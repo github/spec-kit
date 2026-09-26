@@ -682,6 +682,77 @@ class PresetResolver:
 
         return layers
 
+    def resolve_script_chain(self, script_name: str) -> List[Path]:
+        """Return the ordered chain of files backing a script's continuation.
+
+        Scripts are executed rather than merely read, so â€” unlike
+        templates and commands â€” their composition doesn't need to be
+        spliced into a single file ahead of time. A ``"wrap"`` script
+        contains a literal ``$CORE_SCRIPT`` reference that a runtime
+        continuation runner resolves hop by hop, so this returns the
+        stack of files that reference forms, in priority order, rather
+        than composed content.
+
+        This walks the same priority stack as ``resolve_content()`` for
+        ``template_type="script"``: the highest-priority layer down
+        through the nearest layer with strategy ``"replace"``
+        (inclusive), which terminates the chain â€” only ``"replace"`` and
+        ``"wrap"`` are valid script strategies, so a chain longer than
+        one entry always has a ``"wrap"`` top. Layers below the
+        terminating ``"replace"`` layer are never reachable and are
+        omitted, matching ``resolve_content()``.
+
+        Returns an empty list when the script name has no layers, or
+        when none of them has strategy ``"replace"`` (composition has no
+        base to terminate on â€” the same condition under which
+        ``resolve_content()`` returns ``None``).
+        """
+        layers = list(self.collect_all_layers(script_name, "script"))
+        if not any(layer["strategy"] == "replace" for layer in layers):
+            # collect_all_layers() only knows scripts/<name>.sh; the real
+            # built-in Bash assets live under scripts/bash/.
+            bundled = self._find_bundled_bash_script(script_name)
+            if bundled is not None:
+                layers.append(
+                    {"path": bundled, "source": "core (bundled)", "strategy": "replace"}
+                )
+        if not layers:
+            return []
+        base_idx = next(
+            (i for i, layer in enumerate(layers) if layer["strategy"] == "replace"),
+            None,
+        )
+        if base_idx is None:
+            return []
+        chain_layers = layers[: base_idx + 1]
+        for layer in chain_layers:
+            if layer["strategy"] != "wrap":
+                continue
+            try:
+                body = layer["path"].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise PresetValidationError(
+                    f"Cannot read wrap script '{layer['source']}': {exc}"
+                ) from exc
+            if "$CORE_SCRIPT" not in body:
+                raise PresetValidationError(
+                    f"Wrap strategy in '{layer['source']}' is missing the "
+                    f"$CORE_SCRIPT placeholder; executing it would silently "
+                    f"drop every lower layer."
+                )
+        return [layer["path"] for layer in chain_layers]
+
+    def _find_bundled_bash_script(self, script_name: str) -> Optional[Path]:
+        """Locate the built-in Bash script from the core pack or source tree."""
+        try:
+            from specify_cli import _locate_core_pack, _repo_root
+        except ImportError:
+            return None
+        core_pack = _locate_core_pack()
+        base = core_pack if core_pack is not None else _repo_root()
+        candidate = base / "scripts" / "bash" / f"{script_name}.sh"
+        return candidate if candidate.is_file() else None
+
     def _find_bundled_core(
         self,
         template_name: str,

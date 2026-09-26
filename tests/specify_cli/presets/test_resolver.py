@@ -17,6 +17,7 @@ from tests.specify_cli.presets._helpers import (
     CORE_TEMPLATE_NAMES,
     install_self_test_preset,
 )
+from tests.specify_cli.presets._helpers import create_pack as _create_pack
 
 
 class TestPresetResolver:
@@ -1760,43 +1761,164 @@ class TestCollectAllLayers:
         assert layers[1]["strategy"] == "replace"
 
 
-def _create_pack(temp_dir, valid_pack_data, pack_id, content,
-                 strategy="replace", template_type="template",
-                 template_name="spec-template"):
-    """Helper to create a preset pack directory."""
-    pack_data = {**valid_pack_data}
-    pack_data["preset"] = {**valid_pack_data["preset"], "id": pack_id, "name": pack_id}
+class TestResolveScriptChain:
+    """Test PresetResolver.resolve_script_chain() (#4551).
 
-    tmpl_entry = {
-        "type": template_type,
-        "name": template_name,
-    }
-    if template_type == "script":
-        tmpl_entry["file"] = f"scripts/{template_name}.sh"
-    elif template_type == "command":
-        tmpl_entry["file"] = f"commands/{template_name}.md"
-    else:
-        tmpl_entry["file"] = f"templates/{template_name}.md"
-    if strategy != "replace":
-        tmpl_entry["strategy"] = strategy
-    pack_data["provides"] = {"templates": [tmpl_entry]}
+    Unlike resolve_content(), which splices script content together
+    ahead of time, this returns the ordered *files* a runtime
+    continuation dispatcher walks hop by hop, so priority/enablement
+    changes take effect without re-splicing.
+    """
 
-    pack_dir = temp_dir / pack_id
-    pack_dir.mkdir(exist_ok=True)
-    with open(pack_dir / "preset.yml", 'w') as f:
-        yaml.dump(pack_data, f)
+    def test_missing_script_returns_empty(self, project_dir):
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_script_chain("does-not-exist") == []
 
-    if template_type == "script":
-        subdir = pack_dir / "scripts"
-        subdir.mkdir(exist_ok=True)
-        (subdir / f"{template_name}.sh").write_text(content)
-    elif template_type == "command":
-        subdir = pack_dir / "commands"
-        subdir.mkdir(exist_ok=True)
-        (subdir / f"{template_name}.md").write_text(content)
-    else:
-        subdir = pack_dir / "templates"
-        subdir.mkdir(exist_ok=True)
-        (subdir / f"{template_name}.md").write_text(content)
+    def test_single_core_layer(self, project_dir):
+        """A script with no overrides resolves to a one-entry chain."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "solo-script.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
 
-    return pack_dir
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("solo-script")
+        assert chain == [core_script]
+
+    def test_wrap_over_core_orders_top_first(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "wrapped.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "wrap-pack",
+            "echo before\n$CORE_SCRIPT\necho after\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="wrapped",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("wrapped")
+        assert len(chain) == 2
+        assert chain[0].read_text().startswith("echo before")
+        assert chain[1] == core_script
+
+    def test_replace_layer_terminates_chain(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A "replace" layer wins outright; nothing below it is reachable."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "overridden.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "replace-pack",
+            "echo replaced\n",
+            strategy="replace",
+            template_type="script",
+            template_name="overridden",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        chain = resolver.resolve_script_chain("overridden")
+        assert len(chain) == 1
+        assert chain[0].read_text() == "echo replaced\n"
+
+    def test_no_replace_base_returns_empty(self, project_dir, temp_dir, valid_pack_data):
+        """A wrap-only stack with no core/replace layer can't terminate."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "dangling-wrap",
+            "echo before\n$CORE_SCRIPT\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="dangling",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        assert resolver.resolve_script_chain("dangling") == []
+
+    def test_priority_change_reorders_chain_without_reinstall(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Changing priority alone (no reinstall) must reorder the next
+        resolve_script_chain() call — this is the property the runtime
+        dispatcher relies on to avoid re-materializing on every
+        enable/disable/set-priority change."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "reorder-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        for pid, prio in [("layer-a", 5), ("layer-b", 10)]:
+            pack_dir = _create_pack(
+                temp_dir,
+                valid_pack_data,
+                pid,
+                f"echo {pid} before\n$CORE_SCRIPT\necho {pid} after\n",
+                strategy="wrap",
+                template_type="script",
+                template_name="reorder-me",
+            )
+            manager.install_from_directory(pack_dir, "0.1.5", priority=prio)
+
+        resolver = PresetResolver(project_dir)
+        chain_before = resolver.resolve_script_chain("reorder-me")
+        assert "layer-a" in str(chain_before[0])
+
+        manager.registry.update("layer-a", {"priority": 20})
+
+        chain_after = resolver.resolve_script_chain("reorder-me")
+        assert "layer-b" in str(chain_after[0])
+        assert "layer-a" in str(chain_after[1])
+
+
+    def test_wrap_missing_core_script_placeholder_is_rejected(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core = project_dir / ".specify" / "templates" / "scripts" / "bad-wrap.sh"
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text("echo core\n")
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "bad-wrap-pack", "echo no placeholder\n",
+            strategy="wrap", template_type="script", template_name="bad-wrap",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        with pytest.raises(PresetValidationError, match="CORE_SCRIPT"):
+            PresetResolver(project_dir).resolve_script_chain("bad-wrap")
+
+    def test_builtin_bash_script_is_found_as_core_base(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A wrap over a real built-in (scripts/bash/setup-plan.sh) must
+        resolve without a fabricated .specify/templates/scripts core."""
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "real-wrap", "echo a\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="setup-plan",
+        )
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        chain = PresetResolver(project_dir).resolve_script_chain("setup-plan")
+        assert len(chain) == 2
+        assert chain[1].name == "setup-plan.sh"
+        assert chain[1].parent.name == "bash"
