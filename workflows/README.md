@@ -85,7 +85,10 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 13 built-in step types, including `workflow` for calling an
+installed workflow with private inputs and declared outputs. See
+[workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
+for the scope and execution identity contracts.
 
 ### Command Steps (default)
 

@@ -540,6 +540,73 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `do-while`   | Execute at least once, then loop on condition    |
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
+| `workflow`   | Call an installed workflow with private inputs and declared outputs |
+
+### Workflow composition
+
+A `workflow` step executes an installed, enabled workflow in the current project
+as a private scope of the same run. Targets can be literal IDs or expressions;
+the resolved string must match the ID exactly, including case and whitespace.
+
+```yaml
+inputs:
+  target: {type: string, required: true}
+  report: {type: string, required: true}
+steps:
+  - id: investigate
+    type: workflow
+    workflow: "{{ inputs.target }}"
+    input:
+      report: "{{ inputs.report }}"
+```
+
+The included workflow sees only declared inputs passed through `input` and its
+own step results. Unknown input names, missing required values, and invalid
+types/enums fail the call. Existing defaults and `integration: auto` resolution
+apply. Values cross back only through explicit declarations:
+
+```yaml
+outputs:
+  report:
+    value: "{{ steps.analyze.output.stdout }}"
+```
+
+The caller reads `{{ steps.investigate.output.report }}`. Output includes
+`workflow` and `status`; failures also include `error`, and an abort includes
+`aborted: true`. These names and `integration`, `model`, `options`, and `input`
+are reserved. Returned values must be JSON-safe. Private inputs, step records,
+and logs are not part of the return value. No separate child run is created.
+
+Failures may be handled with `continue_on_error: true` at either the included
+step or workflow-call boundary. Pauses and explicit aborts always stop execution.
+Nested composition is allowed, but repeated workflow IDs on the active call
+path are cycles. Diamonds are allowed. The maximum included depth is 16, with
+the root at depth zero.
+
+### Execution identity and resume
+
+Each step occurrence owns a record in a persisted execution tree. Authored step
+names are local expression aliases, not global execution IDs. Fan-out items
+have independent alias contexts; results remain ordered by item index.
+
+New runs persist selected branches, dynamic custom-step expansions, loop
+iterations, and fan-out items. Resume retries unfinished operations and retains
+completed work without reevaluating already selected branches. Workflow targets
+and overlay-resolved definitions remain bound even if installations change.
+Ordinary resume retains bound inputs; explicit `--input` updates rebind reached,
+incomplete calls through their original mappings. Completed calls retain their
+results. Failed output evaluation retries finalization without repeating child
+commands.
+
+Snapshots are stored as YAML strings inside the private JSON execution tree,
+preserving YAML scalar types. Inputs and results remain JSON values. Legacy runs
+without a tree enter through their saved top-level index, then use tree-backed
+resume. A tree-backed run left `running` by a crashed process can also be resumed;
+only one process may execute or resume a run at a time. A side effect completed
+before its checkpoint may execute again after a crash.
+
+Run/resume/status JSON includes `workflow_scopes` summaries when calls exist and
+reports the active nested gate with its `scope_path`.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 

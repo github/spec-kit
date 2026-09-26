@@ -41,9 +41,10 @@ unless `continue_on_error: true` is set (an explicit abort always stops).
 The engine calls `validate()` during workflow validation but does not
 automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
-successful default or an unhandled exception. Resume restarts the current
-top-level step; a pause inside nested steps re-runs their parent and nested
-body. Design side effects accordingly.
+successful default or an unhandled exception. New runs persist an execution
+tree: resume retries unfinished occurrences and restores completed results and
+selected expansions. Legacy states enter through their old top-level index.
+Side effects performed before their completion checkpoint can still repeat.
 
 The registry holds one shared instance per type. Concurrent `fan-out` can
 invoke that instance from multiple threads: keep execution stateless and
