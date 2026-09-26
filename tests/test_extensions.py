@@ -6662,6 +6662,89 @@ class TestExtensionCatalog:
         assert archive_path.name == "test-ext-1.0.0.tar.gz"
         assert archive_path.read_bytes() == archive_bytes
 
+    def test_download_extension_url_downloads_without_catalog_lookup(self, temp_dir):
+        """download_extension_url retrieves an explicit URL without consulting
+        the catalog, naming the archive from the caller-supplied id/version
+        (the #4712 pinned-release retrieval path)."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = self._make_zip_bytes()
+        with patch.object(
+            catalog,
+            "get_extension_info",
+            side_effect=AssertionError(
+                "no catalog lookup expected for an explicit-URL download"
+            ),
+        ), patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            zip_path = catalog.download_extension_url(
+                "https://example.com/releases/download/v0.4.12/test-ext-0.4.12.zip",
+                "test-ext",
+                "0.4.12",
+                target_dir=temp_dir,
+            )
+
+        assert zip_path.name == "test-ext-0.4.12.zip"
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_extension_url_verifies_sha256_when_provided(self, temp_dir):
+        """A supplied digest is enforced; omission (None) skips verification,
+        matching the catalogue-optional behaviour of the advertised path."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = self._make_zip_bytes()
+        digest = hashlib.sha256(zip_bytes).hexdigest()
+
+        with patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            zip_path = catalog.download_extension_url(
+                "https://example.com/test-ext.zip",
+                "test-ext",
+                "1.0.0",
+                sha256=digest,
+                target_dir=temp_dir,
+            )
+        assert zip_path.read_bytes() == zip_bytes
+
+        with patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            with pytest.raises(ExtensionError, match="Integrity check failed"):
+                catalog.download_extension_url(
+                    "https://example.com/test-ext.zip",
+                    "test-ext",
+                    "1.0.0",
+                    sha256="0" * 64,
+                    target_dir=temp_dir,
+                )
+
+    def test_download_extension_url_rejects_non_https(self, temp_dir):
+        """Explicit-URL downloads enforce the same HTTPS rule as catalog
+        downloads (localhost HTTP aside)."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        with patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(ExtensionError, match="must use HTTPS"):
+                catalog.download_extension_url(
+                    "http://example.com/test-ext.zip",
+                    "test-ext",
+                    target_dir=temp_dir,
+                )
+        open_url.assert_not_called()
+
+    def test_download_extension_url_rejects_malformed_authority(self, temp_dir):
+        """An explicit URL with a malformed authority surfaces a clean
+        ExtensionError rather than leaking a raw ValueError."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        with patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(ExtensionError, match="malformed"):
+                catalog.download_extension_url(
+                    "https://[::1/test-ext.zip", "test-ext", target_dir=temp_dir
+                )
+        open_url.assert_not_called()
+
 
 
 # ===== CatalogEntry Tests =====

@@ -22,12 +22,32 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from . import BundlerError
 from .manifest import ComponentRef
 
 DEFAULT_PRIORITY = 10
+
+
+def _pinned_release_matches(pinned: str | None, advertised: object) -> bool:
+    """Return whether a manifest pin is satisfied by an advertised version.
+
+    Mirrors the normalization of :func:`_assert_pinned_version`: a missing
+    pin, or a source that advertises no version, cannot be checked, so both
+    count as matching.
+    """
+    if not pinned or advertised is None:
+        return True
+    actual = str(advertised).strip()
+    if not actual:
+        return True
+    from .versioning import parse_version
+
+    try:
+        return parse_version(actual) == parse_version(pinned)
+    except BundlerError:
+        return actual == str(pinned).strip()
 
 
 def _assert_pinned_version(
@@ -41,23 +61,162 @@ def _assert_pinned_version(
     enforce the pin, so installation proceeds (the source, not the bundler,
     owns that gap).
     """
+    if _pinned_release_matches(pinned, advertised):
+        return
+    actual = str(advertised).strip() if advertised is not None else ""
+    raise BundlerError(
+        f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
+        f"manifest, but the resolved version is {actual}. Update the bundle's "
+        "pinned version or the source before installing."
+    )
+
+
+def _replace_version_token(segment: str, token: str, prefix: str, pinned: str) -> str | None:
+    """Substitute *token* with *pinned* when it appears as a bounded token.
+
+    Returns the rewritten path segment, or ``None`` when no bounded
+    occurrence exists. A token is bounded when it is not embedded in a
+    longer dotted/dashed run: a preceding ``.`` is accepted only when it is
+    not itself preceded by a digit, and a following ``.`` only when it is
+    not followed by one -- so an advertised ``0.5.1`` never matches inside
+    ``1.0.5.1``, ``0.5.10`` or ``10.5.1``.
+    """
+    start = 0
+    while True:
+        pos = segment.find(token, start)
+        if pos < 0:
+            return None
+        before = segment[pos - 1] if pos > 0 else ""
+        end = pos + len(token)
+        after = segment[end] if end < len(segment) else ""
+        before_ok = (
+            before == ""
+            or before in "-_/"
+            or (before == "." and (pos < 2 or not segment[pos - 2].isdigit()))
+        )
+        after_ok = (
+            after == ""
+            or after in "-_/"
+            or (
+                after == "."
+                and (end + 1 >= len(segment) or not segment[end + 1].isdigit())
+            )
+        )
+        if before_ok and after_ok:
+            return segment[:pos] + prefix + pinned + segment[end:]
+        start = pos + 1
+
+
+def _pinned_release_url(
+    download_url: object, advertised: object, pinned: str | None
+) -> str | None:
+    """Derive the pinned release's URL from the advertised release's URL.
+
+    Catalog entries advertise a single (version, download_url) pair, so when
+    a catalog moves to a newer release a bundle's pinned release is no longer
+    advertised -- although its artifact usually remains reachable at the same
+    location with the version token substituted (e.g. a GitHub release
+    download URL pinned to a tag). Returns such a derived URL, or ``None``
+    when the advertised version token does not appear as a distinct token in
+    the URL path and no derivation is possible.
+
+    Only the URL path is rewritten (query strings are left untouched), so
+    the derivation stays conservative: the same host, scheme, and any
+    authentication the advertised URL carries are preserved.
+    """
+    if not isinstance(download_url, str) or not download_url:
+        return None
     if not pinned or advertised is None:
-        return
-    actual = str(advertised).strip()
-    if not actual:
-        return
-    from .versioning import parse_version
+        return None
+    advertised = str(advertised).strip()
+    pinned = str(pinned).strip()
+    if not advertised or not pinned:
+        return None
+    if advertised == pinned:
+        return None
+
+    from urllib.parse import urlunparse, urlparse
 
     try:
-        matches = parse_version(actual) == parse_version(pinned)
-    except BundlerError:
-        matches = actual == str(pinned).strip()
-    if not matches:
-        raise BundlerError(
-            f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
-            f"manifest, but the resolved version is {actual}. Update the bundle's "
-            "pinned version or the source before installing."
+        parts = urlparse(download_url)
+    except ValueError:
+        return None
+    if not parts.path:
+        return None
+
+    if advertised[:1] in ("v", "V"):
+        # The catalog spells the version v/V-prefixed; preserve that tag
+        # prefix form (the pin is bare semver, so the prefix is never its own
+        # version character).
+        candidates: list[tuple[str, str]] = [(advertised, advertised[:1])]
+    else:
+        candidates = [
+            (f"V{advertised}", "V"),
+            (f"v{advertised}", "v"),
+            (advertised, ""),
+        ]
+
+    segments = parts.path.split("/")
+    changed = False
+    for index, segment in enumerate(segments):
+        for token, prefix in candidates:
+            replaced = _replace_version_token(segment, token, prefix, pinned)
+            if replaced is not None:
+                segments[index] = replaced
+                changed = True
+                break
+    if not changed:
+        return None
+    return urlunparse(parts._replace(path="/".join(segments)))
+
+
+def _download_catalog_component(
+    download_by_id: Callable[..., Path],
+    download_by_url: Callable[..., Path],
+    kind: str,
+    component: ComponentRef,
+    info: dict,
+    *,
+    error_types: tuple[type[Exception], ...],
+) -> Path:
+    """Download a catalog component, fetching the pinned release on demand.
+
+    *download_by_id* is the catalog's standard ID-based download;
+    *download_by_url* is its explicit-URL counterpart. When the bundle's pin
+    differs from the version the catalog currently advertises, the pinned
+    release's URL is derived from the catalog's own ``download_url`` (same
+    host, re-validated as HTTPS by the catalog's download path) and
+    retrieved without the catalog's SHA-256, which only covers the
+    advertised release. When no derivation is possible, or the pinned
+    retrieval fails, the error names the pin and the advertised version so
+    the failure reports the pin mismatch rather than a bare network error.
+    """
+    pinned = component.version
+    if pinned and not _pinned_release_matches(pinned, info.get("version")):
+        advertised = str(info.get("version")).strip()
+        derived = _pinned_release_url(
+            info.get("download_url"), info.get("version"), pinned
         )
+        if derived is None:
+            raise BundlerError(
+                f"{kind} '{component.id}' is pinned to version {pinned} in the "
+                f"bundle manifest, but the catalog now advertises {advertised} "
+                "and its download URL does not identify that version, so the "
+                "pinned release cannot be located. Update the bundle's pinned "
+                "version to match the catalog, or restore the pinned release, "
+                "before installing."
+            )
+        try:
+            return download_by_url(derived, component.id, pinned)
+        except error_types as exc:
+            raise BundlerError(
+                f"{kind} '{component.id}' is pinned to version {pinned} in the "
+                f"bundle manifest, but the catalog now advertises {advertised}. "
+                f"Retrieving the pinned release from {derived} failed: {exc} "
+                "Update the bundle's pinned version or the catalog before "
+                "installing."
+            ) from exc
+    return download_by_id(component.id)
 
 
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
@@ -192,7 +351,7 @@ class _PresetKindManager:
                 "network access; re-run without --offline."
             )
 
-        from ..presets import PresetCatalog
+        from ..presets import PresetCatalog, PresetError
 
         catalog = PresetCatalog(self._root)
         info = catalog.get_pack_info(component.id)
@@ -203,10 +362,14 @@ class _PresetKindManager:
                 f"Preset '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Preset", component.id, component.version, info.get("version")
+        zip_path = _download_catalog_component(
+            catalog.download_pack,
+            catalog.download_pack_url,
+            "Preset",
+            component,
+            info,
+            error_types=(PresetError,),
         )
-        zip_path = catalog.download_pack(component.id)
         try:
             self._manager.install_from_zip(
                 zip_path,
@@ -280,7 +443,7 @@ class _ExtensionKindManager:
                 "network access; re-run without --offline."
             )
 
-        from ..extensions import ExtensionCatalog
+        from ..extensions import ExtensionCatalog, ExtensionError
 
         catalog = ExtensionCatalog(self._root)
         info = catalog.get_extension_info(component.id)
@@ -293,10 +456,14 @@ class _ExtensionKindManager:
                 f"Extension '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Extension", component.id, component.version, info.get("version")
+        zip_path = _download_catalog_component(
+            catalog.download_extension,
+            catalog.download_extension_url,
+            "Extension",
+            component,
+            info,
+            error_types=(ExtensionError,),
         )
-        zip_path = catalog.download_extension(component.id)
         try:
             manifest = self._manager.install_from_zip(
                 zip_path,

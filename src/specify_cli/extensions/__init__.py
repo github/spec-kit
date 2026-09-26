@@ -4369,8 +4369,6 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If extension not found or download fails
         """
-        import urllib.error
-
         # Get extension info from catalog
         ext_info = self.get_extension_info(extension_id)
         if not ext_info:
@@ -4392,14 +4390,64 @@ class ExtensionCatalog(CatalogStackBase):
                 f"Extension download URL is malformed: {download_url}"
             )
 
+        return self.download_extension_url(
+            download_url,
+            extension_id,
+            ext_info.get("version"),
+            sha256=ext_info.get("sha256"),
+            target_dir=target_dir,
+        )
+
+    def download_extension_url(
+        self,
+        download_url: str,
+        extension_id: str,
+        version: Optional[str] = None,
+        *,
+        sha256: Optional[str] = None,
+        target_dir: Optional[Path] = None,
+    ) -> Path:
+        """Download an extension archive from an explicit URL.
+
+        The same pipeline ``download_extension`` applies to a catalog entry's
+        ``download_url`` (HTTPS validation, size-limited fetch, optional
+        SHA-256 verification, archive-format detection, safe cache path),
+        without a catalog lookup, so callers can retrieve a specific release
+        by URL -- e.g. a bundle pin the catalog no longer advertises.
+        ``sha256`` defaults to ``None`` (no digest check): a release that is
+        not the catalog's advertised one has no catalog-declared digest to
+        verify against.
+
+        Args:
+            download_url: HTTPS URL of the archive to download
+            extension_id: ID used to name the cached archive
+            version: Version used to name the cached archive ("unknown"
+                when None)
+            sha256: Expected SHA-256 hex digest, or None to skip the check
+            target_dir: Directory to save the archive
+
+        Returns:
+            Path to the downloaded archive
+
+        Raises:
+            ExtensionError: If the URL is invalid or the download fails
+        """
+        import urllib.error
+
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
 
-        # A malformed authority (e.g. an unterminated IPv6 bracket
+        if not isinstance(download_url, str):
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            )
+
+        # A malformed authority (e.g., an unterminated IPv6 bracket
         # "https://[::1") makes urlparse / hostname access raise ValueError.
-        # The download_url comes from catalog payload data, so surface a clean
-        # ExtensionError rather than leaking a raw ValueError past the command
-        # handler (which only catches ExtensionError). Mirrors catalogs (#3435)
+        # The URL comes from caller data (a catalog payload field or a
+        # derived pinned-release URL), so surface a clean ExtensionError
+        # rather than leaking a raw ValueError past the command handler
+        # (which only catches ExtensionError). Mirrors catalogs (#3435)
         # and workflows/catalog.py (#3484).
         try:
             parsed = urlparse(download_url)
@@ -4422,7 +4470,7 @@ class ExtensionCatalog(CatalogStackBase):
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
         target_dir = Path(target_dir)
-        version = ext_info.get("version", "unknown")
+        version = "unknown" if version is None else version
         declared_format = archive_format_from_name(download_url)
         build_safe_download_path(
             target_dir,
@@ -4463,7 +4511,7 @@ class ExtensionCatalog(CatalogStackBase):
                 )
 
             verify_archive_sha256(
-                archive_data, ext_info.get("sha256"), extension_id, ExtensionError
+                archive_data, sha256, extension_id, ExtensionError
             )
 
             with tempfile.NamedTemporaryFile(
