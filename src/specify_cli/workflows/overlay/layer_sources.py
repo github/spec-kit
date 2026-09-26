@@ -7,7 +7,8 @@ from pathlib import Path
 
 import yaml
 
-from .schema import Overlay, _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
+from ..engine import is_valid_workflow_id
+from .schema import Overlay, _RESERVED_WORKFLOW_IDS, validate_overlay_yaml
 
 
 @dataclass
@@ -38,7 +39,7 @@ def _validate_workflow_id(workflow_id: str, context_path: Path) -> None:
     """
     if (
         not isinstance(workflow_id, str)
-        or not _SAFE_ID_PATTERN.fullmatch(workflow_id)
+        or not is_valid_workflow_id(workflow_id)
         or workflow_id in _RESERVED_WORKFLOW_IDS
     ):
         raise OverlayLoadError(

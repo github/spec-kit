@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..engine import WorkflowDefinition
+from ..engine import WorkflowDefinition, is_valid_workflow_id
 from .composer import StepListComposer
 from .layer_sources import (
     BaseWorkflowSource,
@@ -12,14 +12,14 @@ from .layer_sources import (
     ProjectOverlaySource,
 )
 from .merge import ComposedStep
-from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN
+from .schema import _RESERVED_WORKFLOW_IDS
 
 
 def _validate_workflow_id(workflow_id: str) -> None:
     """Reject workflow IDs that are unsafe as installed-storage path segments."""
     if (
         not isinstance(workflow_id, str)
-        or not _SAFE_ID_PATTERN.fullmatch(workflow_id)
+        or not is_valid_workflow_id(workflow_id)
         or workflow_id in _RESERVED_WORKFLOW_IDS
     ):
         raise ValueError(f"Invalid workflow ID: {workflow_id!r}")

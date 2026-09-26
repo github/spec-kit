@@ -20,7 +20,7 @@ def workflow_run(
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from . import load_custom_steps
-    from .engine import WorkflowEngine
+    from .engine import WorkflowEngine, is_valid_workflow_id
 
     source_path = cli.Path(source).expanduser()
     is_file_source = (
@@ -63,7 +63,7 @@ def workflow_run(
         # bypassing the disabled check below.
         if (
             source in cli._RESERVED_WORKFLOW_IDS
-            or not cli._WORKFLOW_ID_PATTERN.fullmatch(source)
+            or not is_valid_workflow_id(source)
         ):
             err.print(
                 f"[red]Error:[/red] Invalid workflow ID: {cli._escape_markup(repr(source))}"

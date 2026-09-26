@@ -4842,6 +4842,30 @@ steps:
         errors = validate_workflow(definition)
         assert any("lowercase alphanumeric" in e for e in errors)
 
+    @pytest.mark.parametrize(
+        ("workflow_id", "valid"),
+        [("a" * 200, True), ("a" * 201, False)],
+    )
+    def test_workflow_id_length_limit(self, workflow_id, valid):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition(
+            {
+                "schema_version": "1.0",
+                "workflow": {
+                    "id": workflow_id,
+                    "name": "Test",
+                    "version": "1.0.0",
+                },
+                "steps": [{"id": "step-one", "command": "speckit.specify"}],
+            }
+        )
+
+        errors = validate_workflow(definition)
+        assert (errors == []) is valid
+        if not valid:
+            assert any("at most 200 characters" in error for error in errors)
+
     def test_workflow_id_with_trailing_newline_is_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 

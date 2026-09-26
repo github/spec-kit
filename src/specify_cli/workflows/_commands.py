@@ -30,6 +30,7 @@ from .._download_security import (
 )
 from .._project import _resolve_init_dir_override as _resolve_init_dir_override
 from ..shared_infra import verify_archive_sha256
+from .engine import is_valid_workflow_id
 
 workflow_app = typer.Typer(
     name="workflow",
@@ -154,7 +155,6 @@ def _resolve_installed_workflow_ownership(
     return resolver(source_path, err)
 
 
-_WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
 
 
@@ -263,7 +263,7 @@ def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
     if (
         workflow_id in _RESERVED_WORKFLOW_IDS
-        or not _WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
+        or not is_valid_workflow_id(workflow_id)
     ):
         console.print(
             f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
@@ -1032,7 +1032,9 @@ def _gate_details(step_id: str, output: Any) -> dict[str, Any]:
     }
 
 
-def _scope_gate(scopes: Any, path: list[str]) -> dict[str, Any] | None:
+def _scope_gate(
+    scopes: Any, path: list[str], active_status: str
+) -> dict[str, Any] | None:
     """Find the active gate inside a serialized scope tree.
 
     A pause/abort inside a composed workflow leaves the *root* resting on the
@@ -1046,10 +1048,12 @@ def _scope_gate(scopes: Any, path: list[str]) -> dict[str, Any] | None:
         if not isinstance(record, dict):
             continue
         child_path = [*path, key]
-        if str(record.get("status")) not in ("paused", "aborted"):
+        if str(record.get("status")) != active_status:
             continue
-        # A deeper paused scope is more specific; check descendants first.
-        nested = _scope_gate(record.get("workflow_scopes"), child_path)
+        # A deeper active scope is more specific; check descendants first.
+        nested = _scope_gate(
+            record.get("workflow_scopes"), child_path, active_status
+        )
         if nested is not None:
             return nested
         step_id = _scope_current_step_id(record)
@@ -1079,13 +1083,14 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     # notably `completed`/`failed` — must be suppressed: current_step_id is
     # not cleared when a run whose last executed step was a gate moves on, so
     # without this guard it would surface stale detail (run/resume/status).
-    if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
+    status = getattr(state.status, "value", state.status)
+    if status not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
     if isinstance(step, dict) and _is_gate_step(step):
         return _gate_details(state.current_step_id, step.get("output"))
     # Not a top-level gate: a composed workflow may be paused on a nested gate.
-    return _scope_gate(getattr(state, "workflow_scopes", None), [])
+    return _scope_gate(getattr(state, "workflow_scopes", None), [], status)
 
 
 def _normalize_gate_options(options: Any) -> list[str] | None:

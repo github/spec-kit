@@ -42,7 +42,7 @@ class WorkflowStep(StepBase):
         # the ``{{ ... }}`` expression.
         target: Any = config.get("workflow")
         try:
-            from specify_cli.workflows.engine import _ID_PATTERN
+            from specify_cli.workflows.engine import is_valid_workflow_id
             from specify_cli.workflows.overlay.schema import (
                 _RESERVED_WORKFLOW_IDS,
             )
@@ -74,7 +74,7 @@ class WorkflowStep(StepBase):
                     ),
                 )
             if (
-                not _ID_PATTERN.fullmatch(target)
+                not is_valid_workflow_id(target)
                 or target in _RESERVED_WORKFLOW_IDS
             ):
                 return StepResult(

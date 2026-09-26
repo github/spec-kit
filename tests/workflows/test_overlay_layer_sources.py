@@ -128,6 +128,7 @@ _UNSAFE_IDS = [
     "/absolute",
     "UPPER",
     "has space",
+    "a" * 201,
 ]
 
 

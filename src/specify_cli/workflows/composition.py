@@ -56,11 +56,11 @@ MAX_COMPOSITION_DEPTH = 16
 _SAFE_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 
-def _id_pattern() -> re.Pattern[str]:
-    """Return the engine's exact workflow-ID pattern (lazy import)."""
-    from .engine import _ID_PATTERN
+def _is_valid_workflow_id(value: Any) -> bool:
+    """Return whether *value* meets the engine's workflow-ID contract."""
+    from .engine import is_valid_workflow_id
 
-    return _ID_PATTERN
+    return is_valid_workflow_id(value)
 
 
 def _reserved_workflow_ids() -> frozenset[str]:
@@ -169,7 +169,7 @@ def validate_workflow_call_config(config: dict[str, Any]) -> list[str]:
         )
     elif "{{" not in target:
         # A literal target must be a valid, non-reserved workflow ID.
-        if not _id_pattern().fullmatch(target):
+        if not _is_valid_workflow_id(target):
             errors.append(
                 f"Workflow step {step_id!r}: 'workflow' literal {target!r} "
                 "must be lowercase alphanumeric with hyphens."

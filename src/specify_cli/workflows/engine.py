@@ -134,8 +134,19 @@ class WorkflowDefinition:
 
 # -- Workflow Validation --------------------------------------------------
 
-# ID format: lowercase alphanumeric with hyphens
+# ID format: lowercase alphanumeric with hyphens. Keep this below the common
+# filesystem component limit once composed-workflow snapshot suffixes are added.
+MAX_WORKFLOW_ID_LENGTH = 200
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+
+
+def is_valid_workflow_id(value: Any) -> bool:
+    """Return whether *value* is a workflow ID safe for all storage paths."""
+    return (
+        isinstance(value, str)
+        and len(value) <= MAX_WORKFLOW_ID_LENGTH
+        and _ID_PATTERN.fullmatch(value) is not None
+    )
 
 # Keys accepted under a workflow's ``requires`` block: the advisory
 # pre-conditions documented for workflows (``speckit_version`` and
@@ -221,10 +232,10 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"'workflow.id' must be a string, got "
             f"{type(definition.id).__name__} ({definition.id!r})."
         )
-    elif not _ID_PATTERN.fullmatch(definition.id):
+    elif not is_valid_workflow_id(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
-            f"with hyphens."
+            f"with hyphens and at most {MAX_WORKFLOW_ID_LENGTH} characters."
         )
 
     if definition.name is None or definition.name == "":
@@ -652,7 +663,7 @@ class RunState:
                     "Invalid run state: 'installed_workflow_id' must be a "
                     f"string or null, got {type(installed_workflow_id).__name__}"
                 )
-            if not _ID_PATTERN.fullmatch(installed_workflow_id):
+            if not is_valid_workflow_id(installed_workflow_id):
                 raise ValueError(
                     "Invalid run state: 'installed_workflow_id' must be a "
                     "lowercase alphanumeric workflow ID with hyphens"
@@ -864,9 +875,7 @@ class RunState:
             )
 
         workflow_id = state_data["workflow_id"]
-        if not isinstance(workflow_id, str) or not _ID_PATTERN.fullmatch(
-            workflow_id
-        ):
+        if not is_valid_workflow_id(workflow_id):
             raise ValueError(
                 "Invalid run state: 'workflow_id' must be a lowercase "
                 "alphanumeric workflow ID with hyphens"

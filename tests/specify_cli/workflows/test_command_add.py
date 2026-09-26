@@ -772,6 +772,7 @@ steps:
             "bad id",
             " bad-id",
             "bad-id ",
+            "a" * 201,
         ],
     )
     def test_safe_workflow_id_dir_rejects_reserved_or_non_segment_ids(

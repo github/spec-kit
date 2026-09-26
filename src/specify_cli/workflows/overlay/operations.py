@@ -13,6 +13,7 @@ from rich.markup import escape as _escape_markup
 from ..._console import console, err_console
 from ...extensions import normalize_priority
 from .. import _commands as cli
+from ..engine import is_valid_workflow_id
 from . import WorkflowResolver
 from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
@@ -33,6 +34,12 @@ def _validate_overlay_id_or_exit(id_value: str, label: str) -> None:
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate a workflow id, treating the overlay root as reserved."""
     _validate_overlay_id_or_exit(workflow_id, "workflow ID")
+    if not is_valid_workflow_id(workflow_id):
+        err_console.print(
+            f"[red]Error:[/red] Invalid workflow ID {workflow_id!r}: "
+            "maximum length is 200 characters."
+        )
+        raise typer.Exit(1)
     if workflow_id in _RESERVED_WORKFLOW_IDS:
         err_console.print(
             f"[red]Error:[/red] Invalid workflow ID {workflow_id!r}: "

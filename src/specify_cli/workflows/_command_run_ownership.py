@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from . import _commands as cli
+from .engine import is_valid_workflow_id
 
 
 def _same_existing_path(left: Path, right: Path) -> bool:
@@ -125,7 +126,7 @@ def _resolve_installed_workflow_ownership(
             if (
                 not isinstance(workflow_id, str)
                 or workflow_id in cli._RESERVED_WORKFLOW_IDS
-                or not cli._WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
+                or not is_valid_workflow_id(workflow_id)
             ):
                 continue
             try:

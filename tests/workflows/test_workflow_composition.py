@@ -415,6 +415,32 @@ class TestLiteralAndRuntimeTargets:
         assert result["output"]["workflow"] == "child\n"
         assert "not a valid workflow ID" in result["error"]
 
+    def test_runtime_target_rejects_id_over_200_characters(self, project_dir):
+        long_id = "a" * 201
+        _install(
+            project_dir,
+            "parent",
+            _workflow(
+                "parent",
+                [
+                    _shell("pick", f"printf {long_id}"),
+                    {
+                        "id": "call",
+                        "type": "workflow",
+                        "workflow": "{{ steps.pick.output.stdout }}",
+                        "continue_on_error": True,
+                    },
+                ],
+            ),
+        )
+
+        state = _run(project_dir, "parent")
+
+        result = state.step_results["call"]
+        assert result["status"] == "failed"
+        assert result["output"]["workflow"] == long_id
+        assert "not a valid workflow ID" in result["error"]
+
     def test_registry_key_must_match_resolved_definition_id(self, project_dir):
         _install(project_dir, "child", _workflow("other", [_shell("x", "echo hi")]))
 
@@ -2410,11 +2436,64 @@ class TestCliReporting:
                 "active": active_gate,
             },
             [],
+            "paused",
         )
 
         assert gate is not None
         assert gate["step_id"] == "active"
         assert gate["scope_path"] == ["active"]
+
+    @pytest.mark.parametrize(
+        ("root_status", "expected_scope"),
+        [("paused", "paused"), ("aborted", "aborted")],
+    )
+    def test_mixed_sibling_statuses_report_gate_matching_root_status(
+        self, root_status, expected_scope
+    ):
+        from types import SimpleNamespace
+
+        from specify_cli.workflows._commands import _gate_outcome
+
+        def gate(status, step_id):
+            return {
+                "status": status,
+                "current_step_id": step_id,
+                "step_results": {
+                    step_id: {
+                        "type": "gate",
+                        "output": {"message": step_id, "on_reject": "abort"},
+                    }
+                },
+            }
+
+        # The non-matching sibling is deliberately first, reproducing the
+        # timing-dependent insertion order from concurrent fan-out execution.
+        state = SimpleNamespace(
+            status=SimpleNamespace(value=root_status),
+            current_step_id="fan-out",
+            step_results={},
+            workflow_scopes={
+                "aborted": gate("aborted", "abort-gate"),
+                "paused": gate("paused", "pause-gate"),
+            },
+        )
+
+        outcome = _gate_outcome(state)
+        assert outcome is not None
+        assert outcome["scope_path"] == [expected_scope]
+        assert outcome["step_id"] == {
+            "paused": "pause-gate",
+            "aborted": "abort-gate",
+        }[expected_scope]
+
+    def test_maximum_workflow_id_keeps_snapshot_filename_within_limits(self):
+        from specify_cli.workflows.composition import ExecutionScope, _snapshot_ref_for
+
+        reference = _snapshot_ref_for(
+            ExecutionScope(scope_id="call", workflow_id="a" * 200)
+        )
+
+        assert len(reference.encode("ascii")) <= 255
 
     def test_gate_inside_nested_control_flow_reports_gate(self, project_dir):
         """A gate inside an ``if`` body must be reported, not its enclosing step.
