@@ -44,6 +44,7 @@ packages = ["src/specify_cli"]
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"
 "extensions/assess" = "specify_cli/core_pack/extensions/assess"
 "extensions/bug" = "specify_cli/core_pack/extensions/bug"
+"extensions/github" = "specify_cli/core_pack/extensions/github"
 # Bundled workflows (`specify init` installs only `speckit`; `bugfix`/`assess` are opt-in via first-party bundles)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 "workflows/bugfix" = "specify_cli/core_pack/workflows/bugfix"
