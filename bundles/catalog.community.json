@@ -1,8 +1,31 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-21T00:00:00Z",
+  "updated_at": "2026-09-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.community.json",
   "bundles": {
+    "agentstandards": {
+      "name": "Agentstandards Multi-Vendor Architecture",
+      "id": "agentstandards",
+      "version": "0.1.1",
+      "role": "architecture-governance",
+      "description": "Installs a Codex-orchestrated, multi-vendor architecture council, its hard task gate, and the supporting Spec Kit workflow.",
+      "author": "bbjwz",
+      "license": "MIT",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.1/agentstandards-bundle-0.1.1.zip",
+      "sha256": "0306cdc780f4107e6702cd25680afede8acea866dfbb0ba81f9ea9c8f960a9dc",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 1,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["architecture", "governance", "multi-vendor", "codex"],
+      "verified": false
+    },
     "sicario-spec": {
       "name": "SicarioSpec Security & Governance Bundle",
       "id": "sicario-spec",
@@ -34,15 +57,16 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.4.12",
+      "version": "0.5.2",
       "role": "developer",
       "description": "Durable-ID promotion for stock Spec Kit: templates, Gate 2 refusal, and trace-manifest emission.",
       "author": "Rik Dryfoos",
       "license": "MIT",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.4.12/specassay-0.4.12.zip",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-0.5.2.zip",
+      "sha256": "a9acd0848132bee975be7ca6759a531ff02b736c99a98b1bc4e7d8da90da7c82",
       "repository": "https://github.com/rdryfoos/specassay",
       "requires": {
-        "speckit_version": ">=0.14.0"
+        "speckit_version": ">=0.14.0,<2.0.0"
       },
       "provides": {
         "extensions": 1,

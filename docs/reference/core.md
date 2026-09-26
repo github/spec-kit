@@ -57,9 +57,9 @@ specify init my-project --integration copilot --preset compliance
 | `SPECIFY_FEATURE_NO_PERSIST` | Set to `1` or `true` to stop every core script from writing `.specify/feature.json`, even when it would otherwise persist `SPECIFY_FEATURE_DIRECTORY` on read. Useful when multiple agents run concurrently against the same checkout, each with its own `SPECIFY_FEATURE_DIRECTORY`: without it, each invocation's persist step can overwrite another agent's pinned feature directory. |
 
 > **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** — its default location is under `specs/` in that project, but an explicitly selected feature directory is not restricted to living inside it. They are independent — project first, then feature.
-
+>
 > **Version control.** `specify init` scaffolds a managed `.specify/.gitignore` that excludes machine-local state — `feature.json` (the current-feature pointer, rewritten on every feature switch) and per-machine extension `extensions/*/local-config.yml` overrides — while leaving everything else under `.specify/` (constitution, templates, scripts, extension config) shareable so teams stay aligned. Like the rest of `.specify/`'s shared scripts and templates, the file is tracked in the shared-infrastructure manifest: your edits are preserved on re-init and `specify init --here --force` restores the managed content. It is intentionally left in place by `specify integration uninstall`, which only removes the uninstalled agent's own files.
-
+>
 > **Symlinked project roots.** `SPECIFY_INIT_DIR` relocates *where* the project is, not *how* a command treats symlinks: each command keeps its existing cwd-path stance. Commands that traverse and write project files through broad input paths (`bundle`, `workflow run <file>`) refuse a symlinked `.specify/` to preserve write confinement. Other project-scoped commands keep their existing behavior when `SPECIFY_INIT_DIR` points at a project root, which may include following a symlinked `.specify/`.
 
 ## Naming Features with the Helper Scripts
