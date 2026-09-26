@@ -28,6 +28,13 @@ from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
 )
+from ._continuation import (
+    allows_expansion_index,
+    new_continuation,
+    sequence_steps,
+    validate_continuation,
+    write_expansion_snapshot,
+)
 from .base import RunStatus, StepContext, StepResult, StepStatus
 from .composition import (
     ExecutionScope,
@@ -719,6 +726,9 @@ class RunState:
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
+        # Private execution authority for cursor-backed runs. The public
+        # current_step fields remain compatibility projections.
+        self.continuation: dict[str, Any] | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
         # Nested composition scopes, keyed by effective invocation id. The
         # runtime tree lives in ``ExecutionScope`` objects; this is its
@@ -798,12 +808,14 @@ class RunState:
             "status": self.status.value,
             "current_step_index": self.current_step_index,
             "current_step_id": self.current_step_id,
+            "continuation": self.continuation,
             "step_results": self.step_results,
             "workflow_scopes": self.workflow_scopes,
             "workflow_dir": self.workflow_dir,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "error": self.error,
+            "inputs": self.inputs,
         }
         self._atomic_write_json(runs_dir / "state.json", state_data)
         self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
@@ -903,6 +915,21 @@ class RunState:
         workflow_scopes = state_data.get("workflow_scopes", {})
         validate_serialized_scopes(workflow_scopes, run_dir=runs_dir)
 
+        continuation = state_data.get("continuation")
+        if continuation is not None:
+            root_steps = None
+            workflow_copy = runs_dir / "workflow.yml"
+            if workflow_copy.is_file():
+                try:
+                    root_data = yaml.safe_load(workflow_copy.read_text(encoding="utf-8"))
+                except (OSError, yaml.YAMLError) as exc:
+                    raise ValueError("Invalid continuation: unable to load workflow snapshot") from exc
+                if isinstance(root_data, dict) and isinstance(root_data.get("steps"), list):
+                    root_steps = root_data["steps"]
+            validate_continuation(
+                continuation, run_dir=runs_dir, root_steps=root_steps
+            )
+
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=workflow_id,
@@ -929,6 +956,9 @@ class RunState:
             )
         state.current_step_index = current_step_index
         state.current_step_id = state_data.get("current_step_id")
+        # States created before continuations deliberately retain their legacy
+        # coarse resume behavior until their first resumed activation.
+        state.continuation = continuation
         state.step_results = step_results
         state.workflow_scopes = workflow_scopes
         state.workflow_dir = state_data.get("workflow_dir")
@@ -936,8 +966,13 @@ class RunState:
         state.updated_at = state_data.get("updated_at", "")
         state.error = state_data.get("error")
 
+        inputs = state_data.get("inputs")
+        if inputs is not None:
+            if not isinstance(inputs, dict):
+                raise ValueError("Invalid run state: 'inputs' must be a JSON object")
+            state.inputs = inputs
         inputs_path = runs_dir / "inputs.json"
-        if inputs_path.exists():
+        if inputs is None and inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
                 inputs_data = json.load(f)
             if not isinstance(inputs_data, dict):
@@ -1111,6 +1146,7 @@ class WorkflowEngine:
         )
         state.workflow_dir = workflow_dir
         state.status = RunStatus.RUNNING
+        state.continuation = new_continuation()
         state.save()
 
         context = StepContext(
@@ -1127,7 +1163,9 @@ class WorkflowEngine:
 
         # Execute steps
         try:
-            self._execute_steps(definition.steps, context, scope, STEP_REGISTRY)
+            self._execute_cursor_sequence(
+                definition.steps, context, scope, STEP_REGISTRY, state.continuation
+            )
         except KeyboardInterrupt:
             scope.status = RunStatus.PAUSED
             scope.append_log({"event": "workflow_interrupted"})
@@ -1180,7 +1218,10 @@ class WorkflowEngine:
         # index (e.g. a hand-edited state.json) would otherwise slice
         # definition.steps[state.current_step_index:] into an empty list
         # below, silently completing the run without executing any step.
-        if state.current_step_index >= len(definition.steps):
+        if state.current_step_index >= len(definition.steps) and (
+            state.continuation is None
+            or not allows_expansion_index(state.continuation, state.current_step_index)
+        ):
             msg = (
                 "Invalid run state: 'current_step_index' "
                 f"({state.current_step_index}) is out of range for "
@@ -1214,23 +1255,28 @@ class WorkflowEngine:
 
         from . import STEP_REGISTRY
 
-        state.error = None
-        state.status = RunStatus.RUNNING
-        state.save()
-
         scope = self._build_root_scope(state, definition)
         scope.rebind_inputs_on_resume = bool(inputs)
-
-        # Resume from the current step — re-execute it so gates
-        # can prompt interactively again.
-        remaining_steps = definition.steps[state.current_step_index :]
-        step_offset = state.current_step_index
+        state.error = None
+        state.status = RunStatus.RUNNING
+        scope.error = None
+        scope.status = RunStatus.RUNNING
 
         try:
-            self._execute_steps(
-                remaining_steps, context, scope, STEP_REGISTRY,
-                step_offset=step_offset,
-            )
+            if scope.continuation is None:
+                # Legacy runs and the not-yet-cursor-backed loop/fan-out
+                # state machines retain the prior coarse replay behavior.
+                self._execute_steps(
+                    definition.steps[state.current_step_index :],
+                    context,
+                    scope,
+                    STEP_REGISTRY,
+                    step_offset=state.current_step_index,
+                )
+            else:
+                self._execute_cursor_sequence(
+                    definition.steps, context, scope, STEP_REGISTRY, scope.continuation
+                )
         except KeyboardInterrupt:
             scope.status = RunStatus.PAUSED
             scope.append_log({"event": "workflow_interrupted"})
@@ -1279,6 +1325,7 @@ class WorkflowEngine:
             step_results=state.step_results,
             current_step_index=state.current_step_index,
             current_step_id=state.current_step_id,
+            continuation=state.continuation,
             status=state.status,
             error=state.error,
             root_state=state,
@@ -1308,6 +1355,7 @@ class WorkflowEngine:
             step_results=state.step_results,
             current_step_index=state.current_step_index,
             current_step_id=state.current_step_id,
+            continuation=state.continuation,
             status=state.status,
             error=state.error,
             root_state=state,
@@ -1327,10 +1375,210 @@ class WorkflowEngine:
         state.error = scope.error
         state.current_step_id = scope.current_step_id
         state.current_step_index = scope.current_step_index
+        state.continuation = scope.continuation
         state.workflow_scopes = {
             key: child._serialize()
             for key, child in scope.workflow_scopes.items()
         }
+
+    def _cursor_step_data(
+        self,
+        step_config: dict[str, Any],
+        step_type: str,
+        result: StepResult,
+        context: StepContext,
+    ) -> dict[str, Any]:
+        """Build the persisted result record shared by cursor executions."""
+        if step_type == "workflow" and result.status == StepStatus.FAILED:
+            recorded_input = result.output.get("input", {})
+        else:
+            recorded_input = result.output.get("input") or step_config.get("input", {})
+        data = {
+            "type": step_type,
+            "integration": result.output.get("integration")
+            or step_config.get("integration")
+            or context.default_integration,
+            "model": result.output.get("model")
+            or step_config.get("model")
+            or context.default_model,
+            "options": result.output.get("options") or step_config.get("options", {}),
+            "input": recorded_input,
+            "output": result.output,
+            "status": result.status.value,
+            "error": result.error,
+        }
+        if step_type == "command" and "integration_args" in result.output:
+            data["integration_args"] = result.output["integration_args"]
+            data["integration_options"] = result.output["integration_options"]
+        return data
+
+    @staticmethod
+    def _cursor_path(parent: list[dict[str, Any]], step_id: str) -> list[dict[str, Any]]:
+        return [*parent, {"kind": "step", "id": step_id}]
+
+    def _execute_cursor_sequence(
+        self,
+        root_steps: list[dict[str, Any]],
+        context: StepContext,
+        scope: ExecutionScope,
+        registry: dict[str, Any],
+        continuation: dict[str, Any] | None,
+        sequence: dict[str, Any] | None = None,
+        path: list[dict[str, Any]] | None = None,
+        invocation_path: tuple[str, ...] = (),
+    ) -> None:
+        """Execute one durable sequential cursor tree.
+
+        This handles ordinary steps and finite ``next_steps`` expansions. Loops
+        and fan-out retain their established executor until their dedicated
+        cursor frames are introduced; keeping that boundary explicit avoids
+        silently claiming exact item/iteration resume semantics.
+        """
+        if continuation is None:
+            raise ValueError("Cursor-backed execution requires a continuation")
+        sequence = sequence or continuation["sequence"]
+        path = path or []
+        steps = sequence_steps(sequence, root_steps=root_steps, run_dir=scope.root().root_state.runs_dir)
+
+        while sequence["next_index"] < len(steps):
+            index = sequence["next_index"]
+            step_config = steps[index]
+            step_id = step_config.get("id", f"step-{index}")
+            step_type = step_config.get("type", "command")
+            active = sequence.get("active")
+
+            if active is not None and active.get("phase") == "children":
+                child = active["child_sequence"]
+                nested_path = (*invocation_path, step_id)
+                self._execute_cursor_sequence(
+                    root_steps, context, scope, registry, continuation, child,
+                    active["activation_path"], nested_path,
+                )
+                if scope.status in (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED):
+                    return
+                root_index = continuation["sequence"]["next_index"]
+                if sequence is continuation["sequence"]:
+                    root_index += 1
+                scope.complete_cursor_expansion(
+                    sequence, root_index=min(root_index, len(root_steps) - 1), step_id=step_id
+                )
+                continue
+
+            # Dedicated loop and fan-out frames are intentionally deferred. Do
+            # not partially persist a generic cursor then hand execution to a
+            # state machine that cannot restore it.
+            if step_type in {"while", "do-while", "fan-out"}:
+                scope.continuation = None
+                scope.persist()
+                self._execute_steps(
+                    steps[index:], context, scope, registry,
+                    step_offset=index if sequence is continuation["sequence"] else -1,
+                    invocation_path=invocation_path,
+                )
+                return
+
+            if active is None:
+                active = {
+                    "activation_path": self._cursor_path(path, step_id),
+                    "step_id": step_id,
+                    "step_type": step_type,
+                    "attempt": 1,
+                    "phase": "running",
+                }
+                sequence["active"] = active
+            else:
+                active["attempt"] += 1
+                active["phase"] = "running"
+            scope.current_step_index = min(continuation["sequence"]["next_index"], len(root_steps) - 1)
+            scope.current_step_id = step_id
+            scope.status = RunStatus.RUNNING
+            scope.error = None
+            scope.persist()
+            scope.append_log({"event": "step_started", "step_id": step_id, "type": step_type})
+            label = step_config.get("command", "") or step_type
+            if self.on_step_start is not None:
+                with self._callback_lock:
+                    self.on_step_start(step_id, label)
+
+            step_impl = registry.get(step_type)
+            if step_impl is None:
+                result = StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Unknown step type: {step_type!r}",
+                )
+            else:
+                try:
+                    result = (
+                        self._run_workflow_call(
+                            step_config, context, scope, registry, step_impl, invocation_path
+                        )
+                        if step_type == "workflow"
+                        else step_impl.execute(step_config, context)
+                    )
+                except KeyboardInterrupt:
+                    active["phase"] = "interrupted"
+                    scope.status = RunStatus.PAUSED
+                    scope.persist()
+                    raise
+                except Exception as exc:
+                    active["phase"] = "failed"
+                    scope.status = RunStatus.FAILED
+                    scope.error = str(exc)
+                    scope.persist()
+                    raise
+
+            data = self._cursor_step_data(step_config, step_type, result, context)
+            blocked = result.status == StepStatus.PAUSED or (
+                result.status == StepStatus.FAILED
+                and (result.output.get("aborted") or step_config.get("continue_on_error") is not True)
+            )
+            status = (
+                RunStatus.PAUSED if result.status == StepStatus.PAUSED
+                else RunStatus.ABORTED if result.output.get("aborted")
+                else RunStatus.FAILED if blocked else RunStatus.RUNNING
+            )
+            phase = (
+                "paused" if result.status == StepStatus.PAUSED else "failed"
+            ) if blocked else None
+            child_sequence = None
+            # Failed/paused outcomes take precedence over any returned children,
+            # including handled failures, matching the legacy executor.
+            if result.next_steps and result.status not in (StepStatus.FAILED, StepStatus.PAUSED):
+                ref, _ = write_expansion_snapshot(scope.root().root_state.runs_dir, result.next_steps)
+                child_sequence = {
+                    "source": {"kind": "expansion", "snapshot": ref},
+                    "next_index": 0,
+                    "active": None,
+                }
+                phase = "children"
+            root_index = min(continuation["sequence"]["next_index"], len(root_steps) - 1)
+            if sequence is continuation["sequence"] and phase is None:
+                root_index = min(index + 1, len(root_steps) - 1)
+            scope.commit_cursor_result(
+                context, step_id, data, sequence=sequence,
+                phase=phase, child_sequence=child_sequence,
+                root_index=root_index,
+                current_step_id=step_id, status=status,
+                error=result.error if status in (RunStatus.FAILED, RunStatus.ABORTED) else None,
+                child_scope_id=":".join([*invocation_path, step_id]) if step_type == "workflow" else None,
+                complete_child=step_type == "workflow" and result.status == StepStatus.COMPLETED,
+            )
+            scope.append_log({"event": "step_completed", "step_id": step_id, "status": result.status.value})
+            if result.status == StepStatus.FAILED:
+                # Outcome events follow the atomic result/cursor transition so
+                # logging errors cannot make committed work replay on resume.
+                if result.output.get("aborted"):
+                    scope.append_log({"event": "workflow_aborted", "step_id": step_id})
+                else:
+                    scope.append_log({
+                        "event": "step_failed" if blocked else "step_continue_on_error",
+                        "step_id": step_id,
+                        "error": result.error,
+                    })
+            if blocked:
+                return
+            if child_sequence is not None:
+                continue
 
     def _execute_steps(
         self,
@@ -1741,16 +1989,50 @@ class WorkflowEngine:
                 child_scope.persist()
             child_scope.status = RunStatus.RUNNING
             child_scope.error = None
-            start = child_scope.current_step_index
             child_context = child_scope.build_context(is_resume=True)
             try:
-                self._execute_steps(
-                    definition.steps[start:],
-                    child_context,
-                    child_scope,
-                    registry,
-                    step_offset=start,
-                )
+                if child_scope.continuation is None:
+                    self._execute_steps(
+                        definition.steps[child_scope.current_step_index :],
+                        child_context,
+                        child_scope,
+                        registry,
+                        step_offset=child_scope.current_step_index,
+                    )
+                elif context.inside_fan_out:
+                    # Fan-out owns a separate item state machine. Until its
+                    # per-item cursor frames are implemented, retain the
+                    # established coarse retry semantics for composed items.
+                    # A child may have a cursor paused inside a nested
+                    # expansion, whose compatibility index is relative to
+                    # that expansion rather than the child definition.
+                    # Restarting this legacy fan-out item therefore starts at
+                    # its containing top-level operation.
+                    child_scope.continuation = None
+                    child_scope.current_step_index = 0
+                    self._execute_steps(
+                        definition.steps,
+                        child_context,
+                        child_scope,
+                        registry,
+                        step_offset=0,
+                    )
+                elif (
+                    child_scope.continuation["sequence"]["next_index"]
+                    >= len(definition.steps)
+                ):
+                    # The child sequence completed but evaluation of declared
+                    # outputs failed. Retrying this caller activation must
+                    # reevaluate outputs, not replay the child's last step.
+                    pass
+                else:
+                    self._execute_cursor_sequence(
+                        definition.steps,
+                        child_context,
+                        child_scope,
+                        registry,
+                        child_scope.continuation,
+                    )
             except Exception as exc:  # noqa: BLE001 - isolate child runtime failures
                 error = (
                     f"Workflow step {effective_id!r}: workflow "
@@ -1832,6 +2114,7 @@ class WorkflowEngine:
             status=RunStatus.RUNNING,
             parent=scope,
             root_state=scope.root().root_state,
+            continuation=None if context.inside_fan_out else new_continuation(),
         )
         # Persist the resolved definition as an immutable YAML snapshot before
         # referencing it from state.json. YAML round-trips native scalars
@@ -1846,9 +2129,18 @@ class WorkflowEngine:
 
         child_context = child_scope.build_context(is_resume=False)
         try:
-            self._execute_steps(
-                definition.steps, child_context, child_scope, registry, step_offset=0
-            )
+            if child_scope.continuation is None:
+                self._execute_steps(
+                    definition.steps, child_context, child_scope, registry, step_offset=0
+                )
+            else:
+                self._execute_cursor_sequence(
+                    definition.steps,
+                    child_context,
+                    child_scope,
+                    registry,
+                    child_scope.continuation,
+                )
         except Exception as exc:  # noqa: BLE001 - isolate child runtime failures
             error = (
                 f"Workflow step {effective_id!r}: workflow "
@@ -1892,6 +2184,14 @@ class WorkflowEngine:
                 )
                 child_scope.status = RunStatus.FAILED
                 child_scope.error = error
+                # Preserve the pre-cursor output retry boundary: rerun only the
+                # last top-level operation, which may produce a usable value on
+                # retry, and retain the completed prefix. Dedicated
+                # ``workflow_outputs`` frames will replace this reset.
+                if child_scope.continuation is not None:
+                    child_scope.continuation["sequence"]["next_index"] = max(
+                        len(definition.steps) - 1, 0
+                    )
                 return StepResult(
                     status=StepStatus.FAILED,
                     output={
@@ -2125,6 +2425,24 @@ class WorkflowEngine:
                 scope.error = halt_rec.get("error")
             self._sync_wrapped(wrap_state, scope)
             return slots[: halted_at + 1]
+        # The legacy concurrent fan-out coordinator attributes a halt from the
+        # template step's direct record. A template can itself be a completed
+        # control-flow parent whose nested workflow call aborted, so that record
+        # does not expose the terminal outcome. Preserve the existing composed
+        # workflow behavior until fan-out gets branch-local cursors.
+        if scope.status == RunStatus.PAUSED:
+            aborted_child = next(
+                (
+                    child
+                    for key, child in scope.workflow_scopes.items()
+                    if key.startswith(f"{step_id}:")
+                    and child.status == RunStatus.ABORTED
+                ),
+                None,
+            )
+            if aborted_child is not None:
+                scope.status = RunStatus.ABORTED
+                scope.error = aborted_child.error
         self._sync_wrapped(wrap_state, scope)
         return slots[:collected]
 

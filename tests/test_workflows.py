@@ -10248,6 +10248,370 @@ steps:
         from specify_cli.workflows.engine import WorkflowEngine
         return WorkflowEngine(project_dir)
 
+    @pytest.mark.parametrize("outcome", ["failed", "paused", "handled", "aborted"])
+    def test_unsuccessful_expansion_preserves_outcome(self, project_dir, monkeypatch, outcome):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        calls = []
+
+        class Expand(StepBase):
+            def execute(self, config, context):
+                calls.append(config["id"])
+                if config["id"] == "expand":
+                    return StepResult(
+                        status=(
+                            StepStatus.COMPLETED if context.inputs["ready"]
+                            else StepStatus.PAUSED if outcome == "paused"
+                            else StepStatus.FAILED
+                        ),
+                        output={"aborted": True} if outcome == "aborted" else {},
+                        error="not ready" if not context.inputs["ready"] else None,
+                        next_steps=[{"id": "child", "type": "expand"}],
+                    )
+                return StepResult()
+
+        monkeypatch.setitem(STEP_REGISTRY, "expand", Expand())
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "expansion-outcome", "name": "Expansion outcome", "version": "1.0.0"},
+            "inputs": {"ready": {"type": "boolean", "default": False}},
+            "steps": [
+                {"id": "expand", "type": "expand", "continue_on_error": outcome in {"handled", "aborted"}},
+                {"id": "after", "type": "expand"},
+            ],
+        })
+        engine = self._engine(project_dir)
+        state = engine.execute(definition)
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.status.value == ("completed" if outcome == "handled" else outcome)
+        assert calls == (["expand", "after"] if outcome == "handled" else ["expand"])
+        if outcome == "aborted":
+            active = loaded.continuation["sequence"]["active"]
+            assert active["phase"] == "failed"
+            assert active.get("child_sequence") is None
+        if outcome in {"failed", "paused"}:
+            active = loaded.continuation["sequence"]["active"]
+            assert active["phase"] == outcome
+            assert active.get("child_sequence") is None
+            # An unchanged resume retries the blocker rather than its children.
+            assert engine.resume(state.run_id).status.value == outcome
+            assert calls == ["expand", "expand"]
+            assert engine.resume(state.run_id, {"ready": True}).status.value == "completed"
+            assert calls == ["expand", "expand", "expand", "child", "after"]
+
+    @pytest.mark.parametrize(
+        ("outcome", "event", "expected_status"),
+        [
+            ("failed", "step_failed", "failed"),
+            ("handled", "step_continue_on_error", "running"),
+            ("aborted", "workflow_aborted", "aborted"),
+        ],
+    )
+    def test_cursor_failure_resolution_logged_after_commit(
+        self, project_dir, monkeypatch, outcome, event, expected_status
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.composition import ExecutionScope
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        class Fail(StepBase):
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.FAILED, error="expected failure",
+                    output={"aborted": True} if outcome == "aborted" else {},
+                )
+
+        monkeypatch.setitem(STEP_REGISTRY, "fail", Fail())
+        original = ExecutionScope.append_log
+        snapshots = []
+
+        def inspect_commit(self, entry):
+            if entry["event"] == event:
+                snapshots.append(RunState.load(self.root().root_state.run_id, project_dir))
+            return original(self, entry)
+
+        monkeypatch.setattr(ExecutionScope, "append_log", inspect_commit)
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "failure-log", "name": "Failure log", "version": "1.0.0"},
+            "steps": [{"id": "fail", "type": "fail", "continue_on_error": outcome != "failed"}],
+        })
+        state = self._engine(project_dir).execute(definition)
+        events = [json.loads(line) for line in (state.runs_dir / "log.jsonl").read_text().splitlines()]
+        resolutions = [entry for entry in events if entry["event"] in {
+            "step_failed", "step_continue_on_error", "workflow_aborted"
+        }]
+        assert len(resolutions) == 1
+        assert resolutions[0]["event"] == event
+        assert resolutions[0]["step_id"] == "fail"
+        if outcome != "aborted":
+            assert resolutions[0]["error"] == "expected failure"
+        assert len(snapshots) == 1
+        assert snapshots[0].status.value == expected_status
+        assert snapshots[0].step_results["fail"]["status"] == "failed"
+        assert snapshots[0].continuation["sequence"]["next_index"] == (1 if outcome == "handled" else 0)
+
+    def test_nested_expansion_resumes_without_replaying_parent_or_prefix(
+        self, project_dir, monkeypatch
+    ):
+        """A persisted branch expansion is authoritative after its child pauses."""
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        calls: list[str] = []
+
+        class _Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                if config.get("pause") and context.inputs["verdict"] != "approve":
+                    return StepResult(status=StepStatus.PAUSED)
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", _Count())
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow:
+  id: exact-branch-resume
+  name: Exact branch resume
+  version: "1.0.0"
+inputs:
+  route:
+    type: string
+    default: then
+  verdict:
+    type: string
+    default: ""
+steps:
+  - id: choose
+    type: if
+    condition: "{{ inputs.route == 'then' }}"
+    then:
+      - id: prepare
+        type: count
+      - id: review
+        type: count
+        pause: true
+      - id: publish
+        type: count
+    else:
+      - id: wrong-route
+        type: count
+  - id: after
+    type: count
+"""
+        )
+        engine = self._engine(project_dir)
+
+        paused = engine.execute(definition)
+        assert paused.status.value == "paused"
+        assert calls == ["prepare", "review"]
+
+        resumed = engine.resume(paused.run_id, {"route": "else", "verdict": "approve"})
+        assert resumed.status.value == "completed"
+        assert calls == ["prepare", "review", "review", "publish", "after"]
+        assert "wrong-route" not in calls
+
+    def test_long_expansion_resumes_with_root_compatibility_index(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(
+                    status=StepStatus.PAUSED
+                    if config["id"] == "review" and not context.inputs["approved"]
+                    else StepStatus.COMPLETED
+                )
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow: {id: long-branch, name: Long branch, version: "1.0.0"}
+inputs: {approved: {type: boolean, default: false}}
+steps:
+  - id: choose
+    type: if
+    condition: true
+    then:
+      - {id: one, type: count}
+      - {id: two, type: count}
+      - {id: three, type: count}
+      - {id: review, type: count}
+      - {id: after, type: count}
+"""
+        )
+        engine = self._engine(project_dir)
+        paused = engine.execute(definition)
+        assert paused.current_step_index == 0
+        assert RunState.load(paused.run_id, project_dir).current_step_id == "review"
+        finished = engine.resume(paused.run_id, {"approved": True})
+        assert finished.status.value == "completed"
+        assert calls == ["one", "two", "three", "review", "review", "after"]
+
+    def test_committed_leaf_survives_completion_log_failure(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow: {id: logging-fault, name: Logging fault, version: "1.0.0"}
+steps:
+  - {id: first, type: count}
+  - {id: second, type: count}
+"""
+        )
+        engine = self._engine(project_dir)
+        from specify_cli.workflows.composition import ExecutionScope
+
+        original = ExecutionScope.append_log
+        raised = False
+
+        def fail_once(self, entry):
+            nonlocal raised
+            if entry.get("event") == "step_completed" and not raised:
+                raised = True
+                raise RuntimeError("log failed")
+            return original(self, entry)
+
+        monkeypatch.setattr(ExecutionScope, "append_log", fail_once)
+        with pytest.raises(RuntimeError, match="log failed"):
+            engine.execute(definition, run_id="logging-fault-run")
+        state = RunState.load("logging-fault-run", project_dir)
+        assert state.continuation["sequence"]["next_index"] == 1
+        assert state.step_results["first"]["status"] == "completed"
+        assert engine.resume(state.run_id).status.value == "completed"
+        assert calls == ["first", "second"]
+
+    def test_failed_cursor_save_does_not_commit_unadvanced_result(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow: {id: save-fault, name: Save fault, version: "1.0.0"}
+steps:
+  - {id: first, type: count}
+  - {id: second, type: count}
+"""
+        )
+        original = RunState._save_locked
+        failed = False
+
+        def fail_before_write(self):
+            nonlocal failed
+            if self.step_results.get("first") and not failed:
+                failed = True
+                raise OSError("state write failed")
+            return original(self)
+
+        monkeypatch.setattr(RunState, "_save_locked", fail_before_write)
+        engine = self._engine(project_dir)
+        with pytest.raises(OSError, match="state write failed"):
+            engine.execute(definition, run_id="save-fault-run")
+        loaded = RunState.load("save-fault-run", project_dir)
+        assert loaded.continuation["sequence"]["next_index"] == 0
+        assert "first" not in loaded.step_results
+        assert engine.resume(loaded.run_id).status.value == "completed"
+        assert calls == ["first", "first", "second"]
+
+    def test_inputs_mirror_failure_preserves_committed_cursor(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowDefinition
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        definition = WorkflowDefinition.from_string(
+            """
+schema_version: "1.0"
+workflow: {id: mirror-fault, name: Mirror fault, version: "1.0.0"}
+steps:
+  - {id: first, type: count}
+  - {id: second, type: count}
+"""
+        )
+        original = RunState._atomic_write_json
+        failed = False
+
+        def fail_mirror(path, data):
+            nonlocal failed
+            if path.name == "inputs.json" and "first" in data_state["step_results"] and not failed:
+                failed = True
+                raise OSError("mirror write failed")
+            return original(path, data)
+
+        engine = self._engine(project_dir)
+        data_state = None
+        # The mirror write receives only inputs; inspect the committed state
+        # alongside it to identify the first completed-step transition.
+        def fail_after_state_write(path, data):
+            nonlocal data_state
+            if path.name == "state.json":
+                data_state = data
+            return fail_mirror(path, data)
+
+        monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(fail_after_state_write))
+        with pytest.raises(OSError, match="mirror write failed"):
+            engine.execute(definition, run_id="mirror-fault-run")
+        loaded = RunState.load("mirror-fault-run", project_dir)
+        assert loaded.continuation["sequence"]["next_index"] == 1
+        assert engine.resume(loaded.run_id).status.value == "completed"
+        assert calls == ["first", "second"]
+
     def test_resume_with_input_reruns_step_with_new_value(self, project_dir):
         from specify_cli.workflows.engine import WorkflowDefinition
         from specify_cli.workflows.base import RunStatus

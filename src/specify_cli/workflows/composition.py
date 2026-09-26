@@ -15,10 +15,12 @@ steps never see an ``ExecutionScope``.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import re
 import tempfile
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -528,6 +530,7 @@ class ExecutionScope:
     step_results: dict[str, dict[str, Any]] = field(default_factory=dict)
     current_step_index: int = 0
     current_step_id: str | None = None
+    continuation: dict[str, Any] | None = None
     status: RunStatus = RunStatus.RUNNING
     error: str | None = None
     # A workflow caller stages a terminal child transition here so its caller
@@ -627,6 +630,7 @@ class ExecutionScope:
             "error": self.error,
             "current_step_index": self.current_step_index,
             "current_step_id": self.current_step_id,
+            "continuation": self.continuation,
             "step_results": self.step_results,
             "workflow_scopes": {
                 key: child._serialize()
@@ -652,6 +656,7 @@ class ExecutionScope:
         state.error = self.error
         state.current_step_id = self.current_step_id
         state.current_step_index = self.current_step_index
+        state.continuation = self.continuation
         state.step_results = self.step_results
         state.workflow_scopes = {
             key: child._serialize()
@@ -714,6 +719,137 @@ class ExecutionScope:
             root._sync_to_state(state)
             state._save_locked()
 
+    def commit_cursor_result(
+        self,
+        context: StepContext,
+        step_id: str,
+        data: dict[str, Any],
+        *,
+        sequence: dict[str, Any],
+        phase: str | None,
+        child_sequence: dict[str, Any] | None,
+        root_index: int,
+        current_step_id: str,
+        status: RunStatus,
+        error: str | None = None,
+        child_scope_id: str | None = None,
+        complete_child: bool = False,
+    ) -> None:
+        """Commit a cursor outcome and its caller/child result in one state write."""
+        root = self.root()
+        state = root.root_state
+        if state is None:  # pragma: no cover - cursor execution has a run state
+            raise ValueError("Cursor execution requires a run state")
+        with state._lock:
+            child = self.workflow_scopes.get(child_scope_id) if child_scope_id else None
+            missing = object()
+            previous_result = self.step_results.get(step_id, missing)
+            previous_context = context.steps.get(step_id, missing)
+            previous_sequence = deepcopy(sequence)
+            previous_fields = (
+                self.current_step_index, self.current_step_id, self.status, self.error
+            )
+            previous_child = (
+                child.status, child.error,
+                child.pending_terminal_status, child.pending_terminal_error,
+            ) if child is not None else None
+            try:
+                if child is not None:
+                    if complete_child:
+                        child.status = RunStatus.COMPLETED
+                    elif child.pending_terminal_status is not None:
+                        child.status = child.pending_terminal_status
+                        child.error = child.pending_terminal_error
+                        child.pending_terminal_status = None
+                        child.pending_terminal_error = None
+                if context.steps is not self.step_results:
+                    context.steps[step_id] = data
+                self.step_results[step_id] = data
+                if phase is None:
+                    sequence["active"] = None
+                    sequence["next_index"] += 1
+                else:
+                    active = sequence["active"]
+                    active["phase"] = phase
+                    if child_sequence is not None:
+                        active["child_sequence"] = child_sequence
+                self.current_step_index = root_index
+                self.current_step_id = current_step_id
+                self.status = status
+                self.error = error
+                root._sync_to_state(state)
+                state._save_locked()
+            except BaseException:
+                # A write can fail after os.replace() has already committed
+                # state.json (for example while writing the inputs mirror).
+                # Keep that committed transition authoritative in memory so
+                # outer exception handling cannot persist an old cursor over it.
+                try:
+                    disk = json.loads((state.runs_dir / "state.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    disk = {}
+                if (
+                    disk.get("continuation") == state.continuation
+                    and disk.get("step_results") == state.step_results
+                    and disk.get("workflow_scopes") == state.workflow_scopes
+                    and disk.get("status") == state.status.value
+                    and disk.get("inputs") == state.inputs
+                ):
+                    raise
+                sequence.clear()
+                sequence.update(previous_sequence)
+                if previous_result is missing:
+                    self.step_results.pop(step_id, None)
+                else:
+                    self.step_results[step_id] = previous_result
+                if context.steps is not self.step_results:
+                    if previous_context is missing:
+                        context.steps.pop(step_id, None)
+                    else:
+                        context.steps[step_id] = previous_context
+                (self.current_step_index, self.current_step_id, self.status, self.error) = previous_fields
+                if child is not None and previous_child is not None:
+                    (child.status, child.error,
+                     child.pending_terminal_status, child.pending_terminal_error) = previous_child
+                root._sync_to_state(state)
+                raise
+
+    def complete_cursor_expansion(
+        self, sequence: dict[str, Any], *, root_index: int, step_id: str
+    ) -> None:
+        """Persist parent advancement after its child sequence is exhausted."""
+        root = self.root()
+        state = root.root_state
+        if state is None:  # pragma: no cover - cursor execution has a run state
+            raise ValueError("Cursor execution requires a run state")
+        with state._lock:
+            old_index = sequence["next_index"]
+            old_active = sequence["active"]
+            old_projection = self.current_step_index, self.current_step_id
+            sequence["active"] = None
+            sequence["next_index"] += 1
+            self.current_step_index = root_index
+            self.current_step_id = step_id
+            root._sync_to_state(state)
+            try:
+                state._save_locked()
+            except BaseException:
+                try:
+                    disk = json.loads((state.runs_dir / "state.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    disk = {}
+                if (
+                    disk.get("continuation") == state.continuation
+                    and disk.get("workflow_scopes") == state.workflow_scopes
+                    and disk.get("status") == state.status.value
+                ):
+                    raise
+                sequence["next_index"] = old_index
+                sequence["active"] = old_active
+                self.current_step_index, self.current_step_id = old_projection
+                root._sync_to_state(state)
+                raise
+
 
 def deserialize_scope(
     record: dict[str, Any],
@@ -737,6 +873,7 @@ def deserialize_scope(
         step_results=record.get("step_results", {}) or {},
         current_step_index=record.get("current_step_index", 0),
         current_step_id=record.get("current_step_id"),
+        continuation=record.get("continuation"),
         status=RunStatus(record.get("status", RunStatus.RUNNING.value)),
         error=record.get("error"),
         parent=parent,
@@ -930,6 +1067,16 @@ def _validate_scope_record(
     definition = _resolve_scope_definition(record, run_dir=run_dir, path=path)
     _validate_definition_shape(definition, path=f"{path}.definition")
 
+    continuation = record.get("continuation")
+    if continuation is not None:
+        from ._continuation import validate_continuation
+
+        if run_dir is None:  # pragma: no cover - caller always provides it
+            raise ValueError("Invalid run state: continuation requires a run directory")
+        validate_continuation(
+            continuation, run_dir=run_dir, root_steps=definition["steps"]
+        )
+
     # A nested scope resumes by slicing its persisted definition at
     # ``current_step_index``; an index at or beyond the step count would
     # otherwise yield an empty slice and let the scope silently complete
@@ -937,7 +1084,12 @@ def _validate_scope_record(
     # ``WorkflowEngine.resume``, which ``RunState.load`` cannot apply until the
     # definition (and its step count) is known.
     steps = definition["steps"]
-    if index >= len(steps):
+    if continuation is not None:
+        from ._continuation import allows_expansion_index
+
+    if index >= len(steps) and (
+        continuation is None or not allows_expansion_index(continuation, index)
+    ):
         msg = (
             f"Invalid run state: '{path}.current_step_index' ({index}) is "
             f"out of range for workflow {workflow_id!r} with "

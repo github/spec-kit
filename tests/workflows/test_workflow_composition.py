@@ -1642,7 +1642,10 @@ class TestResume:
             "child",
             _workflow(
                 "child",
-                [_shell("x", f"test -f {marker} && printf '{{\"ok\": true}}' || printf bad")],
+                [
+                    _shell("prepare", "echo prepared"),
+                    _shell("x", f"test -f {marker} && printf '{{\"ok\": true}}' || printf bad"),
+                ],
                 outputs={"parsed": {"value": "{{ steps.x.output.stdout | from_json }}"}},
             ),
         )
@@ -1651,15 +1654,23 @@ class TestResume:
             "parent",
             _workflow("parent", [{"id": "c", "type": "workflow", "workflow": "child"}]),
         )
+        calls = []
         engine = WorkflowEngine(project_dir)
+        engine.on_step_start = lambda step_id, label: calls.append(step_id)
         state = engine.execute(_definition(project_dir, "parent"), {})
         assert state.status == RunStatus.FAILED
         assert state.workflow_scopes["c"]["status"] == "failed"
+        assert calls == ["c", "prepare", "x"]
+
+        # Repeated output failures must keep the completed prefix intact.
+        assert engine.resume(state.run_id).status == RunStatus.FAILED
+        assert calls == ["c", "prepare", "x", "c", "x"]
 
         marker.touch()
         resumed = engine.resume(state.run_id)
         assert resumed.status == RunStatus.COMPLETED
         assert resumed.step_results["c"]["output"]["parsed"] == {"ok": True}
+        assert calls == ["c", "prepare", "x", "c", "x", "c", "x"]
 
     def test_resume_uses_definition_snapshot(self, project_dir):
         self._paused_child(
@@ -1854,7 +1865,7 @@ class TestResume:
         assert state.status == RunStatus.PAUSED
 
         snapshots: list[dict] = []
-        real_record_and_save = ExecutionScope.record_and_save
+        real_commit = ExecutionScope.commit_cursor_result
 
         def coordinated_handoff(self, context, step_id, data, **kwargs):
             if step_id == "c":
@@ -1869,9 +1880,9 @@ class TestResume:
                         )
                     )
                 )
-            return real_record_and_save(self, context, step_id, data, **kwargs)
+            return real_commit(self, context, step_id, data, **kwargs)
 
-        monkeypatch.setattr(ExecutionScope, "record_and_save", coordinated_handoff)
+        monkeypatch.setattr(ExecutionScope, "commit_cursor_result", coordinated_handoff)
         resumed = engine.resume(state.run_id, {"mode": "invalid"})
 
         assert resumed.status == RunStatus.COMPLETED
@@ -1967,6 +1978,200 @@ class TestResume:
 
 
 class TestRepeatedCalls:
+    def test_same_named_calls_in_separate_branches_keep_distinct_scopes(
+        self, project_dir
+    ):
+        _install(project_dir, "child", _workflow(
+            "child", [_shell("capture", "echo {{ inputs.value }}")],
+            inputs={"value": {"type": "string", "required": True}},
+        ))
+        parent = _workflow("parent", [
+            {"id": branch, "type": "if", "condition": True, "then": [
+                {"id": "call", "type": "workflow", "workflow": "child",
+                 "input": {"value": branch}},
+            ]}
+            for branch in ("first", "second")
+        ])
+        state = WorkflowEngine(project_dir).execute(WorkflowDefinition(parent))
+        assert state.status == RunStatus.COMPLETED
+        assert set(state.workflow_scopes) == {"first:call", "second:call"}
+        assert {
+            key: record["step_results"]["capture"]["output"]["stdout"].strip()
+            for key, record in state.workflow_scopes.items()
+        } == {"first:call": "first", "second:call": "second"}
+        assert set(RunState.load(state.run_id, project_dir).workflow_scopes) == {
+            "first:call", "second:call"
+        }
+
+    def test_later_nested_call_reuses_its_own_scope_on_resume(self, project_dir):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(context.inputs["value"])
+                if context.inputs["value"] == "second" and not context.inputs["approved"]:
+                    return StepResult(status=StepStatus.PAUSED)
+                return StepResult(status=StepStatus.COMPLETED)
+
+        old = STEP_REGISTRY.get("count")
+        STEP_REGISTRY["count"] = Count()
+        try:
+            _install(project_dir, "child", _workflow(
+                "child", [{"id": "count", "type": "count"}],
+                inputs={
+                    "value": {"type": "string", "required": True},
+                    "approved": {"type": "boolean", "default": False},
+                },
+            ))
+            parent = _workflow("parent", [
+                {"id": branch, "type": "if", "condition": True, "then": [
+                    {"id": "call", "type": "workflow", "workflow": "child",
+                     "input": {"value": branch, "approved": "{{ inputs.approved }}"}},
+                ]}
+                for branch in ("first", "second")
+            ], inputs={"approved": {"type": "boolean", "default": False}})
+            engine = WorkflowEngine(project_dir)
+            state = engine.execute(WorkflowDefinition(parent))
+            assert state.status == RunStatus.PAUSED
+            assert set(state.workflow_scopes) == {"first:call", "second:call"}
+            assert engine.resume(state.run_id, {"approved": True}).status == RunStatus.COMPLETED
+            assert calls == ["first", "second", "second"]
+        finally:
+            if old is None:
+                STEP_REGISTRY.pop("count", None)
+            else:
+                STEP_REGISTRY["count"] = old
+
+    def test_handled_child_failure_commits_caller_progress(self, project_dir, monkeypatch):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+        from specify_cli.workflows.composition import ExecutionScope
+
+        calls = []
+
+        class Fail(StepBase):
+            type_key = "fail-once"
+
+            def execute(self, config, context):
+                calls.append("child")
+                return StepResult(status=StepStatus.FAILED, error="expected failure")
+
+        monkeypatch.setitem(STEP_REGISTRY, "fail-once", Fail())
+        _install(project_dir, "child", _workflow(
+            "child", [{"id": "fail", "type": "fail-once"}]
+        ))
+        parent = WorkflowDefinition(_workflow("parent", [
+            {"id": "call", "type": "workflow", "workflow": "child",
+             "continue_on_error": True},
+            _shell("after", "echo done"),
+        ]))
+        original = ExecutionScope.append_log
+        raised = False
+
+        def fail_completion_log(self, entry):
+            nonlocal raised
+            if entry.get("event") == "step_completed" and entry.get("step_id") == "call" and not raised:
+                raised = True
+                raise RuntimeError("log failed")
+            return original(self, entry)
+
+        monkeypatch.setattr(ExecutionScope, "append_log", fail_completion_log)
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(RuntimeError, match="log failed"):
+            engine.execute(parent, run_id="handled-failure-run")
+        loaded = RunState.load("handled-failure-run", project_dir)
+        assert loaded.continuation["sequence"]["next_index"] == 1
+        assert loaded.step_results["call"]["status"] == "failed"
+        assert loaded.workflow_scopes["call"]["status"] == "failed"
+        assert engine.resume(loaded.run_id).status == RunStatus.COMPLETED
+        assert calls == ["child"]
+
+    def test_long_child_expansion_keeps_scope_index_loadable(self, project_dir, monkeypatch):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(
+                    status=StepStatus.PAUSED
+                    if config["id"] == "review" and not context.inputs["approved"]
+                    else StepStatus.COMPLETED
+                )
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        _install(project_dir, "child", _workflow(
+            "child", [{"id": "branch", "type": "if", "condition": True,
+                       "then": [{"id": name, "type": "count"}
+                                for name in ("one", "two", "three", "review", "after")]}],
+            inputs={"approved": {"type": "boolean", "default": False}},
+        ))
+        parent = WorkflowDefinition(_workflow(
+            "parent", [{"id": "call", "type": "workflow", "workflow": "child",
+                        "input": {"approved": "{{ inputs.approved }}"}}],
+            inputs={"approved": {"type": "boolean", "default": False}},
+        ))
+        engine = WorkflowEngine(project_dir)
+        paused = engine.execute(parent)
+        assert paused.status == RunStatus.PAUSED
+        child = RunState.load(paused.run_id, project_dir).workflow_scopes["call"]
+        assert child["current_step_index"] == 0
+        assert child["current_step_id"] == "review"
+        assert engine.resume(paused.run_id, {"approved": True}).status == RunStatus.COMPLETED
+        assert calls == ["one", "two", "three", "review", "review", "after"]
+
+    def test_child_handoff_write_failure_retries_without_replaying_child(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult
+
+        calls = []
+
+        class Count(StepBase):
+            type_key = "count"
+
+            def execute(self, config, context):
+                calls.append(config["id"])
+                return StepResult(status=StepStatus.COMPLETED)
+
+        monkeypatch.setitem(STEP_REGISTRY, "count", Count())
+        _install(project_dir, "child", _workflow(
+            "child", [{"id": "count", "type": "count"}]
+        ))
+        parent = WorkflowDefinition(_workflow(
+            "parent", [{"id": "call", "type": "workflow", "workflow": "child"}]
+        ))
+        real_write = RunState._atomic_write_json
+        failed = False
+
+        def fail_handoff(path, data):
+            nonlocal failed
+            if (path.name == "state.json" and not failed
+                    and data["step_results"].get("call", {}).get("status") == "completed"):
+                failed = True
+                raise OSError("handoff write failed")
+            return real_write(path, data)
+
+        monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(fail_handoff))
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(OSError, match="handoff write failed"):
+            engine.execute(parent, run_id="handoff-fault-run")
+        saved = RunState.load("handoff-fault-run", project_dir)
+        assert saved.workflow_scopes["call"]["status"] == "running"
+        assert "call" not in saved.step_results
+        assert engine.resume(saved.run_id).status == RunStatus.COMPLETED
+        assert calls == ["count"]
+
     def test_nested_if_workflow_calls_have_distinct_loop_invocations(self, project_dir):
         _install(
             project_dir,
