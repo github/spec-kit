@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -79,7 +80,111 @@ def clean_env() -> dict[str, str]:
     for key in list(env):
         if key.startswith("SPECIFY_"):
             env.pop(key)
+    # A --without-pip venv still honors an inherited PYTHONPATH, so leaving
+    # this set could make a "no-PyYAML" test interpreter import PyYAML
+    # anyway, silently skipping the delegated-parsing path under test.
+    env.pop("PYTHONPATH", None)
+    # Tests exercising SPECKIT_PYTHON_EXECUTABLE/SPECKIT_PYTHON set them
+    # explicitly; an ambient value in the host environment would otherwise
+    # silently override the "unset" baseline for every other test.
+    env.pop("SPECKIT_PYTHON_EXECUTABLE", None)
+    env.pop("SPECKIT_PYTHON", None)
     return env
+
+
+def venv_python3_exe(venv_dir: Path) -> Path:
+    """Path to the python3 executable of a venv created with ``--without-pip``."""
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python3"
+
+
+def make_yaml_less_venv(venv_dir: Path) -> Path:
+    """Create a ``--without-pip`` venv and return its python3 executable.
+
+    Asserts the interpreter cannot actually import PyYAML, since it could
+    otherwise be visible via an inherited ``PYTHONPATH`` despite
+    ``--without-pip``, silently invalidating tests that assume it lacks one.
+    """
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(venv_dir)],
+        check=True,
+        capture_output=True,
+    )
+    exe = venv_python3_exe(venv_dir)
+    assert exe.is_file()
+    probe = subprocess.run(
+        [str(exe), "-c", "import yaml"],
+        capture_output=True,
+        env=clean_env(),
+        check=False,
+    )
+    assert probe.returncode != 0, "venv unexpectedly has PyYAML importable"
+    return exe
+
+
+def _bash_posix_path(path: Path) -> str:
+    """Convert a Windows path to the POSIX form the available bash expects.
+
+    Uses ``abspath`` rather than ``Path.resolve()``: the caller may pass a
+    venv's python3, which is typically a symlink, and resolving it would
+    exec the underlying base interpreter from outside the venv directory,
+    silently dropping that venv's site-packages isolation.
+    """
+    resolved = os.path.abspath(path)
+    if os.name != "nt":
+        return resolved
+    converted = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            'command -v cygpath >/dev/null 2>&1 && cygpath -u "$1"',
+            "bash",
+            resolved,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if converted.returncode == 0 and converted.stdout.strip():
+        return converted.stdout.strip()
+    drive = path.drive.rstrip(":").lower()
+    posix = path.as_posix()
+    return f"/mnt/{drive}{posix[2:]}" if drive else posix
+
+
+def make_python3_path_shim(shim_dir: Path, target: Path | str | None = None) -> Path:
+    """Create a deterministic ``python3`` shim that execs ``target`` (the
+    current pytest interpreter by default), so a test can put a guaranteed
+    interpreter first on PATH as the *default* ``python3`` a script finds via
+    its python3 -> python -> py -3 fallback chain (as opposed to the
+    SPECKIT_PYTHON(_EXECUTABLE) override, which names its interpreter
+    explicitly and never depends on PATH lookup).
+
+    A venv's own bin/Scripts directory is not enough on Windows: it provides
+    ``python.exe``, not ``python3``, so it never actually shadows a PATH
+    lookup for ``python3``. This shim exists precisely to fill that gap.
+    """
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    # Deliberately not .resolve(): a venv's python3 is typically a symlink,
+    # and following it to the underlying base interpreter would exec it
+    # from outside the venv directory, which drops pyvenv.cfg discovery and
+    # silently regains/loses that venv's site-packages (e.g. PyYAML).
+    python_exe = Path(target if target is not None else sys.executable).absolute()
+
+    shell_shim = shim_dir / "python3"
+    shell_shim.write_text(
+        f"#!/usr/bin/env sh\nexec {shlex.quote(_bash_posix_path(python_exe))} \"$@\"\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    shell_shim.chmod(0o755)
+
+    if os.name == "nt":
+        cmd_shim = shim_dir / "python3.cmd"
+        cmd_shim.write_text(f'@echo off\r\n"{python_exe}" %*\r\n', encoding="utf-8")
+
+    return shim_dir
 
 
 def collation_range_locale() -> str | None:
@@ -156,7 +261,7 @@ def install_composition_stack(
     """Install wrap/prepend/append presets over a core template."""
     templates = repo / ".specify" / "templates"
     templates.mkdir(parents=True, exist_ok=True)
-    (templates / f"{template_name}.md").write_text(core_content, encoding="utf-8")
+    (templates / f"{template_name}.md").write_bytes(core_content.encode("utf-8"))
 
     layers = [
         ("wrap-pack", 1, "wrap", "## Wrapper\n{CORE_TEMPLATE}\n## End\n"),
@@ -171,7 +276,7 @@ def install_composition_stack(
         preset_dir = repo / ".specify" / "presets" / preset_id
         template_dir = preset_dir / "templates"
         template_dir.mkdir(parents=True)
-        (template_dir / f"{template_name}.md").write_text(content, encoding="utf-8")
+        (template_dir / f"{template_name}.md").write_bytes(content.encode("utf-8"))
         (preset_dir / "preset.yml").write_text(
             "provides:\n"
             "  templates:\n"
