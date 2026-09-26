@@ -19,7 +19,7 @@ requires:
 provides:
   extensions:
     - id: "agent-context"
-      version: "1.0.1"
+      version: "1.0.2"
   presets:
     - id: "product-discovery"
       version: "1.0.0"
