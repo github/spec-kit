@@ -5761,6 +5761,70 @@ steps:
 
 # ===== Workflow Engine Tests =====
 
+# Control-flow containers that nest a ``leaf`` step one level below a loop
+# body / fan-out template. ``_rename_step_tree_ids`` reaches ``then`` via
+# ``_NESTED_STEP_LIST_KEYS`` but ``cases.*`` through a separate branch, and
+# ``default`` through the list-keys path again, so each is exercised directly.
+# Each non-taken branch uses a distinct id so only ``leaf`` ever runs.
+_NESTED_LEAF_CONTAINERS = {
+    "if-then": """\
+id: CID
+type: if
+condition: "true"
+then:
+  - id: leaf
+    type: shell
+    run: "RUN"
+""",
+    "switch-case": """\
+id: CID
+type: switch
+expression: "hit"
+cases:
+  hit:
+    - id: leaf
+      type: shell
+      run: "RUN"
+default:
+  - id: miss-leaf
+    type: shell
+    run: "echo miss"
+""",
+    "switch-default": """\
+id: CID
+type: switch
+expression: "other"
+cases:
+  hit:
+    - id: miss-leaf
+      type: shell
+      run: "echo miss"
+default:
+  - id: leaf
+    type: shell
+    run: "RUN"
+""",
+}
+
+
+def _nested_leaf_yaml(
+    container: str, container_id: str, run: str, indent: int, list_item: bool
+) -> str:
+    """Render a ``_NESTED_LEAF_CONTAINERS`` entry at *indent* spaces, either
+    as a list item (a loop body's ``steps:``) or a mapping (a fan-out
+    ``step:`` template)."""
+    body = (
+        _NESTED_LEAF_CONTAINERS[container]
+        .replace("CID", container_id)
+        .replace("RUN", run)
+    )
+    lines = body.splitlines()
+    if list_item:
+        lines = ["- " + lines[0]] + ["  " + line for line in lines[1:]]
+    pad = " " * indent
+    return "\n".join(pad + line for line in lines) + "\n"
+
+
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
 
@@ -6727,6 +6791,1044 @@ steps:
         assert state.status == RunStatus.COMPLETED
         # Falls back to the default cap of 10, not range(True - 1) == 1 run.
         assert counter_file.read_text(encoding="utf-8").strip() == "10"
+
+    @pytest.mark.parametrize("loop_type", ["while", "do-while"])
+    @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
+    def test_while_loop_namespaces_nested_descendant_steps(
+        self, project_dir, loop_type, container
+    ):
+        """A step nested one level deeper than the loop body's direct child
+        (e.g. a `shell` step inside an `if` inside the `while` body) must get
+        a unique namespaced key per iteration, not just the immediate child.
+
+        Parametrized over `while` and `do-while` (both share the engine's
+        per-iteration namespacing branch) and over `if`/`then`, `switch`
+        `cases.*`, and `switch` `default` containers -- `cases.*` is renamed
+        by a separate code path from the other nested-list keys.
+
+        Previously only the direct child's id was namespaced
+        (`retry-loop:guard:1`); the grandchild `leaf` kept its bare id across
+        every iteration, so each iteration silently overwrote the previous
+        one's entry in `state.step_results["leaf"]` and no per-iteration
+        record of it ever existed.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-nested-descendant"
+  name: "While Nested Descendant"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: {loop_type}
+    condition: "true"
+    max_iterations: 3
+    steps:
+""" + _nested_leaf_yaml(container, "guard", "echo tick", 6, list_item=True)
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # The unprefixed key still holds the latest iteration's result
+        # (sibling steps in the loop body and the loop condition read it).
+        assert state.step_results["leaf"]["output"]["stdout"] == "tick\n"
+        # Every iteration's grandchild result is separately recoverable --
+        # including the FIRST iteration. The first iteration previously ran
+        # through a separate, unnamespaced code path before the loop-specific
+        # namespacing logic was reached, so it had no dedicated entry and was
+        # immediately overwritten by iteration 1's aliasing the moment that
+        # iteration ran.
+        for iteration in range(3):
+            key = f"retry-loop:leaf:{iteration}"
+            assert state.step_results[key]["output"]["stdout"] == "tick\n"
+        # The non-taken switch branch never ran under any id.
+        assert not any("miss-leaf" in key for key in state.step_results)
+
+    def test_while_loop_sibling_step_sees_immediate_alias(self, tmp_path):
+        """A step nested inside an `if` in a `while` body that references an
+        earlier SIBLING nested in the SAME `if` branch by its bare id must
+        see that sibling's value from the SAME iteration -- not a stale
+        value left over from a previous iteration.
+
+        Aliasing a namespaced descendant back to its bare id previously
+        happened only after the entire renamed subtree (here, the whole
+        `if` step, both its own id and its branch's) finished executing --
+        so a later sibling in the same branch that read the earlier one by
+        its bare id ran before that iteration's alias was ever written, and
+        so saw the previous iteration's aliased value instead.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.if_then import IfThenStep
+        from specify_cli.workflows.step.while_loop import WhileStep
+
+        call_count = {"n": 0}
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                n = call_count["n"]
+                call_count["n"] += 1
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": f"value-{n}"}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = context.steps.get("first", {}).get("output", {}).get("marker")
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "while": WhileStep(),
+            "if": IfThenStep(),
+            "write": _WriteStep(),
+            "read": _ReadStep(),
+        }
+        steps = [
+            {
+                "id": "retry-loop",
+                "type": "while",
+                "condition": "true",
+                "max_iterations": 2,
+                "steps": [
+                    {
+                        "id": "guard",
+                        "type": "if",
+                        "condition": "true",
+                        "then": [
+                            {"id": "first", "type": "write"},
+                            {"id": "second", "type": "read"},
+                        ],
+                    },
+                ],
+            },
+        ]
+        engine._execute_steps(steps, context, state, registry)
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["retry-loop:second:0"]["output"]["seen"] == "value-0"
+        assert state.step_results["retry-loop:second:1"]["output"]["seen"] == "value-1"
+
+    def test_fan_out_concurrent_sibling_step_isolated_per_item(self, tmp_path):
+        """A later sibling step in a CONCURRENT fan-out item's template that
+        references an earlier sibling by its bare id must see THIS item's
+        value -- not a stale value, and not a value written by a DIFFERENT,
+        concurrently-running item through the same shared bare-id key.
+
+        A barrier forces every item's first sibling to complete at roughly
+        the same time, maximizing the window for a racy implementation to
+        leak one item's value onto another's read of the shared bare-id key.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        n = 4
+        barrier = threading.Barrier(n, timeout=5)
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                barrier.wait()
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = context.steps.get("first", {}).get("output", {}).get("marker")
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = list(range(n))
+        engine._run_fan_out(items, template, "fan", context, state, registry, n)
+
+        for i in items:
+            assert state.step_results[f"fan:second:{i}"]["output"]["seen"] == i
+
+    def test_fan_out_concurrent_sibling_step_resolves_via_expression(self, tmp_path):
+        """A `{{ steps.<id>.output... }}` expression -- the real templating
+        path workflow YAML actually uses -- must resolve inside a
+        concurrent fan-out item, not just a direct `context.steps.get()`
+        Python call.
+
+        `_resolve_dot_path` (which every `{{ }}` expression goes through)
+        only descends through `isinstance(current, dict)`. The concurrent
+        item isolation previously gave each item a `ChainMap` overlay for
+        `context.steps` -- `ChainMap` is not a `dict` subclass, so
+        `_build_namespace`'s `ns["steps"] = context.steps or {}` put a
+        non-dict object at `steps`, and every `steps.*` expression
+        evaluated inside a concurrent fan-out item silently resolved to
+        `None`. A direct `.get()` call (as in
+        `test_fan_out_concurrent_sibling_step_isolated_per_item`) doesn't
+        exercise this, since `ChainMap` supports `.get()` directly.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        n = 4
+        barrier = threading.Barrier(n, timeout=5)
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                barrier.wait()
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = evaluate_expression(
+                    "{{ steps.first.output.marker }}", context
+                )
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = list(range(n))
+        engine._run_fan_out(items, template, "fan", context, state, registry, n)
+
+        for i in items:
+            assert state.step_results[f"fan:second:{i}"]["output"]["seen"] == i
+
+    def test_fan_out_concurrent_alias_never_clobbers_unrelated_step(self, tmp_path):
+        """A fan-out template's bare-id convenience alias must never
+        overwrite an unrelated, distinctly-authored step's result just
+        because the template's id happens to collide with it.
+
+        Fan-out template ids are exempt from the workflow's global
+        id-uniqueness validation (the engine's parentId:templateId:index key
+        is assumed to make collisions safe) -- so nothing stops a template
+        step from reusing an id already used by a real step elsewhere in the
+        workflow. This pre-populates `state.step_results["leaf"]` the way an
+        earlier, unrelated step would have, and marks "leaf" as reserved
+        (what `_collect_reserved_step_ids` would compute from the full
+        workflow definition), then runs a CONCURRENT fan-out whose template
+        also uses id "leaf". The unrelated entry must survive untouched;
+        only the namespaced per-item entries should exist for the fan-out's
+        own use of that id.
+        """
+        from specify_cli.workflows.base import RunStatus, StepBase, StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _LeafStep(StepBase):
+            type_key = "leaf-step"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated_result = {
+            "type": "command",
+            "output": {"marker": "unrelated"},
+            "status": "completed",
+            "error": None,
+        }
+        context = StepContext(reserved_step_ids=frozenset({"leaf"}))
+        context.steps["leaf"] = unrelated_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        state.step_results["leaf"] = unrelated_result
+        registry = {"leaf-step": _LeafStep()}
+        template = {"id": "leaf", "type": "leaf-step"}
+        items = ["a", "b", "c"]
+        engine._run_fan_out(items, template, "fan", context, state, registry, 3)
+
+        # The unrelated step's own result is untouched.
+        assert state.step_results["leaf"] == unrelated_result
+        assert context.steps["leaf"] == unrelated_result
+        # Each item's namespaced result still exists.
+        for idx, item in enumerate(items):
+            assert state.step_results[f"fan:leaf:{idx}"]["output"]["marker"] == item
+
+    def test_fan_out_sequential_alias_never_clobbers_unrelated_step(self, tmp_path):
+        """The same collision safety as
+        `test_fan_out_concurrent_alias_never_clobbers_unrelated_step`, but
+        for the SEQUENTIAL fan-out path (`max_concurrency` <= 1), which
+        writes its bare-id alias immediately per item rather than deferring
+        to a single post-join write.
+        """
+        from specify_cli.workflows.base import RunStatus, StepBase, StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _LeafStep(StepBase):
+            type_key = "leaf-step"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated_result = {
+            "type": "command",
+            "output": {"marker": "unrelated"},
+            "status": "completed",
+            "error": None,
+        }
+        context = StepContext(reserved_step_ids=frozenset({"leaf"}))
+        context.steps["leaf"] = unrelated_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        state.step_results["leaf"] = unrelated_result
+        registry = {"leaf-step": _LeafStep()}
+        template = {"id": "leaf", "type": "leaf-step"}
+        items = ["a", "b", "c"]
+        engine._run_fan_out(items, template, "fan", context, state, registry, 1)
+
+        assert state.step_results["leaf"] == unrelated_result
+        assert context.steps["leaf"] == unrelated_result
+        for idx, item in enumerate(items):
+            assert state.step_results[f"fan:leaf:{idx}"]["output"]["marker"] == item
+
+    def test_fan_out_sequential_nested_while_reserved_collision_restores_live_context(
+        self, tmp_path
+    ):
+        """The sequential fan-out path's reserved-id snapshot/restore must
+        also cover a nested while/do-while body's DYNAMIC alias, not just
+        ids present in the fan-out's own static `id_map`.
+
+        `_rename_step_tree_ids` deliberately leaves a nested while/do-while
+        step's own `steps` body unrenamed -- it re-namespaces itself at
+        runtime each iteration (see the while/do-while branch in
+        `_execute_steps`) -- so a while body's id never appears in the
+        fan-out's static `id_map`. When that dynamic id collides with a
+        real, reserved step elsewhere in the workflow, `_execute_steps`'s
+        collision guard still writes the item-local value straight into the
+        live, shared `context.steps[orig_id]` (so a later sibling step
+        within the SAME item can resolve it) -- but restoring the snapshot
+        keyed only off `set(id_map.values()) & context.reserved_step_ids`
+        would never see this id at all, since it isn't in `id_map`, and so
+        never restore it: the last item's transient value would leak into
+        the live context past the end of the fan-out, even though the
+        persisted `state.step_results` entry stays protected.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.while_loop import WhileStep
+
+        class _LeafStep(StepBase):
+            type_key = "leaf-step"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated_result = {
+            "type": "command",
+            "output": {"marker": "unrelated"},
+            "status": "completed",
+            "error": None,
+        }
+        context = StepContext(reserved_step_ids=frozenset({"leaf"}))
+        context.steps["leaf"] = unrelated_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        state.step_results["leaf"] = unrelated_result
+        registry = {"while": WhileStep(), "leaf-step": _LeafStep()}
+        template = {
+            "id": "item",
+            "type": "while",
+            "condition": "true",
+            "max_iterations": 1,
+            "steps": [
+                {"id": "leaf", "type": "leaf-step"},
+            ],
+        }
+        items = ["a", "b", "c"]
+        engine._run_fan_out(items, template, "fan", context, state, registry, 1)
+
+        # Persisted state was already protected before this fix (covered by
+        # the statically-namespaced-id case above); the gap was the LIVE
+        # context never getting restored for a dynamically-namespaced id.
+        assert state.step_results["leaf"] == unrelated_result
+        assert context.steps["leaf"] == unrelated_result
+
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_reserved_id_collision_still_resolves_item_local_sibling(
+        self, tmp_path, max_concurrency
+    ):
+        """Protecting a reserved id's shared/persisted entry from a
+        colliding fan-out template alias must not also break a later
+        sibling step *within that same item* resolving the id locally.
+
+        The template's first step uses id "first", which collides with a
+        real, distinctly-authored step "first" elsewhere in the workflow
+        (pre-populated and marked reserved, exactly like the sibling
+        `..._never_clobbers_unrelated_step` tests above). The template's
+        second step reads `steps.first.output.marker` via the real
+        `{{ }}` expression path. It must see THIS item's own "first"
+        result, not the outside one -- for both the sequential
+        (max_concurrency=1) and concurrent (2) fan-out paths -- while the
+        outside step's entry must still come out of the fan-out untouched.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                seen = evaluate_expression(
+                    "{{ steps.first.output.marker }}", context
+                )
+                return StepResult(status=StepStatus.COMPLETED, output={"seen": seen})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated_result = {
+            "type": "command",
+            "output": {"marker": "unrelated"},
+            "status": "completed",
+            "error": None,
+        }
+        context = StepContext(reserved_step_ids=frozenset({"first"}))
+        context.steps["first"] = unrelated_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        state.step_results["first"] = unrelated_result
+        registry = {"if": IfThenStep(), "write": _WriteStep(), "read": _ReadStep()}
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "first", "type": "write"},
+                {"id": "second", "type": "read"},
+            ],
+        }
+        items = ["a", "b", "c"]
+        engine._run_fan_out(
+            items, template, "fan", context, state, registry, max_concurrency
+        )
+
+        for idx, item in enumerate(items):
+            assert state.step_results[f"fan:second:{idx}"]["output"]["seen"] == item
+
+        # The outside step's own entry must survive the fan-out untouched.
+        assert state.step_results["first"] == unrelated_result
+        assert context.steps["first"] == unrelated_result
+
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_reserved_id_collision_end_to_end(
+        self, project_dir, max_concurrency
+    ):
+        """End-to-end counterpart of the `..._never_clobbers_unrelated_step`
+        tests above: those build `StepContext(reserved_step_ids=...)` by
+        hand, so they would still pass if `execute()` stopped wiring
+        `_collect_reserved_step_ids(definition.steps)` into the run context.
+
+        This drives a real workflow through `engine.execute()`: an outside
+        step `leaf` runs first, then a fan-out whose template reuses the id
+        `leaf` (allowed -- template ids are exempt from global uniqueness
+        validation). The outside result must survive in both persisted
+        state and the live context, as seen by a later step reading
+        `steps.leaf`, on both the sequential (1) and concurrent (2) paths.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-reserved-collision"
+  name: "Fan Out Reserved Collision"
+  version: "1.0.0"
+steps:
+  - id: leaf
+    type: shell
+    run: "echo outside"
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b', 'c'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: leaf
+      type: shell
+      run: "echo {{{{ item }}}}"
+  - id: after
+    type: shell
+    run: "echo {{{{ steps.leaf.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
+        for idx, item in enumerate(["a", "b", "c"]):
+            assert (
+                state.step_results[f"fan:leaf:{idx}"]["output"]["stdout"]
+                == f"{item}\n"
+            )
+        assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
+
+    @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
+    def test_fan_out_namespaces_nested_descendant_steps(self, project_dir, container):
+        """A step nested inside a fan-out template's `if`/`switch` branch
+        must get a unique namespaced key per item, not just the template's
+        own top-level id.
+
+        Previously only the template's own id was namespaced
+        (`fan:item:0`); a grandchild step like `leaf` kept its bare id
+        across every item, so each item silently overwrote the previous
+        item's entry in `state.step_results["leaf"]` — losing every item's
+        nested result except the last. Nested/template step ids are exempt
+        from the workflow's global id-uniqueness validation specifically
+        because runtime namespacing is assumed to make collisions safe, so
+        an unnamespaced grandchild id can also collide with an unrelated
+        step of the same id elsewhere in the workflow.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "fan-out-nested-descendant"
+  name: "Fan Out Nested Descendant"
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{ ['a', 'b', 'c'] }}"
+    max_concurrency: 1
+    step:
+""" + _nested_leaf_yaml(container, "item", "echo {{ item }}", 6, list_item=False)
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Every item's grandchild result is separately recoverable.
+        assert state.step_results["fan:leaf:0"]["output"]["stdout"] == "a\n"
+        assert state.step_results["fan:leaf:1"]["output"]["stdout"] == "b\n"
+        assert state.step_results["fan:leaf:2"]["output"]["stdout"] == "c\n"
+        # The non-taken switch branch never ran under any id.
+        assert not any("miss-leaf" in key for key in state.step_results)
+
+    @pytest.mark.parametrize("loop_type", ["while", "do-while"])
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_while_loop_nested_in_fan_out_aliases_to_true_original_id(
+        self, project_dir, max_concurrency, loop_type
+    ):
+        """A `while` loop that is itself a fan-out template (or nested inside
+        one) must alias its body's steps back to their real, bare original
+        ids -- not to an already-namespaced id produced by the fan-out's own
+        outer rename pass.
+
+        The fan-out's rename recurses into the template's subtree to
+        namespace steps nested arbitrarily deep (see
+        `test_fan_out_namespaces_nested_descendant_steps`). If that recursion
+        also renamed a nested `while` step's OWN `steps` body, the body's
+        `leaf` step would already be `fan:leaf:0` by the time the while
+        step's own per-iteration rename ran -- which would then treat
+        `fan:leaf:0` as "the original" and alias a doubly-prefixed id
+        (`fan:item:0:fan:leaf:0:0`) back to it instead of to the workflow
+        author's actual bare id `leaf`. `state.step_results["leaf"]` would
+        then never be populated at all, so `steps.leaf` could never resolve.
+
+        Parametrized over both the sequential (1) and concurrent (2) fan-out
+        paths: a nested while/do-while body renames itself dynamically at
+        runtime, so it has no entry in the fan-out's own static
+        `_rename_step_tree_ids` map. The concurrent path's bare-id alias
+        used to be reconstructed from that static map after the item
+        finished, which silently dropped this dynamically-namespaced alias
+        -- `fan:item:*:leaf:0` (asserted below) survived, but the bare
+        `leaf` key never did, even though the sequential path (which writes
+        aliases immediately, not from that reconstruction) got it right.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-nested-while"
+  name: "Fan Out Nested While"
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: item
+      type: {loop_type}
+      condition: "true"
+      max_iterations: 1
+      steps:
+        - id: leaf
+          type: shell
+          run: "echo {{{{ item }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # The bare id resolves -- to the latest (last) item's value, matching
+        # the alias convention used everywhere else in this module. Item
+        # order (not completion order) decides "latest" under concurrency
+        # too -- see _run_fan_out's deterministic-publish comment.
+        assert state.step_results["leaf"]["output"]["stdout"] == "b\n"
+        # Each item's own namespaced entry is still separately recoverable,
+        # aliased against its item-level prefix, not doubly-prefixed.
+        assert state.step_results["fan:item:0:leaf:0"]["output"]["stdout"] == "a\n"
+        assert state.step_results["fan:item:1:leaf:0"]["output"]["stdout"] == "b\n"
+
+    def test_nested_fan_out_inside_concurrent_fan_out_publishes_by_item_order(
+        self, tmp_path
+    ):
+        """A fan-out template nested inside another fan-out's item must
+        inherit the ENCLOSING item's isolation, not decide isolation purely
+        from its own `max_concurrency`.
+
+        The outer fan-out runs two items ("x", "y") CONCURRENTLY. Each
+        outer item's template is itself a fan-out over a single item,
+        with `max_concurrency: 1` -- which, taken in isolation, needs no
+        isolation of its own. Previously the inner fan-out's sequential
+        branch always wrote its bare-id alias ("leaf") directly to the
+        real, persisted `state.step_results`, immediately as each inner
+        item completed, regardless of whether the enclosing outer item was
+        itself one of several running concurrently. That let two outer
+        items -- each running this nested fan-out in its own thread --
+        race on the same shared "leaf" key, so the surviving value was
+        decided by wall-clock completion order instead of the item-order
+        convention every other fan-out alias in this module follows (see
+        `test_while_loop_nested_in_fan_out_aliases_to_true_original_id`).
+
+        This forces outer item "x" (item order 0) to finish its write
+        strictly after outer item "y" (item order 1, the true "last" item)
+        despite both starting concurrently, then asserts the bare "leaf"
+        alias still resolves to "y" -- the deterministic, item-order-based
+        outcome -- not "x", which a completion-order race would produce.
+        """
+        import threading
+        import time
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        # Keyed by id(context): each concurrent outer item runs against its
+        # own StepContext replica (see `_run_fan_out.run_isolated`), so this
+        # recovers "which outer item" once the inner fan-out has overwritten
+        # that replica's `.item` with the INNER item value.
+        outer_marker = {}
+        y_done = threading.Event()
+
+        class _MarkStep(StepBase):
+            type_key = "mark"
+
+            def execute(self, config, context):
+                outer_marker[id(context)] = context.item
+                return StepResult(status=StepStatus.COMPLETED, output={})
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                marker = outer_marker[id(context)]
+                if marker == "y":
+                    result = StepResult(
+                        status=StepStatus.COMPLETED, output={"marker": marker}
+                    )
+                    y_done.set()
+                    return result
+                # "x": wait for "y" to finish first, then give the engine
+                # time to complete y's post-execute alias write before x's
+                # own alias write can happen -- forcing x to complete LAST
+                # in wall-clock order despite being FIRST in item order.
+                assert y_done.wait(timeout=5), "y never completed"
+                time.sleep(0.05)
+                return StepResult(status=StepStatus.COMPLETED, output={"marker": marker})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "if": IfThenStep(),
+            "mark": _MarkStep(),
+            "fan-out": FanOutStep(),
+            "write": _WriteStep(),
+        }
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {"id": "mark", "type": "mark"},
+                {
+                    "id": "item2",
+                    "type": "fan-out",
+                    "items": "{{ ['only'] }}",
+                    "max_concurrency": 1,
+                    "step": {"id": "leaf", "type": "write"},
+                },
+            ],
+        }
+        items = ["x", "y"]
+        engine._run_fan_out(items, template, "fan", context, state, registry, 2)
+
+        # Item-order convention: the LAST item ("y", index 1) wins the bare
+        # alias, regardless of "x" finishing later in wall-clock time.
+        assert state.step_results["leaf"]["output"]["marker"] == "y"
+        # Both outer items' own namespaced entries are still separately
+        # recoverable either way.
+        assert state.step_results["fan:item2:0:leaf:0"]["output"]["marker"] == "x"
+        assert state.step_results["fan:item2:1:leaf:0"]["output"]["marker"] == "y"
+
+    def test_sequential_fan_out_nested_in_concurrent_item_visible_to_later_sibling(
+        self, tmp_path
+    ):
+        """A sequential fan-out nested inside a concurrently-running outer
+        item must publish its bare-id alias into that outer item's private
+        steps view, not only into its accumulator.
+
+        Each inner item runs against a throwaway snapshot of the outer
+        item's view (it inherits the outer isolation), so unless the alias
+        is copied back into the outer view after each inner item, a step
+        that follows the nested fan-out inside the SAME outer item cannot
+        resolve ``steps.leaf`` at all -- while the concurrent inner path
+        already publishes it there.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        class _WriteStep(StepBase):
+            type_key = "write"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"v": context.item}
+                )
+
+        class _ReadStep(StepBase):
+            type_key = "read"
+
+            def execute(self, config, context):
+                leaf = context.steps.get("leaf") or {}
+                return StepResult(
+                    status=StepStatus.COMPLETED,
+                    output={"seen": (leaf.get("output") or {}).get("v")},
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "if": IfThenStep(),
+            "fan-out": FanOutStep(),
+            "write": _WriteStep(),
+            "read": _ReadStep(),
+        }
+        template = {
+            "id": "item",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {
+                    "id": "inner",
+                    "type": "fan-out",
+                    "items": "{{ ['p'] }}",
+                    "max_concurrency": 1,
+                    "step": {"id": "leaf", "type": "write"},
+                },
+                {"id": "read", "type": "read"},
+            ],
+        }
+        engine._run_fan_out(["x", "y"], template, "fan", context, state, registry, 2)
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["fan:read:0"]["output"]["seen"] == "p"
+        assert state.step_results["fan:read:1"]["output"]["seen"] == "p"
+
+    @pytest.mark.parametrize("outer_concurrency", [1, 2])
+    @pytest.mark.parametrize("inner_concurrency", [1, 2])
+    def test_nested_fan_out_keeps_enclosing_item_for_later_sibling(
+        self, tmp_path, outer_concurrency, inner_concurrency
+    ):
+        """A step after a nested fan-out must still see the OUTER item.
+
+        ``_run_fan_out`` already restores (sequential) or never touches
+        (concurrent) the caller's ``context.item``; an extra
+        ``context.item = None`` after the nested call used to wipe the
+        enclosing item, so a later sibling resolved ``{{ item }}`` as None.
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+        from specify_cli.workflows.step.fan_out import FanOutStep
+        from specify_cli.workflows.step.if_then import IfThenStep
+
+        class _ItemStep(StepBase):
+            type_key = "item"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"item": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {
+            "if": IfThenStep(),
+            "fan-out": FanOutStep(),
+            "item": _ItemStep(),
+        }
+        template = {
+            "id": "body",
+            "type": "if",
+            "condition": "true",
+            "then": [
+                {
+                    "id": "inner",
+                    "type": "fan-out",
+                    "items": "{{ ['p', 'q'] }}",
+                    "max_concurrency": inner_concurrency,
+                    "step": {"id": "leaf", "type": "item"},
+                },
+                {"id": "after", "type": "item"},
+            ],
+        }
+        engine._run_fan_out(
+            ["x", "y"], template, "fan", context, state, registry,
+            outer_concurrency,
+        )
+
+        assert state.status == RunStatus.RUNNING
+        assert state.step_results["fan:after:0"]["output"]["item"] == "x"
+        assert state.step_results["fan:after:1"]["output"]["item"] == "y"
+        assert context.item is None
+
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_alias_kept_from_earlier_item_not_run_by_last(
+        self, project_dir, max_concurrency
+    ):
+        """A bare-id alias written only by an EARLIER item must survive.
+
+        Here only item "a" takes the branch that runs ``leaf``. The
+        sequential path leaves ``steps.leaf`` pointing at "a" (the latest
+        item that actually ran it); the concurrent path used to publish
+        only the last item's alias map, so ``leaf`` vanished entirely.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-earlier-alias"
+  name: "Fan Out Earlier Alias"
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: item
+      type: if
+      condition: "{{{{ item == 'a' }}}}"
+      then:
+        - id: leaf
+          type: shell
+          run: "echo {{{{ item }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert "fan:leaf:1" not in state.step_results
+        assert state.step_results["fan:leaf:0"]["output"]["stdout"] == "a\n"
+        assert state.step_results["leaf"]["output"]["stdout"] == "a\n"
+
+    def test_concurrent_fan_out_on_resume_never_writes_step_results_unlocked(
+        self, tmp_path
+    ):
+        """On resume ``context.steps`` IS ``state.step_results``; a concurrent
+        fan-out item must not mirror its namespaced results into it outside
+        the run lock (racing another worker's ``state.save()``).
+
+        The run lock is swapped for one that records its owning thread, and
+        ``step_results`` for a dict that records every top-level write made
+        by a thread that does not hold that lock -- deterministic, unlike
+        trying to provoke the actual ``dictionary changed size`` race.
+        """
+        import threading
+
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _OwnedLock:
+            def __init__(self):
+                self._lock = threading.Lock()
+                self.owner = None
+
+            def __enter__(self):
+                self._lock.acquire()
+                self.owner = threading.get_ident()
+                return self
+
+            def __exit__(self, *exc):
+                self.owner = None
+                self._lock.release()
+
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        lock = _OwnedLock()
+        state._lock = lock
+        unlocked_writes = []
+
+        class _WatchedDict(dict):
+            def __setitem__(self, key, value):
+                if lock.owner != threading.get_ident():
+                    unlocked_writes.append(key)
+                super().__setitem__(key, value)
+
+        state.step_results = _WatchedDict()
+
+        class _NoopStep(StepBase):
+            type_key = "noop"
+
+            def execute(self, config, context):
+                return StepResult(status=StepStatus.COMPLETED, output={})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        # Mirrors resume(): the live context shares the persisted dict.
+        context = StepContext(steps=state.step_results)
+        engine._run_fan_out(
+            ["a", "b"], {"id": "leaf", "type": "noop"}, "fan", context, state,
+            {"noop": _NoopStep()}, 2,
+        )
+
+        assert "fan:leaf:0" in state.step_results
+        assert "fan:leaf:1" in state.step_results
+        assert unlocked_writes == []
 
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
