@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ...extensions import normalize_priority
-from ..engine import MAX_WORKFLOW_ID_LENGTH
-
 # Safe single-segment identifiers: no path separators, no traversal, no dots.
 _SAFE_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_OVERLAY_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays"})
@@ -147,13 +145,6 @@ def validate_overlay_yaml(data: dict[str, Any]) -> tuple[Overlay | None, list[st
     ):
         errors.append(err)
         extends = ""
-    elif len(extends) > MAX_WORKFLOW_ID_LENGTH:
-        errors.append(
-            f"Overlay 'extends' {extends!r} exceeds the maximum workflow ID "
-            f"length of {MAX_WORKFLOW_ID_LENGTH} characters."
-        )
-        extends = ""
-
     priority = normalize_priority(data.get("priority", 10))
 
     edits_raw = data.get("edits")

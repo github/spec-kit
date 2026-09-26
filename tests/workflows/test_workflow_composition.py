@@ -415,20 +415,25 @@ class TestLiteralAndRuntimeTargets:
         assert result["output"]["workflow"] == "child\n"
         assert "not a valid workflow ID" in result["error"]
 
-    def test_runtime_target_rejects_id_over_200_characters(self, project_dir):
-        long_id = "a" * 201
+    def test_long_valid_target_uses_bounded_snapshot_name(self, project_dir):
+        # This ID fits an installed-workflow directory component, but adding the
+        # old readable ``-<digest>.yml`` suffix exceeded the common 255-byte cap.
+        long_id = "a" * 239
+        _install(
+            project_dir,
+            long_id,
+            _workflow(long_id, [_shell("x", "echo hi")]),
+        )
         _install(
             project_dir,
             "parent",
             _workflow(
                 "parent",
                 [
-                    _shell("pick", f"printf {long_id}"),
                     {
                         "id": "call",
                         "type": "workflow",
-                        "workflow": "{{ steps.pick.output.stdout }}",
-                        "continue_on_error": True,
+                        "workflow": long_id,
                     },
                 ],
             ),
@@ -437,9 +442,12 @@ class TestLiteralAndRuntimeTargets:
         state = _run(project_dir, "parent")
 
         result = state.step_results["call"]
-        assert result["status"] == "failed"
+        assert state.status == RunStatus.COMPLETED
+        assert result["status"] == "completed"
         assert result["output"]["workflow"] == long_id
-        assert "not a valid workflow ID" in result["error"]
+        reference = state.workflow_scopes["call"]["definition_snapshot"]
+        assert len(reference.encode("ascii")) == 68
+        assert (state.runs_dir / "snapshots" / reference).is_file()
 
     def test_registry_key_must_match_resolved_definition_id(self, project_dir):
         _install(project_dir, "child", _workflow("other", [_shell("x", "echo hi")]))
@@ -2486,14 +2494,14 @@ class TestCliReporting:
             "aborted": "abort-gate",
         }[expected_scope]
 
-    def test_maximum_workflow_id_keeps_snapshot_filename_within_limits(self):
+    def test_snapshot_filename_is_bounded_independently_of_workflow_id(self):
         from specify_cli.workflows.composition import ExecutionScope, _snapshot_ref_for
 
         reference = _snapshot_ref_for(
-            ExecutionScope(scope_id="call", workflow_id="a" * 200)
+            ExecutionScope(scope_id="call", workflow_id="a" * 255)
         )
 
-        assert len(reference.encode("ascii")) <= 255
+        assert len(reference.encode("ascii")) == 68
 
     def test_gate_inside_nested_control_flow_reports_gate(self, project_dir):
         """A gate inside an ``if`` body must be reported, not its enclosing step.

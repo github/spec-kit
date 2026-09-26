@@ -4842,13 +4842,10 @@ steps:
         errors = validate_workflow(definition)
         assert any("lowercase alphanumeric" in e for e in errors)
 
-    @pytest.mark.parametrize(
-        ("workflow_id", "valid"),
-        [("a" * 200, True), ("a" * 201, False)],
-    )
-    def test_workflow_id_length_limit(self, workflow_id, valid):
+    def test_long_workflow_id_remains_valid(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
+        workflow_id = "a" * 255
         definition = WorkflowDefinition(
             {
                 "schema_version": "1.0",
@@ -4862,9 +4859,7 @@ steps:
         )
 
         errors = validate_workflow(definition)
-        assert (errors == []) is valid
-        if not valid:
-            assert any("at most 200 characters" in error for error in errors)
+        assert errors == []
 
     def test_workflow_id_with_trailing_newline_is_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -7730,6 +7725,24 @@ class TestRunState:
         assert loaded.status == RunStatus.RUNNING
         assert loaded.inputs == {"name": "login"}
         assert loaded.step_results == state.step_results
+
+    def test_load_preserves_preexisting_long_workflow_ids(self, project_dir):
+        from specify_cli.workflows.engine import RunState
+
+        workflow_id = "a" * 255
+        state = RunState(
+            run_id="long-workflow",
+            workflow_id=workflow_id,
+            project_root=project_dir,
+            installed_workflow_id=workflow_id,
+            installed_registry_root=str(project_dir.resolve()),
+        )
+        state.save()
+
+        loaded = RunState.load("long-workflow", project_dir)
+
+        assert loaded.workflow_id == workflow_id
+        assert loaded.installed_workflow_id == workflow_id
 
     @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
     def test_load_rejects_non_object_step_results(

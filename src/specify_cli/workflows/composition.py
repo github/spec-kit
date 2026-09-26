@@ -394,7 +394,8 @@ def check_composition_path(active_path: list[str], target: str) -> None:
 #: Directory under a run directory holding immutable definition snapshots.
 SNAPSHOT_DIRNAME = "snapshots"
 
-#: Snapshot file name: ``<workflow-id>-<digest>.yml``.
+#: Snapshot file name: ``<digest>.yml``. Older readable
+#: ``<workflow-id>-<digest>.yml`` references remain valid when loading state.
 _SNAPSHOT_REF_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*\.yml$")
 
 
@@ -411,14 +412,16 @@ def _invocation_path(scope: ExecutionScope) -> list[str]:
 def _snapshot_ref_for(scope: ExecutionScope) -> str:
     """Deterministic, filesystem-safe snapshot name for *scope*.
 
-    Derived from the invocation path and the target workflow id rather than the
-    authored step id, so a step id containing ``/`` or ``:`` can never escape
-    the snapshots directory.
+    The complete digest keeps the component bounded independently of authored
+    invocation and workflow ID lengths. The target ID is included so the name
+    also changes if the same invocation path is ever rebound before persisting.
     """
-    digest = hashlib.sha256(
-        "\x00".join(_invocation_path(scope)).encode("utf-8")
-    ).hexdigest()[:12]
-    return f"{scope.workflow_id}-{digest}.yml"
+    digest = hashlib.sha256()
+    for value in [*_invocation_path(scope), scope.workflow_id]:
+        encoded = value.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return f"{digest.hexdigest()}.yml"
 
 
 def _definition_snapshot_path(run_dir: Path, ref: str) -> Path:

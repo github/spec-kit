@@ -134,19 +134,13 @@ class WorkflowDefinition:
 
 # -- Workflow Validation --------------------------------------------------
 
-# ID format: lowercase alphanumeric with hyphens. Keep this below the common
-# filesystem component limit once composed-workflow snapshot suffixes are added.
-MAX_WORKFLOW_ID_LENGTH = 200
+# ID format: lowercase alphanumeric with hyphens.
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
 
 def is_valid_workflow_id(value: Any) -> bool:
-    """Return whether *value* is a workflow ID safe for all storage paths."""
-    return (
-        isinstance(value, str)
-        and len(value) <= MAX_WORKFLOW_ID_LENGTH
-        and _ID_PATTERN.fullmatch(value) is not None
-    )
+    """Return whether *value* follows the workflow-ID format."""
+    return isinstance(value, str) and _ID_PATTERN.fullmatch(value) is not None
 
 # Keys accepted under a workflow's ``requires`` block: the advisory
 # pre-conditions documented for workflows (``speckit_version`` and
@@ -235,7 +229,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     elif not is_valid_workflow_id(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
-            f"with hyphens and at most {MAX_WORKFLOW_ID_LENGTH} characters."
+            "with hyphens."
         )
 
     if definition.name is None or definition.name == "":
