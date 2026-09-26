@@ -65,6 +65,16 @@ class DockerAgentIntegration(SkillsIntegration):
             return [executable, "run"]
         return command
 
+    def is_cli_available(self) -> bool:
+        """Detect the standalone binary or the ``docker agent`` CLI plugin.
+
+        Docker Agent is not a single executable on PATH, so the inherited
+        PATH lookup cannot answer this; the shared probe is authoritative.
+        """
+        executable = self._resolve_executable()
+        probe = docker_agent_command(None if executable == self.key else executable)
+        return probe is not None
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         opts = super().options()

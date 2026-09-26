@@ -156,28 +156,16 @@ def check_tool(tool: str, tracker=None) -> bool:
     Returns:
         True if tool is found, False otherwise
     """
-    # Special handling for Claude CLI local installs
-    # See: https://github.com/github/spec-kit/issues/123
-    # See: https://github.com/github/spec-kit/issues/550
-    # Claude Code can be installed in two local paths:
-    #   1. ~/.claude/local/claude          (after `claude migrate-installer`)
-    #   2. ~/.claude/local/node_modules/.bin/claude  (npm-local install, e.g. via nvm)
-    # Neither path may be on the system PATH, so we check them explicitly.
-    if tool == "claude":
-        if CLAUDE_LOCAL_PATH.is_file() or CLAUDE_NPM_LOCAL_PATH.is_file():
-            if tracker:
-                tracker.complete(tool, "available")
-            return True
+    # A registered integration owns how its CLI is located, so preflight asks
+    # the same object dispatch will use instead of repeating per-tool rules
+    # here. Imported inside the function because the integrations package
+    # imports this module at import time. Plain tools such as git are not
+    # integrations and stay a straight PATH lookup.
+    from .integrations import get_integration
 
-    # Per-integration executable resolution.
-    if tool == "kiro-cli":
-        # Kiro currently supports both executable names. Prefer kiro-cli and
-        # accept kiro as a compatibility fallback.
-        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
-    elif tool == "rovodev":
-        found = shutil.which("acli") is not None
-    elif tool == "docker-agent":
-        found = docker_agent_command() is not None
+    integration = get_integration(tool)
+    if integration is not None:
+        found = integration.is_cli_available()
     else:
         found = shutil.which(tool) is not None
 
