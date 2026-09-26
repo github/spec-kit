@@ -5696,6 +5696,70 @@ steps:
 
 # ===== Workflow Engine Tests =====
 
+# Control-flow containers that nest a ``leaf`` step one level below a loop
+# body / fan-out template. ``_rename_step_tree_ids`` reaches ``then`` via
+# ``_NESTED_STEP_LIST_KEYS`` but ``cases.*`` through a separate branch, and
+# ``default`` through the list-keys path again, so each is exercised directly.
+# Each non-taken branch uses a distinct id so only ``leaf`` ever runs.
+_NESTED_LEAF_CONTAINERS = {
+    "if-then": """\
+id: CID
+type: if
+condition: "true"
+then:
+  - id: leaf
+    type: shell
+    run: "RUN"
+""",
+    "switch-case": """\
+id: CID
+type: switch
+expression: "hit"
+cases:
+  hit:
+    - id: leaf
+      type: shell
+      run: "RUN"
+default:
+  - id: miss-leaf
+    type: shell
+    run: "echo miss"
+""",
+    "switch-default": """\
+id: CID
+type: switch
+expression: "other"
+cases:
+  hit:
+    - id: miss-leaf
+      type: shell
+      run: "echo miss"
+default:
+  - id: leaf
+    type: shell
+    run: "RUN"
+""",
+}
+
+
+def _nested_leaf_yaml(
+    container: str, container_id: str, run: str, indent: int, list_item: bool
+) -> str:
+    """Render a ``_NESTED_LEAF_CONTAINERS`` entry at *indent* spaces, either
+    as a list item (a loop body's ``steps:``) or a mapping (a fan-out
+    ``step:`` template)."""
+    body = (
+        _NESTED_LEAF_CONTAINERS[container]
+        .replace("CID", container_id)
+        .replace("RUN", run)
+    )
+    lines = body.splitlines()
+    if list_item:
+        lines = ["- " + lines[0]] + ["  " + line for line in lines[1:]]
+    pad = " " * indent
+    return "\n".join(pad + line for line in lines) + "\n"
+
+
 class TestWorkflowEngine:
     """Test WorkflowEngine execution."""
 
@@ -6663,10 +6727,19 @@ steps:
         # Falls back to the default cap of 10, not range(True - 1) == 1 run.
         assert counter_file.read_text(encoding="utf-8").strip() == "10"
 
-    def test_while_loop_namespaces_nested_descendant_steps(self, project_dir):
+    @pytest.mark.parametrize("loop_type", ["while", "do-while"])
+    @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
+    def test_while_loop_namespaces_nested_descendant_steps(
+        self, project_dir, loop_type, container
+    ):
         """A step nested one level deeper than the loop body's direct child
         (e.g. a `shell` step inside an `if` inside the `while` body) must get
         a unique namespaced key per iteration, not just the immediate child.
+
+        Parametrized over `while` and `do-while` (both share the engine's
+        per-iteration namespacing branch) and over `if`/`then`, `switch`
+        `cases.*`, and `switch` `default` containers -- `cases.*` is renamed
+        by a separate code path from the other nested-list keys.
 
         Previously only the direct child's id was namespaced
         (`retry-loop:guard:1`); the grandchild `leaf` kept its bare id across
@@ -6677,7 +6750,7 @@ steps:
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
 
-        yaml_str = """
+        yaml_str = f"""
 schema_version: "1.0"
 workflow:
   id: "while-nested-descendant"
@@ -6685,18 +6758,11 @@ workflow:
   version: "1.0.0"
 steps:
   - id: retry-loop
-    type: while
+    type: {loop_type}
     condition: "true"
     max_iterations: 3
     steps:
-      - id: guard
-        type: if
-        condition: "true"
-        then:
-          - id: leaf
-            type: shell
-            run: "echo tick"
-"""
+""" + _nested_leaf_yaml(container, "guard", "echo tick", 6, list_item=True)
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition)
@@ -6711,9 +6777,11 @@ steps:
         # namespacing logic was reached, so it had no dedicated entry and was
         # immediately overwritten by iteration 1's aliasing the moment that
         # iteration ran.
-        assert "retry-loop:leaf:0" in state.step_results
-        assert "retry-loop:leaf:1" in state.step_results
-        assert "retry-loop:leaf:2" in state.step_results
+        for iteration in range(3):
+            key = f"retry-loop:leaf:{iteration}"
+            assert state.step_results[key]["output"]["stdout"] == "tick\n"
+        # The non-taken switch branch never ran under any id.
+        assert not any("miss-leaf" in key for key in state.step_results)
 
     def test_while_loop_sibling_step_sees_immediate_alias(self, tmp_path):
         """A step nested inside an `if` in a `while` body that references an
@@ -7222,7 +7290,8 @@ steps:
             )
         assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
 
-    def test_fan_out_namespaces_nested_descendant_steps(self, project_dir):
+    @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
+    def test_fan_out_namespaces_nested_descendant_steps(self, project_dir, container):
         """A step nested inside a fan-out template's `if`/`switch` branch
         must get a unique namespaced key per item, not just the template's
         own top-level id.
@@ -7252,14 +7321,7 @@ steps:
     items: "{{ ['a', 'b', 'c'] }}"
     max_concurrency: 1
     step:
-      id: item
-      type: if
-      condition: "true"
-      then:
-        - id: leaf
-          type: shell
-          run: "echo {{ item }}"
-"""
+""" + _nested_leaf_yaml(container, "item", "echo {{ item }}", 6, list_item=False)
         definition = WorkflowDefinition.from_string(yaml_str)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition)
@@ -7269,10 +7331,13 @@ steps:
         assert state.step_results["fan:leaf:0"]["output"]["stdout"] == "a\n"
         assert state.step_results["fan:leaf:1"]["output"]["stdout"] == "b\n"
         assert state.step_results["fan:leaf:2"]["output"]["stdout"] == "c\n"
+        # The non-taken switch branch never ran under any id.
+        assert not any("miss-leaf" in key for key in state.step_results)
 
+    @pytest.mark.parametrize("loop_type", ["while", "do-while"])
     @pytest.mark.parametrize("max_concurrency", [1, 2])
     def test_while_loop_nested_in_fan_out_aliases_to_true_original_id(
-        self, project_dir, max_concurrency
+        self, project_dir, max_concurrency, loop_type
     ):
         """A `while` loop that is itself a fan-out template (or nested inside
         one) must alias its body's steps back to their real, bare original
@@ -7316,7 +7381,7 @@ steps:
     max_concurrency: {max_concurrency}
     step:
       id: item
-      type: while
+      type: {loop_type}
       condition: "true"
       max_iterations: 1
       steps:
