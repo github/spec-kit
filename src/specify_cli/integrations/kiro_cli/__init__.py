@@ -1,5 +1,7 @@
 """Kiro CLI integration."""
 
+import shutil
+
 from ..base import MarkdownIntegration
 
 
@@ -34,3 +36,17 @@ class KiroCliIntegration(MarkdownIntegration):
         "args": _KIRO_ARG_FALLBACK,
         "extension": ".md",
     }
+
+    def _resolve_executable(self) -> str:
+        """Resolve the Kiro CLI, accepting the legacy ``kiro`` executable.
+
+        Kiro ships under both names and availability checks have long accepted
+        either, so dispatch has to resolve the same way. Otherwise a machine
+        with only the legacy binary passes preflight and then fails to launch.
+        """
+        resolved = super()._resolve_executable()
+        if resolved != self.key:
+            return resolved
+        if shutil.which(resolved) is None and shutil.which("kiro"):
+            return "kiro"
+        return resolved

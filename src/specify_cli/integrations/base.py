@@ -312,6 +312,21 @@ class IntegrationBase(ABC):
         override = os.environ.get(env_name, "").strip()
         return override if override else self.key
 
+    def is_cli_available(self) -> bool:
+        """Report whether this integration's CLI can actually be launched.
+
+        Resolves the same executable :meth:`dispatch_command` will run, so a
+        preflight check cannot report a tool as present under a name that
+        dispatch then fails to find. A resolved value containing a path
+        separator names an explicit location and is checked directly; a bare
+        name is looked up on PATH.
+        """
+        executable = self._resolve_executable()
+        separators = [os.sep, os.altsep] if os.altsep else [os.sep]
+        if any(sep in executable for sep in separators):
+            return Path(executable).is_file()
+        return shutil.which(executable) is not None
+
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
         """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
 

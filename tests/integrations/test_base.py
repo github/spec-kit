@@ -2,11 +2,16 @@
 
 import inspect
 import shlex
+import shutil
 import sys
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from specify_cli._utils import check_tool
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import (
     IntegrationBase,
     IntegrationOption,
@@ -766,3 +771,46 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+class TestCliAvailabilityMatchesDispatch:
+    """A tool reported as available must be launchable under the same name.
+
+    ``check_tool`` used to special-case a handful of CLIs while dispatch
+    resolved the executable separately. A Claude install that is not on PATH,
+    or a machine carrying only the legacy ``kiro`` binary, therefore passed
+    preflight and then failed with FileNotFoundError when the command ran.
+    """
+
+    def test_claude_local_install_resolves_to_the_path_preflight_accepted(self, tmp_path):
+        local_claude = tmp_path / "claude"
+        local_claude.write_text("#!/bin/sh\n")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("specify_cli._utils.CLAUDE_LOCAL_PATH", local_claude),
+        ):
+            integration = get_integration("claude")
+            resolved = integration._resolve_executable()
+            exec_args = integration.build_exec_args("hello")
+
+            assert check_tool("claude") is True
+            assert resolved == str(local_claude)
+            # Dispatch runs this value; it has to exist, not just be a name.
+            assert Path(resolved).is_file()
+            # argv[0] is what actually reaches subprocess.run.
+            assert exec_args[0] == str(local_claude)
+
+    def test_kiro_legacy_binary_resolves_to_the_name_preflight_accepted(self):
+        def fake_which(name):
+            return "/usr/bin/kiro" if name == "kiro" else None
+
+        with patch("shutil.which", side_effect=fake_which):
+            integration = get_integration("kiro-cli")
+            resolved = integration._resolve_executable()
+            exec_args = integration.build_exec_args("hello")
+
+            assert check_tool("kiro-cli") is True
+            assert resolved == "kiro"
+            assert shutil.which(resolved) is not None
+            # argv[0] is what actually reaches subprocess.run.
+            assert exec_args[0] == "kiro"
