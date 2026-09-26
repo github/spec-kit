@@ -72,14 +72,16 @@ flowchart LR
 
 When a `gate` step pauses execution, the engine persists `current_step_index` and all accumulated `step_results`. On `specify workflow resume <run_id>`, the engine restores the context and continues from the paused step.
 
-> **Note:** Resume tracking is at the top-level step index only. If a
-> nested step (inside `if`/`switch`/`while`) pauses, resume re-runs
-> the parent control-flow step and its nested body. A nested step-path
-> stack for exact resume is a planned enhancement.
+New runs use a versioned execution tree. Each occurrence owns its result,
+selected child sequences, and optional workflow binding. The same executor
+traverses that tree on initial execution and resume, restoring local aliases
+from completed results. Fan-out items have separate contexts. Legacy runs enter
+through their top-level index once. Inputs and tree transitions share one atomic
+state checkpoint; the inputs file is a compatibility mirror.
 
 ## Step Types
 
-The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
+The engine ships with 13 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
@@ -95,6 +97,7 @@ The engine ships with 12 built-in step types, each in its own subpackage under `
 | `do-while` | `DoWhileStep` | Loop, always runs body at least once | Yes (always) |
 | `fan-out` | `FanOutStep` | Dispatch per item over a collection | No (engine expands) |
 | `fan-in` | `FanInStep` | Aggregate results from fan-out | No |
+| `workflow` | `WorkflowStep` | Execute an installed workflow in a private scope | No (engine enters scope) |
 
 ## Step Registry
 

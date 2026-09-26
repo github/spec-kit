@@ -40,6 +40,8 @@ class GateStep(StepBase):
         message = config.get("message", "Review required.")
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
+        if message is not None:
+            message = str(message)
 
         options = config.get("options", ["approve", "reject"])
         on_reject = config.get("on_reject", "abort")

@@ -95,6 +95,38 @@ steps:
         )
         assert any(r["run_id"] == rid for r in listing["runs"])
 
+    def test_composed_gate_status_and_resume(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        child_dir = project_dir / ".specify" / "workflows" / "child"
+        child_dir.mkdir(parents=True)
+        (child_dir / "workflow.yml").write_text(
+            "workflow: {id: child, name: Child}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n  - {id: review, type: gate, message: Review, verdict_input: verdict}\n",
+            encoding="utf-8",
+        )
+        WorkflowRegistry(project_dir).add("child", {"enabled": True})
+        root = self._write_wf(
+            project_dir,
+            "workflow: {id: parent, name: Parent}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n  - id: call\n    type: workflow\n    workflow: child\n"
+            "    input: {verdict: '{{ inputs.verdict }}'}\n",
+            "parent",
+        )
+        run = json.loads(self._invoke(project_dir, ["workflow", "run", str(root), "--json"]).stdout)
+        assert run["status"] == "paused", run
+        status = json.loads(self._invoke(project_dir, ["workflow", "status", run["run_id"], "--json"]).stdout)
+        assert status["gate"] == run["gate"]
+        assert status["gate"]["scope_path"] == ["call"]
+        assert status["workflow_scopes"] == [{"scope_path": ["call"], "workflow_id": "child", "status": "paused"}]
+        human = self._invoke(project_dir, ["workflow", "status", run["run_id"]])
+        assert "child: paused" in human.stdout
+        resumed = self._invoke(project_dir, ["workflow", "resume", run["run_id"], "--input", "verdict=approve", "--json"])
+        assert resumed.exit_code == 0
+        assert json.loads(resumed.stdout)["status"] == "completed"
+
 
 
 class TestWorkflowCliAlignment:

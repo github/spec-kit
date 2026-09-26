@@ -90,6 +90,15 @@ def workflow_status(
                     s, "white"
                 )
                 cli.console.print(f"    [{sc}]●[/{sc}] {step_id}: {s}")
+        if state.execution:
+            from ._execution import scope_summaries
+
+            for scope in scope_summaries(state.execution):
+                path = " / ".join(scope["scope_path"])
+                cli.console.print(
+                    f"  {cli._escape_markup(path)} → "
+                    f"{cli._escape_markup(scope['workflow_id'])}: {scope['status']}"
+                )
     else:
         runs = engine.list_runs()
 

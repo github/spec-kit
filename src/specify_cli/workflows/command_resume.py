@@ -18,7 +18,7 @@ def workflow_resume(
         help="Emit the resume outcome as a single JSON object instead of formatted text.",
     ),
 ):
-    """Resume a paused or failed workflow run."""
+    """Resume a paused, failed, or crash-interrupted workflow run."""
     from . import load_custom_steps
     from .engine import RunState, WorkflowEngine
 

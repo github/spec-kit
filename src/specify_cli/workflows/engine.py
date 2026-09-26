@@ -10,14 +10,12 @@ The engine is the orchestrator that:
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
 import re
 import tempfile
 import threading
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,7 +26,7 @@ from ..integration_state import (
     default_integration_key,
     try_read_integration_json,
 )
-from .base import RunStatus, StepContext, StepResult, StepStatus
+from .base import RunStatus, StepContext
 
 
 # -- Workflow Definition --------------------------------------------------
@@ -86,6 +84,7 @@ class WorkflowDefinition:
 
         # Inputs
         self.inputs: dict[str, Any] = data.get("inputs", {})
+        self.outputs: Any = data.get("outputs", {})
 
         # Steps
         self.steps: list[dict[str, Any]] = data.get("steps", [])
@@ -140,7 +139,7 @@ def _get_valid_step_types() -> set[str]:
         return set(STEP_REGISTRY.keys())
     return {
         "command", "shell", "prompt", "gate", "if", "init", "slot",
-        "switch", "while", "do-while", "fan-out", "fan-in",
+        "switch", "while", "do-while", "fan-out", "fan-in", "workflow",
     }
 
 
@@ -183,7 +182,9 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
 
     An empty list means the workflow is valid.
     """
-    errors: list[str] = []
+    from .composition import validate_outputs
+
+    errors: list[str] = validate_outputs(definition.outputs)
 
     # -- Schema version ---------------------------------------------------
     # str() so an unquoted ``schema_version: 1.0`` (YAML float) is accepted —
@@ -695,10 +696,14 @@ class RunState:
         self.current_step_index = 0
         self.current_step_id: str | None = None
         self.step_results: dict[str, dict[str, Any]] = {}
+        self.execution: dict[str, Any] | None = None
+        self._checkpoint_failed = False
         # Guards step_results mutation and save() so a concurrent fan-out cannot
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        # Reentrant so an execution transition can update views and call save()
+        # under the same lock. Step implementations run outside that lock.
         # Serializes append_log's list append + log.jsonl write so concurrent
         # fan-out workers cannot interleave or corrupt log lines. Kept separate
         # from _lock so frequent logging never contends with state saves; since
@@ -723,6 +728,10 @@ class RunState:
         fan-out). For a sequential run this is an uncontended lock.
         """
         with self._lock:
+            from ._execution import CheckpointError
+
+            if self._checkpoint_failed:
+                raise CheckpointError("A previous checkpoint failed; reload the run")
             self.step_results[step_id] = data
 
     def set_step_output(self, step_id: str, output: Any) -> None:
@@ -749,6 +758,10 @@ class RunState:
         runs_dir.mkdir(parents=True, exist_ok=True)
 
         with self._lock:
+            if self._checkpoint_failed:
+                from ._execution import CheckpointError
+
+                raise CheckpointError("A previous checkpoint failed; reload the run")
             # Stamp updated_at inside the lock so the timestamp matches the
             # snapshot this thread serializes (concurrent savers don't race it).
             self.updated_at = datetime.now(timezone.utc).isoformat()
@@ -765,9 +778,18 @@ class RunState:
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
                 "error": self.error,
+                "inputs": self.inputs,
             }
-            self._atomic_write_json(runs_dir / "state.json", state_data)
-            self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
+            if self.execution is not None:
+                state_data["execution"] = self.execution
+            try:
+                self._atomic_write_json(runs_dir / "state.json", state_data)
+                self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
+            except BaseException as exc:
+                from ._execution import CheckpointError
+
+                self._checkpoint_failed = True
+                raise CheckpointError(str(exc)) from exc
 
     @staticmethod
     def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -892,9 +914,14 @@ class RunState:
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
         state.error = state_data.get("error")
+        state.execution = state_data.get("execution")
+        if "execution" in state_data:
+            from ._execution import validate_execution
+
+            validate_execution(state.execution)
 
         inputs_path = runs_dir / "inputs.json"
-        if inputs_path.exists():
+        if "inputs" not in state_data and inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
                 inputs_data = json.load(f)
             if not isinstance(inputs_data, dict):
@@ -907,6 +934,11 @@ class RunState:
                     "Invalid run inputs: 'inputs' must be a JSON object"
                 )
             state.inputs = inputs
+
+        if "inputs" in state_data:
+            if not isinstance(state_data["inputs"], dict):
+                raise ValueError("Invalid run inputs: 'inputs' must be a JSON object")
+            state.inputs = state_data["inputs"]
 
         return state
 
@@ -1089,6 +1121,8 @@ class WorkflowEngine:
             state.save()
             return state
         except Exception as exc:
+            if state._checkpoint_failed:
+                raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
             state.append_log({"event": "workflow_failed", "error": str(exc)})
@@ -1106,7 +1140,7 @@ class WorkflowEngine:
         run_id: str,
         inputs: dict[str, Any] | None = None,
     ) -> RunState:
-        """Resume a paused or failed workflow run.
+        """Resume a paused/failed run or a tree-backed run interrupted by a crash.
 
         When ``inputs`` is provided, the values are merged over the run's
         persisted inputs and re-resolved through the same typed validation
@@ -1115,7 +1149,9 @@ class WorkflowEngine:
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
         state = RunState.load(run_id, self.project_root)
-        if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
+        if state.status not in (RunStatus.PAUSED, RunStatus.FAILED) and not (
+            state.status == RunStatus.RUNNING and state.execution is not None
+        ):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
             raise ValueError(msg)
 
@@ -1143,6 +1179,12 @@ class WorkflowEngine:
                 "step(s)."
             )
             raise ValueError(msg)
+
+        if state.execution is not None:
+            persisted_steps = yaml.safe_load(state.execution["sequence"]["source"])
+            offset = state.execution.get("offset", 0)
+            if persisted_steps != definition.steps[offset:]:
+                raise ValueError("Invalid execution state: root sequence differs from workflow snapshot")
 
         dispatch_default_errors = _dispatch_default_errors(definition)
         if dispatch_default_errors:
@@ -1182,6 +1224,7 @@ class WorkflowEngine:
             self._execute_steps(
                 remaining_steps, context, state, STEP_REGISTRY,
                 step_offset=step_offset,
+                rebind=bool(inputs),
             )
         except KeyboardInterrupt:
             state.status = RunStatus.PAUSED
@@ -1189,6 +1232,8 @@ class WorkflowEngine:
             state.save()
             return state
         except Exception as exc:
+            if state._checkpoint_failed:
+                raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
             state.append_log({"event": "resume_failed", "error": str(exc)})
@@ -1225,240 +1270,26 @@ class WorkflowEngine:
         registry: dict[str, Any],
         *,
         step_offset: int = 0,
+        rebind: bool = False,
     ) -> None:
-        """Execute a list of steps sequentially."""
-        for i, step_config in enumerate(steps):
-            step_id = step_config.get("id", f"step-{i}")
-            step_type = step_config.get("type", "command")
+        """Execute or resume the persisted tree (legacy indices adapt once)."""
+        from ._execution import Execution, active_step, sequence
+        from copy import deepcopy
 
-            state.current_step_id = step_id
-            if step_offset >= 0:
-                state.current_step_index = step_offset + i
-            state.save()
-
-            state.append_log(
-                {"event": "step_started", "step_id": step_id, "type": step_type}
-            )
-
-            # Log progress — use the engine's on_step_start callback if set,
-            # otherwise stay silent (library-safe default).
-            label = step_config.get("command", "") or step_type
-            if self.on_step_start is not None:
-                with self._callback_lock:
-                    self.on_step_start(step_id, label)
-
-            step_impl = registry.get(step_type)
-            if not step_impl:
-                state.status = RunStatus.FAILED
-                state.error = f"Unknown step type: {step_type!r}"
-                state.append_log(
-                    {
-                        "event": "step_failed",
-                        "step_id": step_id,
-                        "error": f"Unknown step type: {step_type!r}",
-                    }
-                )
-                state.save()
-                return
-
-            result: StepResult = step_impl.execute(step_config, context)
-
-            # Record step results — prefer resolved values from step output
-            step_data = {
-                "type": step_type,
-                "integration": result.output.get("integration")
-                or step_config.get("integration")
-                or context.default_integration,
-                "model": result.output.get("model")
-                or step_config.get("model")
-                or context.default_model,
-                "options": result.output.get("options")
-                or step_config.get("options", {}),
-                "input": result.output.get("input")
-                or step_config.get("input", {}),
-                "output": result.output,
-                "status": result.status.value,
-                "error": result.error,
-            }
-            if step_type == "command" and "integration_args" in result.output:
-                step_data["integration_args"] = result.output["integration_args"]
-                step_data["integration_options"] = result.output[
-                    "integration_options"
-                ]
-            self._record_result(context, state, step_id, step_data)
-
-            state.append_log(
-                {
-                    "event": "step_completed",
-                    "step_id": step_id,
-                    "status": result.status.value,
-                }
-            )
-
-            # Handle gate pauses
-            if result.status == StepStatus.PAUSED:
-                state.status = RunStatus.PAUSED
-                state.save()
-                return
-
-            # Handle failures
-            if result.status == StepStatus.FAILED:
-                # Gate abort (output.aborted) maps to ABORTED status.
-                # Aborts are deliberate operator decisions, so
-                # `continue_on_error` does NOT override them — that flag
-                # is for transient/expected step failures only.
-                if result.output.get("aborted"):
-                    state.status = RunStatus.ABORTED
-                    state.error = result.error
-                    state.append_log(
-                        {
-                            "event": "workflow_aborted",
-                            "step_id": step_id,
-                        }
-                    )
-                    state.save()
-                    return
-
-                # `continue_on_error: true` lets the pipeline route
-                # around the failure instead of halting. The step
-                # result (including exit_code, stderr, status) is
-                # still recorded so a downstream `if` or `switch`
-                # can branch on it (or a `gate` can surface it to the
-                # operator via message interpolation). Log a single,
-                # unambiguous event per failure resolution — either
-                # the run continued past it, or it halted.
-                #
-                # Use identity comparison (`is True`) rather than
-                # truthiness so that only a literal boolean enables
-                # the behaviour, even if validation was skipped.
-                # Validation rejects non-bool values at parse time,
-                # but `WorkflowEngine.execute()` does not auto-validate
-                # (see `WorkflowEngine.load_workflow`, whose docstring
-                # explicitly notes "not yet validated; call
-                # `validate_workflow()` or `engine.validate()`
-                # separately"), so a caller passing an unvalidated
-                # definition could otherwise see truthy non-bool
-                # values like the string `"true"` silently change
-                # run semantics.
-                if step_config.get("continue_on_error") is True:
-                    state.append_log(
-                        {
-                            "event": "step_continue_on_error",
-                            "step_id": step_id,
-                            "error": result.error,
-                        }
-                    )
-                    state.save()
-                    continue
-
-                state.status = RunStatus.FAILED
-                state.error = result.error
-                state.append_log(
-                    {
-                        "event": "step_failed",
-                        "step_id": step_id,
-                        "error": result.error,
-                    }
-                )
-                state.save()
-                return
-
-            # Execute nested steps (from control flow)
-            # NOTE: Nested steps run with step_offset=-1 so they don't
-            # update current_step_index.  If a nested step pauses,
-            # resume will re-run the parent step and its nested body.
-            # A step-path stack for exact nested resume is a future
-            # enhancement.
-            if result.next_steps:
-                self._execute_steps(
-                    result.next_steps, context, state, registry,
-                    step_offset=-1,
-                )
-                if state.status in (
-                    RunStatus.PAUSED,
-                    RunStatus.FAILED,
-                    RunStatus.ABORTED,
-                ):
-                    return
-
-                # Loop iteration: while/do-while re-evaluate after body
-                if step_type in ("while", "do-while"):
-                    from .expressions import evaluate_condition
-
-                    max_iters = step_config.get("max_iterations")
-                    # A bool is an int in Python (isinstance(True, int) is True
-                    # and True == 1), so a bool max_iterations would slip past
-                    # the int check and cap the loop at range(0)==1 iteration
-                    # instead of the default. Exclude bools, mirroring the
-                    # while/do-while validators and the continue_on_error guard.
-                    if (
-                        isinstance(max_iters, bool)
-                        or not isinstance(max_iters, int)
-                        or max_iters < 1
-                    ):
-                        max_iters = 10
-                    condition = step_config.get("condition", False)
-                    for _loop_iter in range(max_iters - 1):
-                        if not evaluate_condition(condition, context):
-                            break
-                        # Namespace nested step IDs per iteration
-                        # so logs and state keys are unique.
-                        # Execute one step at a time and alias each
-                        # result back to the unprefixed key so that
-                        # later steps in the same body and the loop
-                        # condition see the latest values.
-                        for ns_idx, ns in enumerate(result.next_steps):
-                            ns_copy = dict(ns)
-                            orig = ns_copy.get("id")
-                            base_id = orig or f"step-{ns_idx}"
-                            ns_copy["id"] = f"{step_id}:{base_id}:{_loop_iter + 1}"
-                            self._execute_steps(
-                                [ns_copy], context, state, registry,
-                                step_offset=-1,
-                            )
-                            if state.status in (
-                                RunStatus.PAUSED,
-                                RunStatus.FAILED,
-                                RunStatus.ABORTED,
-                            ):
-                                return
-                            if orig and ns_copy["id"] in context.steps:
-                                self._record_result(
-                                    context, state, orig,
-                                    context.steps[ns_copy["id"]],
-                                )
-
-            # Fan-out: execute the nested step template once per item. Honors
-            # max_concurrency — <=1 runs sequentially (default, historical
-            # behavior); >1 runs up to that many items concurrently. Either way
-            # results are assembled in item order under the
-            # parentId:templateId:index id grammar.
-            if step_type == "fan-out":
-                items = result.output.get("items", [])
-                template = result.output.get("step_template", {})
-                if template and items:
-                    fan_out_results = self._run_fan_out(
-                        items, template, step_id, context, state, registry,
-                        result.output.get("max_concurrency", 1),
-                    )
-                    context.item = None
-                    # Preserve original output and add collected results
-                    fan_out_output = dict(result.output)
-                    fan_out_output["results"] = fan_out_results
-                    # set_step_output updates the recorded dict under the run lock;
-                    # context.steps[step_id] is that same object, so it reflects the
-                    # change too — no separate (unlocked) context mutation needed.
-                    state.set_step_output(step_id, fan_out_output)
-                    if state.status in (
-                        RunStatus.PAUSED,
-                        RunStatus.FAILED,
-                        RunStatus.ABORTED,
-                    ):
-                        return
-                else:
-                    # Empty items or no template — normalize output
-                    result.output["results"] = []
-                    state.set_step_output(step_id, result.output)
+        if state.execution is None:
+            state.execution = {"version": 1, "sequence": sequence(steps)}
+            state.execution["offset"] = max(0, step_offset)
+            state.execution["initial"] = deepcopy(context.steps)
+        context.steps = deepcopy(state.execution.get("initial", {}))
+        state.save()
+        tree = state.execution["sequence"]
+        executor = Execution(self, state, registry, rebind=rebind)
+        outcome, error = executor.run(tree, context, (state.workflow_id,), root=True)
+        active = active_step(state.execution)
+        if active is not None:
+            state.current_step_id = active[0][-1]
+        state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
+        state.error = error
 
     def _run_fan_out(
         self,
@@ -1470,184 +1301,24 @@ class WorkflowEngine:
         registry: dict[str, Any],
         max_concurrency: Any,
     ) -> list[Any]:
-        """Run a fan-out template once per item; return per-item outputs in item order.
+        """Compatibility adapter to the unified fan-out executor."""
+        from ._execution import Execution, sequence
 
-        ``max_concurrency`` <= 1 (the default) runs items sequentially, identical
-        to the historical fan-out behavior. ``max_concurrency`` > 1 runs items on a
-        bounded thread pool using a sliding submission window of that size: at most
-        that many items are ever in flight, and no new item is launched once the run
-        has reached a halting status, so a halt cannot keep starting queued work.
-
-        Results are always returned in item order (never completion order). On a
-        halt (PAUSED/FAILED/ABORTED) the returned prefix is the items up to and
-        including the first item *in item order* whose own execution halted the run
-        — identical to the sequential path. Later items that have not yet started
-        are cancelled; any already running are allowed to finish but their outputs
-        are ignored. Halt is attributed per item from that item's recorded result
-        (not the shared run status, which a concurrently-running later item may have
-        already flipped), so the prefix never drops the actual halting item.
-
-        ``max_concurrency`` is coerced with ``int()``; a value that cannot be
-        coerced (``None``, a non-numeric string, ``.inf``/``.nan``, …) or that
-        coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
-        a float like ``4.0`` is honored.
-        """
         if not items:
             return []
-
-        halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
-        try:
-            workers = max(1, int(max_concurrency))
-        except (TypeError, ValueError, OverflowError):
-            # OverflowError: int(float("inf")) — a YAML ``max_concurrency: .inf``
-            # would otherwise crash the whole run instead of falling back.
-            workers = 1
-        # Never spin up more workers than there is work — bounds a user-controlled
-        # max_concurrency from over-allocating threads.
-        workers = min(workers, len(items))
-
-        base_id = template.get("id", "item")
-
-        def item_id(idx: int) -> str:
-            # Per-item ID grammar: parentId:templateId:index.
-            return f"{step_id}:{base_id}:{idx}"
-
-        def run_item(idx: int, item_ctx: StepContext) -> Any:
-            item_step = dict(template)
-            item_step["id"] = item_id(idx)
-            self._execute_steps(
-                [item_step], item_ctx, state, registry, step_offset=-1,
-            )
-            # Read back through the context that was actually executed against,
-            # not the outer closure — clearer and robust if StepContext copying
-            # ever stops sharing the steps dict by reference.
-            return item_ctx.steps.get(item_step["id"], {}).get("output", {})
-
-        # Sequential path — identical to the historical behavior.
-        if workers <= 1:
-            results: list[Any] = []
-            previous_item = context.item
-            previous_inside_fan_out = context.inside_fan_out
-            context.inside_fan_out = True
-            try:
-                for item_idx, item_val in enumerate(items):
-                    context.item = item_val
-                    results.append(run_item(item_idx, context))
-                    if state.status in halting:
-                        break
-            finally:
-                context.item = previous_item
-                context.inside_fan_out = previous_inside_fan_out
-            return results
-
-        # Concurrent path — bounded sliding window; results assembled in item order.
-        n = len(items)
-        slots: list[Any] = [None] * n
-
-        def run_isolated(idx: int) -> Any:
-            # Each item runs against its own context copy so context.item is not
-            # clobbered across threads; the shared steps dict is written only on the
-            # disjoint parentId:templateId:index key (GIL-safe on distinct keys).
-            return run_item(
-                idx,
-                dataclasses.replace(
-                    context,
-                    item=items[idx],
-                    inside_fan_out=True,
-                ),
-            )
-
-        def item_halt_status(idx: int) -> RunStatus | None:
-            # If THIS item's own execution halted the run, return the resulting run
-            # status; else None. Decided from the item's own recorded result, not
-            # the shared run status, so a later item's concurrent halt is never
-            # misattributed here. Mirrors the sequential mapping: PAUSED -> PAUSED;
-            # FAILED -> ABORTED when aborted, else FAILED, unless continue_on_error
-            # routes around it.
-            rec = context.steps.get(item_id(idx))
-            if rec is None:
-                # Ran but recorded nothing — only when the item failed before
-                # record_step_result (e.g. an unknown step type returns early).
-                # Every item runs the same template, so the shared run status is
-                # this item's own outcome; attribute the halt to it.
-                return state.status if state.status in halting else None
-            status = rec.get("status")
-            if status == StepStatus.PAUSED.value:
-                return RunStatus.PAUSED
-            if status == StepStatus.FAILED.value:
-                out = rec.get("output") or {}
-                if out.get("aborted"):
-                    return RunStatus.ABORTED
-                if template.get("continue_on_error") is not True:
-                    return RunStatus.FAILED
-            return None
-
-        # (halting item index, its run status) once a halt is attributed.
-        halt: tuple[int, RunStatus] | None = None
-        collected = 0
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures: dict[int, Future] = {}
-            next_submit = 0
-            for idx in range(n):
-                # Refill the window: keep <= workers in flight, and stop launching
-                # new items once the run is halting so a halt cannot keep starting
-                # queued work. Already-submitted futures are still collected in
-                # item order below.
-                while (
-                    next_submit < n
-                    and len(futures) < workers
-                    and state.status not in halting
-                ):
-                    futures[next_submit] = pool.submit(run_isolated, next_submit)
-                    next_submit += 1
-
-                fut = futures.pop(idx, None)
-                if fut is None:
-                    # Safety net: the window submits indices in order and the loop
-                    # breaks at the first halting item, so every collected index has
-                    # an in-flight future. Stop cleanly rather than raise if a future
-                    # change ever breaks that invariant.
-                    break
-                try:
-                    slots[idx] = fut.result()
-                except Exception:
-                    # A genuine exception escaping a step (not a normal step
-                    # FAILED, which sets state.status) must not be masked: cancel
-                    # outstanding work and re-raise — with a bare ``raise`` so the
-                    # original traceback is preserved — so the engine marks the run
-                    # failed instead of reporting a vacuous completion. The pool's
-                    # __exit__ still joins any already-running workers.
-                    for other in futures.values():
-                        other.cancel()
-                    raise
-                collected = idx + 1
-                halt_status = item_halt_status(idx)
-                if halt_status is not None:
-                    # First halting item in item order: include it (slots[idx] is
-                    # already set), record its status, and cancel everything pending.
-                    halt = (idx, halt_status)
-                    for other in futures.values():
-                        other.cancel()
-                    break
-
-        if halt is not None:
-            halted_at, halted_status = halt
-            # A later in-flight item may have overwritten state.status before the
-            # pool joined; restore the halting item's own outcome so the final run
-            # status matches the sequential semantics.
-            state.status = halted_status
-            # Restore the halting item's error so it matches the terminal
-            # status — a concurrent item may have overwritten state.error
-            # before the pool joined. Assign unconditionally when a record
-            # exists (even when the halting item's own error is falsy) so a
-            # third-party step returning FAILED with no message never inherits
-            # an unrelated concurrent item's error; this mirrors the sequential
-            # path, which sets state.error = result.error verbatim.
-            halt_rec = context.steps.get(item_id(halted_at))
-            if isinstance(halt_rec, dict):
-                state.error = halt_rec.get("error")
-            return slots[: halted_at + 1]
-        return slots[:collected]
+        node = {
+            "phase": "children",
+            "result": {"output": {"items": items, "step_template": template,
+                                   "max_concurrency": max_concurrency}},
+            "children": [sequence([template]) for _ in items],
+        }
+        outcome, error, results = Execution(self, state, registry).fan_out(
+            {"id": step_id, "type": "fan-out"}, node, context,
+            (state.workflow_id,), (), step_id,
+        )
+        state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
+        state.error = error
+        return results
 
     def _resolve_inputs(
         self,
