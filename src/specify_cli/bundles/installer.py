@@ -11,11 +11,14 @@ write (FR-018, SC partial-failure-stop).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from . import BundlerError
+
+logger = logging.getLogger(__name__)
 from .manifest import BundleManifest, ComponentRef
 from .records import (
     InstalledBundleRecord,
@@ -273,4 +276,5 @@ def _rollback(
         try:
             installer.remove(project_root, component)
         except Exception:  # noqa: BLE001 - best-effort rollback
+            logger.debug("rollback failed for %s", component, exc_info=True)
             continue

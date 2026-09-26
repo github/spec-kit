@@ -612,3 +612,24 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     # A rollback must be a rollback: the entry comes back byte-for-byte, not
     # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
     assert restored.get("my-step") == seeded
+
+
+class TestRollbackLoggingRegression:
+    """Regression: _rollback() must log errors, not silently swallow them."""
+
+    def test_rollback_logs_exception_on_remove_failure(self, caplog, tmp_path):
+        """When installer.remove() fails, _rollback() must log the error."""
+        import logging
+        from unittest.mock import MagicMock
+        from specify_cli.bundles.installer import _rollback
+        from specify_cli.bundles.manifest import ComponentRef
+
+        installer = MagicMock()
+        installer.remove.side_effect = RuntimeError("simulated remove failure")
+        done = [ComponentRef(kind="extensions", id="test-ext")]
+
+        with caplog.at_level(logging.DEBUG):
+            _rollback(tmp_path, installer, done)
+
+        assert any("rollback failed" in record.message for record in caplog.records)
+        assert any("test-ext" in record.message for record in caplog.records)
