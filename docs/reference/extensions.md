@@ -26,10 +26,18 @@ specify extension add <name>
 | --------------- | -------------------------------------------------------- |
 | `--dev`         | Install from a local directory (for development)         |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
+| `--version <v>` | Install an exact version advertised by a catalog        |
 | `--force`       | Overwrite if the extension is already installed          |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
 Installs an extension from the catalog, a URL, or a local directory. Extension commands are automatically registered with the currently installed AI coding agent integration.
+
+An unqualified catalog install still selects the advertised current version.
+`--version` uses only the winning catalog source for that extension ID; it does
+not fall back to a lower-priority source when the requested version is absent.
+Discovery-only catalogs remain non-installable. `--version` cannot be combined
+with `--dev` or the direct-URL `--from` option. The downloaded archive's extension
+ID and version are checked before installation.
 
 > **Note:** All extension commands require a project already initialized with `specify init`.
 
@@ -79,9 +87,45 @@ including for help, the existing human-readable behavior is unchanged.
 
 ```bash
 specify extension info <name>
+specify extension info <name> --versions
 ```
 
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
+`--versions` lists the current and historical versions advertised by the
+winning catalog source; it labels discovery-only sources as non-installable.
+Equivalent PEP 440 version spellings (for example, `v1.0` and `1.0`) select
+the same release; the catalog's advertised spelling remains visible.
+
+Catalogs may keep the current release in the existing top-level fields and add
+historical releases in a `releases` mapping. Older single-version catalogs
+continue to work unchanged. Each historical release needs its own download URL
+and SHA-256 digest; release-specific requirements or provided capabilities must
+be placed in that release's record rather than inherited from the current one.
+
+```json
+{
+  "extensions": {
+    "my-extension": {
+      "name": "My Extension",
+      "version": "0.5.1",
+      "download_url": "https://example.com/my-extension-0.5.1.zip",
+      "sha256": "<64-character SHA-256 for 0.5.1>",
+      "releases": {
+        "0.4.12": {
+          "download_url": "https://example.com/my-extension-0.4.12.zip",
+          "sha256": "<64-character SHA-256 for 0.4.12>"
+        }
+      }
+    }
+  }
+}
+```
+
+The example omits other catalog metadata for brevity. The current version must
+not be repeated in `releases`; malformed or duplicate release records are
+rejected. Bundle pins still use the current catalog resolution path until the
+separate bundle work described in [#4719](https://github.com/github/spec-kit/issues/4719)
+adds exact-version component lookup.
 
 ## Update Extensions
 
