@@ -10,7 +10,10 @@ extension:
   license: MIT
 
 requires:
-  speckit_version: ">=0.2.0"
+  # 0.12.6 is the first release that rewrites extension-local "scripts/..."
+  # paths (#3364); earlier versions render this command against the core
+  # script tree, so it installs but fails at run time.
+  speckit_version: ">=0.12.6"
   tools:
     - name: git
       required: true

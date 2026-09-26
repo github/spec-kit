@@ -38,6 +38,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "github"
 CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
+# A released Spec Kit version that satisfies the manifest floor. Installs are
+# refused below it, so this cannot be an arbitrary synthetic value.
+INSTALL_SPECKIT_VERSION = "1.0.12"
+# The floor exists because extension-local script path rewriting landed in
+# 0.12.6 (#3364); anything lower renders this command against core scripts.
+MIN_SPECKIT_VERSION = "0.12.6"
+
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
 
@@ -180,6 +187,23 @@ class TestManifest:
         assert set(tools) == {"git", "github-mcp-server"}
         assert all(t["required"] is True for t in tools.values())
 
+    def test_version_floor_covers_extension_local_scripts(self):
+        """The floor must exclude releases that cannot render this command.
+
+        Extension-local ``scripts/...`` rewriting landed in 0.12.6 (#3364).
+        Below that the rendered command points into the core script tree, so
+        the extension installs cleanly and then fails when a user runs it --
+        the failure mode a compatibility floor exists to prevent.
+        """
+        from packaging.specifiers import SpecifierSet
+
+        floor = _manifest_dict()["requires"]["speckit_version"]
+        spec = SpecifierSet(floor)
+        assert "0.12.5" not in spec, floor
+        assert MIN_SPECKIT_VERSION in spec, floor
+        # And the version the install tests use must satisfy it.
+        assert INSTALL_SPECKIT_VERSION in spec, floor
+
     def test_core_command_remains_unchanged(self):
         """Stage 1 is additive: the core command still ships."""
         assert CORE_COMMAND.is_file()
@@ -225,7 +249,9 @@ class TestExtensionInstall:
         commands_dir.mkdir(parents=True)
 
         manager = ExtensionManager(project)
-        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=True)
+        manager.install_from_directory(
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=True
+        )
 
         assert manager.registry.is_installed("github")
         assert (
@@ -249,7 +275,7 @@ class TestExtensionInstall:
         (tmp_path / ".specify").mkdir()
         manager = ExtensionManager(tmp_path)
         manifest = manager.install_from_directory(
-            EXT_DIR, "0.9.0", register_commands=False
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=False
         )
 
         assert manifest.id == "github"
@@ -266,7 +292,9 @@ class TestExtensionInstall:
 
         (tmp_path / ".specify").mkdir()
         manager = ExtensionManager(tmp_path)
-        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=False)
+        manager.install_from_directory(
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=False
+        )
 
         assert manager.remove("github") is True
         assert not manager.registry.is_installed("github")
@@ -309,7 +337,9 @@ class TestExtensionInstall:
         core.write_text("core taskstoissues\n", encoding="utf-8")
 
         manager = ExtensionManager(tmp_path)
-        manager.install_from_directory(EXT_DIR, "0.9.0", register_commands=True)
+        manager.install_from_directory(
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=True
+        )
         for rel_path in extension_artifacts:
             assert (tmp_path / rel_path).is_file(), f"Not registered: {rel_path}"
 
@@ -370,7 +400,7 @@ class TestScriptPathResolution:
 
         manager = ExtensionManager(project)
         manifest = manager.install_from_directory(
-            EXT_DIR, "0.9.0", register_commands=False
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=False
         )
         extension_dir = project / ".specify" / "extensions" / "github"
 
@@ -416,7 +446,7 @@ class TestScriptPathResolution:
 
         manager = ExtensionManager(project)
         manifest = manager.install_from_directory(
-            EXT_DIR, "0.9.0", register_commands=False
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=False
         )
         CommandRegistrar().register_commands_for_agent(
             agent, manifest, project / ".specify" / "extensions" / "github", project
@@ -462,7 +492,7 @@ class TestScriptPathResolution:
 
         manager = ExtensionManager(project)
         manifest = manager.install_from_directory(
-            EXT_DIR, "0.9.0", register_commands=False
+            EXT_DIR, INSTALL_SPECKIT_VERSION, register_commands=False
         )
         extension_dir = project / ".specify" / "extensions" / "github"
 
