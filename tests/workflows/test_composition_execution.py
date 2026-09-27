@@ -1426,20 +1426,26 @@ def test_unknown_step_type_resumes_after_reinstall(tmp_path, monkeypatch, probe)
     assert state.step_results["missing"]["status"] == "completed"
 
 
+@pytest.mark.parametrize("workers", [1, 2])
+@pytest.mark.parametrize("named", [False, True])
 def test_unknown_fan_out_template_step_always_fails_despite_continue_on_error(
-    tmp_path, probe
+    tmp_path, monkeypatch, probe, workers, named
 ):
+    local_name = "missing" if named else "step-0"
+    alias_name = "missing" if named else "item"
     state = WorkflowEngine(tmp_path).execute(
         definition(
             "parent",
             [
+                # An inherited same-name result must not become the item result.
+                {"id": local_name, "type": "probe", "value": "parent"},
                 {
                     "id": "fan",
                     "type": "fan-out",
                     "items": [1, 2],
-                    "max_concurrency": 2,
+                    "max_concurrency": workers,
                     "step": {
-                        "id": "missing",
+                        **({"id": "missing"} if named else {}),
                         "type": "not-installed",
                         "continue_on_error": True,
                     },
@@ -1451,10 +1457,42 @@ def test_unknown_fan_out_template_step_always_fails_despite_continue_on_error(
 
     assert state.status == RunStatus.FAILED
     assert state.error == "Unknown step type: 'not-installed'"
-    assert not probe
+    assert probe == {local_name: 1}
+    assert set(state.step_results) == {local_name, "fan"}
+    saved = RunState.load(state.run_id, tmp_path)
+    assert saved.step_results == state.step_results
+    assert saved.step_results["fan"]["output"]["results"] == [{}]
     events = [entry["event"] for entry in state.log_entries]
     assert "step_failed" in events
     assert "step_continue_on_error" not in events
+    item_events = {}
+    for entry in state.log_entries:
+        if entry.get("step_id", "").startswith("fan:"):
+            item_events.setdefault(entry["step_id"], []).append(entry["event"])
+    assert item_events
+    assert all(
+        events == ["step_started", "step_failed"] for events in item_events.values()
+    )
+
+    class Reinstalled(StepBase):
+        type_key = "not-installed"
+
+        def execute(self, config, context):
+            return StepResult(output={"value": context.item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "not-installed", Reinstalled())
+    state = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {local_name: 1, "after": 1}
+    assert state.step_results["fan"]["output"]["results"] == [
+        {"value": 1}, {"value": 2}
+    ]
+    for index, value in enumerate([1, 2]):
+        assert state.step_results[f"fan:{alias_name}:{index}"]["output"] == {
+            "value": value
+        }
+    assert RunState.load(state.run_id, tmp_path).step_results == state.step_results
 
 
 def test_diamond_and_depth_limit(tmp_path, probe):

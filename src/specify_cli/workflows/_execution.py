@@ -799,6 +799,8 @@ class Execution:
             local = replace(
                 context, steps=deepcopy(initial), item=items[index], inside_fan_out=True
             )
+            local_name = output.get("step_template", {}).get("id", "step-0")
+            inherited = local.steps.get(local_name)
             child = node["children"][index]
             outcome, error = self.run(
                 child,
@@ -812,6 +814,10 @@ class Execution:
             if outcome in HALTING:
                 halted.set()
             record = child["nodes"][0].get("result")
+            # Expose only results projected by the item traversal. Missing step
+            # implementations keep an internal retry record but publish nothing.
+            if local.steps.get(local_name) is inherited:
+                record = None
             if public and record is not None:
                 # Projection only (E2): persisted by the next commit, rebuilt on replay.
                 with self.state._lock:
