@@ -220,12 +220,43 @@ def child_context_for_call(parent, binding, definition):
     )
 
 
+def qualified_id(name, loop_alias=None):
+    """Return the public occurrence ID for a direct loop body step."""
+    if loop_alias is None:
+        return name
+    return f"{loop_alias[0]}:{name}:{loop_alias[1]}"
+
+
 class Execution:
     def __init__(self, engine, state, registry, *, rebind=False):
         self.engine, self.state, self.registry = engine, state, registry
         self.rebind = rebind
 
-    def commit(self, node=None, changes=None, *, context=None, name=None, public=None):
+    def project(self, context, name, result, *, public, qualified):
+        """Apply an occurrence result to its local and public views."""
+        context.steps[name] = result
+        if public:
+            self.state.step_results[name] = result
+            if qualified != name:
+                context.steps[qualified] = result
+                self.state.step_results[qualified] = result
+
+    def project_alias(self, context, name, result):
+        """Project a fan-out item result without exposing item internals."""
+        context.steps[name] = result
+        self.state.step_results[name] = result
+
+    def commit(
+        self,
+        node=None,
+        changes=None,
+        *,
+        context=None,
+        name=None,
+        public=False,
+        qualified=None,
+        aliases=(),
+    ):
         """Mutate an occurrence and its compatibility views in one checkpoint."""
         with self.state._lock:
             if self.state._checkpoint_failed:
@@ -233,9 +264,15 @@ class Execution:
             if node is not None:
                 node.update(changes or {})
                 if context is not None and "result" in node:
-                    context.steps[name] = node["result"]
-                    if public is not None:
-                        self.state.step_results[public] = node["result"]
+                    self.project(
+                        context,
+                        name,
+                        node["result"],
+                        public=public,
+                        qualified=qualified or name,
+                    )
+            for alias_context, alias, result in aliases:
+                self.project_alias(alias_context, alias, result)
             self.state.save()
 
     def log(self, event, name, path, workflow, **fields):
@@ -260,7 +297,7 @@ class Execution:
             config = {"id": f"step-{index}", **config}
             name = config["id"]
             occurrence = (*path, index)
-            public_name = name if public else None
+            qualified = qualified_id(name, loop_alias)
             if root and node["phase"] != "done":
                 with self.state._lock:
                     self.state.current_step_index = index + self.state.execution.get(
@@ -268,50 +305,75 @@ class Execution:
                     )
                     self.state.current_step_id = name
             outcome = self.step(
-                config, node, context, ancestry, occurrence, public_name
+                config, node, context, ancestry, occurrence, public, qualified
             )
-            if loop_alias is not None and "result" in node:
-                with self.state._lock:
-                    key = f"{loop_alias[0]}:{name}:{loop_alias[1]}"
-                    self.state.step_results[key] = node["result"]
-                    context.steps[key] = node["result"]
-                    self.state.save()
             if outcome in HALTING:
                 return outcome, node.get("error")
         return "completed", None
 
-    def restore(self, node, context):
-        """Rebuild aliases for completed expansions without re-executing them."""
-        for child in node.get("children", []) if "binding" not in node else []:
-            for index, (config, nested) in enumerate(
-                zip(steps_of(child), child["nodes"])
-            ):
-                if "result" in nested:
-                    context.steps[config.get("id", f"step-{index}")] = nested["result"]
-                if config.get("type") != "fan-out":
-                    self.restore(nested, context)
+    def replay_fan_out(self, config, node, context, ancestry, path, public, qualified):
+        """Replay persisted fan-out items in order without starting workers."""
+        output = node["result"]["output"]
+        initial = deepcopy(context.steps)
+        items = output.get("items", [])
+        template_name = output.get("step_template", {}).get("id", "item")
+        for index, child in enumerate(node.get("children", [])):
+            local = replace(
+                context,
+                steps=deepcopy(initial),
+                item=items[index],
+                inside_fan_out=True,
+            )
+            outcome, error = self.run(
+                child, local, ancestry, path=(*path, "item", index), public=False
+            )
+            record = child["nodes"][0].get("result")
+            if record is not None:
+                self.project_alias(
+                    context,
+                    f"{qualified}:{template_name}:{index}",
+                    record,
+                )
+            if outcome in HALTING:
+                return outcome, error
+        return "completed", None
 
-    def step(self, config, node, context, ancestry, path, public_name):
+    def step(self, config, node, context, ancestry, path, public, qualified):
         name = config.get("id", "step-0")
         kind = config.get("type", "command")
         if node["phase"] == "done":
-            context.steps[name] = node["result"]
+            self.project(
+                context, name, node["result"], public=public, qualified=qualified
+            )
+            if kind == "workflow":
+                return node.get("outcome", "completed")
             if kind == "fan-out":
-                template = node["result"]["output"].get("step_template", {})
-                for index, child in enumerate(node.get("children", [])):
-                    result = child["nodes"][0].get("result")
-                    if result is not None:
-                        context.steps[
-                            f"{name}:{template.get('id', 'item')}:{index}"
-                        ] = result
+                outcome, _ = self.replay_fan_out(
+                    config, node, context, ancestry, path, public, qualified
+                )
             else:
-                self.restore(node, context)
-            return node.get("outcome", "completed")
+                outcome = "completed"
+                for iteration, child in enumerate(node.get("children", [])):
+                    outcome, _ = self.run(
+                        child,
+                        context,
+                        ancestry,
+                        path=(*path, iteration),
+                        public=public,
+                        loop_alias=(qualified, iteration)
+                        if kind in {"while", "do-while"} and iteration
+                        else None,
+                    )
+                    if outcome in HALTING:
+                        break
+            return outcome if outcome in HALTING else node.get("outcome", "completed")
         if node.get("outcome") == "aborted":
             return "aborted"
 
         if kind == "workflow":
-            return self.workflow(config, node, context, ancestry, path, public_name)
+            return self.workflow(
+                config, node, context, ancestry, path, public, qualified
+            )
 
         if node["phase"] in {"ready", "blocked"}:
             with self.state._lock:
@@ -334,12 +396,13 @@ class Execution:
                     context,
                     ancestry,
                     path,
-                    public_name,
+                    public,
+                    qualified,
                 )
             result = impl.execute(config, context)
             if result.status in {StepStatus.FAILED, StepStatus.PAUSED}:
                 return self.finish(
-                    config, node, result, context, ancestry, path, public_name
+                    config, node, result, context, ancestry, path, public, qualified
                 )
             children = [sequence(result.next_steps)] if result.next_steps else []
             if kind == "fan-out":
@@ -354,28 +417,36 @@ class Execution:
                 if kind == "fan-out":
                     result.output = {**result.output, "results": []}
                 return self.finish(
-                    config, node, result, context, ancestry, path, public_name
+                    config, node, result, context, ancestry, path, public, qualified
                 )
             self.commit(
                 node,
                 {"phase": "children", "result": data, "children": children},
                 context=context,
                 name=name,
-                public=public_name,
+                public=public,
+                qualified=qualified,
             )
         else:
-            context.steps[name] = node["result"]
+            self.project(
+                context, name, node["result"], public=public, qualified=qualified
+            )
 
         if kind == "fan-out":
             outcome, error, outputs = self.fan_out(
-                config, node, context, ancestry, path, public_name
+                config, node, context, ancestry, path, public, qualified
             )
             data = {
                 **node["result"],
                 "output": {**node["result"]["output"], "results": outputs},
             }
             self.commit(
-                node, {"result": data}, context=context, name=name, public=public_name
+                node,
+                {"result": data},
+                context=context,
+                name=name,
+                public=public,
+                qualified=qualified,
             )
         else:
             outcome, error = "completed", None
@@ -385,11 +456,10 @@ class Execution:
                     context,
                     ancestry,
                     path=(*path, iteration),
-                    public=public_name is not None,
-                    loop_alias=(name, iteration)
+                    public=public,
+                    loop_alias=(qualified, iteration)
                     if kind in {"while", "do-while"}
                     and iteration
-                    and public_name is not None
                     else None,
                 )
                 if outcome in HALTING:
@@ -408,10 +478,8 @@ class Execution:
                         context,
                         ancestry,
                         path=(*path, len(node["children"]) - 1),
-                        public=public_name is not None,
-                        loop_alias=(name, len(node["children"]) - 1)
-                        if public_name is not None
-                        else None,
+                        public=public,
+                        loop_alias=(qualified, len(node["children"]) - 1),
                     )
                     if outcome in HALTING:
                         break
@@ -460,7 +528,7 @@ class Execution:
             )
         return data
 
-    def finish(self, config, node, result, context, ancestry, path, public_name):
+    def finish(self, config, node, result, context, ancestry, path, public, qualified):
         name = config.get("id", "step-0")
         outcome = "completed"
         if result.status == StepStatus.PAUSED:
@@ -479,7 +547,8 @@ class Execution:
             },
             context=context,
             name=name,
-            public=public_name,
+            public=public,
+            qualified=qualified,
         )
         self.log("step_completed", name, path, ancestry[-1], status=result.status.value)
         if result.status == StepStatus.FAILED:
@@ -490,7 +559,7 @@ class Execution:
             self.log(event, name, path, ancestry[-1], error=result.error)
         return outcome
 
-    def workflow(self, config, node, context, ancestry, path, public_name):
+    def workflow(self, config, node, context, ancestry, path, public, qualified):
         from .engine import WorkflowDefinition, workflow_dir_for
 
         name = config.get("id", "step-0")
@@ -527,7 +596,7 @@ class Execution:
                     error=str(exc),
                 )
                 return self.finish(
-                    config, node, result, context, ancestry, path, public_name
+                    config, node, result, context, ancestry, path, public, qualified
                 )
         else:
             definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
@@ -554,7 +623,7 @@ class Execution:
                 output.update(status="failed", error=str(exc))
                 result = StepResult(StepStatus.FAILED, output=output, error=str(exc))
                 return self.finish(
-                    config, node, result, context, ancestry, path, public_name
+                    config, node, result, context, ancestry, path, public, qualified
                 )
         elif outcome == "aborted":
             output["aborted"] = True
@@ -574,9 +643,11 @@ class Execution:
             "Unknown step type: "
         ):
             config = {**config, "continue_on_error": False}
-        return self.finish(config, node, result, context, ancestry, path, public_name)
+        return self.finish(
+            config, node, result, context, ancestry, path, public, qualified
+        )
 
-    def fan_out(self, config, node, context, ancestry, path, public_name):
+    def fan_out(self, config, node, context, ancestry, path, public, qualified):
         output = node["result"]["output"]
         items = output.get("items", [])
         try:
@@ -599,12 +670,16 @@ class Execution:
                 halted.set()
             record = child["nodes"][0].get("result", {})
             template_name = output.get("step_template", {}).get("id", "item")
-            with self.state._lock:
-                key = f"{config['id']}:{template_name}:{index}"
-                context.steps[key] = record
-                if public_name is not None:
-                    self.state.step_results[key] = record
-                    self.state.save()
+            if public:
+                self.commit(
+                    aliases=[
+                        (
+                            context,
+                            f"{qualified}:{template_name}:{index}",
+                            record,
+                        )
+                    ]
+                )
             return outcome, error, record.get("output", {})
 
         results = []

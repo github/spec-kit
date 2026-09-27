@@ -567,6 +567,206 @@ def test_expansion_resume_preserves_completed_work(tmp_path, probe, kind):
     assert probe["prepare"] == (1 if kind == "if" else 2)
 
 
+def test_replay_restores_fan_out_aliases_from_completed_if(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "route",
+                    "type": "if",
+                    "condition": True,
+                    "then": [
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": [1],
+                            "step": {
+                                "id": "template",
+                                "type": "probe",
+                                "value": "{{ item }}",
+                            },
+                        }
+                    ],
+                },
+                {"id": "wait", "type": "probe", "await": True},
+                {"id": "join", "type": "fan-in", "wait_for": ["fan:template:0"]},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["join"]["output"]["results"] == [{"value": 1}]
+
+
+def test_replay_does_not_execute_completed_fan_out_or_emit_callbacks(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+    root = definition(
+        "parent",
+        [
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [1, 2],
+                "step": {
+                    "id": "template",
+                    "type": "probe",
+                    "value": "{{ item }}",
+                },
+            },
+            {"id": "wait", "type": "probe", "await": True},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = engine.execute(root)
+    assert state.status == RunStatus.PAUSED
+    assert probe == {"template": 2, "wait": 1}
+    callbacks.clear()
+
+    state = engine.resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {"template": 2, "wait": 2}
+    assert callbacks == ["wait"]
+
+
+def test_replay_does_not_evaluate_completed_loop_condition(
+    tmp_path, monkeypatch, probe
+):
+    import specify_cli.workflows._execution as execution
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": False,
+                    "steps": [{"id": "work", "type": "probe"}],
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    monkeypatch.setattr(
+        execution,
+        "evaluate_condition",
+        lambda *_: pytest.fail("replay must not evaluate loop conditions"),
+    )
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {"work": 1, "wait": 2}
+
+
+def test_replay_does_not_commit_completed_nodes(tmp_path, monkeypatch, probe):
+    import specify_cli.workflows._execution as execution
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {"id": "done", "type": "probe"},
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    original = execution.Execution.commit
+    committed = []
+
+    def commit(self, node=None, changes=None, **kwargs):
+        if node is not None and node["phase"] == "done":
+            committed.append(node)
+        return original(self, node, changes, **kwargs)
+
+    monkeypatch.setattr(execution.Execution, "commit", commit)
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert committed == []
+
+
+def test_private_fan_out_context_has_no_qualified_aliases(tmp_path, monkeypatch, probe):
+    class Inspect(StepBase):
+        type_key = "inspect"
+
+        def execute(self, config, context):
+            return StepResult(
+                StepStatus.COMPLETED,
+                output={"aliases": sorted(key for key in context.steps if ":" in key)},
+            )
+
+    monkeypatch.setitem(STEP_REGISTRY, "inspect", Inspect())
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "template", "type": "probe"},
+                },
+                {"id": "inspect", "type": "inspect"},
+            ],
+            outputs={"aliases": {"value": "{{ steps.inspect.output.aliases }}"}},
+        ),
+    )
+
+    state = WorkflowEngine(tmp_path).execute(definition("parent", [call()]))
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["output"]["aliases"] == []
+
+
+def test_fan_out_in_later_loop_iteration_uses_qualified_aliases(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": [1, 2],
+                            "step": {
+                                "id": "template",
+                                "type": "probe",
+                                "value": "{{ item }}",
+                            },
+                        }
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["fan:template:0"]["output"]["value"] == 1
+    assert state.step_results["fan:template:1"]["output"]["value"] == 2
+    assert state.step_results["loop:fan:1:template:0"]["output"]["value"] == 1
+    assert state.step_results["loop:fan:1:template:1"]["output"]["value"] == 2
+
+
 @pytest.mark.parametrize("mode", ["unknown", "disabled", "mismatch", "cycle"])
 def test_resolution_failures_are_call_failures(tmp_path, probe, mode):
     if mode != "unknown":
