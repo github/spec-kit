@@ -70,14 +70,21 @@ flowchart LR
     E -- "resume()" --> B
 ```
 
-When a `gate` step pauses execution, the engine persists `current_step_index` and all accumulated `step_results`. On `specify workflow resume <run_id>`, the engine restores the context and continues from the paused step.
+When a `gate` step pauses execution, the engine persists `current_step_index`
+and all accumulated `step_results`. On `specify workflow resume <run_id>`, the
+same executor replays completed occurrences into their contexts without
+executing them, then continues at the unfinished occurrence.
 
 New runs use a versioned execution tree. Each occurrence owns its result,
-selected child sequences, and optional workflow binding. The same executor
-traverses that tree on initial execution and resume, restoring local aliases
-from completed results. Fan-out items have separate contexts. Legacy runs enter
-through their top-level index once. Inputs and tree transitions share one atomic
-state checkpoint; the inputs file is a compatibility mirror.
+selected child sequences, and optional workflow binding. A binding stores the
+target, frozen definition, private inputs, and `workflow_dir`; the called
+workflow remains a private scope in the same run. Fan-out items have separate
+contexts. Binding and selected expansions are checkpointed before child side
+effects, results before an occurrence is done, and logs after the checkpoint.
+Legacy runs enter through their top-level index once. Inputs and tree
+transitions share one atomic state checkpoint; the inputs file is a
+compatibility mirror. A checkpoint failure prevents further writes by that
+executor instance.
 
 ## Step Types
 

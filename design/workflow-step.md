@@ -41,10 +41,21 @@ unless `continue_on_error: true` is set (an explicit abort always stops).
 The engine calls `validate()` during workflow validation but does not
 automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
-successful default or an unhandled exception. New runs persist an execution
-tree: resume retries unfinished occurrences and restores completed results and
-selected expansions. Legacy states enter through their old top-level index.
-Side effects performed before their completion checkpoint can still repeat.
+successful default or an unhandled exception.
+
+New runs persist an execution tree. Resume replays completed occurrences into
+their expression contexts without calling their implementations, then continues
+at the unfinished occurrence. Selected branches, custom expansions, loop
+iterations, fan-out items, and bound workflow definitions therefore remain
+frozen across resume. This is intentionally forward-only: new resume inputs do
+not reinterpret or repeat completed work. Legacy states enter the tree once
+through their saved top-level index.
+
+Fan-out items have independent expression contexts. Their internal results do
+not enter the shared parent context; the parent receives the qualified item
+result and the fan-out step's ordered `output.results`. A side effect performed
+before its completion checkpoint can still repeat after an interruption, so the
+guarantee is at-least-once rather than exactly-once.
 
 The registry holds one shared instance per type. Concurrent `fan-out` can
 invoke that instance from multiple threads: keep execution stateless and
