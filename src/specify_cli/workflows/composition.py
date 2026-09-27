@@ -127,7 +127,7 @@ def resolve_target(project_root: Path, target: Any, ancestry: tuple[str, ...]):
         return definition
     except CallError:
         raise
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         raise CallError(str(exc)) from exc
 
 

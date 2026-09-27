@@ -1221,6 +1221,36 @@ def test_resolution_failures_are_call_failures(tmp_path, probe, mode):
 
 
 @pytest.mark.parametrize(
+    "error, handled",
+    [
+        (ValueError("bad overlay"), True),
+        (FileNotFoundError("gone"), True),
+        (RuntimeError("resolver bug"), False),
+    ],
+)
+def test_only_resolver_contract_errors_are_call_failures(
+    tmp_path, monkeypatch, probe, error, handled
+):
+    from specify_cli.workflows.overlay.resolver import WorkflowResolver
+
+    install(tmp_path, definition("child", [{"id": "work", "type": "probe"}]))
+
+    def resolve(self, workflow_id):
+        raise error
+
+    monkeypatch.setattr(WorkflowResolver, "resolve", resolve)
+    parent = definition("parent", [call(continue_on_error=True)])
+    if handled:
+        state = WorkflowEngine(tmp_path).execute(parent)
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["call"]["status"] == "failed"
+    else:
+        with pytest.raises(RuntimeError, match="resolver bug"):
+            WorkflowEngine(tmp_path).execute(parent)
+    assert not probe
+
+
+@pytest.mark.parametrize(
     "child_continue, call_continue", [(False, False), (True, False), (False, True)]
 )
 def test_unknown_child_step_always_fails_despite_continue_on_error(

@@ -621,31 +621,23 @@ class Execution:
     @staticmethod
     def record(config, result, context):
         output = result.output
-        is_workflow = config.get("type") == "workflow"
         data = {
             "type": config.get("type", "command"),
-            "integration": None
-            if is_workflow
-            else output.get("integration")
+            "integration": output.get("integration")
             or config.get("integration")
             or context.default_integration,
-            "model": None
-            if is_workflow
-            else output.get("model")
+            "model": output.get("model")
             or config.get("model")
             or context.default_model,
-            "options": {}
-            if is_workflow
-            else output.get("options") or config.get("options", {}),
-            "input": (
-                {}
-                if is_workflow
-                else output.get("input") or config.get("input", {})
-            ),
+            "options": output.get("options") or config.get("options", {}),
+            "input": output.get("input") or config.get("input", {}),
             "output": output,
             "status": result.status.value,
             "error": result.error,
         }
+        if config.get("type") == "workflow":
+            # A call result exposes neither caller defaults nor private inputs (4.3).
+            data.update(integration=None, model=None, options={}, input={})
         if data["type"] == "command" and "integration_args" in output:
             data.update(
                 integration_args=output["integration_args"],
