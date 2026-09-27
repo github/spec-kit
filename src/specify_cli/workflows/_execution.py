@@ -271,10 +271,15 @@ def child_context_for_call(parent, binding, definition):
 
 
 def qualified_id(name, loop_alias=None):
-    """Return the public occurrence ID for a direct loop body step."""
+    """Return the public occurrence ID of a loop-iteration or fan-out-item step."""
     if loop_alias is None:
         return name
     return f"{loop_alias[0]}:{name}:{loop_alias[1]}"
+
+
+def loop_alias_for(kind, qualified, iteration):
+    """Qualify direct body steps of later loop iterations (4.6)."""
+    return (qualified, iteration) if kind in LOOP_TYPES and iteration else None
 
 
 class Execution:
@@ -305,7 +310,6 @@ class Execution:
         name=None,
         public=False,
         qualified=None,
-        aliases=(),
     ):
         """Mutate an occurrence and its compatibility views in one checkpoint."""
         with self.state._lock:
@@ -321,10 +325,6 @@ class Execution:
                         public=public,
                         qualified=qualified or name,
                     )
-            for alias_context, alias, result in aliases:
-                self.project_alias(
-                    alias_context, alias, node["result"] if result is None else result
-                )
             self.state.save()
 
     def emit(
@@ -358,7 +358,6 @@ class Execution:
         root=False,
         loop_alias=None,
         steps=None,
-        aliases=(),
     ):
         steps = steps_of(seq) if steps is None else steps
         for index, (config, node) in enumerate(zip(steps, seq["nodes"])):
@@ -380,81 +379,51 @@ class Execution:
                 occurrence,
                 public,
                 qualified,
-                aliases=aliases,
             )
             if outcome in HALTING:
                 return outcome, node.get("error")
         return "completed", None
 
-    def replay_fan_out(self, config, node, context, ancestry, path, public, qualified):
-        """Replay persisted fan-out items in order without starting workers."""
-        output = node["result"]["output"]
-        initial = deepcopy(context.steps)
-        items = output.get("items", [])
-        template_name = output.get("step_template", {}).get("id", "item")
-        for index, child in enumerate(node.get("children", [])):
-            local = replace(
-                context,
-                steps=deepcopy(initial),
-                item=items[index],
-                inside_fan_out=True,
-            )
+    def run_children(self, config, node, context, ancestry, path, public, qualified):
+        """Run or replay persisted child sequences in order."""
+        kind = config.get("type", "command")
+        for iteration, child in enumerate(node.get("children", [])):
             outcome, error = self.run(
                 child,
-                local,
+                context,
                 ancestry,
-                path=(*path, "item", index),
-                public=False,
-                loop_alias=(qualified, index),
-                steps=child_steps(config, node, index),
+                path=(*path, iteration),
+                public=public,
+                loop_alias=loop_alias_for(kind, qualified, iteration),
+                steps=child_steps(config, node, iteration),
             )
-            record = child["nodes"][0].get("result")
-            if public and record is not None:
-                self.project_alias(
-                    context,
-                    f"{qualified}:{template_name}:{index}",
-                    record,
-                )
             if outcome in HALTING:
                 return outcome, error
         return "completed", None
 
-    def step(
-        self, config, node, context, ancestry, path, public, qualified, *, aliases=()
-    ):
+    def step(self, config, node, context, ancestry, path, public, qualified):
         name = config.get("id", "step-0")
         kind = config.get("type", "command")
         if node["phase"] == "done":
             self.project(
                 context, name, node["result"], public=public, qualified=qualified
             )
-            for alias_context, alias, result in aliases:
-                self.project_alias(
-                    alias_context, alias, node["result"] if result is None else result
+            if kind == "fan-out" and node.get("children"):
+                self.fan_out(
+                    config,
+                    node,
+                    context,
+                    ancestry,
+                    path,
+                    public,
+                    qualified,
+                    sequential=True,
                 )
-            if kind == "workflow":
-                return node.get("outcome", "completed")
-            if kind == "fan-out":
-                outcome, _ = self.replay_fan_out(
+            elif kind not in {"workflow", "fan-out"}:
+                self.run_children(
                     config, node, context, ancestry, path, public, qualified
                 )
-            else:
-                outcome = "completed"
-                for iteration, child in enumerate(node.get("children", [])):
-                    outcome, _ = self.run(
-                        child,
-                        context,
-                        ancestry,
-                        path=(*path, iteration),
-                        public=public,
-                        loop_alias=(qualified, iteration)
-                        if kind in LOOP_TYPES and iteration
-                        else None,
-                        steps=child_steps(config, node, iteration),
-                    )
-                    if outcome in HALTING:
-                        break
-            return outcome if outcome in HALTING else node.get("outcome", "completed")
+            return "completed"
         if node.get("outcome") == "aborted":
             return "aborted"
 
@@ -467,7 +436,6 @@ class Execution:
                 path,
                 public,
                 qualified,
-                aliases=aliases,
             )
 
         if node["phase"] in {"ready", "blocked"}:
@@ -498,7 +466,6 @@ class Execution:
                     path,
                     public,
                     qualified,
-                    aliases=aliases,
                 )
             result = impl.execute(config, context)
             if result.status in {StepStatus.FAILED, StepStatus.PAUSED}:
@@ -511,7 +478,6 @@ class Execution:
                     path,
                     public,
                     qualified,
-                    aliases=aliases,
                 )
             children = [sequence(result.next_steps)] if result.next_steps else []
             if kind == "fan-out":
@@ -534,7 +500,6 @@ class Execution:
                     path,
                     public,
                     qualified,
-                    aliases=aliases,
                 )
             self.commit(
                 node,
@@ -566,22 +531,9 @@ class Execution:
                 "output": {**node["result"]["output"], "results": outputs},
             }
         else:
-            outcome, error = "completed", None
-            for iteration, child in enumerate(node["children"]):
-                outcome, error = self.run(
-                    child,
-                    context,
-                    ancestry,
-                    path=(*path, iteration),
-                    public=public,
-                    loop_alias=(qualified, iteration)
-                    if kind in LOOP_TYPES
-                    and iteration
-                    else None,
-                    steps=child_steps(config, node, iteration),
-                )
-                if outcome in HALTING:
-                    break
+            outcome, error = self.run_children(
+                config, node, context, ancestry, path, public, qualified
+            )
             if outcome == "completed" and kind in LOOP_TYPES:
                 limit = config.get("max_iterations", 10)
                 if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
@@ -597,7 +549,9 @@ class Execution:
                         ancestry,
                         path=(*path, len(node["children"]) - 1),
                         public=public,
-                        loop_alias=(qualified, len(node["children"]) - 1),
+                        loop_alias=loop_alias_for(
+                            kind, qualified, len(node["children"]) - 1
+                        ),
                         steps=child_steps(config, node, len(node["children"]) - 1),
                     )
                     if outcome in HALTING:
@@ -614,7 +568,6 @@ class Execution:
             name=name if kind == "fan-out" else None,
             public=public,
             qualified=qualified,
-            aliases=aliases,
         )
         return outcome
 
@@ -655,8 +608,6 @@ class Execution:
         path,
         public,
         qualified,
-        *,
-        aliases=(),
     ):
         name = config.get("id", "step-0")
         outcome = "completed"
@@ -678,7 +629,6 @@ class Execution:
             name=name,
             public=public,
             qualified=qualified,
-            aliases=aliases,
         )
         self.emit(
             "step_completed",
@@ -712,8 +662,6 @@ class Execution:
         path,
         public,
         qualified,
-        *,
-        aliases=(),
     ):
         from .engine import WorkflowDefinition, workflow_dir_for
 
@@ -763,7 +711,6 @@ class Execution:
                     path,
                     public,
                     qualified,
-                    aliases=aliases,
                 )
         else:
             definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
@@ -799,7 +746,6 @@ class Execution:
                     path,
                     public,
                     qualified,
-                    aliases=aliases,
                 )
         elif outcome == "aborted":
             output["aborted"] = True
@@ -828,15 +774,18 @@ class Execution:
             path,
             public,
             qualified,
-            aliases=aliases,
         )
 
-    def fan_out(self, config, node, context, ancestry, path, public, qualified):
+    def fan_out(
+        self, config, node, context, ancestry, path, public, qualified, *, sequential=False
+    ):
         output = node["result"]["output"]
         items = output.get("items", [])
         try:
             workers = max(1, int(output.get("max_concurrency", 1)))
         except (TypeError, ValueError, OverflowError):
+            workers = 1
+        if sequential:
             workers = 1
         workers = min(workers, len(items))
         initial = deepcopy(context.steps)
@@ -856,16 +805,17 @@ class Execution:
                 public=False,
                 loop_alias=(qualified, index),
                 steps=child_steps(config, node, index),
-                aliases=(
-                    (context, f"{qualified}:{template_name}:{index}", None),
-                )
-                if public
-                else (),
             )
             if outcome in HALTING:
                 halted.set()
-            record = child["nodes"][0].get("result", {})
-            return outcome, error, record.get("output", {})
+            record = child["nodes"][0].get("result")
+            if public and record is not None:
+                # Projection only (E2): persisted by the next commit, rebuilt on replay.
+                with self.state._lock:
+                    self.project_alias(
+                        context, f"{qualified}:{template_name}:{index}", record
+                    )
+            return outcome, error, (record or {}).get("output", {})
 
         results = []
         if workers <= 1:

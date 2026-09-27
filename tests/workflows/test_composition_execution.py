@@ -858,6 +858,101 @@ def test_replay_does_not_execute_completed_fan_out_or_emit_callbacks(tmp_path, p
     ] == [("step_started", "wait"), ("step_completed", "wait")]
 
 
+def test_fan_out_item_aliases_are_projected_under_run_lock(tmp_path, monkeypatch):
+    from specify_cli.workflows._execution import Execution
+
+    class PauseSecond(StepBase):
+        type_key = "pause-second"
+
+        def execute(self, config, context):
+            if context.item == 2 and not context.inputs["approve"]:
+                return StepResult(StepStatus.PAUSED)
+            return StepResult(output={"value": context.item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "pause-second", PauseSecond())
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "max_concurrency": 2,
+                    "step": {"id": "template", "type": "pause-second"},
+                }
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    owned = []
+    original = Execution.project_alias
+
+    def spy(self, context, name, result):
+        owned.append(self.state._lock._is_owned())
+        return original(self, context, name, result)
+
+    monkeypatch.setattr(Execution, "project_alias", spy)
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert owned and all(owned)
+    assert state.step_results["fan:template:0"]["output"] == {"value": 1}
+    assert state.step_results["fan:template:1"]["output"] == {"value": 2}
+
+
+def test_replay_does_not_start_worker_threads(tmp_path, monkeypatch, probe):
+    import specify_cli.workflows._execution as execution
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "max_concurrency": 2,
+                    "step": {"id": "template", "type": "probe"},
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+
+    class NoThreads:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("replay must not start worker threads")
+
+    monkeypatch.setattr(execution, "ThreadPoolExecutor", NoThreads)
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {"template": 2, "wait": 2}
+
+
+def test_fan_out_without_children_survives_replay(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {"id": "fan", "type": "fan-out", "items": [1, 2], "step": {}},
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["fan"]["output"]["results"] == []
+
+
 def test_replay_does_not_evaluate_completed_loop_condition(
     tmp_path, monkeypatch, probe
 ):
