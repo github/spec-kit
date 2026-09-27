@@ -496,6 +496,64 @@ def test_bad_checkpoint_rejected_without_writes(tmp_path, probe, mutation):
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("index", [0, 1])
+def test_unbound_workflow_children_rejected_without_writes(tmp_path, probe, index):
+    install(tmp_path, definition("child", [{"id": "work", "type": "probe"}]))
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                call(id="first"),
+                call(id="second"),
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["execution"]["sequence"]["nodes"][index].pop("binding")
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert path.read_bytes() == before
+
+
+def test_completed_container_with_unfinished_child_rejected(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "route",
+                    "type": "if",
+                    "condition": True,
+                    "then": [{"id": "work", "type": "probe"}],
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["execution"]["sequence"]["nodes"][0]["children"][0]["nodes"][0] = {
+        "phase": "ready"
+    }
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert path.read_bytes() == before
+    assert probe["work"] == 1
+
+
 def test_bound_call_without_source_path_resumes_with_null_workflow_dir(
     tmp_path, monkeypatch, probe
 ):

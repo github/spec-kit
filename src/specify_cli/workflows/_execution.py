@@ -60,23 +60,31 @@ def steps_of(seq: dict[str, Any]) -> Any:
     return yaml.safe_load(seq["source"])
 
 
-def child_steps(config, node, child):
+LOOP_TYPES = frozenset({"while", "do-while"})
+
+
+def shares_source(kind, index):
+    """Whether child ``index`` reads its steps from the parent occurrence."""
+    return kind in {"workflow", "fan-out"} or (kind in LOOP_TYPES and index > 0)
+
+
+def child_steps(config, node, index):
     """Read a child sequence from its position in the parent occurrence."""
     kind = config.get("type")
+    if not shares_source(kind, index):
+        return steps_of(node["children"][index])
     if kind == "workflow":
         return yaml.safe_load(node["binding"]["definition"])["steps"]
     if kind == "fan-out":
         return [node["result"]["output"]["step_template"]]
-    if kind in {"while", "do-while"} and child is not node["children"][0]:
-        return steps_of(node["children"][0])
-    return steps_of(child)
+    return steps_of(node["children"][0])
 
 
 def child_path(config, path, item):
     """Return a child's reporting path from its parent occurrence."""
     return (
         [*path, str(item)]
-        if config.get("type") in {"fan-out", "while", "do-while"}
+        if config.get("type") in {"fan-out"} | LOOP_TYPES
         else path
     )
 
@@ -90,24 +98,18 @@ def walk_execution(
         if skip_done and node["phase"] == "done":
             continue
         here = [*path, config.get("id", f"step-{index}")]
-        children = node.get("children", [])
-        if children_first:
-            for item, child in enumerate(children):
-                yield from walk_execution(
-                    child,
-                    child_path(config, here, item),
-                    children_first=True,
-                    skip_done=skip_done,
-                    steps=child_steps(config, node, child),
-                )
-        yield config, node, here
         if not children_first:
-            for item, child in enumerate(children):
-                yield from walk_execution(
-                    child,
-                    child_path(config, here, item),
-                    steps=child_steps(config, node, child),
-                )
+            yield config, node, here
+        for item, child in enumerate(node.get("children", [])):
+            yield from walk_execution(
+                child,
+                child_path(config, here, item),
+                children_first=children_first,
+                skip_done=skip_done,
+                steps=child_steps(config, node, item),
+            )
+        if children_first:
+            yield config, node, here
 
 
 def validate_execution(tree: Any) -> None:
@@ -165,9 +167,10 @@ def validate_execution(tree: Any) -> None:
             children = node.get("children", [])
             if not isinstance(children, list):
                 raise ValueError("Invalid execution children")
+            kind = step.get("type")
             binding = node.get("binding")
             if binding is not None:
-                if step.get("type") != "workflow" or not isinstance(binding, dict):
+                if kind != "workflow" or not isinstance(binding, dict):
                     raise ValueError("Invalid workflow binding")
                 definition = yaml.safe_load(binding.get("definition", ""))
                 if (
@@ -181,19 +184,23 @@ def validate_execution(tree: Any) -> None:
                     or not isinstance(definition.get("steps"), list)
                 ):
                     raise ValueError("Invalid bound workflow definition or inputs")
+            elif kind == "workflow" and children:
+                raise ValueError("Workflow children require a binding")
+            if kind == "fan-out" and children:
+                template = (result or {}).get("output", {}).get("step_template")
+                if not isinstance(template, dict):
+                    raise ValueError("Invalid fan-out template")
             for index, child in enumerate(children):
-                kind = step.get("type")
-                if kind == "workflow":
-                    check_sequence(child, definition["steps"], shared=True)
-                elif kind == "fan-out":
-                    template = (result or {}).get("output", {}).get("step_template")
-                    if not isinstance(template, dict):
-                        raise ValueError("Invalid fan-out template")
-                    check_sequence(child, [template], shared=True)
-                elif kind in {"while", "do-while"} and index:
-                    check_sequence(child, steps_of(children[0]), shared=True)
+                if shares_source(kind, index):
+                    check_sequence(child, child_steps(step, node, index), shared=True)
                 else:
                     check_sequence(child)
+                if (
+                    node["phase"] == "done"
+                    and kind != "workflow"
+                    and any(nested["phase"] != "done" for nested in child["nodes"])
+                ):
+                    raise ValueError("Completed execution has unfinished children")
             if node["phase"] == "outputs" and binding is None:
                 raise ValueError("Output finalization requires a workflow binding")
             if node["phase"] == "children" and (
@@ -399,7 +406,7 @@ class Execution:
                 path=(*path, "item", index),
                 public=False,
                 loop_alias=(qualified, index),
-                steps=child_steps(config, node, child),
+                steps=child_steps(config, node, index),
             )
             record = child["nodes"][0].get("result")
             if public and record is not None:
@@ -441,9 +448,9 @@ class Execution:
                         path=(*path, iteration),
                         public=public,
                         loop_alias=(qualified, iteration)
-                        if kind in {"while", "do-while"} and iteration
+                        if kind in LOOP_TYPES and iteration
                         else None,
-                        steps=child_steps(config, node, child),
+                        steps=child_steps(config, node, iteration),
                     )
                     if outcome in HALTING:
                         break
@@ -568,14 +575,14 @@ class Execution:
                     path=(*path, iteration),
                     public=public,
                     loop_alias=(qualified, iteration)
-                    if kind in {"while", "do-while"}
+                    if kind in LOOP_TYPES
                     and iteration
                     else None,
-                    steps=child_steps(config, node, child),
+                    steps=child_steps(config, node, iteration),
                 )
                 if outcome in HALTING:
                     break
-            if outcome == "completed" and kind in {"while", "do-while"}:
+            if outcome == "completed" and kind in LOOP_TYPES:
                 limit = config.get("max_iterations", 10)
                 if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
                     limit = 10
@@ -591,7 +598,7 @@ class Execution:
                         path=(*path, len(node["children"]) - 1),
                         public=public,
                         loop_alias=(qualified, len(node["children"]) - 1),
-                        steps=child_steps(config, node, child),
+                        steps=child_steps(config, node, len(node["children"]) - 1),
                     )
                     if outcome in HALTING:
                         break
@@ -781,7 +788,7 @@ class Execution:
             (*ancestry, target),
             path=(*path, "workflow"),
             public=False,
-            steps=child_steps(config, node, node["children"][0]),
+            steps=child_steps(config, node, 0),
         )
         output = {"workflow": target, "status": outcome}
         if outcome == "completed":
@@ -856,7 +863,7 @@ class Execution:
                 path=(*path, "item", index),
                 public=False,
                 loop_alias=(qualified, index),
-                steps=child_steps(config, node, child),
+                steps=child_steps(config, node, index),
                 aliases=(
                     (context, f"{qualified}:{template_name}:{index}", None),
                 )
