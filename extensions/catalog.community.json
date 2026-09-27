@@ -3697,7 +3697,7 @@
       "updated_at": "2026-03-26T00:00:00Z"
     },
     "openspec": {
-      "name": "Openspec",
+      "name": "OpenSpec",
       "id": "openspec",
       "description": "Adds a spec-driven change-management workflow (propose → implement → verify → archive) to Spec Kit projects, keeping specs, designs, and code in sync",
       "author": "Aaron Sun",
