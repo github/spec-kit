@@ -26,6 +26,17 @@ from .expressions import evaluate_condition, evaluate_expression
 
 HALTING = {"paused", "failed", "aborted"}
 
+UNKNOWN_STEP_PREFIX = "Unknown step type: "
+
+
+def unknown_step_error(kind):
+    return f"{UNKNOWN_STEP_PREFIX}{kind!r}"
+
+
+def is_unknown_step_error(error):
+    """A missing implementation stays terminal across workflow boundaries."""
+    return isinstance(error, str) and error.startswith(UNKNOWN_STEP_PREFIX)
+
 
 class CheckpointError(RuntimeError):
     """Persistence failed; reload the authoritative disk checkpoint before retrying."""
@@ -332,16 +343,15 @@ class Execution:
         event,
         qualified,
         path,
-        workflow,
+        ancestry,
         *,
-        private=False,
         callback_label=None,
         **fields,
     ):
         """Emit one step event and its optional start callback."""
         entry = {"event": event, "step_id": qualified, **fields}
-        if private:
-            entry.update(execution_path=list(path), workflow_id=workflow)
+        if len(ancestry) > 1:
+            entry.update(execution_path=list(path), workflow_id=ancestry[-1])
         self.state.append_log(entry)
         if callback_label is not None and self.engine.on_step_start is not None:
             with self.engine._callback_lock:
@@ -445,28 +455,27 @@ class Execution:
                 "step_started",
                 qualified,
                 path,
-                ancestry[-1],
-                private=len(ancestry) > 1,
+                ancestry,
                 type=kind,
                 callback_label=config.get("command", "") or kind,
             )
             impl = self.registry.get(kind)
             if impl is None:
-                # A missing implementation is a runtime configuration error, not
-                # a step failure that a workflow may explicitly recover from.
-                result = StepResult(
-                    StepStatus.FAILED, error=f"Unknown step type: {kind!r}"
-                )
-                return self.finish(
-                    {**config, "continue_on_error": False},
+                # As on main: terminal, only step_failed, no projected result.
+                # The node keeps its result so resume can retry after reinstalling.
+                error = unknown_step_error(kind)
+                result = StepResult(StepStatus.FAILED, error=error)
+                self.commit(
                     node,
-                    result,
-                    context,
-                    ancestry,
-                    path,
-                    public,
-                    qualified,
+                    {
+                        "phase": "blocked",
+                        "result": self.record(config, result, context),
+                        "outcome": "failed",
+                        "error": error,
+                    },
                 )
+                self.emit("step_failed", qualified, path, ancestry, error=error)
+                return "failed"
             result = impl.execute(config, context)
             if result.status in {StepStatus.FAILED, StepStatus.PAUSED}:
                 return self.finish(
@@ -513,8 +522,7 @@ class Execution:
                 "step_completed",
                 qualified,
                 path,
-                ancestry[-1],
-                private=len(ancestry) > 1,
+                ancestry,
                 status=result.status.value,
             )
         else:
@@ -634,8 +642,7 @@ class Execution:
             "step_completed",
             qualified,
             path,
-            ancestry[-1],
-            private=len(ancestry) > 1,
+            ancestry,
             status=result.status.value,
         )
         if result.status == StepStatus.FAILED:
@@ -647,8 +654,7 @@ class Execution:
                 event,
                 qualified,
                 path,
-                ancestry[-1],
-                private=len(ancestry) > 1,
+                ancestry,
                 error=result.error,
             )
         return outcome
@@ -669,8 +675,7 @@ class Execution:
             "step_started",
             qualified,
             path,
-            ancestry[-1],
-            private=len(ancestry) > 1,
+            ancestry,
             type="workflow",
             callback_label="workflow",
         )
@@ -761,9 +766,7 @@ class Execution:
         result = StepResult(status, output=output, error=error)
         # An unavailable child implementation is terminal at every workflow
         # boundary, matching direct execution of the same step.
-        if isinstance(result.error, str) and result.error.startswith(
-            "Unknown step type: "
-        ):
+        if is_unknown_step_error(result.error):
             config = {**config, "continue_on_error": False}
         return self.finish(
             config,

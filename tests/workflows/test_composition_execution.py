@@ -1396,6 +1396,34 @@ def test_unknown_child_step_always_fails_despite_continue_on_error(
     events = [entry["event"] for entry in state.log_entries]
     assert "step_failed" in events
     assert "step_continue_on_error" not in events
+    assert [
+        entry["event"]
+        for entry in state.log_entries
+        if entry.get("step_id") == "missing" and entry.get("workflow_id") == "child"
+    ] == ["step_started", "step_failed"]
+
+
+def test_unknown_step_type_resumes_after_reinstall(tmp_path, monkeypatch, probe):
+    class Reinstalled(StepBase):
+        type_key = "temporarily-installed"
+
+        def execute(self, config, context):
+            return StepResult(StepStatus.COMPLETED)
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [{"id": "missing", "type": "temporarily-installed"}],
+        ),
+        run_id="reinstall",
+    )
+    assert state.status == RunStatus.FAILED
+
+    monkeypatch.setitem(STEP_REGISTRY, "temporarily-installed", Reinstalled())
+    state = WorkflowEngine(tmp_path).resume("reinstall")
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["missing"]["status"] == "completed"
 
 
 def test_unknown_fan_out_template_step_always_fails_despite_continue_on_error(

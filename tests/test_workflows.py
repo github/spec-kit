@@ -7770,6 +7770,31 @@ steps:
         assert "step_failed" in events
         assert "step_continue_on_error" not in events
 
+    def test_unknown_step_type_events_match_main(self, project_dir):
+        """Only step_started and step_failed, and no projected step result."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-events"
+  name: "Unknown Type Events"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert [
+            entry["event"]
+            for entry in state.log_entries
+            if entry.get("step_id") == "mystery"
+        ] == ["step_started", "step_failed"]
+        assert "mystery" not in state.step_results
+
 
 # ===== State Persistence Tests =====
 
