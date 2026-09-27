@@ -1156,7 +1156,9 @@ class WorkflowEngine:
             raise ValueError(msg)
 
         if state.execution is not None:
-            persisted_steps = yaml.safe_load(state.execution["sequence"]["source"])
+            from ._execution import steps_of
+
+            persisted_steps = steps_of(state.execution["sequence"])
             offset = state.execution.get("offset", 0)
             if persisted_steps != definition.steps[offset:]:
                 raise ValueError("Invalid execution state: root sequence differs from workflow snapshot")
@@ -1236,8 +1238,8 @@ class WorkflowEngine:
 
         if state.execution is None:
             state.execution = new_execution(steps, step_offset, context.steps)
+            state.save()
         context.steps = deepcopy(state.execution.get("initial", {}))
-        state.save()
         tree = state.execution["sequence"]
         executor = Execution(self, state, registry, rebind=rebind)
         outcome, error = executor.run(tree, context, (state.workflow_id,), root=True)

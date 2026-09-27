@@ -1516,6 +1516,215 @@ def test_native_yaml_definition_and_long_id_roundtrip(tmp_path, probe):
     assert WorkflowEngine(tmp_path).resume(state.run_id).status == RunStatus.PAUSED
 
 
+def test_execution_shares_workflow_fan_out_and_loop_sources(tmp_path, probe):
+    child = definition(
+        "child",
+        [{"id": "work", "type": "probe"}],
+    )
+    install(tmp_path, child)
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                call(),
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "step": {"id": "item", "type": "probe"},
+                },
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [{"id": "body", "type": "probe"}],
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+        )
+    )
+
+    tree = json.loads((state.runs_dir / "state.json").read_text())["execution"]
+    call_node, fan_node, loop_node, _ = tree["sequence"]["nodes"]
+    assert "source" not in call_node["children"][0]
+    assert "source" not in fan_node["children"][0]
+    assert "source" not in fan_node["children"][1]
+    assert "source" in loop_node["children"][0]
+    assert "source" not in loop_node["children"][1]
+    assert yaml.safe_load(call_node["binding"]["definition"])["steps"] == [
+        {"id": "work", "type": "probe"}
+    ]
+    RunState.load(state.run_id, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda tree: tree["sequence"]["nodes"][0]["children"][0].update(
+            source="[]\n"
+        ),
+        lambda tree: tree["sequence"]["nodes"][1]["children"][0].update(
+            source="[]\n"
+        ),
+        lambda tree: tree["sequence"]["nodes"][2]["children"][1].update(
+            source="[]\n"
+        ),
+        lambda tree: tree["sequence"]["nodes"][0]["children"][0]["nodes"].append(
+            {"phase": "ready"}
+        ),
+    ],
+)
+def test_shared_execution_sources_reject_local_copies(tmp_path, probe, mutation):
+    child = definition("child", [{"id": "work", "type": "probe"}])
+    install(tmp_path, child)
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                call(),
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "item", "type": "probe"},
+                },
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [{"id": "body", "type": "probe"}],
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+        )
+    )
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    mutation(data["execution"])
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError, match="Invalid execution sequence"):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("items", [1, 4])
+def test_fan_out_saves_once_per_item_transition(tmp_path, monkeypatch, probe, items):
+    original = RunState.save
+    saves = 0
+
+    def save(self):
+        nonlocal saves
+        saves += 1
+        original(self)
+
+    monkeypatch.setattr(RunState, "save", save)
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": list(range(items)),
+                    "max_concurrency": 1,
+                    "step": {"id": "item", "type": "probe"},
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.COMPLETED
+    assert saves == items + 5
+
+
+def test_fan_out_snapshot_size_does_not_scale_with_template_length(tmp_path, probe):
+    def size(items, length):
+        root = tmp_path / f"fan-{items}-{length}"
+        state = WorkflowEngine(root).execute(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "fan",
+                        "type": "fan-out",
+                        "items": list(range(items)),
+                        "max_concurrency": 1,
+                        "step": {
+                            "id": "item",
+                            "type": "probe",
+                            "payload": "x" * length,
+                        },
+                    }
+                ],
+            )
+        )
+        return (state.runs_dir / "state.json").stat().st_size
+
+    small_one, large_one = size(1, 128), size(1, 4096)
+    small_many, large_many = size(4, 128), size(4, 4096)
+
+    assert large_many - small_many <= large_one - small_one + 256
+
+
+def test_loop_snapshot_size_does_not_scale_with_body_length(tmp_path, probe):
+    def size(iterations, length):
+        root = tmp_path / f"loop-{iterations}-{length}"
+        state = WorkflowEngine(root).execute(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "loop",
+                        "type": "do-while",
+                        "condition": True,
+                        "max_iterations": iterations,
+                        "steps": [
+                            {
+                                "id": "body",
+                                "type": "probe",
+                                "payload": "x" * length,
+                            }
+                        ],
+                    }
+                ],
+            )
+        )
+        return (state.runs_dir / "state.json").stat().st_size
+
+    small_one, large_one = size(1, 128), size(1, 4096)
+    small_many, large_many = size(4, 128), size(4, 4096)
+
+    assert large_many - small_many <= large_one - small_one + 256
+
+
+def test_tree_backed_resume_has_no_setup_checkpoint(tmp_path, monkeypatch, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [{"id": "wait", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    original = RunState.save
+    saves = 0
+
+    def save(self):
+        nonlocal saves
+        saves += 1
+        original(self)
+
+    monkeypatch.setattr(RunState, "save", save)
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert saves == 3
+
+
 def test_exact_depth_limit_is_allowed(tmp_path, probe):
     for index in range(1, 17):
         install(
