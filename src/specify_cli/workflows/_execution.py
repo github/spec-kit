@@ -275,11 +275,25 @@ class Execution:
                 self.project_alias(alias_context, alias, result)
             self.state.save()
 
-    def log(self, event, name, path, workflow, **fields):
-        entry = {"event": event, "step_id": name, **fields}
-        if path:
+    def emit(
+        self,
+        event,
+        qualified,
+        path,
+        workflow,
+        *,
+        private=False,
+        callback_label=None,
+        **fields,
+    ):
+        """Emit one step event and its optional start callback."""
+        entry = {"event": event, "step_id": qualified, **fields}
+        if private:
             entry.update(execution_path=list(path), workflow_id=workflow)
         self.state.append_log(entry)
+        if callback_label is not None and self.engine.on_step_start is not None:
+            with self.engine._callback_lock:
+                self.engine.on_step_start(qualified, callback_label)
 
     def run(
         self,
@@ -325,7 +339,12 @@ class Execution:
                 inside_fan_out=True,
             )
             outcome, error = self.run(
-                child, local, ancestry, path=(*path, "item", index), public=False
+                child,
+                local,
+                ancestry,
+                path=(*path, "item", index),
+                public=False,
+                loop_alias=(qualified, index),
             )
             record = child["nodes"][0].get("result")
             if record is not None:
@@ -378,10 +397,15 @@ class Execution:
         if node["phase"] in {"ready", "blocked"}:
             with self.state._lock:
                 self.state.current_step_id = name
-            self.log("step_started", name, path, ancestry[-1], type=kind)
-            if self.engine.on_step_start is not None:
-                with self.engine._callback_lock:
-                    self.engine.on_step_start(name, config.get("command", "") or kind)
+            self.emit(
+                "step_started",
+                qualified,
+                path,
+                ancestry[-1],
+                private=len(ancestry) > 1,
+                type=kind,
+                callback_label=config.get("command", "") or kind,
+            )
             impl = self.registry.get(kind)
             if impl is None:
                 # A missing implementation is a runtime configuration error, not
@@ -426,6 +450,14 @@ class Execution:
                 name=name,
                 public=public,
                 qualified=qualified,
+            )
+            self.emit(
+                "step_completed",
+                qualified,
+                path,
+                ancestry[-1],
+                private=len(ancestry) > 1,
+                status=result.status.value,
             )
         else:
             self.project(
@@ -550,23 +582,41 @@ class Execution:
             public=public,
             qualified=qualified,
         )
-        self.log("step_completed", name, path, ancestry[-1], status=result.status.value)
+        self.emit(
+            "step_completed",
+            qualified,
+            path,
+            ancestry[-1],
+            private=len(ancestry) > 1,
+            status=result.status.value,
+        )
         if result.status == StepStatus.FAILED:
             event = {
                 "aborted": "workflow_aborted",
                 "completed": "step_continue_on_error",
             }.get(outcome, "step_failed")
-            self.log(event, name, path, ancestry[-1], error=result.error)
+            self.emit(
+                event,
+                qualified,
+                path,
+                ancestry[-1],
+                private=len(ancestry) > 1,
+                error=result.error,
+            )
         return outcome
 
     def workflow(self, config, node, context, ancestry, path, public, qualified):
         from .engine import WorkflowDefinition, workflow_dir_for
 
-        name = config.get("id", "step-0")
-        self.log("step_started", name, path, ancestry[-1], type="workflow")
-        if self.engine.on_step_start is not None:
-            with self.engine._callback_lock:
-                self.engine.on_step_start(name, "workflow")
+        self.emit(
+            "step_started",
+            qualified,
+            path,
+            ancestry[-1],
+            private=len(ancestry) > 1,
+            type="workflow",
+            callback_label="workflow",
+        )
         binding = node.get("binding")
         target = binding["workflow"] if binding else config.get("workflow")
         if binding is None:
@@ -664,7 +714,12 @@ class Execution:
             )
             child = node["children"][index]
             outcome, error = self.run(
-                child, local, ancestry, path=(*path, "item", index), public=False
+                child,
+                local,
+                ancestry,
+                path=(*path, "item", index),
+                public=False,
+                loop_alias=(qualified, index),
             )
             if outcome in HALTING:
                 halted.set()

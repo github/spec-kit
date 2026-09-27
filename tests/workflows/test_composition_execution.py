@@ -537,6 +537,50 @@ def test_completion_log_failure_does_not_replay_committed_step(
     assert probe["work"] == 1
 
 
+def test_container_completion_log_failure_does_not_replay_expansion(
+    tmp_path, monkeypatch, probe
+):
+    original = RunState.append_log
+    failed = False
+    expanded = 0
+
+    class Expand(StepBase):
+        type_key = "expand"
+
+        def execute(self, config, context):
+            nonlocal expanded
+            expanded += 1
+            return StepResult(
+                StepStatus.COMPLETED,
+                next_steps=[{"id": "work", "type": "probe"}],
+            )
+
+    def log(self, entry):
+        nonlocal failed
+        if entry == {
+            "event": "step_completed",
+            "step_id": "expand",
+            "status": "completed",
+        } and not failed:
+            failed = True
+            raise OSError("log failed")
+        original(self, entry)
+
+    monkeypatch.setitem(STEP_REGISTRY, "expand", Expand())
+    monkeypatch.setattr(RunState, "append_log", log)
+    with pytest.raises(OSError, match="log failed"):
+        WorkflowEngine(tmp_path).execute(
+            definition("parent", [{"id": "expand", "type": "expand"}]),
+            run_id="container-log",
+        )
+
+    state = WorkflowEngine(tmp_path).resume("container-log")
+
+    assert state.status == RunStatus.COMPLETED
+    assert expanded == 1
+    assert probe["work"] == 1
+
+
 @pytest.mark.parametrize("kind", ["if", "while", "do-while", "fan-out"])
 def test_expansion_resume_preserves_completed_work(tmp_path, probe, kind):
     body = [
@@ -634,6 +678,11 @@ def test_replay_does_not_execute_completed_fan_out_or_emit_callbacks(tmp_path, p
     assert state.status == RunStatus.COMPLETED
     assert probe == {"template": 2, "wait": 2}
     assert callbacks == ["wait"]
+    assert [
+        (entry["event"], entry["step_id"])
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+    ] == [("step_started", "wait"), ("step_completed", "wait")]
 
 
 def test_replay_does_not_evaluate_completed_loop_condition(
@@ -765,6 +814,218 @@ def test_fan_out_in_later_loop_iteration_uses_qualified_aliases(tmp_path, probe)
     assert state.step_results["fan:template:1"]["output"]["value"] == 2
     assert state.step_results["loop:fan:1:template:0"]["output"]["value"] == 1
     assert state.step_results["loop:fan:1:template:1"]["output"]["value"] == 2
+
+
+def test_fan_out_events_and_callbacks_use_qualified_item_ids(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+
+    state = engine.execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "step": {"id": "template", "type": "probe"},
+                }
+            ],
+        )
+    )
+
+    events = [
+        (entry["event"], entry["step_id"])
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+    ]
+    assert callbacks == ["fan", "fan:template:0", "fan:template:1"]
+    assert events == [
+        ("step_started", "fan"),
+        ("step_completed", "fan"),
+        ("step_started", "fan:template:0"),
+        ("step_completed", "fan:template:0"),
+        ("step_started", "fan:template:1"),
+        ("step_completed", "fan:template:1"),
+    ]
+
+
+def test_loop_events_and_callbacks_use_qualified_iteration_ids(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+
+    state = engine.execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [{"id": "body", "type": "probe"}],
+                }
+            ],
+        )
+    )
+
+    events = [
+        (entry["event"], entry["step_id"])
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+    ]
+    assert callbacks == ["loop", "body", "loop:body:1"]
+    assert events == [
+        ("step_started", "loop"),
+        ("step_completed", "loop"),
+        ("step_started", "body"),
+        ("step_completed", "body"),
+        ("step_started", "loop:body:1"),
+        ("step_completed", "loop:body:1"),
+    ]
+
+
+def test_private_scope_events_include_execution_path_and_workflow_id(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+    install(tmp_path, definition("child", [{"id": "work", "type": "probe"}]))
+    state = engine.execute(definition("parent", [call()]))
+
+    call_entries = [
+        entry
+        for entry in state.log_entries
+        if entry.get("step_id") == "call" and entry["event"].startswith("step_")
+    ]
+    child_entries = [
+        entry
+        for entry in state.log_entries
+        if entry.get("step_id") == "work" and entry["event"].startswith("step_")
+    ]
+    assert all("execution_path" not in entry for entry in call_entries)
+    assert all("workflow_id" not in entry for entry in call_entries)
+    assert all(entry["workflow_id"] == "child" for entry in child_entries)
+    assert all(entry["execution_path"] == [0, "workflow", 0] for entry in child_entries)
+    assert callbacks == ["call", "work"]
+
+
+def test_completed_workflow_call_replay_emits_no_events(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+    install(tmp_path, definition("child", [{"id": "work", "type": "probe"}]))
+    root = definition(
+        "parent",
+        [
+            call(),
+            {"id": "wait", "type": "probe", "await": True},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+
+    state = engine.execute(root)
+    assert state.status == RunStatus.PAUSED
+    callbacks.clear()
+
+    state = engine.resume(state.run_id, {"approve": True})
+
+    events = [
+        (entry["event"], entry["step_id"])
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+    ]
+    assert state.status == RunStatus.COMPLETED
+    assert callbacks == ["wait"]
+    assert events == [("step_started", "wait"), ("step_completed", "wait")]
+
+
+def test_unfinished_workflow_call_emits_events_on_resume(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "wait", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
+    root = definition(
+        "parent",
+        [call(input={"approve": "{{ inputs.approve }}"})],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+
+    state = engine.execute(root)
+    assert state.status == RunStatus.PAUSED
+    callbacks.clear()
+
+    state = engine.resume(state.run_id, {"approve": True})
+
+    events = [
+        (entry["event"], entry["step_id"])
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+    ]
+    assert state.status == RunStatus.COMPLETED
+    assert callbacks == ["call", "wait"]
+    assert events == [
+        ("step_started", "call"),
+        ("step_started", "wait"),
+        ("step_completed", "wait"),
+        ("step_completed", "call"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "template, expected_event, status",
+    [
+        ({"status": "failed"}, "step_failed", RunStatus.FAILED),
+        (
+            {"status": "failed", "continue_on_error": True},
+            "step_continue_on_error",
+            RunStatus.COMPLETED,
+        ),
+        (
+            {"status": "failed", "output": {"aborted": True}},
+            "workflow_aborted",
+            RunStatus.ABORTED,
+        ),
+    ],
+)
+def test_fan_out_failure_events_use_qualified_item_ids(
+    tmp_path, probe, template, expected_event, status
+):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "template", "type": "probe", **template},
+                }
+            ],
+        )
+    )
+
+    failures = [
+        entry
+        for entry in state.log_entries
+        if entry["event"] in {
+            "step_failed",
+            "step_continue_on_error",
+            "workflow_aborted",
+        }
+    ]
+    assert state.status == status
+    assert len(failures) == 1
+    assert failures[0]["step_id"] == "fan:template:0"
+    assert failures[0]["event"] == expected_event
 
 
 @pytest.mark.parametrize("mode", ["unknown", "disabled", "mismatch", "cycle"])
