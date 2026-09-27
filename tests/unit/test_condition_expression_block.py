@@ -553,7 +553,7 @@ MULTI_POSITION_UNFIXABLE = [
     ("in inputs.tags", "missing an operand"),             # leading word operator
     ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
     ("inputs.f(]", "brackets do not balance"),
-    ("inputs.items | length", "the evaluator rejects it"),
+    ("inputs.items | truncate", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
     ('he said "hi" then left', "is not a name the evaluator can resolve"),
     ("inputs.count+1", "is not a valid path segment"),
@@ -612,10 +612,15 @@ def test_the_probe_reports_what_the_evaluator_reports():
     Asking the evaluator removes that class: any filter used under an unknown name
     or in an unsupported form is reported by the code that will run.
     """
-    assert _evaluator_rejects("inputs.items | length") is not None
+    assert _evaluator_rejects("inputs.items | truncate") is not None
     assert _evaluator_rejects("inputs.tags | join") is not None
     assert _evaluator_rejects("inputs.tags | join(',')") is None
     assert _evaluator_rejects("inputs.count > 100") is None
+    # A registered filter used in an unsupported form is a rejection too.
+    assert _evaluator_rejects("inputs.items | split") is not None
+    # Registered filters that are wired correctly are not.
+    assert _evaluator_rejects("inputs.items | length") is None
+    assert _evaluator_rejects("inputs.tags | split(',')") is None
 
 
 @pytest.mark.parametrize(
@@ -671,7 +676,12 @@ def test_probe_value_errors_are_not_treated_as_rejections(condition):
 
 @pytest.mark.parametrize(
     "condition",
-    ["inputs.items | length", "inputs.tags | join"],
+    [
+        "inputs.items | truncate",
+        "inputs.tags | join",
+        "inputs.items | split",
+        "inputs.text | upper('x')",
+    ],
 )
 def test_filter_wiring_errors_are_still_rejections(condition):
     """The other half: a filter named wrong or used wrong is the author's text."""

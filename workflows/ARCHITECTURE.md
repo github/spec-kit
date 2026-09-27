@@ -123,8 +123,23 @@ Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic value
 | Filter: `contains` | `{{ text \| contains('sub') }}` | Substring/membership check |
 | Filter: `map` | `{{ list \| map('attr') }}` | Extract attribute from each item |
 | Filter: `from_json` | `{{ steps.emit.output.stdout \| from_json }}` | Parse a JSON string into a typed value (raises on invalid JSON) |
+| Filter: `to_json` | `{{ obj \| to_json }}` | Serialize any value to a JSON string (inverse of `from_json`) |
+| Filter: `upper` | `{{ text \| upper }}` | Uppercase a string (strings only) |
+| Filter: `lower` | `{{ text \| lower }}` | Lowercase a string (strings only) |
+| Filter: `split` | `{{ csv \| split(',') }}` | Split a string on a separator into a list |
+| Filter: `length` | `{{ items \| length }}` | Length of a list or string (mappings rejected) |
 
 **Single expressions** (`{{ expr }}` only) return typed values. **Mixed templates** (`"text {{ expr }} more"`) return interpolated strings.
+
+**Filter argument strictness.** Every filter validates its own input types and raises `ValueError` naming the problem rather than coercing or leaking a Python `TypeError`/`AttributeError` that would crash the run. So `upper`/`lower` accept only strings, `split` requires a string value *and* a string separator, and `length` accepts only lists and strings. Coercion is deliberately rejected: a type mismatch almost always means the pipeline is wired to the wrong variable, and a coerced result (e.g. `"3"` for an int) would hide that. A filter used with the wrong arity — `| upper('x')`, `| split` with no separator, `| join` bare — is reported as a known filter misused, distinct from an entirely unknown name.
+
+**`to_json` output is deterministic.** It pins `sort_keys=True` and `ensure_ascii=False`, so the same value always serializes to the same bytes regardless of dict insertion order or platform. That is what makes the `to_json` → shell step → `from_json` round-trip safe, and it is why non-ASCII text is not `\uXXXX`-escaped on its way to a shell step.
+
+**Filters and comparisons.** The pipe binds tighter than comparison operators, and the parser splits on the top-level `|` before looking for operators. A comparison or other trailing token after a filter is therefore rejected rather than silently evaluated (`{{ items | default(0) > 5 }}` raises) — the same holds for the new filters. To branch on a count, compare it before filtering, or test the filtered value's truthiness directly in a `condition:`, since `length` returns `0` for an empty input:
+
+```yaml
+condition: "{{ inputs.items | length }}"   # 0 -> False, any non-zero count -> True
+```
 
 ### Namespace
 

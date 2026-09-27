@@ -590,7 +590,30 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `context.run_id`               | Current workflow run ID              |
 | `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
-Available filters: `default`, `join`, `contains`, `map`, `from_json`.
+Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+| Filter   | Example                                    | Behavior                                                                                        |
+| -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `default`| `{{ val \| default('fb') }}`               | Fallback for `None`/empty values                                                                  |
+| `join`   | `{{ list \| join(', ') }}`                 | Join list elements into a string                                                                   |
+| `contains`| `{{ text \| contains('sub') }}`           | Substring or membership check                                                                      |
+| `map`    | `{{ list \| map('attr') }}`                | Extract an attribute from each item                                                                |
+| `from_json`| `{{ out \| from_json }}`                 | Parse a JSON string into a typed value                                                             |
+| `to_json`| `{{ obj \| to_json }}`                     | Serialize a value to a JSON string — the inverse of `from_json`                                    |
+| `upper`  | `{{ text \| upper }}`                      | Uppercase a string                                                                                 |
+| `lower`  | `{{ text \| lower }}`                      | Lowercase a string                                                                                 |
+| `split`  | `{{ csv \| split(',') }}`                  | Split a string on a separator into a list of strings                                               |
+| `length` | `{{ items \| length }}`                    | Number of elements in a list, or characters in a string                                            |
+
+Notes on the newer filters:
+
+- **Types are validated, not coerced.** `upper` and `lower` accept strings only, `split` requires both a string value and a string separator, and `length` accepts lists and strings but rejects mappings. Anything else raises a `ValueError` naming the problem. Coercion is deliberately not performed: a type mismatch nearly always means the workflow is wired to the wrong variable, and a coerced result would hide that. A filter given the wrong number of arguments (`| upper('x')`, `| split` with no separator) is reported as a known filter misused, which is distinct from an entirely unknown filter name.
+- **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That is what makes a `to_json` → `shell` step → `from_json` round-trip safe.
+- **Trailing comparisons after a filter are rejected.** The pipe binds tighter than comparison operators, so `{{ items | length > 0 }}` raises rather than evaluating. To branch on a count, use the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+
+  ```yaml
+  condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
+  ```
 
 Example:
 
@@ -598,6 +621,8 @@ Example:
 condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
+tag_count: "{{ inputs.tags | split(',') | length }}"
+shell_flag: "{{ inputs.branch | upper }}"
 ```
 
 ### Interpolation and shell safety

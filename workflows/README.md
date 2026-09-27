@@ -406,9 +406,18 @@ condition: "{{ steps.run-tests.output.exit_code != 0 }}"
 
 # Filters
 message: "{{ status | default('pending') }}"
+ids: "{{ rows | split(',') | length }}"
 ```
 
-Supported filters: `default`, `join`, `contains`, `map`, `from_json`.
+Supported filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+Each filter validates its input types and raises a `ValueError` naming the
+problem instead of coercing — so `upper`/`lower` take strings only, `split`
+takes a string value and a string separator, and `length` accepts lists and
+strings but rejects mappings. A filter used with the wrong number of arguments
+(`| upper('x')`, bare `| split`) is reported as a known filter misused, which is
+distinct from an entirely unknown filter name. See
+[ARCHITECTURE.md](ARCHITECTURE.md#expression-evaluation) for the full table.
 
 ### Runtime Context
 

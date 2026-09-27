@@ -598,6 +598,210 @@ class TestExpressions:
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
 
+    def test_filter_upper_and_lower(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "Hello World", "empty": "", "mixed": "aBc"})
+        assert evaluate_expression("{{ inputs.s | upper }}", ctx) == "HELLO WORLD"
+        assert evaluate_expression("{{ inputs.s | lower }}", ctx) == "hello world"
+        # An empty string is valid input, not a missing value: it must come back
+        # empty rather than raising or falling through to `default`.
+        assert evaluate_expression("{{ inputs.empty | upper }}", ctx) == ""
+        assert evaluate_expression("{{ inputs.empty | lower }}", ctx) == ""
+        # Case-only transforms are no-ops on already-conforming input.
+        assert evaluate_expression("{{ inputs.mixed | upper }}", ctx) == "ABC"
+        # Non-ASCII must pass through unchanged (no transliteration/loss).
+        assert evaluate_expression("{{ inputs.uni | upper }}", StepContext(inputs={"uni": "café"})) == "CAFÉ"
+        # Filters compose left to right with the rest of the chain.
+        assert evaluate_expression("{{ inputs.s | upper | lower }}", ctx) == "hello world"
+
+    def test_filter_upper_rejects_non_string(self):
+        # A non-string value is an authoring mistake (e.g. `| upper` on an exit
+        # code). It must raise a ValueError naming the problem rather than
+        # coerce to "3" — which would look like a plausible result and hide the
+        # mis-wiring — or leak AttributeError and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "n": 3, "flag": True, "none": None})
+        for name in ("items", "n", "flag", "none"):
+            with pytest.raises(ValueError, match="upper: expected a string value"):
+                evaluate_expression("{{ inputs." + name + " | upper }}", ctx)
+
+    def test_filter_lower_rejects_non_string(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "n": 3, "flag": True, "none": None})
+        for name in ("items", "n", "flag", "none"):
+            with pytest.raises(ValueError, match="lower: expected a string value"):
+                evaluate_expression("{{ inputs." + name + " | lower }}", ctx)
+
+    def test_filter_split(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "csv": "a,b,c",
+                "multi": "x::y::z",
+                "empty": "",
+                "nodelim": "abc",
+                "trailing": "a,b,",
+            }
+        )
+        assert evaluate_expression("{{ inputs.csv | split(',') }}", ctx) == ["a", "b", "c"]
+        assert evaluate_expression("{{ inputs.multi | split('::') }}", ctx) == ["x", "y", "z"]
+        # An empty string is the one-element list [''], matching str.split. It
+        # must not be treated as a missing value or return [].
+        assert evaluate_expression("{{ inputs.empty | split(',') }}", ctx) == [""]
+        # A separator that never occurs yields the whole string, not [].
+        assert evaluate_expression("{{ inputs.nodelim | split(',') }}", ctx) == ["abc"]
+        # Trailing empty field is preserved, so round-tripping is lossless.
+        assert evaluate_expression("{{ inputs.trailing | split(',') }}", ctx) == ["a", "b", ""]
+        # split is the inverse of join.
+        assert evaluate_expression("{{ inputs.csv | split(',') | join('-') }}", ctx) == "a-b-c"
+
+    def test_filter_split_rejects_non_string_inputs(self):
+        # Both the value and the separator must be strings. A non-string
+        # separator would otherwise leak a TypeError/AttributeError from
+        # str.split and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a", "b"], "csv": "a,b", "n": 3})
+        with pytest.raises(ValueError, match="split: expected a string value"):
+            evaluate_expression("{{ inputs.items | split(',') }}", ctx)
+        with pytest.raises(ValueError, match="split: expected a string separator"):
+            evaluate_expression("{{ inputs.csv | split(5) }}", ctx)
+
+    def test_filter_length(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "items": ["a", "b", "c"],
+                "empty_list": [],
+                "s": "hello",
+                "empty_str": "",
+            }
+        )
+        assert evaluate_expression("{{ inputs.items | length }}", ctx) == 3
+        assert evaluate_expression("{{ inputs.empty_list | length }}", ctx) == 0
+        # Strings count characters, as in Jinja2.
+        assert evaluate_expression("{{ inputs.s | length }}", ctx) == 5
+        assert evaluate_expression("{{ inputs.empty_str | length }}", ctx) == 0
+        # Composes with the rest of the chain, which is the motivating use.
+        assert evaluate_expression("{{ inputs.csv_len | length }}", StepContext(inputs={"csv_len": "a,b,c"})) == 5
+        assert evaluate_expression("{{ inputs.s | split('l') | length }}", ctx) == 3
+
+    def test_filter_length_drives_conditions(self):
+        # The motivating use: `length` makes an emptiness check expressible as a
+        # condition, because 0 is falsy and any non-zero count is truthy.
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "empty": []})
+        assert evaluate_condition("{{ inputs.items | length }}", ctx) is True
+        assert evaluate_condition("{{ inputs.empty | length }}", ctx) is False
+
+    def test_filter_length_rejects_unsupported_types(self):
+        # length accepts only list and str. Mappings are excluded on purpose so
+        # `{{ obj | length }}` cannot silently mean "key count" for one shape and
+        # "value count" for another; other types are mis-wiring and must raise
+        # rather than coerce to 0 (which is indistinguishable from "empty").
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"obj": {"a": 1}, "n": 3, "flag": True, "none": None, "ratio": 1.5}
+        )
+        with pytest.raises(ValueError, match="length: expected a list or string"):
+            evaluate_expression("{{ inputs.obj | length }}", ctx)
+        for name in ("n", "flag", "none", "ratio"):
+            with pytest.raises(ValueError, match="length: expected a list or string"):
+                evaluate_expression("{{ inputs." + name + " | length }}", ctx)
+
+    def test_filter_to_json(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "obj": {"b": 2, "a": 1},
+                "items": [1, 2, 3],
+                "s": "hi",
+                "n": 3,
+                "flag": False,
+                "none": None,
+                "uni": "café",
+            }
+        )
+        # sort_keys=True pins key order, so output does not depend on dict
+        # insertion order and stays byte-stable across runs.
+        assert evaluate_expression("{{ inputs.obj | to_json }}", ctx) == '{"a": 1, "b": 2}'
+        assert evaluate_expression("{{ inputs.items | to_json }}", ctx) == "[1, 2, 3]"
+        assert evaluate_expression("{{ inputs.s | to_json }}", ctx) == '"hi"'
+        assert evaluate_expression("{{ inputs.n | to_json }}", ctx) == "3"
+        assert evaluate_expression("{{ inputs.flag | to_json }}", ctx) == "false"
+        assert evaluate_expression("{{ inputs.none | to_json }}", ctx) == "null"
+        # ensure_ascii=False keeps non-ASCII readable instead of \uXXXX-escaped,
+        # so shell steps receive the original text.
+        assert evaluate_expression("{{ inputs.uni | to_json }}", ctx) == '"café"'
+
+    def test_filter_to_json_round_trips_from_json(self):
+        # to_json is the inverse of from_json, which is the point: a workflow can
+        # pass a structured value through a shell step and recover it.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"obj": {"items": [1, 2, 3]}},
+            steps={"emit": {"output": {"stdout": '{"items": [1, 2, 3]}'}}},
+        )
+        assert evaluate_expression(
+            "{{ steps.emit.output.stdout | from_json | to_json }}", ctx
+        ) == '{"items": [1, 2, 3]}'
+        assert evaluate_expression(
+            "{{ inputs.obj | to_json | from_json }}", ctx
+        ) == {"items": [1, 2, 3]}
+
+    def test_filter_to_json_rejects_non_serializable(self):
+        # A non-serializable value must raise a ValueError naming the filter,
+        # not leak a TypeError from json.dumps and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"obj": {"f": object()}, "step": object()})
+        with pytest.raises(ValueError, match="to_json: value is not JSON-serializable"):
+            evaluate_expression("{{ inputs.obj | to_json }}", ctx)
+        with pytest.raises(ValueError, match="to_json: value is not JSON-serializable"):
+            evaluate_expression("{{ inputs.step | to_json }}", ctx)
+
+    def test_zero_arg_filters_reject_miswired_forms(self):
+        # The strict no-argument branch is shared by from_json/upper/lower/
+        # length/to_json. Every mis-wired form — parenthesized, accidental arg,
+        # or trailing garbage — must raise naming the filter, rather than
+        # silently falling through to the unknown-filter path.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "hi", "items": ["a"]})
+        for fname in ("from_json", "upper", "lower", "length", "to_json"):
+            for bad in (fname + "()", fname + "('x')", fname + ")", fname + " extra"):
+                with pytest.raises(ValueError, match=fname + ": expected"):
+                    evaluate_expression(
+                        "{{ inputs.s | " + bad + " }}", ctx
+                    )
+
     def test_filter_unknown_name_raises(self):
         # An unregistered filter name must fail loudly rather than silently
         # returning the unfiltered value (which hides a typo / unsupported
@@ -607,8 +811,8 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"items": [1, 2, 3]})
-        with pytest.raises(ValueError, match="unknown filter 'length'"):
-            evaluate_expression("{{ inputs.items | length }}", ctx)
+        with pytest.raises(ValueError, match="unknown filter 'truncate'"):
+            evaluate_expression("{{ inputs.items | truncate }}", ctx)
 
     def test_filter_unknown_name_with_args_raises(self):
         # The unknown-filter path must also catch the `name(arg)` form, which
@@ -618,8 +822,8 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"text": "hello"})
-        with pytest.raises(ValueError, match="unknown filter 'upper'"):
-            evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
+        with pytest.raises(ValueError, match="unknown filter 'truncate'"):
+            evaluate_expression("{{ inputs.text | truncate('x') }}", ctx)
 
     def test_filter_map_non_string_attr_raises(self):
         # A non-string attribute (authoring mistake like `map(5)`) must raise a
@@ -667,7 +871,7 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.nums | contains(9) }}", ctx) is False
 
     def test_registered_filters_unaffected(self):
-        # Regression: all five registered filters keep working unchanged.
+        # Regression: every registered filter keeps working unchanged.
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
@@ -677,6 +881,8 @@ class TestExpressions:
                 "text": "hello world",
                 "missing": "",
                 "rows": [{"id": "a"}, {"id": "b"}],
+                "csv": "a,b,c",
+                "obj": {"n": 1},
             },
             steps={"emit": {"output": {"stdout": '{"n": 1}'}}},
         )
@@ -691,6 +897,31 @@ class TestExpressions:
         assert evaluate_expression(
             "{{ steps.emit.output.stdout | from_json }}", ctx
         ) == {"n": 1}
+        assert evaluate_expression("{{ inputs.text | upper }}", ctx) == "HELLO WORLD"
+        assert evaluate_expression("{{ inputs.text | lower }}", ctx) == "hello world"
+        assert evaluate_expression("{{ inputs.csv | split(',') }}", ctx) == ["a", "b", "c"]
+        assert evaluate_expression("{{ inputs.tags | length }}", ctx) == 3
+        assert evaluate_expression("{{ inputs.obj | to_json }}", ctx) == '{"n": 1}'
+
+    def test_registered_filter_list_covers_every_implemented_filter(self):
+        # _REGISTERED_FILTERS drives the "known filter used in an unsupported
+        # form" message, so it must stay in sync with what is implemented: a
+        # registered-but-unimplemented name would be advertised in the expected
+        # list yet raise as unknown.
+        from specify_cli.workflows.expressions import _REGISTERED_FILTERS
+
+        assert set(_REGISTERED_FILTERS) == {
+            "default",
+            "join",
+            "map",
+            "contains",
+            "from_json",
+            "upper",
+            "lower",
+            "split",
+            "length",
+            "to_json",
+        }
 
     def test_registered_filter_unsupported_form_raises(self):
         # A *registered* filter used in an unsupported form (e.g. `| join` with
@@ -709,6 +940,15 @@ class TestExpressions:
             ValueError, match="filter 'map' used in an unsupported form"
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
+        # An arg-taking filter must not silently accept the wrong arity.
+        with pytest.raises(
+            ValueError, match="filter 'split' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | split }}", ctx)
+        with pytest.raises(
+            ValueError, match="filter 'contains' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | contains }}", ctx)
 
     def test_filter_call_with_trailing_tokens_fails_loudly(self):
         # A trailing operator/token after a filter's closing paren must not be
