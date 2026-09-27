@@ -601,9 +601,7 @@ commands.
 Snapshots are stored as YAML strings inside the private JSON execution tree,
 preserving YAML scalar types. Inputs and results remain JSON values. Legacy runs
 without a tree enter through their saved top-level index, then use tree-backed
-resume. A tree-backed run left `running` by a crashed process can also be resumed;
-only one process may execute or resume a run at a time. A side effect completed
-before its checkpoint may execute again after a crash.
+resume. Resume is available only for runs in the `paused` or `failed` state.
 
 Run/resume/status JSON includes `workflow_scopes` summaries when calls exist and
 reports the active nested gate with its `scope_path`.

@@ -290,6 +290,37 @@ def test_output_failure_retries_only_finalization(tmp_path, monkeypatch, probe):
     assert probe["work"] == 1
 
 
+@pytest.mark.parametrize("status", [RunStatus.PAUSED, RunStatus.FAILED])
+def test_resume_accepts_paused_and_failed_tree_backed_runs(tmp_path, probe, status):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [{"id": "wait", "type": "probe", "status": status.value}],
+        )
+    )
+    assert state.status == status
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert resumed.status == status
+
+
+def test_resume_rejects_running_tree_backed_run_without_writes(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition("parent", [{"id": "wait", "type": "probe", "await": True}])
+    )
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["status"] = RunStatus.RUNNING.value
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError, match="Cannot resume run .* 'running'"):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert path.read_bytes() == before
+
+
 def test_legacy_resume_adapts_once(tmp_path, probe):
     root = definition(
         "parent",
@@ -334,7 +365,7 @@ def test_bad_checkpoint_rejected_without_writes(tmp_path, probe, mutation):
 
 
 @pytest.mark.parametrize("failure_after_replace", [False, True])
-def test_checkpoint_failure_never_overwrites_committed_progress(
+def test_checkpoint_failure_leaves_running_run_not_resumable(
     tmp_path, monkeypatch, probe, failure_after_replace
 ):
     from specify_cli.workflows._execution import CheckpointError
@@ -363,9 +394,11 @@ def test_checkpoint_failure_never_overwrites_committed_progress(
     node = disk["execution"]["sequence"]["nodes"][0]
     assert node["phase"] == ("done" if failure_after_replace else "ready")
     assert ("work" in disk["step_results"]) is failure_after_replace
-    state = WorkflowEngine(tmp_path).resume("fault")
-    assert state.status == RunStatus.COMPLETED
-    assert probe["work"] == (1 if failure_after_replace else 2)
+    with pytest.raises(
+        ValueError, match="Cannot resume run 'fault' with status 'running'"
+    ):
+        WorkflowEngine(tmp_path).resume("fault")
+    assert probe["work"] == 1
 
 
 def test_completion_log_failure_does_not_replay_committed_step(
@@ -438,6 +471,90 @@ def test_resolution_failures_are_call_failures(tmp_path, probe, mode):
     assert state.status == RunStatus.COMPLETED
     assert state.step_results["call"]["status"] == "failed"
     assert not probe
+
+
+@pytest.mark.parametrize(
+    "child_continue, call_continue", [(False, False), (True, False), (False, True)]
+)
+def test_unknown_child_step_always_fails_despite_continue_on_error(
+    tmp_path, monkeypatch, probe, child_continue, call_continue
+):
+    class TemporarilyInstalled(StepBase):
+        type_key = "temporarily-installed"
+
+        def execute(self, config, context):
+            return StepResult(StepStatus.COMPLETED)
+
+    monkeypatch.setitem(STEP_REGISTRY, "temporarily-installed", TemporarilyInstalled())
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {"id": "wait", "type": "probe", "await": True},
+                {
+                    "id": "missing",
+                    "type": "temporarily-installed",
+                    "continue_on_error": child_continue,
+                }
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                call(
+                    input={"approve": "{{ inputs.approve }}"},
+                    continue_on_error=call_continue,
+                ),
+                {"id": "after", "type": "probe"},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    monkeypatch.delitem(STEP_REGISTRY, "temporarily-installed")
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.FAILED
+    assert state.error == "Unknown step type: 'temporarily-installed'"
+    assert probe == {"wait": 2}
+    events = [entry["event"] for entry in state.log_entries]
+    assert "step_failed" in events
+    assert "step_continue_on_error" not in events
+
+
+def test_unknown_fan_out_template_step_always_fails_despite_continue_on_error(
+    tmp_path, probe
+):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "max_concurrency": 2,
+                    "step": {
+                        "id": "missing",
+                        "type": "not-installed",
+                        "continue_on_error": True,
+                    },
+                },
+                {"id": "after", "type": "probe"},
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.FAILED
+    assert state.error == "Unknown step type: 'not-installed'"
+    assert not probe
+    events = [entry["event"] for entry in state.log_entries]
+    assert "step_failed" in events
+    assert "step_continue_on_error" not in events
 
 
 def test_diamond_and_depth_limit(tmp_path, probe):

@@ -40,6 +40,8 @@ class GateStep(StepBase):
         message = config.get("message", "Review required.")
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
+        # Step results are persisted as JSON. Keep the display value serializable
+        # while _compose_prompt() independently accepts synthetic non-string data.
         if message is not None:
             message = str(message)
 

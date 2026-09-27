@@ -720,32 +720,6 @@ class RunState:
     def runs_dir(self) -> Path:
         return self.project_root / ".specify" / "workflows" / "runs" / self.run_id
 
-    def record_step_result(self, step_id: str, data: dict[str, Any]) -> None:
-        """Record one step's result under the run lock.
-
-        Routing the mutation through the lock keeps it from racing a concurrent
-        ``save()`` that is iterating ``step_results`` (e.g. during a concurrent
-        fan-out). For a sequential run this is an uncontended lock.
-        """
-        with self._lock:
-            from ._execution import CheckpointError
-
-            if self._checkpoint_failed:
-                raise CheckpointError("A previous checkpoint failed; reload the run")
-            self.step_results[step_id] = data
-
-    def set_step_output(self, step_id: str, output: Any) -> None:
-        """Replace an already-recorded step's ``output`` under the run lock.
-
-        Fan-out updates its parent step's output after the items have run;
-        routing that nested mutation through the lock keeps it from racing a
-        ``save()`` serializing ``step_results`` — the same invariant
-        ``record_step_result`` provides for the top-level assignment.
-        """
-        with self._lock:
-            if step_id in self.step_results:
-                self.step_results[step_id]["output"] = output
-
     def save(self) -> None:
         """Persist current state to disk.
 
@@ -1140,7 +1114,7 @@ class WorkflowEngine:
         run_id: str,
         inputs: dict[str, Any] | None = None,
     ) -> RunState:
-        """Resume a paused/failed run or a tree-backed run interrupted by a crash.
+        """Resume a paused or failed workflow run.
 
         When ``inputs`` is provided, the values are merged over the run's
         persisted inputs and re-resolved through the same typed validation
@@ -1149,9 +1123,7 @@ class WorkflowEngine:
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
         state = RunState.load(run_id, self.project_root)
-        if state.status not in (RunStatus.PAUSED, RunStatus.FAILED) and not (
-            state.status == RunStatus.RUNNING and state.execution is not None
-        ):
+        if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
             raise ValueError(msg)
 
@@ -1246,22 +1218,6 @@ class WorkflowEngine:
         state.save()
         return state
 
-    @staticmethod
-    def _record_result(
-        context: StepContext, state: RunState, step_id: str, data: dict[str, Any]
-    ) -> None:
-        """Record a step result into both the live context and persistent state.
-
-        ``record_step_result`` writes ``state.step_results`` under the run lock.
-        On a resume run ``context.steps`` *is* that same dict, so that locked
-        write is the only one needed; mirror into ``context.steps`` separately
-        only when it is a distinct object (a fresh run), to avoid an unlocked
-        mutation of the shared dict that could race a concurrent ``save()``.
-        """
-        if context.steps is not state.step_results:
-            context.steps[step_id] = data
-        state.record_step_result(step_id, data)
-
     def _execute_steps(
         self,
         steps: list[dict[str, Any]],
@@ -1290,35 +1246,6 @@ class WorkflowEngine:
             state.current_step_id = active[0][-1]
         state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
         state.error = error
-
-    def _run_fan_out(
-        self,
-        items: list[Any],
-        template: dict[str, Any],
-        step_id: str,
-        context: StepContext,
-        state: RunState,
-        registry: dict[str, Any],
-        max_concurrency: Any,
-    ) -> list[Any]:
-        """Compatibility adapter to the unified fan-out executor."""
-        from ._execution import Execution, sequence
-
-        if not items:
-            return []
-        node = {
-            "phase": "children",
-            "result": {"output": {"items": items, "step_template": template,
-                                   "max_concurrency": max_concurrency}},
-            "children": [sequence([template]) for _ in items],
-        }
-        outcome, error, results = Execution(self, state, registry).fan_out(
-            {"id": step_id, "type": "fan-out"}, node, context,
-            (state.workflow_id,), (), step_id,
-        )
-        state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
-        state.error = error
-        return results
 
     def _resolve_inputs(
         self,

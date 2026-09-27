@@ -999,7 +999,7 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if not isinstance(step, dict) or not _is_gate_step(step):
         return None
     output = step.get("output") or {}
-    # `message`, `options`, and `choice` may be non-string YAML literals in an
+    # `message`, `options`, and `choice` may be non-string YAML literals in
     # legacy or synthetic records, so
     # normalise all three for a stable JSON schema: message → str, options →
     # list[str] | None, choice → str | None (None means no decision yet).

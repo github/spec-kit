@@ -283,11 +283,22 @@ class Execution:
                 with self.engine._callback_lock:
                     self.engine.on_step_start(name, config.get("command", "") or kind)
             impl = self.registry.get(kind)
-            result = (
-                impl.execute(config, context)
-                if impl
-                else StepResult(StepStatus.FAILED, error=f"Unknown step type: {kind!r}")
-            )
+            if impl is None:
+                # A missing implementation is a runtime configuration error, not
+                # a step failure that a workflow may explicitly recover from.
+                result = StepResult(
+                    StepStatus.FAILED, error=f"Unknown step type: {kind!r}"
+                )
+                return self.finish(
+                    {**config, "continue_on_error": False},
+                    node,
+                    result,
+                    context,
+                    ancestry,
+                    path,
+                    public_name,
+                )
+            result = impl.execute(config, context)
             if result.status in {StepStatus.FAILED, StepStatus.PAUSED}:
                 return self.finish(
                     config, node, result, context, ancestry, path, public_name
@@ -515,6 +526,12 @@ class Execution:
                 output={"workflow": target, "status": "failed", "error": str(exc)},
                 error=str(exc),
             )
+        # An unavailable child implementation is terminal at every workflow
+        # boundary, matching direct execution of the same step.
+        if isinstance(result.error, str) and result.error.startswith(
+            "Unknown step type: "
+        ):
+            config = {**config, "continue_on_error": False}
         return self.finish(config, node, result, context, ancestry, path, public_name)
 
     def fan_out(self, config, node, context, ancestry, path, public_name):
