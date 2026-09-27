@@ -3696,6 +3696,35 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "openspec": {
+      "name": "Openspec",
+      "id": "openspec",
+      "description": "Adds a spec-driven change-management workflow (propose → implement → verify → archive) to Spec Kit projects, keeping specs, designs, and code in sync",
+      "author": "Aaron Sun",
+      "version": "0.1.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-openspec/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/aaronrsun/spec-kit-openspec",
+      "homepage": "https://github.com/aaronrsun/spec-kit-openspec",
+      "documentation": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0"
+      },
+      "provides": {
+        "commands": 12
+      },
+      "tags": [
+        "openspec"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-26T00:00:00Z",
+      "updated_at": "2026-09-26T00:00:00Z"
+    },
     "openup": {
       "name": "OpenUP Governed Lifecycle",
       "id": "openup",
