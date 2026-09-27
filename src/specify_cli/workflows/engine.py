@@ -1168,8 +1168,7 @@ class WorkflowEngine:
         # Merge any newly-supplied inputs over the persisted ones and
         # re-validate through the same typing path as the initial run.
         if inputs:
-            merged = {**state.inputs, **inputs}
-            state.inputs = self._resolve_inputs(definition, merged)
+            state.inputs = self._merge_inputs(definition, state.inputs, inputs)
 
         # Restore context
         context = StepContext(
@@ -1312,6 +1311,15 @@ class WorkflowEngine:
                 }
             resolved[name] = self._coerce_input(name, value, coerce_input_def)
         return resolved
+
+    def _merge_inputs(
+        self,
+        definition: WorkflowDefinition,
+        previous: dict[str, Any],
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve updates over an existing input snapshot."""
+        return self._resolve_inputs(definition, {**previous, **updates})
 
     def _resolve_default(self, name: str, default: Any) -> Any:
         """Resolve special default sentinels against project state.

@@ -24,6 +24,10 @@ RESERVED_OUTPUT_NAMES = frozenset(
 MAX_COMPOSITION_DEPTH = 16
 
 
+class CallError(ValueError):
+    """A treatable violation of the workflow-call boundary."""
+
+
 def require_json(value: Any) -> None:
     """Reject lossy/non-JSON values, including cycles, before checkpointing."""
     try:
@@ -60,6 +64,13 @@ def validate_call(config: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validate_runtime_call(config: dict[str, Any]) -> None:
+    """Raise a call-boundary error for an invalid authored call shape."""
+    errors = validate_call(config)
+    if errors:
+        raise CallError("; ".join(errors))
+
+
 def validate_outputs(outputs: Any) -> list[str]:
     from .engine import _ID_PATTERN
 
@@ -87,61 +98,84 @@ def resolve_target(project_root: Path, target: Any, ancestry: tuple[str, ...]):
     from .overlay import WorkflowResolver
     from .overlay.schema import _RESERVED_WORKFLOW_IDS
 
-    if not isinstance(target, str) or not _ID_PATTERN.fullmatch(target):
-        raise ValueError("Workflow target must be an exact safe workflow ID")
-    if target in _RESERVED_WORKFLOW_IDS:
-        raise ValueError(f"Workflow {target!r} is reserved")
-    if target in ancestry:
-        raise ValueError(
-            f"Workflow composition cycle: {' -> '.join((*ancestry, target))}"
-        )
-    if len(ancestry) > MAX_COMPOSITION_DEPTH:
-        raise ValueError(
-            f"Workflow composition exceeds maximum depth {MAX_COMPOSITION_DEPTH}"
-        )
-    metadata = WorkflowRegistry(project_root).get(target)
-    if not isinstance(metadata, dict):
-        raise ValueError(f"Workflow {target!r} is not installed")
-    if not metadata.get("enabled", True):
-        raise ValueError(f"Workflow {target!r} is disabled")
-    definition = WorkflowResolver(project_root).resolve(target)
-    if definition.id != target:
-        raise ValueError(
-            f"Workflow {target!r} resolves to mismatched ID {definition.id!r}"
-        )
-    errors = validate_workflow(definition)
-    if errors:
-        raise ValueError(f"Invalid workflow {target!r}: {'; '.join(errors)}")
-    return definition
+    try:
+        if not isinstance(target, str) or not _ID_PATTERN.fullmatch(target):
+            raise CallError("Workflow target must be an exact safe workflow ID")
+        if target in _RESERVED_WORKFLOW_IDS:
+            raise CallError(f"Workflow {target!r} is reserved")
+        if target in ancestry:
+            raise CallError(
+                f"Workflow composition cycle: {' -> '.join((*ancestry, target))}"
+            )
+        if len(ancestry) > MAX_COMPOSITION_DEPTH:
+            raise CallError(
+                f"Workflow composition exceeds maximum depth {MAX_COMPOSITION_DEPTH}"
+            )
+        metadata = WorkflowRegistry(project_root).get(target)
+        if not isinstance(metadata, dict):
+            raise CallError(f"Workflow {target!r} is not installed")
+        if not metadata.get("enabled", True):
+            raise CallError(f"Workflow {target!r} is disabled")
+        definition = WorkflowResolver(project_root).resolve(target)
+        if definition.id != target:
+            raise CallError(
+                f"Workflow {target!r} resolves to mismatched ID {definition.id!r}"
+            )
+        errors = validate_workflow(definition)
+        if errors:
+            raise CallError(f"Invalid workflow {target!r}: {'; '.join(errors)}")
+        return definition
+    except CallError:
+        raise
+    except Exception as exc:
+        raise CallError(str(exc)) from exc
 
 
-def bind_inputs(engine, definition, config: dict[str, Any], context: StepContext):
+def bind_inputs(
+    engine,
+    definition,
+    config: dict[str, Any],
+    context: StepContext,
+    previous: dict[str, Any] | None = None,
+):
     mapping = config.get("input")
     if mapping is None:
         mapping = {}
     if not isinstance(mapping, dict) or any(not isinstance(k, str) for k in mapping):
-        raise ValueError("'input' must be a mapping with string keys")
+        raise CallError("'input' must be a mapping with string keys")
     provided = {
         key: evaluate_expression(value, context) for key, value in mapping.items()
     }
-    require_json(provided)
-    unknown = provided.keys() - definition.inputs.keys()
-    if unknown:
-        raise ValueError(
-            f"Undeclared inputs for workflow {definition.id!r}: {sorted(unknown)}"
+    try:
+        require_json(provided)
+        unknown = provided.keys() - definition.inputs.keys()
+        if unknown:
+            raise CallError(
+                f"Undeclared inputs for workflow {definition.id!r}: {sorted(unknown)}"
+            )
+        resolved = (
+            engine._resolve_inputs(definition, provided)
+            if previous is None
+            else engine._merge_inputs(definition, previous, provided)
         )
-    resolved = engine._resolve_inputs(definition, provided)
-    require_json(resolved)
-    return resolved
+        require_json(resolved)
+        return resolved
+    except CallError:
+        raise
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise CallError(str(exc)) from exc
 
 
 def evaluate_outputs(definition, context: StepContext) -> dict[str, Any]:
     errors = validate_outputs(definition.outputs)
     if errors:
-        raise ValueError("; ".join(errors))
+        raise CallError("; ".join(errors))
     output = {
         name: evaluate_expression(entry["value"], context)
         for name, entry in definition.outputs.items()
     }
-    require_json(output)
-    return output
+    try:
+        require_json(output)
+        return output
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise CallError(str(exc)) from exc

@@ -293,24 +293,114 @@ def test_invalid_inputs_do_not_execute_child(tmp_path, probe, mapping):
     RunState.load(state.run_id, tmp_path)
 
 
-def test_output_failure_retries_only_finalization(tmp_path, monkeypatch, probe):
+def test_child_exception_propagates_despite_continue_on_error(tmp_path, monkeypatch):
+    class Explode(StepBase):
+        type_key = "explode"
+
+        def execute(self, config, context):
+            raise RuntimeError("child exploded")
+
+    monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+    install(tmp_path, definition("child", [{"id": "work", "type": "explode"}]))
+
+    with pytest.raises(RuntimeError, match="child exploded"):
+        WorkflowEngine(tmp_path).execute(
+            definition("parent", [call(continue_on_error=True)])
+        )
+
+
+@pytest.mark.parametrize("location", ["input", "output"])
+def test_call_expression_errors_propagate_despite_continue_on_error(
+    tmp_path, probe, location
+):
+    child = definition(
+        "child",
+        [{"id": "work", "type": "probe"}],
+        inputs={"value": {"type": "string"}},
+        outputs=(
+            {"value": {"value": "{{ inputs.value | from_json }}"}}
+            if location == "output"
+            else {}
+        ),
+    )
+    install(tmp_path, child)
+    config = call(
+        input={
+            "value": (
+                "{{ inputs.value | from_json }}" if location == "input" else "not json"
+            )
+        },
+        continue_on_error=True,
+    )
+
+    with pytest.raises(ValueError, match="from_json: invalid JSON"):
+        WorkflowEngine(tmp_path).execute(
+            definition(
+                "parent",
+                [config],
+                inputs={"value": {"type": "string", "default": "not json"}},
+            )
+        )
+
+
+@pytest.mark.parametrize("handled", [False, True])
+def test_output_failure_retries_only_finalization(
+    tmp_path, monkeypatch, probe, handled
+):
     import specify_cli.workflows._execution as execution
+    from specify_cli.workflows.composition import CallError
 
     install(tmp_path, definition("child", [{"id": "work", "type": "probe"}]))
     original = execution.evaluate_outputs
     monkeypatch.setattr(
         execution,
         "evaluate_outputs",
-        lambda *_: (_ for _ in ()).throw(ValueError("bad output")),
+        lambda *_: (_ for _ in ()).throw(CallError("bad output")),
     )
-    state = WorkflowEngine(tmp_path).execute(definition("parent", [call()]))
-    assert state.status == RunStatus.FAILED
+    state = WorkflowEngine(tmp_path).execute(
+        definition("parent", [call(continue_on_error=handled)])
+    )
+    assert state.status == (
+        RunStatus.COMPLETED if handled else RunStatus.FAILED
+    )
+    if handled:
+        assert probe["work"] == 1
+        return
     state = WorkflowEngine(tmp_path).resume(state.run_id)
     assert state.status == RunStatus.FAILED
     monkeypatch.setattr(execution, "evaluate_outputs", original)
     state = WorkflowEngine(tmp_path).resume(state.run_id)
     assert state.status == RunStatus.COMPLETED
     assert probe["work"] == 1
+
+
+def test_output_expression_failure_retries_only_finalization(tmp_path, probe):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "work", "type": "probe"}],
+            inputs={"value": {"type": "string"}},
+            outputs={"value": {"value": "{{ inputs.value | from_json }}"}},
+        ),
+    )
+    root = definition(
+        "parent",
+        [call(input={"value": "{{ inputs.value }}"})],
+        inputs={"value": {"type": "string", "default": "not json"}},
+    )
+
+    with pytest.raises(ValueError, match="from_json: invalid JSON"):
+        WorkflowEngine(tmp_path).execute(root, run_id="output-expression")
+
+    state = WorkflowEngine(tmp_path).resume(
+        "output-expression",
+        {"value": '{"ok": true}'},
+    )
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe["work"] == 1
+    assert state.step_results["call"]["output"]["value"] == {"ok": True}
 
 
 @pytest.mark.parametrize("status", [RunStatus.PAUSED, RunStatus.FAILED])
@@ -673,14 +763,222 @@ def test_rebind_failure_has_one_failed_caller_outcome(tmp_path, probe):
     )
     state = WorkflowEngine(tmp_path).execute(root)
     assert state.status == RunStatus.PAUSED
-    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": "invalid"})
-    assert state.status == RunStatus.COMPLETED
-    node = RunState.load(state.run_id, tmp_path).execution["sequence"]["nodes"][0]
-    assert node["phase"] == "done"
-    assert node["result"]["output"]["status"] == "failed"
-    from specify_cli.workflows._execution import active_step
+    before = RunState.load(state.run_id, tmp_path).execution["sequence"]["nodes"][0]
 
-    assert active_step(state.execution) is None
+    with pytest.raises(ValueError, match="expected a boolean"):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": "invalid"})
+
+    failed = RunState.load(state.run_id, tmp_path)
+    node = failed.execution["sequence"]["nodes"][0]
+    assert failed.status == RunStatus.FAILED
+    assert node == before
+    assert WorkflowEngine(tmp_path).resume(
+        state.run_id, {"approve": "true"}
+    ).status == RunStatus.COMPLETED
+
+
+@pytest.mark.parametrize("depth", [1, 2])
+def test_verdict_input_remains_forbidden_through_calls_in_fan_out(
+    tmp_path, probe, depth
+):
+    child = definition(
+        "child",
+        [
+            {
+                "id": "review",
+                "type": "gate",
+                "message": "Review",
+                "verdict_input": "approve",
+            }
+        ],
+        inputs={"approve": {"type": "string", "default": ""}},
+    )
+    install(tmp_path, child)
+    if depth == 2:
+        install(
+            tmp_path,
+            definition(
+                "middle",
+                [call("child", input={"approve": "{{ inputs.approve }}"})],
+                inputs={"approve": {"type": "string", "default": ""}},
+            ),
+        )
+    target = "middle" if depth == 2 else "child"
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": ["item"],
+                    "step": {
+                        "id": "call",
+                        "type": "workflow",
+                        "workflow": target,
+                        "input": {"approve": ""},
+                    },
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.FAILED
+    assert "not supported inside fan-out templates" in state.error
+
+
+def test_workflow_result_does_not_inherit_parent_defaults(tmp_path, probe):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "work", "type": "probe"}],
+            workflow={
+                "id": "child",
+                "name": "child",
+                "integration": "child",
+                "model": "child-model",
+                "options": {"x": 2},
+            },
+        ),
+    )
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [call()],
+            workflow={
+                "id": "parent",
+                "name": "parent",
+                "integration": "parent",
+                "model": "parent-model",
+                "options": {"x": 1},
+            },
+        )
+    )
+
+    call_result = state.step_results["call"]
+    assert call_result["integration"] is None
+    assert call_result["model"] is None
+    assert call_result["options"] == {}
+    assert call_result["input"] == {}
+
+
+def test_child_context_does_not_inherit_item_or_fan_in(tmp_path, probe):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {"id": "item", "type": "probe", "value": "{{ item }}"},
+                {"id": "fan-in", "type": "probe", "value": "{{ fan_in }}"},
+            ],
+            outputs={
+                "item": {"value": "{{ steps.item.output.value }}"},
+                "fan-in": {"value": "{{ steps.fan-in.output.value }}"},
+            },
+        ),
+    )
+
+    state = WorkflowEngine(tmp_path).execute(definition("parent", [call()]))
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["output"] == {
+        "workflow": "child",
+        "status": "completed",
+        "item": None,
+        "fan-in": {},
+    }
+
+
+def test_rebind_keeps_unmapped_auto_input(tmp_path, probe):
+    marker = tmp_path / ".specify" / "integration.json"
+    marker.parent.mkdir()
+    marker.write_text('{"version": 1, "default_integration": "first"}')
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "wait", "type": "probe", "await": True}],
+            inputs={
+                "approve": {"type": "boolean", "default": False},
+                "integration": {"type": "string", "default": "auto"},
+            },
+        ),
+    )
+    root = definition(
+        "parent",
+        [call(input={"approve": "{{ inputs.approve }}"})],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    marker.write_text('{"version": 1, "default_integration": "second"}')
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    binding = state.execution["sequence"]["nodes"][0]["binding"]
+    assert binding["inputs"] == {"approve": True, "integration": "first"}
+
+
+@pytest.mark.parametrize("change", ["disable", "uninstall"])
+def test_bound_call_uses_snapshot_after_target_changes(tmp_path, probe, change):
+    child = definition(
+        "child",
+        [{"id": "wait", "type": "probe", "await": True}],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    directory = install(tmp_path, child)
+    root = definition(
+        "parent",
+        [call(input={"approve": "{{ inputs.approve }}"})],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    if change == "disable":
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        WorkflowRegistry(tmp_path).add("child", {"version": "1.0.0", "enabled": False})
+    else:
+        directory.rename(tmp_path / "removed-child")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert resumed.status == RunStatus.COMPLETED
+
+
+@pytest.mark.parametrize("change", ["disable", "uninstall"])
+def test_unbound_call_checks_target_when_resume_reaches_it(tmp_path, probe, change):
+    child = definition("child", [{"id": "work", "type": "probe"}])
+    directory = install(tmp_path, child)
+    root = definition(
+        "parent",
+        [
+            {
+                "id": "wait",
+                "type": "gate",
+                "message": "Wait",
+                "verdict_input": "approve",
+            },
+            call(continue_on_error=True),
+        ],
+        inputs={"approve": {"type": "string", "default": ""}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    if change == "disable":
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        WorkflowRegistry(tmp_path).add("child", {"version": "1.0.0", "enabled": False})
+    else:
+        directory.rename(tmp_path / "removed-child")
+
+    resumed = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": "approve"})
+
+    assert resumed.status == RunStatus.COMPLETED
+    assert resumed.step_results["call"]["status"] == "failed"
+    assert not probe
 
 
 @pytest.mark.parametrize(

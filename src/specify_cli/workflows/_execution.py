@@ -15,7 +15,13 @@ from typing import Any
 import yaml
 
 from .base import StepContext, StepResult, StepStatus
-from .composition import bind_inputs, evaluate_outputs, resolve_target, validate_call
+from .composition import (
+    CallError,
+    bind_inputs,
+    evaluate_outputs,
+    resolve_target,
+    validate_runtime_call,
+)
 from .expressions import evaluate_condition, evaluate_expression
 
 HALTING = {"paused", "failed", "aborted"}
@@ -197,6 +203,21 @@ def scope_summaries(tree):
                 }
             )
     return summaries
+
+
+def child_context_for_call(parent, binding, definition):
+    """Create the private context for one bound workflow call."""
+    return StepContext(
+        inputs=binding["inputs"],
+        project_root=parent.project_root,
+        run_id=parent.run_id,
+        is_resume=parent.is_resume,
+        inside_fan_out=parent.inside_fan_out,
+        workflow_dir=binding["workflow_dir"],
+        default_integration=definition.default_integration,
+        default_model=definition.default_model,
+        default_options=definition.default_options,
+    )
 
 
 class Execution:
@@ -407,18 +428,27 @@ class Execution:
     @staticmethod
     def record(config, result, context):
         output = result.output
+        is_workflow = config.get("type") == "workflow"
         data = {
             "type": config.get("type", "command"),
-            "integration": output.get("integration")
+            "integration": None
+            if is_workflow
+            else output.get("integration")
             or config.get("integration")
             or context.default_integration,
-            "model": output.get("model")
+            "model": None
+            if is_workflow
+            else output.get("model")
             or config.get("model")
             or context.default_model,
-            "options": output.get("options") or config.get("options", {}),
-            "input": {}
-            if config.get("type") == "workflow"
-            else output.get("input") or config.get("input", {}),
+            "options": {}
+            if is_workflow
+            else output.get("options") or config.get("options", {}),
+            "input": (
+                {}
+                if is_workflow
+                else output.get("input") or config.get("input", {})
+            ),
             "output": output,
             "status": result.status.value,
             "error": result.error,
@@ -470,11 +500,9 @@ class Execution:
                 self.engine.on_step_start(name, "workflow")
         binding = node.get("binding")
         target = binding["workflow"] if binding else config.get("workflow")
-        try:
-            if binding is None:
-                errors = validate_call(config)
-                if errors:
-                    raise ValueError("; ".join(errors))
+        if binding is None:
+            try:
+                validate_runtime_call(config)
                 target = evaluate_expression(target, context)
                 definition = resolve_target(self.state.project_root, target, ancestry)
                 binding = {
@@ -491,56 +519,55 @@ class Execution:
                         "phase": "children",
                     },
                 )
-            else:
-                definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
-                if self.rebind:
-                    binding = {
-                        **binding,
-                        "inputs": bind_inputs(self.engine, definition, config, context),
-                    }
-                    self.commit(node, {"binding": binding})
-            child_context = StepContext(
-                inputs=binding["inputs"],
-                project_root=context.project_root,
-                run_id=context.run_id,
-                is_resume=context.is_resume,
-                workflow_dir=binding["workflow_dir"],
-                default_integration=definition.default_integration,
-                default_model=definition.default_model,
-                default_options=definition.default_options,
-            )
-            outcome, error = self.run(
-                node["children"][0],
-                child_context,
-                (*ancestry, target),
-                path=(*path, "workflow"),
-                public=False,
-            )
-            output = {"workflow": target, "status": outcome}
-            if outcome == "completed":
-                self.commit(node, {"phase": "outputs"})
+            except CallError as exc:
+                target = target if isinstance(target, str) else repr(target)
+                result = StepResult(
+                    StepStatus.FAILED,
+                    output={"workflow": target, "status": "failed", "error": str(exc)},
+                    error=str(exc),
+                )
+                return self.finish(
+                    config, node, result, context, ancestry, path, public_name
+                )
+        else:
+            definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
+            if self.rebind:
+                inputs = bind_inputs(
+                    self.engine, definition, config, context, binding["inputs"]
+                )
+                binding = {**binding, "inputs": inputs}
+                self.commit(node, {"binding": binding})
+        child_context = child_context_for_call(context, binding, definition)
+        outcome, error = self.run(
+            node["children"][0],
+            child_context,
+            (*ancestry, target),
+            path=(*path, "workflow"),
+            public=False,
+        )
+        output = {"workflow": target, "status": outcome}
+        if outcome == "completed":
+            self.commit(node, {"phase": "outputs"})
+            try:
                 output.update(evaluate_outputs(definition, child_context))
-            elif outcome == "aborted":
-                output["aborted"] = True
-            if error is not None:
-                output["error"] = error
-            status = (
-                StepStatus.COMPLETED
-                if outcome == "completed"
-                else StepStatus.PAUSED
-                if outcome == "paused"
-                else StepStatus.FAILED
-            )
-            result = StepResult(status, output=output, error=error)
-        except CheckpointError:
-            raise
-        except Exception as exc:
-            target = target if isinstance(target, str) else repr(target)
-            result = StepResult(
-                StepStatus.FAILED,
-                output={"workflow": target, "status": "failed", "error": str(exc)},
-                error=str(exc),
-            )
+            except CallError as exc:
+                output.update(status="failed", error=str(exc))
+                result = StepResult(StepStatus.FAILED, output=output, error=str(exc))
+                return self.finish(
+                    config, node, result, context, ancestry, path, public_name
+                )
+        elif outcome == "aborted":
+            output["aborted"] = True
+        if error is not None:
+            output["error"] = error
+        status = (
+            StepStatus.COMPLETED
+            if outcome == "completed"
+            else StepStatus.PAUSED
+            if outcome == "paused"
+            else StepStatus.FAILED
+        )
+        result = StepResult(status, output=output, error=error)
         # An unavailable child implementation is terminal at every workflow
         # boundary, matching direct execution of the same step.
         if isinstance(result.error, str) and result.error.startswith(
