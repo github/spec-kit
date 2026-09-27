@@ -103,6 +103,29 @@ def test_declared_output_and_scope_isolation(tmp_path, probe):
     assert len(list((tmp_path / ".specify/workflows/runs").iterdir())) == 1
 
 
+def test_called_workflow_dir_resolves_definition_symlink(tmp_path, monkeypatch, probe):
+    import specify_cli.workflows._execution as execution
+
+    resolved_dir = tmp_path / "resolved-child"
+    resolved_dir.mkdir()
+    symlink_dir = tmp_path / "linked-child"
+    symlink_dir.symlink_to(resolved_dir, target_is_directory=True)
+    child = definition(
+        "child",
+        [{"id": "path", "type": "probe", "value": "{{ context.workflow_dir }}"}],
+        outputs={"workflow-dir": {"value": "{{ steps.path.output.value }}"}},
+    )
+    child.source_path = symlink_dir / "workflow.yml"
+    monkeypatch.setattr(execution, "resolve_target", lambda *_: child)
+
+    state = WorkflowEngine(tmp_path).execute(definition("parent", [call()]))
+
+    assert state.status == RunStatus.COMPLETED, state.error
+    assert state.step_results["call"]["output"]["workflow-dir"] == str(
+        resolved_dir
+    )
+
+
 def test_concurrent_nested_calls_keep_downstream_aliases_local(
     tmp_path, monkeypatch, probe
 ):

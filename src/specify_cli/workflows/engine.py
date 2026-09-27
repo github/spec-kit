@@ -117,6 +117,13 @@ class WorkflowDefinition:
         return cls(data)
 
 
+def workflow_dir_for(definition: WorkflowDefinition) -> str | None:
+    """Return the resolved parent directory of a workflow definition's source."""
+    if definition.source_path is None:
+        return None
+    return str(definition.source_path.resolve().parent)
+
+
 # -- Workflow Validation --------------------------------------------------
 
 # ID format: lowercase alphanumeric with hyphens
@@ -1067,11 +1074,7 @@ class WorkflowEngine:
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
-        workflow_dir = (
-            str(definition.source_path.resolve().parent)
-            if definition.source_path is not None
-            else None
-        )
+        workflow_dir = workflow_dir_for(definition)
         state.workflow_dir = workflow_dir
         state.status = RunStatus.RUNNING
         state.save()
@@ -1229,13 +1232,11 @@ class WorkflowEngine:
         rebind: bool = False,
     ) -> None:
         """Execute or resume the persisted tree (legacy indices adapt once)."""
-        from ._execution import Execution, active_step, sequence
+        from ._execution import Execution, active_step, new_execution
         from copy import deepcopy
 
         if state.execution is None:
-            state.execution = {"version": 1, "sequence": sequence(steps)}
-            state.execution["offset"] = max(0, step_offset)
-            state.execution["initial"] = deepcopy(context.steps)
+            state.execution = new_execution(steps, step_offset, context.steps)
         context.steps = deepcopy(state.execution.get("initial", {}))
         state.save()
         tree = state.execution["sequence"]

@@ -32,13 +32,60 @@ def sequence(steps: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def new_execution(
+    steps: list[dict[str, Any]], offset: int, initial: dict[str, Any]
+) -> dict[str, Any]:
+    """Create the persisted root execution tree."""
+    return {
+        "version": 1,
+        "sequence": sequence(steps),
+        "offset": max(0, offset),
+        "initial": deepcopy(initial),
+    }
+
+
+def steps_of(seq: dict[str, Any]) -> Any:
+    """Read the persisted YAML source for one execution sequence."""
+    return yaml.safe_load(seq["source"])
+
+
+def child_path(config, path, item):
+    """Return a child's reporting path from its parent occurrence."""
+    return (
+        [*path, str(item)]
+        if config.get("type") in {"fan-out", "while", "do-while"}
+        else path
+    )
+
+
+def walk_execution(seq, path=(), *, children_first=False, skip_done=False):
+    """Yield execution occurrences with one shared path rule."""
+    for index, (config, node) in enumerate(zip(steps_of(seq), seq["nodes"])):
+        if skip_done and node["phase"] == "done":
+            continue
+        here = [*path, config.get("id", f"step-{index}")]
+        children = node.get("children", [])
+        if children_first:
+            for item, child in enumerate(children):
+                yield from walk_execution(
+                    child,
+                    child_path(config, here, item),
+                    children_first=True,
+                    skip_done=skip_done,
+                )
+        yield config, node, here
+        if not children_first:
+            for item, child in enumerate(children):
+                yield from walk_execution(child, child_path(config, here, item))
+
+
 def validate_execution(tree: Any) -> None:
     """Validate stored structure without importing a project's custom steps."""
 
     def check_sequence(seq):
         if not isinstance(seq, dict) or not isinstance(seq.get("source"), str):
             raise ValueError("Invalid execution sequence")
-        steps = yaml.safe_load(seq["source"])
+        steps = steps_of(seq)
         nodes = seq.get("nodes")
         if (
             not isinstance(steps, list)
@@ -95,7 +142,7 @@ def validate_execution(tree: Any) -> None:
                     or not isinstance(binding.get("inputs"), dict)
                     or len(children) != 1
                     or not isinstance(definition.get("steps"), list)
-                    or definition["steps"] != yaml.safe_load(children[0]["source"])
+                    or definition["steps"] != steps_of(children[0])
                 ):
                     raise ValueError("Invalid bound workflow definition or inputs")
             if node["phase"] == "outputs" and binding is None:
@@ -128,57 +175,27 @@ def validate_execution(tree: Any) -> None:
 
 def active_step(tree):
     """First unfinished leaf in execution order, including nested workflow scopes."""
-
-    def walk(seq, path):
-        for index, (config, node) in enumerate(
-            zip(yaml.safe_load(seq["source"]), seq["nodes"])
-        ):
-            if node["phase"] == "done":
-                continue
-            here = [*path, config.get("id", f"step-{index}")]
-            for item, child in enumerate(node.get("children", [])):
-                child_path = (
-                    [*here, str(item)]
-                    if config.get("type") in {"fan-out", "while", "do-while"}
-                    else here
-                )
-                found = walk(child, child_path)
-                if found:
-                    return found
-            return here, node
-        return None
-
-    return walk(tree["sequence"], [])
+    for _, node, path in walk_execution(
+        tree["sequence"], children_first=True, skip_done=True
+    ):
+        return path, node
+    return None
 
 
 def scope_summaries(tree):
     """Report workflow boundaries without exposing private inputs or results."""
     summaries = []
-
-    def walk(seq, path):
-        for index, (config, node) in enumerate(
-            zip(yaml.safe_load(seq["source"]), seq["nodes"])
-        ):
-            here = [*path, config.get("id", f"step-{index}")]
-            binding = node.get("binding")
-            if binding:
-                output = node.get("result", {}).get("output", {})
-                summaries.append(
-                    {
-                        "scope_path": here,
-                        "workflow_id": binding["workflow"],
-                        "status": output.get("status", "running"),
-                    }
-                )
-            for item, child in enumerate(node.get("children", [])):
-                child_path = (
-                    [*here, str(item)]
-                    if config.get("type") in {"fan-out", "while", "do-while"}
-                    else here
-                )
-                walk(child, child_path)
-
-    walk(tree["sequence"], [])
+    for _, node, path in walk_execution(tree["sequence"]):
+        binding = node.get("binding")
+        if binding:
+            output = node.get("result", {}).get("output", {})
+            summaries.append(
+                {
+                    "scope_path": path,
+                    "workflow_id": binding["workflow"],
+                    "status": output.get("status", "running"),
+                }
+            )
     return summaries
 
 
@@ -217,7 +234,7 @@ class Execution:
         root=False,
         loop_alias=None,
     ):
-        steps = yaml.safe_load(seq["source"])
+        steps = steps_of(seq)
         for index, (config, node) in enumerate(zip(steps, seq["nodes"])):
             config = {"id": f"step-{index}", **config}
             name = config["id"]
@@ -246,7 +263,7 @@ class Execution:
         """Rebuild aliases for completed expansions without re-executing them."""
         for child in node.get("children", []) if "binding" not in node else []:
             for index, (config, nested) in enumerate(
-                zip(yaml.safe_load(child["source"]), child["nodes"])
+                zip(steps_of(child), child["nodes"])
             ):
                 if "result" in nested:
                     context.steps[config.get("id", f"step-{index}")] = nested["result"]
@@ -363,7 +380,7 @@ class Execution:
                 while len(node["children"]) < limit and evaluate_condition(
                     config.get("condition", False), context
                 ):
-                    child = sequence(yaml.safe_load(node["children"][0]["source"]))
+                    child = sequence(steps_of(node["children"][0]))
                     self.commit(node, {"children": [*node["children"], child]})
                     outcome, error = self.run(
                         child,
@@ -444,7 +461,7 @@ class Execution:
         return outcome
 
     def workflow(self, config, node, context, ancestry, path, public_name):
-        from .engine import WorkflowDefinition
+        from .engine import WorkflowDefinition, workflow_dir_for
 
         name = config.get("id", "step-0")
         self.log("step_started", name, path, ancestry[-1], type="workflow")
@@ -464,9 +481,7 @@ class Execution:
                     "workflow": target,
                     "definition": yaml.safe_dump(definition.data, sort_keys=False),
                     "inputs": bind_inputs(self.engine, definition, config, context),
-                    "workflow_dir": str(definition.source_path.parent)
-                    if definition.source_path
-                    else None,
+                    "workflow_dir": workflow_dir_for(definition),
                 }
                 self.commit(
                     node,
