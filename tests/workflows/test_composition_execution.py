@@ -461,11 +461,30 @@ def test_legacy_resume_adapts_once(tmp_path, probe):
         lambda tree: tree.update(version=99),
         lambda tree: tree["sequence"].update(nodes=[]),
         lambda tree: tree["sequence"]["nodes"][0].update(phase="nonsense"),
+        lambda tree: tree["sequence"]["nodes"][0]["binding"].pop("workflow_dir"),
+        lambda tree: tree["sequence"]["nodes"][0]["binding"].update(
+            workflow_dir=42
+        ),
+        lambda tree: tree["sequence"]["nodes"][0]["binding"].update(
+            workflow_dir={}
+        ),
     ],
 )
 def test_bad_checkpoint_rejected_without_writes(tmp_path, probe, mutation):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "wait", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
     state = WorkflowEngine(tmp_path).execute(
-        definition("parent", [{"id": "wait", "type": "probe", "await": True}])
+        definition(
+            "parent",
+            [call(input={"approve": "{{ inputs.approve }}"})],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
     )
     path = state.runs_dir / "state.json"
     data = json.loads(path.read_text())
@@ -475,6 +494,32 @@ def test_bad_checkpoint_rejected_without_writes(tmp_path, probe, mutation):
     with pytest.raises(ValueError):
         WorkflowEngine(tmp_path).resume(state.run_id)
     assert path.read_bytes() == before
+
+
+def test_bound_call_without_source_path_resumes_with_null_workflow_dir(
+    tmp_path, monkeypatch, probe
+):
+    import specify_cli.workflows._execution as execution
+
+    child = definition(
+        "child",
+        [{"id": "wait", "type": "probe", "await": True}],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    monkeypatch.setattr(execution, "resolve_target", lambda *_: child)
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [call(input={"approve": "{{ inputs.approve }}"})],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    assert state.execution["sequence"]["nodes"][0]["binding"]["workflow_dir"] is None
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
 
 
 @pytest.mark.parametrize("failure_after_replace", [False, True])
@@ -645,6 +690,76 @@ def test_replay_restores_fan_out_aliases_from_completed_if(tmp_path, probe):
 
     assert state.status == RunStatus.COMPLETED
     assert state.step_results["join"]["output"]["results"] == [{"value": 1}]
+
+
+def test_resume_restores_completed_fan_out_item_aliases(tmp_path, monkeypatch, probe):
+    class PauseSecond(StepBase):
+        type_key = "pause-second"
+
+        def execute(self, config, context):
+            if context.item == 2 and not context.inputs["approve"]:
+                return StepResult(StepStatus.PAUSED)
+            return StepResult(output={"value": context.item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "pause-second", PauseSecond())
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "step": {"id": "template", "type": "pause-second"},
+                },
+                {
+                    "id": "join",
+                    "type": "fan-in",
+                    "wait_for": ["fan:template:0", "fan:template:1"],
+                },
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["join"]["output"]["results"] == [
+        {"value": 1},
+        {"value": 2},
+    ]
+
+
+def test_replay_keeps_private_nested_fan_out_aliases_private(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "outer",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {
+                        "id": "outer-item",
+                        "type": "fan-out",
+                        "items": [1],
+                        "step": {"id": "inner", "type": "probe"},
+                    },
+                },
+                {"id": "wait", "type": "probe", "await": True},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    assert "outer:outer-item:0" in state.step_results
+    assert "outer:outer-item:0:inner:0" not in state.step_results
 
 
 def test_replay_does_not_execute_completed_fan_out_or_emit_callbacks(tmp_path, probe):

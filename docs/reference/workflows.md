@@ -582,10 +582,11 @@ outputs:
 ```
 
 The caller reads `{{ steps.investigate.output.report }}`. Output includes
-`workflow` and `status`; failures also include `error`, and an abort includes
-`aborted: true`. These names and `integration`, `model`, `options`, and `input`
-are reserved. Returned values must be JSON-safe. Private inputs, step records,
-and logs are not part of the return value. No separate child run is created.
+`workflow` and `status`; failures include `error` when the failed operation
+reported one, and an abort includes `aborted: true`. These names and
+`integration`, `model`, `options`, and `input` are reserved. Returned values
+must be JSON-safe. Private inputs, step records, and logs are not part of the
+return value. No separate child run is created.
 
 `continue_on_error: true` on a workflow call handles a returned child failure
 and call-boundary contract failures, such as an unavailable target, invalid

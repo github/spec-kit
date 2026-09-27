@@ -175,6 +175,8 @@ def validate_execution(tree: Any) -> None:
                     or not isinstance(definition.get("workflow"), dict)
                     or definition["workflow"].get("id") != binding.get("workflow")
                     or not isinstance(binding.get("inputs"), dict)
+                    or "workflow_dir" not in binding
+                    or not isinstance(binding["workflow_dir"], (str, type(None)))
                     or len(children) != 1
                     or not isinstance(definition.get("steps"), list)
                 ):
@@ -400,7 +402,7 @@ class Execution:
                 steps=child_steps(config, node, child),
             )
             record = child["nodes"][0].get("result")
-            if record is not None:
+            if public and record is not None:
                 self.project_alias(
                     context,
                     f"{qualified}:{template_name}:{index}",
@@ -419,6 +421,10 @@ class Execution:
             self.project(
                 context, name, node["result"], public=public, qualified=qualified
             )
+            for alias_context, alias, result in aliases:
+                self.project_alias(
+                    alias_context, alias, node["result"] if result is None else result
+                )
             if kind == "workflow":
                 return node.get("outcome", "completed")
             if kind == "fan-out":
