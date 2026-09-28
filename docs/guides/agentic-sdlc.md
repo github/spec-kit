@@ -111,8 +111,8 @@ design documents.
 
 &#9733; The [bundler SDD snapshot](https://github.com/github/spec-kit/commit/3fd1e54d4b237af6124bb967e2eae24c93685a89)
 illustrates the deeper path: its plan, research, data model, contracts, and
-tasks made the design actionable through `/speckit-plan` and
-`/speckit-tasks`. This shows where Spec Kit itself was used without
+tasks made the design actionable through `/speckit.plan` and
+`/speckit.tasks`. This shows where Spec Kit itself was used without
 presenting that level of detail as the default for every change.
 
 ### 4. Development: make reviewable changes
