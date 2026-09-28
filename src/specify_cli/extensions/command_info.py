@@ -45,7 +45,9 @@ def extension_info(
     if ext_info:
         if show_versions:
             try:
-                available = catalog.get_extension_versions(ext_info["id"])
+                from ._catalog_versions import available_versions
+
+                available = available_versions(ext_info)
             except ExtensionError as exc:
                 _commands.console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
                 raise typer.Exit(1) from exc

@@ -171,8 +171,11 @@ def extension_add(
                     if version is not None:
                         # Resolve within the winning catalog source. A missing
                         # historical release must not fall through to a lower
-                        # priority (or discovery-only) catalog.
-                        selected = catalog.get_extension_info(ext_info["id"], version)
+                        # priority (or discovery-only) catalog. Reuse the entry
+                        # already resolved above rather than fetching again.
+                        from ._catalog_versions import select_release
+
+                        selected = select_release(ext_info, version)
                         if selected is None:
                             console.print(
                                 f"[red]Error:[/red] Extension '{_escape_markup(str(ext_info['id']))}' "

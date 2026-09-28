@@ -161,6 +161,44 @@ def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
     assert catalog.get_extension_versions("demo-history") == ["0.5.1"]
 
 
+@pytest.mark.parametrize("second_lookup", ["lower_priority", "unavailable"])
+def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
+    tmp_path, monkeypatch, second_lookup
+):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    old_archive = _archive(tmp_path, "0.4.12")
+    high = _entry(old_archive)
+    low = _entry(old_archive)
+    low["releases"]["0.4.12"]["download_url"] = "https://example.com/low.zip"
+    fetches = []
+    selected = []
+
+    def merged(_self):
+        fetches.append(True)
+        if len(fetches) == 1:
+            return [high]
+        if second_lookup == "unavailable":
+            raise ExtensionError("winning catalog is unavailable")
+        return [low]
+
+    def download(_self, info):
+        selected.append(info)
+        return old_archive
+
+    monkeypatch.setattr(ExtensionCatalog, "_get_merged_extensions", merged)
+    monkeypatch.setattr(ExtensionCatalog, "download_extension_info", download)
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        app, ["extension", "add", "demo-history", "--version", "0.4.12"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(fetches) == 1
+    assert selected[0]["download_url"] == "https://example.com/demo-0.4.12.zip"
+
+
 @pytest.mark.parametrize(
     "bad_history",
     [
@@ -376,6 +414,31 @@ def test_info_lists_versions_and_discovery_only_policy(tmp_path, monkeypatch):
     assert "0.5.1 (current)" in result.output
     assert "0.4.12" in result.output
     assert "Discovery only" in result.output
+
+
+def test_info_versions_uses_first_resolved_catalog_snapshot(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    high = _entry(_archive(tmp_path, "0.4.12"))
+    low = _entry(_archive(tmp_path, "0.4.12"))
+    low["version"] = "0.8.0"
+    fetches = []
+
+    def merged(_self):
+        fetches.append(True)
+        return [high if len(fetches) == 1 else low]
+
+    monkeypatch.setattr(ExtensionCatalog, "_get_merged_extensions", merged)
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        app, ["extension", "info", "demo-history", "--versions"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(fetches) == 1
+    assert "0.5.1 (current)" in result.output
+    assert "0.8.0" not in result.output
 
 
 def test_info_versions_preserves_catalog_failure(tmp_path, monkeypatch):
