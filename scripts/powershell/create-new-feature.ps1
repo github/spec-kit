@@ -86,7 +86,7 @@ function Test-SpecPrefixInUse {
 function ConvertTo-CleanBranchName {
     param([string]$Name)
 
-    return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+    return $Name.ToLower() -replace '[^\p{L}\p{N}]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 
 function Get-FittedBranchName {
@@ -132,8 +132,8 @@ function Get-BranchName {
         'want', 'need', 'add', 'get', 'set'
     )
 
-    # Convert to lowercase and extract words (alphanumeric only)
-    $cleanName = $Description.ToLower() -replace '[^a-z0-9\s]', ' '
+    # Convert to lowercase and extract Unicode words.
+    $cleanName = $Description.ToLower() -replace '[^\p{L}\p{N}\s]', ' '
     $words = $cleanName -split '\s+' | Where-Object { $_ }
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
@@ -164,13 +164,7 @@ function Get-BranchName {
     } else {
         # Fallback to original logic if no meaningful words found
         $result = ConvertTo-CleanBranchName -Name $Description
-        # @() keeps this an array. ConvertTo-CleanBranchName blanks every
-        # non-[a-z0-9] character, so a description written in a non-Latin script
-        # (or made only of punctuation) leaves nothing for the pipeline to
-        # emit -- it yields $null, and [string]::Join on $null throws
-        # ArgumentNullException. With $ErrorActionPreference = 'Stop' that is
-        # terminating, so the script died with a .NET stack trace and exit 1
-        # where the bash and Python twins both return an empty suffix.
+        # @() keeps this an array when the description contains only separators.
         $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }

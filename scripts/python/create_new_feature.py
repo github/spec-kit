@@ -167,13 +167,13 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
 
 
 def _clean_branch_name(name: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]", "-", name.lower())
+    cleaned = re.sub(r"[^\w]|_", "-", name.lower(), flags=re.UNICODE)
     cleaned = re.sub(r"-+", "-", cleaned)
     return cleaned.strip("-")
 
 
 def _generate_branch_name(description: str) -> str:
-    clean = re.sub(r"[^a-z0-9]", " ", description.lower())
+    clean = re.sub(r"[^\w]|_", " ", description.lower(), flags=re.UNICODE)
     meaningful: list[str] = []
     for word in clean.split():
         if word in _STOP_WORDS:

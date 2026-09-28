@@ -1166,15 +1166,7 @@ def test_all_variants_corrected_prefix_skips_timestamp_collision(repo: Path) -> 
 def test_bash_branch_name_ignores_locale_collation(
     repo: Path, description: str
 ) -> None:
-    """Branch naming must not depend on the caller's locale.
-
-    ``clean_branch_name``/``generate_branch_name`` sanitize with
-    ``sed 's/[^a-z0-9]/-/g'``. Run under a collation-ordered locale that class
-    keeps accented lowercase letters, so bash produced
-    ``001-ajouter-réservation-hôtelière`` where the Python and PowerShell twins
-    produce ``001-ajouter-servation-teli``: the same description yielded a
-    different ``specs/`` directory on two machines that differ only in ``LANG``.
-    """
+    """Branch naming preserves Unicode letters across the script twins."""
     locale_name = collation_range_locale()
     if locale_name is None:
         pytest.skip("no locale with collation-ordered [a-z] ranges available")
@@ -1189,12 +1181,10 @@ def test_bash_branch_name_ignores_locale_collation(
     assert py.returncode == bash.returncode == 0
     assert json_stdout(py) == json_stdout(bash)
     branch = json_stdout(bash)["BRANCH_NAME"]
-    assert isinstance(branch, str) and branch.isascii(), branch
+    assert isinstance(branch, str) and "réservation" in branch, branch
 
     # The run above reaches generate_branch_name. --short-name reaches
-    # clean_branch_name, a separate function carrying its own LC_ALL=C, so
-    # exercise the accented value through both: neither copy can then regress
-    # on its own without a failure here.
+    # clean_branch_name, a separate function, so exercise both paths.
     short_args = ("--json", "--dry-run", "--short-name", description, "x")
     bash_short = run(bash_cmd(repo, SCRIPT, *short_args), repo, env)
     py_short = run(py_cmd(repo, SCRIPT, *short_args), repo, env)
@@ -1202,7 +1192,7 @@ def test_bash_branch_name_ignores_locale_collation(
     assert py_short.returncode == bash_short.returncode == 0
     assert json_stdout(py_short) == json_stdout(bash_short)
     short_branch = json_stdout(bash_short)["BRANCH_NAME"]
-    assert isinstance(short_branch, str) and short_branch.isascii(), short_branch
+    assert isinstance(short_branch, str) and "réservation" in short_branch, short_branch
 
 
 @requires_bash
@@ -1264,18 +1254,10 @@ def test_python_dash_prefixed_short_name_matches_bash(
     ["!!! ??? ***", "добавить", "添加用户"],
     ids=["punctuation_only", "cyrillic", "han"],
 )
-def test_powershell_survives_description_with_no_ascii_words(
+def test_powershell_preserves_unicode_description(
     tmp_path: Path, description: str
 ):
-    """A description with no [a-z0-9] characters must not crash the PS twin.
-
-    ``ConvertTo-CleanBranchName`` blanks every non-ASCII character, so the
-    fallback pipeline yields nothing and ``[string]::Join`` received ``$null``
-    — an ArgumentNullException, made terminating by
-    ``$ErrorActionPreference = 'Stop'``. The script died with a .NET stack
-    trace and exit 1 where the bash and Python twins both return an empty
-    suffix. This fires for any feature phrased in a non-Latin script.
-    """
+    """Descriptions using Unicode letters produce a usable branch suffix."""
     repo = _setup_repo(tmp_path)
 
     ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
@@ -1283,13 +1265,14 @@ def test_powershell_survives_description_with_no_ascii_words(
     assert ps.returncode == 0, ps.stderr
     assert "ArgumentNullException" not in ps.stderr
     assert "Join" not in ps.stderr
-    assert json_stdout(ps)["BRANCH_NAME"] == "001-"
+    expected = "001-" if description.startswith("!") else f"001-{description}"
+    assert json_stdout(ps)["BRANCH_NAME"] == expected
 
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
-    """All three twins agree on the branch name for such a description."""
+    """All three twins agree on the Unicode branch name."""
     description = "добавить"
 
     bash_repo = _setup_repo(tmp_path, "b")
@@ -1308,4 +1291,4 @@ def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
         json_stdout(py)["BRANCH_NAME"],
         json_stdout(ps)["BRANCH_NAME"],
     }
-    assert names == {"001-"}, names
+    assert names == {"001-добавить"}, names
