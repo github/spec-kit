@@ -435,16 +435,10 @@ def _check_duplicate(
         for existing_name in existing_names:
             if existing_name == step_id or existing_name.casefold() != folded_id:
                 continue
-            existing_dir = step_dir.parent / existing_name
-            try:
-                same_destination = step_dir.exists() and existing_dir.samefile(step_dir)
-            except OSError:
-                same_destination = False
-            if not same_destination:
-                raise StepInstallError(
-                    f"Step ID '{step_id}' collides case-insensitively with "
-                    f"existing step directory '{existing_name}'"
-                )
+            raise StepInstallError(
+                f"Step ID '{step_id}' collides case-insensitively with "
+                f"existing step directory '{existing_name}'"
+            )
     except FileNotFoundError:
         pass
     except OSError as exc:
@@ -457,12 +451,12 @@ def _check_duplicate(
     if registry.is_installed(step_id):
         raise StepInstallError(
             f"Step type '{step_id}' is already installed. Remove it first with: "
-            f"[cyan]specify workflow step remove {step_id}[/cyan]"
+            f"specify workflow step remove {step_id}"
         )
     if step_dir.exists():
         raise StepInstallError(
             f"Step directory already exists at '{step_dir}'. Remove it manually "
-            f"or use: [cyan]specify workflow step remove {step_id}[/cyan]"
+            f"or use: specify workflow step remove {step_id}"
         )
 
 
@@ -663,7 +657,7 @@ def _replace_install(
         if not force:
             raise StepInstallError(
                 f"Step directory already exists at '{step_dir}'. Remove it manually "
-                f"or use: [cyan]specify workflow step remove {step_id}[/cyan]"
+                f"or use: specify workflow step remove {step_id}"
             )
         # --force replacement: the replacement is fully staged and validated,
         # so it is safe to remove the previous installation now.

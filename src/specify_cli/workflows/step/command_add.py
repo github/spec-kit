@@ -96,11 +96,11 @@ def _install_from_url(
         _ = parsed.port
     except ValueError:
         raise installer.StepInstallError(
-            f"Invalid URL: {cli._escape_markup(from_url)}"
+            f"Invalid URL: {from_url}"
         ) from None
     if not hostname:
         raise installer.StepInstallError(
-            f"Invalid URL: {cli._escape_markup(from_url)}"
+            f"Invalid URL: {from_url}"
         )
     if not cli.is_https_or_localhost_http(from_url):
         raise installer.StepInstallError(
@@ -156,7 +156,7 @@ def _install_from_url(
             final_url = resp.geturl()
             if not cli.is_https_or_localhost_http(final_url):
                 raise installer.StepInstallError(
-                    f"URL redirected to non-HTTPS: {cli._escape_markup(final_url)}"
+                    f"URL redirected to non-HTTPS: {final_url}"
                 )
             content_type = (
                 resp.getheader("Content-Type")
@@ -174,18 +174,13 @@ def _install_from_url(
             ]
             recognized = [item for item in declarations if item[2] is not None]
             archive_format = recognized[0][2] if recognized else None
-            if archive_format is None:
-                raise installer.StepInstallError(
-                    "URL does not reference a supported archive "
-                    "(.zip, .tar.gz, or .tgz)"
-                )
             if any(item[2] != archive_format for item in recognized):
                 details = ", ".join(
                     f"{label} declares {declared}"
                     for label, _value, declared in recognized
                 )
                 raise installer.StepInstallError(
-                    f"Archive format mismatch: {cli._escape_markup(details)}"
+                    f"Archive format mismatch: {details}"
                 )
             downloaded = cli.read_response_limited(
                 resp,
@@ -194,7 +189,8 @@ def _install_from_url(
             )
 
         with tempfile.NamedTemporaryFile(
-            suffix=cli.archive_suffix(archive_format), delete=False
+            suffix=cli.archive_suffix(archive_format) if archive_format else ".archive",
+            delete=False,
         ) as tmp:
             tmp_path = cli.Path(tmp.name)
             tmp.write(downloaded)
@@ -213,9 +209,7 @@ def _install_from_url(
             cli.safe_extract_archive(
                 tmp_path,
                 extracted_root,
-                source_name=next(
-                    value for _label, value, declared in recognized if declared is not None
-                ),
+                source_name=recognized[0][1] if recognized else None,
                 content_type=content_type,
             )
             package_root = installer.resolve_package_root(extracted_root)
@@ -255,7 +249,7 @@ def _install_from_url(
         raise
     except Exception as exc:
         raise installer.StepInstallError(
-            f"Failed to install step from URL: {cli._escape_markup(str(exc))}"
+            f"Failed to install step from URL: {exc}"
         ) from exc
     finally:
         _cleanup_download_tmp_path(tmp_path)
@@ -539,5 +533,5 @@ def workflow_step_add(
             cli.console.print(
                 f"[yellow]Warning:[/yellow] {cli._escape_markup(note)}"
             )
-        cli.console.print(f"[red]Error:[/red] {exc}")
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1) from exc

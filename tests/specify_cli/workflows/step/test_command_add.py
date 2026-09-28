@@ -1185,6 +1185,61 @@ class TestWorkflowStepAddSources:
             project_dir / ".specify" / "workflows" / "steps" / "my-step" / "step.yml"
         ).is_file()
 
+    def test_from_github_api_asset_detects_archive_from_bytes(
+        self, project_dir, monkeypatch
+    ):
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)
+        api_asset_url = (
+            "https://api.github.com/repos/example/project/releases/assets/123"
+        )
+        body = _make_zip(_valid_archive_files())
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None, extra_headers=None: (
+                _ArchiveResponse(url, body, "application/octet-stream")
+            ),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step", "--from", api_asset_url]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step" / "step.yml"
+        ).is_file()
+
+    def test_install_error_escapes_rich_markup_from_step_metadata(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        package = _write_package(tmp_path, type_key="my-step")
+        (package / "step.yml").write_text(
+            "step:\n  type_key: '[/]'\n", encoding="utf-8"
+        )
+        monkeypatch.chdir(project_dir)
+
+        result = CliRunner().invoke(
+            app,
+            ["workflow", "step", "add", "my-step", "--dev", str(package)],
+        )
+
+        assert result.exit_code != 0
+        assert "does not match" in result.output
+        assert "MarkupError" not in result.output
+        assert "Traceback" not in result.output
+
     def test_archive_temp_directory_cleanup_failure_warns_after_commit(
         self, project_dir, monkeypatch
     ):

@@ -34,7 +34,7 @@ def _validate_step_id_or_exit(step_id: str) -> None:
     try:
         validate_step_id(step_id)
     except StepInstallError as exc:
-        cli.console.print(f"[red]Error:[/red] {exc}")
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1) from exc
 
 
@@ -43,5 +43,5 @@ def _resolve_steps_base_dir_or_exit(project_root: cli.Path) -> cli.Path:
     try:
         return resolve_steps_base_dir(project_root)
     except StepInstallError as exc:
-        cli.console.print(f"[red]Error:[/red] {exc}")
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1) from exc

@@ -399,11 +399,41 @@ def test_force_rejects_casefolded_registered_id_collision(tmp_path, project_dir)
     assert set(StepRegistry(project_dir).list()) == {"Foo"}
 
 
-def test_force_rejects_casefolded_orphan_directory_collision(tmp_path, project_dir):
+def test_force_rejects_casefolded_orphan_directory_collision(
+    tmp_path, project_dir, monkeypatch
+):
+    from pathlib import Path
+
     old_dir = _write_package(
         _steps_dir(project_dir) / "Foo", type_key="Foo", init_body="# old\n"
     )
     replacement = _write_package(tmp_path / "replacement", type_key="foo")
+    destination = _steps_dir(project_dir) / "foo"
+    real_exists = Path.exists
+    real_samefile = Path.samefile
+
+    # Simulate a case-insensitive filesystem while running on Linux: both
+    # spellings resolve to the same destination even though they differ.
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: True if self == destination else real_exists(self),
+    )
+    real_is_dir = Path.is_dir
+    monkeypatch.setattr(
+        Path,
+        "is_dir",
+        lambda self: True if self == destination else real_is_dir(self),
+    )
+    monkeypatch.setattr(
+        Path,
+        "samefile",
+        lambda self, other: (
+            True
+            if self == old_dir and other == destination
+            else real_samefile(self, other)
+        ),
+    )
 
     with pytest.raises(installer.StepInstallError, match="case-insensitively"):
         installer.install_step_package(
@@ -789,11 +819,10 @@ def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
     """Drive two concurrent installs against the install lock.
 
     Installer A is paused inside the locked critical section while installer B
-    is guaranteed to be blocked on the lock (its ``fcntl.flock`` attempt has
+    is guaranteed to be blocked on the platform lock (its lock attempt has
     been observed). The caller resumes A via the returned ``release_a`` event,
     then joins both threads and inspects ``outcomes``.
     """
-    import fcntl
     import threading
 
     pkg_a = _write_package(tmp_path / "pkg-a", init_body="# a\n")
@@ -810,7 +839,6 @@ def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
 
     race = Race()
     real_replace = installer._replace_install
-    real_flock = fcntl.flock
 
     def _replace(step_dir, staged_dir, registry, step_id, entry, *, force):
         if threading.current_thread().name == "installer-a":
@@ -823,16 +851,41 @@ def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
             step_dir, staged_dir, registry, step_id, entry, force=force
         )
 
-    def _flock(fd, operation):
-        if (
-            threading.current_thread().name == "installer-b"
-            and operation == fcntl.LOCK_EX
-        ):
-            race.b_attempted_lock.set()
-        return real_flock(fd, operation)
-
     monkeypatch.setattr(installer, "_replace_install", _replace)
-    monkeypatch.setattr(fcntl, "flock", _flock)
+    if os.name == "nt":
+        import msvcrt
+
+        real_locking = msvcrt.locking
+
+        def _locking(fd, operation, nbytes):
+            is_installer_b = threading.current_thread().name == "installer-b"
+            try:
+                result = real_locking(fd, operation, nbytes)
+            except OSError:
+                if is_installer_b and operation == msvcrt.LK_NBLCK:
+                    # The non-blocking Windows lock attempt has now confirmed
+                    # contention with installer A.
+                    race.b_attempted_lock.set()
+                raise
+            if is_installer_b and operation == msvcrt.LK_NBLCK:
+                race.b_attempted_lock.set()
+            return result
+
+        monkeypatch.setattr(msvcrt, "locking", _locking)
+    else:
+        import fcntl
+
+        real_flock = fcntl.flock
+
+        def _flock(fd, operation):
+            if (
+                threading.current_thread().name == "installer-b"
+                and operation == fcntl.LOCK_EX
+            ):
+                race.b_attempted_lock.set()
+            return real_flock(fd, operation)
+
+        monkeypatch.setattr(fcntl, "flock", _flock)
 
     def _install(label, pkg, force):
         try:
@@ -872,9 +925,6 @@ def test_install_lock_blocks_concurrent_duplicate(tmp_path, project_dir, monkeyp
     B can never enter the swap while A holds it; once A commits, B reloads the
     registry inside the lock and fails as a duplicate instead of overwriting.
     """
-    if os.name == "nt":
-        pytest.skip("fcntl.flock is POSIX-only")
-
     race = _install_race_setup(tmp_path, project_dir, monkeypatch, force_b=False)
     # A holds the lock, so B cannot have reached the directory swap.
     assert not race.b_inside_replace.is_set()
@@ -894,9 +944,6 @@ def test_install_lock_blocks_concurrent_duplicate(tmp_path, project_dir, monkeyp
 
 def test_install_lock_serializes_force_replace(tmp_path, project_dir, monkeypatch):
     """A forced install swaps only after the lock is released by the first."""
-    if os.name == "nt":
-        pytest.skip("fcntl.flock is POSIX-only")
-
     race = _install_race_setup(tmp_path, project_dir, monkeypatch, force_b=True)
     # B is blocked on the lock and has not swapped A's package yet.
     assert not race.b_inside_replace.is_set()
