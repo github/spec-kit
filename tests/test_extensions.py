@@ -3386,6 +3386,25 @@ class TestExtensionManager:
         assert not (outside_target / "test-ext" / "test-ext-config.yml").exists()
         assert manager.registry.is_installed("test-ext")
 
+    def test_remove_keep_config_ignores_symlinked_backup_root(
+        self, extension_dir, project_dir
+    ):
+        """``keep_config=True`` never writes a backup, so an unrelated symlink
+        at ``.backup`` must not block removal.
+        """
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        outside_target = project_dir.parent / "outside-backup-root-keep-config"
+        outside_target.mkdir()
+        backup_root = project_dir / ".specify" / "extensions" / ".backup"
+        backup_root.symlink_to(outside_target, target_is_directory=True)
+
+        result = manager.remove("test-ext", keep_config=True)
+
+        assert result is True
+        assert not manager.registry.is_installed("test-ext")
+
     def test_remove_rejects_id_with_trailing_newline(self, project_dir):
         """``fullmatch`` must be used so a trailing newline cannot slip past ``$``."""
         manager = ExtensionManager(project_dir)

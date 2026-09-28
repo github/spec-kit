@@ -95,6 +95,27 @@ def test_extension_remove_propagates_refusal_as_bundler_error(tmp_path: Path):
     assert manager._manager.registry.is_installed("test-ext")
 
 
+def test_preset_remove_propagates_refusal_as_bundler_error(tmp_path: Path):
+    """Mirrors ``test_extension_remove_propagates_refusal_as_bundler_error``:
+    ``PresetManager.remove()`` also returns ``False`` on an unsafe target, and
+    the bundle adapter must surface that refusal rather than discarding it.
+    """
+    manager = primitive_manager("presets", tmp_path)
+    manager._manager.registry.add("test-preset", {"version": "1.0.0"})
+
+    pack_dir = tmp_path / ".specify" / "presets" / "test-preset"
+    pack_dir.parent.mkdir(parents=True, exist_ok=True)
+    real_target = tmp_path / "real-target"
+    real_target.mkdir()
+    pack_dir.symlink_to(real_target, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="removal was refused"):
+        manager.remove(_component("presets", "test-preset"))
+
+    assert pack_dir.is_symlink()
+    assert manager._manager.registry.is_installed("test-preset")
+
+
 @pytest.mark.parametrize("kind", ["presets", "extensions", "workflows", "steps"])
 def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: str):
     installer = DefaultPrimitiveInstaller(allow_network=False)

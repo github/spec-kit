@@ -222,11 +222,16 @@ class _PresetKindManager:
 
     def remove(self, component: ComponentRef) -> None:
         try:
-            self._manager.remove(component.id)
+            removed = self._manager.remove(component.id)
         except Exception as exc:  # noqa: BLE001
             raise BundlerError(
                 f"Failed to remove preset '{component.id}': {exc}"
             ) from exc
+        if not removed:
+            raise BundlerError(
+                f"Failed to remove preset '{component.id}': removal was "
+                "refused (unsafe registry id or symlinked target)."
+            )
 
 
 class _ExtensionKindManager:
