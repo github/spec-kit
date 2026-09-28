@@ -51,16 +51,13 @@ def validate_call(config: dict[str, Any]) -> list[str]:
     ):
         errors.append("'workflow' must be an exact, safe, non-reserved workflow ID")
     mapping = config.get("input", {})
-    if mapping is not None:
-        if not isinstance(mapping, dict) or any(
-            not isinstance(k, str) for k in mapping
-        ):
-            errors.append("'input' must be a mapping with string keys")
-        else:
-            try:
-                require_json(mapping)
-            except ValueError as exc:
-                errors.append(str(exc))
+    if not isinstance(mapping, dict) or any(not isinstance(k, str) for k in mapping):
+        errors.append("'input' must be a mapping with string keys")
+    else:
+        try:
+            require_json(mapping)
+        except ValueError as exc:
+            errors.append(str(exc))
     return errors
 
 
@@ -138,9 +135,7 @@ def bind_inputs(
     context: StepContext,
     previous: dict[str, Any] | None = None,
 ):
-    mapping = config.get("input")
-    if mapping is None:
-        mapping = {}
+    mapping = config.get("input", {})
     if not isinstance(mapping, dict) or any(not isinstance(k, str) for k in mapping):
         raise CallError("'input' must be a mapping with string keys")
     provided = {

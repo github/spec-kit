@@ -184,7 +184,10 @@ def validate_execution(tree: Any) -> None:
             if binding is not None:
                 if kind != "workflow" or not isinstance(binding, dict):
                     raise ValueError("Invalid workflow binding")
-                definition = yaml.safe_load(binding.get("definition", ""))
+                source = binding.get("definition")
+                if not isinstance(source, str):
+                    raise ValueError("Invalid bound workflow definition or inputs")
+                definition = yaml.safe_load(source)
                 if (
                     not isinstance(definition, dict)
                     or not isinstance(definition.get("workflow"), dict)
@@ -207,15 +210,19 @@ def validate_execution(tree: Any) -> None:
                     check_sequence(child, child_steps(step, node, index), shared=True)
                 else:
                     check_sequence(child)
+                handled_child_failure = (
+                    kind == "workflow"
+                    and step.get("continue_on_error") is True
+                    and node.get("outcome") == "completed"
+                    and result is not None
+                    and result["status"] == "failed"
+                )
                 if (
                     node["phase"] == "done"
                     and any(nested["phase"] != "done" for nested in child["nodes"])
-                    and not (
-                        kind == "workflow"
-                        and step.get("continue_on_error") is True
-                        and result["status"] == "failed"
-                    )
+                    and not handled_child_failure
                 ):
+                    raise ValueError("Completed execution has unfinished children")
             if node["phase"] == "outputs" and binding is None:
                 raise ValueError("Output finalization requires a workflow binding")
             if node["phase"] == "children" and (

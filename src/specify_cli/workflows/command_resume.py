@@ -20,6 +20,7 @@ def workflow_resume(
 ):
     """Resume a paused or failed workflow run."""
     from . import load_custom_steps
+    from ._execution import CheckpointError
     from .engine import RunState, WorkflowEngine
 
     project_root = cli._require_specify_project()
@@ -76,7 +77,7 @@ def workflow_resume(
         pre_state.installed_origin_tracked = True
         try:
             pre_state.save()
-        except OSError as exc:
+        except (OSError, CheckpointError) as exc:
             err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
             raise cli.typer.Exit(1)
 

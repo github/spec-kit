@@ -495,7 +495,8 @@ def _validate_steps(
                             f"itself; a fan-in cannot wait for its own results."
                         )
                     elif wid not in seen_ids and not any(
-                        wid.removeprefix(f"{alias}:").isdigit()
+                        wid.removeprefix(f"{alias}:").isascii()
+                        and wid.removeprefix(f"{alias}:").isdigit()
                         for alias in fan_out_aliases
                         if wid.startswith(f"{alias}:")
                     ):

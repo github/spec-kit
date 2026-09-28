@@ -279,7 +279,8 @@ def test_invalid_targets_are_handled_failures(tmp_path, probe, target):
 
 
 @pytest.mark.parametrize(
-    "mapping", [{"unknown": "x"}, {"value": []}, {"value": date(2026, 1, 1)}, [1]]
+    "mapping",
+    [{"unknown": "x"}, {"value": []}, {"value": date(2026, 1, 1)}, [1], None],
 )
 def test_invalid_inputs_do_not_execute_child(tmp_path, probe, mapping):
     install(
@@ -473,6 +474,9 @@ def test_legacy_resume_adapts_once(tmp_path, probe):
         lambda tree: tree["sequence"]["nodes"][0]["binding"].update(
             workflow_dir={}
         ),
+        lambda tree: tree["sequence"]["nodes"][0]["binding"].update(
+            definition=42
+        ),
     ],
 )
 def test_bad_checkpoint_rejected_without_writes(tmp_path, probe, mutation):
@@ -557,6 +561,61 @@ def test_completed_container_with_unfinished_child_rejected(tmp_path, probe):
 
     assert path.read_bytes() == before
     assert probe["work"] == 1
+
+
+@pytest.mark.parametrize("child_phase", ["ready", "blocked"])
+def test_completed_workflow_call_with_unfinished_child_rejected(
+    tmp_path, probe, child_phase
+):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "work", "type": "probe"}, {"id": "wait", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [call(input={"approve": "{{ inputs.approve }}"}), {"id": "pause", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    call_node = data["execution"]["sequence"]["nodes"][0]
+    call_node.update(phase="done", outcome="completed")
+    if child_phase == "ready":
+        call_node["children"][0]["nodes"][1] = {"phase": "ready"}
+    path.write_text(json.dumps(data))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError, match="Completed execution has unfinished children"):
+        WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert path.read_bytes() == before
+
+
+def test_handled_failed_workflow_call_can_retain_blocked_child(tmp_path, probe):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {"id": "fail", "type": "probe", "status": "failed"},
+                {"id": "unreached", "type": "probe"},
+            ],
+        ),
+    )
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition("parent", [call(continue_on_error=True)])
+    )
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["status"] == "failed"
+    assert RunState.load(state.run_id, tmp_path).status == RunStatus.COMPLETED
 
 
 def test_bound_call_without_source_path_resumes_with_null_workflow_dir(

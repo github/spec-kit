@@ -4789,6 +4789,26 @@ steps:
             "must be step-id strings" in e and "int" in e for e in errors
         )
 
+    def test_non_ascii_fan_out_item_index_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: [one]
+    step:
+      id: item
+      type: command
+      command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [fan:item:١]
+""")
+        assert any("unknown or not-yet-declared step id 'fan:item:١'" in e for e in errors)
+
 
 # ===== Workflow Definition Tests =====
 
