@@ -42,6 +42,7 @@ from specify_cli.extensions import (
     CompatibilityError,
     normalize_priority,
 )
+from specify_cli.integrations.base import IntegrationOutputPathError
 from specify_cli._utils import version_satisfies
 
 # Minimal valid ZIP (empty end-of-central-directory record). Passes
@@ -5059,6 +5060,77 @@ class TestIntegration:
 
         assert not agent_file.exists()
         assert not prompt_file.exists()
+
+    def test_copilot_cleanup_removes_nested_alias(
+        self, extension_dir, project_dir, valid_manifest_data
+    ):
+        valid_manifest_data["provides"]["commands"][0]["aliases"] = ["group/run"]
+        (extension_dir / "extension.yml").write_text(
+            yaml.safe_dump(valid_manifest_data), encoding="utf-8"
+        )
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0")
+        agent_file = agents_dir / "group" / "run.agent.md"
+        prompt_file = project_dir / ".github" / "prompts" / "group" / "run.prompt.md"
+        assert agent_file.is_file()
+        assert prompt_file.is_file()
+
+        assert manager.remove("test-ext") is True
+        assert not manager.registry.is_installed("test-ext")
+        assert not agent_file.exists()
+        assert not prompt_file.exists()
+
+    def test_copilot_cleanup_rejects_symlinked_prompt_parent(
+        self, extension_dir, project_dir
+    ):
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0")
+        agent_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        prompt_name = "speckit.test-ext.hello.prompt.md"
+        prompts_dir = project_dir / ".github" / "prompts"
+        assert agent_file.is_file()
+        shutil.rmtree(prompts_dir)
+        external = project_dir.parent / "external-prompts"
+        external.mkdir()
+        external_prompt = external / prompt_name
+        external_prompt.write_text("external\n", encoding="utf-8")
+        try:
+            prompts_dir.symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        with pytest.raises(IntegrationOutputPathError):
+            manager.remove("test-ext")
+
+        assert manager.registry.is_installed("test-ext")
+        assert agent_file.is_file()
+        assert external_prompt.read_text(encoding="utf-8") == "external\n"
+
+    def test_copilot_cleanup_rejects_traversal_in_registered_command(
+        self, extension_dir, project_dir
+    ):
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0")
+        agent_file = agents_dir / "speckit.test-ext.hello.agent.md"
+        metadata = manager.registry.get("test-ext")
+        metadata["registered_commands"]["copilot"].append("../../outside")
+        manager.registry.update("test-ext", metadata)
+        outside = project_dir / "outside.prompt.md"
+        outside.write_text("outside\n", encoding="utf-8")
+
+        with pytest.raises(IntegrationOutputPathError):
+            manager.remove("test-ext")
+
+        assert manager.registry.is_installed("test-ext")
+        assert agent_file.is_file()
+        assert outside.read_text(encoding="utf-8") == "outside\n"
 
     def test_multiple_extensions(self, temp_dir, project_dir):
         """Test installing multiple extensions."""
