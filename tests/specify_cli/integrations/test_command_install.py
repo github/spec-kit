@@ -26,6 +26,13 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationInstall:
+    def test_historical_catalog_versions_are_not_install_options(self):
+        result = runner.invoke(
+            app, ["integration", "install", "copilot", "--version", "1.0.0"]
+        )
+        assert result.exit_code == 2
+        assert "No such option: --version" in result.output
+
     def test_install_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:
