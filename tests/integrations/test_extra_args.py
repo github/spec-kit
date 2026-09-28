@@ -647,9 +647,8 @@ def test_copilot_executable_windows_prefers_exe_on_path(monkeypatch):
     from specify_cli.integrations.copilot import _copilot_executable
 
     monkeypatch.setattr(os, "name", "nt")
-    monkeypatch.setattr(
-        shutil, "which", lambda name: r"C:\tools\copilot.exe" if name == "copilot.exe" else None
-    )
+    paths = {"copilot.exe": r"C:\tools\copilot.exe", "copilot.cmd": r"C:\tools\copilot.cmd"}
+    monkeypatch.setattr(shutil, "which", lambda name: paths.get(name))
     assert _copilot_executable() == "copilot.exe"
 
 
@@ -675,6 +674,21 @@ def test_copilot_executable_windows_nothing_on_path_keeps_historical_default(mon
 
     monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert _copilot_executable() == "copilot.cmd"
+
+
+def test_copilot_executable_windows_ignores_unlaunchable_bare_name(monkeypatch):
+    """A bare `copilot` match (e.g. a `.bat`/`.com` resolved via `PATHEXT`)
+    must not be returned: `CreateProcess` doesn't consult `PATHEXT`, so a
+    bare name detected this way can't actually be launched."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        shutil, "which", lambda name: r"C:\tools\copilot.bat" if name == "copilot" else None
+    )
     assert _copilot_executable() == "copilot.cmd"
 
 

@@ -57,7 +57,7 @@ def _copilot_executable() -> str:
     if os.name != "nt":
         return "copilot"
 
-    for candidate in ("copilot.exe", "copilot.cmd", "copilot"):
+    for candidate in ("copilot.exe", "copilot.cmd"):
         if shutil.which(candidate):
             return candidate
 

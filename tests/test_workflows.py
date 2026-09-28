@@ -1024,11 +1024,10 @@ class TestBuildExecArgs:
     def test_copilot_exec_args(self, monkeypatch):
         monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
         monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
-        from specify_cli.integrations.copilot import CopilotIntegration
+        from specify_cli.integrations.copilot import CopilotIntegration, _copilot_executable
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
-        expected_exec = "copilot.cmd" if os.name == "nt" else "copilot"
-        assert args[0] == expected_exec
+        assert args[0] == _copilot_executable()
         assert "-p" in args
         assert "--yolo" in args
         assert "--model" in args
