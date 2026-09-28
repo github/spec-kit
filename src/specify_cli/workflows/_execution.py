@@ -87,7 +87,8 @@ def child_steps(config, node, index):
     if kind == "workflow":
         return yaml.safe_load(node["binding"]["definition"])["steps"]
     if kind == "fan-out":
-        return [node["result"]["output"]["step_template"]]
+        template = node["result"]["output"]["step_template"]
+        return [{"id": "item", **template}]
     return steps_of(node["children"][0])
 
 
@@ -308,9 +309,8 @@ class Execution:
                 self.state.step_results[qualified] = result
 
     def project_alias(self, context, name, result):
-        """Project a fan-out item result without exposing item internals."""
+        """Project a fan-out item result into its enclosing workflow scope."""
         context.steps[name] = result
-        self.state.step_results[name] = result
 
     def commit(
         self,
@@ -793,13 +793,13 @@ class Execution:
         workers = min(workers, len(items))
         initial = deepcopy(context.steps)
         halted = threading.Event()
-        template_name = output.get("step_template", {}).get("id", "item")
+        template_name = child_steps(config, node, 0)[0]["id"]
 
         def run_item(index):
             local = replace(
                 context, steps=deepcopy(initial), item=items[index], inside_fan_out=True
             )
-            local_name = output.get("step_template", {}).get("id", "step-0")
+            local_name = template_name
             inherited = local.steps.get(local_name)
             child = node["children"][index]
             outcome, error = self.run(
@@ -818,12 +818,18 @@ class Execution:
             # implementations keep an internal retry record but publish nothing.
             if local.steps.get(local_name) is inherited:
                 record = None
-            if public and record is not None:
+            if record is not None:
                 # Projection only (E2): persisted by the next commit, rebuilt on replay.
                 with self.state._lock:
                     self.project_alias(
-                        context, f"{qualified}:{template_name}:{index}", record
+                        context,
+                        f"{qualified}:{template_name}:{index}",
+                        record,
                     )
+                    if public:
+                        self.state.step_results[
+                            f"{qualified}:{template_name}:{index}"
+                        ] = record
             return outcome, error, (record or {}).get("output", {})
 
         results = []

@@ -10,7 +10,12 @@ import yaml
 
 from specify_cli.workflows import STEP_REGISTRY
 from specify_cli.workflows.base import RunStatus, StepBase, StepResult, StepStatus
-from specify_cli.workflows.engine import RunState, WorkflowDefinition, WorkflowEngine
+from specify_cli.workflows.engine import (
+    RunState,
+    WorkflowDefinition,
+    WorkflowEngine,
+    validate_workflow,
+)
 
 
 def definition(name, steps, **fields):
@@ -1016,17 +1021,7 @@ def test_replay_does_not_commit_completed_nodes(tmp_path, monkeypatch, probe):
     assert committed == []
 
 
-def test_private_fan_out_context_has_no_qualified_aliases(tmp_path, monkeypatch, probe):
-    class Inspect(StepBase):
-        type_key = "inspect"
-
-        def execute(self, config, context):
-            return StepResult(
-                StepStatus.COMPLETED,
-                output={"aliases": sorted(key for key in context.steps if ":" in key)},
-            )
-
-    monkeypatch.setitem(STEP_REGISTRY, "inspect", Inspect())
+def test_private_fan_out_aliases_remain_available_to_child_fan_in(tmp_path, probe):
     install(
         tmp_path,
         definition(
@@ -1035,19 +1030,55 @@ def test_private_fan_out_context_has_no_qualified_aliases(tmp_path, monkeypatch,
                 {
                     "id": "fan",
                     "type": "fan-out",
-                    "items": [1],
-                    "step": {"id": "template", "type": "probe"},
+                    "items": [1, 2],
+                    "step": {
+                        "id": "template",
+                        "type": "probe",
+                        "value": "{{ item }}",
+                    },
                 },
-                {"id": "inspect", "type": "inspect"},
+                {
+                    "id": "join",
+                    "type": "fan-in",
+                    "wait_for": ["fan:template:0", "fan:template:1"],
+                },
             ],
-            outputs={"aliases": {"value": "{{ steps.inspect.output.aliases }}"}},
+            outputs={"results": {"value": "{{ steps.join.output.results }}"}},
         ),
     )
 
     state = WorkflowEngine(tmp_path).execute(definition("parent", [call()]))
 
     assert state.status == RunStatus.COMPLETED
-    assert state.step_results["call"]["output"]["aliases"] == []
+    assert state.step_results["call"]["output"]["results"] == [
+        {"value": 1},
+        {"value": 2},
+    ]
+    assert "fan:template:0" not in state.step_results
+    assert "fan:template:1" not in state.step_results
+
+
+def test_fan_in_rejects_non_item_fan_out_alias():
+    errors = validate_workflow(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "template", "type": "probe"},
+                },
+                {
+                    "id": "join",
+                    "type": "fan-in",
+                    "wait_for": ["fan:template:not-an-item"],
+                },
+            ],
+        )
+    )
+
+    assert any("unknown or not-yet-declared" in error for error in errors)
 
 
 def test_fan_out_in_later_loop_iteration_uses_qualified_aliases(tmp_path, probe):
@@ -1117,6 +1148,36 @@ def test_fan_out_events_and_callbacks_use_qualified_item_ids(tmp_path, probe):
         ("step_started", "fan:template:1"),
         ("step_completed", "fan:template:1"),
     ]
+
+
+def test_unnamed_fan_out_templates_use_item_id_for_results_and_events(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+
+    state = engine.execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"type": "probe", "value": "{{ item }}"},
+                }
+            ],
+        )
+    )
+
+    item_events = [
+        entry["step_id"]
+        for entry in state.log_entries
+        if entry["event"] in {"step_started", "step_completed"}
+        and entry["step_id"].startswith("fan:")
+    ]
+    assert callbacks == ["fan", "fan:item:0"]
+    assert item_events == ["fan:item:0", "fan:item:0"]
+    assert state.step_results["fan:item:0"]["output"] == {"value": 1}
 
 
 def test_loop_events_and_callbacks_use_qualified_iteration_ids(tmp_path, probe):
