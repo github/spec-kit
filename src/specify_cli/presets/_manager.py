@@ -152,7 +152,7 @@ def _materialize_constitution_template(
 
 
 # Generated files for script composition (#4551). Both carry no
-# stack-specific data â€” only the script's own name â€” so they never need
+# stack-specific data — only the script's own name — so they never need
 # rewriting when priorities/enablement change; the dispatcher resolves the
 # live chain on every invocation via `specify preset script-chain`. They are
 # generated (not shipped under scripts/bash) so projects initialized before
@@ -677,6 +677,43 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             first_line = canonical.read_text(encoding="utf-8").splitlines()[:2]
             if any(_SCRIPT_DISPATCHER_MARKER in line for line in first_line):
                 canonical.unlink()
+
+    def reconcile_all_script_chains(self) -> None:
+        """Re-materialize every active preset-provided script's canonical file.
+
+        ``install_shared_infra`` (re)writes ``.specify/scripts/bash/<name>.sh``
+        from the bundled core on ``specify init --force`` and forced
+        integration upgrades, overwriting any generated continuation
+        dispatcher in place. Unlike commands/skills, script presets are not
+        re-registered as part of that refresh, so a previously-installed
+        wrapper would otherwise go inert until its preset was reinstalled.
+        Call this once after any shared-infrastructure refresh to restore
+        dispatchers for every script name currently provided by an enabled
+        preset.
+        """
+        script_names: Set[str] = set()
+        for pack_id, _metadata in self.registry.list_by_priority():
+            manifest = PresetResolver(self.project_root)._get_manifest(
+                self.presets_dir / pack_id
+            )
+            if manifest is None:
+                continue
+            script_names.update(
+                t["name"]
+                for t in manifest.templates
+                if t.get("type") == "script" and isinstance(t.get("name"), str)
+            )
+        for script_name in script_names:
+            try:
+                self._reconcile_script_chain(script_name)
+            except Exception as exc:
+                import warnings
+                warnings.warn(
+                    f"Post-refresh script reconciliation failed for "
+                    f"script '{script_name}': {exc}. "
+                    f"Run 'specify preset script-chain {script_name}' to diagnose.",
+                    stacklevel=2,
+                )
 
     def _seed_constitution_from_preset(
         self, manifest: PresetManifest, preset_dir: Path

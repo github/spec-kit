@@ -685,8 +685,8 @@ class PresetResolver:
     def resolve_script_chain(self, script_name: str) -> List[Path]:
         """Return the ordered chain of files backing a script's continuation.
 
-        Scripts are executed rather than merely read, so â€” unlike
-        templates and commands â€” their composition doesn't need to be
+        Scripts are executed rather than merely read, so — unlike
+        templates and commands — their composition doesn't need to be
         spliced into a single file ahead of time. A ``"wrap"`` script
         contains a literal ``$CORE_SCRIPT`` reference that a runtime
         continuation runner resolves hop by hop, so this returns the
@@ -696,7 +696,7 @@ class PresetResolver:
         This walks the same priority stack as ``resolve_content()`` for
         ``template_type="script"``: the highest-priority layer down
         through the nearest layer with strategy ``"replace"``
-        (inclusive), which terminates the chain â€” only ``"replace"`` and
+        (inclusive), which terminates the chain — only ``"replace"`` and
         ``"wrap"`` are valid script strategies, so a chain longer than
         one entry always has a ``"wrap"`` top. Layers below the
         terminating ``"replace"`` layer are never reachable and are
@@ -704,7 +704,7 @@ class PresetResolver:
 
         Returns an empty list when the script name has no layers, or
         when none of them has strategy ``"replace"`` (composition has no
-        base to terminate on â€” the same condition under which
+        base to terminate on — the same condition under which
         ``resolve_content()`` returns ``None``).
         """
         layers = list(self.collect_all_layers(script_name, "script"))

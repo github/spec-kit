@@ -1700,7 +1700,6 @@ class TestScriptChainReconciliation:
     def test_reconcile_refuses_symlinked_destination(
         self, project_dir, temp_dir, valid_pack_data
     ):
-        import os
         outside = temp_dir / "outside"
         outside.mkdir()
         scripts = project_dir / ".specify" / "scripts"
@@ -1804,9 +1803,6 @@ class TestScriptChainReconciliation:
 
     def test_python_module_entry_point_runs_cli(self):
         """The dispatcher's ``python3 -m specify_cli`` fallback needs __main__."""
-        import subprocess
-        import sys
-
         result = subprocess.run(
             [sys.executable, "-m", "specify_cli", "preset", "script-chain", "--help"],
             capture_output=True,
@@ -1842,3 +1838,29 @@ class TestScriptChainReconciliation:
         manager.remove("revert-pack")
 
         assert canonical.read_text() == "echo core\n"
+
+    def test_reconcile_all_script_chains_restores_dispatcher_after_shared_infra_refresh(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """``specify init --force`` rewrites the canonical script from the
+        bundled core, clobbering a generated dispatcher for an
+        already-enabled script preset. ``reconcile_all_script_chains()`` is
+        what a forced refresh calls afterward to restore it."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "reinit-pack", "echo wrapped\n",
+            strategy="replace", template_type="script", template_name="reinit-me",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "reinit-me")
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text()
+
+        # Simulate install_shared_infra --force overwriting the canonical
+        # script with the bundled core, as it would on `specify init --force`.
+        canonical.write_text("echo bundled-core\n")
+        assert "dispatcher" not in canonical.read_text()
+
+        manager.reconcile_all_script_chains()
+
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text()
