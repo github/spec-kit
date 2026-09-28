@@ -335,6 +335,26 @@ class TestPresetManager:
         assert pack_dir.is_symlink()
         assert manager.registry.is_installed("test-pack")
 
+    def test_remove_refuses_dangling_symlinked_preset_dir(self, project_dir):
+        """A dangling symlink must fail explicitly rather than be silently skipped.
+
+        ``Path.exists()`` follows the link and returns False for a broken
+        symlink, so a guard gated on ``exists()`` would let this through.
+        """
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.parent.mkdir(parents=True, exist_ok=True)
+        missing_target = project_dir.parent / "does-not-exist"
+        pack_dir.symlink_to(missing_target, target_is_directory=True)
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert pack_dir.is_symlink()
+        assert manager.registry.is_installed("test-pack")
+
     def test_list_installed(self, project_dir, pack_dir):
         """Test listing installed packs."""
         manager = PresetManager(project_dir)

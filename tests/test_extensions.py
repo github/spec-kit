@@ -3344,6 +3344,60 @@ class TestExtensionManager:
         assert not (outside_target / "test-ext-config.yml").exists()
         assert manager.registry.is_installed("test-ext")
 
+    def test_remove_refuses_dangling_symlinked_extension_dir(self, project_dir):
+        """A dangling symlink must fail explicitly rather than be silently skipped.
+
+        ``Path.exists()`` follows the link and returns False for a broken
+        symlink, so a guard gated on ``exists()`` would let this through.
+        """
+        manager = ExtensionManager(project_dir)
+        manager.registry.add("test-ext", {"version": "1.0.0"})
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        ext_dir.parent.mkdir(parents=True, exist_ok=True)
+        missing_target = project_dir.parent / "does-not-exist"
+        ext_dir.symlink_to(missing_target, target_is_directory=True)
+
+        result = manager.remove("test-ext")
+
+        assert result is False
+        assert ext_dir.is_symlink()
+        assert manager.registry.is_installed("test-ext")
+
+    def test_remove_refuses_symlinked_backup_root(self, extension_dir, project_dir):
+        """A symlinked ``.backup`` parent must not redirect config backups."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("test: config")
+
+        outside_target = project_dir.parent / "outside-backup-root"
+        outside_target.mkdir()
+        backup_root = project_dir / ".specify" / "extensions" / ".backup"
+        backup_root.symlink_to(outside_target, target_is_directory=True)
+
+        result = manager.remove("test-ext", keep_config=False)
+
+        assert result is False
+        assert ext_dir.exists()
+        assert config_file.exists()
+        assert not (outside_target / "test-ext" / "test-ext-config.yml").exists()
+        assert manager.registry.is_installed("test-ext")
+
+    def test_remove_rejects_id_with_trailing_newline(self, project_dir):
+        """``fullmatch`` must be used so a trailing newline cannot slip past ``$``."""
+        manager = ExtensionManager(project_dir)
+        unsafe_id = "test-ext\n"
+        manager.registry.add(unsafe_id, {"version": "1.0.0"})
+        assert manager.registry.is_installed(unsafe_id)
+
+        result = manager.remove(unsafe_id)
+
+        assert result is False
+        assert manager.registry.is_installed(unsafe_id)
+
 
 # ===== CommandRegistrar Tests =====
 

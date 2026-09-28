@@ -648,7 +648,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         if not PresetResolver._is_safe_registry_id(pack_id):
             return False
         pack_dir = self.presets_dir / pack_id
-        if pack_dir.exists() and (pack_dir.is_symlink() or not pack_dir.is_dir()):
+        if pack_dir.is_symlink() or (pack_dir.exists() and not pack_dir.is_dir()):
             return False
 
         metadata = self.registry.get(pack_id)

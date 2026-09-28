@@ -2965,14 +2965,17 @@ class ExtensionManager:
         # path component before it is used to construct removal/backup
         # targets, and refuse a target that is not a real directory (e.g. a
         # symlink planted to redirect the deletion elsewhere).
-        if not VALID_EXTENSION_ARTIFACT_NAME_PATTERN.match(extension_id):
+        if not VALID_EXTENSION_ARTIFACT_NAME_PATTERN.fullmatch(extension_id):
             return False
         extension_dir = self.extensions_dir / extension_id
-        if extension_dir.exists() and (
-            extension_dir.is_symlink() or not extension_dir.is_dir()
+        if extension_dir.is_symlink() or (
+            extension_dir.exists() and not extension_dir.is_dir()
         ):
             return False
-        backup_dir = self.extensions_dir / ".backup" / extension_id
+        backup_root = self.extensions_dir / ".backup"
+        if backup_root.is_symlink():
+            return False
+        backup_dir = backup_root / extension_id
         if backup_dir.is_symlink():
             return False
 
