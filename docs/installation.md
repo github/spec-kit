@@ -152,7 +152,7 @@ After initialization, you should see the following commands available in your co
 
 The `generic` integration scaffolds core commands or skills, but does not
 register extension add-ons; installing `github` there does not make its
-replacement command invokable. See the [GitHub extension's installation notes](../extensions/github/README.md#installation).
+replacement command invokable. See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 

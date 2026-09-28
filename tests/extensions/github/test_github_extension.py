@@ -650,8 +650,19 @@ def _make_feature_project(tmp_path: Path) -> Path:
     return project
 
 
+def _resolver_env() -> dict[str, str]:
+    """Environment without inherited project or feature overrides."""
+    env = dict(os.environ)
+    env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+    env.pop("SPECIFY_INIT_DIR", None)
+    env.pop("SPECIFY_FEATURE_NO_PERSIST", None)
+    return env
+
+
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    return subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, env=_resolver_env()
+    )
 
 
 class TestResolveTasksPython:
@@ -664,6 +675,24 @@ class TestResolveTasksPython:
         assert Path(payload["FEATURE_DIR"]) == project / "specs" / "001-demo"
         assert Path(payload["TASKS"]) == project / "specs" / "001-demo" / "tasks.md"
         assert payload["AVAILABLE_DOCS"] == ["research.md", "tasks.md"]
+
+    def test_ignores_inherited_resolver_overrides(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        project = _make_feature_project(tmp_path)
+        feature_json = project / ".specify" / "feature.json"
+        before = feature_json.read_bytes()
+        monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "missing"))
+        monkeypatch.setenv("SPECIFY_FEATURE_DIRECTORY", "specs/missing")
+        monkeypatch.setenv("SPECIFY_FEATURE_NO_PERSIST", "1")
+
+        result = _run([sys.executable, str(PY_SCRIPT), "--json"], project)
+
+        assert result.returncode == 0, result.stderr
+        assert Path(json.loads(result.stdout)["FEATURE_DIR"]) == (
+            project / "specs" / "001-demo"
+        )
+        assert feature_json.read_bytes() == before
 
     def test_errors_when_tasks_md_is_missing(self, tmp_path: Path):
         project = _make_feature_project(tmp_path)
@@ -683,7 +712,7 @@ class TestResolveTasksPython:
         aborted the report right after ``AVAILABLE_DOCS:``.
         """
         project = _make_feature_project(tmp_path)
-        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+        env = {**_resolver_env(), "PYTHONIOENCODING": "cp1252"}
         result = subprocess.run(
             [sys.executable, str(PY_SCRIPT)],
             cwd=project,
@@ -719,8 +748,7 @@ class TestResolveTasksPython:
         (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
         (feature / "tasks.md").write_text("- [ ] T001 Task\n", encoding="utf-8")
 
-        env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
-        env.pop("SPECIFY_FEATURE_DIRECTORY", None)
+        env = {**_resolver_env(), "PYTHONIOENCODING": "cp1252"}
         result = subprocess.run(
             [sys.executable, str(PY_SCRIPT), "--json"],
             cwd=project,
@@ -741,7 +769,7 @@ class TestResolveTasksPython:
         self, tmp_path: Path
     ):
         project = _make_feature_project(tmp_path)
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        env = {**_resolver_env(), "PYTHONIOENCODING": "utf-8"}
         result = subprocess.run(
             [sys.executable, str(PY_SCRIPT)],
             cwd=project,
@@ -764,15 +792,6 @@ class TestResolveTasksPython:
 
         assert result.returncode == 0, result.stderr
         assert feature_json.read_bytes() == before
-
-
-def _resolver_env() -> dict[str, str]:
-    """Environment without inherited project or feature overrides."""
-    env = dict(os.environ)
-    env.pop("SPECIFY_FEATURE_DIRECTORY", None)
-    env.pop("SPECIFY_INIT_DIR", None)
-    env.pop("SPECIFY_FEATURE_NO_PERSIST", None)
-    return env
 
 
 def _run_ps(project: Path) -> subprocess.CompletedProcess:
