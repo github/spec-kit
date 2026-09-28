@@ -379,7 +379,6 @@ def _validate_steps(
     errors: list[str],
     input_defs: dict[str, Any] | None = None,
     inside_fan_out: bool = False,
-    fan_out_aliases: set[str] | None = None,
 ) -> None:
     """Recursively validate a list of steps.
 
@@ -389,8 +388,6 @@ def _validate_steps(
     rejected anywhere inside a fan-out template.
     """
     from . import STEP_REGISTRY
-
-    fan_out_aliases = set() if fan_out_aliases is None else fan_out_aliases
 
     for step_config in steps:
         if not isinstance(step_config, dict):
@@ -494,12 +491,7 @@ def _validate_steps(
                             f"Fan-in step {step_id!r}: 'wait_for' references "
                             f"itself; a fan-in cannot wait for its own results."
                         )
-                    elif wid not in seen_ids and not any(
-                        wid.removeprefix(f"{alias}:").isascii()
-                        and wid.removeprefix(f"{alias}:").isdigit()
-                        for alias in fan_out_aliases
-                        if wid.startswith(f"{alias}:")
-                    ):
+                    elif wid not in seen_ids:
                         errors.append(
                             f"Fan-in step {step_id!r}: 'wait_for' references "
                             f"unknown or not-yet-declared step id {wid!r}."
@@ -562,7 +554,6 @@ def _validate_steps(
                     errors,
                     input_defs,
                     inside_fan_out=inside_fan_out,
-                    fan_out_aliases=fan_out_aliases,
                 )
 
         # Validate switch cases
@@ -576,7 +567,6 @@ def _validate_steps(
                         errors,
                         input_defs,
                         inside_fan_out=inside_fan_out,
-                        fan_out_aliases=fan_out_aliases,
                     )
 
         # Validate switch default
@@ -588,7 +578,6 @@ def _validate_steps(
                 errors,
                 input_defs,
                 inside_fan_out=inside_fan_out,
-                fan_out_aliases=fan_out_aliases,
             )
 
         # Validate fan-out nested step (template — not added to seen_ids
@@ -604,9 +593,6 @@ def _validate_steps(
                 inside_fan_out=True,
             )
             errors.extend(fan_errors)
-            template_id = fan_step.get("id", "item")
-            if isinstance(template_id, str):
-                fan_out_aliases.add(f"{step_id}:{template_id}")
 
 
 # -- Run State Persistence ------------------------------------------------

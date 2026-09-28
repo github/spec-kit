@@ -320,6 +320,11 @@ Aggregate results from fan-out steps:
   output: {}
 ```
 
+`wait_for` references declared step IDs. For a fan-out, use the fan-out step's
+own `id` (`parallel-impl` above); its ordered item results are available as
+`steps.<fan-out-id>.output.results`. Generated item aliases such as
+`fan:template:0` are reporting-only and are not valid `wait_for` targets.
+
 ## Error Handling
 
 By default, any step that returns `StepResult(status=StepStatus.FAILED, ...)`

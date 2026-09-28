@@ -53,7 +53,10 @@ through their saved top-level index.
 
 Fan-out items have independent expression contexts. Their internal results do
 not enter the shared parent context; the parent receives the qualified item
-result and the fan-out step's ordered `output.results`. A side effect performed
+result and the fan-out step's ordered `output.results`. Fan-out item aliases are
+reporting-only; a `fan-in` `wait_for` targets declared step IDs (the fan-out
+step's own `id`) and reads its ordered `output.results`, never a generated item
+alias. A side effect performed
 before its completion checkpoint can still repeat after an interruption, so the
 guarantee is at-least-once rather than exactly-once.
 

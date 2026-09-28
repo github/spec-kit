@@ -667,7 +667,10 @@ step ID is a local expression alias, not a global execution ID. Fan-out items
 have independent alias contexts and ordered item results. Public reporting uses
 qualified occurrence IDs where needed, for example `fan:template:0` for a
 fan-out item and `loop:step:1` for a later loop iteration. Qualified IDs are
-not expression names.
+not expression names. Fan-out item aliases are reporting-only: a `fan-in`
+`wait_for` references declared step IDs, in particular the fan-out step's own
+`id`, whose ordered item results are available as
+`steps.<fan-out-id>.output.results`.
 
 New runs persist selected branches, dynamic custom-step expansions, loop
 iterations, and fan-out items. Resume retains completed work without

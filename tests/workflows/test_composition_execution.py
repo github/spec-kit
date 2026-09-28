@@ -778,7 +778,7 @@ def test_expansion_resume_preserves_completed_work(tmp_path, probe, kind):
     assert probe["prepare"] == (1 if kind == "if" else 2)
 
 
-def test_replay_restores_fan_out_aliases_from_completed_if(tmp_path, probe):
+def test_replay_restores_fan_out_item_aliases_from_completed_if(tmp_path, probe):
     state = WorkflowEngine(tmp_path).execute(
         definition(
             "parent",
@@ -801,7 +801,12 @@ def test_replay_restores_fan_out_aliases_from_completed_if(tmp_path, probe):
                     ],
                 },
                 {"id": "wait", "type": "probe", "await": True},
-                {"id": "join", "type": "fan-in", "wait_for": ["fan:template:0"]},
+                {
+                    "id": "join",
+                    "type": "fan-in",
+                    "wait_for": ["fan"],
+                    "output": {"merged": "{{ steps.fan.output.results }}"},
+                },
             ],
             inputs={"approve": {"type": "boolean", "default": False}},
         )
@@ -811,7 +816,8 @@ def test_replay_restores_fan_out_aliases_from_completed_if(tmp_path, probe):
     state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
     assert state.status == RunStatus.COMPLETED
-    assert state.step_results["join"]["output"]["results"] == [{"value": 1}]
+    assert state.step_results["fan:template:0"]["output"] == {"value": 1}
+    assert state.step_results["join"]["output"]["merged"] == [{"value": 1}]
 
 
 def test_resume_restores_completed_fan_out_item_aliases(tmp_path, monkeypatch, probe):
@@ -837,7 +843,8 @@ def test_resume_restores_completed_fan_out_item_aliases(tmp_path, monkeypatch, p
                 {
                     "id": "join",
                     "type": "fan-in",
-                    "wait_for": ["fan:template:0", "fan:template:1"],
+                    "wait_for": ["fan"],
+                    "output": {"merged": "{{ steps.fan.output.results }}"},
                 },
             ],
             inputs={"approve": {"type": "boolean", "default": False}},
@@ -848,7 +855,9 @@ def test_resume_restores_completed_fan_out_item_aliases(tmp_path, monkeypatch, p
     state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
     assert state.status == RunStatus.COMPLETED
-    assert state.step_results["join"]["output"]["results"] == [
+    assert state.step_results["fan:template:0"]["output"] == {"value": 1}
+    assert state.step_results["fan:template:1"]["output"] == {"value": 2}
+    assert state.step_results["join"]["output"]["merged"] == [
         {"value": 1},
         {"value": 2},
     ]
@@ -1080,7 +1089,7 @@ def test_replay_does_not_commit_completed_nodes(tmp_path, monkeypatch, probe):
     assert committed == []
 
 
-def test_private_fan_out_aliases_remain_available_to_child_fan_in(tmp_path, probe):
+def test_composed_fan_out_joins_container_results(tmp_path, probe):
     install(
         tmp_path,
         definition(
@@ -1099,10 +1108,11 @@ def test_private_fan_out_aliases_remain_available_to_child_fan_in(tmp_path, prob
                 {
                     "id": "join",
                     "type": "fan-in",
-                    "wait_for": ["fan:template:0", "fan:template:1"],
+                    "wait_for": ["fan"],
+                    "output": {"merged": "{{ steps.fan.output.results }}"},
                 },
             ],
-            outputs={"results": {"value": "{{ steps.join.output.results }}"}},
+            outputs={"results": {"value": "{{ steps.join.output.merged }}"}},
         ),
     )
 
@@ -1117,27 +1127,89 @@ def test_private_fan_out_aliases_remain_available_to_child_fan_in(tmp_path, prob
     assert "fan:template:1" not in state.step_results
 
 
-def test_fan_in_rejects_non_item_fan_out_alias():
-    errors = validate_workflow(
+def test_fan_in_rejects_fan_out_item_alias():
+    for alias in ("fan:template:0", "fan:template:not-an-item"):
+        errors = validate_workflow(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "fan",
+                        "type": "fan-out",
+                        "items": [1],
+                        "step": {"id": "template", "type": "probe"},
+                    },
+                    {"id": "join", "type": "fan-in", "wait_for": [alias]},
+                ],
+            )
+        )
+
+        assert any("unknown or not-yet-declared" in error for error in errors), alias
+
+
+def test_fan_in_rejects_item_alias_at_runtime():
+    from specify_cli.workflows.base import StepContext
+    from specify_cli.workflows.step.fan_in import FanInStep
+
+    result = FanInStep().execute(
+        {"id": "join", "type": "fan-in", "wait_for": ["fan:template:0"]},
+        StepContext(),
+    )
+
+    assert result.status == StepStatus.FAILED
+    assert "fan-out item alias" in (result.error or "")
+
+
+def test_fan_in_container_join_in_loop_sees_current_iteration(tmp_path, monkeypatch, probe):
+    calls = []
+
+    class Varying(StepBase):
+        type_key = "varying"
+
+        def execute(self, config, context):
+            calls.append(1)
+            items = [10, 20] if len(calls) == 1 else [30, 40]
+            return StepResult(output={"items": items})
+
+    monkeypatch.setitem(STEP_REGISTRY, "varying", Varying())
+    state = WorkflowEngine(tmp_path).execute(
         definition(
             "parent",
             [
                 {
-                    "id": "fan",
-                    "type": "fan-out",
-                    "items": [1],
-                    "step": {"id": "template", "type": "probe"},
-                },
-                {
-                    "id": "join",
-                    "type": "fan-in",
-                    "wait_for": ["fan:template:not-an-item"],
-                },
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [
+                        {"id": "varying", "type": "varying"},
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": "{{ steps.varying.output.items }}",
+                            "step": {
+                                "id": "template",
+                                "type": "probe",
+                                "value": "{{ item }}",
+                            },
+                        },
+                        {
+                            "id": "join",
+                            "type": "fan-in",
+                            "wait_for": ["fan"],
+                            "output": {"merged": "{{ steps.fan.output.results }}"},
+                        },
+                    ],
+                }
             ],
         )
     )
 
-    assert any("unknown or not-yet-declared" in error for error in errors)
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["join"]["output"]["merged"] == [
+        {"value": 30},
+        {"value": 40},
+    ]
 
 
 def test_fan_out_in_later_loop_iteration_uses_qualified_aliases(tmp_path, probe):
