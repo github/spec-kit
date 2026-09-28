@@ -8,6 +8,7 @@ directory, and ``--from`` archive URL). All three sources converge on
 
 from __future__ import annotations
 
+import sys
 from typing import Annotated
 
 from .. import _commands as cli
@@ -198,7 +199,14 @@ def _install_from_url(
             tmp_path = cli.Path(tmp.name)
             tmp.write(downloaded)
 
-        extract_tmp = tempfile.TemporaryDirectory(prefix="speckit-step-archive-")
+        try:
+            extract_tmp = tempfile.TemporaryDirectory(
+                prefix="speckit-step-archive-"
+            )
+        except OSError as exc:
+            raise installer.StepInstallError(
+                f"Failed to create temporary step archive directory: {exc}"
+            ) from exc
         extracted_root = cli.Path(extract_tmp.name)
         try:
             # safe_extract_archive re-detects and confirms the archive bytes.
@@ -220,20 +228,27 @@ def _install_from_url(
             )
             committed = True
         finally:
+            primary_error = sys.exc_info()[1]
             try:
                 extract_tmp.cleanup()
             except OSError as cleanup_exc:
-                if committed:
-                    cli.console.print(
-                        "[yellow]Warning:[/yellow] Could not remove temporary step "
-                        f"archive directory: {cli._escape_markup(str(cleanup_exc))} "
+                if extract_tmp.name and cli.Path(extract_tmp.name).exists():
+                    detail = (
+                        f"{cli._escape_markup(str(cleanup_exc))} "
                         f"(path: {cli._escape_markup(extract_tmp.name)})"
                     )
-                elif __import__("sys").exc_info()[0] is None:
+                    cli.console.print(
+                        "[yellow]Warning:[/yellow] Could not remove temporary "
+                        f"step archive directory: {detail}"
+                    )
+                if primary_error is None and not committed:
                     raise installer.StepInstallError(
                         "Failed to remove temporary step archive directory: "
                         f"{cleanup_exc}"
                     ) from cleanup_exc
+                # Do not raise from cleanup: the primary installation error
+                # (if any) is already propagating, and after commit the install
+                # has succeeded. The warning above reports the residual path.
     except cli.typer.Exit:
         raise
     except installer.StepInstallError:
@@ -368,7 +383,12 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
                 label="step package response",
             )
 
-    package_tmp = tempfile.TemporaryDirectory(prefix="speckit-step-package-")
+    try:
+        package_tmp = tempfile.TemporaryDirectory(prefix="speckit-step-package-")
+    except OSError as exc:
+        raise installer.StepInstallError(
+            f"Failed to create temporary step package directory: {exc}"
+        ) from exc
     package_dir = cli.Path(package_tmp.name)
     committed = False
     try:
@@ -456,20 +476,26 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
         )
         committed = True
     finally:
+        primary_error = sys.exc_info()[1]
         try:
             package_tmp.cleanup()
         except OSError as cleanup_exc:
-            if committed:
-                cli.console.print(
-                    "[yellow]Warning:[/yellow] Could not remove temporary step "
-                    f"package directory: {cli._escape_markup(str(cleanup_exc))} "
+            if package_tmp.name and cli.Path(package_tmp.name).exists():
+                detail = (
+                    f"{cli._escape_markup(str(cleanup_exc))} "
                     f"(path: {cli._escape_markup(package_tmp.name)})"
                 )
-            elif __import__("sys").exc_info()[0] is None:
+                cli.console.print(
+                    "[yellow]Warning:[/yellow] Could not remove temporary "
+                    f"step package directory: {detail}"
+                )
+            if primary_error is None and not committed:
                 raise installer.StepInstallError(
                     "Failed to remove temporary step package directory: "
                     f"{cleanup_exc}"
                 ) from cleanup_exc
+            # Do not raise from cleanup: preserve a primary download/install
+            # error, or report a successful install with a warning only.
 
     _print_installed(step_id, entry)
 
@@ -508,5 +534,10 @@ def workflow_step_add(
         else:
             _install_from_catalog(project_root, step_id, force=force)
     except installer.StepInstallError as exc:
+        notes = getattr(exc, "__notes__", ())
+        for note in notes:
+            cli.console.print(
+                f"[yellow]Warning:[/yellow] {cli._escape_markup(note)}"
+            )
         cli.console.print(f"[red]Error:[/red] {exc}")
         raise cli.typer.Exit(1) from exc

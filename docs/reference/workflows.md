@@ -635,10 +635,11 @@ specify workflow step add my-step --from https://example.com/my-step.zip --force
 `--force` first stages and validates the replacement before touching the
 existing installation, and can replace both a registered install and a leftover
 unregistered directory. Validation and staging failures leave the previous
-package untouched. If a replacement commit fails after the previous package is
-removed — removing the old directory, publishing the new one, or writing the
-registry — the installation is left incomplete: rerun the command with the
-original source and `--force` to reinstall. No automatic rollback is attempted.
+package untouched. If removing the old directory fails, the replacement is not
+published. If publishing the replacement or updating the registry fails after
+the old directory has been removed, the installation may be left incomplete:
+rerun the command with the original source and `--force` to reinstall. No
+automatic rollback is attempted.
 
 #### Package validation
 

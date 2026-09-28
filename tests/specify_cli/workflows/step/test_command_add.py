@@ -104,6 +104,254 @@ class TestWorkflowStepAddCLI:
             project_dir / ".specify" / "workflows" / "steps" / "my-step"
         ).exists()
 
+    def test_catalog_temp_directory_creation_error_is_user_facing(
+        self, project_dir, monkeypatch
+    ):
+        import tempfile
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+
+        def _fail_tempdir(*args, **kwargs):
+            raise OSError("temporary storage unavailable")
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", _fail_tempdir)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step"]
+        )
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Failed to create temporary step package directory" in result.output
+        assert "temporarystorageunavailable" in "".join(result.output.split())
+
+    def test_archive_temp_directory_creation_error_is_user_facing(
+        self, project_dir, monkeypatch
+    ):
+        import tempfile
+        import zipfile
+        from io import BytesIO
+
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+        real_tempdir = tempfile.TemporaryDirectory
+        allocations = 0
+
+        def _allocate_tempdir(*args, **kwargs):
+            nonlocal allocations
+            allocations += 1
+            if allocations == 1:
+                raise OSError("archive temp unavailable")
+            return real_tempdir(*args, **kwargs)
+
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            for name, content in _valid_archive_files().items():
+                zf.writestr(name, content)
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", _allocate_tempdir)
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, extra_headers=None, redirect_validator=None: _ArchiveResponse(
+                url, archive.getvalue(), "application/zip"
+            ),
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "step",
+                "add",
+                "my-step",
+                "--from",
+                "https://example.com/pkg.zip",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Failed to create temporary step archive directory" in result.output
+        assert "archivetempunavailable" in "".join(result.output.split())
+
+    def test_archive_cleanup_failure_preserves_primary_install_error(
+        self, project_dir, monkeypatch
+    ):
+        import tempfile
+        import zipfile
+        from io import BytesIO
+
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step import installer
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            for name, content in _valid_archive_files().items():
+                zf.writestr(name, content)
+
+        real_tempdir = tempfile.TemporaryDirectory
+        extract_paths = []
+
+        class _FailCleanupTempDir:
+            def __init__(self, *args, **kwargs):
+                self._inner = real_tempdir(*args, **kwargs)
+                self.name = self._inner.name
+                extract_paths.append(self.name)
+
+            def cleanup(self):
+                raise OSError("archive cleanup blocked")
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", _FailCleanupTempDir)
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None, extra_headers=None: _ArchiveResponse(
+                url, archive.getvalue(), "application/zip"
+            ),
+        )
+
+        real_install = installer.install_step_package
+
+        def _install_then_raise(*args, **kwargs):
+            real_install(*args, **kwargs)
+            raise installer.StepInstallError("primary archive install error")
+
+        monkeypatch.setattr(installer, "install_step_package", _install_then_raise)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "step",
+                "add",
+                "my-step",
+                "--from",
+                "https://example.com/pkg.zip",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "primary archive install error" in result.output
+        assert "Could not remove temporary step archive directory" in result.output
+        assert extract_paths[0] in result.output
+        import shutil
+
+        for extract_path in extract_paths:
+            shutil.rmtree(extract_path, ignore_errors=True)
+
+    def test_catalog_cleanup_failure_adds_note_to_primary_error(
+        self, project_dir, monkeypatch
+    ):
+        import tempfile
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
+        from specify_cli.workflows.step import installer
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+        bodies = {
+            "https://example.com/step.yml": b"step:\n  type_key: my-step\n",
+            "https://example.com/__init__.py": b"# init\n",
+        }
+
+        class _Response:
+            def __init__(self, url):
+                self.url = url
+                self.body = bodies[url]
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.body) - self.offset
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _Response(url),
+        )
+        real_tempdir = tempfile.TemporaryDirectory
+        allocated = []
+
+        class _FailCleanupTempDir:
+            def __init__(self, *args, **kwargs):
+                self._inner = real_tempdir(*args, **kwargs)
+                self.name = self._inner.name
+                allocated.append(self)
+
+            def cleanup(self):
+                raise OSError("catalog cleanup blocked")
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", _FailCleanupTempDir)
+
+        real_install = installer.install_step_package
+
+        def _install_then_raise(*args, **kwargs):
+            real_install(*args, **kwargs)
+            raise installer.StepInstallError("primary install error")
+
+        monkeypatch.setattr(installer, "install_step_package", _install_then_raise)
+        result = CliRunner().invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "primary install error" in result.output
+        assert "Could not remove temporary step package directory" in result.output
+        assert allocated[0].name in result.output
+        for item in allocated:
+            import shutil
+
+            shutil.rmtree(item.name, ignore_errors=True)
+
     @pytest.mark.parametrize(
         "step_yml_body", [b"[]", b"false", b"0", b"''", b"null", b"~", b"NULL"]
     )
@@ -936,6 +1184,69 @@ class TestWorkflowStepAddSources:
         assert (
             project_dir / ".specify" / "workflows" / "steps" / "my-step" / "step.yml"
         ).is_file()
+
+    def test_archive_temp_directory_cleanup_failure_warns_after_commit(
+        self, project_dir, monkeypatch
+    ):
+        import tempfile
+
+        import typer
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(typer, "confirm", lambda *args, **kwargs: True)
+
+        real_tempdir = tempfile.TemporaryDirectory
+        extract_paths: list[str] = []
+
+        class _FailCleanupTempDir:
+            def __init__(self, *args, **kwargs):
+                self._inner = real_tempdir(*args, **kwargs)
+                self.name = self._inner.name
+                extract_paths.append(self.name)
+
+            def cleanup(self):
+                raise OSError("archive cleanup blocked")
+
+        monkeypatch.setattr(tempfile, "TemporaryDirectory", _FailCleanupTempDir)
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None, extra_headers=None: (
+                _ArchiveResponse(
+                    url,
+                    _make_zip(_valid_archive_files()),
+                    "application/zip",
+                )
+            ),
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "step",
+                "add",
+                "my-step",
+                "--from",
+                "https://example.com/pkg.zip",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+        assert "Could not remove temporary step archive directory" in result.output
+        assert extract_paths[0] in result.output
+        assert (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step" / "step.yml"
+        ).is_file()
+        for path in extract_paths:
+            import shutil
+
+            shutil.rmtree(path, ignore_errors=True)
 
     def test_from_rejects_non_https(self, project_dir, monkeypatch):
         from typer.testing import CliRunner

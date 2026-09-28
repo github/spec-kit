@@ -15,7 +15,9 @@ import contextlib
 import os
 import shutil
 import stat
+import sys
 import tempfile
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,7 @@ import yaml
 # files. These ceilings apply uniformly to catalog, local, and archive sources.
 _MAX_STEP_PACKAGE_FILES = 512
 _MAX_STEP_PACKAGE_BYTES = 50 * 1024 * 1024  # 50 MiB
+_COPY_CHUNK_BYTES = 64 * 1024
 
 # Files/dirs never copied into (or counted as part of) an installed step
 # package. Mirrors ``bundles/packager.py`` ``EXCLUDE_NAMES``.
@@ -411,6 +414,44 @@ def _reject_builtin_collision(step_id: str) -> None:
 def _check_duplicate(
     registry: Any, step_id: str, step_dir: Path, *, force: bool
 ) -> None:
+    folded_id = step_id.casefold()
+    try:
+        registered_ids = registry.list()
+    except (AttributeError, TypeError):
+        registered_ids = ()
+    for registered_id in registered_ids:
+        if (
+            isinstance(registered_id, str)
+            and registered_id != step_id
+            and registered_id.casefold() == folded_id
+        ):
+            raise StepInstallError(
+                f"Step ID '{step_id}' collides case-insensitively with registered "
+                f"step ID '{registered_id}'; use the exact registered ID with --force"
+            )
+
+    try:
+        existing_names = (item.name for item in step_dir.parent.iterdir())
+        for existing_name in existing_names:
+            if existing_name == step_id or existing_name.casefold() != folded_id:
+                continue
+            existing_dir = step_dir.parent / existing_name
+            try:
+                same_destination = step_dir.exists() and existing_dir.samefile(step_dir)
+            except OSError:
+                same_destination = False
+            if not same_destination:
+                raise StepInstallError(
+                    f"Step ID '{step_id}' collides case-insensitively with "
+                    f"existing step directory '{existing_name}'"
+                )
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise StepInstallError(
+            f"Failed to inspect existing step directories: {exc}"
+        ) from exc
+
     if force:
         return
     if registry.is_installed(step_id):
@@ -517,6 +558,8 @@ def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
     validation cannot smuggle external content into the staged package.
     """
 
+    remaining_bytes = [_MAX_STEP_PACKAGE_BYTES]
+
     def _copy(current: Path, destination: Path) -> None:
         try:
             destination.mkdir(parents=True, exist_ok=True)
@@ -545,7 +588,8 @@ def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
             if stat.S_ISDIR(mode):
                 _copy(Path(entry.path), target)
             elif stat.S_ISREG(mode):
-                _copy_regular_file(entry.path, target, mode)
+                copied = _copy_regular_file(entry.path, target, mode, remaining_bytes[0])
+                remaining_bytes[0] -= copied
             else:
                 raise StepInstallError(
                     f"Step package contains unsupported file: {entry.path}"
@@ -554,8 +598,10 @@ def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
     _copy(source_dir, target_dir)
 
 
-def _copy_regular_file(source: str, target: Path, expected_mode: int) -> None:
-    """Copy an inspected regular file without following a late symlink swap."""
+def _copy_regular_file(
+    source: str, target: Path, expected_mode: int, remaining_bytes: int
+) -> int:
+    """Copy an inspected regular file within the remaining package byte budget."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(source, flags)
@@ -574,8 +620,24 @@ def _copy_regular_file(source: str, target: Path, expected_mode: int) -> None:
             raise StepInstallError(
                 f"Step package file changed while staging: {source}"
             )
-        with os.fdopen(fd, "rb", closefd=False) as source_file, target.open("xb") as target_file:
-            shutil.copyfileobj(source_file, target_file)
+        copied_bytes = 0
+        with os.fdopen(fd, "rb", closefd=False) as source_file, target.open(
+            "xb"
+        ) as target_file:
+            while True:
+                chunk = source_file.read(
+                    min(_COPY_CHUNK_BYTES, remaining_bytes - copied_bytes + 1)
+                )
+                if not chunk:
+                    break
+                if copied_bytes + len(chunk) > remaining_bytes:
+                    raise StepInstallError(
+                        f"Step package exceeds the {_MAX_STEP_PACKAGE_BYTES}-byte "
+                        "total size limit while staging"
+                    )
+                target_file.write(chunk)
+                copied_bytes += len(chunk)
+        return copied_bytes
     except OSError as exc:
         raise StepInstallError(f"Failed to stage step package: {exc}") from exc
     finally:
@@ -760,14 +822,20 @@ def install_step_package(
             )
             committed = True
     finally:
+        primary_error = sys.exc_info()[1]
         try:
             shutil.rmtree(work_dir)
         except OSError as cleanup_exc:
-            # The staged directory is private and cannot be loaded as a step,
-            # but callers still need an actionable residual-path diagnostic.
-            if work_dir.exists() and not committed and os.sys.exc_info()[0] is None:
-                raise StepInstallError(
-                    f"Failed to remove staging directory '{work_dir}': {cleanup_exc}"
-                ) from cleanup_exc
+            if work_dir.exists():
+                message = (
+                    f"Could not remove step staging directory '{work_dir}': "
+                    f"{cleanup_exc}"
+                )
+                if primary_error is not None:
+                    primary_error.add_note(message)
+                elif committed:
+                    warnings.warn(message, UserWarning, stacklevel=2)
+                else:
+                    raise StepInstallError(message) from cleanup_exc
 
     return entry

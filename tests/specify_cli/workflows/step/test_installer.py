@@ -254,6 +254,46 @@ def test_byte_limit_boundary(tmp_path, monkeypatch):
     assert "total size limit" in str(exc.value)
 
 
+def test_copy_enforces_byte_limit_if_source_grows_after_validation(
+    tmp_path, project_dir, monkeypatch
+):
+    pkg = _write_package(tmp_path / "pkg", init_body="# init\n")
+    original_bytes = sum(path.stat().st_size for path in pkg.iterdir())
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_BYTES", original_bytes)
+    real_copy = installer._copy_regular_file
+    grew_source = False
+    copied_bytes: list[int] = []
+
+    def _grow_then_copy(source, target, expected_mode, remaining_bytes):
+        nonlocal grew_source
+        if not grew_source:
+            with open(source, "ab") as source_file:
+                source_file.write(b"x")
+            grew_source = True
+        copied = real_copy(source, target, expected_mode, remaining_bytes)
+        copied_bytes.append(copied)
+        return copied
+
+    monkeypatch.setattr(installer, "_copy_regular_file", _grow_then_copy)
+
+    with pytest.raises(installer.StepInstallError, match="while staging"):
+        installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+    assert sum(copied_bytes) <= original_bytes
+    assert not (_steps_dir(project_dir) / "my-step").exists()
+
+
+def test_copy_accepts_exact_byte_limit(tmp_path, project_dir, monkeypatch):
+    pkg = _write_package(tmp_path / "pkg", init_body="# init\n")
+    total_bytes = sum(path.stat().st_size for path in pkg.iterdir())
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_BYTES", total_bytes)
+
+    installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+    installed = _steps_dir(project_dir) / "my-step"
+    assert sum(path.stat().st_size for path in installed.iterdir()) == total_bytes
+
+
 # ---------------------------------------------------------------------------
 # Archive root resolution
 # ---------------------------------------------------------------------------
@@ -339,6 +379,86 @@ def test_duplicate_install_rejected_without_force(tmp_path, project_dir):
 
     with pytest.raises(installer.StepInstallError, match="already installed"):
         installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+
+def test_force_rejects_casefolded_registered_id_collision(tmp_path, project_dir):
+    from specify_cli.workflows.step.catalog import StepRegistry
+
+    old_dir = _write_package(
+        _steps_dir(project_dir) / "Foo", type_key="Foo", init_body="# old\n"
+    )
+    _register(project_dir, "Foo")
+    replacement = _write_package(tmp_path / "replacement", type_key="foo")
+
+    with pytest.raises(installer.StepInstallError, match="case-insensitively"):
+        installer.install_step_package(
+            project_dir, "foo", replacement, source="local", force=True
+        )
+
+    assert (old_dir / "__init__.py").read_text(encoding="utf-8") == "# old\n"
+    assert set(StepRegistry(project_dir).list()) == {"Foo"}
+
+
+def test_force_rejects_casefolded_orphan_directory_collision(tmp_path, project_dir):
+    old_dir = _write_package(
+        _steps_dir(project_dir) / "Foo", type_key="Foo", init_body="# old\n"
+    )
+    replacement = _write_package(tmp_path / "replacement", type_key="foo")
+
+    with pytest.raises(installer.StepInstallError, match="case-insensitively"):
+        installer.install_step_package(
+            project_dir, "foo", replacement, source="local", force=True
+        )
+
+    assert (old_dir / "__init__.py").read_text(encoding="utf-8") == "# old\n"
+
+
+def test_force_allows_exact_id_with_registered_package(tmp_path, project_dir):
+    from specify_cli.workflows.step.catalog import StepRegistry
+
+    pkg = _write_package(
+        _steps_dir(project_dir) / "Foo", type_key="Foo", init_body="# old\n"
+    )
+    _register(project_dir, "Foo")
+    replacement = _write_package(
+        tmp_path / "replacement", type_key="Foo", init_body="# replacement\n"
+    )
+
+    installer.install_step_package(
+        project_dir, "Foo", replacement, source="local", force=True
+    )
+
+    assert (pkg / "__init__.py").read_text(encoding="utf-8") == "# replacement\n"
+    assert set(StepRegistry(project_dir).list()) == {"Foo"}
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_casefold_collision_guard_runs_for_force_and_regular_install(
+    tmp_path, project_dir, monkeypatch, force
+):
+    class _Registry:
+        def list(self):
+            return {"Foo": {}}
+
+        def is_installed(self, step_id):
+            return step_id == "foo"
+
+    steps_dir = _steps_dir(project_dir)
+    steps_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(installer, "resolve_steps_base_dir", lambda _root: steps_dir)
+    monkeypatch.setattr(installer, "_resolve_step_dir", lambda _base, _id: steps_dir / "foo")
+    monkeypatch.setattr(installer, "_reject_unsafe_destination", lambda _path: None)
+    monkeypatch.setattr(installer, "_reject_builtin_collision", lambda _step_id: None)
+    monkeypatch.setattr(
+        "specify_cli.workflows.step.catalog.StepRegistry",
+        lambda _root: _Registry(),
+    )
+    pkg = _write_package(tmp_path / f"pkg-{force}", type_key="foo")
+
+    with pytest.raises(installer.StepInstallError, match="case-insensitively"):
+        installer.install_step_package(
+            project_dir, "foo", pkg, source="local", force=force
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +643,74 @@ def test_force_registry_failure_warns_reinstall(
     assert (_steps_dir(project_dir) / "my-step" / "__init__.py").read_text(
         encoding="utf-8"
     ) == "# new\n"
+
+
+def test_staging_cleanup_failure_warns_after_success(
+    tmp_path, project_dir, monkeypatch
+):
+    pkg = _write_package(tmp_path / "pkg")
+    real_rmtree = installer.shutil.rmtree
+    residual_dirs: list[Path] = []
+
+    def _rmtree(path, *args, **kwargs):
+        path = Path(path)
+        if path.name.startswith(installer._WORK_DIR_PREFIX):
+            residual_dirs.append(path)
+            raise OSError("cleanup blocked")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(installer.shutil, "rmtree", _rmtree)
+    try:
+        with pytest.warns(
+            UserWarning, match="Could not remove step staging directory"
+        ):
+            installer.install_step_package(project_dir, "my-step", pkg, source="local")
+        assert (_steps_dir(project_dir) / "my-step").is_dir()
+        assert len(residual_dirs) == 1 and residual_dirs[0].is_dir()
+    finally:
+        for residual_dir in residual_dirs:
+            if residual_dir.exists():
+                real_rmtree(residual_dir)
+
+
+def test_staging_cleanup_failure_preserves_primary_error(
+    tmp_path, project_dir, monkeypatch
+):
+    pkg = _write_package(tmp_path / "pkg")
+    real_validate = installer.validate_step_package
+    real_rmtree = installer.shutil.rmtree
+    residual_dirs: list[Path] = []
+    calls = 0
+
+    def _validate(package_dir, step_id):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise installer.StepInstallError("primary staged validation failure")
+        return real_validate(package_dir, step_id)
+
+    def _rmtree(path, *args, **kwargs):
+        path = Path(path)
+        if path.name.startswith(installer._WORK_DIR_PREFIX):
+            residual_dirs.append(path)
+            raise OSError("cleanup blocked")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(installer, "validate_step_package", _validate)
+    monkeypatch.setattr(installer.shutil, "rmtree", _rmtree)
+    try:
+        with pytest.raises(
+            installer.StepInstallError, match="primary staged validation failure"
+        ) as exc:
+            installer.install_step_package(
+                project_dir, "my-step", pkg, source="local"
+            )
+        assert len(residual_dirs) == 1 and residual_dirs[0].is_dir()
+        assert str(residual_dirs[0]) in exc.value.__notes__[0]
+    finally:
+        for residual_dir in residual_dirs:
+            if residual_dir.exists():
+                real_rmtree(residual_dir)
 
 
 def test_force_removal_failure_warns_reinstall(tmp_path, project_dir, monkeypatch):
