@@ -327,6 +327,10 @@ function Format-SpecKitCommand {
 # Find a usable Python 3 executable (python3, python, or py -3).
 # Returns the command/arguments as an array, or $null if none found.
 function Get-Python3Command {
+    if ($env:SPECKIT_PYTHON -and (Get-Command $env:SPECKIT_PYTHON -ErrorAction SilentlyContinue)) {
+        $ver = & $env:SPECKIT_PYTHON --version 2>&1
+        if ($ver -match 'Python 3') { return @($env:SPECKIT_PYTHON) }
+    }
     if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
     if (Get-Command python -ErrorAction SilentlyContinue) {
         $ver = & python --version 2>&1
@@ -335,6 +339,58 @@ function Get-Python3Command {
     if (Get-Command py -ErrorAction SilentlyContinue) {
         $ver = & py -3 --version 2>&1
         if ($ver -match 'Python 3') { return @('py', '-3') }
+    }
+    return $null
+}
+
+# SPECKIT_YAML_RUNTIME_FALLBACK=1
+function Get-Python3WithYamlCommand {
+    $candidates = @()
+    if ($env:SPECKIT_PYTHON -and (Get-Command $env:SPECKIT_PYTHON -ErrorAction SilentlyContinue)) {
+        $candidates += ,@($env:SPECKIT_PYTHON)
+    }
+    if (Get-Command python3 -ErrorAction SilentlyContinue) { $candidates += ,@('python3') }
+    if (Get-Command python -ErrorAction SilentlyContinue) { $candidates += ,@('python') }
+    if (Get-Command py -ErrorAction SilentlyContinue) { $candidates += ,@('py', '-3') }
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        $candidates += ,@(
+            'uv',
+            'run',
+            '--isolated',
+            '--no-project',
+            '--with',
+            'pyyaml==6.0.3',
+            'python'
+        )
+    }
+
+    $previousPythonPath = $env:PYTHONPATH
+    $previousPythonSafePath = $env:PYTHONSAFEPATH
+    try {
+        $env:PYTHONSAFEPATH = '1'
+        foreach ($command in $candidates) {
+            if ($command[0] -eq 'uv') {
+                Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+            } elseif ($null -eq $previousPythonPath) {
+                Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+            } else {
+                $env:PYTHONPATH = $previousPythonPath
+            }
+            [array]$commandArgs = if ($command.Count -gt 1) { $command[1..($command.Count - 1)] } else { @() }
+            & $command[0] @commandArgs -c 'import sys, yaml; raise SystemExit(sys.version_info.major != 3)' *> $null
+            if ($LASTEXITCODE -eq 0) { return $command }
+        }
+    } finally {
+        if ($null -eq $previousPythonPath) {
+            Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+        } else {
+            $env:PYTHONPATH = $previousPythonPath
+        }
+        if ($null -eq $previousPythonSafePath) {
+            Remove-Item Env:PYTHONSAFEPATH -ErrorAction SilentlyContinue
+        } else {
+            $env:PYTHONSAFEPATH = $previousPythonSafePath
+        }
     }
     return $null
 }
@@ -598,22 +654,34 @@ function Resolve-TemplateContent {
                 ForEach-Object { $_.Name }
         }
 
-        $pyCmd = @(Get-Python3Command)
+        $yamlCmd = $null
+        $yamlCommandResolved = $false
         foreach ($presetId in $sortedPresets) {
                 # Read strategy and file path from preset manifest
                 $strategy = 'replace'
                 $manifestFilePath = ''
                 $manifestDeclared = $false
                 $manifest = Join-Path $presetsDir "$presetId/preset.yml"
-                if ((Test-Path $manifest) -and -not $pyCmd) {
-                    throw "Python 3 and PyYAML are required to resolve preset template composition"
-                }
                 if (Test-Path $manifest) {
+                    if (-not $yamlCommandResolved) {
+                        $yamlCmd = @(Get-Python3WithYamlCommand)
+                        $yamlCommandResolved = $true
+                    }
+                    if (-not $yamlCmd) {
+                        throw "Python 3 and PyYAML are required to resolve preset template composition"
+                    }
                     try {
                         # Use Python to parse YAML manifest for strategy and file path
-                        $pyArgs = if ($pyCmd.Count -gt 1) { $pyCmd[1..($pyCmd.Count-1)] } else { @() }
+                        [array]$pyArgs = if ($yamlCmd.Count -gt 1) { $yamlCmd[1..($yamlCmd.Count-1)] } else { @() }
                         $pyStderrFile = [System.IO.Path]::GetTempFileName()
-                        $stratResult = & $pyCmd[0] @pyArgs -c @"
+                        $previousPythonPath = $env:PYTHONPATH
+                        $previousPythonSafePath = $env:PYTHONSAFEPATH
+                        try {
+                            $env:PYTHONSAFEPATH = '1'
+                            if ($yamlCmd[0] -eq 'uv') {
+                                Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+                            }
+                            $stratResult = & $yamlCmd[0] @pyArgs -c @"
 import sys
 try:
     import yaml
@@ -668,8 +736,21 @@ except Exception as exc:
     print(f'manifest_invalid: {exc}', file=sys.stderr)
     sys.exit(3)
 "@ $manifest $TemplateName 2>$pyStderrFile
-                        if ($LASTEXITCODE -ne 0) {
-                            if ($LASTEXITCODE -eq 2) {
+                            $parserExitCode = $LASTEXITCODE
+                        } finally {
+                            if ($null -eq $previousPythonPath) {
+                                Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+                            } else {
+                                $env:PYTHONPATH = $previousPythonPath
+                            }
+                            if ($null -eq $previousPythonSafePath) {
+                                Remove-Item Env:PYTHONSAFEPATH -ErrorAction SilentlyContinue
+                            } else {
+                                $env:PYTHONSAFEPATH = $previousPythonSafePath
+                            }
+                        }
+                        if ($parserExitCode -ne 0) {
+                            if ($parserExitCode -eq 2) {
                                 throw "PyYAML is required to resolve preset template composition"
                             }
                             throw "Invalid preset manifest $manifest"
