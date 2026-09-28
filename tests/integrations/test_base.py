@@ -784,6 +784,8 @@ class TestCliAvailabilityMatchesDispatch:
     def test_claude_local_install_resolves_to_the_path_preflight_accepted(self, tmp_path):
         local_claude = tmp_path / "claude"
         local_claude.write_text("#!/bin/sh\n")
+        # An installed CLI is executable; availability now requires it.
+        local_claude.chmod(0o755)
 
         with (
             patch("shutil.which", return_value=None),
@@ -814,3 +816,29 @@ class TestCliAvailabilityMatchesDispatch:
             assert shutil.which(resolved) is not None
             # argv[0] is what actually reaches subprocess.run.
             assert exec_args[0] == "kiro"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows has no POSIX execute bit; os.access(X_OK) is always true",
+    )
+    def test_explicit_path_without_execute_bit_is_not_available(
+        self, monkeypatch, tmp_path
+    ):
+        # An explicit path that exists but cannot be executed passed preflight
+        # and then failed when dispatch launched it. Existence alone is not
+        # the question the caller is asking.
+        stub = tmp_path / "claude"
+        stub.write_text("#!/bin/sh\n")
+        stub.chmod(0o644)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", str(stub))
+        integration = get_integration("claude")
+
+        # Dispatch would run this exact path, so preflight must judge it.
+        assert integration._resolve_executable() == str(stub)
+        assert integration.is_cli_available() is False
+        assert check_tool("claude") is False
+
+        # Same path, now launchable: the only thing that changed is the bit.
+        stub.chmod(0o755)
+        assert integration.is_cli_available() is True
+        assert check_tool("claude") is True

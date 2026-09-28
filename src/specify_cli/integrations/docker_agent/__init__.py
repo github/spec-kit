@@ -69,11 +69,20 @@ class DockerAgentIntegration(SkillsIntegration):
         """Detect the standalone binary or the ``docker agent`` CLI plugin.
 
         Docker Agent is not a single executable on PATH, so the inherited
-        PATH lookup cannot answer this; the shared probe is authoritative.
+        PATH lookup cannot answer this on its own; the shared probe decides
+        which command form is available.
+
+        An explicit executable override is different. The probe deliberately
+        does not launch a custom binary, so it shapes argv for one without
+        establishing that it exists. The inherited check runs first in that
+        case, keeping preflight and dispatch in agreement.
         """
         executable = self._resolve_executable()
-        probe = docker_agent_command(None if executable == self.key else executable)
-        return probe is not None
+        if executable == self.key:
+            return docker_agent_command(None) is not None
+        if not super().is_cli_available():
+            return False
+        return docker_agent_command(executable) is not None
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

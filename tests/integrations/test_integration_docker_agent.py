@@ -2,6 +2,7 @@
 
 import pytest
 
+from specify_cli._utils import docker_agent_command
 from specify_cli.integrations.docker_agent import DockerAgentIntegration
 
 from .test_integration_base_skills import SkillsIntegrationTests
@@ -276,3 +277,34 @@ def test_docker_executable_override_uses_agent_subcommand(monkeypatch):
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
     assert args == ["/opt/docker", "agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+
+
+def test_nonexistent_executable_override_is_not_available(monkeypatch, tmp_path):
+    missing = tmp_path / "docker-agent"
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", str(missing))
+
+    # The probe never launches a custom binary, so on its own it reports a
+    # command form for a path that does not exist. Availability cannot be
+    # taken from it alone for an override.
+    assert docker_agent_command(str(missing)) is not None
+    assert DockerAgentIntegration().is_cli_available() is False
+
+
+def test_existing_executable_override_is_available(monkeypatch, tmp_path):
+    present = tmp_path / "docker-agent"
+    present.write_text("#!/bin/sh\n")
+    present.chmod(0o755)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", str(present))
+
+    assert DockerAgentIntegration().is_cli_available() is True
+
+
+def test_default_key_availability_still_uses_the_shared_probe(monkeypatch):
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker-agent" if name == "docker-agent" else None,
+    )
+
+    # No override: the PATH-based probe stays authoritative.
+    assert DockerAgentIntegration().is_cli_available() is True

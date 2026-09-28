@@ -320,11 +320,17 @@ class IntegrationBase(ABC):
         dispatch then fails to find. A resolved value containing a path
         separator names an explicit location and is checked directly; a bare
         name is looked up on PATH.
+
+        An explicit path must also carry the execute bit. Dispatch launches it
+        through :mod:`subprocess`, so a present-but-non-executable file would
+        pass preflight and then fail at launch — the same mismatch this method
+        exists to prevent. ``shutil.which`` already applies that test on the
+        PATH branch.
         """
         executable = self._resolve_executable()
         separators = [os.sep, os.altsep] if os.altsep else [os.sep]
         if any(sep in executable for sep in separators):
-            return Path(executable).is_file()
+            return Path(executable).is_file() and os.access(executable, os.X_OK)
         return shutil.which(executable) is not None
 
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
