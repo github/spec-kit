@@ -304,9 +304,10 @@ class CopilotIntegration(IntegrationBase):
         """Return the Copilot CLI executable, respecting the env-var override.
 
         Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
-        back to the platform-specific default from ``_copilot_executable()``
-        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
-        existing behaviour is preserved when the env var is unset.
+        back to the platform-specific default from ``_copilot_executable()``:
+        on Windows this probes ``PATH`` for ``copilot.exe`` then
+        ``copilot.cmd``, only falling back to ``copilot.cmd`` when neither is
+        found; elsewhere it is always ``copilot``.
         """
         env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
         override = os.environ.get(env_name, "").strip()
