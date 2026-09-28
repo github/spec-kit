@@ -22,13 +22,32 @@ jobs:
           days-before-close: 30
 
           # Stale issue settings
-          stale-issue-message: 'This issue has been automatically marked as stale because it has not had any activity for 60 days. It will be closed in 30 days if no further activity occurs.'
-          close-issue-message: 'This issue has been automatically closed due to inactivity (90 days total). If you believe this issue is still relevant, please reopen it or create a new issue.'
+          stale-issue-message: >-
+            This issue has been automatically marked as stale because it has had no activity for 60 days.
+            It will be closed in 30 days unless there is a substantive update. If the problem still applies,
+            please provide updated context such as whether it is still reproducible, the affected version or
+            environment, its current impact, and any new reproduction details. A comment that only states that
+            the issue is "still relevant" does not give maintainers enough information to reconsider it.
+          close-issue-message: >-
+            This issue has been automatically closed after 90 days without activity. To request reconsideration,
+            please provide updated reproduction details, the currently affected version or environment, and the
+            present impact. Reopen this issue if it is fundamentally the same problem. If the scope or reproduction
+            has materially changed, create a new issue, link this one, and explain what has changed.
           stale-issue-label: 'stale'
 
           # Stale PR settings
-          stale-pr-message: 'This pull request has been automatically marked as stale because it has not had any activity for 60 days. It will be closed in 30 days if no further activity occurs.'
-          close-pr-message: 'This pull request has been automatically closed due to inactivity (90 days total). If you believe this PR is still relevant, please reopen it or create a new PR.'
+          stale-pr-message: >-
+            This pull request has been automatically marked as stale because it has had no activity for 60 days.
+            It will be closed in 30 days unless there is a substantive update. If you intend to continue, please
+            describe the current status, address or acknowledge outstanding feedback, and confirm whether the
+            branch can be updated and the change remains ready for review. A comment that only states that the
+            pull request is "still relevant" does not provide enough context for maintainers.
+          close-pr-message: >-
+            This pull request has been automatically closed after 90 days without activity. To request
+            reconsideration, please explain why the change is still needed, confirm that the implementation is
+            current and ready for review, and address any outstanding feedback or conflicts. Reopen this pull
+            request if the existing branch and approach remain valid. Otherwise, create a new pull request, link
+            this one, and explain what has changed.
           stale-pr-label: 'stale'
 
           # Exempt issues and PRs with these labels from being marked as stale
