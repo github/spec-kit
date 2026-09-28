@@ -664,6 +664,9 @@ class CopilotIntegration(IntegrationBase):
         if not changed:
             return
 
+        # A lone surrogate (\ud800) can't be UTF-8 encoded; write it back as its JSON escape.
         dst.write_text(
-            json.dumps(existing, indent=4) + "\n", encoding="utf-8"
+            json.dumps(existing, indent=4, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            errors="backslashreplace",
         )
