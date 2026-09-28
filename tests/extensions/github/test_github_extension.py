@@ -1156,6 +1156,13 @@ class TestResolverPrerequisiteHints:
         assert result.stderr.splitlines()[-1] == hint
 
     def test_complete_feature_still_resolves(self, project: Path, twin: str):
+        feature = project / "specs" / "001-demo"
+        (feature / "data-model.md").write_text("# Data Model\n", encoding="utf-8")
+        contracts = feature / "contracts"
+        contracts.mkdir()
+        (contracts / "api.yaml").write_text("openapi: 3.0.0\n", encoding="utf-8")
+        (feature / "quickstart.md").write_text("# Quickstart\n", encoding="utf-8")
+
         result = _run_twin(twin, project)
 
         assert result.returncode == 0, result.stderr
@@ -1163,7 +1170,13 @@ class TestResolverPrerequisiteHints:
         payload = json.loads(result.stdout)
         assert Path(payload["FEATURE_DIR"]).parts[-2:] == ("specs", "001-demo")
         assert Path(payload["TASKS"]).parts[-3:] == ("specs", "001-demo", "tasks.md")
-        assert payload["AVAILABLE_DOCS"] == ["research.md", "tasks.md"]
+        assert payload["AVAILABLE_DOCS"] == [
+            "research.md",
+            "data-model.md",
+            "contracts/",
+            "quickstart.md",
+            "tasks.md",
+        ]
 
 
 @pytest.mark.parametrize("twin", _TWINS)
