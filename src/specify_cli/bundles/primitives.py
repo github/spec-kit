@@ -313,11 +313,16 @@ class _ExtensionKindManager:
 
     def remove(self, component: ComponentRef) -> None:
         try:
-            self._manager.remove(component.id)
+            removed = self._manager.remove(component.id)
         except Exception as exc:  # noqa: BLE001
             raise BundlerError(
                 f"Failed to remove extension '{component.id}': {exc}"
             ) from exc
+        if not removed:
+            raise BundlerError(
+                f"Failed to remove extension '{component.id}': removal was "
+                "refused (unsafe registry id or symlinked target)."
+            )
 
 
 class _WorkflowKindManager:

@@ -70,6 +70,31 @@ def test_default_installer_threads_allow_network(tmp_path: Path):
         installer.install(tmp_path, _component("workflows"))
 
 
+def test_extension_remove_propagates_refusal_as_bundler_error(tmp_path: Path):
+    """A tampered registry/symlinked target must fail the bundle removal, not
+    silently report success while leaving the extension installed on disk.
+
+    ``ExtensionManager.remove()`` returns ``False`` when it refuses to act on
+    an unsafe target; the bundle adapter must surface that refusal instead of
+    discarding it, or ``remove_bundle()`` would record the component as
+    uninstalled while it is still on disk.
+    """
+    manager = primitive_manager("extensions", tmp_path)
+    manager._manager.registry.add("test-ext", {"version": "1.0.0"})
+
+    ext_dir = tmp_path / ".specify" / "extensions" / "test-ext"
+    ext_dir.parent.mkdir(parents=True, exist_ok=True)
+    real_target = tmp_path / "real-target"
+    real_target.mkdir()
+    ext_dir.symlink_to(real_target, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="removal was refused"):
+        manager.remove(_component("extensions", "test-ext"))
+
+    assert ext_dir.is_symlink()
+    assert manager._manager.registry.is_installed("test-ext")
+
+
 @pytest.mark.parametrize("kind", ["presets", "extensions", "workflows", "steps"])
 def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: str):
     installer = DefaultPrimitiveInstaller(allow_network=False)

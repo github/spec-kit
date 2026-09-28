@@ -355,6 +355,22 @@ class TestPresetManager:
         assert pack_dir.is_symlink()
         assert manager.registry.is_installed("test-pack")
 
+    def test_remove_refuses_regular_file_preset_dir(self, project_dir):
+        """A regular file at the preset path must fail explicitly, not crash
+        ``shutil.rmtree`` or leave the registry mutated."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.parent.mkdir(parents=True, exist_ok=True)
+        pack_dir.write_text("not a directory")
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert pack_dir.is_file()
+        assert manager.registry.is_installed("test-pack")
+
     def test_list_installed(self, project_dir, pack_dir):
         """Test listing installed packs."""
         manager = PresetManager(project_dir)
