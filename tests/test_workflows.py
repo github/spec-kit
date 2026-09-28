@@ -679,6 +679,19 @@ class TestExpressions:
         with pytest.raises(ValueError, match="split: expected a string separator"):
             evaluate_expression("{{ inputs.csv | split(5) }}", ctx)
 
+    def test_filter_split_rejects_empty_separator(self):
+        # `str.split("")` raises the bare `ValueError: empty separator`, which
+        # names neither the filter nor the expression and escapes the evaluator
+        # as a raw Python error. An empty separator has no meaning, so it must
+        # be reported by the filter itself like every other misuse.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"csv": "a,b"})
+        with pytest.raises(ValueError, match="split: separator must not be empty"):
+            evaluate_expression("{{ inputs.csv | split('') }}", ctx)
+
     def test_filter_length(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

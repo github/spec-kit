@@ -172,10 +172,14 @@ def _filter_split(value: Any, separator: str) -> list[str]:
     no maxsplit, because a partial split has no obvious meaning in a workflow
     expression and an unused parameter is an authoring mistake worth reporting.
 
-    Raises ``ValueError`` when *value* is not a string or *separator* is not a
-    string. Without those guards a non-string argument reaches ``str.split`` and
-    raises a cryptic ``TypeError`` that escapes the evaluator and crashes the
-    whole run, mirroring the strict argument handling in ``join`` and ``map``.
+    Raises ``ValueError`` when *value* is not a string, *separator* is not a
+    string, or *separator* is empty. Without those guards a non-string argument
+    reaches ``str.split`` and raises a cryptic ``TypeError``, and an empty
+    separator raises the bare ``ValueError: empty separator`` — neither names
+    the filter, and both escape the evaluator and crash the whole run, mirroring
+    the strict argument handling in ``join`` and ``map``. An empty separator has
+    no meaning anyway: ``str.split("")`` is an error in Python, so it is an
+    authoring mistake rather than a valid edge case.
     """
     if not isinstance(value, str):
         raise ValueError(f"split: expected a string value, got {type(value).__name__}")
@@ -183,6 +187,8 @@ def _filter_split(value: Any, separator: str) -> list[str]:
         raise ValueError(
             f"split: expected a string separator, got {type(separator).__name__}"
         )
+    if separator == "":
+        raise ValueError("split: separator must not be empty")
     return value.split(separator)
 
 
@@ -210,11 +216,16 @@ def _filter_to_json(value: Any) -> str:
 
     Serialization is pinned to ``sort_keys=True`` and ``ensure_ascii=False`` so
     the output is byte-stable across runs, platforms, and dict insertion order.
-    That determinism is what lets a workflow round-trip a value through a shell
-    step and recover it with ``from_json``, and it is why these flags are not
-    left to the default: the default key order varies with insertion order and
-    escapes non-ASCII as ``\\uXXXX``, so the same workflow would emit different
-    bytes on different runs and hand shell steps mangled text.
+    It is why these flags are not left to the default: the default key order
+    varies with insertion order and escapes non-ASCII as ``\\uXXXX``, so the
+    same workflow would emit different bytes on different runs and hand
+    downstream tools mangled text. Determinism buys *reproducibility* — the same
+    value always serializes identically — and nothing more. It does not make the
+    result safe to pass through a shell: expression interpolation adds no
+    quoting or escaping, so JSON quotes and metacharacters are still interpreted
+    by whatever runs the ``run`` field. Interpolate unconstrained JSON into a
+    shell step only when you have constrained what it can contain; see the
+    "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
 
     Raises ``ValueError`` when *value* is not JSON-serializable, chained from
     the underlying error so the offending type stays visible.
