@@ -209,10 +209,13 @@ def validate_execution(tree: Any) -> None:
                     check_sequence(child)
                 if (
                     node["phase"] == "done"
-                    and kind != "workflow"
                     and any(nested["phase"] != "done" for nested in child["nodes"])
+                    and not (
+                        kind == "workflow"
+                        and step.get("continue_on_error") is True
+                        and result["status"] == "failed"
+                    )
                 ):
-                    raise ValueError("Completed execution has unfinished children")
             if node["phase"] == "outputs" and binding is None:
                 raise ValueError("Output finalization requires a workflow binding")
             if node["phase"] == "children" and (
