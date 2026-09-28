@@ -692,13 +692,29 @@ class WorkflowCatalog:
             results.append(wf_data)
         return results
 
-    def get_workflow_info(self, workflow_id: str) -> dict[str, Any] | None:
-        """Get details for a specific workflow from the catalog."""
+    def get_workflow_info(
+        self, workflow_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get the current or an exact advertised release from the winning source."""
+        from ._versions import select_release
+
         merged = self._get_merged_workflows()
         wf = merged.get(workflow_id)
-        if wf:
-            wf.setdefault("id", workflow_id)
-        return wf
+        if wf is None:
+            return None
+        wf.setdefault("id", workflow_id)
+        return select_release(wf, version)
+
+    def get_workflow_versions(self, workflow_id: str) -> list[str]:
+        """List versions advertised by the winning catalog entry."""
+        from ._versions import available_versions
+
+        merged = self._get_merged_workflows()
+        wf = merged.get(workflow_id)
+        if wf is None:
+            return []
+        wf.setdefault("id", workflow_id)
+        return available_versions(wf)
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""

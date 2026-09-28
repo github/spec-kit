@@ -724,6 +724,7 @@ def _install_workflow_package(
     *,
     expected_id: str | None = None,
     expected_version: str | None = None,
+    expected_requires: dict[str, Any] | None = None,
     expected_installed_version: str | None = None,
     catalog_info: dict[str, Any] | None = None,
 ) -> None:
@@ -766,6 +767,12 @@ def _install_workflow_package(
             f"[red]Error:[/red] Downloaded workflow version "
             f"({_escape_markup(str(definition.version))}) does not match the catalog "
             f"version ({_escape_markup(expected_version)})."
+        )
+        raise typer.Exit(1)
+    if expected_requires is not None and definition.requires != expected_requires:
+        console.print(
+            "[red]Error:[/red] Downloaded workflow requirements do not match "
+            "the selected catalog release."
         )
         raise typer.Exit(1)
 
@@ -1067,6 +1074,7 @@ def _install_workflow_from_catalog(
     workflow_id: str,
     expected_version: str | None = None,
     expected_installed_version: str | None = None,
+    requested_version: str | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
@@ -1094,14 +1102,27 @@ def _install_workflow_from_catalog(
 
     catalog = WorkflowCatalog(project_root)
     try:
-        info = catalog.get_workflow_info(workflow_id)
+        info = (
+            catalog.get_workflow_info(workflow_id, requested_version)
+            if requested_version is not None
+            else catalog.get_workflow_info(workflow_id)
+        )
     except WorkflowCatalogError as exc:
         console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if not info:
+        if requested_version is not None:
+            console.print(
+                f"[red]Error:[/red] Workflow '{safe_wf_id}' version "
+                f"'{_escape_markup(requested_version)}' not found in the winning catalog."
+            )
+            raise typer.Exit(1)
         console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' not found in catalog")
         raise typer.Exit(1)
+
+    if requested_version is not None:
+        expected_version = info["version"]
 
     if not info.get("_install_allowed", True):
         console.print(f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' is from a discovery-only catalog")
@@ -1235,14 +1256,17 @@ def _install_workflow_from_catalog(
         console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
+    try:
+        verify_archive_sha256(
+            downloaded_content, info.get("sha256"), workflow_id, ValueError
+        )
+    except ValueError as exc:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
+
     if downloaded_archive_format is not None:
         try:
-            verify_archive_sha256(
-                downloaded_content,
-                info.get("sha256"),
-                workflow_id,
-                ValueError,
-            )
             import tempfile
             from io import BytesIO
 
@@ -1270,6 +1294,9 @@ def _install_workflow_from_catalog(
                     workflow_url,
                     expected_id=workflow_id,
                     expected_version=expected_version,
+                    expected_requires=(
+                        info.get("requires") if requested_version is not None else None
+                    ),
                     expected_installed_version=expected_installed_version,
                     catalog_info={**info, "url": workflow_url},
                 )
@@ -1330,6 +1357,19 @@ def _install_workflow_from_catalog(
                 f"The catalog entry may be stale or misconfigured."
             )
             raise typer.Exit(1)
+    if (
+        requested_version is not None
+        and "requires" in info
+        and definition.requires != info["requires"]
+    ):
+        _safe_discard_staged_workflow_file(
+            staged_file, workflow_dir, existed_before
+        )
+        console.print(
+            "[red]Error:[/red] Downloaded workflow requirements do not match "
+            "the selected catalog release."
+        )
+        raise typer.Exit(1)
 
     try:
         transaction = _workflow_install_transaction(project_root)

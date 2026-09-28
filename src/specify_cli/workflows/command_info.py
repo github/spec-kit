@@ -8,12 +8,32 @@ from . import _commands as cli
 @cli.workflow_app.command("info")
 def workflow_info(
     workflow_id: str = cli.typer.Argument(..., help="Workflow ID"),
+    versions: bool = cli.typer.Option(
+        False, "--versions", help="Show versions available in workflow catalogs"
+    ),
 ):
     """Show workflow details and step graph."""
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowEngine
 
     project_root = cli._require_specify_project()
+    if versions:
+        catalog = WorkflowCatalog(project_root)
+        try:
+            available = catalog.get_workflow_versions(workflow_id)
+        except WorkflowCatalogError as exc:
+            cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+            raise cli.typer.Exit(1)
+        if not available:
+            cli.console.print(
+                f"[red]Error:[/red] Workflow '{cli._escape_markup(workflow_id)}' not found in catalog"
+            )
+            raise cli.typer.Exit(1)
+        cli.console.print(
+            f"Available versions for {cli._escape_markup(workflow_id)}: "
+            + ", ".join(cli._escape_markup(version) for version in available)
+        )
+        return
 
     # Check installed first
     registry = cli._open_workflow_registry(project_root)
@@ -92,8 +112,9 @@ def workflow_info(
     catalog = WorkflowCatalog(project_root)
     try:
         info = catalog.get_workflow_info(workflow_id)
-    except WorkflowCatalogError:
-        info = None
+    except WorkflowCatalogError as exc:
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+        raise cli.typer.Exit(1)
 
     if info:
         # Catalog-derived fields are untrusted; escape them so bracketed content
