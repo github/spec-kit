@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 
 import pytest
 
@@ -1654,3 +1655,206 @@ class DevStep(StepBase):
 
         removed = runner.invoke(app, ["workflow", "step", "remove", "dev-step"])
         assert removed.exit_code == 0
+class TestVersionedStepAdd:
+    @staticmethod
+    def _setup(project_dir, monkeypatch, *, discovery=False, corrupt=None):
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        base = "https://example.com/old/"
+        bodies = {
+            base + "step.yml": b"step:\n  type_key: deploy\n  version: '1.0'\n",
+            base + "__init__.py": b"# example\n",
+            base + "helper.py": b"# helper\n",
+        }
+        hashes = {
+            name: hashlib.sha256(bodies[base + name]).hexdigest()
+            for name in ("step.yml", "__init__.py", "helper.py")
+        }
+        entry = {
+            "id": "deploy",
+            "name": "Deploy",
+            "version": "2.0",
+            "step_yml_url": "https://example.com/current/step.yml",
+            "_install_allowed": not discovery,
+            "releases": {
+                "1.0": {
+                    "step_yml_url": base + "step.yml",
+                    "init_url": base + "__init__.py",
+                    "extra_files": {"helper.py": base + "helper.py"},
+                    "sha256": hashes,
+                }
+            },
+        }
+        if corrupt == "checksum":
+            bodies[base + "helper.py"] = b"changed"
+        elif corrupt == "version":
+            bodies[base + "step.yml"] = b"step:\n  type_key: deploy\n  version: '2.0'\n"
+            hashes["step.yml"] = hashlib.sha256(bodies[base + "step.yml"]).hexdigest()
+        elif corrupt == "id":
+            bodies[base + "step.yml"] = b"step:\n  type_key: other\n  version: '1.0'\n"
+            hashes["step.yml"] = hashlib.sha256(bodies[base + "step.yml"]).hexdigest()
+        elif corrupt == "url":
+            entry["releases"]["1.0"]["init_url"] = "http://evil.example/__init__.py"
+        monkeypatch.setattr(
+            StepCatalog, "_get_merged_steps", lambda self: {"deploy": entry}
+        )
+        requested = []
+
+        class Response:
+            def __init__(self, url):
+                self.url = url
+                self.content = bodies[url]
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def geturl(self):
+                return self.url
+
+            def getheader(self, _name):
+                return None
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.content)
+                chunk = self.content[self.offset:self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        def open_url(url, **_kwargs):
+            requested.append(url)
+            return Response(url)
+
+        monkeypatch.setattr(auth_http, "open_url", open_url)
+        return requested
+
+    def test_install_exact_selected_files(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        requested = self._setup(project_dir, monkeypatch)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "deploy", "--version", "v1.0"]
+        )
+        assert result.exit_code == 0, result.output
+        assert requested == [
+            f"https://example.com/old/{name}"
+            for name in ("step.yml", "__init__.py", "helper.py")
+        ]
+        assert StepRegistry(project_dir).get("deploy")["version"] == "1.0"
+        assert (
+            project_dir / ".specify/workflows/steps/deploy/helper.py"
+        ).read_bytes() == b"# helper\n"
+
+    @pytest.mark.parametrize(
+        ("corrupt", "error"),
+        [
+            ("checksum", "checksum mismatch"),
+            ("version", "does not match catalog version"),
+            ("id", "does not match step ID"),
+            ("url", "non-HTTPS"),
+        ],
+    )
+    def test_rejects_bad_selected_release(
+        self, project_dir, monkeypatch, corrupt, error
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        self._setup(project_dir, monkeypatch, corrupt=corrupt)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "deploy", "--version", "1.0"]
+        )
+        assert result.exit_code == 1, result.output
+        assert error in result.output
+        assert not StepRegistry(project_dir).is_installed("deploy")
+        assert not (project_dir / ".specify/workflows/steps/deploy").exists()
+
+    @pytest.mark.parametrize(
+        ("discovery", "version", "error"),
+        [
+            (False, "0.9", "not found in the winning catalog"),
+            (True, "1.0", "discovery-only catalog"),
+        ],
+    )
+    def test_no_fallback_or_discovery_install(
+        self, project_dir, monkeypatch, discovery, version, error
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        requested = self._setup(project_dir, monkeypatch, discovery=discovery)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "deploy", "--version", version]
+        )
+        assert result.exit_code == 1, result.output
+        assert error in result.output
+        assert requested == []
+
+    def test_current_explicit_selection_requires_digests(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        requested = self._setup(project_dir, monkeypatch)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "deploy", "--version", "2.0"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "SHA-256 digests" in result.output
+        assert requested == []
+
+    def test_rejects_insecure_redirect_before_following_it(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        self._setup(project_dir, monkeypatch)
+
+        def redirect(url, *, redirect_validator, **_kwargs):
+            redirect_validator(url, "http://evil.example/step.yml")
+            raise AssertionError("redirect should have been refused")
+
+        monkeypatch.setattr(auth_http, "open_url", redirect)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "deploy", "--version", "1.0"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "redirect target must use HTTPS" in " ".join(result.output.split())
+        assert not (project_dir / ".specify/workflows/steps/deploy").exists()
+
+    @pytest.mark.parametrize("source_option", ["--dev", "--from"])
+    def test_version_rejected_with_direct_source_before_network(
+        self, project_dir, monkeypatch, source_option
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            auth_http, "open_url",
+            lambda *args, **kwargs: pytest.fail("direct source must not download"),
+        )
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow", "step", "add", "deploy",
+                source_option, "https://example.com/deploy.zip",
+                "--version", "1.0",
+            ],
+        )
+        assert result.exit_code == 1, result.output
+        assert "--version requires a catalog step ID" in result.output
