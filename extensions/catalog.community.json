@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-25T00:00:00Z",
+  "updated_at": "2026-09-28T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3703,7 +3703,7 @@
       "author": "Aaron Sun",
       "version": "0.1.0",
       "download_url": "https://github.com/aaronrsun/spec-kit-openspec/releases/download/openspec-v0.1.0/openspec.zip",
-      "sha256": "21b55eff174a79b51e53a744c0afaf81313ed1976b54cbfdfae0904dfc7b5ba5",
+      "sha256": "9d3b384d5a13c36547352009cc11ce059d45c5f0624b3e3311559e2e5766cdf9",
       "repository": "https://github.com/aaronrsun/spec-kit-openspec",
       "homepage": "https://github.com/aaronrsun/spec-kit-openspec",
       "documentation": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/README.md",
