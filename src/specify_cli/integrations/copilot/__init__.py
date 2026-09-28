@@ -47,13 +47,15 @@ _COPILOT_CORE_COMMANDS = {
 
 
 def _copilot_executable() -> str:
-    """Return the executable name for Copilot CLI on this platform.
+    """Return the available Copilot CLI executable for this platform."""
+    if os.name != "nt":
+        return "copilot"
 
-    On Windows, subprocess invocation is reliable with `copilot.cmd`.
-    """
-    if os.name == "nt":
-        return "copilot.cmd"
-    return "copilot"
+    for candidate in ("copilot.exe", "copilot.cmd", "copilot"):
+        if shutil.which(candidate):
+            return candidate
+
+    return "copilot.cmd"
 
 
 def _allow_all() -> bool:
@@ -292,10 +294,8 @@ class CopilotIntegration(IntegrationBase):
     def _resolve_executable(self) -> str:
         """Return the Copilot CLI executable, respecting the env-var override.
 
-        Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
-        back to the platform-specific default from ``_copilot_executable()``
-        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
-        existing behaviour is preserved when the env var is unset.
+        Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first, then
+        discovers the platform-specific default from ``_copilot_executable``.
         """
         env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
         override = os.environ.get(env_name, "").strip()

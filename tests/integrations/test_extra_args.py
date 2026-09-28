@@ -639,6 +639,76 @@ def test_executable_env_var_copilot_unset_uses_platform_default(monkeypatch):
     assert args[0] == _copilot_executable()
 
 
+def test_copilot_windows_discovers_exe_on_path(monkeypatch):
+    """A native Windows executable is selected when it is the only match."""
+    import specify_cli.integrations.copilot as copilot
+
+    monkeypatch.setattr(copilot.os, "name", "nt")
+    monkeypatch.setattr(
+        copilot.shutil,
+        "which",
+        lambda candidate: r"C:\Tools\copilot.exe" if candidate == "copilot.exe" else None,
+    )
+
+    assert copilot._copilot_executable() == "copilot.exe"
+
+
+def test_copilot_windows_prefers_exe_over_cmd(monkeypatch):
+    """Windows executable discovery uses the documented candidate order."""
+    import specify_cli.integrations.copilot as copilot
+
+    monkeypatch.setattr(copilot.os, "name", "nt")
+    monkeypatch.setattr(
+        copilot.shutil,
+        "which",
+        lambda candidate: candidate if candidate in {"copilot.exe", "copilot.cmd"} else None,
+    )
+
+    assert copilot._copilot_executable() == "copilot.exe"
+
+
+def test_copilot_windows_keeps_historical_fallback(monkeypatch):
+    """Missing Windows candidates retain the historical executable name."""
+    import specify_cli.integrations.copilot as copilot
+
+    monkeypatch.setattr(copilot.os, "name", "nt")
+    monkeypatch.setattr(copilot.shutil, "which", lambda candidate: None)
+
+    assert copilot._copilot_executable() == "copilot.cmd"
+
+
+def test_copilot_executable_env_var_precedes_path_discovery(monkeypatch):
+    """The explicit executable override remains higher priority than PATH."""
+    import specify_cli.integrations.copilot as copilot
+
+    monkeypatch.setattr(copilot.os, "name", "nt")
+    monkeypatch.setattr(copilot.shutil, "which", lambda candidate: candidate)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_COPILOT_EXECUTABLE", "/opt/copilot")
+
+    assert copilot.CopilotIntegration()._resolve_executable() == "/opt/copilot"
+
+
+def test_copilot_dispatch_command_uses_path_discovery(monkeypatch):
+    """Command dispatch uses the executable discovered on Windows PATH."""
+    import specify_cli.integrations.copilot as copilot
+    import subprocess
+
+    capture = _RunCapture()
+    monkeypatch.setattr(copilot.os, "name", "nt")
+    monkeypatch.setattr(
+        copilot.shutil,
+        "which",
+        lambda candidate: r"C:\Tools\copilot.exe" if candidate == "copilot.exe" else None,
+    )
+    monkeypatch.setattr(subprocess, "run", capture)
+    monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
+
+    copilot.CopilotIntegration().dispatch_command("speckit.plan", args="body", stream=False)
+
+    assert capture.captured_args is not None
+    assert capture.captured_args[0] == "copilot.exe"
+
+
 def test_executable_env_var_copilot_dispatch_command(monkeypatch):
     """CopilotIntegration.dispatch_command honours the executable env var."""
     import subprocess
