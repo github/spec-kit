@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -23,7 +24,9 @@ def extension_set_priority(
     project_root = _commands._require_specify_project()
     # Validate priority
     if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        console.print(
+            "[red]Error:[/red] Priority must be a positive integer (1 or higher)"
+        )
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -54,7 +57,9 @@ def extension_set_priority(
         and not isinstance(raw_priority, bool)
         and raw_priority == priority
     ):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' already has priority {priority}[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' already has priority {priority}[/yellow]"
+        )
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
@@ -62,5 +67,13 @@ def extension_set_priority(
     # Update priority
     manager.registry.update(extension_id, {"priority": priority})
 
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' priority changed: {old_priority} → {priority}")
-    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
+    # Extension reordering can change the lower-layer candidates matched by
+    # enabled preset regex selectors.
+    _commands._refresh_presets_and_warn(project_root)
+
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' priority changed: {old_priority} → {priority}"
+    )
+    console.print(
+        "\n[dim]Lower priority = higher precedence in template resolution[/dim]"
+    )

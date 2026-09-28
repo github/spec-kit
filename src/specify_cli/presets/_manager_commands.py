@@ -197,6 +197,8 @@ class _PresetCommandMethods:
         self,
         manifest: PresetManifest,
         preset_dir: Path,
+        *,
+        command_templates: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, List[str]]:
         """Register preset command overrides with all detected AI agents.
 
@@ -219,10 +221,12 @@ class _PresetCommandMethods:
             t for t in manifest.templates if t.get("type") == "command"
         ]
         resolver = PresetResolver(self.project_root)
-        command_templates = self._expand_command_selectors(
-            resolver,
-            preset_dir,
-            raw_command_templates,
+        command_templates = (
+            command_templates
+            if command_templates is not None
+            else self._expand_command_selectors(
+                resolver, preset_dir, raw_command_templates
+            )
         )
         if not command_templates:
             return {}

@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -39,7 +40,9 @@ def extension_enable(
         raise typer.Exit(1)
 
     if metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]"
+        )
         raise typer.Exit(0)
 
     manager.registry.update(extension_id, {"enabled": True})
@@ -53,11 +56,14 @@ def extension_enable(
                     hook["enabled"] = True
         hook_executor.save_project_config(config)
 
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled")
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled"
+    )
 
     # #1: regenerate native event config so the enabled extension's events
     # are re-emitted in installed integrations.
     _commands._refresh_events_and_warn(project_root)
+    _commands._refresh_presets_and_warn(project_root)
 
     # Scaffold config templates on enable
     try:
@@ -75,7 +81,9 @@ def extension_enable(
         for cfg in deployed:
             console.print(f"  • {config_home}/{_escape_markup(str(cfg))}")
     if skipped:
-        console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
+        console.print(
+            f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]"
+        )
     if failed:
         console.print(
             f"\n[yellow]Warning:[/yellow] Config templates not scaffolded: "

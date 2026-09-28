@@ -259,6 +259,261 @@ def test_regex_validation_and_fullmatch(tmp_path):
     assert not selector_matches("regex:plan", "plan-template")
 
 
+def _write_command_declarations(pack_dir, preset_id, declarations):
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    for index, declaration in enumerate(declarations):
+        payload = pack_dir / f"command-{index}.md"
+        payload.write_text(declaration["body"], encoding="utf-8")
+        declaration["file"] = payload.name
+        declaration.pop("body")
+    data = _manifest("unused", "command")
+    data["preset"]["id"] = preset_id
+    data["provides"]["templates"] = declarations
+    (pack_dir / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    return pack_dir
+
+
+def _install_test_preset(project_dir, preset_id, pack_dir, priority):
+    PresetRegistry(project_dir / ".specify" / "presets").add(
+        preset_id, {"enabled": True, "priority": priority, "version": "1.0.0"}
+    )
+    destination = project_dir / ".specify" / "presets" / preset_id
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in pack_dir.iterdir():
+        (destination / path.name).write_bytes(path.read_bytes())
+    return destination
+
+
+@pytest.mark.parametrize(
+    ("strategy", "overlay", "expected"),
+    [
+        ("replace", "# Preset replacement\n", "# Preset replacement"),
+        ("prepend", "# Preset prefix\n", "# Preset prefix\n\n\n# Core command"),
+        ("append", "# Preset suffix\n", "# Core command\n\n\n# Preset suffix"),
+        (
+            "wrap",
+            "# Wrapper start\n{CORE_TEMPLATE}\n# Wrapper end\n",
+            "# Wrapper start\n# Core command\n\n# Wrapper end",
+        ),
+    ],
+)
+def test_command_regex_composes_over_core_for_each_strategy(
+    project_dir, tmp_path, strategy, overlay, expected
+):
+    core_commands = project_dir / ".specify" / "templates" / "commands"
+    core_commands.mkdir(parents=True, exist_ok=True)
+    (core_commands / "plan.md").write_text("# Core command\n", encoding="utf-8")
+    pack_dir = tmp_path / "selector"
+    declaration = {
+        "type": "command",
+        "name": r"regex:^speckit\.plan$",
+        "strategy": strategy,
+        "body": overlay,
+    }
+    _write_command_declarations(pack_dir, "selector", [declaration])
+    installed = _install_test_preset(project_dir, "selector", pack_dir, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.plan", "command")
+
+    assert content is not None
+    assert content.strip() == expected.strip()
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    assert [layer["source"] for layer in layers] == ["selector v1.0.0", "core"]
+    assert layers[0]["path"] == installed / "command-0.md"
+
+
+def test_command_regex_expands_and_composes_over_extension_layer(project_dir, tmp_path):
+    extension = project_dir / ".specify" / "extensions" / "demo"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "commands" / "speckit.demo.md").write_text(
+        "# Extension command\n", encoding="utf-8"
+    )
+    ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+        "demo", {"enabled": True, "priority": 10, "version": "1.0"}
+    )
+    pack_dir = tmp_path / "selector"
+    _write_command_declarations(
+        pack_dir,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.demo$",
+                "strategy": "append",
+                "body": "# Preset addition\n",
+            }
+        ],
+    )
+    _install_test_preset(project_dir, "selector", pack_dir, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.demo", "command")
+
+    assert content == "# Extension command\n\n\n# Preset addition\n"
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.demo", "command")
+    assert [layer["source"] for layer in layers] == [
+        "selector v1.0.0",
+        "extension:demo v1.0",
+    ]
+
+
+def test_command_regex_expands_and_composes_over_lower_preset(project_dir, tmp_path):
+    lower_pack = tmp_path / "lower"
+    _write_command_declarations(
+        lower_pack,
+        "lower",
+        [
+            {
+                "type": "command",
+                "name": "speckit.lower",
+                "strategy": "replace",
+                "body": "# Lower preset command\n",
+            }
+        ],
+    )
+    _install_test_preset(project_dir, "lower", lower_pack, 10)
+    selector_pack = tmp_path / "selector"
+    _write_command_declarations(
+        selector_pack,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.lower$",
+                "strategy": "prepend",
+                "body": "# Selector prefix\n",
+            }
+        ],
+    )
+    _install_test_preset(project_dir, "selector", selector_pack, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.lower", "command")
+
+    assert content == "# Selector prefix\n\n\n# Lower preset command\n"
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.lower", "command")
+    assert [layer["source"] for layer in layers] == [
+        "selector v1.0.0",
+        "lower v1.0.0",
+    ]
+
+
+def test_command_regex_excludes_higher_preset_and_project_override(
+    project_dir, tmp_path
+):
+    # The selector is lower priority than both the higher preset and the project
+    # override. Neither may make a command eligible for selector expansion.
+    higher_pack = tmp_path / "higher"
+    _write_command_declarations(
+        higher_pack,
+        "higher",
+        [
+            {
+                "type": "command",
+                "name": "speckit.higher",
+                "strategy": "replace",
+                "body": "# Higher command\n",
+            }
+        ],
+    )
+    _install_test_preset(project_dir, "higher", higher_pack, 1)
+    selector_pack = tmp_path / "selector"
+    _write_command_declarations(
+        selector_pack,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.(higher|override)$",
+                "strategy": "append",
+                "body": "# Selector addition\n",
+            }
+        ],
+    )
+    installed = _install_test_preset(project_dir, "selector", selector_pack, 10)
+    override_dir = project_dir / ".specify" / "templates" / "overrides"
+    override_dir.mkdir(parents=True)
+    (override_dir / "speckit.override.md").write_text("# Project override\n")
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(installed / "preset.yml")
+
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), installed, manifest.templates
+    )
+
+    assert expanded == []
+    assert (
+        PresetResolver(project_dir).collect_all_layers("speckit.higher", "command")[0][
+            "source"
+        ]
+        == "higher v1.0.0"
+    )
+    assert (
+        PresetResolver(project_dir).collect_all_layers("speckit.override", "command")[
+            0
+        ]["source"]
+        == "project override"
+    )
+
+
+def test_three_overlapping_command_regexes_keep_declaration_order_and_compose(
+    project_dir, tmp_path
+):
+    core_commands = project_dir / ".specify" / "templates" / "commands"
+    core_commands.mkdir(parents=True, exist_ok=True)
+    (core_commands / "plan.md").write_text("# Core command\n", encoding="utf-8")
+    pack_dir = tmp_path / "selector"
+    declarations = [
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.plan$",
+            "strategy": "prepend",
+            "body": "# Declared first\n",
+        },
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.p.*$",
+            "strategy": "append",
+            "body": "# Declared second\n",
+        },
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.pla.*n$",
+            "strategy": "wrap",
+            "body": "# Declared third start\n{CORE_TEMPLATE}\n# Declared third end\n",
+        },
+    ]
+    _write_command_declarations(pack_dir, "selector", declarations)
+    _install_test_preset(project_dir, "selector", pack_dir, 1)
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(
+        project_dir / ".specify" / "presets" / "selector" / "preset.yml"
+    )
+
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir),
+        project_dir / ".specify" / "presets" / "selector",
+        manifest.templates,
+    )
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    content = PresetResolver(project_dir).resolve_content("speckit.plan", "command")
+
+    assert [entry["name"] for entry in expanded] == [
+        "speckit.plan",
+        "speckit.plan",
+        "speckit.plan",
+    ]
+    assert [layer["path"].name for layer in layers] == [
+        "command-0.md",
+        "command-1.md",
+        "command-2.md",
+        "plan.md",
+    ]
+    assert content is not None
+    assert content.index("Declared first") < content.index("Declared third start")
+    assert content.index("Declared third start") < content.index("Core command")
+    assert content.index("Core command") < content.index("Declared third end")
+    assert content.index("Declared third end") < content.index("Declared second")
+
+
 def test_invalid_regex_fails_during_manifest_validation(tmp_path):
     path = tmp_path / "preset.yml"
     path.write_text(yaml.safe_dump(_manifest("regex:[unterminated")), encoding="utf-8")
@@ -320,7 +575,7 @@ def test_same_priority_regex_layers_follow_preset_id_order(project_dir):
         "regex:^plan-template$",
         priority=10,
         strategy="append",
-        body="zeta\\n",
+        body="zeta\n",
     )
     _write_preset(
         project_dir,
@@ -328,7 +583,7 @@ def test_same_priority_regex_layers_follow_preset_id_order(project_dir):
         "regex:^plan-template$",
         priority=10,
         strategy="append",
-        body="alpha\\n",
+        body="alpha\n",
     )
     layers = PresetResolver(project_dir).collect_all_layers("plan-template", "template")
     regex_sources = [
@@ -366,7 +621,7 @@ def test_project_override_does_not_hide_real_regex_lower_layer(project_dir):
     )
     core = project_dir / ".specify" / "templates" / "foo-template.md"
     core.parent.mkdir(parents=True, exist_ok=True)
-    core.write_text("core\\n", encoding="utf-8")
+    core.write_text("core\n", encoding="utf-8")
     layers = PresetResolver(project_dir).collect_all_layers("foo-template", "template")
     assert [layer["source"] for layer in layers] == [
         "project override",

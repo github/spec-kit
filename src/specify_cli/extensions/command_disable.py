@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -39,7 +40,9 @@ def extension_disable(
         raise typer.Exit(1)
 
     if not metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]"
+        )
         raise typer.Exit(0)
 
     manager.registry.update(extension_id, {"enabled": False})
@@ -53,10 +56,17 @@ def extension_disable(
                     hook["enabled"] = False
         hook_executor.save_project_config(config)
 
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled"
+    )
     console.print("\nCommands will no longer be available. Hooks will not execute.")
-    console.print(f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}")
+    console.print(
+        f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}"
+    )
 
     # #1: regenerate native event config so the disabled extension's events
     # are stripped from installed integrations.
+    # Extension mutations may change the expansion set for preset regex
+    # selectors; re-register enabled presets after refreshing native events.
     _commands._refresh_events_and_warn(project_root)
+    _commands._refresh_presets_and_warn(project_root)

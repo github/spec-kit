@@ -519,63 +519,74 @@ class PresetResolver:
 
         return {"path": resolved_str, "source": "core"}
 
-    def _regex_preset_declaration(
+    def _preset_declarations_for_resource(
         self, pack_dir: Path, template_name: str, template_type: str
-    ) -> tuple[dict | None, Path | None]:
-        """Find a matching regex declaration only when a concrete lower layer exists."""
-        if template_type not in {"template", "script"}:
-            return None, None
+    ) -> list[tuple[dict, Path | None]]:
+        """Collect exact and matching regex declarations in manifest order."""
+        if template_type not in {"template", "script", "command"}:
+            return []
         manifest = self._get_manifest(pack_dir)
         if manifest is None:
-            return None, None
+            return []
         presets = self._get_all_presets_by_priority()
         pack_ids = [pack_id for pack_id, _ in presets]
         try:
             current_index = pack_ids.index(pack_dir.name)
         except ValueError:
-            return None, None
-
-        # A selector only sees resources below its owning preset in the actual
-        # resolver stack, followed by enabled extensions and core.
-        for lower_id, _metadata in presets[current_index + 1 :]:
-            lower_dir = self.presets_dir / lower_id
-            if self._preset_has_concrete_resource(
-                lower_dir, template_name, template_type
-            ):
-                has_lower_resource = True
-                break
-        else:
-            has_lower_resource = False
-
+            return []
+        has_lower_resource = any(
+            self._preset_has_concrete_resource(
+                self.presets_dir / lower_id, template_name, template_type
+            )
+            for lower_id, _metadata in presets[current_index + 1 :]
+        )
         if not has_lower_resource:
-            for _priority, ext_id, _meta in self._get_all_extensions_by_priority():
-                if self._extension_has_concrete_resource(
+            has_lower_resource = any(
+                self._extension_has_concrete_resource(
                     self.extensions_dir / ext_id, template_name, template_type
-                ):
-                    has_lower_resource = True
-                    break
-
+                )
+                for _priority, ext_id, _meta in self._get_all_extensions_by_priority()
+            )
         if not has_lower_resource:
             has_lower_resource = self._core_has_concrete_resource(
                 template_name, template_type
             )
-        if not has_lower_resource:
-            return None, None
-
+        matches = []
         for declaration in manifest.templates:
-            declared_name = declaration.get("name")
-            if (
-                declaration.get("type") == template_type
-                and isinstance(declared_name, str)
-                and is_regex_selector(declared_name)
-                and selector_matches(declared_name, template_name)
-            ):
+            name = declaration.get("name")
+            if declaration.get("type") != template_type or not isinstance(name, str):
+                continue
+            exact = not is_regex_selector(name) and name == template_name
+            regex = (
+                has_lower_resource
+                and is_regex_selector(name)
+                and selector_matches(name, template_name)
+            )
+            if exact or regex:
                 file_value = declaration.get("file")
                 path = pack_dir / file_value if isinstance(file_value, str) else None
-                return declaration, (
-                    path if path is not None and path.is_file() else None
+                matches.append(
+                    (declaration, path if path is not None and path.is_file() else None)
                 )
-        return None, None
+        return matches
+
+    def _regex_preset_declarations(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> list[tuple[dict, Path | None]]:
+        matches = self._preset_declarations_for_resource(
+            pack_dir, template_name, template_type
+        )
+        return [
+            item for item in matches if is_regex_selector(str(item[0].get("name", "")))
+        ]
+
+    def _regex_preset_declaration(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        matches = self._regex_preset_declarations(
+            pack_dir, template_name, template_type
+        )
+        return matches[0] if matches else (None, None)
 
     def _has_concrete_resource(
         self,
@@ -712,34 +723,24 @@ class PresetResolver:
         if self.presets_dir.exists():
             for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
-                # Read strategy and manifest file path from preset manifest
-                strategy = "replace"
-                manifest_has_strategy = False
-                entry, manifest_candidate = self._manifest_declared_template(
+                preset_declarations = self._preset_declarations_for_resource(
                     pack_dir, template_name, template_type
                 )
-                if entry is None:
-                    entry, manifest_candidate = self._regex_preset_declaration(
+                if not preset_declarations:
+                    entry, candidate = self._manifest_declared_template(
                         pack_dir, template_name, template_type
                     )
-                if entry is not None:
-                    strategy = entry.get("strategy", "replace")
-                    manifest_has_strategy = "strategy" in entry
-                # Use the manifest's declared file when it's a usable regular file;
-                # only fall back to convention-based lookup when the manifest
-                # doesn't list this template at all, so preset.yml stays
-                # authoritative (a declared-but-unusable file skips convention —
-                # parity with resolve()).
-                candidate = None
-                if manifest_candidate is not None:
-                    candidate = manifest_candidate
-                elif entry is None:
-                    candidate = _find_in_subdirs(pack_dir)
-                if candidate:
-                    # Legacy fallback: if manifest doesn't explicitly declare a
-                    # strategy, check the command file's frontmatter for any valid
-                    # strategy. Skip when the manifest entry includes strategy key
-                    # (even if it's "replace") to avoid overriding explicit declarations.
+                    if entry is None:
+                        candidate = _find_in_subdirs(pack_dir)
+                    preset_declarations = [(entry, candidate)]
+                for layer_entry, candidate in preset_declarations:
+                    strategy = "replace"
+                    manifest_has_strategy = False
+                    if layer_entry is not None:
+                        strategy = layer_entry.get("strategy", "replace")
+                        manifest_has_strategy = "strategy" in layer_entry
+                    if candidate is None:
+                        continue
                     if (
                         not manifest_has_strategy
                         and strategy == "replace"
@@ -749,25 +750,30 @@ class PresetResolver:
                             cmd_content = candidate.read_text(encoding="utf-8")
                             lines = cmd_content.splitlines(keepends=True)
                             if lines and lines[0].rstrip("\r\n") == "---":
-                                fence_end = -1
-                                for fi, fline in enumerate(lines[1:], start=1):
-                                    if fline.rstrip("\r\n") == "---":
-                                        fence_end = fi
-                                        break
+                                fence_end = next(
+                                    (
+                                        i
+                                        for i, line in enumerate(lines[1:], 1)
+                                        if line.rstrip("\r\n") == "---"
+                                    ),
+                                    -1,
+                                )
                                 if fence_end > 0:
-                                    fm_text = "".join(lines[1:fence_end])
-                                    fm_data = yaml.safe_load(fm_text)
-                                    if isinstance(fm_data, dict):
-                                        fm_strategy = fm_data.get("strategy")
-                                        if (
-                                            isinstance(fm_strategy, str)
-                                            and fm_strategy.lower()
-                                            in VALID_PRESET_STRATEGIES
-                                        ):
-                                            strategy = fm_strategy.lower()
+                                    fm_data = yaml.safe_load(
+                                        "".join(lines[1:fence_end])
+                                    )
+                                    fm_strategy = (
+                                        fm_data.get("strategy")
+                                        if isinstance(fm_data, dict)
+                                        else None
+                                    )
+                                    if (
+                                        isinstance(fm_strategy, str)
+                                        and fm_strategy.lower()
+                                        in VALID_PRESET_STRATEGIES
+                                    ):
+                                        strategy = fm_strategy.lower()
                         except (UnicodeDecodeError, yaml.YAMLError, OSError):
-                            # Best-effort legacy frontmatter parsing: keep default
-                            # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
                     layers.append(

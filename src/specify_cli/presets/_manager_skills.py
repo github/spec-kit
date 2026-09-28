@@ -17,6 +17,7 @@ from ..integrations.base import IntegrationBase
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
+from ._selectors import is_regex_selector
 
 
 class _PresetSkillMethods:
@@ -39,8 +40,7 @@ class _PresetSkillMethods:
         @property
         def templates(self) -> List[Dict[str, Any]]:
             return [
-                t for t in self._manifest.templates
-                if t.get("name") in self._cmd_names
+                t for t in self._manifest.templates if t.get("name") in self._cmd_names
             ]
 
     def _merge_pack_registered_skills(
@@ -82,9 +82,7 @@ class _PresetSkillMethods:
         else:
             existing_skills = self._normalize_registered_skills(raw_existing_skills)
         merged_skills = copy.deepcopy(existing_skills)
-        changed = (
-            isinstance(raw_existing_skills, list) and bool(raw_existing_skills)
-        )
+        changed = isinstance(raw_existing_skills, list) and bool(raw_existing_skills)
         for agent_name, skill_names in written.items():
             if not skill_names:
                 continue
@@ -99,9 +97,7 @@ class _PresetSkillMethods:
     def _reconcile_skills(
         self,
         command_names: List[str],
-        extra_skills_dirs: Optional[
-            Dict[Path, tuple[Optional[str], List[str]]]
-        ] = None,
+        extra_skills_dirs: Optional[Dict[Path, tuple[Optional[str], List[str]]]] = None,
         target_agent: Optional[str] = None,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
@@ -158,9 +154,7 @@ class _PresetSkillMethods:
             if not layers:
                 continue
 
-            skill_name, legacy_skill_name = self._skill_names_for_command(
-                cmd_name
-            )
+            skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
             candidate_skill_names = {skill_name, legacy_skill_name}
             # Track whether any preset previously registered this skill
             # (i.e., it was actively managed), so a not-yet-existing skill
@@ -180,9 +174,7 @@ class _PresetSkillMethods:
                     recorded_names = set(recorded)
                 else:
                     recorded_names = set()
-                recorded_candidates = (
-                    candidate_skill_names & recorded_names
-                )
+                recorded_candidates = candidate_skill_names & recorded_names
                 if recorded_candidates:
                     managed_skill_names.update(recorded_candidates)
 
@@ -200,8 +192,12 @@ class _PresetSkillMethods:
                 # Track the winning layer path for skill restoration.
                 non_preset_skills.append((skill_name, cmd_name, layers[0]))
 
-        core_ext_skills = [s for s in non_preset_skills if s[2]["source"] != "project override"]
-        override_skills = [s for s in non_preset_skills if s[2]["source"] == "project override"]
+        core_ext_skills = [
+            s for s in non_preset_skills if s[2]["source"] != "project override"
+        ]
+        override_skills = [
+            s for s in non_preset_skills if s[2]["source"] == "project override"
+        ]
 
         def apply_to_dir(
             skills_dir: Path,
@@ -243,12 +239,13 @@ class _PresetSkillMethods:
                     from .. import SKILL_DESCRIPTIONS
                     from ..agents import CommandRegistrar
                     from ..shared_infra import _write_shared_text
+
                     registrar = CommandRegistrar()
                     content = top_layer["path"].read_text(encoding="utf-8")
                     fm, body = registrar.parse_frontmatter(content)
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
-                        short_name = short_name[len("speckit."):]
+                        short_name = short_name[len("speckit.") :]
                     desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
                         f"Command: {short_name}",
@@ -262,6 +259,7 @@ class _PresetSkillMethods:
                             body, registrar, selected_ai, self.project_root
                         )
                     from ..integrations import get_integration
+
                     integration = get_integration(selected_ai) if selected_ai else None
                     skill_title = self._skill_title_from_command(cmd_name)
                     wrote_override = False
@@ -281,9 +279,7 @@ class _PresetSkillMethods:
                             desc,
                             f"override:{cmd_name}",
                         )
-                        registrar.apply_argument_hint(
-                            fm, fm_data, integration
-                        )
+                        registrar.apply_argument_hint(fm, fm_data, integration)
                         fm_text = dump_frontmatter(fm_data)
                         skill_content = (
                             f"---\n{fm_text}\n---\n\n"
@@ -292,10 +288,8 @@ class _PresetSkillMethods:
                         if integration is not None and hasattr(
                             integration, "post_process_skill_content"
                         ):
-                            skill_content = (
-                                integration.post_process_skill_content(
-                                    skill_content
-                                )
+                            skill_content = integration.post_process_skill_content(
+                                skill_content
                             )
                         _write_shared_text(
                             skills_dir,
@@ -303,12 +297,8 @@ class _PresetSkillMethods:
                             skill_content,
                         )
                         wrote_override = True
-                    if (
-                        wrote_override
-                        and (
-                            target_agent is None
-                            or dir_agent == target_agent
-                        )
+                    if wrote_override and (
+                        target_agent is None or dir_agent == target_agent
                     ):
                         reconciled_skill_commands.add(cmd_name)
                 except Exception:
@@ -364,14 +354,14 @@ class _PresetSkillMethods:
                     written = self._register_skills(filtered_manifest, pack_dir)
                 else:
                     written = self._register_skills(
-                        filtered_manifest, pack_dir,
-                        target_dir=skills_dir, target_agent=dir_agent or "",
+                        filtered_manifest,
+                        pack_dir,
+                        target_dir=skills_dir,
+                        target_agent=dir_agent or "",
                     )
                 if target_agent is None:
                     written_names = {
-                        name
-                        for names in written.values()
-                        for name in names
+                        name for names in written.values() for name in names
                     }
                 else:
                     written_names = set(written.get(target_agent, []))
@@ -399,9 +389,7 @@ class _PresetSkillMethods:
                     active_ai,
                     is_active=True,
                     managed_names=(
-                        set(active_provenance[1])
-                        if active_provenance
-                        else None
+                        set(active_provenance[1]) if active_provenance else None
                     ),
                 )
 
@@ -455,11 +443,15 @@ class _PresetSkillMethods:
             resolve_active_skills_dir,
         )
         from ..shared_infra import _ensure_safe_shared_directory
+
         try:
             skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
             _print_cli_warning(
-                "resolve", "skills directory", None, exc,
+                "resolve",
+                "skills directory",
+                None,
+                exc,
                 continuing="Continuing without skill registration.",
             )
             return None
@@ -493,7 +485,10 @@ class _PresetSkillMethods:
             )
         except (ValueError, OSError) as exc:
             _print_cli_warning(
-                "resolve", "skills directory", str(agent_skills_dir), exc,
+                "resolve",
+                "skills directory",
+                str(agent_skills_dir),
+                exc,
                 continuing="Continuing without skill registration.",
             )
             return None
@@ -504,7 +499,7 @@ class _PresetSkillMethods:
         """Return the modern and legacy skill directory names for a command."""
         raw_short_name = cmd_name
         if raw_short_name.startswith("speckit."):
-            raw_short_name = raw_short_name[len("speckit."):]
+            raw_short_name = raw_short_name[len("speckit.") :]
 
         modern_skill_name = f"speckit-{raw_short_name.replace('.', '-')}"
         legacy_skill_name = f"speckit.{raw_short_name}"
@@ -515,7 +510,7 @@ class _PresetSkillMethods:
         """Return a human-friendly title for a skill command name."""
         title_name = cmd_name
         if title_name.startswith("speckit."):
-            title_name = title_name[len("speckit."):]
+            title_name = title_name[len("speckit.") :]
         return title_name.replace(".", " ").replace("-", " ").title()
 
     @staticmethod
@@ -608,7 +603,9 @@ class _PresetSkillMethods:
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
                 }
-                modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
+                modern_skill_name, legacy_skill_name = self._skill_names_for_command(
+                    cmd_name
+                )
                 restore_index.setdefault(modern_skill_name, restore_info)
                 if legacy_skill_name != modern_skill_name:
                     restore_index.setdefault(legacy_skill_name, restore_info)
@@ -622,6 +619,7 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        command_templates: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -654,8 +652,20 @@ class _PresetSkillMethods:
             matching the shape ``registered_commands`` already uses so the
             two can be tracked/restored consistently (#2948).
         """
-        command_templates = [
+        command_declarations = [
             t for t in manifest.templates if t.get("type") == "command"
+        ]
+        command_templates = (
+            command_templates
+            if command_templates is not None
+            else self._expand_command_selectors(
+                PresetResolver(self.project_root), preset_dir, command_declarations
+            )
+        )
+        command_templates = [
+            t
+            for t in command_templates
+            if isinstance(t.get("name"), str) and not is_regex_selector(t["name"])
         ]
         if not command_templates:
             return {}
@@ -696,7 +706,9 @@ class _PresetSkillMethods:
         # preset skills in _register_commands() because their detected agent
         # directory is already the skills directory. This flag is only for
         # command-backed agents that also mirror commands into skills.
-        create_missing_skills = ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
+        create_missing_skills = (
+            ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
+        )
 
         written: List[str] = []
 
@@ -716,7 +728,7 @@ class _PresetSkillMethods:
             # Derive the short command name (e.g. "specify" from "speckit.specify")
             raw_short_name = cmd_name
             if raw_short_name.startswith("speckit."):
-                raw_short_name = raw_short_name[len("speckit."):]
+                raw_short_name = raw_short_name[len("speckit.") :]
             short_name = raw_short_name.replace(".", "-")
             skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
             skill_title = self._skill_title_from_command(cmd_name)
@@ -727,7 +739,10 @@ class _PresetSkillMethods:
             target_skill_names: List[str] = []
             if (skills_dir / skill_name).is_dir():
                 target_skill_names.append(skill_name)
-            if legacy_skill_name != skill_name and (skills_dir / legacy_skill_name).is_dir():
+            if (
+                legacy_skill_name != skill_name
+                and (skills_dir / legacy_skill_name).is_dir()
+            ):
                 target_skill_names.append(legacy_skill_name)
             if not target_skill_names and create_missing_skills:
                 missing_skill_dir = skills_dir / skill_name
@@ -752,9 +767,7 @@ class _PresetSkillMethods:
             # _register_commands already warned for this command in the same
             # pass, so the skip is silent here to avoid a duplicate warning.
             effective_strategy = (
-                cmd_tmpl.get("strategy")
-                or frontmatter.get("strategy")
-                or "replace"
+                cmd_tmpl.get("strategy") or frontmatter.get("strategy") or "replace"
             )
             if (
                 effective_strategy != "replace"
@@ -764,7 +777,9 @@ class _PresetSkillMethods:
                 continue
 
             if frontmatter.get("strategy") == "wrap":
-                body, core_frontmatter = _substitute_core_template(body, cmd_name, self.project_root, registrar)
+                body, core_frontmatter = _substitute_core_template(
+                    body, cmd_name, self.project_root, registrar
+                )
                 frontmatter = dict(frontmatter)
                 for key in ("scripts", "agent_scripts", "argument-hint"):
                     if key not in frontmatter and key in core_frontmatter:
@@ -780,7 +795,9 @@ class _PresetSkillMethods:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
-            body = self._resolve_skill_command_refs(body, registrar, selected_ai, self.project_root)
+            body = self._resolve_skill_command_refs(
+                body, registrar, selected_ai, self.project_root
+            )
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -801,7 +818,9 @@ class _PresetSkillMethods:
                     enhanced_desc,
                     f"preset:{manifest.id}",
                 )
-                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
+                registrar.apply_argument_hint(
+                    frontmatter, frontmatter_data, integration
+                )
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
                     f"---\n"
@@ -810,15 +829,15 @@ class _PresetSkillMethods:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                if integration is not None and hasattr(
+                    integration, "post_process_skill_content"
+                ):
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
 
                 skill_file = skill_subdir / "SKILL.md"
-                _write_shared_text(
-                    skills_dir, skill_file, skill_content
-                )
+                _write_shared_text(skills_dir, skill_file, skill_content)
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
                     manifest.id, {selected_ai: [target_skill_name]}
@@ -910,7 +929,9 @@ class _PresetSkillMethods:
         inferred: Dict[str, List[str]] = {}
         matched_names: set = set()
         for resolved_dir, agents in dir_to_agents.items():
-            canonical_agent = fallback_agent if fallback_agent in agents else sorted(agents)[0]
+            canonical_agent = (
+                fallback_agent if fallback_agent in agents else sorted(agents)[0]
+            )
             for name in safe_skill_names:
                 skill_subdir = resolved_dir / name
                 if not self._validate_skill_subdir(
@@ -998,8 +1019,10 @@ class _PresetSkillMethods:
             return None
         try:
             _ensure_safe_shared_directory(
-                validation_root, skills_dir,
-                create=False, context="preset skills directory",
+                validation_root,
+                skills_dir,
+                create=False,
+                context="preset skills directory",
             )
         except (ValueError, OSError):
             return None
@@ -1069,13 +1092,13 @@ class _PresetSkillMethods:
         try:
             if create:
                 _ensure_safe_shared_directory(
-                    validation_root, skill_subdir,
-                    create=True, context="preset skill directory",
+                    validation_root,
+                    skill_subdir,
+                    create=True,
+                    context="preset skill directory",
                 )
             else:
-                _validate_safe_shared_directory(
-                    validation_root, skill_subdir
-                )
+                _validate_safe_shared_directory(validation_root, skill_subdir)
         except (ValueError, OSError):
             return False
         return True
@@ -1213,11 +1236,7 @@ class _PresetSkillMethods:
             additional_owned_sources=additional_owned_sources,
             restore_from_bundled_core=restore_from_bundled_core,
         )
-        return (
-            {skills_dir: (selected_ai, mutated_names)}
-            if mutated_names
-            else {}
-        )
+        return {skills_dir: (selected_ai, mutated_names)} if mutated_names else {}
 
     def _delete_agent_preset_skills(
         self, agent_name: str, skill_names: List[str], pack_id: str
@@ -1238,16 +1257,9 @@ class _PresetSkillMethods:
         if manifest is not None:
             for template in manifest.templates:
                 command_name = template.get("name")
-                if (
-                    template.get("type") == "command"
-                    and isinstance(command_name, str)
-                ):
-                    for skill_name in self._skill_names_for_command(
-                        command_name
-                    ):
-                        override_sources[skill_name] = (
-                            f"override:{command_name}"
-                        )
+                if template.get("type") == "command" and isinstance(command_name, str):
+                    for skill_name in self._skill_names_for_command(command_name):
+                        override_sources[skill_name] = f"override:{command_name}"
         for skill_name in skill_names:
             if not self._is_safe_registry_skill_name(skill_name):
                 continue
@@ -1265,11 +1277,7 @@ class _PresetSkillMethods:
                 continue
             frontmatter, _ = registrar.parse_frontmatter(content)
             metadata = frontmatter.get("metadata")
-            source = (
-                metadata.get("source")
-                if isinstance(metadata, dict)
-                else None
-            )
+            source = metadata.get("source") if isinstance(metadata, dict) else None
             owned_sources = {marker}
             override_source = override_sources.get(skill_name)
             if override_source:
@@ -1333,7 +1341,9 @@ class _PresetSkillMethods:
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
         registrar = CommandRegistrar()
-        integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
+        integration = (
+            get_integration(selected_ai) if isinstance(selected_ai, str) else None
+        )
         extension_restore_index = self._build_extension_skill_restore_index()
         mutated_names: List[str] = []
 
@@ -1355,9 +1365,9 @@ class _PresetSkillMethods:
             # Derive command name from skill name (speckit-specify -> specify)
             short_name = skill_name
             if short_name.startswith("speckit-"):
-                short_name = short_name[len("speckit-"):]
+                short_name = short_name[len("speckit-") :]
             elif short_name.startswith("speckit."):
-                short_name = short_name[len("speckit."):]
+                short_name = short_name[len("speckit.") :]
 
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
@@ -1388,9 +1398,7 @@ class _PresetSkillMethods:
                 )
                 owned_sources = {f"preset:{pack_id}"}
                 if additional_owned_sources:
-                    additional_source = additional_owned_sources.get(
-                        skill_name
-                    )
+                    additional_source = additional_owned_sources.get(skill_name)
                     if additional_source:
                         owned_sources.add(additional_source)
                 if current_source not in owned_sources:
@@ -1422,7 +1430,9 @@ class _PresetSkillMethods:
                 if _core_pack is not None:
                     core_file = _core_pack / "commands" / f"{short_name}.md"
                 else:
-                    core_file = _repo_root() / "templates" / "commands" / f"{short_name}.md"
+                    core_file = (
+                        _repo_root() / "templates" / "commands" / f"{short_name}.md"
+                    )
             if not core_file.exists():
                 core_file = None
 
@@ -1462,7 +1472,9 @@ class _PresetSkillMethods:
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
                 )
-                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
+                registrar.apply_argument_hint(
+                    frontmatter, frontmatter_data, integration
+                )
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
@@ -1472,7 +1484,9 @@ class _PresetSkillMethods:
                     f"# Speckit {skill_title} Skill\n\n"
                     f"{body}\n"
                 )
-                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                if integration is not None and hasattr(
+                    integration, "post_process_skill_content"
+                ):
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
@@ -1485,7 +1499,9 @@ class _PresetSkillMethods:
                 # unreadable extension source leaves the skill in place
                 # instead of crashing or being deleted.
                 try:
-                    content = extension_restore["source_file"].read_text(encoding="utf-8")
+                    content = extension_restore["source_file"].read_text(
+                        encoding="utf-8"
+                    )
                 except (OSError, UnicodeDecodeError) as exc:
                     self._warn_unrestored_skill(
                         skill_name, extension_restore["source_file"], exc
@@ -1517,20 +1533,22 @@ class _PresetSkillMethods:
                 frontmatter_data = registrar.build_skill_frontmatter(
                     selected_ai if isinstance(selected_ai, str) else "",
                     skill_name,
-                    frontmatter.get("description", f"Extension command: {command_name}"),
+                    frontmatter.get(
+                        "description", f"Extension command: {command_name}"
+                    ),
                     extension_restore["source"],
                     author=extension_restore.get("author", "github-spec-kit"),
                 )
-                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
+                registrar.apply_argument_hint(
+                    frontmatter, frontmatter_data, integration
+                )
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
-                    f"---\n"
-                    f"{frontmatter_text}\n"
-                    f"---\n\n"
-                    f"# {title_name} Skill\n\n"
-                    f"{body}\n"
+                    f"---\n{frontmatter_text}\n---\n\n# {title_name} Skill\n\n{body}\n"
                 )
-                if integration is not None and hasattr(integration, "post_process_skill_content"):
+                if integration is not None and hasattr(
+                    integration, "post_process_skill_content"
+                ):
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )

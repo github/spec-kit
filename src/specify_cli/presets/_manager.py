@@ -36,6 +36,25 @@ _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 _CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
 
 
+class _ExpandedCommandManifest:
+    """Manifest view exposing concrete command selector expansions."""
+
+    def __init__(self, manifest: PresetManifest, commands: List[Dict[str, Any]]):
+        self._manifest = manifest
+        self._commands = commands
+
+    def __getattr__(self, name: str):
+        return getattr(self._manifest, name)
+
+    @property
+    def templates(self) -> List[Dict[str, Any]]:
+        return [
+            template
+            for template in self._manifest.templates
+            if template.get("type") != "command"
+        ] + self._commands
+
+
 def _content_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
@@ -423,23 +442,32 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             },
         )
 
+        raw_command_templates = [
+            template
+            for template in manifest.templates
+            if template.get("type") == "command"
+        ]
+        command_templates = self._expand_command_selectors(
+            PresetResolver(self.project_root), dest_dir, raw_command_templates
+        )
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}
         try:
-            # Register command overrides with AI agents and persist the result
-            # immediately so cleanup can recover even if installation stops
-            # before later phases complete.
-            registered_commands = self._register_commands(manifest, dest_dir)
+            # Register both command artifacts and skills from the same expanded
+            # concrete command declaration set.
+            registered_commands = self._register_commands(
+                manifest, dest_dir, command_templates=command_templates
+            )
             self.registry.update(
                 manifest.id,
-                {
-                    "registered_commands": registered_commands,
-                },
+                {"registered_commands": registered_commands},
             )
 
             # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
-            registered_skills = self._register_skills(manifest, dest_dir)
+            registered_skills = self._register_skills(
+                manifest, dest_dir, command_templates=command_templates
+            )
             self.registry.update(
                 manifest.id,
                 {

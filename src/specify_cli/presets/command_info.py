@@ -11,7 +11,7 @@ from ._commands import preset_app
 
 def _diagnostic_selector_matches(resolver, preset_dir, selector, resource_type):
     import os
-    from .._selectors import is_regex_selector, selector_matches
+    from ._selectors import is_regex_selector, selector_matches
 
     ordered_presets = resolver._get_all_presets_by_priority()
     try:
