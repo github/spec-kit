@@ -123,6 +123,11 @@ def _pinned_release_url(
     Only the URL path is rewritten (query strings are left untouched), so
     the derivation stays conservative: the same host, scheme, and any
     authentication the advertised URL carries are preserved.
+
+    Version tokens are compared in their bare form: both the advertised
+    version and the pin may carry an optional v/V prefix (bundle manifest
+    validation accepts it), and a URL token keeps its own prefix -- a pin of
+    ``v0.4.12`` must derive ``v0.4.12``, never ``vv0.4.12``.
     """
     if not isinstance(download_url, str) or not download_url:
         return None
@@ -132,8 +137,9 @@ def _pinned_release_url(
     pinned = str(pinned).strip()
     if not advertised or not pinned:
         return None
-    if advertised == pinned:
+    if _pinned_release_matches(pinned, advertised):
         return None
+    bare_pinned = pinned[1:] if pinned[:1] in ("v", "V") else pinned
 
     from urllib.parse import urlunparse, urlparse
 
@@ -145,10 +151,13 @@ def _pinned_release_url(
         return None
 
     if advertised[:1] in ("v", "V"):
-        # The catalog spells the version v/V-prefixed; preserve that tag
-        # prefix form (the pin is bare semver, so the prefix is never its own
-        # version character).
-        candidates: list[tuple[str, str]] = [(advertised, advertised[:1])]
+        # The catalog spells the version v/V-prefixed. Prefer the prefixed
+        # token (a tag segment such as "v0.5.1"), then the bare form, which
+        # is how a versioned asset filename spells it ("asset-0.5.1.zip").
+        candidates: list[tuple[str, str]] = [
+            (advertised, advertised[:1]),
+            (advertised[1:], ""),
+        ]
     else:
         candidates = [
             (f"V{advertised}", "V"),
@@ -160,7 +169,7 @@ def _pinned_release_url(
     changed = False
     for index, segment in enumerate(segments):
         for token, prefix in candidates:
-            replaced = _replace_version_token(segment, token, prefix, pinned)
+            replaced = _replace_version_token(segment, token, prefix, bare_pinned)
             if replaced is not None:
                 segments[index] = replaced
                 changed = True
@@ -168,6 +177,69 @@ def _pinned_release_url(
     if not changed:
         return None
     return urlunparse(parts._replace(path="/".join(segments)))
+
+
+def _verify_pinned_release_archive(
+    archive_path: Path, kind: str, component_id: str, pinned: str
+) -> None:
+    """Verify that a retrieved pinned-release archive declares the pin.
+
+    A successful request to a *derived* URL does not prove that the served
+    artifact is the pinned release: a redirect, a fallback response, or a
+    mislabeled historical asset can serve a different component or version.
+    The catalog's SHA-256 covers only the advertised release, and the
+    primitive installers trust the archive's manifest, so the bundler checks
+    the extracted manifest's ID and normalized version against the
+    ``ComponentRef`` before anything is installed. The lookup mirrors the
+    installers' own: the manifest at the archive root or inside a single
+    top-level directory.
+    """
+    import tempfile
+
+    import yaml
+
+    from .._download_security import safe_extract_archive
+
+    manifest_name = "extension.yml" if kind == "Extension" else "preset.yml"
+    root_key = "extension" if kind == "Extension" else "preset"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        safe_extract_archive(archive_path, root, error_type=BundlerError)
+
+        manifest_path = root / manifest_name
+        if not manifest_path.exists():
+            subdirs = [d for d in root.iterdir() if d.is_dir()]
+            if len(subdirs) == 1:
+                manifest_path = subdirs[0] / manifest_name
+        if not manifest_path.exists():
+            raise BundlerError(f"no {manifest_name} in the retrieved archive")
+        try:
+            data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise BundlerError(
+                f"unreadable {manifest_name} in the retrieved archive: {exc}"
+            ) from exc
+
+        section = data.get(root_key) if isinstance(data, dict) else None
+        if not isinstance(section, dict):
+            raise BundlerError(f"no {root_key} section in the retrieved archive")
+        actual_id = section.get("id")
+        if not isinstance(actual_id, str) or actual_id != component_id:
+            raise BundlerError(
+                f"the retrieved archive declares {kind.lower()} id "
+                f"'{actual_id}' instead of '{component_id}'"
+            )
+        actual_version = section.get("version")
+        if not isinstance(actual_version, str) or not actual_version.strip():
+            raise BundlerError(
+                "the retrieved archive declares no version in its manifest"
+            )
+        if not _pinned_release_matches(pinned, actual_version):
+            raise BundlerError(
+                f"the retrieved archive declares version '{actual_version}' "
+                f"instead of the pinned version {pinned}"
+            )
 
 
 def _download_catalog_component(
@@ -187,9 +259,11 @@ def _download_catalog_component(
     release's URL is derived from the catalog's own ``download_url`` (same
     host, re-validated as HTTPS by the catalog's download path) and
     retrieved without the catalog's SHA-256, which only covers the
-    advertised release. When no derivation is possible, or the pinned
-    retrieval fails, the error names the pin and the advertised version so
-    the failure reports the pin mismatch rather than a bare network error.
+    advertised release. The retrieved archive's manifest is then verified
+    to declare the pinned component (ID and version) before it is installed.
+    When no derivation is possible, the retrieval fails, or the verification
+    fails, the error names the pin and the advertised version so the failure
+    reports the pin mismatch rather than a bare network error.
     """
     pinned = component.version
     if pinned and not _pinned_release_matches(pinned, info.get("version")):
@@ -207,7 +281,7 @@ def _download_catalog_component(
                 "before installing."
             )
         try:
-            return download_by_url(derived, component.id, pinned)
+            archive_path = download_by_url(derived, component.id, pinned)
         except error_types as exc:
             raise BundlerError(
                 f"{kind} '{component.id}' is pinned to version {pinned} in the "
@@ -216,6 +290,21 @@ def _download_catalog_component(
                 "Update the bundle's pinned version or the catalog before "
                 "installing."
             ) from exc
+        try:
+            _verify_pinned_release_archive(archive_path, kind, component.id, pinned)
+        except BundlerError as exc:
+            # The catalog digest does not cover this release; an unverified
+            # artifact must not be left behind for a later install to reuse.
+            with contextlib.suppress(Exception):
+                if archive_path.exists():
+                    archive_path.unlink()
+            raise BundlerError(
+                f"{kind} '{component.id}' is pinned to version {pinned} in the "
+                f"bundle manifest, but the catalog now advertises {advertised}: "
+                f"{exc}. Update the bundle's pinned version or the catalog "
+                "before installing."
+            ) from exc
+        return archive_path
     return download_by_id(component.id)
 
 
