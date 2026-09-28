@@ -56,14 +56,14 @@ SCRIPT_TWINS = {
 }
 
 
-def _supported_agents() -> list[str]:
-    """Every integration Spec Kit can register commands for."""
+def _extension_registrar_agents() -> list[str]:
+    """Integrations supported by the extension command registrar."""
     from specify_cli.agents import CommandRegistrar
 
     return sorted(CommandRegistrar().AGENT_CONFIGS)
 
 
-SUPPORTED_AGENTS = _supported_agents()
+EXTENSION_REGISTRAR_AGENTS = _extension_registrar_agents()
 
 
 def _manifest_dict() -> dict:
@@ -355,10 +355,12 @@ class TestExtensionInstall:
 
 
 class TestScriptPathResolution:
-    def test_registerable_integration_scope_excludes_generic(self):
+    def test_extension_registrar_scope_excludes_generic(self):
         from specify_cli.integrations import INTEGRATION_REGISTRY
 
-        assert set(SUPPORTED_AGENTS) == set(INTEGRATION_REGISTRY) - {"generic"}
+        assert set(EXTENSION_REGISTRAR_AGENTS) == set(INTEGRATION_REGISTRY) - {
+            "generic"
+        }
 
     def test_frontmatter_uses_plain_extension_local_spelling(self):
         """No ``../../`` escape hatch back into core scripts."""
@@ -421,11 +423,11 @@ class TestScriptPathResolution:
         # And it must not have been rewritten into the core script tree.
         assert ".specify/scripts/" not in content
 
-    @pytest.mark.parametrize("agent", SUPPORTED_AGENTS)
-    def test_every_registerable_integration_renders_the_command(
+    @pytest.mark.parametrize("agent", EXTENSION_REGISTRAR_AGENTS)
+    def test_every_extension_registrar_integration_renders_the_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agent: str
     ):
-        """Acceptance criterion: the command works for every registerable integration.
+        """The command works for every extension registrar integration.
 
         Covers both layouts in one sweep — command-file agents, skills-mode
         agents, and Hermes, which installs to ``~/.hermes/skills`` rather than
