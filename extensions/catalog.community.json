@@ -3712,13 +3712,19 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=1.0.0,<2.0.0"
+        "speckit_version": ">=1.0.0"
       },
       "provides": {
-        "commands": 12
+        "commands": 12,
+        "hooks": 0
       },
       "tags": [
-        "openspec"
+        "openspec",
+        "spec-driven-development",
+        "planning",
+        "implementation",
+        "workflow",
+        "experimental"
       ],
       "verified": false,
       "downloads": 0,
