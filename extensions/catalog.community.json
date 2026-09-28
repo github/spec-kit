@@ -3702,7 +3702,7 @@
       "description": "Adds a spec-driven change-management workflow (propose → implement → verify → archive) to Spec Kit projects, keeping specs, designs, and code in sync",
       "author": "Aaron Sun",
       "version": "0.1.0",
-      "download_url": "https://github.com/aaronrsun/spec-kit-openspec/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/aaronrsun/spec-kit-openspec/releases/download/openspec-v0.1.0/openspec.zip",
       "sha256": "21b55eff174a79b51e53a744c0afaf81313ed1976b54cbfdfae0904dfc7b5ba5",
       "repository": "https://github.com/aaronrsun/spec-kit-openspec",
       "homepage": "https://github.com/aaronrsun/spec-kit-openspec",
