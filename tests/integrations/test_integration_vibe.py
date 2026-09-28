@@ -1,5 +1,6 @@
 """Tests for VibeIntegration."""
 
+import os
 from unittest.mock import MagicMock
 
 import yaml
@@ -8,6 +9,7 @@ from specify_cli.events import install_integration_events, remove_integration_ev
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.integrations.vibe import VibeIntegration
 
 from .test_integration_base_skills import SkillsIntegrationTests
 
@@ -169,6 +171,20 @@ class TestVibeTomlMerging:
         (hook,) = self._parse(tmp_path)["hooks"]
         assert "match" not in hook
 
+    def test_non_bmp_matcher_round_trips_through_toml(self, tmp_path):
+        """Vibe hook strings retain non-BMP Unicode rather than TOML-invalid surrogates."""
+        matcher = "Edit|😀"
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": matcher}],
+        })
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert hook["match"] == f"re:{matcher}"
+
+    def test_toml_quote_round_trips_special_characters(self):
+        value = 'quote: " backslash: \\ newline: \n carriage: \r tab: \t nul: \x00 unit: \x1f del: \x7f'
+        quoted = VibeIntegration._toml_quote(value)
+        assert tomllib.loads(f"value = {quoted}\n")["value"] == value
+
     def test_unsupported_events_are_skipped(self, tmp_path, capsys):
         self._install(tmp_path, {
             "session_start": [{"command": "speckit.agent-context.update"}],
@@ -245,7 +261,9 @@ class TestVibeTomlMerging:
         spaces must be double-quoted, never shlex-quoted."""
         import specify_cli.events as events_mod
 
-        monkeypatch.setattr(events_mod, "_vibe_target_os", lambda: "cmd")
+        monkeypatch.setattr(
+            VibeIntegration, "_hook_target_os", staticmethod(lambda: "cmd")
+        )
         monkeypatch.setattr(
             events_mod, "_resolve_interpreter",
             lambda root: r"C:\Program Files\Python\python.exe",
@@ -258,9 +276,11 @@ class TestVibeTomlMerging:
     def test_posix_host_keeps_shlex_quoting(self, tmp_path, monkeypatch):
         import specify_cli.events as events_mod
 
-        # Pin the target: on a Windows CI runner _vibe_target_os() would
+        # Pin the target: on a Windows CI runner _hook_target_os() would
         # return "cmd" and this test asserts the POSIX-host quoting path.
-        monkeypatch.setattr(events_mod, "_vibe_target_os", lambda: "host")
+        monkeypatch.setattr(
+            VibeIntegration, "_hook_target_os", staticmethod(lambda: "host")
+        )
         monkeypatch.setattr(
             events_mod, "_resolve_interpreter",
             lambda root: "/opt/my venv/bin/python3",
@@ -298,6 +318,63 @@ class TestVibeTomlMerging:
         assert (tmp_path / ".vibe" / "hooks.toml").is_file()
         remove_integration_events(integration, tmp_path, manifest)
         assert not (tmp_path / ".vibe" / "hooks.toml").exists()
+
+
+class TestVibeTomlNoOpRemoval:
+    """Unowned Vibe hooks.toml files survive no-op cleanup byte-for-byte."""
+
+    _FIXED_MTIME_NS = 1_700_000_000_123_456_789
+
+    def _user_hooks_file(self, tmp_path, content):
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(content)
+        os.utime(path, ns=(self._FIXED_MTIME_NS, self._FIXED_MTIME_NS))
+        return path, path.stat().st_mtime_ns
+
+    def _assert_untouched(self, path, original, original_mtime_ns):
+        assert path.exists()
+        assert path.read_bytes() == original
+        assert path.stat().st_mtime_ns == original_mtime_ns
+
+    def test_empty_events_leave_user_crlf_file_untracked_and_untouched(self, tmp_path):
+        integration = get_integration("vibe")
+        manifest = _vibe_manifest()
+        original = b'user_option = "keep"\r\nsecond_option = true'
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        self._assert_untouched(path, original, original_mtime_ns)
+        manifest.record_existing.assert_not_called()
+
+    def test_empty_events_preserve_comments_only_file(self, tmp_path):
+        original = b"# maintained by the user\n# no hooks yet\n"
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(get_integration("vibe"), tmp_path, _vibe_manifest(), {})
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_empty_events_preserve_whitespace_only_file(self, tmp_path):
+        original = b"\r\n \t\r\n"
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        install_integration_events(get_integration("vibe"), tmp_path, _vibe_manifest(), {})
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_forced_teardown_preserves_unowned_file_with_manifest_claim(self, tmp_path):
+        integration = get_integration("vibe")
+        original = b'user_option = "keep"\r\n'
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+        manifest = IntegrationManifest(integration.key, tmp_path, version="test")
+        manifest.record_existing(".vibe/hooks.toml")
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest, force=True)
+
+        self._assert_untouched(path, original, original_mtime_ns)
 
 
 class TestVibeUserInvocable:

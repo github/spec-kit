@@ -1228,17 +1228,6 @@ def _shell_quote(value: str, target_os: str) -> str:
     return shlex.quote(value)
 
 
-def _vibe_target_os() -> str:
-    """Quoting target for Vibe hook commands.
-
-    Vibe launches hooks with ``asyncio.create_subprocess_shell`` — the host's
-    native shell: POSIX ``sh`` on Unix, ``cmd.exe`` (%COMSPEC%) on Windows,
-    where POSIX single-quoting is not quoting at all and an interpreter or
-    dispatcher path containing spaces would split.
-    """
-    return "cmd" if os.name == "nt" else "host"
-
-
 def _dispatcher_command(
     integration: IntegrationBase,
     project_root: Path,
@@ -1502,50 +1491,27 @@ def install_integration_events(
             created.append(config_path)
 
     elif fmt == "toml-vibe":
-        # Vibe hooks.toml custom merge. Flat [[hooks]] array; Vibe's
-        # HookConfig schema is name/type/command/match/timeout, with type
-        # limited to "pre_tool" | "post_tool" | "post_agent". Hook names must
-        # be unique (Vibe silently drops duplicates by name), so a per-file
-        # counter suffix disambiguates handlers whose commands share a final
-        # segment (e.g. speckit.a.validate vs speckit.b.validate).
-        lines: list[str] = []
-        used_names: set[str] = set()
-        for ev, handlers in filtered.items():
-            native = canonical_to_native[ev]
-            for cfg in handlers:
-                command = cfg.get("command", "")
-                dispatcher_cmd = _dispatcher_command(
-                    integration, project_root, command, ev,
-                    target_os=_vibe_target_os(),
-                    timeout_seconds=cfg.get("timeout", 60),
-                )
-                command_stem = command.split('.')[-1] if command else "unknown"
-                command_stem = re.sub(r'[^A-Za-z0-9_-]+', '-', command_stem) or "unknown"
-                base_name = f"speckit-{native}-{command_stem}"
-                hook_name = base_name
-                suffix = 2
-                while hook_name in used_names:
-                    hook_name = f"{base_name}-{suffix}"
-                    suffix += 1
-                used_names.add(hook_name)
-                lines.append("[[hooks]]")
-                lines.append(f'name = {_toml_quote(hook_name)}')
-                lines.append(f'type = {_toml_quote(native)}')
-                # Vibe's field is `match` (fnmatch glob, or `re:`-prefixed
-                # regex, case-insensitive) and it is only valid on tool
-                # hooks — HookConfig rejects `match` on post_agent. Canonical
-                # matchers are Claude-style regexes ("Edit|Write"), so
-                # non-wildcard matchers are emitted as `re:` patterns.
-                matcher = cfg.get("matcher", "*")
-                if matcher and matcher != "*" and native in ("pre_tool", "post_tool"):
-                    lines.append(f'match = {_toml_quote("re:" + matcher)}')
-                lines.append(f'command = {_toml_quote(dispatcher_cmd)}')
-                lines.append(f'timeout = {_native_timeout(integration, cfg.get("timeout", 60) + EVENT_TIMEOUT_BUFFER)}')
-                lines.append('speckit_marker = true')
-                lines.append('')
-        # S5: only track when the merge wrote (skips on unreadable file).
-        if _merge_vibe_toml_fragment(config_path, "\n".join(lines)):
-            rel = str(config_path.relative_to(project_root))
+        # Vibe owns its native TOML schema and its managed-entry boundaries.
+        # Shared events deliberately supplies only dispatcher construction and
+        # manifest handling, keeping this a narrow integration-specific seam.
+        merge_vibe_hooks = getattr(integration, "merge_vibe_event_hooks", None)
+        if not callable(merge_vibe_hooks):
+            raise TypeError("toml-vibe integrations must implement merge_vibe_event_hooks")
+        if merge_vibe_hooks(
+            project_root,
+            filtered,
+            build_dispatcher_command=lambda command, event, target_os, timeout: _dispatcher_command(
+                integration,
+                project_root,
+                command,
+                event,
+                target_os=target_os,
+                timeout_seconds=timeout,
+            ),
+            native_timeout=lambda seconds: _native_timeout(integration, seconds),
+            ensure_safe_destination=_ensure_safe_destination,
+        ):
+            rel = config_path.relative_to(project_root).as_posix()
             if rel not in manifest.files:
                 manifest.record_existing(rel)
             created.append(config_path)
@@ -1673,7 +1639,13 @@ def _remove_native_event_hooks(
     elif fmt == "toml":
         _remove_toml_entries(config_path)
     elif fmt == "toml-vibe":
-        _remove_vibe_toml_entries(config_path)
+        remove_vibe_hooks = getattr(integration, "remove_vibe_event_hooks", None)
+        if not callable(remove_vibe_hooks):
+            raise TypeError("toml-vibe integrations must implement remove_vibe_event_hooks")
+        remove_vibe_hooks(
+            project_root,
+            ensure_safe_destination=_ensure_safe_destination,
+        )
     elif fmt in ("json-nested", "json-flat"):
         _remove_json_entries(config_path)
     elif fmt == "json-root-nested":
@@ -2176,42 +2148,6 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     return True
 
 
-def _merge_vibe_toml_fragment(dst: Path, fragment: str) -> bool:
-    """Merge Specify-owned Vibe TOML hook entries into *dst*, regenerating the file.
-
-    Vibe uses a flat [[hooks]] array with type/matcher/command fields.
-    This removes any existing Specify-marked hooks and appends the new fragment.
-    An unreadable or undecodable pre-existing file aborts the merge instead
-    of discarding the user's bytes, mirroring ``_load_user_json`` (#22).
-    Returns False when skipped so callers avoid tracking the untouched file
-    (S5).
-    """
-    _ensure_safe_destination(dst)
-    existing = ""
-    if dst.exists():
-        try:
-            existing = dst.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            logger.warning(
-                "Could not read %s (it may be unreadable or not UTF-8); "
-                "skipping event-config merge to preserve user content.",
-                dst,
-            )
-            logger.debug("Read error detail: %s", exc)
-            return False
-    # Remove existing Specify-marked [[hooks]] blocks
-    # Match [[hooks]] ... speckit_marker = true (with any content in between)
-    existing = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
-        "",
-        existing,
-        flags=re.DOTALL,
-    )
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
-    return True
-
-
 def _remove_toml_entries(dst: Path) -> bool:
     """Remove Specify-marked TOML entries; delete the file if now empty (#14).
 
@@ -2252,43 +2188,6 @@ def _remove_toml_entries(dst: Path) -> bool:
     # Stripping removed a Specify-owned block. If only whitespace/comments
     # remain, the file had no user content — delete it rather than leaving
     # an empty stub that confuses uninstall.
-    stripped = "\n".join(
-        line for line in cleaned.splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    )
-    if not stripped:
-        dst.unlink(missing_ok=True)
-        return True
-    dst.write_text(cleaned, encoding="utf-8")
-    return False
-
-
-def _remove_vibe_toml_entries(dst: Path) -> bool:
-    """Remove Specify-marked Vibe TOML hook entries; delete the file if now empty.
-
-    Returns True if the file was deleted (no user content remained).
-    """
-    if not dst.exists():
-        return False
-    _ensure_safe_destination(dst)
-    try:
-        existing = dst.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        logger.warning(
-            "Could not read %s (it may be unreadable or not UTF-8); "
-            "skipping event-config cleanup to preserve user content.",
-            dst,
-        )
-        logger.debug("Read error detail: %s", exc)
-        return False
-    # Remove Specify-marked [[hooks]] blocks
-    cleaned = re.sub(
-        r'\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*',
-        "",
-        existing,
-        flags=re.DOTALL,
-    )
-    # If only whitespace/comments remain, the file had no user content
     stripped = "\n".join(
         line for line in cleaned.splitlines()
         if line.strip() and not line.strip().startswith("#")

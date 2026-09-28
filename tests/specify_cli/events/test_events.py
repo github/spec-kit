@@ -2126,6 +2126,54 @@ def _claude_manifest(tmp_path):
     return manifest
 
 
+class TestNativeIntegrationDelegation:
+    """Shared events owns orchestration and manifest claims around native hooks."""
+
+    def test_vibe_merge_is_delegated_and_claimed_by_shared_events(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        manifest = _claude_manifest(tmp_path)
+        merge = MagicMock(return_value=True)
+        monkeypatch.setattr(integration, "merge_vibe_event_hooks", merge)
+
+        install_integration_events(
+            integration,
+            tmp_path,
+            manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+
+        merge.assert_called_once()
+        assert merge.call_args.args[0] == tmp_path
+        assert {"build_dispatcher_command", "native_timeout", "ensure_safe_destination"} == set(
+            merge.call_args.kwargs
+        )
+        manifest.record_existing.assert_called_once_with(".vibe/hooks.toml")
+
+    def test_vibe_cleanup_is_delegated_and_manifest_claim_is_removed(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".vibe" / "hooks.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text('user_option = "keep"\n', encoding="utf-8")
+        remove = MagicMock(return_value=False)
+        monkeypatch.setattr(integration, "remove_vibe_event_hooks", remove)
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        remove.assert_called_once()
+        assert remove.call_args.args == (tmp_path,)
+        assert set(remove.call_args.kwargs) == {"ensure_safe_destination"}
+        manifest.remove.assert_called_once_with(".vibe/hooks.toml")
+
+
 class TestMergeIdempotency:
     """#9/#11: marker recursion and full-clean-before-add."""
 
