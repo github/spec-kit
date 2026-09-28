@@ -10,6 +10,7 @@ from .._utils import dump_frontmatter
 from ..extensions import ExtensionRegistry, normalize_priority
 from ._manifest import VALID_PRESET_STRATEGIES, PresetManifest, PresetValidationError
 from ._registry import PresetRegistry
+from ._selectors import is_regex_selector, selector_matches
 
 
 class PresetResolver:
@@ -84,7 +85,13 @@ class PresetResolver:
         if not manifest:
             return None, None
         for tmpl in manifest.templates:
-            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+            declared_name = tmpl.get("name")
+            if (
+                isinstance(declared_name, str)
+                and not is_regex_selector(declared_name)
+                and declared_name == template_name
+                and tmpl.get("type") == template_type
+            ):
                 file_path = tmpl.get("file")
                 if file_path:
                     manifest_candidate = pack_dir / file_path
@@ -147,7 +154,9 @@ class PresetResolver:
                 # symlinks in ext_dir's ancestors (e.g. a symlinked tmp dir
                 # on macOS) and diverge from the unresolved paths convention
                 # lookup returns for the same directory.
-                candidate.resolve().relative_to(ext_dir.resolve())  # raises ValueError if outside
+                candidate.resolve().relative_to(
+                    ext_dir.resolve()
+                )  # raises ValueError if outside
             except (OSError, ValueError):
                 return entry, None
             return entry, (candidate if candidate.is_file() else None)
@@ -193,7 +202,9 @@ class PresetResolver:
             # Skip disabled extensions
             if not metadata.get("enabled", True):
                 continue
-            priority = normalize_priority(metadata.get("priority") if metadata else None)
+            priority = normalize_priority(
+                metadata.get("priority") if metadata else None
+            )
             all_extensions.append((priority, ext_id, metadata))
 
         # Add unregistered directories with implicit priority=10
@@ -217,7 +228,7 @@ class PresetResolver:
         or ``None`` otherwise.
         """
         if template_name.startswith("speckit."):
-            return template_name[len("speckit."):]
+            return template_name[len("speckit.") :]
         return None
 
     def resolve(
@@ -254,7 +265,6 @@ class PresetResolver:
         if template_type == "script":
             ext = ".sh"  # scripts use .sh; callers can also check .ps1
 
-        # Priority 1: Project-local overrides
         if template_type == "script":
             override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
         else:
@@ -278,6 +288,10 @@ class PresetResolver:
                 entry, manifest_candidate = self._manifest_declared_template(
                     pack_dir, template_name, template_type
                 )
+                if entry is None:
+                    entry, manifest_candidate = self._regex_preset_declaration(
+                        pack_dir, template_name, template_type
+                    )
                 if manifest_candidate is not None:
                     return manifest_candidate
                 if entry is not None:
@@ -346,6 +360,7 @@ class PresetResolver:
             _locate_core_pack,
             _repo_root,
         )
+
         _core_pack = _locate_core_pack()
         if _core_pack is not None:
             # Wheel install path
@@ -504,6 +519,140 @@ class PresetResolver:
 
         return {"path": resolved_str, "source": "core"}
 
+    def _regex_preset_declaration(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Find a matching regex declaration only when a concrete lower layer exists."""
+        if template_type not in {"template", "script"}:
+            return None, None
+        manifest = self._get_manifest(pack_dir)
+        if manifest is None:
+            return None, None
+        presets = self._get_all_presets_by_priority()
+        pack_ids = [pack_id for pack_id, _ in presets]
+        try:
+            current_index = pack_ids.index(pack_dir.name)
+        except ValueError:
+            return None, None
+
+        # A selector only sees resources below its owning preset in the actual
+        # resolver stack, followed by enabled extensions and core.
+        for lower_id, _metadata in presets[current_index + 1 :]:
+            lower_dir = self.presets_dir / lower_id
+            if self._preset_has_concrete_resource(
+                lower_dir, template_name, template_type
+            ):
+                has_lower_resource = True
+                break
+        else:
+            has_lower_resource = False
+
+        if not has_lower_resource:
+            for _priority, ext_id, _meta in self._get_all_extensions_by_priority():
+                if self._extension_has_concrete_resource(
+                    self.extensions_dir / ext_id, template_name, template_type
+                ):
+                    has_lower_resource = True
+                    break
+
+        if not has_lower_resource:
+            has_lower_resource = self._core_has_concrete_resource(
+                template_name, template_type
+            )
+        if not has_lower_resource:
+            return None, None
+
+        for declaration in manifest.templates:
+            declared_name = declaration.get("name")
+            if (
+                declaration.get("type") == template_type
+                and isinstance(declared_name, str)
+                and is_regex_selector(declared_name)
+                and selector_matches(declared_name, template_name)
+            ):
+                file_value = declaration.get("file")
+                path = pack_dir / file_value if isinstance(file_value, str) else None
+                return declaration, (
+                    path if path is not None and path.is_file() else None
+                )
+        return None, None
+
+    def _has_concrete_resource(
+        self,
+        base_dir: Path,
+        name: str,
+        template_type: str,
+        *,
+        is_extension: bool = False,
+    ) -> bool:
+        """Check concrete-resource existence using the same lookups as resolve()."""
+        if is_extension:
+            entry, candidate = self._extension_manifest_declared_template(
+                base_dir, name, template_type
+            )
+        else:
+            entry, candidate = self._manifest_declared_template(
+                base_dir, name, template_type
+            )
+        if candidate is not None:
+            return True
+        if entry is not None:
+            return False
+        return self._conventional_resource(base_dir, name, template_type) is not None
+
+    def _preset_has_concrete_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> bool:
+        return self._has_concrete_resource(base_dir, name, template_type)
+
+    def _extension_has_concrete_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> bool:
+        return self._has_concrete_resource(
+            base_dir, name, template_type, is_extension=True
+        )
+
+    def _core_has_concrete_resource(self, name: str, template_type: str) -> bool:
+        return self._core_resource(name, template_type) is not None
+
+    def _conventional_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> Optional[Path]:
+        subdirs = {
+            "template": ("templates", ""),
+            "command": ("commands",),
+            "script": ("scripts",),
+        }.get(template_type, ("",))
+        extension = ".sh" if template_type == "script" else ".md"
+        for subdir in subdirs:
+            candidate = (
+                base_dir / subdir / f"{name}{extension}"
+                if subdir
+                else base_dir / f"{name}{extension}"
+            )
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _core_resource(self, name: str, template_type: str) -> Optional[Path]:
+        extension = ".sh" if template_type == "script" else ".md"
+        if template_type == "template":
+            candidates = [self.templates_dir / f"{name}{extension}"]
+        elif template_type == "command":
+            candidates = [self.templates_dir / "commands" / f"{name}{extension}"]
+            stem = self._core_stem(name)
+            if stem:
+                candidates.append(
+                    self.templates_dir / "commands" / f"{stem}{extension}"
+                )
+        else:
+            candidates = [self.templates_dir / "scripts" / f"{name}{extension}"]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        bundled = self._find_bundled_core(name, template_type, extension)
+        return bundled if bundled is not None and bundled.is_file() else None
+
     def collect_all_layers(
         self,
         template_name: str,
@@ -546,17 +695,18 @@ class PresetResolver:
                     return candidate
             return None
 
-        # Priority 1: Project-local overrides (always "replace" strategy)
         if template_type == "script":
             override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
         else:
             override = self.overrides_dir / f"{template_name}{ext}"
         if override.exists():
-            layers.append({
-                "path": override,
-                "source": "project override",
-                "strategy": "replace",
-            })
+            layers.append(
+                {
+                    "path": override,
+                    "source": "project override",
+                    "strategy": "replace",
+                }
+            )
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
@@ -568,6 +718,10 @@ class PresetResolver:
                 entry, manifest_candidate = self._manifest_declared_template(
                     pack_dir, template_name, template_type
                 )
+                if entry is None:
+                    entry, manifest_candidate = self._regex_preset_declaration(
+                        pack_dir, template_name, template_type
+                    )
                 if entry is not None:
                     strategy = entry.get("strategy", "replace")
                     manifest_has_strategy = "strategy" in entry
@@ -586,7 +740,11 @@ class PresetResolver:
                     # strategy, check the command file's frontmatter for any valid
                     # strategy. Skip when the manifest entry includes strategy key
                     # (even if it's "replace") to avoid overriding explicit declarations.
-                    if not manifest_has_strategy and strategy == "replace" and template_type == "command":
+                    if (
+                        not manifest_has_strategy
+                        and strategy == "replace"
+                        and template_type == "command"
+                    ):
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")
                             lines = cmd_content.splitlines(keepends=True)
@@ -601,18 +759,24 @@ class PresetResolver:
                                     fm_data = yaml.safe_load(fm_text)
                                     if isinstance(fm_data, dict):
                                         fm_strategy = fm_data.get("strategy")
-                                        if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
+                                        if (
+                                            isinstance(fm_strategy, str)
+                                            and fm_strategy.lower()
+                                            in VALID_PRESET_STRATEGIES
+                                        ):
                                             strategy = fm_strategy.lower()
                         except (UnicodeDecodeError, yaml.YAMLError, OSError):
                             # Best-effort legacy frontmatter parsing: keep default
                             # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
-                    layers.append({
-                        "path": candidate,
-                        "source": f"{pack_id} v{version}",
-                        "strategy": strategy,
-                    })
+                    layers.append(
+                        {
+                            "path": candidate,
+                            "source": f"{pack_id} v{version}",
+                            "strategy": strategy,
+                        }
+                    )
 
         # Priority 3: Extension-provided templates (always "replace")
         for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
@@ -634,13 +798,15 @@ class PresetResolver:
                     source = f"extension:{ext_id} v{version}"
                 else:
                     source = f"extension:{ext_id} (unregistered)"
-                layers.append({
-                    "path": candidate,
-                    "source": source,
-                    "strategy": "replace",
-                    "extension_id": ext_id,
-                    "extension_dir": ext_dir,
-                })
+                layers.append(
+                    {
+                        "path": candidate,
+                        "source": source,
+                        "strategy": "replace",
+                        "extension_id": ext_id,
+                        "extension_dir": ext_dir,
+                    }
+                )
 
         # Priority 4: Core templates (always "replace")
         core = None
@@ -664,21 +830,25 @@ class PresetResolver:
             if c.exists():
                 core = c
         if core:
-            layers.append({
-                "path": core,
-                "source": "core",
-                "strategy": "replace",
-            })
+            layers.append(
+                {
+                    "path": core,
+                    "source": "core",
+                    "strategy": "replace",
+                }
+            )
         else:
             # Priority 5: Bundled core_pack (wheel install) or repo-root
             # templates (source-checkout), matching resolve()'s tier-5 fallback.
             bundled = self._find_bundled_core(template_name, template_type, ext)
             if bundled:
-                layers.append({
-                    "path": bundled,
-                    "source": "core (bundled)",
-                    "strategy": "replace",
-                })
+                layers.append(
+                    {
+                        "path": bundled,
+                        "source": "core (bundled)",
+                        "strategy": "replace",
+                    }
+                )
 
         return layers
 
@@ -850,8 +1020,8 @@ class PresetResolver:
             if fence_end == -1:
                 return None, text
 
-            fm_block = "".join(lines[:fence_end + 1]).rstrip("\r\n")
-            body = "".join(lines[fence_end + 1:])
+            fm_block = "".join(lines[: fence_end + 1]).rstrip("\r\n")
+            body = "".join(lines[fence_end + 1 :])
             return fm_block, body
 
         if is_command:
@@ -907,6 +1077,7 @@ class PresetResolver:
         # inheriting scripts/agent_scripts from the base if missing
         # and stripping the strategy key (internal-only, not for agent output).
         if is_command and top_frontmatter_text:
+
             def _parse_fm_yaml(fm_block: str) -> dict:
                 """Parse YAML from a frontmatter block (with --- fences)."""
                 lines = fm_block.splitlines()
@@ -934,11 +1105,7 @@ class PresetResolver:
             top_fm.pop("strategy", None)
 
             if top_fm:
-                top_frontmatter_text = (
-                    "---\n"
-                    + dump_frontmatter(top_fm)
-                    + "\n---"
-                )
+                top_frontmatter_text = "---\n" + dump_frontmatter(top_fm) + "\n---"
             else:
                 # Empty frontmatter — omit rather than emitting {}
                 top_frontmatter_text = None

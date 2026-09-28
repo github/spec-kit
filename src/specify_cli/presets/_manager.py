@@ -30,6 +30,7 @@ from ._manifest import (
 )
 from ._registry import PresetRegistry
 from ._resolver import PresetResolver
+from ._selectors import is_regex_selector
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 _CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
@@ -69,16 +70,13 @@ def _constitution_is_generated(
             metadata = json.loads(provenance.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return False
-        return (
-            isinstance(metadata, dict)
-            and metadata.get("sha256") == _content_sha256(content)
+        return isinstance(metadata, dict) and metadata.get("sha256") == _content_sha256(
+            content
         )
 
     # Older projects have no provenance sidecar. Only the immutable bundled or
     # source-checkout core template is safe to treat as generated.
-    core = resolver._find_bundled_core(
-        "constitution-template", "template", ".md"
-    )
+    core = resolver._find_bundled_core("constitution-template", "template", ".md")
     return core is not None and core.read_bytes() == content
 
 
@@ -164,9 +162,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         self.registry = PresetRegistry(self.presets_dir)
 
     def check_compatibility(
-        self,
-        manifest: PresetManifest,
-        speckit_version: str
+        self, manifest: PresetManifest, speckit_version: str
     ) -> bool:
         """Check if preset is compatible with current spec-kit version.
 
@@ -208,8 +204,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         return True
 
     def find_unmet_extension_dependencies(
-        self,
-        manifest: PresetManifest
+        self, manifest: PresetManifest
     ) -> List[Dict[str, Any]]:
         """Find declared extension dependencies that are not satisfied.
 
@@ -321,9 +316,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # the preset is as inert as if it were never installed -- but the
             # surviving entry would otherwise read as satisfied.
             if not (extensions_dir / dep["id"]).is_dir():
-                unmet.append(
-                    {**dep, "installed": installed_version, "reason": "stale"}
-                )
+                unmet.append({**dep, "installed": installed_version, "reason": "stale"})
                 continue
 
             # A disabled extension is registered but contributes nothing:
@@ -347,7 +340,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # apart -- it catches InvalidVersion and returns False, which would
             # report a mismatch against a version nobody can evaluate. Check
             # parseability up front so only real comparisons reach the warning.
-            if installed_version is None or not _is_comparable_version(installed_version):
+            if installed_version is None or not _is_comparable_version(
+                installed_version
+            ):
                 continue
             if not version_satisfies(installed_version, constraint):
                 unmet.append(
@@ -382,7 +377,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         """
         # Validate priority
         if priority < 1:
-            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+            raise PresetValidationError(
+                "Priority must be a positive integer (1 or higher)"
+            )
 
         manifest_path = source_dir / "preset.yml"
         manifest = PresetManifest(manifest_path)
@@ -413,15 +410,18 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             if normalized_catalog_name
             else "local"
         )
-        self.registry.add(manifest.id, {
-            "version": manifest.version,
-            "source": source,
-            "manifest_hash": manifest.get_hash(),
-            "enabled": True,
-            "priority": priority,
-            "registered_commands": {},
-            "registered_skills": {},
-        })
+        self.registry.add(
+            manifest.id,
+            {
+                "version": manifest.version,
+                "source": source,
+                "manifest_hash": manifest.get_hash(),
+                "enabled": True,
+                "priority": priority,
+                "registered_commands": {},
+                "registered_skills": {},
+            },
+        )
 
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}
@@ -430,16 +430,22 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.
             registered_commands = self._register_commands(manifest, dest_dir)
-            self.registry.update(manifest.id, {
-                "registered_commands": registered_commands,
-            })
+            self.registry.update(
+                manifest.id,
+                {
+                    "registered_commands": registered_commands,
+                },
+            )
 
             # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
             registered_skills = self._register_skills(manifest, dest_dir)
-            self.registry.update(manifest.id, {
-                "registered_skills": registered_skills,
-            })
+            self.registry.update(
+                manifest.id,
+                {
+                    "registered_skills": registered_skills,
+                },
+            )
         except Exception:
             # Roll back all side effects. _register_skills persists each
             # successful write immediately, so reload that partial map when
@@ -462,19 +468,30 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             self.registry.remove(manifest.id)
             raise
 
-        # Reconcile all affected commands from the full priority stack so that
-        # install order doesn't determine the winning command file.
-        cmd_names = [
-            t["name"]
-            for t in manifest.templates
-            if t.get("type") == "command"
+        command_templates = [
+            template
+            for template in manifest.templates
+            if template.get("type") == "command"
         ]
+        expanded_templates = self._expand_command_selectors(
+            PresetResolver(self.project_root), dest_dir, command_templates
+        )
+        cmd_names = sorted(
+            {
+                item["name"]
+                for item in expanded_templates
+                if isinstance(item.get("name"), str)
+                and not is_regex_selector(item["name"])
+            }
+        )
+
         if cmd_names:
             try:
                 self._reconcile_composed_commands(cmd_names)
                 self._reconcile_skills(cmd_names)
             except Exception as exc:
                 import warnings
+
                 warnings.warn(
                     f"Post-install reconciliation failed for {manifest.id}: {exc}. "
                     f"Agent command files may not reflect the current priority stack.",
@@ -501,14 +518,18 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         stack. Later preset installs only reconcile when they provide a
         ``constitution-template``. Authored constitutions are never overwritten.
         """
-        provides_constitution = manifest.id == _CONSTITUTION_SYNC_PRESET_ID or any(
-            t.get("type") == "template" and t.get("name") == "constitution-template"
-            for t in manifest.templates
-        ) or any(
-            (preset_dir / relative_path).is_file()
-            for relative_path in (
-                "templates/constitution-template.md",
-                "constitution-template.md",
+        provides_constitution = (
+            manifest.id == _CONSTITUTION_SYNC_PRESET_ID
+            or any(
+                t.get("type") == "template" and t.get("name") == "constitution-template"
+                for t in manifest.templates
+            )
+            or any(
+                (preset_dir / relative_path).is_file()
+                for relative_path in (
+                    "templates/constitution-template.md",
+                    "constitution-template.md",
+                )
             )
         )
         if not provides_constitution:
@@ -577,7 +598,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         """
         # Validate priority early
         if priority < 1:
-            raise PresetValidationError("Priority must be a positive integer (1 or higher)")
+            raise PresetValidationError(
+                "Priority must be a positive integer (1 or higher)"
+            )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
@@ -598,9 +621,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     manifest_path = pack_dir / "preset.yml"
 
             if not manifest_path.exists():
-                raise PresetValidationError(
-                    "No preset.yml found in archive"
-                )
+                raise PresetValidationError("No preset.yml found in archive")
 
             return self.install_from_directory(
                 pack_dir,
@@ -659,7 +680,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             from .. import load_init_options
 
             init_opts = load_init_options(self.project_root)
-            fallback_agent = init_opts.get("ai") if isinstance(init_opts, dict) else None
+            fallback_agent = (
+                init_opts.get("ai") if isinstance(init_opts, dict) else None
+            )
             if not isinstance(fallback_agent, str):
                 fallback_agent = ""
             registered_skills = self._infer_legacy_skill_provenance(
@@ -667,7 +690,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 pack_id,
                 fallback_agent=fallback_agent,
             )
-        registered_commands = metadata.get("registered_commands", {}) if metadata else {}
+        registered_commands = (
+            metadata.get("registered_commands", {}) if metadata else {}
+        )
         pack_dir = self.presets_dir / pack_id
 
         # Record which historical agents this preset's registered_commands
@@ -688,19 +713,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             agent_name
             for agent_name in registered_commands
             if _CommandRegistrarForScope is None
-            or _CommandRegistrarForScope.AGENT_CONFIGS.get(agent_name, {}).get("extension") != "/SKILL.md"
+            or _CommandRegistrarForScope.AGENT_CONFIGS.get(agent_name, {}).get(
+                "extension"
+            )
+            != "/SKILL.md"
         }
 
-        # Collect ALL command names before filtering for reconciliation,
-        # so commands registered only for skill-based agents are also
-        # reconciled. Every command-type template's primary name is added
-        # unconditionally (not just aliases) since ai_skills-mode presets
-        # never populate registered_commands for command-backed
-        # integrations (see _register_commands's ai_skills guard) — without
-        # this, removing a skills-mode preset that overrides a command no
-        # other preset registered "the normal way" would skip reconciliation
-        # entirely and _unregister_skills would restore core/extension
-        # content instead of a surviving lower-priority preset's override.
+        # Collect ALL command names before filtering for reconciliation.
         removed_cmd_names = set()
         removed_constitution = any(
             path.exists()
@@ -721,33 +740,46 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     metadata["version"],
                 )
             )
-        for cmd_names in registered_commands.values():
-            removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
         if manifest_path.exists():
             try:
                 manifest = PresetManifest(manifest_path)
+                from ._manager_commands import _PresetCommandMethods
+
+                resolver = PresetResolver(self.project_root)
                 for tmpl in manifest.templates:
+                    if tmpl.get("type") == "command":
+                        name = tmpl.get("name")
+                        if isinstance(name, str):
+                            expanded = (
+                                _PresetCommandMethods._expand_command_selectors(
+                                    self, resolver, pack_dir, [tmpl]
+                                )
+                                if is_regex_selector(name)
+                                else [tmpl]
+                            )
+                            removed_cmd_names.update(
+                                item["name"]
+                                for item in expanded
+                                if isinstance(item.get("name"), str)
+                                and not is_regex_selector(item["name"])
+                            )
+                        removed_cmd_names.update(
+                            alias
+                            for alias in tmpl.get("aliases", [])
+                            if isinstance(alias, str)
+                        )
                     if (
                         tmpl.get("type") == "template"
                         and tmpl.get("name") == "constitution-template"
                     ):
                         removed_constitution = True
-                    if tmpl.get("type") == "command":
-                        name = tmpl.get("name")
-                        if isinstance(name, str):
-                            removed_cmd_names.add(name)
-                        for alias in tmpl.get("aliases", []):
-                            if isinstance(alias, str):
-                                removed_cmd_names.add(alias)
             except PresetValidationError:
-                # Invalid manifest — skip alias extraction; primary command
-                # names from registered_commands are still unregistered.
                 pass
+        for cmd_names in registered_commands.values():
+            removed_cmd_names.update(cmd_names)
 
-        affected_skill_dirs: Dict[
-            Path, tuple[Optional[str], List[str]]
-        ] = {}
+        affected_skill_dirs: Dict[Path, tuple[Optional[str], List[str]]] = {}
         if registered_skills:
             restorable_skills = registered_skills
             # A skill tracked for a command-backed agent whose ai_skills is
@@ -764,9 +796,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # shadowing the module-level name for this whole function.
             from .._init_options import load_init_options as _load_init_options
 
-            resolved_active = resolve_active_agent_for_registration(
-                self.project_root
-            )
+            resolved_active = resolve_active_agent_for_registration(self.project_root)
             if (
                 isinstance(registered_skills, dict)
                 and isinstance(resolved_active, str)
@@ -774,17 +804,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 and _CommandRegistrarForScope is not None
                 and _CommandRegistrarForScope.AGENT_CONFIGS.get(
                     resolved_active, {}
-                ).get("extension") != "/SKILL.md"
-                and not is_ai_skills_enabled(
-                    _load_init_options(self.project_root)
-                )
+                ).get("extension")
+                != "/SKILL.md"
+                and not is_ai_skills_enabled(_load_init_options(self.project_root))
             ):
                 raw_names = registered_skills.get(resolved_active)
                 stale_names = [
                     name
-                    for name in (
-                        raw_names if isinstance(raw_names, list) else []
-                    )
+                    for name in (raw_names if isinstance(raw_names, list) else [])
                     if isinstance(name, str)
                 ]
                 restorable_skills = {
@@ -813,16 +840,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 CommandRegistrar = None
             if CommandRegistrar is not None:
                 skill_coverage = (
-                    registered_skills
-                    if isinstance(registered_skills, dict)
-                    else {}
+                    registered_skills if isinstance(registered_skills, dict) else {}
                 )
                 commands_to_unregister: Dict[str, List[str]] = {}
                 for agent_name, cmd_names in registered_commands.items():
                     is_native_skill_agent = (
-                        CommandRegistrar.AGENT_CONFIGS.get(
-                            agent_name, {}
-                        ).get("extension")
+                        CommandRegistrar.AGENT_CONFIGS.get(agent_name, {}).get(
+                            "extension"
+                        )
                         == "/SKILL.md"
                     )
                     if not is_native_skill_agent:
@@ -833,9 +858,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     covered_skill_names = {
                         name
                         for name in (
-                            raw_skill_names
-                            if isinstance(raw_skill_names, list)
-                            else []
+                            raw_skill_names if isinstance(raw_skill_names, list) else []
                         )
                         if isinstance(name, str)
                     }
@@ -848,9 +871,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                         )
                     ]
                     if uncovered_commands:
-                        commands_to_unregister[agent_name] = (
-                            uncovered_commands
-                        )
+                        commands_to_unregister[agent_name] = uncovered_commands
                 registered_commands = commands_to_unregister
 
         # Unregister non-skill command files from AI agents.
@@ -874,6 +895,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 )
             except Exception as exc:
                 import warnings
+
                 warnings.warn(
                     f"Post-removal reconciliation failed for {pack_id}: {exc}. "
                     f"Agent command files may be stale; reinstall affected presets "
@@ -884,7 +906,12 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         if removed_constitution:
             try:
                 self._reconcile_constitution()
-            except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
+            except (
+                OSError,
+                UnicodeDecodeError,
+                PresetValidationError,
+                ValueError,
+            ) as exc:
                 import warnings
 
                 warnings.warn(
@@ -912,39 +939,55 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
             try:
                 manifest = PresetManifest(manifest_path)
-                provided_counts = {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0}
+                provided_counts = {
+                    "commands": 0,
+                    "templates": 0,
+                    "scripts": 0,
+                    "hooks": 0,
+                }
                 for template in manifest.templates:
                     provided_counts[f"{template['type']}s"] += 1
                 author = manifest.author
-                result.append({
-                    "id": pack_id,
-                    "name": manifest.name,
-                    "version": metadata.get("version", manifest.version),
-                    "description": manifest.description,
-                    "enabled": metadata.get("enabled", True),
-                    "installed_at": metadata.get("installed_at"),
-                    "template_count": len(manifest.templates),
-                    "tags": manifest.tags,
-                    "priority": normalize_priority(metadata.get("priority")),
-                    "_json_author": author if isinstance(author, str) and author else None,
-                    "_json_source": metadata.get("source"),
-                    "_json_provides": provided_counts,
-                })
+                result.append(
+                    {
+                        "id": pack_id,
+                        "name": manifest.name,
+                        "version": metadata.get("version", manifest.version),
+                        "description": manifest.description,
+                        "enabled": metadata.get("enabled", True),
+                        "installed_at": metadata.get("installed_at"),
+                        "template_count": len(manifest.templates),
+                        "tags": manifest.tags,
+                        "priority": normalize_priority(metadata.get("priority")),
+                        "_json_author": author
+                        if isinstance(author, str) and author
+                        else None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": provided_counts,
+                    }
+                )
             except PresetValidationError:
-                result.append({
-                    "id": pack_id,
-                    "name": pack_id,
-                    "version": metadata.get("version", "unknown"),
-                    "description": "⚠️ Corrupted preset",
-                    "enabled": False,
-                    "installed_at": metadata.get("installed_at"),
-                    "template_count": 0,
-                    "tags": [],
-                    "priority": normalize_priority(metadata.get("priority")),
-                    "_json_author": None,
-                    "_json_source": metadata.get("source"),
-                    "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
-                })
+                result.append(
+                    {
+                        "id": pack_id,
+                        "name": pack_id,
+                        "version": metadata.get("version", "unknown"),
+                        "description": "⚠️ Corrupted preset",
+                        "enabled": False,
+                        "installed_at": metadata.get("installed_at"),
+                        "template_count": 0,
+                        "tags": [],
+                        "priority": normalize_priority(metadata.get("priority")),
+                        "_json_author": None,
+                        "_json_source": metadata.get("source"),
+                        "_json_provides": {
+                            "commands": 0,
+                            "templates": 0,
+                            "scripts": 0,
+                            "hooks": 0,
+                        },
+                    }
+                )
 
         return result
 

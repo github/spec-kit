@@ -15,8 +15,9 @@ from .._init_options import (
     resolve_active_agent_for_registration,
 )
 from ..extensions import ExtensionRegistry
-from ._manifest import PresetManifest
+from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
+from ._selectors import is_regex_selector, selector_matches
 
 
 def _substitute_core_template(
@@ -46,7 +47,7 @@ def _substitute_core_template(
     # Derive the short name (strip "speckit." prefix) used by core command templates.
     short_name = cmd_name
     if short_name.startswith("speckit."):
-        short_name = short_name[len("speckit."):]
+        short_name = short_name[len("speckit.") :]
 
     resolver = PresetResolver(project_root)
     # Resolution order for the core template:
@@ -91,10 +92,111 @@ def _substitute_core_template(
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
 
+    def _expand_command_selectors(
+        self,
+        resolver: PresetResolver,
+        preset_dir: Path,
+        command_templates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Expand command selectors to lower-layer concrete entries.
+
+        A regex declaration is eligible only if its selector matches at least
+        one command contributed below the current preset; it is then replaced
+        by exact-name copies so existing registration/tracking sees only real
+        command names.
+        """
+        presets = self.registry.list_by_priority()
+        current_id = preset_dir.name
+        current_index = next(
+            (
+                i
+                for i, (preset_id, _meta) in enumerate(presets)
+                if preset_id == current_id
+            ),
+            None,
+        )
+        if current_index is None:
+            return [
+                declaration
+                for declaration in command_templates
+                if not is_regex_selector(str(declaration.get("name", "")))
+            ]
+        lower_preset_ids = {
+            preset_id for preset_id, _meta in presets[current_index + 1 :]
+        }
+        lower_extension_ids = {
+            ext_id
+            for _priority, ext_id, _meta in resolver._get_all_extensions_by_priority()
+        }
+        try:
+            from ..artifacts.catalog import ArtifactCatalog
+            from ..extensions import CORE_COMMAND_NAMES
+
+            candidates = ArtifactCatalog(self.project_root).list_artifacts()
+        except Exception as exc:
+            raise PresetValidationError(
+                f"Could not enumerate concrete commands for preset selector: {exc}"
+            ) from exc
+        concrete_candidates = {
+            artifact.name
+            for artifact in candidates
+            if artifact.kind == "command"
+            and isinstance(artifact.name, str)
+            and not is_regex_selector(artifact.name)
+        }
+        concrete_candidates.update(f"speckit.{name}" for name in CORE_COMMAND_NAMES)
+        concrete_names = sorted(
+            {
+                name
+                for name in concrete_candidates
+                if self._command_name_has_lower_layer(
+                    resolver, name, lower_preset_ids, lower_extension_ids
+                )
+            }
+        )
+
+        expanded: list[dict[str, Any]] = []
+        for declaration in command_templates:
+            name = declaration.get("name")
+            if not isinstance(name, str) or not is_regex_selector(name):
+                expanded.append(declaration)
+                continue
+            expanded.extend(
+                {**declaration, "name": concrete_name}
+                for concrete_name in concrete_names
+                if selector_matches(name, concrete_name)
+            )
+        return expanded
+
+    @staticmethod
+    def _command_name_has_lower_layer(
+        resolver: PresetResolver,
+        name: str,
+        lower_preset_ids: set[str],
+        lower_extension_ids: set[str],
+    ) -> bool:
+        """Use the resolver's concrete stack, excluding project override/current preset."""
+        for layer in resolver.collect_all_layers(name, "command"):
+            source = layer["source"]
+            if source == "project override":
+                continue
+            if any(
+                source.startswith(f"{preset_id} v") for preset_id in lower_preset_ids
+            ):
+                return True
+            if any(
+                source.startswith(f"extension:{ext_id}")
+                for ext_id in lower_extension_ids
+            ):
+                return True
+            if source in {"core", "core (bundled)"}:
+                return True
+        return False
+
     def _register_commands(
         self,
         manifest: PresetManifest,
-        preset_dir: Path
+        preset_dir: Path,
     ) -> Dict[str, List[str]]:
         """Register preset command overrides with all detected AI agents.
 
@@ -113,9 +215,15 @@ class _PresetCommandMethods:
         Returns:
             Dictionary mapping agent names to lists of registered command names
         """
-        command_templates = [
+        raw_command_templates = [
             t for t in manifest.templates if t.get("type") == "command"
         ]
+        resolver = PresetResolver(self.project_root)
+        command_templates = self._expand_command_selectors(
+            resolver,
+            preset_dir,
+            raw_command_templates,
+        )
         if not command_templates:
             return {}
 
@@ -139,8 +247,8 @@ class _PresetCommandMethods:
                 # If a higher-priority replace already wins, skip composition
                 # here — reconciliation will write the correct content.
                 layers = resolver.collect_all_layers(cmd["name"], "command")
-                top_layer_is_ours = (
-                    layers and layers[0]["path"].is_relative_to(preset_dir)
+                top_layer_is_ours = layers and layers[0]["path"].is_relative_to(
+                    preset_dir
                 )
                 if top_layer_is_ours:
                     composed = resolver.resolve_content(cmd["name"], "command")
@@ -150,10 +258,12 @@ class _PresetCommandMethods:
                             composed_dir.mkdir(parents=True, exist_ok=True)
                         composed_file = composed_dir / f"{cmd['name']}.md"
                         composed_file.write_text(composed, encoding="utf-8")
-                        commands_to_register.append({
-                            **cmd,
-                            "file": f".composed/{cmd['name']}.md",
-                        })
+                        commands_to_register.append(
+                            {
+                                **cmd,
+                                "file": f".composed/{cmd['name']}.md",
+                            }
+                        )
                     else:
                         # No base layer to compose onto (e.g. the command it
                         # would wrap comes from an extension that isn't
@@ -163,6 +273,7 @@ class _PresetCommandMethods:
                         # _reconcile_composed_commands so command-mode and
                         # reconciliation behave identically.
                         import warnings
+
                         warnings.warn(
                             f"Command '{cmd['name']}' uses '{strategy}' "
                             f"strategy but no base command layer exists to "
@@ -268,7 +379,9 @@ class _PresetCommandMethods:
             agent_config = CommandRegistrar().AGENT_CONFIGS.get(agent_name)
         except ImportError:
             agent_config = None
-        is_command_backed = bool(agent_config) and agent_config.get("extension") != "/SKILL.md"
+        is_command_backed = (
+            bool(agent_config) and agent_config.get("extension") != "/SKILL.md"
+        )
         ai_skills_now = is_command_backed and is_ai_skills_enabled(
             load_init_options(self.project_root)
         )
@@ -285,27 +398,27 @@ class _PresetCommandMethods:
             )
             if candidate_manifest is None:
                 continue
-            for template in candidate_manifest.templates:
+            command_templates = [
+                template
+                for template in candidate_manifest.templates
+                if template.get("type") == "command"
+            ]
+            expanded_for_reconcile = self._expand_command_selectors(
+                resolver, self.presets_dir / candidate_pack_id, command_templates
+            )
+            for template in expanded_for_reconcile:
                 command_name = template.get("name")
-                if (
-                    template.get("type") == "command"
-                    and isinstance(command_name, str)
-                ):
-                    if (
-                        resolver.overrides_dir / f"{command_name}.md"
-                    ).is_file():
-                        project_override_commands.add(command_name)
-                    winning_pack_by_command.setdefault(
-                        command_name, candidate_pack_id
+                if not isinstance(command_name, str) or is_regex_selector(command_name):
+                    continue
+                if (resolver.overrides_dir / f"{command_name}.md").is_file():
+                    project_override_commands.add(command_name)
+                winning_pack_by_command.setdefault(command_name, candidate_pack_id)
+                source_file = template.get("file")
+                if isinstance(source_file, str):
+                    winning_source_by_command.setdefault(
+                        command_name,
+                        self.presets_dir / candidate_pack_id / source_file,
                     )
-                    source_file = template.get("file")
-                    if isinstance(source_file, str):
-                        winning_source_by_command.setdefault(
-                            command_name,
-                            self.presets_dir
-                            / candidate_pack_id
-                            / source_file,
-                        )
 
         pending_command_cleanups: List[
             tuple[
@@ -337,8 +450,19 @@ class _PresetCommandMethods:
             # any partial writes even when _register_commands never returns.
             for tmpl in manifest.templates:
                 name = tmpl.get("name")
-                if tmpl.get("type") == "command" and isinstance(name, str):
-                    affected_cmd_names.add(name)
+                if tmpl.get("type") != "command" or not isinstance(name, str):
+                    continue
+                expanded_for_reconcile = (
+                    self._expand_command_selectors(resolver, pack_dir, [tmpl])
+                    if is_regex_selector(name)
+                    else [tmpl]
+                )
+                for expanded in expanded_for_reconcile:
+                    concrete_name = expanded.get("name")
+                    if isinstance(concrete_name, str) and not is_regex_selector(
+                        concrete_name
+                    ):
+                        affected_cmd_names.add(concrete_name)
 
             # Isolate per-preset failures: one preset that fails to register
             # must not abort registration of the remaining enabled presets.
@@ -355,9 +479,7 @@ class _PresetCommandMethods:
                         isinstance(primary_name, str)
                         and primary_name in registered_command_names
                     ):
-                        successful_command_replacements.add(
-                            (pack_id, primary_name)
-                        )
+                        successful_command_replacements.add((pack_id, primary_name))
                 existing_commands = metadata.get("registered_commands", {})
                 if not isinstance(existing_commands, dict):
                     existing_commands = {}
@@ -391,7 +513,9 @@ class _PresetCommandMethods:
                 # the commands phase already wrote to disk must still be
                 # tracked so preset removal can clean them up (#2948).
                 if merged_commands != existing_commands:
-                    self.registry.update(pack_id, {"registered_commands": merged_commands})
+                    self.registry.update(
+                        pack_id, {"registered_commands": merged_commands}
+                    )
 
                 registered_skills = self._register_skills(manifest, pack_dir)
                 replaced_skill_names = set(registered_skills.get(agent_name) or [])
@@ -408,9 +532,7 @@ class _PresetCommandMethods:
                         modern_name in replaced_skill_names
                         or legacy_name in replaced_skill_names
                     ):
-                        successful_skill_replacements.add(
-                            (pack_id, primary_name)
-                        )
+                        successful_skill_replacements.add((pack_id, primary_name))
                 raw_existing_skills = metadata.get("registered_skills")
                 if isinstance(raw_existing_skills, list) and raw_existing_skills:
                     # Legacy flat-list value: don't assume agent_name wrote
@@ -435,7 +557,11 @@ class _PresetCommandMethods:
                         for name in registered_skills[agent_name]
                         if name not in existing_names
                     ]
-                elif is_command_backed and not ai_skills_now and merged_skills.get(agent_name):
+                elif (
+                    is_command_backed
+                    and not ai_skills_now
+                    and merged_skills.get(agent_name)
+                ):
                     # Mirror image: toggled skills -> command for this same
                     # agent. _get_skills_dir() no longer resolves a skills
                     # directory once ai_skills is off, so _register_skills
@@ -572,8 +698,7 @@ class _PresetCommandMethods:
             for command_name, winning_pack_id in winning_pack_by_command.items()
             if command_name not in project_override_commands
             and (
-                (winning_pack_id, command_name)
-                in successful_skill_replacements
+                (winning_pack_id, command_name) in successful_skill_replacements
                 or (
                     command_name in reconciled_skills
                     and command_name in winning_source_by_command
@@ -609,17 +734,14 @@ class _PresetCommandMethods:
                 merged_commands[agent_name] = remaining_stale
             else:
                 merged_commands.pop(agent_name, None)
-            self.registry.update(
-                pack_id, {"registered_commands": merged_commands}
-            )
+            self.registry.update(pack_id, {"registered_commands": merged_commands})
 
         successfully_replaced_command_winners = {
             command_name
             for command_name, winning_pack_id in winning_pack_by_command.items()
             if command_name not in project_override_commands
             and (
-                (winning_pack_id, command_name)
-                in successful_command_replacements
+                (winning_pack_id, command_name) in successful_command_replacements
                 or (
                     command_name in reconciled_commands
                     and command_name in winning_source_by_command
@@ -669,9 +791,7 @@ class _PresetCommandMethods:
                 merged_skills[agent_name] = remaining_stale
             else:
                 merged_skills.pop(agent_name, None)
-            self.registry.update(
-                pack_id, {"registered_skills": merged_skills}
-            )
+            self.registry.update(pack_id, {"registered_skills": merged_skills})
 
     def unregister_agent_artifacts(self, agent_name: str) -> None:
         """Remove ``agent_name``'s tracked preset command/skill artifacts.
@@ -763,9 +883,8 @@ class _PresetCommandMethods:
                     )
                     shared_names: set[str] = set()
                     for other_agent, other_names in registered_commands.items():
-                        if (
-                            other_agent == agent_name
-                            or not isinstance(other_names, list)
+                        if other_agent == agent_name or not isinstance(
+                            other_names, list
                         ):
                             continue
                         other_config = registrar.AGENT_CONFIGS.get(other_agent)
@@ -779,29 +898,19 @@ class _PresetCommandMethods:
                         )
                         if other_output == agent_output:
                             shared_names.update(
-                                name
-                                for name in other_names
-                                if isinstance(name, str)
+                                name for name in other_names if isinstance(name, str)
                             )
                     command_names_to_unregister = [
-                        name
-                        for name in agent_command_names
-                        if name not in shared_names
+                        name for name in agent_command_names if name not in shared_names
                     ]
                 if command_names_to_unregister:
-                    self._unregister_commands(
-                        {agent_name: command_names_to_unregister}
-                    )
+                    self._unregister_commands({agent_name: command_names_to_unregister})
                 new_registered_commands = copy.deepcopy(registered_commands)
                 new_registered_commands.pop(agent_name, None)
                 updates["registered_commands"] = new_registered_commands
 
             agent_skill_names = registered_skills_all.get(agent_name) or []
-            if (
-                agent_skill_names
-                or skills_migrated
-                or native_skills_entry_removed
-            ):
+            if agent_skill_names or skills_migrated or native_skills_entry_removed:
                 if agent_skill_names:
                     self._delete_agent_preset_skills(
                         agent_name, agent_skill_names, pack_id
@@ -1025,13 +1134,22 @@ class _PresetCommandMethods:
                         manifest = resolver._get_manifest(pack_dir)
                         if manifest:
                             for tmpl in manifest.templates:
-                                if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
+                                if (
+                                    tmpl.get("name") == cmd_name
+                                    and tmpl.get("type") == "command"
+                                ):
                                     written = self._register_for_non_skill_agents(
-                                        registrar, [tmpl], manifest.id, pack_dir,
-                                        only_agent=only_agent, extra_agents=extra_agents,
+                                        registrar,
+                                        [tmpl],
+                                        manifest.id,
+                                        pack_dir,
+                                        only_agent=only_agent,
+                                        extra_agents=extra_agents,
                                     )
                                     record_written(written)
-                                    self._merge_pack_registered_commands(manifest.id, written)
+                                    self._merge_pack_registered_commands(
+                                        manifest.id, written
+                                    )
                                     registered = True
                                     break
                         break
@@ -1051,15 +1169,19 @@ class _PresetCommandMethods:
                         if ext_manifest_path.exists():
                             try:
                                 from ..extensions import ExtensionManifest
+
                                 ext_manifest = ExtensionManifest(ext_manifest_path)
                                 # Filter to only the command being reconciled
                                 matching_cmds = [
-                                    c for c in ext_manifest.commands
+                                    c
+                                    for c in ext_manifest.commands
                                     if c.get("name") == cmd_name
                                 ]
                                 if matching_cmds:
                                     written = registrar.register_commands_for_non_skill_agents(
-                                        matching_cmds, extension_id, ext_dir,
+                                        matching_cmds,
+                                        extension_id,
+                                        ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {extension_id} -->\n<!-- Config: .specify/extensions/{extension_id}/ -->\n",
                                         extension_id=extension_id,
@@ -1075,15 +1197,16 @@ class _PresetCommandMethods:
                     if not registered:
                         source_id = extension_id or source
                         written = self._register_command_from_path(
-                            registrar, cmd_name, top_path,
+                            registrar,
+                            cmd_name,
+                            top_path,
                             source_id=source_id,
-                            only_agent=only_agent, extra_agents=extra_agents,
+                            only_agent=only_agent,
+                            extra_agents=extra_agents,
                         )
                         record_written(written)
                     if extension_id:
-                        self._merge_extension_registered_commands(
-                            extension_id, written
-                        )
+                        self._merge_extension_registered_commands(extension_id, written)
             else:
                 # Composed command — resolve from full stack
                 composed = resolver.resolve_content(cmd_name, "command")
@@ -1091,6 +1214,7 @@ class _PresetCommandMethods:
                     # Composition no longer possible (e.g. base layer removed).
                     # Unregister any stale command file from non-skill agents.
                     import warnings
+
                     warnings.warn(
                         f"Cannot compose command '{cmd_name}': no base layer. "
                         f"Stale command files may remain.",
@@ -1104,7 +1228,10 @@ class _PresetCommandMethods:
                         _m = resolver._get_manifest(_pd)
                         if _m:
                             for _t in _m.templates:
-                                if _t.get("name") == cmd_name and _t.get("type") == "command":
+                                if (
+                                    _t.get("name") == cmd_name
+                                    and _t.get("type") == "command"
+                                ):
                                     for alias in _t.get("aliases", []):
                                         if isinstance(alias, str):
                                             cmd_names_to_unregister.append(alias)
@@ -1118,7 +1245,8 @@ class _PresetCommandMethods:
                         {
                             agent: cmd_names_to_unregister
                             for agent in registrar.AGENT_CONFIGS
-                            if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"
+                            if registrar.AGENT_CONFIGS[agent].get("extension")
+                            != "/SKILL.md"
                             and (
                                 only_agent is None
                                 or agent == only_agent
@@ -1137,7 +1265,10 @@ class _PresetCommandMethods:
                     if not manifest:
                         continue
                     for tmpl in manifest.templates:
-                        if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
+                        if (
+                            tmpl.get("name") == cmd_name
+                            and tmpl.get("type") == "command"
+                        ):
                             composed_dir = pack_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"
@@ -1145,8 +1276,10 @@ class _PresetCommandMethods:
                             written = self._register_for_non_skill_agents(
                                 registrar,
                                 [{**tmpl, "file": f".composed/{cmd_name}.md"}],
-                                manifest.id, pack_dir,
-                                only_agent=only_agent, extra_agents=extra_agents,
+                                manifest.id,
+                                pack_dir,
+                                only_agent=only_agent,
+                                extra_agents=extra_agents,
                             )
                             record_written(written)
                             self._merge_pack_registered_commands(manifest.id, written)
@@ -1168,15 +1301,16 @@ class _PresetCommandMethods:
                     else:
                         source_id = source
                     written = self._register_command_from_path(
-                        registrar, cmd_name, composed_file,
+                        registrar,
+                        cmd_name,
+                        composed_file,
                         source_id=source_id,
-                        only_agent=only_agent, extra_agents=extra_agents,
+                        only_agent=only_agent,
+                        extra_agents=extra_agents,
                     )
                     record_written(written)
                     if source.startswith("extension:"):
-                        self._merge_extension_registered_commands(
-                            source_id, written
-                        )
+                        self._merge_extension_registered_commands(source_id, written)
 
         return reconciled_commands
 
@@ -1219,7 +1353,10 @@ class _PresetCommandMethods:
         if source_id and not source_id.startswith("preset:"):
             try:
                 from ..extensions import ExtensionManifest
-                for ext_dir in (self.project_root / ".specify" / "extensions").iterdir():
+
+                for ext_dir in (
+                    self.project_root / ".specify" / "extensions"
+                ).iterdir():
                     if not ext_dir.is_dir():
                         continue
                     if cmd_path.is_relative_to(ext_dir):
@@ -1236,8 +1373,12 @@ class _PresetCommandMethods:
             except Exception:
                 pass  # best-effort alias loading
         return self._register_for_non_skill_agents(
-            registrar, [cmd_tmpl], source_id, cmd_path.parent,
-            only_agent=only_agent, extra_agents=extra_agents,
+            registrar,
+            [cmd_tmpl],
+            source_id,
+            cmd_path.parent,
+            only_agent=only_agent,
+            extra_agents=extra_agents,
         )
 
     def _register_for_non_skill_agents(
@@ -1279,6 +1420,10 @@ class _PresetCommandMethods:
             ``registered_commands`` tracking (#2948).
         """
         return registrar.register_commands_for_non_skill_agents(
-            commands, source_id, source_dir, self.project_root,
-            only_agent=only_agent, extra_agents=extra_agents,
+            commands,
+            source_id,
+            source_dir,
+            self.project_root,
+            only_agent=only_agent,
+            extra_agents=extra_agents,
         )

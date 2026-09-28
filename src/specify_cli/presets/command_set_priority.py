@@ -56,8 +56,31 @@ def preset_set_priority(
 
     old_priority = normalize_priority(raw_priority)
 
-    # Update priority
+    from ._resolver import PresetResolver
+    from ._selectors import is_regex_selector
+
+    resolver = PresetResolver(project_root)
+    affected_commands: set[str] = set()
+    for pack_id, _pack_metadata in manager.registry.list_by_priority():
+        manifest = resolver._get_manifest(manager.presets_dir / pack_id)
+        if manifest is None:
+            continue
+        expanded = manager._expand_command_selectors(
+            resolver,
+            manager.presets_dir / pack_id,
+            [item for item in manifest.templates if item.get("type") == "command"],
+        )
+        affected_commands.update(
+            item["name"]
+            for item in expanded
+            if isinstance(item.get("name"), str) and not is_regex_selector(item["name"])
+        )
+
     manager.registry.update(preset_id, {"priority": priority})
+    names = sorted(affected_commands)
+    if names:
+        manager._reconcile_composed_commands(names)
+        manager._reconcile_skills(names)
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after changing priority for preset {preset_id}"
     )
