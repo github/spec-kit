@@ -41,9 +41,9 @@ CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
 INSTALL_SPECKIT_VERSION = "1.0.12"
-# The floor exists because extension-local script path rewriting landed in
-# 0.12.6 (#3364); anything lower renders this command against core scripts.
-MIN_SPECKIT_VERSION = "0.12.6"
+# The floor exists because auto-registered skills did not resolve command
+# reference tokens until 0.12.17 (#3544).
+MIN_SPECKIT_VERSION = "0.12.17"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -187,19 +187,20 @@ class TestManifest:
         assert set(tools) == {"git", "github-mcp-server"}
         assert all(t["required"] is True for t in tools.values())
 
-    def test_version_floor_covers_extension_local_scripts(self):
+    def test_version_floor_covers_all_rendering_prerequisites(self):
         """The floor must exclude releases that cannot render this command.
 
-        Extension-local ``scripts/...`` rewriting landed in 0.12.6 (#3364).
-        Below that the rendered command points into the core script tree, so
-        the extension installs cleanly and then fails when a user runs it --
-        the failure mode a compatibility floor exists to prevent.
+        Extension-local ``scripts/...`` rewriting landed in 0.12.6 (#3364),
+        but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
+        tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
+        accept the extension but leak a raw command token in skills mode.
         """
         from packaging.specifiers import SpecifierSet
 
         floor = _manifest_dict()["requires"]["speckit_version"]
         spec = SpecifierSet(floor)
         assert "0.12.5" not in spec, floor
+        assert "0.12.16" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor

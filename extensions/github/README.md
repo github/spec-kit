@@ -55,9 +55,10 @@ This extension consumes the existing `before_taskstoissues` and `after_taskstois
 
 ## Requirements
 
-- Spec Kit **0.12.6 or newer**. That release added rewriting of extension-local `scripts/...` paths;
-  on anything older this command is rendered against the core script tree and fails at run time,
-  so `specify extension add github` refuses to install below it.
+- Spec Kit **0.12.17 or newer**. Extension-local `scripts/...` path rewriting arrived in
+  0.12.6, but auto-registered skills did not resolve `__SPECKIT_COMMAND_*__` references
+  until 0.12.17. Earlier releases cannot render this command correctly in every supported
+  layout, so `specify extension add github` refuses to install below 0.12.17.
 - A Git remote pointing at GitHub.
 - The **GitHub MCP server** available to your coding agent, providing the `list_issues` and `issue_write` tools.
 
