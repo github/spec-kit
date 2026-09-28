@@ -138,6 +138,8 @@ Changes the resolution priority of an installed preset. Lower numbers take prece
 
 Preset catalogs control where `search` and `add` look for presets. Catalogs are checked in priority order (lower number = higher precedence).
 
+> **A project's `.specify/preset-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before installing a preset in an unfamiliar project, run `specify preset catalog list` and inspect any catalog marked install-allowed — a project supplying that config, or marking a catalog install-allowed, is not evidence its presets were reviewed. Only mark a catalog `install_allowed` for one you authored or have vetted yourself; leave unfamiliar and community catalogs discovery-only.
+
 ### List Catalogs
 
 ```bash
@@ -156,7 +158,7 @@ specify preset catalog add <url>
 | -------------------------------------------- | -------------------------------------------------- |
 | `--name <name>`                              | Required. Unique name for the catalog              |
 | `--priority <N>`                             | Priority (default: 10; lower = higher precedence)  |
-| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only) |
+| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only). Only enable for a catalog you own and vet; never enable it for an unvetted public catalog. |
 | `--description <text>`                       | Optional description                               |
 
 Adds a catalog to the project's `.specify/preset-catalogs.yml`.
