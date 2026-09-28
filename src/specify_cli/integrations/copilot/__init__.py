@@ -49,11 +49,22 @@ _COPILOT_CORE_COMMANDS = {
 def _copilot_executable() -> str:
     """Return the executable name for Copilot CLI on this platform.
 
-    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    On Windows, the Copilot CLI may be installed as `copilot.exe` (e.g. a
+    standalone installer, winget, scoop) or as a `copilot.cmd` npm shim.
+    Probe `PATH` for whichever is actually present instead of assuming the
+    npm-style shim.
     """
-    if os.name == "nt":
-        return "copilot.cmd"
-    return "copilot"
+    if os.name != "nt":
+        return "copilot"
+
+    for candidate in ("copilot.exe", "copilot.cmd"):
+        if shutil.which(candidate):
+            return candidate
+
+    # Nothing found on PATH — keep the historical default so the
+    # resulting "command not found" error still references the
+    # previously expected name.
+    return "copilot.cmd"
 
 
 def _allow_all() -> bool:
@@ -293,9 +304,10 @@ class CopilotIntegration(IntegrationBase):
         """Return the Copilot CLI executable, respecting the env-var override.
 
         Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
-        back to the platform-specific default from ``_copilot_executable()``
-        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
-        existing behaviour is preserved when the env var is unset.
+        back to the platform-specific default from ``_copilot_executable()``:
+        on Windows this probes ``PATH`` for ``copilot.exe`` then
+        ``copilot.cmd``, only falling back to ``copilot.cmd`` when neither is
+        found; elsewhere it is always ``copilot``.
         """
         env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
         override = os.environ.get(env_name, "").strip()
