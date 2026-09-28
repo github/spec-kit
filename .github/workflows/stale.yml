@@ -31,8 +31,9 @@ jobs:
           close-issue-message: >-
             This issue has been automatically closed after 90 days without activity. To request reconsideration,
             please provide updated reproduction details, the currently affected version or environment, and the
-            present impact. Reopen this issue if it is fundamentally the same problem. If the scope or reproduction
-            has materially changed, create a new issue, link this one, and explain what has changed.
+            present impact. Ask a maintainer to reopen this issue if it is fundamentally the same problem. If the
+            scope or reproduction has materially changed, create a new issue, link this one, and explain what has
+            changed.
           stale-issue-label: 'stale'
 
           # Stale PR settings
@@ -45,9 +46,9 @@ jobs:
           close-pr-message: >-
             This pull request has been automatically closed after 90 days without activity. To request
             reconsideration, please explain why the change is still needed, confirm that the implementation is
-            current and ready for review, and address any outstanding feedback or conflicts. Reopen this pull
-            request if the existing branch and approach remain valid. Otherwise, create a new pull request, link
-            this one, and explain what has changed.
+            current and ready for review, and address any outstanding feedback or conflicts. Ask a maintainer to
+            reopen this pull request if the existing branch and approach remain valid. Otherwise, create a new pull
+            request, link this one, and explain what has changed.
           stale-pr-label: 'stale'
 
           # Exempt issues and PRs with these labels from being marked as stale
