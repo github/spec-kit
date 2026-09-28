@@ -128,6 +128,15 @@ def _pinned_release_url(
     version and the pin may carry an optional v/V prefix (bundle manifest
     validation accepts it), and a URL token keeps its own prefix -- a pin of
     ``v0.4.12`` must derive ``v0.4.12``, never ``vv0.4.12``.
+
+    Substitution is restricted to recognized version positions: the final
+    segment (an asset filename such as ``xt-0.5.1.zip``) and a segment that
+    is *exactly* a version token (a release tag or a versioned directory,
+    e.g. ``releases/download/v0.5.1/`` or ``/v0.5.1/xt.zip``). Any other
+    segment is static path that merely *contains* a version-looking run --
+    a repository named ``tool-0.5.1``, for example -- and is left
+    untouched, so the derivation never moves the component's home
+    repository.
     """
     if not isinstance(download_url, str) or not download_url:
         return None
@@ -165,9 +174,19 @@ def _pinned_release_url(
             (advertised, ""),
         ]
 
+    candidate_tokens = {token for token, _ in candidates}
     segments = parts.path.split("/")
+    last_index = len(segments) - 1
     changed = False
     for index, segment in enumerate(segments):
+        # Only recognized version positions are rewritten: the asset
+        # filename (the final segment) and a segment that is exactly a
+        # version token (a release tag or a versioned directory). Any other
+        # segment is static path that merely contains a version-looking run
+        # -- a repository named "tool-0.5.1", for example -- and is left
+        # untouched so the derivation never moves the component's home repo.
+        if index != last_index and segment not in candidate_tokens:
+            continue
         for token, prefix in candidates:
             replaced = _replace_version_token(segment, token, prefix, bare_pinned)
             if replaced is not None:

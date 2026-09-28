@@ -190,6 +190,34 @@ def test_pinned_release_url_rewrites_bare_tokens_for_v_prefixed_advertised():
     ) == "https://github.com/acme/xt/releases/download/v0.4.12/xt-0.4.12.zip"
 
 
+def test_pinned_release_url_keeps_version_like_static_path_components():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # A repository named "tool-0.5.1" is a static component: the rewrite is
+    # restricted to recognized version positions (the release tag and the
+    # asset filename), so the component's home repository is preserved.
+    assert _pinned_release_url(
+        "https://github.com/acme/tool-0.5.1/releases/download/v0.5.1/tool.zip",
+        "0.5.1",
+        "0.4.12",
+    ) == "https://github.com/acme/tool-0.5.1/releases/download/v0.4.12/tool.zip"
+    assert _pinned_release_url(
+        "https://github.com/acme/tool-0.5.1/archive/refs/tags/v0.5.1.zip",
+        "0.5.1",
+        "0.4.12",
+    ) == "https://github.com/acme/tool-0.5.1/archive/refs/tags/v0.4.12.zip"
+    # The same holds for a version-looking static component on a non-GitHub
+    # host: only the final (filename) segment is rewritten.
+    assert _pinned_release_url(
+        "https://example.com/tools/tool-0.5.1/dist-0.5.1.zip", "0.5.1", "0.4.12"
+    ) == "https://example.com/tools/tool-0.5.1/dist-0.4.12.zip"
+    # A segment that is exactly a version token is still a version position
+    # (a versioned directory), even in a non-final position.
+    assert _pinned_release_url(
+        "https://example.com/v0.5.1/xt.zip", "v0.5.1", "0.4.12"
+    ) == "https://example.com/v0.4.12/xt.zip"
+
+
 def test_pinned_release_url_refuses_ambiguous_or_missing_tokens():
     from specify_cli.bundles.primitives import _pinned_release_url
 
