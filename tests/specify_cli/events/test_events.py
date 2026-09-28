@@ -486,6 +486,26 @@ class TestClaudeJsonMerging:
         assert "Привіт — ¿qué tal? 日本語" in text
         assert json.loads(text)["env"]["GREETING"] == "Привіт — ¿qué tal? 日本語"
 
+    def test_merge_keeps_escaped_lone_surrogate_in_user_settings(self, tmp_path):
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+
+        config_path = tmp_path / ".claude/settings.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text('{"env": {"ODD": "\\ud800"}}', encoding="utf-8")
+
+        events = {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        }
+        install_integration_events(integration, tmp_path, manifest, events)
+
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        assert data["env"]["ODD"] == "\ud800"
+        assert "PreToolUse" in data["hooks"]
+
 
 # -- Copilot events JSON writing --------------------------------------------
 
