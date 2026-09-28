@@ -17,7 +17,9 @@ from .._download_security import (
     build_safe_download_path,
     detect_archive_format,
     is_https_or_localhost_http,
+    is_safe_download_redirect,
 )
+from ._catalog_versions import available_versions, select_release
 from ._manifest import PresetError, PresetValidationError
 
 
@@ -735,8 +737,8 @@ class PresetCatalog:
         return results
 
     def get_pack_info(
-        self, pack_id: str
-    ) -> Optional[Dict[str, Any]]:
+        self, pack_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
         """Get detailed information about a specific preset.
 
         Searches across all active catalogs (merged by priority).
@@ -753,16 +755,33 @@ class PresetCatalog:
             return None
 
         if pack_id in packs:
-            return {**packs[pack_id], "id": pack_id}
+            pack = packs[pack_id]
+            if "releases" in pack and pack.get("id", pack_id) != pack_id:
+                raise PresetError(f"Preset '{pack_id}' has an inconsistent catalog ID.")
+            return select_release({**pack, "id": pack_id}, version)
         return None
+
+    def get_pack_versions(self, pack_id: str) -> list[str]:
+        """List the versions advertised by the winning catalog entry."""
+        pack = self.get_pack_info(pack_id)
+        return available_versions(pack) if pack is not None else []
 
     def download_pack(
         self, pack_id: str, target_dir: Optional[Path] = None
     ) -> Path:
-        """Download a preset archive from a catalog.
+        """Download the advertised current preset archive from a catalog."""
+        pack_info = self.get_pack_info(pack_id)
+        if pack_info is None:
+            raise PresetError(f"Preset '{pack_id}' not found in catalog")
+        return self.download_pack_info(pack_info, target_dir)
+
+    def download_pack_info(
+        self, pack_info: dict[str, Any], target_dir: Path | None = None
+    ) -> Path:
+        """Download an already-selected release without resolving its ID again.
 
         Args:
-            pack_id: ID of the preset to download
+            pack_info: Metadata returned by get_pack_info
             target_dir: Directory to save the archive
 
         Returns:
@@ -775,11 +794,7 @@ class PresetCatalog:
 
         from . import read_response_limited, verify_archive_sha256
 
-        pack_info = self.get_pack_info(pack_id)
-        if not pack_info:
-            raise PresetError(
-                f"Preset '{pack_id}' not found in catalog"
-            )
+        pack_id = pack_info["id"]
 
         # Bundled presets without a download URL must be installed locally
         if pack_info.get("bundled") and not pack_info.get("download_url"):
@@ -857,17 +872,35 @@ class PresetCatalog:
 
         staging_path: Path | None = None
         try:
-            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
+            def _validate_redirect(old_url: str, new_url: str) -> None:
+                if not is_safe_download_redirect(old_url, new_url):
+                    raise PresetError(
+                        f"Preset download redirected to a disallowed URL: {new_url}"
+                    )
+
+            with self._open_url(
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                redirect_validator=_validate_redirect,
+            ) as response:
                 archive_data = read_response_limited(
                     response,
                     error_type=PresetError,
                     label=f"preset '{pack_id}' download",
                 )
-                final_url = (
+                response_url = (
                     response.geturl()
                     if hasattr(response, "geturl")
                     else download_url
                 )
+                final_url = response_url if isinstance(response_url, str) else download_url
+                if not is_https_or_localhost_http(final_url) or not is_safe_download_redirect(
+                    download_url, final_url
+                ):
+                    raise PresetError(
+                        f"Preset download redirected to a disallowed URL: {final_url}"
+                    )
                 content_type = (
                     response.getheader("Content-Type")
                     if hasattr(response, "getheader")

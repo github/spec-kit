@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import typer
+from packaging.version import InvalidVersion, Version
 from rich.markup import escape as _escape_markup
 
 from .._console import console
@@ -17,6 +18,7 @@ from .._download_security import (
     is_safe_download_redirect,
 )
 from . import _commands
+from ._catalog_versions import select_release
 from ._commands import preset_app
 
 
@@ -146,6 +148,9 @@ def preset_add(
         "--priority",
         help="Resolution priority (lower = higher precedence, default 10)",
     ),
+    version: str | None = typer.Option(
+        None, "--version", help="Install an exact version from a catalog"
+    ),
 ):
     """Install a preset."""
     from .. import _locate_bundled_preset, _require_specify_project, get_speckit_version
@@ -159,6 +164,15 @@ def preset_add(
 
     project_root = _require_specify_project()
     _commands._validate_priority(priority)
+    # Direct callers of the command function receive Typer's OptionInfo default.
+    if not isinstance(version, str):
+        version = None
+    if version is not None and (not version.strip() or dev or from_url or not preset_id):
+        console.print(
+            "[red]Error:[/red] --version requires a catalog preset ID "
+            "(without --dev or --from)."
+        )
+        raise typer.Exit(1)
 
     manager = PresetManager(project_root)
     speckit_version = get_speckit_version()
@@ -295,7 +309,7 @@ def preset_add(
 
         elif preset_id:
             # Try bundled preset first, then catalog
-            bundled_path = _locate_bundled_preset(preset_id)
+            bundled_path = _locate_bundled_preset(preset_id) if version is None else None
             if bundled_path:
                 console.print(f"Installing bundled preset [cyan]{preset_id}[/cyan]...")
                 manifest = manager.install_from_directory(
@@ -314,14 +328,50 @@ def preset_add(
                     )
                     raise typer.Exit(1)
 
+                if version is not None:
+                    if not pack_info.get("_install_allowed", True):
+                        console.print(
+                            f"[red]Error:[/red] Preset '{_escape_markup(preset_id)}' "
+                            "is from a discovery-only catalog (install not allowed)."
+                        )
+                        raise typer.Exit(1)
+                    selected = select_release(pack_info, version)
+                    if selected is None:
+                        console.print(
+                            f"[red]Error:[/red] Preset '{_escape_markup(preset_id)}' "
+                            f"has no catalog release for version {_escape_markup(version)}."
+                        )
+                        raise typer.Exit(1)
+                    pack_info = selected
+
                 # Bundled presets should have been caught above; if we reach
                 # here the bundled files are missing from the installation.
                 if pack_info.get("bundled") and not pack_info.get("download_url"):
+                    packaged = _locate_bundled_preset(preset_id)
+                    if version is not None and packaged is not None:
+                        from . import PresetManifest
+
+                        packaged_manifest = PresetManifest(packaged / "preset.yml")
+                        try:
+                            matches = Version(packaged_manifest.version) == Version(
+                                pack_info["version"]
+                            )
+                        except InvalidVersion:
+                            matches = False
+                        if packaged_manifest.id == preset_id and matches:
+                            manifest = manager.install_from_directory(
+                                packaged, speckit_version, priority
+                            )
+                            console.print(
+                                f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"
+                            )
+                            _commands._warn_unmet_extension_dependencies(manager, manifest)
+                            return
                     from ..extensions import REINSTALL_COMMAND
 
                     console.print(
-                        f"[red]Error:[/red] Preset '{preset_id}' is bundled with spec-kit "
-                        f"but could not be found in the installed package."
+                        f"[red]Error:[/red] Preset '{_escape_markup(preset_id)}' is bundled with spec-kit "
+                        "but the requested version could not be found in the installed package."
                     )
                     console.print(
                         "\nThis usually means the spec-kit installation is incomplete or corrupted."
@@ -345,12 +395,21 @@ def preset_add(
                 )
 
                 try:
-                    archive_path = catalog.download_pack(preset_id)
+                    archive_path = (
+                        catalog.download_pack_info(pack_info)
+                        if version is not None
+                        else catalog.download_pack(preset_id)
+                    )
                     manifest = manager.install_from_zip(
                         archive_path,
                         speckit_version,
                         priority,
                         catalog_name=pack_info.get("_catalog_name"),
+                        **(
+                            {"expected_id": preset_id, "expected_version": pack_info["version"]}
+                            if version is not None
+                            else {}
+                        ),
                     )
                     console.print(
                         f"[green]✓[/green] Preset '{manifest.name}' v{manifest.version} installed (priority {priority})"

@@ -12,6 +12,7 @@ from ._commands import preset_app
 @preset_app.command("info")
 def preset_info(
     preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
 ):
     """Show detailed information about a preset."""
     from .. import _require_specify_project
@@ -20,6 +21,27 @@ def preset_info(
 
     project_root = _require_specify_project()
     safe_preset_id = _escape_markup(str(preset_id))
+    if versions is True:
+        catalog = PresetCatalog(project_root)
+        try:
+            pack_info = catalog.get_pack_info(preset_id)
+            available = catalog.get_pack_versions(preset_id) if pack_info else []
+        except PresetError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
+        if not available:
+            console.print(
+                f"[red]Error:[/red] No catalog versions found for {safe_preset_id}."
+            )
+            raise typer.Exit(1)
+        console.print(f"Catalog versions for {safe_preset_id}:")
+        for index, item in enumerate(available):
+            console.print(
+                f"  {_escape_markup(item)}{' (current)' if index == 0 else ''}"
+            )
+        if not pack_info.get("_install_allowed", True):
+            console.print("[yellow]Discovery only; catalog installation is disabled.[/yellow]")
+        return
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
