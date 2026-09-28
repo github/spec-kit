@@ -665,5 +665,5 @@ class CopilotIntegration(IntegrationBase):
             return
 
         dst.write_text(
-            json.dumps(existing, indent=4) + "\n", encoding="utf-8"
+            json.dumps(existing, indent=4, ensure_ascii=False) + "\n", encoding="utf-8"
         )

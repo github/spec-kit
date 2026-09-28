@@ -2552,7 +2552,7 @@ def _safe_write_json(dst: Path, data: dict) -> None:
     """Write *data* as JSON to *dst* after validating the destination (#12)."""
     _ensure_safe_destination(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    dst.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _ensure_safe_destination(dst: Path) -> None:
