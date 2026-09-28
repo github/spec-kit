@@ -769,8 +769,11 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.uni | to_json }}", ctx) == '"café"'
 
     def test_filter_to_json_round_trips_from_json(self):
-        # to_json is the inverse of from_json, which is the point: a workflow can
-        # pass a structured value through a shell step and recover it.
+        # to_json is the inverse of from_json: a structured value survives an
+        # evaluator-level round trip. Nothing here exercises a shell, and the
+        # round trip is not extended to one — interpolation adds no quoting, so
+        # the output is reproducible but not shell-safe (see docs/reference/
+        # workflows.md, "Interpolation and shell safety").
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
