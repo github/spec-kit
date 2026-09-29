@@ -824,6 +824,59 @@ class TestExpressions:
             ):
                 evaluate_expression(f"{{{{ inputs.{name} | to_json }}}}", ctx)
 
+    def test_filter_to_json_rejects_non_string_keys(self):
+        # JSON objects have string keys only. Without this check, json.dumps
+        # would coerce 1 to "1" -- colliding with an existing "1" key -- and
+        # sort_keys=True would raise an ordering TypeError on mixed key types,
+        # which surfaced as a generic "not JSON-serializable" hiding the real
+        # authoring mistake.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "mixed": {1: "a", "2": "b"},
+                "intkey": {1: "a"},
+                "nested": {"outer": {3: "deep"}},
+                "strkey": {"1": "a", "2": "b"},
+            }
+        )
+        for name in ("mixed", "intkey", "nested"):
+            with pytest.raises(
+                ValueError, match="to_json: mapping keys must be strings"
+            ):
+                evaluate_expression(f"{{{{ inputs.{name} | to_json }}}}", ctx)
+        # String keys, digit strings included, still serialize normally.
+        assert (
+            evaluate_expression("{{ inputs.strkey | to_json }}", ctx)
+            == '{"1": "a", "2": "b"}'
+        )
+
+    def test_single_arg_filters_reject_extra_argument(self):
+        # Arity is checked before the argument expression is evaluated.
+        # split(',', 1) used to evaluate that fragment first, so the reported
+        # error was "expected a string separator, got NoneType" -- the arity
+        # mistake, which is what the author got wrong, stayed hidden behind a
+        # type error.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "a,b,c", "n": 0})
+        with pytest.raises(
+            ValueError, match="split: expected exactly one argument, got 2"
+        ):
+            evaluate_expression("{{ inputs.s | split(',', 1) }}", ctx)
+        with pytest.raises(
+            ValueError, match="default: expected exactly one argument, got 2"
+        ):
+            evaluate_expression("{{ inputs.n | default(0, 'x') }}", ctx)
+        # A comma inside quotes or brackets is still one argument.
+        assert (
+            evaluate_expression("{{ inputs.s | split(',') }}", ctx) == ["a", "b", "c"]
+        )
+
     def test_zero_arg_filters_reject_miswired_forms(self):
         # The strict no-argument branch is shared by from_json/upper/lower/
         # length/to_json. Every mis-wired form — parenthesized, accidental arg,

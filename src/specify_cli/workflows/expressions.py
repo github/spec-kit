@@ -232,11 +232,50 @@ def _filter_to_json(value: Any) -> str:
     is what makes that true for non-finite floats: ``json.dumps`` would
     otherwise emit bare ``NaN``/``Infinity``/``-Infinity``, none of which is
     valid JSON, and hand downstream parsers a string they must reject.
+
+    Mapping keys must be strings, which is what JSON objects have anyway.
+    ``_check_json_keys`` enforces that before ``json.dumps`` is reached, so a
+    non-string key is reported as the authoring mistake it is rather than
+    surfacing as an ordering ``TypeError`` from ``sort_keys=True`` (mixed key
+    types) or as silent ``1`` → ``"1"`` coercion that collides with an existing
+    ``"1"`` key.
     """
+    _check_json_keys(value)
     try:
         return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"to_json: value is not JSON-serializable: {exc}") from exc
+
+
+def _check_json_keys(value: Any) -> None:
+    """Raise ``ValueError`` if any mapping reachable from *value* has a
+    non-string key.
+
+    Walked iteratively with a ``seen`` set: a self-referential structure is
+    skipped rather than recursed into, so the circular reference stays for
+    ``json.dumps`` to report with its own clearer message instead of the walk
+    exhausting the stack first.
+    """
+    seen: set[int] = set()
+    stack: list[Any] = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            for key, sub_value in item.items():
+                if not isinstance(key, str):
+                    raise ValueError(
+                        "to_json: mapping keys must be strings, got "
+                        f"{type(key).__name__}: {key!r}"
+                    )
+                stack.append(sub_value)
+        elif isinstance(item, (list, tuple)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            stack.extend(item)
 
 
 # Filters that take no arguments and tolerate no trailing tokens. Keyed by name
@@ -251,6 +290,14 @@ _ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
     "length": _filter_length,
     "to_json": _filter_to_json,
 }
+
+# Parenthesized filters that take exactly one argument. Used to report an
+# extra argument by name *before* the argument expression is evaluated:
+# _evaluate_simple_expression has no comma operator, so ``| split(',', 1)``
+# would otherwise hand split an unparseable fragment, which reads back as
+# "expected a string separator, got NoneType" -- the arity mistake, which is
+# what the author actually got wrong, never surfaces.
+_SINGLE_ARG_FILTERS = frozenset({"default", "join", "map", "contains", "split"})
 
 
 # -- Expression resolution ------------------------------------------------
@@ -612,7 +659,15 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
     if filter_match:
         fname = filter_match.group(1)
-        farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
+        farg_text = filter_match.group(2).strip()
+        if fname in _SINGLE_ARG_FILTERS:
+            arg_parts = _split_top_level_commas(farg_text)
+            if len(arg_parts) > 1:
+                raise ValueError(
+                    f"{fname}: expected exactly one argument, got "
+                    f"{len(arg_parts)}: '| {filter_expr}'"
+                )
+        farg = _evaluate_simple_expression(farg_text, namespace)
         if fname == "default":
             return _filter_default(value, farg)
         if fname == "join":
