@@ -20,11 +20,20 @@ from ..manifest import IntegrationManifest
 
 def registration_directory(project_root: Path) -> Path:
     """Resolve the installed generic output root, never the class-level placeholder."""
-    from ...integration_state import integration_setting, try_read_integration_json
+    from ...integration_state import (
+        INTEGRATION_STATE_SCHEMA,
+        integration_setting,
+        try_read_integration_json,
+    )
 
     state, error = try_read_integration_json(project_root)
     if error is not None:
-        raise ValueError(f"Cannot read generic integration settings: {error.detail}")
+        detail = (
+            f"integration state schema {error.schema} is newer than supported "
+            f"schema {INTEGRATION_STATE_SCHEMA}; upgrade Spec Kit"
+            if error.kind == "schema_too_new" else error.detail
+        )
+        raise ValueError(f"Cannot read generic integration settings: {detail}")
     settings = integration_setting(state or {}, "generic")
     commands_dir = GenericIntegration._resolve_commands_dir(
         settings.get("parsed_options"), {"raw_options": settings.get("raw_options")}

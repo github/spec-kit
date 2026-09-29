@@ -1,5 +1,6 @@
 """Tests for GenericIntegration."""
 
+import json
 import os
 import shutil
 import zipfile
@@ -13,7 +14,7 @@ import yaml
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
-from specify_cli.integration_state import write_integration_json
+from specify_cli.integration_state import INTEGRATION_STATE_SCHEMA, write_integration_json
 from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager, HookExecutor
 from specify_cli import save_init_options
 
@@ -183,6 +184,31 @@ def test_generic_extension_reports_missing_registration_options(
     with pytest.raises(ExtensionError, match="generic"):
         ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
     assert not ExtensionManager(project).registry.is_installed("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_reports_newer_integration_schema(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    state_file = project / ".specify/integration.json"
+    original_state = state_file.read_text(encoding="utf-8")
+    state = json.loads(original_state)
+    state["integration_state_schema"] = INTEGRATION_STATE_SCHEMA + 1
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+
+    manager = ExtensionManager(project)
+    with pytest.raises(ExtensionError, match="upgrade Spec Kit") as error:
+        manager.install_from_directory(generic_extension, "1.0.0")
+    assert str(state["integration_state_schema"]) in str(error.value)
+    assert str(INTEGRATION_STATE_SCHEMA) in str(error.value)
+    assert state_file.read_text(encoding="utf-8") == json.dumps(state)
+    assert not manager.registry.is_installed("sample")
+    assert not (manager.extensions_dir / "sample").exists()
+
+    state_file.write_text(original_state, encoding="utf-8")
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert manager.remove("sample")
 
 
 @pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
@@ -1015,7 +1041,7 @@ def test_generic_extension_enable_rejects_partial_registration(
     assert collision.is_file() and other.is_file()
 
 
-@pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed", "schema_too_new"])
 def test_generic_extension_enable_failure_restores_disabled_state(
     tmp_path, generic_extension, invalid_settings,
 ):
@@ -1035,11 +1061,17 @@ def test_generic_extension_enable_failure_restores_disabled_state(
         assert runner.invoke(app, ["extension", "disable", "sample"]).exit_code == 0
         if invalid_settings == "missing":
             state_file.unlink()
+        elif invalid_settings == "schema_too_new":
+            state = json.loads(original_state)
+            state["integration_state_schema"] = INTEGRATION_STATE_SCHEMA + 1
+            state_file.write_text(json.dumps(state), encoding="utf-8")
         else:
             state_file.write_text("{", encoding="utf-8")
         result = runner.invoke(app, ["extension", "enable", "sample"])
         assert result.exit_code == 1
         assert "Could not register generic invocations" in result.output
+        if invalid_settings == "schema_too_new":
+            assert "upgrade Spec Kit" in result.output
         assert not output.exists()
         assert ExtensionManager(project).registry.get("sample")["enabled"] is False
         state_file.write_bytes(original_state)
