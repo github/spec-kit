@@ -170,13 +170,20 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
 
 
 def _clean_branch_name(name: str) -> str:
-    cleaned = re.sub(r"[^\w]|_", "-", name.translate(_ASCII_LOWER))
+    cleaned = _unicode_words(name, "-")
     cleaned = re.sub(r"-+", "-", cleaned)
     return cleaned.strip("-")
 
 
+def _unicode_words(name: str, separator: str) -> str:
+    return "".join(
+        char if char.isalpha() or char.isdecimal() else separator
+        for char in name.translate(_ASCII_LOWER)
+    )
+
+
 def _generate_branch_name(description: str) -> str:
-    clean = re.sub(r"[^\w]|_", " ", description.translate(_ASCII_LOWER))
+    clean = _unicode_words(description, " ")
     meaningful: list[str] = []
     for word in clean.split():
         if word in _STOP_WORDS:
@@ -454,4 +461,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     raise SystemExit(main())

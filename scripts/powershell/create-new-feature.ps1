@@ -93,11 +93,11 @@ function ConvertTo-UnicodeWords {
     param([string]$Name, [string]$Separator)
 
     $lowerName = ConvertTo-AsciiLower -Name $Name
-    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{N}]', {
+    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{Nd}]', {
         param($match)
         if ($match.Length -eq 2) {
             $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0)
-            if ($category.ToString() -match '(Letter|Number)$') {
+            if ($category.ToString() -match '(Letter|DecimalDigitNumber)$') {
                 return $match.Value
             }
         }

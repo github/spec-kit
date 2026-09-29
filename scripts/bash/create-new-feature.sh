@@ -147,13 +147,13 @@ spec_prefix_exists() {
 # Function to clean and format a branch name
 #
 # Three details keep this consistent with the Python and PowerShell twins:
-#   * A UTF-8 locale makes [:alnum:] recognize Unicode letters and digits.
+#   * A UTF-8 locale makes [:alnum:] recognize Unicode letters and decimal digits.
 #   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
 #     '+', leaving repeated separators uncollapsed on macOS.
 #   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
 UNICODE_LOCALE=""
 for candidate in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"; do
-    if [ -n "$candidate" ] && [ "$(printf 'é。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é-' ]; then
+    if [ -n "$candidate" ] && [ "$(printf 'é٥²Ⅻ。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é٥---' ]; then
         UNICODE_LOCALE="$candidate"
         break
     fi

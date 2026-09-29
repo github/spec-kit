@@ -65,7 +65,7 @@ specify init my-project --integration copilot --preset compliance
 ## Naming Features with the Helper Scripts
 
 When calling the bundled `create-new-feature` helper scripts directly, generated
-names retain Unicode letters and digits in UTF-8, so a description such as
+names retain Unicode letters and decimal digits in UTF-8, so a description such as
 `添加用户` produces `001-添加用户`. Descriptions made only of punctuation can still
 produce an empty suffix such as `001-`; the scripts warn on stderr when this
 happens, including during a dry run. JSON output remains parseable.

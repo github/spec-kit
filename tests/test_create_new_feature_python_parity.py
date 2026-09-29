@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -110,6 +112,105 @@ def test_empty_feature_name_warning(
         assert ("-ShortName" if powershell else "--short-name") in result.stderr
         assert "letters or digits" in result.stderr
     assert (repo / "specs" / f"001-{suffix}" / "spec.md").exists() is not dry_run
+
+
+@pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+@pytest.mark.parametrize("dry_run", [False, True], ids=["create", "dry_run"])
+def test_python_outputs_unicode_when_default_encoding_is_cp1252(
+    repo: Path, json_mode: bool, dry_run: bool
+) -> None:
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+    args = []
+    if json_mode:
+        args.append("--json")
+    if dry_run:
+        args.append("--dry-run")
+    args.append("添加用户")
+
+    result = run(py_cmd(repo, SCRIPT, *args), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert "001-添加用户" in result.stdout
+    if not dry_run:
+        assert "001-添加用户" in result.stderr
+    if json_mode:
+        assert json_stdout(result)["BRANCH_NAME"] == "001-添加用户"
+    else:
+        assert "BRANCH_NAME: 001-添加用户" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param("bash", marks=requires_bash),
+        "python",
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("short_name", "expected"),
+    [
+        ("x²", "001-x"),
+        ("xⅫ", "001-x"),
+        ("x٥", "001-x٥"),
+        ("x𝟘", "001-x𝟘"),
+    ],
+    ids=["superscript_number", "roman_numeral", "decimal_digit", "supplementary_decimal"],
+)
+def test_unicode_number_categories_match(
+    repo: Path, variant: str, short_name: str, expected: str
+) -> None:
+    powershell = variant == "powershell"
+    args = (
+        ("-Json", "-DryRun", "-ShortName", short_name, "x")
+        if powershell
+        else ("--json", "--dry-run", "--short-name", short_name, "x")
+    )
+    command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
+
+    result = run(command(repo, SCRIPT, *args), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == expected
+
+
+@requires_bash
+def test_bash_reports_missing_utf8_locale_for_unicode_only(
+    repo: Path, tmp_path: Path
+) -> None:
+    real_sed = shutil.which("sed")
+    assert real_sed is not None
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    sed_shim = shim_dir / "sed"
+    sed_shim.write_text(
+        "#!/bin/sh\n"
+        """if [ "$1" = 's/[^[:alnum:]]/-/g' ]; then exit 1; fi\n"""
+        f"exec {shlex.quote(real_sed)} \"$@\"\n",
+        encoding="utf-8",
+    )
+    sed_shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    ascii_result = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "Add user authentication"),
+        repo,
+        env,
+    )
+    assert ascii_result.returncode == 0, ascii_result.stderr
+    assert json_stdout(ascii_result)["BRANCH_NAME"] == "001-user-authentication"
+
+    for args in (("添加用户",), ("--short-name", "用户", "Add users")):
+        result = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", *args), repo, env)
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "Error: A UTF-8 locale is required" in result.stderr
+        assert not (repo / "specs").exists()
 
 
 def _run_all_variants_allow_existing(
