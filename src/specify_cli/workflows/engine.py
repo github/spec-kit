@@ -128,6 +128,14 @@ def workflow_dir_for(definition: WorkflowDefinition) -> str | None:
 
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+_WORKFLOW_VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
+
+
+def _is_valid_workflow_version(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and _WORKFLOW_VERSION_PATTERN.fullmatch(value) is not None
+    )
 
 # Keys accepted under a workflow's ``requires`` block: the advisory
 # pre-conditions documented for workflows (``speckit_version`` and
@@ -237,7 +245,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.version).__name__} ({definition.version!r}) — "
             f'quote it in YAML (version: "1.0.0").'
         )
-    elif not re.fullmatch(r"\d+\.\d+\.\d+", definition.version):
+    elif not _is_valid_workflow_version(definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
