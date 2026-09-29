@@ -317,7 +317,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -2168,6 +2168,11 @@ class ExtensionManager:
             elif backup_config_dir.exists():
                 backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
+            if not did_remove:
+                raise ExtensionError(
+                    f"Refusing to reinstall '{manifest.id}': existing "
+                    f"installation could not be safely removed"
+                )
 
         # Load and validate .extensionignore BEFORE reading/creating the rescue
         # staging directory (and thus before deleting dest_dir). The loader can

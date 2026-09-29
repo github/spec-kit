@@ -117,7 +117,7 @@ class PresetManifest:
                 )
 
         # Validate pack ID format
-        if not re.match(r'^[a-z0-9-]+$', pack["id"]):
+        if not re.fullmatch(r'[a-z0-9-]+', pack["id"]):
             raise PresetValidationError(
                 f"Invalid preset ID '{pack['id']}': "
                 "must be lowercase alphanumeric with hyphens only"

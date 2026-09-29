@@ -384,11 +384,12 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="not valid UTF-8"):
             ExtensionManifest(manifest_path)
 
-    def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
-        """Test manifest with invalid extension ID format."""
+    @pytest.mark.parametrize("bad_id", ["Invalid_ID", "test-ext\n"])
+    def test_invalid_extension_id(self, temp_dir, valid_manifest_data, bad_id):
+        """Test manifest with invalid extension ID format (incl. trailing newline)."""
         import yaml
 
-        valid_manifest_data["extension"]["id"] = "Invalid_ID"  # Uppercase not allowed
+        valid_manifest_data["extension"]["id"] = bad_id
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
@@ -3320,6 +3321,21 @@ class TestExtensionManager:
         assert (real_target / "important.txt").exists()
         assert ext_dir.is_symlink()
         assert manager.registry.is_installed("test-ext")
+
+    def test_force_reinstall_aborts_when_removal_refused(self, extension_dir, project_dir):
+        """install(force=True) must abort if remove() refuses a symlinked target."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        real_target = project_dir.parent / "real-target"
+        shutil.move(str(ext_dir), str(real_target))
+        ext_dir.symlink_to(real_target, target_is_directory=True)
+
+        with pytest.raises(ExtensionError, match="could not be safely removed"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False, force=True
+            )
+        assert (real_target / "extension.yml").exists()
 
     def test_remove_refuses_symlinked_backup_dir(self, extension_dir, project_dir):
         """Config backups must not be redirected through a symlinked destination."""
