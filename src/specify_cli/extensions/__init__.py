@@ -47,6 +47,12 @@ from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
+from ..integration_state import (
+    INTEGRATION_STATE_SCHEMA,
+    default_integration_key,
+    integration_setting,
+    try_read_integration_json,
+)
 from ..shared_infra import verify_archive_sha256
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
@@ -2438,6 +2444,41 @@ class ExtensionManager:
 
         active_options = load_init_options(self.project_root)
         generic_active = isinstance(active_options, dict) and active_options.get("ai") == "generic"
+        if register_commands and manifest.commands:
+            state, state_error = try_read_integration_json(self.project_root)
+            if state_error is not None:
+                detail = (
+                    f"integration state schema {state_error.schema} is newer than supported "
+                    f"schema {INTEGRATION_STATE_SCHEMA}; upgrade Spec Kit"
+                    if state_error.kind == "schema_too_new"
+                    else state_error.detail or state_error.kind
+                )
+                raise ExtensionError(
+                    "Cannot register extension commands: cannot read integration settings: "
+                    f"{detail}"
+                )
+            generic_default = default_integration_key(state) == "generic" if state else False
+            if state is not None and (generic_default or generic_active):
+                if generic_default != generic_active:
+                    raise ExtensionError(
+                        "Cannot register generic extension commands: generic integration "
+                        "and init options disagree"
+                    )
+                parsed_options = integration_setting(state, "generic").get("parsed_options")
+                configured_skills = (
+                    parsed_options.get("skills", False)
+                    if isinstance(parsed_options, dict) else False
+                )
+                init_skills = active_options.get("ai_skills", False)
+                if (
+                    not isinstance(configured_skills, bool)
+                    or not isinstance(init_skills, bool)
+                    or configured_skills != init_skills
+                ):
+                    raise ExtensionError(
+                        "Cannot register generic extension commands: generic integration "
+                        "and init options disagree on skills mode"
+                    )
         if register_commands and generic_active and manifest.commands:
             from ..integrations.generic import registration_directory
 

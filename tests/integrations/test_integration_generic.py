@@ -187,6 +187,115 @@ def test_generic_extension_reports_missing_registration_options(
 
 
 @pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize(
+    "invalid_options",
+    ["missing", "malformed", "missing_agent", "different_agent", "wrong_layout", "invalid_layout"],
+)
+def test_generic_command_install_rejects_inconsistent_init_options(
+    tmp_path, generic_extension, skills, invalid_options,
+):
+    project = generic_project(tmp_path, skills=skills)
+    options_path = project / ".specify/init-options.json"
+    options = json.loads(options_path.read_text(encoding="utf-8"))
+    if invalid_options == "missing":
+        options_path.unlink()
+    elif invalid_options == "malformed":
+        options_path.write_text("{", encoding="utf-8")
+    else:
+        if invalid_options == "missing_agent":
+            options.pop("ai")
+        elif invalid_options == "different_agent":
+            options["ai"] = "claude"
+        elif invalid_options == "wrong_layout":
+            options["ai_skills"] = not skills
+        else:
+            options["ai_skills"] = "true"
+        options_path.write_text(json.dumps(options), encoding="utf-8")
+
+    manager = ExtensionManager(project)
+    with pytest.raises(ExtensionError, match="generic.*init options"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+
+    assert not manager.registry.is_installed("sample")
+    assert not (manager.extensions_dir / "sample").exists()
+    assert not (project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )).exists()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("invalid_options", ["missing", "malformed"])
+def test_generic_hook_only_install_accepts_missing_init_options(
+    tmp_path, generic_extension, skills, invalid_options,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"] = []
+    manifest["hooks"] = {"after_tasks": {"command": "echo sample"}}
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    project = generic_project(tmp_path, skills=skills)
+    options_path = project / ".specify/init-options.json"
+    if invalid_options == "missing":
+        options_path.unlink()
+    else:
+        options_path.write_text("{", encoding="utf-8")
+
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert manager.registry.get("sample")["enabled"] is True
+    assert not manager.registry.get("sample")["generic_artifact_hashes"]
+    hooks = HookExecutor(project).get_project_config()["hooks"]["after_tasks"]
+    assert any(hook["extension"] == "sample" and hook["enabled"] is True for hook in hooks)
+
+
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed", "schema_too_new"])
+def test_generic_extension_update_reports_invalid_settings_without_crashing(
+    tmp_path, generic_extension, invalid_settings,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands/speckit.sample.run.md"
+    original = artifact.read_bytes()
+    previous = manager.registry.get("sample")
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "missing":
+        state_file.unlink()
+    elif invalid_settings == "malformed":
+        state_file.write_text("{", encoding="utf-8")
+    else:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state["integration_state_schema"] = INTEGRATION_STATE_SCHEMA + 1
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        with (
+            patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                "id": "sample", "name": "Sample", "version": "2.0.0",
+                "_install_allowed": True,
+            }),
+        ):
+            result = CliRunner().invoke(
+                app, ["extension", "update", "sample"], input="y\n",
+            )
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code == 1
+    assert result.exception is not None
+    assert "Error:" in result.output
+    assert "extension update registration settings" in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert artifact.read_bytes() == original
+    assert ExtensionManager(project).registry.get("sample") == previous
+
+
+@pytest.mark.parametrize("skills", [False, True])
 def test_generic_extension_reports_newer_integration_schema(
     tmp_path, generic_extension, skills,
 ):
@@ -1533,7 +1642,7 @@ def test_generic_extension_rejects_escaping_directory(
     project = generic_project(tmp_path, skills=skills)
     write_integration_json(
         project, version="1.0.0", integration_key="generic",
-        settings={"generic": {"parsed_options": {"commands_dir": "../outside"}}},
+        settings={"generic": {"parsed_options": {"commands_dir": "../outside", "skills": skills}}},
     )
     with pytest.raises(ExtensionError, match="escapes project root"):
         ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
