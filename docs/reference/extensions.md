@@ -95,6 +95,8 @@ Updates a specific extension, or all installed extensions if no name is given.
 
 Bundled extensions (such as `agent-context` and `git`) have no download URL; their updates install from the copy shipped with the running spec-kit release. When the catalog advertises a newer version than your spec-kit release ships, the update is reported as requiring a spec-kit upgrade first.
 
+For `generic`, a failed update restores hash-owned invocations from previously configured `--commands-dir` locations as well as the current location, even if another integration is now active.
+
 ## Enable / Disable an Extension
 
 ```bash
@@ -103,6 +105,8 @@ specify extension disable <name>
 ```
 
 Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
+
+For `generic`, disabling removes hash-owned invocations even after the output directory moves, but preserves unrelated same-named files in the new directory.
 
 ## Set Extension Priority
 

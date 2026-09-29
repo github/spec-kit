@@ -1966,16 +1966,20 @@ class ExtensionManager:
         return hashes
 
     def _snapshot_generic_refresh_artifacts(
-        self, manifest: Optional[ExtensionManifest], metadata: Dict[str, Any],
-        *, skills_mode_active: bool,
+        self, extension_id: str, manifest: Optional[ExtensionManifest],
+        metadata: Dict[str, Any],
+        *, skills_mode_active: bool, include_current_candidates: bool = True,
     ) -> Dict[Path, tuple[bytes | None, str | None, bool]]:
         """Remember owned outputs and absent candidates for generic rollback."""
         from ..integrations.generic import registration_directory
         from ..shared_infra import _validate_safe_shared_directory
 
         root = self.project_root.resolve()
-        output_dir = registration_directory(self.project_root)
-        source = (self.extensions_dir / manifest.id).resolve()
+        output_dir = (
+            registration_directory(self.project_root)
+            if include_current_candidates else None
+        )
+        source = (self.extensions_dir / extension_id).resolve()
         hashes = metadata.get("generic_artifact_hashes", {})
         if not isinstance(hashes, dict):
             hashes = {}
@@ -1991,8 +1995,10 @@ class ExtensionManager:
             if manifest is not None and skills_mode_active else set()
         )
         skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
-        paths = {output_dir / f"{name}.md" for name in command_names}
-        paths.update(output_dir / name / "SKILL.md" for name in skill_names)
+        paths: set[Path] = set()
+        if output_dir is not None:
+            paths.update(output_dir / f"{name}.md" for name in command_names)
+            paths.update(output_dir / name / "SKILL.md" for name in skill_names)
         for relative in hashes:
             if not isinstance(relative, str):
                 continue
@@ -3520,22 +3526,29 @@ class ExtensionManager:
                         continue
                     path = self.project_root.resolve() / name
                     if path.parent.resolve().is_relative_to(self.project_root.resolve()) and path.is_file():
+                        if path.is_symlink() and not path.resolve().is_relative_to(
+                            (self.extensions_dir / extension_id).resolve()
+                        ):
+                            raise ExtensionError(
+                                f"Cannot disable '{extension_id}': generic artifact {path} "
+                                "was modified or is not owned; preserve it and remove it manually"
+                            )
                         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
                             raise ExtensionError(
                                 f"Cannot disable '{extension_id}': generic artifact {path} "
                                 "was modified or is not owned; preserve it and remove it manually"
                             )
-            for names, is_skill in ((commands, False), (skills, True)):
-                owned = self._generic_owned_names(metadata, names, skills=is_skill)
-                for name in names:
-                    path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
-                    if (path.exists() or path.is_symlink()) and name not in owned:
-                        raise ExtensionError(
-                            f"Cannot disable '{extension_id}': generic artifact {path} "
-                            "was modified or is not owned; preserve it and remove it manually"
-                        )
+            if not hashes:
+                for names, is_skill in ((commands, False), (skills, True)):
+                    for name in names:
+                        path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
+                        if path.exists() or path.is_symlink():
+                            raise ExtensionError(
+                                f"Cannot disable '{extension_id}': generic artifact {path} "
+                                "was modified or is not owned; preserve it and remove it manually"
+                            )
             snapshot = self._snapshot_generic_refresh_artifacts(
-                self.get_extension(extension_id), metadata,
+                extension_id, self.get_extension(extension_id), metadata,
                 skills_mode_active=bool(skills),
             )
 
@@ -3848,7 +3861,8 @@ class ExtensionManager:
             try:
                 if agent_name == "generic":
                     generic_snapshot = self._snapshot_generic_refresh_artifacts(
-                        manifest, metadata, skills_mode_active=skills_mode_active,
+                        ext_id, manifest, metadata,
+                        skills_mode_active=skills_mode_active,
                     )
                 updates: Dict[str, Any] = {}
                 registered: List[str] = []
