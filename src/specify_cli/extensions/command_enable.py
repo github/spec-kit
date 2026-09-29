@@ -17,7 +17,7 @@ def extension_enable(
     extension: str = typer.Argument(help="Extension ID or name to enable"),
 ):
     """Enable a disabled extension."""
-    from . import ExtensionManager, HookExecutor
+    from . import ExtensionError, ExtensionManager, HookExecutor
 
     project_root = _commands._require_specify_project()
     manager = ExtensionManager(project_root)
@@ -47,7 +47,15 @@ def extension_enable(
     from .. import load_init_options
 
     if load_init_options(project_root).get("ai") == "generic":
-        manager.register_enabled_extensions_for_agent("generic")
+        try:
+            manager.register_enabled_extensions_for_agent("generic")
+        except (ExtensionError, OSError, ValueError) as exc:
+            manager.registry.update(extension_id, {"enabled": False})
+            console.print(
+                f"[red]Error:[/red] Could not register generic invocations "
+                f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1) from exc
         refreshed = manager.registry.get(extension_id) or {}
         commands = refreshed.get("registered_commands", {})
         manifest = manager.get_extension(extension_id)

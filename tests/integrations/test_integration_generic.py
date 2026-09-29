@@ -331,6 +331,114 @@ def test_generic_skills_upgrade_refreshes_artifact_digest(
     assert not skill.exists()
 
 
+def test_generic_command_refreshes_owned_artifact_and_missing_alias(
+    tmp_path, generic_extension,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"][0]["aliases"] = ["speckit.sample.alias"]
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands"
+    primary = output / "speckit.sample.run.md"
+    alias = output / "speckit.sample.alias.md"
+    assert primary.is_file() and alias.is_file()
+    alias.unlink()
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nnew content\n", encoding="utf-8")
+
+    manager.register_enabled_extensions_for_agent("generic")
+
+    assert "new content" in primary.read_text(encoding="utf-8")
+    assert "new content" in alias.read_text(encoding="utf-8")
+    hashes = manager.registry.get("sample")["generic_artifact_hashes"]
+    assert hashes[primary.relative_to(project).as_posix()] == sha256(primary.read_bytes()).hexdigest()
+    assert hashes[alias.relative_to(project).as_posix()] == sha256(alias.read_bytes()).hexdigest()
+    assert manager.remove("sample")
+    assert not primary.exists() and not alias.exists()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("ignored_source", [False, True])
+def test_generic_partial_registration_rolls_back_all_artifacts(
+    tmp_path, generic_extension, skills, ignored_source,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"].append({
+        "name": "speckit.sample.missing",
+        "file": "commands/missing.md",
+        "description": "Missing source",
+    })
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    if ignored_source:
+        (generic_extension / "commands/missing.md").write_text(
+            "---\ndescription: Missing source\n---\ncontent\n", encoding="utf-8",
+        )
+        (generic_extension / ".extensionignore").write_text(
+            "commands/missing.md\n", encoding="utf-8",
+        )
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+
+    with pytest.raises(ExtensionError, match="missing"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+
+    output = project / ".custom/commands"
+    assert not (output / ("speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md")).exists()
+    assert not (manager.extensions_dir / "sample").exists()
+    assert not manager.registry.is_installed("sample")
+    (generic_extension / "commands/missing.md").write_text(
+        "---\ndescription: Resolved source\n---\ncontent\n", encoding="utf-8",
+    )
+    (generic_extension / ".extensionignore").unlink(missing_ok=True)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert manager.registry.is_installed("sample")
+    assert manager.remove("sample")
+
+
+def test_generic_failed_registration_preserves_reinstall_config(
+    tmp_path, generic_extension,
+):
+    (generic_extension / "sample-config.yml").write_text(
+        "default: true\n", encoding="utf-8",
+    )
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0", register_commands=False)
+    assert manager.remove("sample", keep_config=True)
+    config = manager.extensions_dir / "sample/sample-config.yml"
+    config.write_text("user: preserved\n", encoding="utf-8")
+
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"].append({
+        "name": "speckit.sample.other",
+        "file": "commands/other.md",
+        "description": "Another command",
+    })
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    (generic_extension / "commands/other.md").write_text(
+        "---\ndescription: Another command\n---\ncontent\n", encoding="utf-8",
+    )
+    (generic_extension / ".extensionignore").write_text(
+        "commands/other.md\n", encoding="utf-8",
+    )
+    with pytest.raises(ExtensionError, match="missing invocation artifacts"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+
+    assert config.read_text(encoding="utf-8") == "user: preserved\n"
+    assert (config.parent / ".keep-config").exists()
+    assert not (config.parent / "extension.yml").exists()
+    assert not (project / ".custom/commands/speckit.sample.run.md").exists()
+    (generic_extension / ".extensionignore").unlink()
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert config.read_text(encoding="utf-8") == "user: preserved\n"
+    assert manager.remove("sample")
+
+
 def test_generic_extension_skills_accepts_project_alias(tmp_path, generic_extension):
     project = generic_project(tmp_path, skills=True)
     alias = tmp_path / "project-alias"
@@ -573,6 +681,40 @@ def test_generic_extension_enable_reports_colliding_user_file(
     assert "Could not register generic invocations" in enabled.output
     assert artifact.read_text(encoding="utf-8") == "user-owned"
     assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+
+
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
+def test_generic_extension_enable_failure_restores_disabled_state(
+    tmp_path, generic_extension, invalid_settings,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands/speckit.sample.run.md"
+    state_file = project / ".specify/integration.json"
+    original_state = state_file.read_bytes()
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        assert runner.invoke(app, ["extension", "disable", "sample"]).exit_code == 0
+        if invalid_settings == "missing":
+            state_file.unlink()
+        else:
+            state_file.write_text("{", encoding="utf-8")
+        result = runner.invoke(app, ["extension", "enable", "sample"])
+        assert result.exit_code == 1
+        assert "Could not register generic invocations" in result.output
+        assert not output.exists()
+        assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+        state_file.write_bytes(original_state)
+        assert runner.invoke(app, ["extension", "enable", "sample"]).exit_code == 0
+        assert output.is_file()
+    finally:
+        os.chdir(old_cwd)
 
 
 class TestGenericIntegration:

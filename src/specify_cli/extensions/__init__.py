@@ -2293,6 +2293,21 @@ class ExtensionManager:
                 output_dir = registration_directory(self.project_root)
             except (OSError, ValueError) as exc:
                 raise ExtensionError(f"Cannot register generic extension commands: {exc}") from exc
+            source_root = source_dir.resolve()
+            for command in manifest.commands:
+                source_file = (source_root / command["file"]).resolve()
+                if not source_file.is_relative_to(source_root) or not source_file.is_file():
+                    raise ExtensionError(
+                        "Cannot register generic extension commands: missing source "
+                        f"'{command['file']}'"
+                    )
+                try:
+                    source_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    raise ExtensionError(
+                        "Cannot register generic extension commands: unreadable source "
+                        f"'{command['file']}': {exc}"
+                    ) from exc
             skills = is_ai_skills_enabled(active_options)
             names = (
                 {self._skill_name_for_command(command["name"]) for command in manifest.commands}
@@ -2805,10 +2820,46 @@ class ExtensionManager:
             manifest, dest_dir, link_outputs=link_commands
         )
         if register_commands and generic_active and manifest.commands:
-            if not registered_commands.get("generic") and not registered_skills:
+            expected = set(names)
+            actual = set(registered_skills if skills else registered_commands.get("generic", []))
+            missing = expected - actual
+            if missing:
+                for name in actual:
+                    path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+                    if path.is_file() or path.is_symlink():
+                        path.unlink()
+                        if skills:
+                            try:
+                                path.parent.rmdir()
+                            except OSError:
+                                pass
+
+                preserved = set(stranded_configs)
+                if did_remove:
+                    backup_dir = self.extensions_dir / ".backup" / manifest.id
+                    if backup_dir.is_dir() and not backup_dir.is_symlink():
+                        for config_file in backup_dir.iterdir():
+                            if (
+                                config_file.is_file()
+                                and not config_file.is_symlink()
+                                and config_file.name.endswith(("-config.yml", "-config.local.yml"))
+                            ):
+                                shutil.copy2(config_file, dest_dir / config_file.name)
+                                preserved.add(config_file.name)
+                if preserved:
+                    for child in dest_dir.iterdir():
+                        if child.name in preserved:
+                            continue
+                        if child.is_dir() and not child.is_symlink():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
+                    (dest_dir / ".keep-config").write_text("", encoding="utf-8")
+                else:
+                    shutil.rmtree(dest_dir)
                 raise ExtensionError(
-                    "Cannot register generic extension commands: no invocation artifacts "
-                    "were written to the configured directory"
+                    "Cannot register generic extension commands: missing invocation "
+                    f"artifacts for {', '.join(sorted(missing))}"
                 )
         generic_hashes = (
             self._generic_artifact_hashes(registered_commands, registered_skills)
