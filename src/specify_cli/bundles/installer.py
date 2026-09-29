@@ -132,11 +132,10 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
-    _check_unowned_pins(project_root, plan, installer, prior_ours | other_tracked)
-
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
     try:
+        _check_unowned_pins(project_root, plan, installer, prior_ours | other_tracked)
         for component in plan.components:
             key = (component.kind, component.id)
             if installer.is_installed(project_root, component):
@@ -264,9 +263,9 @@ def _check_unowned_pins(
     A component tracked by no bundle is skipped and never refreshed (FR-022), so
     skipping it is only correct when it already has the pinned version.
     Otherwise the bundle record would advance while the project keeps running a
-    different version (#4434). Runs before any primitive is touched. Installers
-    without an ``installed_version`` hook, and components whose installed
-    version is unknown, are not checked.
+    different version (#4434). Runs before any primitive is touched. A component
+    whose installed version can't be read fails too, since it can't be shown to
+    match. Installers without an ``installed_version`` hook are not checked.
     """
     installed_version = getattr(installer, "installed_version", None)
     if not callable(installed_version):
@@ -278,11 +277,11 @@ def _check_unowned_pins(
         if not installer.is_installed(project_root, component):
             continue
         actual = installed_version(project_root, component)
-        if actual is not None and not same_version(actual, component.version):
-            mismatches.append(
-                f"{component.kind[:-1]} '{component.id}' to {component.version}, "
-                f"but {actual} is installed"
-            )
+        pinned = f"{component.kind[:-1]} '{component.id}' to {component.version}"
+        if actual is None:
+            mismatches.append(f"{pinned}, but its installed version is unknown")
+        elif not same_version(actual, component.version):
+            mismatches.append(f"{pinned}, but {actual} is installed")
     if mismatches:
         raise BundlerError(
             f"Bundle '{plan.bundle_id}' pins {'; '.join(mismatches)}. Bundles "

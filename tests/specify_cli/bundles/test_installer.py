@@ -492,6 +492,7 @@ def test_refresh_does_not_touch_independently_installed_component(tmp_path: Path
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
     installer.installed.add(("extensions", "ext-a"))
+    installer.versions[("extensions", "ext-a")] = "1.0.0"
 
     result = install_bundle(
         tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
@@ -516,6 +517,7 @@ def test_pre_existing_component_is_not_attributed_or_removed(tmp_path: Path):
     installer = FakeInstaller()
     # Pre-install ext-a independently — no bundle record references it yet.
     installer.installed.add(("extensions", "ext-a"))
+    installer.versions[("extensions", "ext-a")] = "1.0.0"
 
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
 
@@ -570,6 +572,47 @@ def test_refresh_rejects_independently_installed_component_at_other_version(
 
     assert installer.refresh_calls == []
     assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_install_rejects_independently_installed_component_of_unknown_version(
+    tmp_path: Path,
+):
+    # A registry entry without a readable version can't be shown to meet the
+    # pin, and skipping it would recreate the #4434 mismatch.
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+
+    with pytest.raises(
+        BundlerError, match=r"ext-a' to 1\.0\.0, but its installed version is unknown"
+    ):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert installer.install_calls == []
+    assert not records_path(tmp_path).exists()
+
+
+def test_install_converts_raw_pin_check_exception_to_bundler_error(
+    tmp_path: Path,
+):
+    # The pin check runs before anything is installed, but an unreadable
+    # registry (e.g. _WorkflowKindManager failing closed at construction) must
+    # still surface as the clean BundlerError the CLI catches.
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+
+    def boom(project_root, component):
+        raise OSError("workflow registry unreadable")
+
+    installer.installed_version = boom
+    with pytest.raises(BundlerError, match="workflow registry unreadable"):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert installer.install_calls == []
+    assert not records_path(tmp_path).exists()
 
 
 def test_independently_installed_component_at_pinned_version_stays_unowned(
