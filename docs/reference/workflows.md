@@ -593,8 +593,10 @@ and call-boundary contract failures, such as an unavailable target, invalid
 mapped input, cycle, depth limit, or invalid declared output. It does not catch
 step exceptions, expression errors (including `from_json` errors in `input:` or
 `outputs:`), interruptions, or checkpoint failures; those propagate exactly as
-they do at the root. An unavailable step implementation is terminal at every
-boundary. Pauses and explicit aborts always stop execution.
+they do at the root. An unavailable step implementation is terminal where the
+step occurs; at a workflow call it is a reported child failure, whether it is
+detected while binding the target or later. Pauses and explicit aborts always
+stop execution.
 
 Nested composition is allowed, but repeated workflow IDs on the active call
 path are cycles. Diamonds are allowed. The maximum included depth is 16, with

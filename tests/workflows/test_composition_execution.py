@@ -681,6 +681,79 @@ def test_checkpoint_failure_leaves_running_run_not_resumable(
     assert probe["work"] == 1
 
 
+def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypatch):
+    import specify_cli.workflows._execution as execution
+    from specify_cli.workflows._execution import CheckpointError
+
+    items = {}
+    first_committed = threading.Event()
+    second_failed = threading.Event()
+
+    class Sync(StepBase):
+        type_key = "sync"
+
+        def execute(self, config, context):
+            items[threading.current_thread()] = context.item
+            if context.item == 2:
+                assert first_committed.wait(5)
+            return StepResult(output={"value": context.item})
+
+    original_commit = execution.Execution.commit
+    original_write = RunState._atomic_write_json
+
+    def commit(self, *args, **kwargs):
+        item = items.get(threading.current_thread())
+        try:
+            original_commit(self, *args, **kwargs)
+        except CheckpointError:
+            if item == 2:
+                second_failed.set()
+            raise
+        if item == 1 and not first_committed.is_set():
+            # Item 1 committed and released the lock; item 2 now fails its
+            # checkpoint before item 1 emits its completion event.
+            first_committed.set()
+            assert second_failed.wait(5)
+
+    def write(path, data):
+        if items.get(threading.current_thread()) == 2:
+            raise OSError("disk full")
+        original_write(path, data)
+
+    monkeypatch.setitem(STEP_REGISTRY, "sync", Sync())
+    monkeypatch.setattr(execution.Execution, "commit", commit)
+    monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
+    with pytest.raises(CheckpointError):
+        WorkflowEngine(tmp_path).execute(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "fan",
+                        "type": "fan-out",
+                        "items": [1, 2],
+                        "max_concurrency": 2,
+                        "step": {"type": "sync"},
+                    }
+                ],
+            ),
+            run_id="concurrent-fault",
+        )
+
+    assert second_failed.is_set()
+    log = tmp_path / ".specify/workflows/runs/concurrent-fault/log.jsonl"
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    item_events = [
+        (entry["event"], entry["step_id"])
+        for entry in events
+        if entry.get("step_id", "").startswith("fan:")
+    ]
+    assert sorted(item_events) == [
+        ("step_started", "fan:item:0"),
+        ("step_started", "fan:item:1"),
+    ]
+
+
 def test_completion_log_failure_does_not_replay_committed_step(
     tmp_path, monkeypatch, probe
 ):
@@ -1540,7 +1613,7 @@ def test_only_resolver_contract_errors_are_call_failures(
 @pytest.mark.parametrize(
     "child_continue, call_continue", [(False, False), (True, False), (False, True)]
 )
-def test_unknown_child_step_always_fails_despite_continue_on_error(
+def test_unknown_child_step_is_a_reported_call_failure(
     tmp_path, monkeypatch, probe, child_continue, call_continue
 ):
     class TemporarilyInstalled(StepBase):
@@ -1582,17 +1655,94 @@ def test_unknown_child_step_always_fails_despite_continue_on_error(
     monkeypatch.delitem(STEP_REGISTRY, "temporarily-installed")
     state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
-    assert state.status == RunStatus.FAILED
-    assert state.error == "Unknown step type: 'temporarily-installed'"
-    assert probe == {"wait": 2}
+    error = "Unknown step type: 'temporarily-installed'"
     events = [entry["event"] for entry in state.log_entries]
-    assert "step_failed" in events
-    assert "step_continue_on_error" not in events
+    # The missing step itself is terminal inside the child, as at the root.
     assert [
         entry["event"]
         for entry in state.log_entries
         if entry.get("step_id") == "missing" and entry.get("workflow_id") == "child"
     ] == ["step_started", "step_failed"]
+    if call_continue:
+        # At the call boundary it is a reported child failure.
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["call"]["status"] == "failed"
+        assert state.step_results["call"]["output"]["error"] == error
+        assert probe == {"wait": 2, "after": 1}
+        assert "step_continue_on_error" in events
+    else:
+        assert state.status == RunStatus.FAILED
+        assert state.error == error
+        assert probe == {"wait": 2}
+        assert "step_continue_on_error" not in events
+
+
+@pytest.mark.parametrize("call_continue", [False, True])
+def test_unknown_child_step_at_bind_is_a_reported_call_failure(
+    tmp_path, monkeypatch, probe, call_continue
+):
+    install(
+        tmp_path,
+        definition("child", [{"id": "missing", "type": "later-installed"}]),
+    )
+    parent = definition(
+        "parent",
+        [call(continue_on_error=call_continue), {"id": "after", "type": "probe"}],
+    )
+    state = WorkflowEngine(tmp_path).execute(parent, run_id="bind")
+
+    assert "invalid type 'later-installed'" in state.step_results["call"]["error"]
+    assert "binding" not in state.execution["sequence"]["nodes"][0]
+    if call_continue:
+        # Same treatment as an implementation that disappears after binding.
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["call"]["status"] == "failed"
+        assert probe == {"after": 1}
+        return
+
+    assert state.status == RunStatus.FAILED
+    assert not probe
+
+    class LaterInstalled(StepBase):
+        type_key = "later-installed"
+
+        def execute(self, config, context):
+            return StepResult(StepStatus.COMPLETED)
+
+    monkeypatch.setitem(STEP_REGISTRY, "later-installed", LaterInstalled())
+    state = WorkflowEngine(tmp_path).resume("bind")
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["status"] == "completed"
+    assert probe == {"after": 1}
+
+
+def test_step_reported_unknown_type_error_is_handled_like_any_failure(
+    tmp_path, monkeypatch, probe
+):
+    class Mimic(StepBase):
+        type_key = "mimic"
+
+        def execute(self, config, context):
+            return StepResult(StepStatus.FAILED, error="Unknown step type: 'mimic'")
+
+    monkeypatch.setitem(STEP_REGISTRY, "mimic", Mimic())
+    install(tmp_path, definition("child", [{"id": "work", "type": "mimic"}]))
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {"id": "direct", "type": "mimic", "continue_on_error": True},
+                call(continue_on_error=True),
+                {"id": "after", "type": "probe"},
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["direct"]["status"] == "failed"
+    assert state.step_results["call"]["status"] == "failed"
+    assert probe == {"after": 1}
 
 
 def test_unknown_step_type_resumes_after_reinstall(tmp_path, monkeypatch, probe):

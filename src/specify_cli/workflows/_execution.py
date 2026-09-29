@@ -26,16 +26,8 @@ from .expressions import evaluate_condition, evaluate_expression
 
 HALTING = {"paused", "failed", "aborted"}
 
-UNKNOWN_STEP_PREFIX = "Unknown step type: "
-
-
 def unknown_step_error(kind):
-    return f"{UNKNOWN_STEP_PREFIX}{kind!r}"
-
-
-def is_unknown_step_error(error):
-    """A missing implementation stays terminal across workflow boundaries."""
-    return isinstance(error, str) and error.startswith(UNKNOWN_STEP_PREFIX)
+    return f"Unknown step type: {kind!r}"
 
 
 class CheckpointError(RuntimeError):
@@ -774,10 +766,6 @@ class Execution:
             else StepStatus.FAILED
         )
         result = StepResult(status, output=output, error=error)
-        # An unavailable child implementation is terminal at every workflow
-        # boundary, matching direct execution of the same step.
-        if is_unknown_step_error(result.error):
-            config = {**config, "continue_on_error": False}
         return self.finish(
             config,
             node,

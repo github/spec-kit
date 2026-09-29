@@ -712,9 +712,9 @@ class RunState:
         # Reentrant so an execution transition can update views and call save()
         # under the same lock. Step implementations run outside that lock.
         # Serializes append_log's list append + log.jsonl write so concurrent
-        # fan-out workers cannot interleave or corrupt log lines. Kept separate
-        # from _lock so frequent logging never contends with state saves; since
-        # append_log is never called while _lock is held, the two never nest.
+        # fan-out workers cannot interleave or corrupt log lines. append_log
+        # takes _lock first to observe a checkpoint failure atomically, so the
+        # order is always _lock -> _log_lock and the two cannot deadlock.
         self._log_lock = threading.Lock()
         self.inputs: dict[str, Any] = {}
         self.workflow_dir: str | None = None
@@ -928,14 +928,21 @@ class RunState:
 
         Held under ``_log_lock`` so concurrent fan-out workers serialize their
         list append and ``log.jsonl`` write rather than interleaving lines.
+        The checkpoint-failure check shares ``_lock`` with ``save()``, so no
+        worker can log once any checkpoint of this run has failed.
         """
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
-        with self._log_lock:
-            self.log_entries.append(entry)
-            with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry) + "\n")
+        with self._lock:
+            if self._checkpoint_failed:
+                from ._execution import CheckpointError
+
+                raise CheckpointError("A previous checkpoint failed; reload the run")
+            with self._log_lock:
+                self.log_entries.append(entry)
+                with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
 
 
 # -- Workflow Engine ------------------------------------------------------
