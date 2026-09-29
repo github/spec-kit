@@ -83,10 +83,32 @@ function Test-SpecPrefixInUse {
         Select-Object -First 1)
 }
 
+function ConvertTo-AsciiLower {
+    param([string]$Name)
+
+    return [regex]::Replace($Name, '[A-Z]', { param($match) $match.Value.ToLowerInvariant() })
+}
+
+function ConvertTo-UnicodeWords {
+    param([string]$Name, [string]$Separator)
+
+    $lowerName = ConvertTo-AsciiLower -Name $Name
+    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{N}]', {
+        param($match)
+        if ($match.Length -eq 2) {
+            $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0)
+            if ($category.ToString() -match '(Letter|Number)$') {
+                return $match.Value
+            }
+        }
+        return $Separator
+    })
+}
+
 function ConvertTo-CleanBranchName {
     param([string]$Name)
 
-    return $Name.ToLower() -replace '[^\p{L}\p{N}]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+    return (ConvertTo-UnicodeWords -Name $Name -Separator '-') -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 
 function Get-FittedBranchName {
@@ -96,10 +118,15 @@ function Get-FittedBranchName {
     )
 
     $fittedName = "$FeatureNum-$BranchSuffix"
-    if ($fittedName.Length -gt $maxBranchLength) {
+    if ([System.Text.Encoding]::UTF8.GetByteCount($fittedName) -gt $maxBranchLength) {
         $prefixLength = $FeatureNum.Length + 1
         $maxSuffixLength = $maxBranchLength - $prefixLength
-        $truncatedSuffix = $BranchSuffix.Substring(0, [Math]::Min($BranchSuffix.Length, $maxSuffixLength))
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($BranchSuffix)
+        $bytesToUse = $maxSuffixLength
+        while ($bytesToUse -gt 0 -and ($bytes[$bytesToUse] -band 0xC0) -eq 0x80) {
+            $bytesToUse--
+        }
+        $truncatedSuffix = [System.Text.Encoding]::UTF8.GetString($bytes, 0, $bytesToUse)
         $truncatedSuffix = $truncatedSuffix -replace '-$', ''
         $fittedName = "$FeatureNum-$truncatedSuffix"
     }
@@ -132,8 +159,8 @@ function Get-BranchName {
         'want', 'need', 'add', 'get', 'set'
     )
 
-    # Convert to lowercase and extract Unicode words.
-    $cleanName = $Description.ToLower() -replace '[^\p{L}\p{N}\s]', ' '
+    # Lowercase ASCII and extract Unicode words, matching the shell variant.
+    $cleanName = ConvertTo-UnicodeWords -Name $Description -Separator ' '
     $words = $cleanName -split '\s+' | Where-Object { $_ }
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
@@ -142,8 +169,9 @@ function Get-BranchName {
         # Skip stop words
         if ($stopWords -contains $word) { continue }
 
-        # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
-        if ($word.Length -ge 3) {
+        # Keep Unicode words even when short; ASCII words still need three
+        # characters or an uppercase acronym in the original.
+        if ($word.Length -ge 3 -or $word -match '[^\x00-\x7F]') {
             $meaningfulWords += $word
         } elseif ($Description -cmatch "(?<![0-9A-Za-z_])$($word.ToUpper())(?![0-9A-Za-z_])") {
             # Keep short words only if they appear as uppercase in original (likely
@@ -180,7 +208,7 @@ if ($ShortName) {
 }
 
 if (-not $branchSuffix) {
-    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with ASCII letters or digits (for example, user-auth).")
+    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with letters or digits (for example, user-auth).")
 }
 
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
@@ -252,8 +280,8 @@ $originalBranchName = "$featureNum-$branchSuffix"
 $branchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
 if ($branchName -ne $originalBranchName) {
     [Console]::Error.WriteLine("[specify] Warning: Branch name exceeded GitHub's 244-byte limit")
-    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)")
-    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($($branchName.Length) bytes)")
+    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($([System.Text.Encoding]::UTF8.GetByteCount($originalBranchName)) bytes)")
+    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($([System.Text.Encoding]::UTF8.GetByteCount($branchName)) bytes)")
 }
 
 $featureDir = Join-Path $specsDir $branchName

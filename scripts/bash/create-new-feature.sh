@@ -146,16 +146,35 @@ spec_prefix_exists() {
 
 # Function to clean and format a branch name
 #
-# Three details keep this byte-identical to the Python and PowerShell twins:
-#   * LC_ALL=C -- the character classes below only replace separators, leaving
-#     UTF-8 letters and digits intact without depending on locale collation.
+# Three details keep this consistent with the Python and PowerShell twins:
+#   * A UTF-8 locale makes [:alnum:] recognize Unicode letters and digits.
 #   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
 #     '+', leaving repeated separators uncollapsed on macOS.
 #   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
+UNICODE_LOCALE=""
+for candidate in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"; do
+    if [ -n "$candidate" ] && [ "$(printf 'é。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é-' ]; then
+        UNICODE_LOCALE="$candidate"
+        break
+    fi
+done
+
+if [ -z "$UNICODE_LOCALE" ]; then
+    UNICODE_LOCALE=C
+    if printf '%s' "${SHORT_NAME:-$FEATURE_DESCRIPTION}" | LC_ALL=C grep -q '[^ -~]'; then
+        echo "Error: A UTF-8 locale is required to create a Unicode feature name" >&2
+        exit 1
+    fi
+fi
+
 clean_branch_name() {
     local name="$1"
-    local -x LC_ALL=C
-    printf '%s\n' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:][:punct:]]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+    local -x LC_ALL="$UNICODE_LOCALE"
+    printf '%s\n' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+}
+
+branch_byte_count() {
+    printf '%s' "$1" | wc -c | tr -d '[:space:]'
 }
 
 # Fit a feature prefix and suffix within GitHub's branch-name limit.
@@ -164,11 +183,16 @@ fit_branch_name() {
     local branch_suffix="$2"
     local branch_name="${feature_num}-${branch_suffix}"
 
-    if [ ${#branch_name} -gt $MAX_BRANCH_LENGTH ]; then
+    if [ "$(branch_byte_count "$branch_name")" -gt "$MAX_BRANCH_LENGTH" ]; then
         local prefix_length=$(( ${#feature_num} + 1 ))
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
         local truncated_suffix
-        truncated_suffix=$(printf '%s' "$branch_suffix" | cut -c "1-$max_suffix_length" | sed 's/-$//')
+        local -x LC_ALL="$UNICODE_LOCALE"
+        truncated_suffix="${branch_suffix:0:$max_suffix_length}"
+        while [ "$(branch_byte_count "$truncated_suffix")" -gt "$max_suffix_length" ]; do
+            truncated_suffix="${truncated_suffix%?}"
+        done
+        truncated_suffix="${truncated_suffix%-}"
         branch_name="${feature_num}-${truncated_suffix}"
     fi
 
@@ -208,12 +232,10 @@ generate_branch_name() {
     # Common stop words to filter out
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
 
-    # Convert to lowercase and split into words. LC_ALL=C keeps ASCII
-    # punctuation handling stable while non-ASCII words remain intact, and so the `grep -qw`
-    # acronym probe below uses ASCII word boundaries like the Python twin's
-    # (?<![0-9A-Za-z_]) lookarounds.
-    local -x LC_ALL=C
-    local clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:][:punct:]]/ /g')
+    # Use a UTF-8 locale for Unicode character classes. Lowercase only ASCII
+    # so results do not depend on the platform's multibyte case conversion.
+    local -x LC_ALL="$UNICODE_LOCALE"
+    local clean_name=$(printf '%s\n' "$description" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]/ /g')
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     local meaningful_words=()
@@ -221,14 +243,14 @@ generate_branch_name() {
         # Skip empty words
         [ -z "$word" ] && continue
 
-        # Keep words that are NOT stop words AND (length >= 3 OR are potential acronyms)
+        # Retain non-ASCII words even when shorter than three characters.
         if ! echo "$word" | grep -qiE "$stop_words"; then
-            if [ ${#word} -ge 3 ]; then
+            if [ ${#word} -ge 3 ] || printf '%s' "$word" | LC_ALL=C grep -q '[^ -~]'; then
                 meaningful_words+=("$word")
             # Keep short words that appear as an uppercase acronym in the original.
             # Uppercase via tr and match with grep -w (both portable) rather than
             # bash's 4+ "^^" case expansion (breaks on macOS bash 3.2) and \b (non-POSIX).
-            elif printf '%s' "$description" | grep -qw -- "$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')"; then
+            elif printf '%s' "$description" | LC_ALL=C grep -qw -- "$(printf '%s' "$word" | LC_ALL=C tr '[:lower:]' '[:upper:]')"; then
                 meaningful_words+=("$word")
             fi
         fi
@@ -265,7 +287,7 @@ else
 fi
 
 if [ -z "$BRANCH_SUFFIX" ]; then
-    echo "[specify] Warning: Feature name is empty after removing unsupported characters. Use --short-name with ASCII letters or digits (for example, user-auth)." >&2
+    echo "[specify] Warning: Feature name is empty after removing unsupported characters. Use --short-name with letters or digits (for example, user-auth)." >&2
 fi
 
 # Warn if --number and --timestamp are both specified
@@ -338,8 +360,8 @@ ORIGINAL_BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 BRANCH_NAME=$(fit_branch_name "$FEATURE_NUM" "$BRANCH_SUFFIX")
 if [ "$BRANCH_NAME" != "$ORIGINAL_BRANCH_NAME" ]; then
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
+    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME ($(branch_byte_count "$ORIGINAL_BRANCH_NAME") bytes)"
+    >&2 echo "[specify] Truncated to: $BRANCH_NAME ($(branch_byte_count "$BRANCH_NAME") bytes)"
 fi
 
 FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"

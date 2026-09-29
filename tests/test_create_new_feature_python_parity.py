@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -72,11 +73,11 @@ def repo_pair(tmp_path: Path) -> tuple[Path, Path]:
 @pytest.mark.parametrize(
     "description,short_name,suffix,warns",
     [
-        ("添加用户", None, "", True),
-        ("добавить", None, "", True),
+        ("添加用户", None, "添加用户", False),
+        ("добавить", None, "добавить", False),
         ("!!! ??? ***", None, "", True),
         ("添加用户", "user-auth", "user-auth", False),
-        ("Add users", "用户", "", True),
+        ("Add users", "用户", "用户", False),
         ("Add user authentication", None, "user-authentication", False),
     ],
 )
@@ -89,7 +90,7 @@ def test_empty_feature_name_warning(
     suffix: str,
     warns: bool,
 ) -> None:
-    """Report unusable names without changing JSON or feature creation (#4574)."""
+    """Preserve UTF-8 names and warn only when no name remains (#4574)."""
     powershell = variant == "powershell"
     args = ["-Json" if powershell else "--json"]
     if dry_run:
@@ -107,7 +108,7 @@ def test_empty_feature_name_warning(
     assert result.stderr.count(warning) == int(warns)
     if warns:
         assert ("-ShortName" if powershell else "--short-name") in result.stderr
-        assert "ASCII letters or digits" in result.stderr
+        assert "letters or digits" in result.stderr
     assert (repo / "specs" / f"001-{suffix}" / "spec.md").exists() is not dry_run
 
 
@@ -173,10 +174,8 @@ def test_python_prefix_scan_tolerates_permission_error(
         "I want to add the new API rate limiting feature for users",
         "Fix UI for DB sync",
         "a to the of",
-        # An acronym touching an accented letter: bash probes with `grep -qw`
-        # under LC_ALL=C, where the accent is a word boundary, so the Python
-        # twin must use explicit ASCII lookarounds rather than a Unicode \b.
         "Fix \u00e9DB\u00e9 sync",
+        "Ajouter la réservation hôtelière",
     ],
     ids=[
         "plain",
@@ -184,6 +183,7 @@ def test_python_prefix_scan_tolerates_permission_error(
         "acronyms",
         "all_stop_words_fallback",
         "acronym_next_to_non_ascii",
+        "accented_words",
     ],
 )
 def test_python_branch_name_generation_matches_bash(
@@ -199,22 +199,25 @@ def test_python_branch_name_generation_matches_bash(
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_all_variants_keep_acronym_next_to_non_ascii(repo: Path) -> None:
-    """An acronym touching an accented letter survives in all three twins.
-
-    bash probes for acronyms with `grep -qw` under LC_ALL=C, where an accented
-    letter is a non-word byte and therefore a boundary. Python's \\b and .NET's
-    \\b are Unicode-aware and saw "\u00e9DB\u00e9" as a single word, dropping the
-    acronym; all three now spell the boundary out as ASCII.
-    """
-    description = "Fix \u00e9DB\u00e9 sync"
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Fix éDBé sync", "001-fix-édbé-sync"),
+        ("É DB sync", "001-É-db-sync"),
+        ("é DB sync", "001-é-db-sync"),
+    ],
+)
+def test_all_variants_keep_acronym_next_to_non_ascii(
+    repo: Path, description: str, expected: str
+) -> None:
+    """Unicode words and adjacent ASCII acronyms survive together."""
     bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
     py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
     ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
 
     assert bash.returncode == py.returncode == ps.returncode == 0
     assert json_stdout(py) == json_stdout(bash) == json_stdout(ps)
-    assert json_stdout(ps)["BRANCH_NAME"] == "001-fix-db-sync"
+    assert json_stdout(ps)["BRANCH_NAME"] == expected
 
 
 @requires_bash
@@ -1166,7 +1169,7 @@ def test_all_variants_corrected_prefix_skips_timestamp_collision(repo: Path) -> 
 def test_bash_branch_name_ignores_locale_collation(
     repo: Path, description: str
 ) -> None:
-    """Branch naming preserves Unicode letters across the script twins."""
+    """Branch naming preserves each description's Unicode words across locales."""
     locale_name = collation_range_locale()
     if locale_name is None:
         pytest.skip("no locale with collation-ordered [a-z] ranges available")
@@ -1181,10 +1184,13 @@ def test_bash_branch_name_ignores_locale_collation(
     assert py.returncode == bash.returncode == 0
     assert json_stdout(py) == json_stdout(bash)
     branch = json_stdout(bash)["BRANCH_NAME"]
-    assert isinstance(branch, str) and "réservation" in branch, branch
+    assert isinstance(branch, str) and branch == {
+        "Añadir autenticación de usuario": "001-añadir-autenticación-usuario",
+        "Prüfung für Benutzer anlegen": "001-prüfung-für-benutzer-anlegen",
+        "Ajouter la réservation hôtelière": "001-ajouter-réservation-hôtelière",
+    }[description]
 
-    # The run above reaches generate_branch_name. --short-name reaches
-    # clean_branch_name, a separate function, so exercise both paths.
+    # Both the generated and explicit-name paths must retain the input's words.
     short_args = ("--json", "--dry-run", "--short-name", description, "x")
     bash_short = run(bash_cmd(repo, SCRIPT, *short_args), repo, env)
     py_short = run(py_cmd(repo, SCRIPT, *short_args), repo, env)
@@ -1192,7 +1198,11 @@ def test_bash_branch_name_ignores_locale_collation(
     assert py_short.returncode == bash_short.returncode == 0
     assert json_stdout(py_short) == json_stdout(bash_short)
     short_branch = json_stdout(bash_short)["BRANCH_NAME"]
-    assert isinstance(short_branch, str) and "réservation" in short_branch, short_branch
+    assert isinstance(short_branch, str) and short_branch == {
+        "Añadir autenticación de usuario": "001-añadir-autenticación-de-usuario",
+        "Prüfung für Benutzer anlegen": "001-prüfung-für-benutzer-anlegen",
+        "Ajouter la réservation hôtelière": "001-ajouter-la-réservation-hôtelière",
+    }[description]
 
 
 @requires_bash
@@ -1250,14 +1260,18 @@ def test_python_dash_prefixed_short_name_matches_bash(
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize(
-    "description",
-    ["!!! ??? ***", "добавить", "添加用户"],
+    ("description", "expected"),
+    [
+        ("!!! ??? ***", "001-"),
+        ("добавить", "001-добавить"),
+        ("添加用户", "001-添加用户"),
+    ],
     ids=["punctuation_only", "cyrillic", "han"],
 )
 def test_powershell_preserves_unicode_description(
-    tmp_path: Path, description: str
+    tmp_path: Path, description: str, expected: str
 ):
-    """Descriptions using Unicode letters produce a usable branch suffix."""
+    """Non-Latin descriptions are usable; punctuation alone still warns."""
     repo = _setup_repo(tmp_path)
 
     ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
@@ -1265,23 +1279,38 @@ def test_powershell_preserves_unicode_description(
     assert ps.returncode == 0, ps.stderr
     assert "ArgumentNullException" not in ps.stderr
     assert "Join" not in ps.stderr
-    expected = "001-" if description.startswith("!") else f"001-{description}"
     assert json_stdout(ps)["BRANCH_NAME"] == expected
 
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
-    """All three twins agree on the Unicode branch name."""
-    description = "добавить"
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("добавить", "001-добавить"),
+        ("给倒推引擎加正推能力", "001-给倒推引擎加正推能力"),
+        ("客户邮件。审核队列", "001-客户邮件-审核队列"),
+        ("ПРИВЕТ", "001-ПРИВЕТ"),
+        ("𠀀𠀁。功能", "001-𠀀𠀁-功能"),
+        ("😀!!!", "001-"),
+    ],
+)
+def test_no_ascii_word_description_matches_across_twins(
+    tmp_path: Path, description: str, expected: str
+):
+    """All three twins agree on UTF-8 feature names and separators."""
 
     bash_repo = _setup_repo(tmp_path, "b")
     py_repo = _setup_repo(tmp_path, "p")
     ps_repo = _setup_repo(tmp_path, "s")
 
-    bash = run(bash_cmd(bash_repo, SCRIPT, "--json", "--dry-run", description), bash_repo)
-    py = run(py_cmd(py_repo, SCRIPT, "--json", "--dry-run", description), py_repo)
-    ps = run(ps_cmd(ps_repo, SCRIPT, "-Json", "-DryRun", description), ps_repo)
+    env = clean_env()
+    env["LC_ALL"] = env["LANG"] = "C"
+    bash = run(
+        bash_cmd(bash_repo, SCRIPT, "--json", "--dry-run", description), bash_repo, env
+    )
+    py = run(py_cmd(py_repo, SCRIPT, "--json", "--dry-run", description), py_repo, env)
+    ps = run(ps_cmd(ps_repo, SCRIPT, "-Json", "-DryRun", description), ps_repo, env)
 
     assert bash.returncode == py.returncode == ps.returncode == 0, (
         bash.stderr, py.stderr, ps.stderr,
@@ -1291,4 +1320,39 @@ def test_no_ascii_word_description_matches_across_twins(tmp_path: Path):
         json_stdout(py)["BRANCH_NAME"],
         json_stdout(ps)["BRANCH_NAME"],
     }
-    assert names == {"001-добавить"}, names
+    assert names == {expected}, names
+
+
+@requires_bash
+@pytest.mark.parametrize("variant", ["bash", "python", "powershell"])
+@pytest.mark.parametrize(
+    ("short_name", "expected_suffix"),
+    [
+        ("客" * 100, "客" * 80),
+        ("a" + "客" * 80, "a" + "客" * 79),
+    ],
+    ids=["exact_boundary", "partial_codepoint"],
+)
+def test_unicode_branch_name_fits_244_bytes(
+    repo: Path, variant: str, short_name: str, expected_suffix: str
+) -> None:
+    """Long UTF-8 names remain valid Git refs within GitHub's byte limit."""
+    if variant == "powershell" and not HAS_POWERSHELL:
+        pytest.skip("no PowerShell available")
+    powershell = variant == "powershell"
+    args = (
+        ("-Json", "-DryRun", "-ShortName", short_name, "x")
+        if powershell
+        else ("--json", "--dry-run", "--short-name", short_name, "x")
+    )
+    command = {"bash": bash_cmd, "python": py_cmd, "powershell": ps_cmd}[variant]
+    result = run(command(repo, SCRIPT, *args), repo)
+
+    assert result.returncode == 0, result.stderr
+    branch = json_stdout(result)["BRANCH_NAME"]
+    assert branch == f"001-{expected_suffix}"
+    assert len(branch.encode("utf-8")) <= 244
+    assert "244-byte limit" in result.stderr
+    assert subprocess.run(
+        ["git", "check-ref-format", "--branch", branch], capture_output=True
+    ).returncode == 0

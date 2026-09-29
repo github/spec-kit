@@ -65,20 +65,22 @@ specify init my-project --integration copilot --preset compliance
 ## Naming Features with the Helper Scripts
 
 When calling the bundled `create-new-feature` helper scripts directly, generated
-names retain only ASCII letters and digits. A description entirely in a non-Latin
-script, or made only of punctuation, can therefore produce an empty suffix such
-as `001-`. The scripts warn on stderr when this happens, including during a dry
-run; JSON output remains parseable.
+names retain Unicode letters and digits in UTF-8, so a description such as
+`添加用户` produces `001-添加用户`. Descriptions made only of punctuation can still
+produce an empty suffix such as `001-`; the scripts warn on stderr when this
+happens, including during a dry run. JSON output remains parseable.
 
-Keep the original description and supply a readable ASCII short name:
+To choose a different name, keep the original description and supply a short name:
 
 ```bash
-bash .specify/scripts/bash/create-new-feature.sh --json --short-name user-auth "添加用户"
+bash .specify/scripts/bash/create-new-feature.sh --json --short-name 用户管理 "添加用户"
 ```
 
 The Python helper also accepts `--short-name`; the PowerShell helper uses
 `-ShortName`. A supplied short name is cleaned by the same rules, so it must
-contain at least one ASCII letter or digit.
+contain at least one letter or digit. The Bash helper needs an installed UTF-8
+locale to recognize Unicode letters and digits. ASCII capitals are lowercased;
+non-ASCII letter casing is preserved across the script variants.
 
 ## Check Installed Tools
 
