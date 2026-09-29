@@ -2975,7 +2975,12 @@ class ExtensionManager:
         backup_root = self.extensions_dir / ".backup"
         backup_dir = backup_root / extension_id
         if not keep_config and extension_dir.exists():
-            if backup_root.is_symlink() or backup_dir.is_symlink():
+            if (
+                backup_root.is_symlink()
+                or backup_dir.is_symlink()
+                or (backup_root.exists() and not backup_root.is_dir())
+                or (backup_dir.exists() and not backup_dir.is_dir())
+            ):
                 return False
 
         # Get registered commands and skills before removal

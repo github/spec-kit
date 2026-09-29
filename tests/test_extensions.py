@@ -3344,6 +3344,20 @@ class TestExtensionManager:
         assert not (outside_target / "test-ext-config.yml").exists()
         assert manager.registry.is_installed("test-ext")
 
+    def test_remove_refuses_regular_file_backup_path(self, extension_dir, project_dir):
+        """A non-directory at the backup path must not cause partial removal."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        backup_root = project_dir / ".specify" / "extensions" / ".backup"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        (backup_root / "test-ext").write_text("not a directory")
+
+        assert manager.remove("test-ext", keep_config=False) is False
+        assert ext_dir.exists()
+        assert manager.registry.is_installed("test-ext")
+
     def test_remove_refuses_dangling_symlinked_extension_dir(self, project_dir):
         """A dangling symlink must fail explicitly rather than be silently skipped.
 
