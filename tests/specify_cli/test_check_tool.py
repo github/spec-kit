@@ -17,6 +17,8 @@ class TestCheckToolClaude:
         """claude migrate-installer puts binary at ~/.claude/local/claude."""
         fake_claude = tmp_path / "claude"
         fake_claude.touch()
+        # Availability checks the execute bit, so model a real (executable) install.
+        fake_claude.chmod(0o755)
 
         # Ensure npm-local path is missing so we only exercise migrate-installer path
         fake_missing = tmp_path / "nonexistent" / "claude"
@@ -33,6 +35,8 @@ class TestCheckToolClaude:
         fake_npm_claude = tmp_path / "node_modules" / ".bin" / "claude"
         fake_npm_claude.parent.mkdir(parents=True)
         fake_npm_claude.touch()
+        # Availability checks the execute bit, so model a real (executable) install.
+        fake_npm_claude.chmod(0o755)
 
         # Neither the migrate-installer path nor PATH has claude
         fake_migrate = tmp_path / "nonexistent" / "claude"
@@ -71,6 +75,8 @@ class TestCheckToolClaude:
         fake_npm_claude = tmp_path / "node_modules" / ".bin" / "claude"
         fake_npm_claude.parent.mkdir(parents=True)
         fake_npm_claude.touch()
+        # Availability checks the execute bit, so model a real (executable) install.
+        fake_npm_claude.chmod(0o755)
 
         fake_missing = tmp_path / "nonexistent" / "claude"
         tracker = MagicMock()
