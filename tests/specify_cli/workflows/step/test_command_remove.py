@@ -2,10 +2,214 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import threading
+from pathlib import Path
 
 import pytest
 
+from tests.lock_helpers import wait_until_blocked_or_done, watch_lock_attempt
+
+
+def _write_package(package_dir: Path, type_key: str) -> Path:
+    package_dir.mkdir(parents=True, exist_ok=True)
+    (package_dir / "step.yml").write_text(
+        f"step:\n  type_key: {type_key}\n  name: {type_key}\n  version: 0.1.0\n",
+        encoding="utf-8",
+    )
+    (package_dir / "__init__.py").write_text("# init\n", encoding="utf-8")
+    return package_dir
+
+
+def _steps_dir(project_dir: Path) -> Path:
+    return project_dir / ".specify" / "workflows" / "steps"
+
+
+def _registered_ids(project_dir: Path) -> set[str]:
+    path = _steps_dir(project_dir) / "step-registry.json"
+    return set(json.loads(path.read_text(encoding="utf-8"))["steps"])
+
+
+def _install(project_dir: Path, tmp_path: Path, step_id: str) -> None:
+    from specify_cli.workflows.step import installer
+
+    pkg = _write_package(tmp_path / f"pkg-{step_id}", step_id)
+    installer.install_step_package(project_dir, step_id, pkg, source="local")
+
+
+class _Worker(threading.Thread):
+    """Run ``target`` in a named thread and record its exception, if any."""
+
+    def __init__(self, name, target):
+        super().__init__(name=name, daemon=True)
+        self._target_fn = target
+        self.done = threading.Event()
+        self.error: BaseException | None = None
+
+    def run(self):
+        try:
+            self._target_fn()
+        except BaseException as exc:  # noqa: BLE001 - asserted by the test
+            self.error = exc
+        finally:
+            self.done.set()
+
+
+class TestWorkflowStepRemoveLocking:
+    """`step remove` must share the install lock with `step add`."""
+
+    def test_remove_waiting_on_install_does_not_resurrect_entry(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        """Install of `new` holds the lock while `old` is removed.
+
+        Without the lock, the installer's stale `{old}` snapshot is saved as
+        `{old, new}` after removal persisted `{}`, resurrecting `old` with no
+        directory.
+        """
+        from specify_cli.workflows.step import installer
+        from specify_cli.workflows.step.command_remove import workflow_step_remove
+
+        monkeypatch.chdir(project_dir)
+        _install(project_dir, tmp_path, "old-step")
+        new_pkg = _write_package(tmp_path / "pkg-new", "new-step")
+
+        installer_inside = threading.Event()
+        release_installer = threading.Event()
+        real_replace = installer._replace_install
+
+        def _paused_replace(*args, **kwargs):
+            if threading.current_thread().name == "installer":
+                installer_inside.set()
+                if not release_installer.wait(10):
+                    raise AssertionError("installer was never released")
+            return real_replace(*args, **kwargs)
+
+        monkeypatch.setattr(installer, "_replace_install", _paused_replace)
+        remover_attempted = watch_lock_attempt(monkeypatch, "remover")
+
+        install_thread = _Worker(
+            "installer",
+            lambda: installer.install_step_package(
+                project_dir, "new-step", new_pkg, source="local"
+            ),
+        )
+        remove_thread = _Worker("remover", lambda: workflow_step_remove("old-step"))
+
+        install_thread.start()
+        assert installer_inside.wait(10), "installer never reached the lock"
+        remove_thread.start()
+        wait_until_blocked_or_done(remover_attempted, remove_thread.done)
+        release_installer.set()
+        install_thread.join(10)
+        remove_thread.join(10)
+
+        assert install_thread.error is None
+        assert remove_thread.error is None
+        assert _registered_ids(project_dir) == {"new-step"}
+        assert not (_steps_dir(project_dir) / "old-step").exists()
+        assert (_steps_dir(project_dir) / "new-step").is_dir()
+
+    def test_install_waiting_on_remove_is_not_unregistered(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        """Removal of `old` holds the lock while `new` is installed.
+
+        Without the lock, removal's stale `{old}` snapshot is saved as `{}`
+        after the installer persisted `{old, new}`, leaving `new` on disk but
+        unregistered.
+        """
+        from specify_cli.workflows.step import installer
+        from specify_cli.workflows.step.catalog import StepRegistry
+        from specify_cli.workflows.step.command_remove import workflow_step_remove
+
+        monkeypatch.chdir(project_dir)
+        _install(project_dir, tmp_path, "old-step")
+        new_pkg = _write_package(tmp_path / "pkg-new", "new-step")
+
+        remover_inside = threading.Event()
+        release_remover = threading.Event()
+        real_remove = StepRegistry.remove
+
+        def _paused_remove(self, step_id):
+            if threading.current_thread().name == "remover":
+                remover_inside.set()
+                if not release_remover.wait(10):
+                    raise AssertionError("remover was never released")
+            return real_remove(self, step_id)
+
+        monkeypatch.setattr(StepRegistry, "remove", _paused_remove)
+        installer_attempted = watch_lock_attempt(monkeypatch, "installer")
+
+        remove_thread = _Worker("remover", lambda: workflow_step_remove("old-step"))
+        install_thread = _Worker(
+            "installer",
+            lambda: installer.install_step_package(
+                project_dir, "new-step", new_pkg, source="local"
+            ),
+        )
+
+        remove_thread.start()
+        assert remover_inside.wait(10), "remover never reached the registry update"
+        install_thread.start()
+        wait_until_blocked_or_done(installer_attempted, install_thread.done)
+        release_remover.set()
+        remove_thread.join(10)
+        install_thread.join(10)
+
+        assert remove_thread.error is None
+        assert install_thread.error is None
+        assert _registered_ids(project_dir) == {"new-step"}
+        assert not (_steps_dir(project_dir) / "old-step").exists()
+        assert (_steps_dir(project_dir) / "new-step").is_dir()
+
+    def test_remove_fails_cleanly_when_lock_cannot_be_acquired(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        _install(project_dir, tmp_path, "my-step")
+        # A directory at the lock path cannot be opened as the lock file.
+        lock_path = project_dir / ".specify" / ".step-install.lock"
+        if lock_path.exists():
+            lock_path.unlink()
+        lock_path.mkdir()
+
+        result = CliRunner().invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 1, result.output
+        assert "Failed to lock step removal" in result.output
+        assert _registered_ids(project_dir) == {"my-step"}
+        assert (_steps_dir(project_dir) / "my-step").is_dir()
+
+    def test_remove_restores_registry_entry_when_directory_delete_fails(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        _install(project_dir, tmp_path, "my-step")
+        step_dir = (_steps_dir(project_dir) / "my-step").resolve()
+        real_rmtree = shutil.rmtree
+
+        def _failing_rmtree(path, *args, **kwargs):
+            if Path(path).resolve() == step_dir:
+                raise OSError("simulated delete failure")
+            return real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", _failing_rmtree)
+
+        result = CliRunner().invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 1, result.output
+        assert "Failed to remove step directory" in result.output
+        assert _registered_ids(project_dir) == {"my-step"}
+        assert step_dir.is_dir()
 
 
 class TestWorkflowStepRemoveCLI:

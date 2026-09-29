@@ -80,62 +80,21 @@ class StepInstallError(Exception):
 
 @contextlib.contextmanager
 def _step_install_transaction(project_root: Path):
-    """Serialize step directory swaps with their registry updates."""
-    from ...shared_infra import _ensure_safe_shared_directory
+    """Serialize step directory and registry mutations (install and remove)."""
+    from ...shared_infra import _exclusive_project_lock
 
-    lock_dir = Path(project_root) / ".specify"
-    try:
-        _ensure_safe_shared_directory(
-            Path(project_root), lock_dir, context="step install lock directory"
-        )
-    except ValueError as exc:
-        raise StepInstallError(str(exc)) from exc
-    lock_file = lock_dir / ".step-install.lock"
-    if lock_file.is_symlink():
-        raise StepInstallError(f"Refusing to use symlinked step install lock: {lock_file}")
-
-    flags = os.O_RDWR | os.O_CREAT
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    try:
-        fd = os.open(lock_file, flags, 0o600)
-    except OSError as exc:
-        raise StepInstallError(f"Failed to open step install lock: {exc}") from exc
-    try:
-        if lock_file.is_symlink():
-            raise StepInstallError(
-                f"Refusing to use symlinked step install lock: {lock_file}"
-            )
-        if os.name == "nt":
-            import errno
-            import msvcrt
-            import time
-
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b"\0")
-            while True:
-                os.lseek(fd, 0, os.SEEK_SET)
-                try:
-                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError as exc:
-                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
-                        raise
-                    time.sleep(0.05)
-        else:
-            import fcntl
-
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    except StepInstallError:
-        raise
-    except OSError as exc:
-        raise StepInstallError(f"Failed to lock step installation: {exc}") from exc
-    finally:
+    # Only acquisition failures are reported as lock errors; exceptions raised
+    # by the caller's critical section propagate unchanged.
+    with contextlib.ExitStack() as stack:
         try:
-            os.close(fd)
-        except OSError:
-            pass
+            stack.enter_context(
+                _exclusive_project_lock(
+                    Path(project_root), ".step-install.lock", context="step install"
+                )
+            )
+        except OSError as exc:
+            raise StepInstallError(f"Failed to lock step installation: {exc}") from exc
+        yield
 
 
 # ---------------------------------------------------------------------------

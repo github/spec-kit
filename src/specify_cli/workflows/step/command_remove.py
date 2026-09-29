@@ -8,16 +8,16 @@ from . import step_app
 from . import _helpers as step_helpers
 
 
-@step_app.command("remove")
-def workflow_step_remove(
-    step_id: str = cli.typer.Argument(..., help="Step type ID to uninstall"),
-):
-    """Uninstall a custom step type."""
+def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
+    """Remove a step's registry entry and directory while the lock is held.
+
+    The registry and step directory are resolved here, after the lock is
+    acquired, so a concurrent install cannot be lost or resurrected by a stale
+    registry snapshot.
+    """
+    import shutil
+
     from .catalog import StepRegistry, StepValidationError
-
-    project_root = cli._require_specify_project()
-
-    step_helpers._validate_step_id_or_exit(step_id)
 
     registry = StepRegistry(project_root)
     in_registry = registry.is_installed(step_id)
@@ -53,8 +53,6 @@ def workflow_step_remove(
 
     if dir_exists and not in_registry:
         # No registry write needed; just delete the orphaned directory.
-        import shutil
-
         try:
             shutil.rmtree(step_dir)
         except OSError as exc:
@@ -74,8 +72,6 @@ def workflow_step_remove(
             cli.console.print(f"[red]Error:[/red] {exc}")
             raise cli.typer.Exit(1)
         if dir_exists:
-            import shutil
-
             try:
                 shutil.rmtree(step_dir)
             except OSError as exc:
@@ -94,4 +90,29 @@ def workflow_step_remove(
                     f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
                 )
                 raise cli.typer.Exit(1)
+
+
+@step_app.command("remove")
+def workflow_step_remove(
+    step_id: str = cli.typer.Argument(..., help="Step type ID to uninstall"),
+):
+    """Uninstall a custom step type."""
+    from .installer import StepInstallError, _step_install_transaction
+
+    project_root = cli._require_specify_project()
+
+    step_helpers._validate_step_id_or_exit(step_id)
+
+    # Removal mutates the same directory and registry as `step add`, so it
+    # shares the install lock to prevent lost or resurrected registry entries.
+    try:
+        with _step_install_transaction(project_root):
+            _remove_step_locked(project_root, step_id)
+    except StepInstallError as exc:
+        cli.console.print(
+            f"[red]Error:[/red] Failed to lock step removal '{step_id}': "
+            f"{cli._escape_markup(str(exc))}"
+        )
+        raise cli.typer.Exit(1)
+
     cli.console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")

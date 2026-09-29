@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.workflows.step import installer
+from tests.lock_helpers import watch_lock_attempt
 
 
 def _write_package(
@@ -904,7 +905,7 @@ def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
     class Race:
         a_inside = threading.Event()
         release_a = threading.Event()
-        b_attempted_lock = threading.Event()
+        b_attempted_lock: threading.Event
         b_inside_replace = threading.Event()
         outcomes: dict[str, Exception | None] = {}
         thread_a = None
@@ -925,40 +926,7 @@ def _install_race_setup(tmp_path, project_dir, monkeypatch, *, force_b):
         )
 
     monkeypatch.setattr(installer, "_replace_install", _replace)
-    if os.name == "nt":
-        import msvcrt
-
-        real_locking = msvcrt.locking
-
-        def _locking(fd, operation, nbytes):
-            is_installer_b = threading.current_thread().name == "installer-b"
-            try:
-                result = real_locking(fd, operation, nbytes)
-            except OSError:
-                if is_installer_b and operation == msvcrt.LK_NBLCK:
-                    # The non-blocking Windows lock attempt has now confirmed
-                    # contention with installer A.
-                    race.b_attempted_lock.set()
-                raise
-            if is_installer_b and operation == msvcrt.LK_NBLCK:
-                race.b_attempted_lock.set()
-            return result
-
-        monkeypatch.setattr(msvcrt, "locking", _locking)
-    else:
-        import fcntl
-
-        real_flock = fcntl.flock
-
-        def _flock(fd, operation):
-            if (
-                threading.current_thread().name == "installer-b"
-                and operation == fcntl.LOCK_EX
-            ):
-                race.b_attempted_lock.set()
-            return real_flock(fd, operation)
-
-        monkeypatch.setattr(fcntl, "flock", _flock)
+    race.b_attempted_lock = watch_lock_attempt(monkeypatch, "installer-b")
 
     def _install(label, pkg, force):
         try:
