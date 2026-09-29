@@ -208,6 +208,61 @@ def test_generic_skills_remove_with_invalid_settings(
     assert not manager.registry.is_installed("sample")
 
 
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
+@pytest.mark.parametrize("modified", [False, True])
+def test_generic_commands_remove_with_invalid_settings(
+    tmp_path, generic_extension, invalid_settings, modified,
+):
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    command = project / ".custom/commands/speckit.sample.run.md"
+    if modified:
+        command.write_text("user edit", encoding="utf-8")
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "missing":
+        state_file.unlink()
+    else:
+        state_file.write_text("{", encoding="utf-8")
+
+    assert manager.remove("sample")
+    assert command.exists() is modified
+    if modified:
+        assert command.read_text(encoding="utf-8") == "user edit"
+    assert not (project / ".specify/extensions/sample").exists()
+    assert not manager.registry.is_installed("sample")
+
+
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
+def test_generic_commands_cli_remove_with_invalid_settings(
+    tmp_path, generic_extension, invalid_settings,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path)
+    ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
+    command = project / ".custom/commands/speckit.sample.run.md"
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "missing":
+        state_file.unlink()
+    else:
+        state_file.write_text("{", encoding="utf-8")
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(app, ["extension", "remove", "sample", "--force"])
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 0, result.output
+    if invalid_settings == "malformed":
+        assert "event refresh failed" in result.output
+        assert ".specify/integration.json" in result.output
+    assert not command.exists()
+    assert not ExtensionManager(project).registry.is_installed("sample")
+
+
 @pytest.mark.parametrize("skills", [False, True])
 def test_generic_extension_after_cli_init(tmp_path, generic_extension, skills):
     from typer.testing import CliRunner

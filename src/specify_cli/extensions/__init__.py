@@ -3267,11 +3267,13 @@ class ExtensionManager:
 
         # Unregister commands from all AI agents
         if registered_commands:
-            registrar = CommandRegistrar(self.project_root)
             safe_commands = dict(registered_commands)
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
-            registrar.unregister_commands(safe_commands, self.project_root)
+            if safe_commands:
+                CommandRegistrar().unregister_commands(
+                    safe_commands, self.project_root
+                )
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 

@@ -1827,11 +1827,19 @@ def refresh_integration_events(project_root: Path) -> None:
     while a stale native hook may still be active (R3).
     """
     from ..integrations import get_integration
-    from ..integrations._helpers import _read_integration_json, _resolve_integration_options
+    from ..integrations._helpers import _resolve_integration_options
     from ..integrations.manifest import IntegrationManifest
-    from ..integration_state import installed_integration_keys
+    from ..integration_state import installed_integration_keys, try_read_integration_json
 
-    state = _read_integration_json(project_root)
+    state, error = try_read_integration_json(project_root)
+    if error is not None:
+        detail = (
+            f"unsupported schema {error.schema}"
+            if error.kind == "schema_too_new"
+            else f"{error.kind}: {error.detail}"
+        )
+        raise EventRefreshError([(".specify/integration.json", detail)])
+    state = state or {}
     failures: list[tuple[str, str]] = []
     for key in installed_integration_keys(state):
         integration = get_integration(key)
