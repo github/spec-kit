@@ -946,16 +946,17 @@ def test_a_literal_never_reaches_the_resolver():
 def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     """Widening `_INDEXED_SEGMENT` alone must reach the gate.
 
-    `steps.…​.task_list[-1]` is rejected today because `_INDEXED_SEGMENT` — the
-    one place `_resolve_dot_path` says what an index looks like — accepts digits
-    only. Widening it there and nowhere else must be enough; if the gate keeps
-    its own copy of the shape (as `_PATH_SEGMENT` used to), this fails.
+    `steps.…​.task_list[+1]` is rejected today because `_INDEXED_SEGMENT` — the
+    one place `_resolve_dot_path` says what an index looks like — accepts an
+    optional minus sign and digits only. Widening it there and nowhere else must
+    be enough; if the gate keeps its own copy of the shape (as `_PATH_SEGMENT`
+    used to), this fails.
     """
-    path = "steps.tasks.output.task_list[-1].file"
+    path = "steps.tasks.output.task_list[+1].file"
     assert expressions._unresolvable_term(path) is not None
 
     monkeypatch.setattr(
-        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
     )
     assert expressions._unresolvable_term(path) is None
 
