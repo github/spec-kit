@@ -655,7 +655,8 @@ Every source is validated identically before anything is committed:
   from the limits.
 - The installed-package policy permits at most **512 retained entries** (files
   and directories combined), at most **32 levels** of directory nesting, and
-  **50 MiB** of retained content. Excluded entries do not consume this budget.
+  **50 MiB** of retained content. Excluded entries do not consume the
+  entry-count or byte budgets, but their directory depth is still validated.
 - Archive URLs also pass transport/extraction safety limits before package
   validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
   10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
