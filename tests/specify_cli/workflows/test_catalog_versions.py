@@ -20,6 +20,17 @@ from specify_cli.workflows.catalog import (
 runner = CliRunner()
 CURRENT_URL = "https://example.com/current.zip"
 OLD_URL = "https://example.com/old.zip"
+OLD_YAML_URL = "https://example.com/old.yml"
+OLD_WORKFLOW_YAML = b"""schema_version: "1.0"
+workflow:
+  id: history-wf
+  name: History Workflow
+  version: 1.0.0
+steps:
+  - id: first
+    type: gate
+    message: Continue?
+"""
 
 
 def _archive(version: str, workflow_id: str = "history-wf", requires=None) -> bytes:
@@ -239,31 +250,50 @@ def test_exact_add_uses_historical_url_digest_and_requirements(
 def test_exact_yaml_release_verifies_digest_and_version(monkeypatch, project_dir):
     from specify_cli.authentication import http
 
-    yaml_content = b"""schema_version: "1.0"
-workflow:
-  id: history-wf
-  name: History Workflow
-  version: 1.0.0
-steps:
-  - id: first
-    type: gate
-    message: Continue?
-"""
     entry = _entry()
     entry["releases"]["1.0.0"] = {
-        "url": "https://example.com/old.yml",
-        "sha256": hashlib.sha256(yaml_content).hexdigest(),
+        "url": OLD_YAML_URL,
+        "sha256": hashlib.sha256(OLD_WORKFLOW_YAML).hexdigest(),
     }
     _catalog(monkeypatch, project_dir, entry)
     monkeypatch.setattr(
         http,
         "open_url",
-        lambda url, **kw: _Response(yaml_content, url),
+        lambda url, **kw: _Response(OLD_WORKFLOW_YAML, url),
     )
     monkeypatch.chdir(project_dir)
     result = runner.invoke(app, ["workflow", "add", "history-wf", "--version", "1.0"])
     assert result.exit_code == 0, result.output
     assert WorkflowRegistry(project_dir).get("history-wf")["version"] == "1.0.0"
+
+
+def test_exact_yaml_release_rejects_mismatched_requirements(monkeypatch, project_dir):
+    from specify_cli.authentication import http
+
+    entry = _entry()
+    entry["releases"]["1.0.0"] = {
+        "url": OLD_YAML_URL,
+        "sha256": hashlib.sha256(OLD_WORKFLOW_YAML).hexdigest(),
+        "requires": {"integrations": ["copilot"]},
+    }
+    _catalog(monkeypatch, project_dir, entry)
+    requested = []
+
+    def open_url(url, **kwargs):
+        requested.append(url)
+        return _Response(OLD_WORKFLOW_YAML, url)
+
+    monkeypatch.setattr(http, "open_url", open_url)
+    monkeypatch.chdir(project_dir)
+    result = runner.invoke(app, ["workflow", "add", "history-wf", "--version", "1.0.0"])
+
+    assert result.exit_code == 1
+    assert "requirements do not match" in " ".join(result.output.split())
+    assert requested == [OLD_YAML_URL]
+    assert WorkflowRegistry(project_dir).get("history-wf") is None
+    assert not (
+        project_dir / ".specify" / "workflows" / "history-wf" / "workflow.yml"
+    ).exists()
 
 
 @pytest.mark.parametrize("source_type", ["archive", "yaml"])
@@ -390,3 +420,41 @@ def test_unqualified_add_still_uses_current_and_invalid_version_scope(
     assert invalid.exit_code == 1
     assert "--version requires a workflow ID" in invalid.output
     assert requested == [CURRENT_URL]
+
+
+@pytest.mark.parametrize(
+    "source_type", ["direct-url", "local-file", "local-dir", "dev"]
+)
+def test_exact_add_rejects_non_catalog_sources(monkeypatch, project_dir, source_type):
+    from specify_cli.authentication import http
+
+    source = "history-wf"
+    options = []
+    if source_type == "direct-url":
+        source = OLD_YAML_URL
+    elif source_type in ("local-file", "local-dir"):
+        path = project_dir / "local-workflow"
+        if source_type == "local-dir":
+            path.mkdir()
+            (path / "workflow.yml").write_bytes(OLD_WORKFLOW_YAML)
+        else:
+            path = path.with_suffix(".yml")
+            path.write_bytes(OLD_WORKFLOW_YAML)
+        source = str(path)
+    else:
+        options = ["--dev"]
+
+    requested = []
+    monkeypatch.setattr(http, "open_url", lambda url, **kwargs: requested.append(url))
+    monkeypatch.chdir(project_dir)
+    result = runner.invoke(
+        app, ["workflow", "add", source, *options, "--version", "1.0.0"]
+    )
+
+    assert result.exit_code == 1
+    assert "--version requires a workflow ID from a catalog" in result.output
+    assert requested == []
+    assert WorkflowRegistry(project_dir).get("history-wf") is None
+    assert not (
+        project_dir / ".specify" / "workflows" / "history-wf" / "workflow.yml"
+    ).exists()
