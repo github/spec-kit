@@ -631,6 +631,8 @@ class CommandRegistrar:
         hashes = metadata.get("generic_artifact_hashes", {}) if metadata else {}
         if not isinstance(hashes, dict) or not path.is_file():
             return False
+        if path.stat().st_nlink > 1:
+            return False
         if path.is_symlink() and not path.resolve().is_relative_to(
             (project_root / ".specify/extensions").resolve()
         ):

@@ -2102,6 +2102,8 @@ class ExtensionManager:
                 continue
             if not path.is_file():
                 continue
+            if path.stat().st_nlink > 1:
+                continue
             if path.is_symlink() and not path.resolve().is_relative_to(
                 self.extensions_dir.resolve()
             ):

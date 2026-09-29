@@ -113,6 +113,40 @@ def test_generic_extension_preserves_modified_artifact(tmp_path, generic_extensi
     assert artifact.read_text(encoding="utf-8").endswith("user edit\n")
 
 
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_refresh_rejects_hard_linked_artifact(
+    tmp_path, generic_extension, skills, capsys,
+):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    unrelated = project / "unrelated.md"
+    try:
+        os.link(artifact, unrelated)
+    except OSError:
+        pytest.skip("hard links are unavailable")
+    original = artifact.read_bytes()
+    metadata = manager.registry.get("sample")
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nnew source\n", encoding="utf-8")
+
+    manager.register_enabled_extensions_for_agent("generic", force=skills)
+
+    warning = capsys.readouterr().out
+    assert "Missing" in warning and "invocation artifacts" in warning
+    assert artifact.read_bytes() == original
+    assert unrelated.read_bytes() == original
+    assert manager.registry.get("sample") == metadata
+
+    unrelated.unlink()
+    manager.register_enabled_extensions_for_agent("generic", force=skills)
+    assert b"new source" in artifact.read_bytes()
+    assert manager.remove("sample")
+
+
 @pytest.mark.parametrize("operation", ["resync", "remove", "force"])
 def test_generic_skill_symlinked_directory_is_not_owned(
     tmp_path, generic_extension, operation,
