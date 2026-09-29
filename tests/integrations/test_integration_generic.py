@@ -477,6 +477,215 @@ def test_generic_command_refreshes_owned_artifact_and_missing_alias(
 
 
 @pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("first_present", [False, True])
+@pytest.mark.parametrize("dev_symlink", [False, True])
+@pytest.mark.parametrize("partial_second", [False, True])
+def test_generic_refresh_write_error_restores_artifacts_and_registry(
+    tmp_path, generic_extension, skills, first_present, dev_symlink,
+    partial_second, monkeypatch,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"].append({
+        "name": "speckit.sample.other",
+        "file": "commands/other.md",
+        "description": "Another command",
+    })
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    (generic_extension / "commands/other.md").write_text(
+        "---\ndescription: Another command\n---\ncontent\n", encoding="utf-8",
+    )
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(
+        generic_extension, "1.0.0", link_commands=dev_symlink,
+    )
+    output = project / ".custom/commands"
+    first = output / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    second = output / (
+        "speckit-sample-other/SKILL.md" if skills else "speckit.sample.other.md"
+    )
+    original = first.read_bytes()
+    if dev_symlink and not first.is_symlink():
+        pytest.skip("dev-mode symlinks are unavailable")
+    metadata = manager.registry.get("sample")
+    if not first_present:
+        first.unlink()
+        if skills:
+            first.parent.rmdir()
+    second.unlink()
+    if skills:
+        second.parent.rmdir()
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
+    original_write = Path.write_text
+
+    def fail_second_write(path, *args, **kwargs):
+        if path == second:
+            if partial_second:
+                original_write(path, "partial generated output", encoding="utf-8")
+            raise OSError("simulated refresh write error")
+        return original_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_second_write)
+    manager.register_enabled_extensions_for_agent("generic", force=skills)
+    monkeypatch.undo()
+
+    assert first.exists() is first_present
+    if first_present:
+        assert first.read_bytes() == original
+        assert first.is_symlink() is dev_symlink
+    assert not second.exists()
+    assert manager.registry.get("sample") == metadata
+    unrelated = output / "user-owned.md"
+    unrelated.write_text("user content", encoding="utf-8")
+
+    manager.register_enabled_extensions_for_agent("generic", force=skills)
+    assert "updated source" in first.read_text(encoding="utf-8")
+    assert second.is_file()
+    assert manager.remove("sample")
+    assert not first.exists() and not second.exists()
+    assert unrelated.read_text(encoding="utf-8") == "user content"
+
+
+@pytest.mark.parametrize("save_before_error", [False, True])
+def test_generic_refresh_registry_write_error_restores_previous_state(
+    tmp_path, generic_extension, save_before_error, monkeypatch,
+):
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands/speckit.sample.run.md"
+    original = output.read_bytes()
+    metadata = manager.registry.get("sample")
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
+    original_save = manager.registry._save
+    called = False
+
+    def fail_once():
+        nonlocal called
+        called = True
+        monkeypatch.setattr(manager.registry, "_save", original_save)
+        if save_before_error:
+            original_save()
+        raise OSError("simulated refresh registry write error")
+
+    monkeypatch.setattr(manager.registry, "_save", fail_once)
+    manager.register_enabled_extensions_for_agent("generic")
+    monkeypatch.undo()
+
+    assert called
+    assert output.read_bytes() == original
+    assert manager.registry.get("sample") == metadata
+    assert ExtensionManager(project).registry.get("sample") == metadata
+    manager.register_enabled_extensions_for_agent("generic")
+    assert "updated source" in output.read_text(encoding="utf-8")
+    assert manager.remove("sample")
+
+
+def test_generic_flat_refresh_ignores_unowned_skill_directory(
+    tmp_path, generic_extension,
+):
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands"
+    command = output / "speckit.sample.run.md"
+    user_skill = project / "user-skill"
+    user_skill.mkdir()
+    (user_skill / "SKILL.md").write_text("user content", encoding="utf-8")
+    skill_link = output / "speckit-sample-run"
+    try:
+        skill_link.symlink_to(user_skill, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
+    manager.register_enabled_extensions_for_agent("generic")
+
+    assert "updated source" in command.read_text(encoding="utf-8")
+    assert skill_link.is_symlink()
+    assert (user_skill / "SKILL.md").read_text(encoding="utf-8") == "user content"
+    assert manager.remove("sample")
+    assert skill_link.is_symlink()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_refresh_ignores_unrelated_other_layout_file(
+    tmp_path, generic_extension, skills, monkeypatch,
+):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands"
+    current = output / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    other = output / (
+        "speckit.sample.run.md" if skills else "speckit-sample-run/SKILL.md"
+    )
+    other.parent.mkdir(parents=True, exist_ok=True)
+    other.write_text("user content", encoding="utf-8")
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
+    original_read = Path.read_bytes
+
+    def reject_other_layout_read(path, *args, **kwargs):
+        if path == other:
+            raise OSError("unrelated file must not be read")
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", reject_other_layout_read)
+    manager.register_enabled_extensions_for_agent("generic", force=skills)
+    monkeypatch.undo()
+
+    assert "updated source" in current.read_text(encoding="utf-8")
+    assert other.read_text(encoding="utf-8") == "user content"
+    assert manager.remove("sample")
+    assert other.read_text(encoding="utf-8") == "user content"
+
+
+@pytest.mark.parametrize("skills_before", [False, True])
+def test_generic_layout_change_registry_error_restores_previous_artifacts(
+    tmp_path, generic_extension, skills_before, monkeypatch,
+):
+    project = generic_project(tmp_path, skills=skills_before)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands"
+    skill = output / "speckit-sample-run/SKILL.md"
+    command = output / "speckit.sample.run.md"
+    old_path, new_path = (skill, command) if skills_before else (command, skill)
+    original = old_path.read_bytes()
+    metadata = manager.registry.get("sample")
+    save_init_options(
+        project, {"ai": "generic", "ai_skills": not skills_before, "script": "sh"},
+    )
+    original_save = manager.registry._save
+
+    def fail_once():
+        monkeypatch.setattr(manager.registry, "_save", original_save)
+        raise OSError("simulated layout registry write error")
+
+    monkeypatch.setattr(manager.registry, "_save", fail_once)
+    manager.register_enabled_extensions_for_agent("generic")
+    monkeypatch.undo()
+
+    assert old_path.read_bytes() == original
+    assert not new_path.exists()
+    assert manager.registry.get("sample") == metadata
+    assert ExtensionManager(project).registry.get("sample") == metadata
+    manager.register_enabled_extensions_for_agent("generic")
+    assert new_path.is_file()
+    assert not old_path.exists()
+    assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
 @pytest.mark.parametrize("ignored_source", [False, True])
 def test_generic_partial_registration_rolls_back_all_artifacts(
     tmp_path, generic_extension, skills, ignored_source,

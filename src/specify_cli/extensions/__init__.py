@@ -1961,6 +1961,104 @@ class ExtensionManager:
             hashes[relative] = digest
         return hashes
 
+    def _snapshot_generic_refresh_artifacts(
+        self, manifest: ExtensionManifest, metadata: Dict[str, Any],
+        *, skills_mode_active: bool,
+    ) -> Dict[Path, tuple[bytes | None, str | None, bool]]:
+        """Remember owned outputs and absent candidates before a generic refresh."""
+        from ..integrations.generic import registration_directory
+        from ..shared_infra import _validate_safe_shared_directory
+
+        root = self.project_root.resolve()
+        output_dir = registration_directory(self.project_root)
+        source = (self.extensions_dir / manifest.id).resolve()
+        hashes = metadata.get("generic_artifact_hashes", {})
+        if not isinstance(hashes, dict):
+            hashes = {}
+        registered = metadata.get("registered_commands", {})
+        command_names = (
+            set(self._collect_manifest_command_names(manifest))
+            if not skills_mode_active else set()
+        )
+        if isinstance(registered, dict):
+            command_names.update(self._valid_name_list(registered.get("generic")))
+        skill_names = (
+            {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+            if skills_mode_active else set()
+        )
+        skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
+        paths = {output_dir / f"{name}.md" for name in command_names}
+        paths.update(output_dir / name / "SKILL.md" for name in skill_names)
+        snapshot: Dict[Path, tuple[bytes | None, str | None, bool]] = {}
+        for path in paths:
+            try:
+                _validate_safe_shared_directory(root, path.parent)
+            except (OSError, ValueError):
+                # An unsafe candidate is not owned; do not block the other layout.
+                continue
+            if not path.exists() and not path.is_symlink():
+                snapshot[path] = (None, None, path.parent.is_dir())
+                continue
+            if not path.is_file():
+                continue
+            if path.is_symlink() and not path.resolve().is_relative_to(source):
+                continue
+            content = path.read_bytes()
+            relative = path.relative_to(root).as_posix()
+            if hashes.get(relative) == hashlib.sha256(content).hexdigest():
+                snapshot[path] = (
+                    content, os.readlink(path) if path.is_symlink() else None, True
+                )
+        return snapshot
+
+    def _restore_generic_refresh_artifacts(
+        self, snapshot: Dict[Path, tuple[bytes | None, str | None, bool]],
+        extension_id: str,
+    ) -> None:
+        """Restore prior owned files and remove only outputs absent before refresh."""
+        from ..shared_infra import (
+            _ensure_safe_shared_directory,
+            _validate_safe_shared_directory,
+        )
+
+        root = self.project_root.resolve()
+        source = (self.extensions_dir / extension_id).resolve()
+        errors = []
+        for path, (content, link, parent_existed) in snapshot.items():
+            try:
+                _validate_safe_shared_directory(root, path.parent)
+                if path.is_symlink():
+                    if content is None or not path.resolve().is_relative_to(source):
+                        raise ValueError("unexpected symlink at output path")
+                    if os.readlink(path) == link:
+                        continue
+                    path.unlink()
+                elif path.exists() and not path.is_file():
+                    raise ValueError("output path is no longer a file")
+                elif content is not None and link is None and path.is_file():
+                    if path.read_bytes() == content:
+                        continue
+                if content is None:
+                    if path.is_file():
+                        path.unlink()
+                    if not parent_existed and path.parent.is_dir():
+                        try:
+                            path.parent.rmdir()
+                        except OSError:
+                            pass
+                else:
+                    _ensure_safe_shared_directory(root, path.parent)
+                    if link is not None:
+                        if path.is_file():
+                            path.unlink()
+                        path.symlink_to(link)
+                    else:
+                        path.write_bytes(content)
+            except (OSError, ValueError) as exc:
+                errors.append(f"{path}: {exc}")
+        if errors:
+            raise ExtensionError("Could not restore generic artifacts: " + "; ".join(errors))
+
     def _generic_owned_names(
         self, metadata: Dict[str, Any], names: List[str], *, skills: bool
     ) -> List[str]:
@@ -3683,7 +3781,13 @@ class ExtensionManager:
             # Isolate per-extension failures: one extension that fails to
             # register (e.g. an OSError writing a command file) must not abort
             # registration of the remaining enabled extensions for this agent.
+            generic_snapshot = None
+            registry_update_started = False
             try:
+                if agent_name == "generic":
+                    generic_snapshot = self._snapshot_generic_refresh_artifacts(
+                        manifest, metadata, skills_mode_active=skills_mode_active,
+                    )
                 updates: Dict[str, Any] = {}
                 registered: List[str] = []
                 registered_skills: List[str] = []
@@ -3751,6 +3855,8 @@ class ExtensionManager:
                         # Skills are a companion artifact.  If command registration
                         # already succeeded, still persist it so later cleanup can
                         # find those command files.
+                        if agent_name == "generic":
+                            raise
                         from .. import _print_cli_warning
 
                         _print_cli_warning(
@@ -3934,12 +4040,30 @@ class ExtensionManager:
                     if hashes != metadata.get("generic_artifact_hashes"):
                         updates["generic_artifact_hashes"] = hashes
                 if updates:
+                    registry_update_started = True
                     self.registry.update(ext_id, updates)
             except Exception as ext_err:
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.
                 from .. import _print_cli_warning
 
+                if generic_snapshot is not None:
+                    rollback_errors = []
+                    try:
+                        self._restore_generic_refresh_artifacts(
+                            generic_snapshot, ext_id
+                        )
+                    except (OSError, ValueError, ExtensionError) as error:
+                        rollback_errors.append(f"artifacts: {error}")
+                    if registry_update_started:
+                        try:
+                            self.registry.restore(ext_id, metadata)
+                        except Exception as error:
+                            rollback_errors.append(f"registry: {error}")
+                    if rollback_errors:
+                        ext_err = ExtensionError(
+                            f"{ext_err}; rollback failed: {'; '.join(rollback_errors)}"
+                        )
                 _print_cli_warning(
                     "register extension artifacts for",
                     "extension",
