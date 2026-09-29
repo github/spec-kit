@@ -528,6 +528,68 @@ def test_pre_existing_component_is_not_attributed_or_removed(tmp_path: Path):
     assert ("extensions", "ext-a") in installer.installed
 
 
+def test_install_rejects_independently_installed_component_at_other_version(
+    tmp_path: Path,
+):
+    # An independently installed component is skipped and never refreshed, so
+    # recording the bundle over a different version would leave the project
+    # running the old one under a record that says otherwise (#4434).
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+    installer.versions[("extensions", "ext-a")] = "0.9.0"
+
+    with pytest.raises(
+        BundlerError, match=r"extension 'ext-a' to 1\.0\.0, but 0\.9\.0 is installed"
+    ):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert installer.install_calls == []
+    assert not records_path(tmp_path).exists()
+
+
+def test_refresh_rejects_independently_installed_component_at_other_version(
+    tmp_path: Path,
+):
+    # bundle update never refreshes an unowned component, so a new pin it does
+    # not meet must fail instead of advancing the record past it.
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+    installer.versions[("extensions", "ext-a")] = "1.0.0"
+    man_v1 = _bundle("demo", ["ext-a"])
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+    original_record = records_path(tmp_path).read_bytes()
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+    with pytest.raises(BundlerError, match=r"to 2\.0\.0, but 1\.0\.0 is installed"):
+        install_bundle(
+            tmp_path, _plan(man_v2), installer, manifest=man_v2, refresh=True
+        )
+
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_independently_installed_component_at_pinned_version_stays_unowned(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+    installer.versions[("extensions", "ext-a")] = "v1.0.0"
+
+    result = install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    assert ("extensions", "ext-a") in {(c.kind, c.id) for c in result.skipped}
+    contributed = {
+        (c.kind, c.id) for c in load_records(tmp_path)[0].contributed_components
+    }
+    assert ("extensions", "ext-a") not in contributed
+
+
 def _bundle(manifest_id, ext_ids, *, version="1.0.0"):
     data = valid_manifest_dict()
     data["bundle"]["id"] = manifest_id

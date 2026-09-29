@@ -79,6 +79,18 @@ def satisfies(installed: str, constraint: str) -> bool:
     return spec.contains(version, prereleases=True)
 
 
+def same_version(actual: str, pinned: str) -> bool:
+    """Return True if *actual* is the exact version *pinned* names.
+
+    Compares parsed versions (``v1.0.0`` matches ``1.0.0``) and falls back to a
+    plain string comparison when either side does not parse.
+    """
+    try:
+        return parse_version(actual) == parse_version(pinned)
+    except BundlerError:
+        return str(actual).strip() == str(pinned).strip()
+
+
 _SEMVER_RE = re.compile(
     r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
     r"(?:-(?:(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"

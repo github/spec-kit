@@ -28,6 +28,7 @@ from .records import (
 )
 from .conflict import detect_conflicts
 from .resolver import InstallPlan
+from .versioning import same_version
 
 
 class PrimitiveInstaller(Protocol):
@@ -86,6 +87,10 @@ def install_bundle(
     guaranteed to be applied when the bundler actually performs an install or a
     refresh; running ``specify bundle update`` re-applies every owned component
     at its pinned version.
+
+    The exception is a component installed independently of any bundle: it is
+    never installed or refreshed here, so its installed version must already
+    match the pin, or the call fails before changing anything.
     """
     records = load_records(project_root)
 
@@ -127,6 +132,7 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
+    _check_unowned_pins(project_root, plan, installer, prior_ours | other_tracked)
 
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
@@ -245,6 +251,44 @@ def remove_bundle(
         ) from exc
 
     return result
+
+
+def _check_unowned_pins(
+    project_root: Path,
+    plan: InstallPlan,
+    installer: PrimitiveInstaller,
+    owned: set[tuple[str, str]],
+) -> None:
+    """Refuse to skip an independently installed component that misses its pin.
+
+    A component tracked by no bundle is skipped and never refreshed (FR-022), so
+    skipping it is only correct when it already has the pinned version.
+    Otherwise the bundle record would advance while the project keeps running a
+    different version (#4434). Runs before any primitive is touched. Installers
+    without an ``installed_version`` hook, and components whose installed
+    version is unknown, are not checked.
+    """
+    installed_version = getattr(installer, "installed_version", None)
+    if not callable(installed_version):
+        return
+    mismatches = []
+    for component in plan.components:
+        if not component.version or (component.kind, component.id) in owned:
+            continue
+        if not installer.is_installed(project_root, component):
+            continue
+        actual = installed_version(project_root, component)
+        if actual is not None and not same_version(actual, component.version):
+            mismatches.append(
+                f"{component.kind[:-1]} '{component.id}' to {component.version}, "
+                f"but {actual} is installed"
+            )
+    if mismatches:
+        raise BundlerError(
+            f"Bundle '{plan.bundle_id}' pins {'; '.join(mismatches)}. Bundles "
+            "leave components installed outside any bundle unchanged, so remove "
+            "the installed version or install the pinned one yourself, then re-run."
+        )
 
 
 def _refresh_component(
