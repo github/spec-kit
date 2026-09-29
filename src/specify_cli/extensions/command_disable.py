@@ -52,8 +52,8 @@ def extension_disable(
         except (ExtensionError, ValueError, OSError) as exc:
             console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1) from exc
-
-    manager.registry.update(extension_id, {"enabled": False})
+    else:
+        manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()

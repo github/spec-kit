@@ -27,7 +27,7 @@ specify preset add [<preset_id>]
 | `--from <url>`   | Install from a custom URL instead of the catalog         |
 | `--priority <N>` | Resolution priority (default: 10; lower = higher precedence) |
 
-Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with the currently installed AI coding agent integration.
+Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with supported active AI coding agent integrations. The generic integration currently delivers extension invocations but does not register preset command or skill overrides.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 

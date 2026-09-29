@@ -49,12 +49,12 @@ def extension_enable(
     init_options = load_init_options(project_root)
     if init_options.get("ai") == "generic":
         try:
-            manager.register_enabled_extensions_for_agent("generic")
-            refreshed = manager.registry.get(extension_id) or {}
             manifest = manager.get_extension(extension_id)
             if manifest is None:
                 raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
             if manifest.commands:
+                manager.register_enabled_extensions_for_agent("generic")
+                refreshed = manager.registry.get(extension_id) or {}
                 from .._init_options import is_ai_skills_enabled
 
                 skills = is_ai_skills_enabled(init_options)

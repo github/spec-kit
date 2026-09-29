@@ -1531,6 +1531,8 @@ class ExtensionManager:
             Mapping of agent name to registered command names, matching the
             ``registered_commands`` registry shape.
         """
+        if not manifest.commands:
+            return {}
         registrar = CommandRegistrar(self.project_root)
         agent_scope = self._active_command_registration_scope()
 
@@ -1590,6 +1592,8 @@ class ExtensionManager:
         Returns:
             List of skill names that were created (for registry storage).
         """
+        if not manifest.commands:
+            return []
         skills_dir = self._get_skills_dir()
         if not skills_dir:
             return []
@@ -1962,10 +1966,10 @@ class ExtensionManager:
         return hashes
 
     def _snapshot_generic_refresh_artifacts(
-        self, manifest: ExtensionManifest, metadata: Dict[str, Any],
+        self, manifest: Optional[ExtensionManifest], metadata: Dict[str, Any],
         *, skills_mode_active: bool,
     ) -> Dict[Path, tuple[bytes | None, str | None, bool]]:
-        """Remember owned outputs and absent candidates before a generic refresh."""
+        """Remember owned outputs and absent candidates for generic rollback."""
         from ..integrations.generic import registration_directory
         from ..shared_infra import _validate_safe_shared_directory
 
@@ -1978,17 +1982,23 @@ class ExtensionManager:
         registered = metadata.get("registered_commands", {})
         command_names = (
             set(self._collect_manifest_command_names(manifest))
-            if not skills_mode_active else set()
+            if manifest is not None and not skills_mode_active else set()
         )
         if isinstance(registered, dict):
             command_names.update(self._valid_name_list(registered.get("generic")))
         skill_names = (
             {self._skill_name_for_command(command["name"]) for command in manifest.commands}
-            if skills_mode_active else set()
+            if manifest is not None and skills_mode_active else set()
         )
         skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
         paths = {output_dir / f"{name}.md" for name in command_names}
         paths.update(output_dir / name / "SKILL.md" for name in skill_names)
+        for relative in hashes:
+            if not isinstance(relative, str):
+                continue
+            name = Path(relative)
+            if not name.is_absolute() and ".." not in name.parts:
+                paths.add(root / name)
         snapshot: Dict[Path, tuple[bytes | None, str | None, bool]] = {}
         for path in paths:
             try:
@@ -3485,7 +3495,7 @@ class ExtensionManager:
         return True
 
     def disable_generic_extension_artifacts(self, extension_id: str) -> None:
-        """Retire generic invocations without removing the installed sources."""
+        """Disable and retire generic invocations without removing sources."""
         metadata = self.registry.get(extension_id)
         if not metadata:
             raise ExtensionError(f"Extension '{extension_id}' is not installed")
@@ -3494,48 +3504,76 @@ class ExtensionManager:
         commands = self._valid_name_list(registered.get("generic")) if isinstance(registered, dict) else []
         skills = self._valid_name_list(metadata.get("registered_skills", []))
         hashes = metadata.get("generic_artifact_hashes", {})
-        if not commands and not skills and not hashes:
-            return
-        from ..integrations.generic import registration_directory
+        has_artifacts = bool(commands or skills or hashes)
+        snapshot: Dict[Path, tuple[bytes | None, str | None, bool]] = {}
+        updates: Dict[str, Any] = {"enabled": False}
+        if has_artifacts:
+            from ..integrations.generic import registration_directory
 
-        directory = registration_directory(self.project_root)
-        if isinstance(hashes, dict):
-            for relative, expected in hashes.items():
-                if not isinstance(relative, str) or not isinstance(expected, str):
-                    continue
-                name = Path(relative)
-                if name.is_absolute() or ".." in name.parts:
-                    continue
-                path = self.project_root.resolve() / name
-                if path.parent.resolve().is_relative_to(self.project_root.resolve()) and path.is_file():
-                    if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            directory = registration_directory(self.project_root)
+            if isinstance(hashes, dict):
+                for relative, expected in hashes.items():
+                    if not isinstance(relative, str) or not isinstance(expected, str):
+                        continue
+                    name = Path(relative)
+                    if name.is_absolute() or ".." in name.parts:
+                        continue
+                    path = self.project_root.resolve() / name
+                    if path.parent.resolve().is_relative_to(self.project_root.resolve()) and path.is_file():
+                        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                            raise ExtensionError(
+                                f"Cannot disable '{extension_id}': generic artifact {path} "
+                                "was modified or is not owned; preserve it and remove it manually"
+                            )
+            for names, is_skill in ((commands, False), (skills, True)):
+                owned = self._generic_owned_names(metadata, names, skills=is_skill)
+                for name in names:
+                    path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
+                    if (path.exists() or path.is_symlink()) and name not in owned:
                         raise ExtensionError(
                             f"Cannot disable '{extension_id}': generic artifact {path} "
                             "was modified or is not owned; preserve it and remove it manually"
                         )
-        for names, is_skill in ((commands, False), (skills, True)):
-            owned = self._generic_owned_names(metadata, names, skills=is_skill)
-            for name in names:
-                path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
-                if (path.exists() or path.is_symlink()) and name not in owned:
-                    raise ExtensionError(
-                        f"Cannot disable '{extension_id}': generic artifact {path} "
-                        "was modified or is not owned; preserve it and remove it manually"
-                    )
-
-        self._remove_generic_artifact_paths(extension_id, metadata)
-        if skills:
-            self._unregister_extension_skills(
-                skills, extension_id, skills_dir=directory,
-                generic_hashes=metadata.get("generic_artifact_hashes", {}),
+            snapshot = self._snapshot_generic_refresh_artifacts(
+                self.get_extension(extension_id), metadata,
+                skills_mode_active=bool(skills),
             )
-        new_commands = dict(registered) if isinstance(registered, dict) else {}
-        new_commands.pop("generic", None)
-        self.registry.update(extension_id, {
-            "registered_commands": new_commands,
-            "registered_skills": self._extension_owned_skill_names(skills, extension_id),
-            "generic_artifact_hashes": {},
-        })
+
+        registry_update_started = False
+        try:
+            if has_artifacts:
+                self._remove_generic_artifact_paths(extension_id, metadata)
+                if skills:
+                    self._unregister_extension_skills(
+                        skills, extension_id, skills_dir=directory,
+                        generic_hashes=metadata.get("generic_artifact_hashes", {}),
+                    )
+                new_commands = dict(registered) if isinstance(registered, dict) else {}
+                new_commands.pop("generic", None)
+                updates.update({
+                    "registered_commands": new_commands,
+                    "registered_skills": self._extension_owned_skill_names(skills, extension_id),
+                    "generic_artifact_hashes": {},
+                })
+            registry_update_started = True
+            self.registry.update(extension_id, updates)
+        except Exception as exc:
+            rollback_errors = []
+            try:
+                self._restore_generic_refresh_artifacts(snapshot, extension_id)
+            except (OSError, ValueError, ExtensionError) as error:
+                rollback_errors.append(f"artifacts: {error}")
+            if registry_update_started:
+                try:
+                    self.registry.restore(extension_id, metadata)
+                except Exception as error:
+                    rollback_errors.append(f"registry: {error}")
+            if rollback_errors:
+                raise ExtensionError(
+                    f"Cannot disable '{extension_id}': {exc}; "
+                    f"rollback failed: {'; '.join(rollback_errors)}"
+                ) from exc
+            raise
 
     @staticmethod
     def _valid_name_list(value: Any) -> List[str]:

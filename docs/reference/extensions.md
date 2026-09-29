@@ -102,7 +102,7 @@ specify extension enable <name>
 specify extension disable <name>
 ```
 
-Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be disabled even if generic command-output settings are missing or invalid. Re-enable with `enable`.
+Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
 
 ## Set Extension Priority
 

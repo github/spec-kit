@@ -1522,6 +1522,134 @@ def test_generic_commandless_extension_disables_without_output_settings(
     assert any(hook["extension"] == "sample" and hook["enabled"] is False for hook in hooks)
 
 
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed", "schema_too_new"])
+def test_generic_commandless_install_and_enable_ignore_output_settings(
+    tmp_path, generic_extension, invalid_settings, skills,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"] = []
+    manifest["hooks"] = {"after_tasks": {"command": "echo sample"}}
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    project = generic_project(tmp_path, skills=skills)
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "missing":
+        state_file.unlink()
+    elif invalid_settings == "malformed":
+        state_file.write_text("{", encoding="utf-8")
+    else:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state["integration_state_schema"] = INTEGRATION_STATE_SCHEMA + 1
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert manager.registry.get("sample")["enabled"] is True
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        disabled = runner.invoke(app, ["extension", "disable", "sample"])
+        assert disabled.exit_code == 0, disabled.output
+        enabled = runner.invoke(app, ["extension", "enable", "sample"])
+    finally:
+        os.chdir(old_cwd)
+
+    assert enabled.exit_code == 0, enabled.output
+    assert ExtensionManager(project).registry.get("sample")["enabled"] is True
+    hooks = HookExecutor(project).get_project_config()["hooks"]["after_tasks"]
+    assert any(hook["extension"] == "sample" and hook["enabled"] is True for hook in hooks)
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("after_write", [False, True])
+@pytest.mark.parametrize("moved", [False, True])
+def test_generic_disable_registry_failure_restores_artifacts_and_metadata(
+    tmp_path, generic_extension, monkeypatch, skills, after_write, moved,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    original_content = artifact.read_bytes()
+    original_metadata = manager.registry.get("sample")
+    if moved:
+        write_integration_json(
+            project, version="1.0.0", integration_key="generic",
+            settings={"generic": {"parsed_options": {
+                "commands_dir": ".new/commands", "skills": skills,
+            }}},
+        )
+    original_save = manager.registry.__class__._save
+    failed = False
+
+    def fail_disable_save(registry):
+        nonlocal failed
+        entry = registry.data["extensions"]["sample"]
+        if entry.get("enabled") is False and not failed:
+            failed = True
+            if after_write:
+                original_save(registry)
+            raise OSError("simulated disable registry failure")
+        return original_save(registry)
+
+    monkeypatch.setattr(manager.registry.__class__, "_save", fail_disable_save)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        disabled = runner.invoke(app, ["extension", "disable", "sample"])
+    finally:
+        os.chdir(old_cwd)
+        monkeypatch.undo()
+
+    assert disabled.exit_code != 0
+    assert "simulated disable registry failure" in disabled.output
+    assert artifact.read_bytes() == original_content
+    assert ExtensionManager(project).registry.get("sample") == original_metadata
+    assert manager.registry.get("sample")["enabled"] is True
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        retried = runner.invoke(app, ["extension", "disable", "sample"])
+    finally:
+        os.chdir(old_cwd)
+    assert retried.exit_code == 0, retried.output
+    assert not artifact.exists()
+    assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_preset_registration_remains_outside_extension_scope(
+    tmp_path, skills,
+):
+    from specify_cli.presets import PresetManager
+    from tests.specify_cli.presets._helpers import install_self_test_preset
+
+    project = generic_project(tmp_path, skills=skills)
+    core = project / ".custom/commands" / (
+        "speckit-specify/SKILL.md" if skills else "speckit.specify.md"
+    )
+    original = core.read_bytes()
+    manager = PresetManager(project)
+    install_self_test_preset(manager)
+
+    assert core.read_bytes() == original
+    metadata = manager.registry.get("self-test")
+    assert not metadata.get("registered_commands", {}).get("generic")
+    assert not metadata.get("registered_skills", {}).get("generic")
+
+
 class TestGenericIntegration:
     """Tests for GenericIntegration — requires --commands-dir option."""
 
