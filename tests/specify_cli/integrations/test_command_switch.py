@@ -96,6 +96,62 @@ class TestIntegrationSwitch:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
+    def test_switch_same_force_restores_script_preset_dispatcher(self, tmp_path):
+        """``integration switch <same> --force`` refreshes shared infra
+        (including ``.specify/scripts/bash/<name>.sh``) from the bundled
+        core, clobbering a generated continuation dispatcher for an
+        already-enabled script preset. The switch must reconcile script
+        chains afterward so the preset's script keeps working."""
+        from tests.specify_cli.presets._helpers import create_pack
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-script-pack",
+                    "name": "Switch Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "switch-me.sh"
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
+            encoding="utf-8"
+        )
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "claude",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
+            encoding="utf-8"
+        )
+
     def test_switch_installed_target_rejects_integration_options(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()

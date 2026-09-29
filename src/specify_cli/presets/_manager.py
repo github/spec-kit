@@ -181,7 +181,11 @@ if command -v specify >/dev/null 2>&1; then
 elif command -v python3 >/dev/null 2>&1; then
     SPECIFY_CMD=(python3 -m specify_cli)
 else
-    echo "ERROR: 'specify' is required to resolve the '{script_name}' script chain" >&2
+    echo "ERROR: '{script_name}' is a preset-composed script and needs the 'specify' CLI" >&2
+    echo "(or an importable specify_cli) to resolve its chain, but neither was found." >&2
+    echo "This usually means Spec Kit was installed via the one-time 'uvx' flow, which" >&2
+    echo "discards its environment after 'init'. Install Spec Kit persistently to use" >&2
+    echo "script-providing presets: https://github.com/github/spec-kit/blob/main/docs/install/one-time.md" >&2
     exit 1
 fi
 # Strip carriage returns: on Windows the CLI emits CRLF, and $(...) only

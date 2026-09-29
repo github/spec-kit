@@ -345,6 +345,28 @@ def _set_default_integration(
                 f"Failed to refresh shared infrastructure for '{key}': {exc}"
             ) from exc
 
+        # _install_shared_infra above may have just overwritten
+        # .specify/scripts/bash/<name>.sh with the bundled core when
+        # refresh_templates_force is True, clobbering any generated
+        # continuation dispatcher for a script an already-enabled preset
+        # provides. Restore those dispatchers now, mirroring the same call
+        # in command_init.py and command_upgrade.py.
+        if refresh_templates_force:
+            try:
+                from ..presets import PresetManager as _ExistingPresetManager
+
+                _ExistingPresetManager(project_root).reconcile_all_script_chains()
+            except Exception as exc:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "reconcile script presets after",
+                    "integration use/switch",
+                    str(project_root),
+                    exc,
+                    continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                )
+
     _write_integration_json(project_root, key, installed_keys, settings)
     _update_init_options_for_integration(
         project_root, integration, script_type=resolved_script, parsed_options=parsed_options
