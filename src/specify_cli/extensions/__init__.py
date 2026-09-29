@@ -2446,7 +2446,7 @@ class ExtensionManager:
         generic_active = isinstance(active_options, dict) and active_options.get("ai") == "generic"
         if register_commands and manifest.commands:
             state, state_error = try_read_integration_json(self.project_root)
-            if state_error is not None:
+            if state_error is not None and generic_active:
                 detail = (
                     f"integration state schema {state_error.schema} is newer than supported "
                     f"schema {INTEGRATION_STATE_SCHEMA}; upgrade Spec Kit"
@@ -3118,19 +3118,18 @@ class ExtensionManager:
                 else "local"
             )
             registry_started = True
-            self.registry.add(
-                manifest.id,
-                {
-                    "version": manifest.version,
-                    "source": source,
-                    "manifest_hash": manifest.get_hash(),
-                    "enabled": True,
-                    "priority": priority,
-                    "registered_commands": registered_commands,
-                    "registered_skills": registered_skills,
-                    "generic_artifact_hashes": generic_hashes,
-                },
-            )
+            registry_entry = {
+                "version": manifest.version,
+                "source": source,
+                "manifest_hash": manifest.get_hash(),
+                "enabled": True,
+                "priority": priority,
+                "registered_commands": registered_commands,
+                "registered_skills": registered_skills,
+            }
+            if generic_active:
+                registry_entry["generic_artifact_hashes"] = generic_hashes
+            self.registry.add(manifest.id, registry_entry)
         except Exception as exc:
             # Any failed commit must retire outputs before the original error
             # is re-raised, including errors from hook serialization.

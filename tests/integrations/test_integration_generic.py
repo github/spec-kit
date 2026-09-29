@@ -223,6 +223,31 @@ def test_generic_command_install_rejects_inconsistent_init_options(
     )).exists()
 
 
+@pytest.mark.parametrize("invalid_settings", ["malformed", "schema_too_new"])
+def test_non_generic_command_install_keeps_legacy_integration_state_handling(
+    tmp_path, generic_extension, invalid_settings,
+):
+    project = tmp_path / "project"
+    skills_dir = project / ".claude/skills"
+    skills_dir.mkdir(parents=True)
+    save_init_options(project, {"ai": "claude", "ai_skills": False, "script": "sh"})
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "malformed":
+        state_file.write_text("{", encoding="utf-8")
+    else:
+        state_file.write_text(
+            json.dumps({"integration_state_schema": INTEGRATION_STATE_SCHEMA + 1}),
+            encoding="utf-8",
+        )
+
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+
+    assert manager.registry.is_installed("sample")
+    assert "generic_artifact_hashes" not in manager.registry.get("sample")
+    assert (skills_dir / "speckit-sample-run/SKILL.md").is_file()
+
+
 @pytest.mark.parametrize("skills", [False, True])
 @pytest.mark.parametrize("invalid_options", ["missing", "malformed"])
 def test_generic_hook_only_install_accepts_missing_init_options(
@@ -243,7 +268,7 @@ def test_generic_hook_only_install_accepts_missing_init_options(
     manager = ExtensionManager(project)
     manager.install_from_directory(generic_extension, "1.0.0")
     assert manager.registry.get("sample")["enabled"] is True
-    assert not manager.registry.get("sample")["generic_artifact_hashes"]
+    assert not manager.registry.get("sample").get("generic_artifact_hashes")
     hooks = HookExecutor(project).get_project_config()["hooks"]["after_tasks"]
     assert any(hook["extension"] == "sample" and hook["enabled"] is True for hook in hooks)
 
