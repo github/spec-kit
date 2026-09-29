@@ -1239,6 +1239,87 @@ class TestPresetCatalog:
         assert archive_path.name == "test-pack-1.0.0.tar.gz"
         assert archive_path.read_bytes() == archive_bytes
 
+    def test_download_pack_url_downloads_without_catalog_lookup(self, project_dir):
+        """download_pack_url retrieves an explicit URL without consulting the
+        catalog, naming the archive from the caller-supplied id/version (the
+        #4712 pinned-release retrieval path)."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        with patch.object(
+            catalog,
+            "get_pack_info",
+            side_effect=AssertionError(
+                "no catalog lookup expected for an explicit-URL download"
+            ),
+        ), patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack_url(
+                "https://example.com/releases/download/v0.4.12/test-pack-0.4.12.zip",
+                "test-pack",
+                "0.4.12",
+                target_dir=project_dir,
+            )
+
+        assert zip_path.name == "test-pack-0.4.12.zip"
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_url_verifies_sha256_when_provided(self, project_dir):
+        """A supplied digest is enforced; omission (None) skips verification."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+
+        with patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack_url(
+                "https://example.com/test-pack.zip",
+                "test-pack",
+                "1.0.0",
+                sha256=hashlib.sha256(zip_bytes).hexdigest(),
+                target_dir=project_dir,
+            )
+        assert zip_path.read_bytes() == zip_bytes
+
+        with patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="Integrity check failed"):
+                catalog.download_pack_url(
+                    "https://example.com/test-pack.zip",
+                    "test-pack",
+                    "1.0.0",
+                    sha256="0" * 64,
+                    target_dir=project_dir,
+                )
+
+    def test_download_pack_url_rejects_non_https(self, project_dir):
+        """Explicit-URL downloads enforce the same HTTPS rule as catalog
+        downloads (localhost HTTP aside)."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        with patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(PresetError, match="must use HTTPS"):
+                catalog.download_pack_url(
+                    "http://example.com/test-pack.zip",
+                    "test-pack",
+                    target_dir=project_dir,
+                )
+        open_url.assert_not_called()
+
+    def test_download_pack_url_rejects_malformed_authority(self, project_dir):
+        """An explicit URL with a malformed authority surfaces a clean
+        PresetError rather than leaking a raw ValueError."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        with patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(PresetError, match="malformed"):
+                catalog.download_pack_url(
+                    "https://[::1/test-pack.zip", "test-pack", target_dir=project_dir
+                )
+        open_url.assert_not_called()
+
 
 class TestPresetCatalogEntry:
     """Test PresetCatalogEntry dataclass."""

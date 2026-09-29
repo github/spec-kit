@@ -771,10 +771,6 @@ class PresetCatalog:
         Raises:
             PresetError: If pack not found or download fails
         """
-        import urllib.error
-
-        from . import read_response_limited, verify_archive_sha256
-
         pack_info = self.get_pack_info(pack_id)
         if not pack_info:
             raise PresetError(
@@ -808,14 +804,66 @@ class PresetCatalog:
                 f"Preset download URL is malformed: {download_url}"
             )
 
+        return self.download_pack_url(
+            download_url,
+            pack_id,
+            pack_info.get("version"),
+            sha256=pack_info.get("sha256"),
+            target_dir=target_dir,
+        )
+
+    def download_pack_url(
+        self,
+        download_url: str,
+        pack_id: str,
+        version: Optional[str] = None,
+        *,
+        sha256: Optional[str] = None,
+        target_dir: Optional[Path] = None,
+    ) -> Path:
+        """Download a preset archive from an explicit URL.
+
+        The same pipeline ``download_pack`` applies to a catalog entry's
+        ``download_url`` (HTTPS validation, size-limited fetch, optional
+        SHA-256 verification, archive-format detection, safe cache path),
+        without a catalog lookup, so callers can retrieve a specific release
+        by URL -- e.g. a bundle pin the catalog no longer advertises.
+        ``sha256`` defaults to ``None`` (no digest check): a release that is
+        not the catalog's advertised one has no catalog-declared digest to
+        verify against.
+
+        Args:
+            download_url: HTTPS URL of the archive to download
+            pack_id: ID used to name the cached archive
+            version: Version used to name the cached archive ("unknown"
+                when None)
+            sha256: Expected SHA-256 hex digest, or None to skip the check
+            target_dir: Directory to save the archive
+
+        Returns:
+            Path to the downloaded archive
+
+        Raises:
+            PresetError: If the URL is invalid or the download fails
+        """
+        import urllib.error
+
+        from . import read_response_limited, verify_archive_sha256
+
+        if not isinstance(download_url, str):
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            )
+
         from urllib.parse import urlparse
 
-        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # A malformed authority (e.g., an unterminated IPv6 bracket
         # "https://[::1") makes urlparse / hostname access raise ValueError.
-        # The download_url comes from catalog payload data, so surface a clean
-        # PresetError rather than leaking a raw ValueError past the command
-        # handler (which only catches PresetError). Mirrors catalogs (#3435)
-        # and workflows/catalog.py (#3484).
+        # The URL comes from caller data (a catalog payload field or a
+        # derived pinned-release URL), so surface a clean PresetError rather
+        # than leaking a raw ValueError past the command handler (which only
+        # catches PresetError). Mirrors catalogs (#3435) and
+        # workflows/catalog.py (#3484).
         try:
             parsed = urlparse(download_url)
             hostname = parsed.hostname
@@ -836,7 +884,7 @@ class PresetCatalog:
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
         target_dir = Path(target_dir)
-        version = pack_info.get("version", "unknown")
+        version = "unknown" if version is None else version
         declared_format = archive_format_from_name(download_url)
         build_safe_download_path(
             target_dir,
@@ -875,7 +923,7 @@ class PresetCatalog:
                 )
 
             verify_archive_sha256(
-                archive_data, pack_info.get("sha256"), pack_id, PresetError
+                archive_data, sha256, pack_id, PresetError
             )
 
             with tempfile.NamedTemporaryFile(

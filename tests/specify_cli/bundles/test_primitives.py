@@ -125,6 +125,564 @@ def test_assert_pinned_version_mismatch_raises():
         _assert_pinned_version("Preset", "preset-a", "2.0.0", "3.1.0")
 
 
+def test_pinned_release_matches_normalizes_like_assert():
+    from specify_cli.bundles.primitives import _pinned_release_matches
+
+    # Equal (including v-prefix/normalization) matches; missing pin or
+    # unadvertised version cannot be checked and matches (proceed).
+    assert _pinned_release_matches("2.0.0", "2.0.0")
+    assert _pinned_release_matches("2.0.0", "v2.0.0")
+    assert _pinned_release_matches(None, "9.9.9")
+    assert _pinned_release_matches("2.0.0", None)
+    assert not _pinned_release_matches("0.4.12", "0.5.1")
+    assert not _pinned_release_matches("2.0.0", "3.1.0")
+
+
+def test_pinned_release_url_derives_versioned_download_url():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    base = "https://github.com/acme/xt/releases/download"
+    # A GitHub release download URL: both the tag segment and a versioned
+    # asset filename are rewritten.
+    assert _pinned_release_url(f"{base}/v0.5.1/xt-0.5.1.zip", "0.5.1", "0.4.12") == (
+        f"{base}/v0.4.12/xt-0.4.12.zip"
+    )
+    # A versioned filename alone (no tag segment) is derivable too.
+    assert _pinned_release_url(
+        "https://example.com/xt-0.5.1.zip", "0.5.1", "0.4.12"
+    ) == "https://example.com/xt-0.4.12.zip"
+    # An archive tag URL with the version glued to the suffix.
+    assert _pinned_release_url(
+        "https://github.com/acme/xt/archive/refs/tags/v0.5.1.zip", "0.5.1", "0.4.12"
+    ) == "https://github.com/acme/xt/archive/refs/tags/v0.4.12.zip"
+
+
+def test_pinned_release_url_tolerates_v_prefixed_advertised_version():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # The catalog advertises the v-prefixed form; the bundle pin is bare semver.
+    assert _pinned_release_url(
+        "https://example.com/v0.5.1/xt.zip", "v0.5.1", "0.4.12"
+    ) == "https://example.com/v0.4.12/xt.zip"
+
+
+def test_pinned_release_url_normalizes_v_prefixed_pin():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # The pin itself may be v-prefixed (manifest validation accepts it); the
+    # URL token keeps its own prefix, so the result must not be "vv0.4.12".
+    assert _pinned_release_url(
+        "https://github.com/acme/xt/releases/download/v0.5.1/xt-0.5.1.zip",
+        "0.5.1",
+        "v0.4.12",
+    ) == "https://github.com/acme/xt/releases/download/v0.4.12/xt-0.4.12.zip"
+
+
+def test_pinned_release_url_rewrites_bare_tokens_for_v_prefixed_advertised():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # A v-prefixed advertised version also appears bare in a versioned asset
+    # filename; both the tag segment and the filename must be rewritten.
+    assert _pinned_release_url(
+        "https://github.com/acme/xt/releases/download/v0.5.1/xt-0.5.1.zip",
+        "v0.5.1",
+        "0.4.12",
+    ) == "https://github.com/acme/xt/releases/download/v0.4.12/xt-0.4.12.zip"
+
+
+def test_pinned_release_url_keeps_version_like_static_path_components():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # A repository named "tool-0.5.1" is a static component: the rewrite is
+    # restricted to recognized version positions (the release tag and the
+    # asset filename), so the component's home repository is preserved.
+    assert _pinned_release_url(
+        "https://github.com/acme/tool-0.5.1/releases/download/v0.5.1/tool.zip",
+        "0.5.1",
+        "0.4.12",
+    ) == "https://github.com/acme/tool-0.5.1/releases/download/v0.4.12/tool.zip"
+    assert _pinned_release_url(
+        "https://github.com/acme/tool-0.5.1/archive/refs/tags/v0.5.1.zip",
+        "0.5.1",
+        "0.4.12",
+    ) == "https://github.com/acme/tool-0.5.1/archive/refs/tags/v0.4.12.zip"
+    # The same holds for a version-looking static component on a non-GitHub
+    # host: only the final (filename) segment is rewritten.
+    assert _pinned_release_url(
+        "https://example.com/tools/tool-0.5.1/dist-0.5.1.zip", "0.5.1", "0.4.12"
+    ) == "https://example.com/tools/tool-0.5.1/dist-0.4.12.zip"
+    # A segment that is exactly a version token is still a version position
+    # (a versioned directory), even in a non-final position.
+    assert _pinned_release_url(
+        "https://example.com/v0.5.1/xt.zip", "v0.5.1", "0.4.12"
+    ) == "https://example.com/v0.4.12/xt.zip"
+
+
+def test_pinned_release_url_refuses_ambiguous_or_missing_tokens():
+    from specify_cli.bundles.primitives import _pinned_release_url
+
+    # No version token in the path: nothing to derive.
+    assert (
+        _pinned_release_url("https://example.com/xt.zip", "0.5.1", "0.4.12") is None
+    )
+    # A query-string-only version is not a path token.
+    assert (
+        _pinned_release_url(
+            "https://example.com/xt.zip?tag=0.5.1", "0.5.1", "0.4.12"
+        )
+        is None
+    )
+    # Embedded runs must not partial-match: 0.5.1 inside 10.5.1 / 0.5.10.
+    assert (
+        _pinned_release_url("https://example.com/10.5.1/xt.zip", "0.5.1", "0.4.12")
+        is None
+    )
+    assert (
+        _pinned_release_url("https://example.com/0.5.10/xt.zip", "0.5.1", "0.4.12")
+        is None
+    )
+    # No advertised version, or no pin: nothing to derive.
+    assert _pinned_release_url("https://example.com/v0.5.1/xt.zip", None, "0.4.12") is None
+    assert _pinned_release_url("https://example.com/v0.5.1/xt.zip", "0.5.1", None) is None
+    # Advertised and pinned already agree: not a mismatch case.
+    assert (
+        _pinned_release_url("https://example.com/v0.5.1/xt.zip", "0.5.1", "0.5.1")
+        is None
+    )
+    # Non-string URLs are refused outright.
+    assert _pinned_release_url(None, "0.5.1", "0.4.12") is None
+    assert _pinned_release_url(123, "0.5.1", "0.4.12") is None
+
+
+def _extension_zip(
+    tmp_path: Path, ext_id: str = "my-ext", version: str = "1.0.0"
+) -> Path:
+    """Zip the minimal real extension from ``_write_extension_with_config``."""
+    import zipfile
+
+    source = tmp_path / f"{ext_id}-source"
+    _write_extension_with_config(source, ext_id=ext_id, version=version)
+    zip_path = tmp_path / f"{ext_id}.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for f in source.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(source))
+    return zip_path
+
+
+def _preset_zip(
+    tmp_path: Path, preset_id: str = "p", version: str = "0.4.12"
+) -> Path:
+    """Zip a minimal preset pack (manifest only; the manager is faked)."""
+    import zipfile
+
+    import yaml
+
+    source = tmp_path / f"{preset_id}-source"
+    source.mkdir(parents=True, exist_ok=True)
+    (source / "preset.yml").write_text(
+        yaml.dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": version,
+                    "description": "Test preset",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    zip_path = tmp_path / f"{preset_id}.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.write(source / "preset.yml", "preset.yml")
+    return zip_path
+
+
+def test_catalog_extension_pin_mismatch_fetches_pinned_release(
+    tmp_path: Path, monkeypatch
+):
+    """Regression (#4712): when the catalog no longer advertises the bundle's
+    pinned version, the pinned release must be retrieved from a URL derived
+    from the catalog's own download_url instead of failing the install."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = tmp_path / "project"
+    project.mkdir()
+    # The archive's manifest must declare the pinned component (the bundle
+    # layer verifies a retrieved pinned release before installing it).
+    zip_path = _extension_zip(tmp_path, ext_id="xt", version="0.4.12")
+    downloads = []
+    standard_calls = []
+
+    def _standard(*args, **kwargs):
+        standard_calls.append(args)
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {
+            "id": eid,
+            "version": "0.5.1",
+            "download_url": (
+                "https://github.com/acme/xt/releases/download/v0.5.1/xt-0.5.1.zip"
+            ),
+            "_install_allowed": True,
+            "_catalog_name": "test-catalog",
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, eid: standard_calls.append(eid),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension_url",
+        lambda self, url, eid, version, **kw: (
+            downloads.append((url, eid, version)) or zip_path
+        ),
+    )
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    manager.install(ComponentRef(kind="extensions", id="xt", version="0.4.12"))
+
+    assert downloads == [
+        (
+            "https://github.com/acme/xt/releases/download/v0.4.12/xt-0.4.12.zip",
+            "xt",
+            "0.4.12",
+        )
+    ]
+    assert standard_calls == []
+
+
+def test_catalog_extension_pin_mismatch_unresolvable_reports_pin(
+    tmp_path: Path, monkeypatch
+):
+    """When the catalog's download_url carries no version token, a stale pin
+    fails with a pin-aware error naming the pin and the advertised version —
+    not a silent substitute, and not a bare pin mismatch (issue #4712)."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    calls = []
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {
+            "id": eid,
+            "version": "0.5.1",
+            "download_url": "https://example.com/xt/latest.zip",
+            "_install_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension", lambda self, eid: calls.append(eid)
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension_url",
+        lambda *a, **k: calls.append((a, k)),
+    )
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="extensions", id="xt", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "xt" in message
+    assert "pinned to version 0.4.12" in message
+    assert "0.5.1" in message
+    assert "cannot be located" in message
+    assert calls == []
+
+
+def test_catalog_extension_pin_mismatch_pinned_fetch_failure_reports_pin(
+    tmp_path: Path, monkeypatch
+):
+    """A failed pinned-release retrieval (e.g. the release was deleted)
+    reports the pin and the derived URL, not just a bare network error."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog, ExtensionError
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {
+            "id": eid,
+            "version": "0.5.1",
+            "download_url": (
+                "https://github.com/acme/xt/releases/download/v0.5.1/xt-0.5.1.zip"
+            ),
+            "_install_allowed": True,
+        },
+    )
+
+    def _boom(*args, **kwargs):
+        raise ExtensionError("HTTP Error 404: Not Found")
+
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, eid: (_ for _ in ()).throw(AssertionError("unused")),
+    )
+    monkeypatch.setattr(ExtensionCatalog, "download_extension_url", _boom)
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="extensions", id="xt", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "pinned to version 0.4.12" in message
+    assert "0.5.1" in message
+    assert (
+        "https://github.com/acme/xt/releases/download/v0.4.12/xt-0.4.12.zip"
+        in message
+    )
+    assert "HTTP Error 404" in message
+
+
+def _pin_mismatch_extension_env(tmp_path: Path, monkeypatch):
+    """Monkeypatch a catalog that advertises 0.5.1 for 'xt' and wire the
+    pinned-release download to the caller's archive; return the project."""
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, eid: {
+            "id": eid,
+            "version": "0.5.1",
+            "download_url": (
+                "https://github.com/acme/xt/releases/download/v0.5.1/xt-0.5.1.zip"
+            ),
+            "_install_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, eid: pytest.fail("standard download must not be used"),
+    )
+    return project
+
+
+def test_catalog_extension_pin_mismatch_rejects_release_declaring_other_version(
+    tmp_path: Path, monkeypatch
+):
+    """A derived URL can serve a mislabeled artifact (a redirect, a fallback
+    response, a renamed historical asset). When the retrieved archive's
+    manifest declares a version other than the pinned one, the install is
+    refused and the unverified artifact is removed — the catalog digest only
+    covers the advertised release, so nothing else verifies the content."""
+    import specify_cli.extensions as extensions
+
+    project = _pin_mismatch_extension_env(tmp_path, monkeypatch)
+    retrieved = tmp_path / "retrieved.zip"
+    retrieved.write_bytes(
+        _extension_zip(tmp_path, ext_id="xt", version="0.5.1").read_bytes()
+    )
+    monkeypatch.setattr(
+        extensions.ExtensionCatalog,
+        "download_extension_url",
+        lambda self, url, eid, version, **kw: retrieved,
+    )
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="extensions", id="xt", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "pinned to version 0.4.12" in message
+    assert "0.5.1" in message
+    assert "declares version '0.5.1'" in message
+    # The unverified artifact must not linger for a later install to reuse.
+    assert not retrieved.exists()
+    assert not manager.is_installed(ComponentRef(kind="extensions", id="xt"))
+
+
+def test_catalog_extension_pin_mismatch_rejects_release_declaring_other_id(
+    tmp_path: Path, monkeypatch
+):
+    """A retrieved archive must name the pinned component: an artifact whose
+    manifest declares a different extension id is a different component and
+    is refused, not installed under the pin."""
+    import specify_cli.extensions as extensions
+
+    project = _pin_mismatch_extension_env(tmp_path, monkeypatch)
+    retrieved = tmp_path / "retrieved.zip"
+    retrieved.write_bytes(
+        _extension_zip(tmp_path, ext_id="other-ext", version="0.4.12").read_bytes()
+    )
+    monkeypatch.setattr(
+        extensions.ExtensionCatalog,
+        "download_extension_url",
+        lambda self, url, eid, version, **kw: retrieved,
+    )
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="extensions", id="xt", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "declares extension id 'other-ext' instead of 'xt'" in message
+    assert not retrieved.exists()
+    assert not manager.is_installed(ComponentRef(kind="extensions", id="xt"))
+
+
+def test_catalog_preset_pin_mismatch_fetches_pinned_release(tmp_path: Path, monkeypatch):
+    """Presets follow the same pinned-release retrieval as extensions
+    (issue #4712)."""
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    # The archive's manifest must declare the pinned pack (the bundle layer
+    # verifies a retrieved pinned release before installing it).
+    archive = _preset_zip(tmp_path, preset_id="p", version="0.4.12")
+    downloads = []
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(
+        PresetCatalog,
+        "get_pack_info",
+        lambda _self, _id: {
+            "version": "0.5.1",
+            "download_url": (
+                "https://github.com/acme/preset/releases/download/v0.5.1/preset-0.5.1.zip"
+            ),
+            "_install_allowed": True,
+            "_catalog_name": "bundle-preset-catalog",
+        },
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack",
+        lambda _self, _id: pytest.fail("standard download must not be used"),
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack_url",
+        lambda _self, url, pid, version, **kw: (
+            downloads.append((url, pid, version)) or archive
+        ),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    manager.install(ComponentRef(kind="presets", id="p", version="0.4.12"))
+
+    assert downloads == [
+        (
+            "https://github.com/acme/preset/releases/download/v0.4.12/preset-0.4.12.zip",
+            "p",
+            "0.4.12",
+        )
+    ]
+
+
+def test_catalog_preset_pin_mismatch_unresolvable_reports_pin(
+    tmp_path: Path, monkeypatch
+):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(
+        PresetCatalog,
+        "get_pack_info",
+        lambda _self, _id: {
+            "version": "0.5.1",
+            "download_url": "https://example.com/preset/latest.zip",
+            "_install_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack",
+        lambda _self, _id: pytest.fail("standard download must not be used"),
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack_url",
+        lambda *a, **k: pytest.fail("pinned retrieval must not be attempted"),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="presets", id="p", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "pinned to version 0.4.12" in message
+    assert "0.5.1" in message
+    assert "cannot be located" in message
+
+
+def test_catalog_preset_pin_mismatch_rejects_release_declaring_other_version(
+    tmp_path: Path, monkeypatch
+):
+    """Presets get the same verification: a retrieved archive whose manifest
+    declares a version other than the pin is refused before install."""
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    retrieved = tmp_path / "retrieved.zip"
+    retrieved.write_bytes(
+        _preset_zip(tmp_path, preset_id="p", version="0.5.1").read_bytes()
+    )
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            pytest.fail("install must not proceed for an unverified release")
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(
+        PresetCatalog,
+        "get_pack_info",
+        lambda _self, _id: {
+            "version": "0.5.1",
+            "download_url": (
+                "https://github.com/acme/preset/releases/download/v0.5.1/preset-0.5.1.zip"
+            ),
+            "_install_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack",
+        lambda _self, _id: pytest.fail("standard download must not be used"),
+    )
+    monkeypatch.setattr(
+        PresetCatalog,
+        "download_pack_url",
+        lambda _self, url, pid, version, **kw: retrieved,
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="presets", id="p", version="0.4.12"))
+
+    message = str(exc.value)
+    assert "pinned to version 0.4.12" in message
+    assert "declares version '0.5.1'" in message
+    assert not retrieved.exists()
+
+
 def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
     from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -295,7 +853,9 @@ def test_bundled_extension_pin_match_installs(tmp_path: Path, monkeypatch):
     assert len(called) == 2
 
 
-def _write_extension_with_config(ext_dir: Path) -> None:
+def _write_extension_with_config(
+    ext_dir: Path, ext_id: str = "my-ext", version: str = "1.0.0"
+) -> None:
     """A minimal, real (unmocked) extension source with a provides.config entry."""
     import yaml
 
@@ -303,18 +863,21 @@ def _write_extension_with_config(ext_dir: Path) -> None:
     manifest = {
         "schema_version": "1.0",
         "extension": {
-            "id": "my-ext",
+            "id": ext_id,
             "name": "My Extension",
-            "version": "1.0.0",
+            "version": version,
             "description": "Test extension",
         },
         "requires": {"speckit_version": ">=0.1.0"},
         "provides": {
             "commands": [
-                {"name": "speckit.my-ext.hello", "file": "commands/hello.md"},
+                {"name": f"speckit.{ext_id}.hello", "file": "commands/hello.md"},
             ],
             "config": [
-                {"name": "my-ext-config.yml", "template": "config-template.yml"},
+                {
+                    "name": f"{ext_id}-config.yml",
+                    "template": "config-template.yml",
+                },
             ],
         },
     }
