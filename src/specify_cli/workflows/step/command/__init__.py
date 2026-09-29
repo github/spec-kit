@@ -189,7 +189,8 @@ class CommandStep(StepBase):
                 output=output,
                 error=(
                     f"Cannot dispatch command {command!r}: "
-                    f"integration {integration!r} CLI not found or not installed. "
+                    f"integration {integration!r} CLI not found or not installed, "
+                    f"or the integration does not support CLI dispatch. "
                     f"Install the CLI tool or check 'specify integration list'."
                 ),
             )
