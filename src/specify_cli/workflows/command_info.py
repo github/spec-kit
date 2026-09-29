@@ -20,18 +20,24 @@ def workflow_info(
     if versions:
         catalog = WorkflowCatalog(project_root)
         try:
-            available = catalog.get_workflow_versions(workflow_id)
+            details = catalog.get_workflow_version_details(workflow_id)
         except WorkflowCatalogError as exc:
             cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
             raise cli.typer.Exit(1)
-        if not available:
+        if details is None or not details[0]:
             cli.console.print(
                 f"[red]Error:[/red] Workflow '{cli._escape_markup(workflow_id)}' not found in catalog"
             )
             raise cli.typer.Exit(1)
+        available, install_allowed = details
         cli.console.print(
-            f"Available versions for {cli._escape_markup(workflow_id)}: "
+            f"Catalog versions for {cli._escape_markup(workflow_id)}: "
             + ", ".join(cli._escape_markup(version) for version in available)
+        )
+        cli.console.print(
+            "  Install policy: installable"
+            if install_allowed
+            else "  Install policy: discovery-only (not installable)"
         )
         return
 

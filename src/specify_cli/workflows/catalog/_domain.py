@@ -707,14 +707,21 @@ class WorkflowCatalog:
 
     def get_workflow_versions(self, workflow_id: str) -> list[str]:
         """List versions advertised by the winning catalog entry."""
+        details = self.get_workflow_version_details(workflow_id)
+        return details[0] if details is not None else []
+
+    def get_workflow_version_details(
+        self, workflow_id: str
+    ) -> tuple[list[str], bool] | None:
+        """Return advertised versions and whether their source allows installation."""
         from ._versions import available_versions
 
         merged = self._get_merged_workflows()
         wf = merged.get(workflow_id)
         if wf is None:
-            return []
+            return None
         wf.setdefault("id", workflow_id)
-        return available_versions(wf)
+        return available_versions(wf), bool(wf.get("_install_allowed", True))
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""

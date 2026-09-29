@@ -8,6 +8,7 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from ..._download_security import is_https_or_localhost_http
+from ..engine import _is_valid_workflow_version
 from ._domain import WorkflowValidationError
 
 _SHA256 = re.compile(r"^(?:sha256:)?[0-9a-fA-F]{64}$", re.IGNORECASE)
@@ -34,6 +35,10 @@ def _validated_releases(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
         raise WorkflowValidationError(
             f"Workflow '{workflow_id}' has releases but no current version."
         )
+    if not _is_valid_workflow_version(current):
+        raise WorkflowValidationError(
+            f"Workflow '{workflow_id}' has an invalid current version '{current}'."
+        )
     try:
         seen = {Version(current)}
     except InvalidVersion:
@@ -45,6 +50,10 @@ def _validated_releases(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if not isinstance(release_version, str) or not release_version.strip():
             raise WorkflowValidationError(
                 f"Workflow '{workflow_id}' has an invalid release version key."
+            )
+        if not _is_valid_workflow_version(release_version):
+            raise WorkflowValidationError(
+                f"Workflow '{workflow_id}' has invalid release version '{release_version}'."
             )
         try:
             normalized = Version(release_version)

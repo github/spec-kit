@@ -1348,15 +1348,18 @@ def _install_workflow_from_catalog(
     # A stale or misconfigured URL can serve a different version than the
     # catalog advertised; without this check `update` would report success
     # while leaving the old version installed (or even downgrading).
-    if expected_version is not None:
-        if not versions_match(definition.version, expected_version):
-            _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
-            console.print(
-                f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
-                f"does not match the catalog version ({_escape_markup(expected_version)}). "
-                f"The catalog entry may be stale or misconfigured."
-            )
-            raise typer.Exit(1)
+    if expected_version is not None and not (
+        str(definition.version) == expected_version
+        if requested_version is not None
+        else versions_match(definition.version, expected_version)
+    ):
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(
+            f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
+            f"does not match the catalog version ({_escape_markup(expected_version)}). "
+            f"The catalog entry may be stale or misconfigured."
+        )
+        raise typer.Exit(1)
     if (
         requested_version is not None
         and "requires" in info

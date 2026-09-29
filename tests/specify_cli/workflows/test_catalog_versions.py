@@ -125,11 +125,14 @@ def test_legacy_entry_and_winning_source(monkeypatch, project_dir):
         None,
         [],
         {"bad": {"url": OLD_URL, "sha256": "a" * 64}},
+        {"\u0661.\u0660.\u0660": {"url": OLD_URL, "sha256": "a" * 64}},
+        {"1.0": {"url": OLD_URL, "sha256": "a" * 64}},
+        {"v1.0.0": {"url": OLD_URL, "sha256": "a" * 64}},
         {"2.0.0": {"url": OLD_URL, "sha256": "a" * 64}},
         {"2.0.0.0": {"url": OLD_URL, "sha256": "a" * 64}},
         {
             "1.0.0": {"url": OLD_URL, "sha256": "a" * 64},
-            "v1.0": {"url": OLD_URL, "sha256": "b" * 64},
+            "01.0.0": {"url": OLD_URL, "sha256": "b" * 64},
         },
         {"1.0.0": {"sha256": "a" * 64}},
         {"1.0.0": {"url": "http://example.com/old.zip", "sha256": "a" * 64}},
@@ -159,6 +162,19 @@ def test_history_without_current_version_rejected(monkeypatch, project_dir):
         catalog.get_workflow_info("history-wf")
 
 
+@pytest.mark.parametrize(
+    "version", ["2.0", "v2.0.0", "2.0.0.0", "\u0662.\u0660.\u0660"]
+)
+def test_history_with_non_workflow_current_version_rejected(
+    monkeypatch, project_dir, version
+):
+    entry = _entry()
+    entry["version"] = version
+    catalog = _catalog(monkeypatch, project_dir, entry)
+    with pytest.raises(WorkflowValidationError, match="invalid current version"):
+        catalog.get_workflow_info("history-wf")
+
+
 def test_malformed_history_is_reported_by_cli(monkeypatch, project_dir):
     entry = _entry()
     entry["releases"] = {"1.0.0": {"url": OLD_URL}}
@@ -184,9 +200,20 @@ def test_info_versions_uses_catalog_even_when_installed(monkeypatch, project_dir
     result = runner.invoke(app, ["workflow", "info", "history-wf", "--versions"])
     assert result.exit_code == 0, result.output
     assert "2.0.0, 1.0.0" in result.output
+    assert "installable" in result.output
     result = runner.invoke(app, ["workflow", "info", "history-wf"])
     assert result.exit_code == 0, result.output
     assert "Version:     2.0.0" in result.output
+
+
+def test_info_versions_labels_discovery_only_catalog(monkeypatch, project_dir):
+    _catalog(monkeypatch, project_dir, _entry(), _entry(), install_allowed=False)
+    monkeypatch.chdir(project_dir)
+    result = runner.invoke(app, ["workflow", "info", "history-wf", "--versions"])
+    assert result.exit_code == 0, result.output
+    assert "2.0.0, 1.0.0" in result.output
+    assert "discovery-only" in result.output
+    assert "not installable" in result.output
 
 
 def test_exact_add_uses_historical_url_digest_and_requirements(
@@ -237,6 +264,45 @@ steps:
     result = runner.invoke(app, ["workflow", "add", "history-wf", "--version", "1.0"])
     assert result.exit_code == 0, result.output
     assert WorkflowRegistry(project_dir).get("history-wf")["version"] == "1.0.0"
+
+
+@pytest.mark.parametrize("source_type", ["archive", "yaml"])
+def test_exact_release_rejects_differently_spelled_artifact_version(
+    monkeypatch, project_dir, source_type
+):
+    from specify_cli.authentication import http
+
+    if source_type == "archive":
+        download = _archive("01.0.0")
+        url = OLD_URL
+    else:
+        download = b"""schema_version: "1.0"
+workflow:
+  id: history-wf
+  name: History Workflow
+  version: "01.0.0"
+steps:
+  - id: first
+    type: gate
+    message: Continue?
+"""
+        url = "https://example.com/old.yml"
+    entry = _entry()
+    entry["releases"]["1.0.0"] = {
+        "url": url,
+        "sha256": hashlib.sha256(download).hexdigest(),
+    }
+    _catalog(monkeypatch, project_dir, entry)
+    monkeypatch.setattr(
+        http, "open_url", lambda requested, **kw: _Response(download, requested)
+    )
+    monkeypatch.chdir(project_dir)
+
+    result = runner.invoke(app, ["workflow", "add", "history-wf", "--version", "v1.0"])
+
+    assert result.exit_code == 1
+    assert "does not match the catalog version" in result.output
+    assert WorkflowRegistry(project_dir).get("history-wf") is None
 
 
 @pytest.mark.parametrize(

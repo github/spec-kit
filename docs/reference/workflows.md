@@ -138,6 +138,9 @@ advertises historical versions without changing what unqualified `add`,
 
 Each historical release needs its own URL and SHA-256 digest; `requires` is
 optional and, when present, must match the downloaded workflow definition.
+Advertised versions use the workflow definition's `X.Y.Z` version format;
+`--version` also accepts equivalent spellings such as `v1.0` when selecting an
+advertised `1.0.0` release.
 The requested version must exist in the highest-priority catalog that provides
 the workflow. A missing version does not fall back to another source, and
 discovery-only catalogs cannot be installed from. The downloaded workflow ID,
@@ -411,8 +414,10 @@ specify workflow info <workflow_id> --versions
 ```
 
 Shows detailed information about a workflow, including its steps, inputs, and requirements.
-`--versions` lists the current catalog version followed by available historical
-versions; it also works when a different version is installed locally.
+`--versions` lists the current catalog version followed by advertised historical
+versions and indicates whether the winning catalog is installable or
+discovery-only (not installable). It also works when a different version is
+installed locally.
 
 ## Catalog Management
 
