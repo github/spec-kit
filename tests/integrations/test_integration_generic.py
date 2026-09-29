@@ -112,6 +112,41 @@ def test_generic_extension_preserves_modified_artifact(tmp_path, generic_extensi
     assert artifact.read_text(encoding="utf-8").endswith("user edit\n")
 
 
+@pytest.mark.parametrize("operation", ["resync", "remove", "force"])
+def test_generic_skill_symlinked_directory_is_not_owned(
+    tmp_path, generic_extension, operation,
+):
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill_dir = project / ".custom/commands/speckit-sample-run"
+    other_dir = project / "moved-skill"
+    skill_dir.rename(other_dir)
+    try:
+        skill_dir.symlink_to(other_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+    other_skill = other_dir / "SKILL.md"
+    original = other_skill.read_bytes()
+
+    if operation == "resync":
+        source = manager.extensions_dir / "sample/commands/run.md"
+        source.write_text(source.read_text(encoding="utf-8") + "\nnew source\n", encoding="utf-8")
+        manager.register_enabled_extensions_for_agent("generic", force=True)
+        assert manager._generic_owned_names(
+            manager.registry.get("sample"), ["speckit-sample-run"], skills=True,
+        ) == []
+    elif operation == "force":
+        with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+            manager.install_from_directory(generic_extension, "1.0.0", force=True)
+        assert manager.registry.is_installed("sample")
+
+    if operation != "force":
+        assert manager.remove("sample")
+    assert skill_dir.is_symlink()
+    assert other_skill.read_bytes() == original
+
+
 @pytest.mark.parametrize("skills", [False, True])
 def test_generic_extension_rejects_modified_artifact_on_disable(
     tmp_path, generic_extension, skills,
@@ -396,6 +431,51 @@ def test_generic_partial_registration_rolls_back_all_artifacts(
     (generic_extension / ".extensionignore").unlink(missing_ok=True)
     manager.install_from_directory(generic_extension, "1.0.0")
     assert manager.registry.is_installed("sample")
+    assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_registration_write_error_rolls_back_partial_install(
+    tmp_path, generic_extension, skills, monkeypatch,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"].append({
+        "name": "speckit.sample.other",
+        "file": "commands/other.md",
+        "description": "Another command",
+    })
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    (generic_extension / "commands/other.md").write_text(
+        "---\ndescription: Another command\n---\ncontent\n", encoding="utf-8",
+    )
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    output_dir = project / ".custom/commands"
+    first = output_dir / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    second = output_dir / (
+        "speckit-sample-other/SKILL.md" if skills else "speckit.sample.other.md"
+    )
+    original_write = Path.write_text
+
+    def fail_second_write(path, *args, **kwargs):
+        if path == second:
+            raise OSError("simulated artifact write error")
+        return original_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_second_write)
+    with pytest.raises(OSError, match="simulated artifact write error"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+    monkeypatch.undo()
+
+    assert not first.exists()
+    assert not second.exists()
+    assert not (manager.extensions_dir / "sample").exists()
+    assert not manager.registry.is_installed("sample")
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert first.is_file() and second.is_file()
     assert manager.remove("sample")
 
 

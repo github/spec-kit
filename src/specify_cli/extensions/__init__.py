@@ -1938,19 +1938,25 @@ class ExtensionManager:
     ) -> Dict[str, str]:
         """Record generic-owned output by path and hash for safe later removal."""
         from ..integrations.generic import registration_directory
+        from ..shared_infra import _validate_safe_shared_directory
 
         if not registered_commands.get("generic") and not registered_skills:
             return previous or {}
         output_dir = registration_directory(self.project_root)
+        root = self.project_root.resolve()
         paths = [
             output_dir / f"{name}.md"
             for name in registered_commands.get("generic", [])
         ] + [output_dir / name / "SKILL.md" for name in registered_skills]
         hashes = dict(previous or {})
         for path in paths:
+            try:
+                _validate_safe_shared_directory(root, path.parent)
+            except (OSError, ValueError):
+                continue
             if not path.is_file():
                 continue
-            relative = path.relative_to(self.project_root.resolve()).as_posix()
+            relative = path.relative_to(root).as_posix()
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             hashes[relative] = digest
         return hashes
@@ -1960,21 +1966,27 @@ class ExtensionManager:
     ) -> List[str]:
         """Keep customized or untracked generic artifacts out of cleanup."""
         from ..integrations.generic import registration_directory
+        from ..shared_infra import _validate_safe_shared_directory
 
         hashes = metadata.get("generic_artifact_hashes", {})
         if not isinstance(hashes, dict):
             return []
         output_dir = registration_directory(self.project_root)
+        root = self.project_root.resolve()
         owned = []
         for name in names:
             path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+            try:
+                _validate_safe_shared_directory(root, path.parent)
+            except (OSError, ValueError):
+                continue
             if not path.is_file():
                 continue
             if path.is_symlink() and not path.resolve().is_relative_to(
                 self.extensions_dir.resolve()
             ):
                 continue
-            relative = path.relative_to(self.project_root.resolve()).as_posix()
+            relative = path.relative_to(root).as_posix()
             if hashes.get(relative) == hashlib.sha256(path.read_bytes()).hexdigest():
                 owned.append(name)
         return owned
@@ -1983,6 +1995,8 @@ class ExtensionManager:
         self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True
     ) -> None:
         """Clean recorded generic paths even after the configured directory moves."""
+        from ..shared_infra import _validate_safe_shared_directory
+
         manifest = self.get_extension(extension_id)
         registered = metadata.get("registered_commands", {})
         command_names = set(
@@ -2020,7 +2034,9 @@ class ExtensionManager:
             }:
                 continue
             path = root / name
-            if not path.parent.resolve().is_relative_to(root):
+            try:
+                _validate_safe_shared_directory(root, path.parent)
+            except (OSError, ValueError):
                 continue
             if not path.is_file():
                 continue
@@ -2807,64 +2823,95 @@ class ExtensionManager:
         # the restored user config with packaged defaults.  Cleanup is deferred
         # until after registry.add() succeeds (see post-commit cleanup below).
 
-        # Register commands with AI agents (active integration only, #2948)
-        registered_commands = {}
-        if register_commands:
-            registered_commands = self._register_commands_for_active_agent(
+        def rollback_generic_registration() -> None:
+            from ..shared_infra import _validate_safe_shared_directory
+
+            root = self.project_root.resolve()
+            installed_root = dest_dir.resolve()
+            for name in names:
+                path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+                try:
+                    _validate_safe_shared_directory(root, path.parent)
+                except (OSError, ValueError):
+                    continue
+                if path.is_symlink():
+                    if not path.resolve().is_relative_to(installed_root):
+                        continue
+                elif not path.is_file():
+                    if skills and path.parent.is_dir():
+                        try:
+                            path.parent.rmdir()
+                        except OSError:
+                            pass
+                    continue
+                path.unlink()
+                if skills:
+                    try:
+                        path.parent.rmdir()
+                    except OSError:
+                        pass
+
+            preserved = set(stranded_configs)
+            if did_remove:
+                backup_dir = self.extensions_dir / ".backup" / manifest.id
+                if backup_dir.is_dir() and not backup_dir.is_symlink():
+                    for config_file in backup_dir.iterdir():
+                        if (
+                            config_file.is_file()
+                            and not config_file.is_symlink()
+                            and config_file.name.endswith(("-config.yml", "-config.local.yml"))
+                        ):
+                            shutil.copy2(config_file, dest_dir / config_file.name)
+                            preserved.add(config_file.name)
+            if preserved:
+                for child in dest_dir.iterdir():
+                    if child.name in preserved:
+                        continue
+                    if child.is_dir() and not child.is_symlink():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
+                (dest_dir / ".keep-config").write_text("", encoding="utf-8")
+            else:
+                shutil.rmtree(dest_dir)
+
+        try:
+            # Register commands with AI agents (active integration only, #2948)
+            registered_commands = {}
+            if register_commands:
+                registered_commands = self._register_commands_for_active_agent(
+                    manifest, dest_dir, link_outputs=link_commands
+                )
+
+            # Auto-register extension commands as agent skills when skills mode
+            # was used during project initialisation (feature parity).
+            registered_skills = self._register_extension_skills(
                 manifest, dest_dir, link_outputs=link_commands
             )
-
-        # Auto-register extension commands as agent skills when skills mode
-        # was used during project initialisation (feature parity).
-        registered_skills = self._register_extension_skills(
-            manifest, dest_dir, link_outputs=link_commands
-        )
-        if register_commands and generic_active and manifest.commands:
-            expected = set(names)
-            actual = set(registered_skills if skills else registered_commands.get("generic", []))
-            missing = expected - actual
-            if missing:
-                for name in actual:
-                    path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
-                    if path.is_file() or path.is_symlink():
-                        path.unlink()
-                        if skills:
-                            try:
-                                path.parent.rmdir()
-                            except OSError:
-                                pass
-
-                preserved = set(stranded_configs)
-                if did_remove:
-                    backup_dir = self.extensions_dir / ".backup" / manifest.id
-                    if backup_dir.is_dir() and not backup_dir.is_symlink():
-                        for config_file in backup_dir.iterdir():
-                            if (
-                                config_file.is_file()
-                                and not config_file.is_symlink()
-                                and config_file.name.endswith(("-config.yml", "-config.local.yml"))
-                            ):
-                                shutil.copy2(config_file, dest_dir / config_file.name)
-                                preserved.add(config_file.name)
-                if preserved:
-                    for child in dest_dir.iterdir():
-                        if child.name in preserved:
-                            continue
-                        if child.is_dir() and not child.is_symlink():
-                            shutil.rmtree(child)
-                        else:
-                            child.unlink()
-                    (dest_dir / ".keep-config").write_text("", encoding="utf-8")
-                else:
-                    shutil.rmtree(dest_dir)
-                raise ExtensionError(
-                    "Cannot register generic extension commands: missing invocation "
-                    f"artifacts for {', '.join(sorted(missing))}"
+            if register_commands and generic_active and manifest.commands:
+                expected = set(names)
+                actual = set(
+                    registered_skills if skills else registered_commands.get("generic", [])
                 )
-        generic_hashes = (
-            self._generic_artifact_hashes(registered_commands, registered_skills)
-            if generic_active else {}
-        )
+                missing = expected - actual
+                if missing:
+                    raise ExtensionError(
+                        "Cannot register generic extension commands: missing invocation "
+                        f"artifacts for {', '.join(sorted(missing))}"
+                    )
+            generic_hashes = (
+                self._generic_artifact_hashes(registered_commands, registered_skills)
+                if generic_active else {}
+            )
+        except (ExtensionError, OSError, ValueError, RuntimeError) as exc:
+            if register_commands and generic_active and manifest.commands:
+                try:
+                    rollback_generic_registration()
+                except (OSError, ValueError) as rollback_error:
+                    raise ExtensionError(
+                        f"Generic registration failed ({exc}); rollback failed: {rollback_error}"
+                    ) from rollback_error
+            raise
 
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
