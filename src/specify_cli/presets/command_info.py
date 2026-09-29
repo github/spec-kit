@@ -137,6 +137,7 @@ def preset_info(
 
         resolver = PresetResolver(project_root)
         preset_dir = manager.presets_dir / local_pack.id
+        console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
             tmpl_name = _escape_markup(str(tmpl["name"]))
             tmpl_type = _escape_markup(str(tmpl["type"]))

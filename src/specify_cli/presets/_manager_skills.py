@@ -139,7 +139,11 @@ class _PresetSkillMethods:
         if not isinstance(active_ai, str) or not active_ai:
             active_ai = None
 
-        # Cache registry once to avoid repeated filesystem reads
+        # Preserve disabled entries as cleanup provenance while resolving winners
+        # only from enabled presets.
+        all_presets_by_priority = list(
+            self.registry.list_by_priority(include_disabled=True)
+        )
         presets_by_priority = list(self.registry.list_by_priority())
 
         # Group command names by winning preset to batch _register_skills calls
@@ -162,7 +166,7 @@ class _PresetSkillMethods:
             # Track whether any preset previously registered this skill
             # (i.e., it was actively managed), so a not-yet-existing skill
             # dir can be re-created per affected directory below.
-            for _pid, meta in presets_by_priority:
+            for _pid, meta in all_presets_by_priority:
                 if not isinstance(meta, dict):
                     continue
                 recorded = meta.get("registered_skills", [])
@@ -191,8 +195,6 @@ class _PresetSkillMethods:
                     found_preset = True
                     break
             if not found_preset:
-                # Winner is a non-preset source (core/extension/override).
-                # Track the winning layer path for skill restoration.
                 non_preset_skills.append((skill_name, cmd_name, layers[0]))
 
         core_ext_skills = [
@@ -335,7 +337,7 @@ class _PresetSkillMethods:
                 command_methods = _PresetCommandMethods()
                 command_methods.__dict__.update(self.__dict__)
                 concrete_declarations = command_methods._expand_command_selectors(
-                    PresetResolver(self.project_root),
+                    resolver,
                     pack_dir,
                     [
                         item

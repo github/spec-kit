@@ -36,29 +36,46 @@ def preset_enable(
         console.print(f"[yellow]Preset '{preset_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
-    # Enable the preset
-    manager.registry.update(preset_id, {"enabled": True})
-    try:
-        from ._manifest import PresetManifest
-        from ._resolver import PresetResolver
+    # Capture selector matches while the preset is disabled, then enable it and
+    # reconcile the newly active resolution stack.
+    from ._resolver import PresetResolver
 
-        manifest_path = manager.presets_dir / preset_id / "preset.yml"
-        names: list[str] = []
-        if manifest_path.is_file():
-            PresetManifest(manifest_path)
-            names = sorted(
-                manager._collect_selector_command_names(PresetResolver(project_root))
-            )
-        if names:
-            manager._reconcile_composed_commands(names)
-            manager._reconcile_skills(names)
-    except Exception as exc:
-        import warnings
-
-        warnings.warn(
-            f"Could not reconcile preset commands after enabling {preset_id}: {exc}",
-            stacklevel=2,
+    resolver = PresetResolver(project_root)
+    preset_dir = manager.presets_dir / preset_id
+    manifest = resolver._get_manifest(preset_dir)
+    declarations = [
+        item
+        for item in (manifest.templates if manifest is not None else [])
+        if item.get("type") == "command"
+    ]
+    names = {
+        item["name"]
+        for item in manager._expand_command_selectors(
+            resolver, preset_dir, declarations
         )
+        if isinstance(item.get("name"), str)
+    }
+    manager.registry.update(preset_id, {"enabled": True})
+    from .. import load_init_options
+
+    options = load_init_options(project_root)
+    active_agent = options.get("ai") if isinstance(options, dict) else None
+    if isinstance(active_agent, str) and active_agent:
+        manager.register_enabled_presets_for_agent(active_agent)
+    if names:
+        names.update(
+            manager._collect_selector_command_names(PresetResolver(project_root))
+        )
+        try:
+            manager._reconcile_composed_commands(sorted(names))
+            manager._reconcile_skills(sorted(names))
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"Could not reconcile preset commands after enabling {preset_id}: {exc}",
+                stacklevel=2,
+            )
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after enabling preset {preset_id}"
     )

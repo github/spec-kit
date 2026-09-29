@@ -418,9 +418,13 @@ class _PresetCommandMethods:
             load_init_options(self.project_root)
         )
 
+        from ._resolver import PresetResolver
+        from ._selectors import is_regex_selector
+
         resolver = PresetResolver(self.project_root)
-        affected_cmd_names: set = set()
+        affected_cmd_names: set[str] = set()
         presets_by_priority = list(self.registry.list_by_priority())
+        expanded_declarations_by_pack: Dict[str, List[Dict[str, Any]]] = {}
         winning_pack_by_command: Dict[str, str] = {}
         winning_source_by_command: Dict[str, Path] = {}
         project_override_commands: set[str] = set()
@@ -438,6 +442,7 @@ class _PresetCommandMethods:
             expanded_for_reconcile = self._expand_command_selectors(
                 resolver, self.presets_dir / candidate_pack_id, command_templates
             )
+            expanded_declarations_by_pack[candidate_pack_id] = expanded_for_reconcile
             for template in expanded_for_reconcile:
                 command_name = template.get("name")
                 if not isinstance(command_name, str) or is_regex_selector(command_name):
@@ -477,35 +482,22 @@ class _PresetCommandMethods:
             if manifest is None:
                 continue
 
-            # Registration can write one command and then fail on a later
-            # template. Record names first so final reconciliation can repair
-            # any partial writes even when _register_commands never returns.
-            for tmpl in manifest.templates:
+            concrete_declarations = expanded_declarations_by_pack.get(pack_id, [])
+            for tmpl in concrete_declarations:
                 name = tmpl.get("name")
-                if tmpl.get("type") != "command" or not isinstance(name, str):
-                    continue
-                expanded_for_reconcile = (
-                    self._expand_command_selectors(resolver, pack_dir, [tmpl])
-                    if is_regex_selector(name)
-                    else [tmpl]
-                )
-                for expanded in expanded_for_reconcile:
-                    concrete_name = expanded.get("name")
-                    if isinstance(concrete_name, str) and not is_regex_selector(
-                        concrete_name
-                    ):
-                        affected_cmd_names.add(concrete_name)
+                if isinstance(name, str) and not is_regex_selector(name):
+                    affected_cmd_names.add(name)
 
             # Isolate per-preset failures: one preset that fails to register
             # must not abort registration of the remaining enabled presets.
             try:
-                registered_commands = self._register_commands(manifest, pack_dir)
+                registered_commands = self._register_commands(
+                    manifest, pack_dir, command_templates=concrete_declarations
+                )
                 registered_command_names = set(
                     registered_commands.get(agent_name) or []
                 )
-                for tmpl in manifest.templates:
-                    if tmpl.get("type") != "command":
-                        continue
+                for tmpl in concrete_declarations:
                     primary_name = tmpl.get("name")
                     if (
                         isinstance(primary_name, str)
@@ -549,11 +541,13 @@ class _PresetCommandMethods:
                         pack_id, {"registered_commands": merged_commands}
                     )
 
-                registered_skills = self._register_skills(manifest, pack_dir)
+                registered_skills = self._register_skills(
+                    manifest,
+                    pack_dir,
+                    command_templates=concrete_declarations,
+                )
                 replaced_skill_names = set(registered_skills.get(agent_name) or [])
-                for tmpl in manifest.templates:
-                    if tmpl.get("type") != "command":
-                        continue
+                for tmpl in concrete_declarations:
                     primary_name = tmpl.get("name")
                     if not isinstance(primary_name, str):
                         continue
@@ -611,11 +605,11 @@ class _PresetCommandMethods:
                     # anything unreplaced stays tracked and on disk (#2948).
                     stale_skill_names = merged_skills[agent_name]
                     skill_to_primary: Dict[str, str] = {}
-                    for tmpl in manifest.templates:
-                        if tmpl.get("type") != "command":
-                            continue
+                    for tmpl in concrete_declarations:
                         primary_name = tmpl.get("name")
-                        if not isinstance(primary_name, str):
+                        if not isinstance(primary_name, str) or is_regex_selector(
+                            primary_name
+                        ):
                             continue
                         modern_name, legacy_name = self._skill_names_for_command(
                             primary_name
@@ -670,9 +664,7 @@ class _PresetCommandMethods:
                     # whether the *primary*'s skill replacement actually
                     # landed (#2948).
                     alias_to_primary: Dict[str, str] = {}
-                    for tmpl in manifest.templates:
-                        if tmpl.get("type") != "command":
-                            continue
+                    for tmpl in concrete_declarations:
                         primary_name = tmpl.get("name")
                         if not isinstance(primary_name, str):
                             continue
@@ -1165,25 +1157,40 @@ class _PresetCommandMethods:
                     if top_path.is_relative_to(pack_dir):
                         manifest = resolver._get_manifest(pack_dir)
                         if manifest:
-                            for tmpl in manifest.templates:
-                                if (
-                                    tmpl.get("name") == cmd_name
-                                    and tmpl.get("type") == "command"
-                                ):
-                                    written = self._register_for_non_skill_agents(
-                                        registrar,
-                                        [tmpl],
-                                        manifest.id,
+                            concrete = next(
+                                (
+                                    declaration
+                                    for declaration in self._expand_command_selectors(
+                                        resolver,
                                         pack_dir,
-                                        only_agent=only_agent,
-                                        extra_agents=extra_agents,
+                                        [
+                                            item
+                                            for item in manifest.templates
+                                            if item.get("type") == "command"
+                                        ],
                                     )
-                                    record_written(written)
-                                    self._merge_pack_registered_commands(
-                                        manifest.id, written
-                                    )
-                                    registered = True
-                                    break
+                                    if declaration.get("name") == cmd_name
+                                    and (pack_dir / str(declaration.get("file", "")))
+                                    == top_path
+                                ),
+                                None,
+                            )
+                            if concrete is not None:
+                                logical_declaration = {**concrete, "name": cmd_name}
+                                written = self._register_for_non_skill_agents(
+                                    registrar,
+                                    [logical_declaration],
+                                    manifest.id,
+                                    pack_dir,
+                                    only_agent=only_agent,
+                                    extra_agents=extra_agents,
+                                )
+                                record_written(written)
+                                self._merge_pack_registered_commands(
+                                    manifest.id, written
+                                )
+                                registered = True
+                                break
                         break
                 if not registered:
                     # Top layer is a non-preset source (extension, core, or
@@ -1296,18 +1303,29 @@ class _PresetCommandMethods:
                     manifest = resolver._get_manifest(pack_dir)
                     if not manifest:
                         continue
-                    for tmpl in manifest.templates:
-                        if (
-                            tmpl.get("name") == cmd_name
-                            and tmpl.get("type") == "command"
-                        ):
+                    for tmpl in self._expand_command_selectors(
+                        resolver,
+                        pack_dir,
+                        [
+                            item
+                            for item in manifest.templates
+                            if item.get("type") == "command"
+                        ],
+                    ):
+                        if tmpl.get("name") == cmd_name:
+                            logical_declaration = {**tmpl, "name": cmd_name}
                             composed_dir = pack_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"
                             composed_file.write_text(composed, encoding="utf-8")
                             written = self._register_for_non_skill_agents(
                                 registrar,
-                                [{**tmpl, "file": f".composed/{cmd_name}.md"}],
+                                [
+                                    {
+                                        **logical_declaration,
+                                        "file": f".composed/{cmd_name}.md",
+                                    }
+                                ],
                                 manifest.id,
                                 pack_dir,
                                 only_agent=only_agent,

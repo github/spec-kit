@@ -332,7 +332,7 @@ class PresetResolver:
                 if candidate.exists():
                     return candidate
 
-        # Priority 4: Core templates
+        # Priority 3: Project templates
         if template_type == "template":
             core = self.templates_dir / f"{template_name}.md"
             if core.exists():
@@ -813,6 +813,33 @@ class PresetResolver:
                         "extension_dir": ext_dir,
                     }
                 )
+
+        if template_type == "command":
+            extension_template_name = template_name.removeprefix("speckit.")
+            extension_candidates = [
+                self.extensions_dir
+                / extension_template_name.split(".", 1)[0]
+                / "commands"
+                / f"{extension_template_name}.md",
+                self.extensions_dir
+                / extension_template_name.split(".", 1)[0]
+                / "templates"
+                / "commands"
+                / f"{extension_template_name}.md",
+            ]
+            for candidate in extension_candidates:
+                if candidate.is_file():
+                    ext_id = extension_template_name.split(".", 1)[0]
+                    layers.append(
+                        {
+                            "path": candidate,
+                            "source": f"extension:{ext_id} (unregistered)",
+                            "strategy": "replace",
+                            "extension_id": ext_id,
+                            "extension_dir": self.extensions_dir / ext_id,
+                        }
+                    )
+                    break
 
         # Priority 4: Core templates (always "replace")
         core = None
