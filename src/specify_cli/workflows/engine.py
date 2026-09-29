@@ -1249,10 +1249,14 @@ class WorkflowEngine:
         context.steps = deepcopy(state.execution.get("initial", {}))
         tree = state.execution["sequence"]
         executor = Execution(self, state, registry, rebind=rebind)
-        outcome, error = executor.run(tree, context, (state.workflow_id,), root=True)
-        active = active_step(state.execution)
-        if active is not None:
-            state.current_step_id = active[0][-1]
+        try:
+            outcome, error = executor.run(
+                tree, context, (state.workflow_id,), root=True
+            )
+        finally:
+            active = active_step(state.execution)
+            if active is not None:
+                state.current_step_id = active[0][-1]
         state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
         state.error = error
 
