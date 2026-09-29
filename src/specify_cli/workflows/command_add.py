@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from . import _commands as cli
 
 
@@ -37,12 +39,25 @@ def workflow_add(
     from_url: str | None = cli.typer.Option(
         None, "--from", help="Install from a custom URL"
     ),
+    version: Annotated[
+        str | None, cli.typer.Option(help="Install an exact catalog release")
+    ] = None,
 ):
     """Install a workflow from catalog, URL, or local path."""
     from . import load_custom_steps
     from .engine import WorkflowDefinition
 
     project_root = cli._require_specify_project()
+    if version is not None and (
+        dev or from_url is not None or source.startswith(("http://", "https://"))
+        or cli.Path(source).exists()
+    ):
+        cli.console.print(
+            "[red]Error:[/red] --version requires a workflow ID from a catalog."
+        )
+        raise cli.typer.Exit(1)
+    if version is not None:
+        cli._validate_workflow_id_or_exit(source)
     load_custom_steps(project_root)
     cli._open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
@@ -504,4 +519,6 @@ def workflow_add(
             return
 
     # Try from catalog
-    cli._install_workflow_from_catalog(project_root, workflows_dir, source)
+    cli._install_workflow_from_catalog(
+        project_root, workflows_dir, source, requested_version=version
+    )
