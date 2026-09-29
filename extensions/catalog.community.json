@@ -3696,6 +3696,42 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "openspec": {
+      "name": "OpenSpec",
+      "id": "openspec",
+      "description": "Adds a spec-driven change-management workflow (propose → implement → verify → archive) to Spec Kit projects, keeping specs, designs, and code in sync",
+      "author": "Aaron Sun",
+      "version": "0.1.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-openspec/releases/download/openspec-v0.1.0/openspec.zip",
+      "sha256": "9d3b384d5a13c36547352009cc11ce059d45c5f0624b3e3311559e2e5766cdf9",
+      "repository": "https://github.com/aaronrsun/spec-kit-openspec",
+      "homepage": "https://github.com/aaronrsun/spec-kit-openspec",
+      "documentation": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 12,
+        "hooks": 0
+      },
+      "tags": [
+        "openspec",
+        "spec-driven-development",
+        "planning",
+        "implementation",
+        "workflow",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-28T00:00:00Z",
+      "updated_at": "2026-09-28T00:00:00Z"
+    },
     "openup": {
       "name": "OpenUP Governed Lifecycle",
       "id": "openup",
@@ -5217,10 +5253,11 @@
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
       "id": "speckit-superpowers-bridge",
-      "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
+      "description": "Thin orchestrator between Spec Kit design artifacts and Superpowers implementation discipline. Cross-agent; verified for Codex and Claude Code.",
       "author": "lihan3238",
-      "version": "1.2.0",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.2.0/speckit-superpowers-bridge-v1.2.0.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.3.0/speckit-superpowers-bridge-v1.3.0.zip",
+      "sha256": "2caba4377f003a6229585f1d559de6dedc1d5654e7f2566dcf9b98462c154525",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -5263,7 +5300,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-08-18T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
@@ -5744,6 +5781,48 @@
       "created_at": "2026-05-20T00:00:00Z",
       "updated_at": "2026-05-20T00:00:00Z"
     },
+    "test-by": {
+      "name": "Test Validation",
+      "id": "test-by",
+      "description": "Validate acceptance scenarios and run CSV-driven E2E tests against a live app via Playwright",
+      "author": "Andrei Stsepaniuk",
+      "version": "1.2.0",
+      "download_url": "https://github.com/andstepanuk/speckit-test-validate/archive/refs/tags/v1.2.0.zip",
+      "sha256": "a3c3f5f4d4c37598e9e7aae5f51472cfe31829a42c9e450046f3f7f189d1e777",
+      "repository": "https://github.com/andstepanuk/speckit-test-validate",
+      "homepage": "https://github.com/andstepanuk/speckit-test-validate",
+      "documentation": "https://github.com/andstepanuk/speckit-test-validate/tree/main/docs",
+      "changelog": "https://github.com/andstepanuk/speckit-test-validate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "playwright",
+            "version": ">0.0.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "testing",
+        "playwright",
+        "acceptance",
+        "e2e",
+        "csv"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-25T00:00:00Z",
+      "updated_at": "2026-09-25T00:00:00Z"
+    },
     "test-coverage-drift-control": {
       "name": "Test Coverage Drift Control",
       "id": "test-coverage-drift-control",
@@ -5854,10 +5933,10 @@
     "threatmodel": {
       "name": "OWASP LLM Threat Model",
       "id": "threatmodel",
-      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "description": "OWASP Top 10 for LLM Applications 2026 threat analysis on agent artifacts",
       "author": "NaviaSamal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "version": "2.1.2",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v2.1.2.zip",
       "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
       "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
       "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
@@ -5883,7 +5962,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
-      "updated_at": "2026-04-25T00:00:00Z"
+      "updated_at": "2026-09-28T00:00:00Z"
     },
     "threatspec": {
       "name": "ThreatSpec — Threat Modeling & Security Traceability",

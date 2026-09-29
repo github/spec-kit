@@ -2,6 +2,56 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.0.13] - 2026-09-29
+
+### Changed
+
+- community: add Raaghu Spec Kit Azure DevOps extension to friends (#4782)
+- feat(extensions): add bundled `github` extension for taskstoissues (#4488)
+- fix(integrations): drop invalid --model/--output-format flags from Vibe dispatch (#4784)
+- Update Superpowers Implementation Bridge extension to v1.3.0 (#4783)
+- fix(workflows): evaluate parenthesised expressions (#4417)
+- fix(workflows): resolve negative list indices in expressions (#4416)
+- docs: explain how Spec Kit uses an agentic SDLC (#4774)
+- fix(copilot): detect copilot.exe on Windows instead of assuming copilot.cmd (#4758)
+- fix: keep non-ASCII text readable in merged JSON settings files (#4773)
+- Added openspec extension (#4765)
+- feat(integrations): add MiniMax Code (mcode) integration (#4644) (#4645)
+- docs(community): add Specstride to Community Friends (#4762)
+- docs: clarify feature directories may live outside the project root (#4739)
+- fix(scripts): honor SPECKIT_PYTHON override for preset manifest parsing (#4445)
+- chore: clarify stale issue and PR guidance (#4772)
+- Update OWASP LLM Threat Model extension to v2.1.2 (#4771)
+- docs: correct workflow publishing security-review claim, add catalog vetting notes (#4736)
+- [preset] Update Intake Sequencing Governance preset to v0.2.6 (#4761)
+- [extension] Add Test Validation extension to community catalog (#4760)
+- chore: release 1.0.12, begin 1.0.13.dev0 development (#4759)
+
+## [1.0.12] - 2026-09-25
+
+### Changed
+
+- fix(workflows): reject a multi-argument filter call in expressions (#3893)
+- feat(auth): add Bitbucket authentication provider (#4629)
+- Add Agentstandards bundle to community catalog (#4751)
+- docs: consolidate design guidance and contribution guidelines (#4752)
+- Add Agentstandards Task Gate preset to community catalog (#4749)
+- fix(alquimia): render `/speckit-<name>` invocations for the skills-only Alquimia agent (#4137)
+- [preset] Update Intake Review Governance preset to v0.2.3 (#4748)
+- refactor(presets): split domain internals into private modules (#4747)
+- chore(deps): bump the codeql-action group with 2 updates (#4742)
+- Add Agentstandards Architecture Council extension to community catalog (#4730)
+- fix(ci): make the markdownlint job lint files again (#4526) (#4584)
+- Update SpecAssay community bundle to v0.5.2 (#4737)
+- Update SpecAssay Check extension to v0.5.2 (#4735)
+- [preset] Update SpecAssay preset to v0.5.2 (#4717)
+- fix: sync integration manifest hashes after preset re-registration on upgrade (#4697)
+- [extension] Update OKF Knowledge Bundle Generator to v0.9.2 (#4700)
+- Update Intake Authoring Governance preset to v0.3.4 (#4716)
+- fix: eliminate TOCTOU races in catalog_fetch() for file:// and bare path URLs (#3910)
+- fix: add ValueError guard for timeout in _build_opencode_plugin (#3973)
+- chore: release 1.0.11, begin 1.0.12.dev0 development (#4723)
+
 ## [1.0.11] - 2026-09-24
 
 ### Changed

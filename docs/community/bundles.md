@@ -9,6 +9,7 @@ Accepted community bundle entries are published in [`bundles/catalog.community.j
 
 | Bundle | Purpose | Role or team | Provides | Required catalogs | URL |
 |--------|---------|--------------|----------|-------------------|-----|
+| Agentstandards Multi-Vendor Architecture | Installs a Codex-orchestrated, multi-vendor architecture council, its hard task gate, and the supporting Spec Kit workflow. | `architecture-governance` | 1 extension, 1 preset, 1 workflow | Documented | [agentstandards](https://github.com/bbjwz/agentstandards) |
 | SicarioSpec Security & Governance Bundle | Secure-by-default governance bundle for GitHub Spec Kit. Enforces data classification, threat modeling, and code-owned verification gates. | `security-engineer` | 1 extension, 11 presets | Documented | [sicario-spec](https://github.com/dfirs1car1o/sicario-spec) |
 | SpecAssay | Durable-ID promotion for stock Spec Kit: templates, Gate 2 refusal, and trace-manifest emission. | `developer` | 1 extension, 1 preset | Documented | [specassay](https://github.com/rdryfoos/specassay) |
 
