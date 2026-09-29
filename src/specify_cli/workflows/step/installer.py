@@ -28,6 +28,7 @@ import yaml
 # files. These ceilings apply uniformly to catalog, local, and archive sources.
 _MAX_STEP_PACKAGE_FILES = 512
 _MAX_STEP_PACKAGE_BYTES = 50 * 1024 * 1024  # 50 MiB
+_MAX_STEP_PACKAGE_DEPTH = 32
 _COPY_CHUNK_BYTES = 64 * 1024
 
 # Files/dirs never copied into (or counted as part of) an installed step
@@ -235,39 +236,48 @@ def _walk_package_tree(package_dir: Path):
 
     Descends into excluded directories so a symlink or special file hiding
     inside ``.git``/``__pycache__`` is still rejected, but never follows a
-    symlink. Raises :class:`StepInstallError` on any symlink or object that is
-    neither a regular file nor a directory.
+    symlink. Raises :class:`StepInstallError` on any symlink, object that is
+    neither a regular file nor a directory, or nesting deeper than
+    ``_MAX_STEP_PACKAGE_DEPTH``. Iterative so deep trees cannot exhaust the
+    Python recursion limit.
     """
 
-    def _walk(current: Path, excluded_prefix: bool):
+    def _children(current: Path, depth: int, excluded_prefix: bool):
         try:
             entries = sorted(os.scandir(current), key=lambda entry: entry.name)
         except OSError as exc:
             raise StepInstallError(
                 f"Failed to read step package directory '{current}': {exc}"
             ) from exc
-        for entry in entries:
-            try:
-                mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError as exc:
-                raise StepInstallError(
-                    f"Failed to inspect step package entry '{entry.path}': {exc}"
-                ) from exc
-            path = Path(entry.path)
-            if stat.S_ISLNK(mode):
-                raise StepInstallError(f"Step package contains symlink: {path}")
-            excluded = excluded_prefix or entry.name in EXCLUDE_NAMES
-            if stat.S_ISDIR(mode):
-                yield path, True, excluded
-                yield from _walk(path, excluded)
-            elif stat.S_ISREG(mode):
-                yield path, False, excluded
-            else:
-                raise StepInstallError(
-                    f"Step package contains unsupported file: {path}"
-                )
+        return [(entry, depth, excluded_prefix) for entry in reversed(entries)]
 
-    yield from _walk(package_dir, False)
+    stack = _children(package_dir, 1, False)
+    while stack:
+        entry, depth, excluded_prefix = stack.pop()
+        try:
+            mode = entry.stat(follow_symlinks=False).st_mode
+        except OSError as exc:
+            raise StepInstallError(
+                f"Failed to inspect step package entry '{entry.path}': {exc}"
+            ) from exc
+        path = Path(entry.path)
+        if stat.S_ISLNK(mode):
+            raise StepInstallError(f"Step package contains symlink: {path}")
+        excluded = excluded_prefix or entry.name in EXCLUDE_NAMES
+        if stat.S_ISDIR(mode):
+            if depth > _MAX_STEP_PACKAGE_DEPTH:
+                raise StepInstallError(
+                    f"Step package exceeds the {_MAX_STEP_PACKAGE_DEPTH}-level "
+                    "directory depth limit"
+                )
+            yield path, True, excluded
+            stack.extend(_children(path, depth + 1, excluded))
+        elif stat.S_ISREG(mode):
+            yield path, False, excluded
+        else:
+            raise StepInstallError(
+                f"Step package contains unsupported file: {path}"
+            )
 
 
 def _parse_step_metadata(step_yml_text: str, step_id: str) -> dict[str, Any]:
@@ -338,21 +348,28 @@ def validate_step_package(package_dir: Path, step_id: str) -> dict[str, Any]:
             )
 
     retained_files = 0
+    retained_dirs = 0
     retained_bytes = 0
     for path, is_dir, excluded in _walk_package_tree(package_dir):
-        if is_dir or excluded:
+        if excluded:
             continue
-        retained_files += 1
-        try:
-            retained_bytes += path.lstat().st_size
-        except OSError as exc:
-            raise StepInstallError(
-                f"Failed to inspect step package file '{path}': {exc}"
-            ) from exc
+        if is_dir:
+            retained_dirs += 1
+        else:
+            retained_files += 1
+            try:
+                retained_bytes += path.lstat().st_size
+            except OSError as exc:
+                raise StepInstallError(
+                    f"Failed to inspect step package file '{path}': {exc}"
+                ) from exc
+        if retained_files + retained_dirs > _MAX_STEP_PACKAGE_FILES:
+            break
 
-    if retained_files > _MAX_STEP_PACKAGE_FILES:
+    if retained_files + retained_dirs > _MAX_STEP_PACKAGE_FILES:
         raise StepInstallError(
-            f"Step package contains {retained_files} files, exceeding the "
+            f"Step package contains too many entries ({retained_files} files, "
+            f"{retained_dirs} directories), exceeding the "
             f"{_MAX_STEP_PACKAGE_FILES}-file limit"
         )
     if retained_bytes > _MAX_STEP_PACKAGE_BYTES:
@@ -546,15 +563,24 @@ def _build_entry(
 
 
 def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
-    """Recursively copy *source_dir* into *target_dir*, skipping excludes.
+    """Copy *source_dir* into *target_dir*, skipping excludes.
 
     Refuses to follow a symlink encountered mid-copy so a source swapped after
-    validation cannot smuggle external content into the staged package.
+    validation cannot smuggle external content into the staged package, and
+    re-enforces the depth, entry, and byte budgets. Iterative so a deep tree
+    cannot exhaust the Python recursion limit.
     """
 
-    remaining_bytes = [_MAX_STEP_PACKAGE_BYTES]
-
-    def _copy(current: Path, destination: Path) -> None:
+    remaining_bytes = _MAX_STEP_PACKAGE_BYTES
+    copied_entries = 0
+    pending = [(source_dir, target_dir, 0)]
+    while pending:
+        current, destination, depth = pending.pop()
+        if depth > _MAX_STEP_PACKAGE_DEPTH:
+            raise StepInstallError(
+                f"Step package exceeds the {_MAX_STEP_PACKAGE_DEPTH}-level "
+                "directory depth limit"
+            )
         try:
             destination.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -579,17 +605,22 @@ def _copy_package_tree(source_dir: Path, target_dir: Path) -> None:
                 raise StepInstallError(
                     f"Step package contains symlink: {entry.path}"
                 )
-            if stat.S_ISDIR(mode):
-                _copy(Path(entry.path), target)
-            elif stat.S_ISREG(mode):
-                copied = _copy_regular_file(entry.path, target, mode, remaining_bytes[0])
-                remaining_bytes[0] -= copied
-            else:
+            if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
                 raise StepInstallError(
                     f"Step package contains unsupported file: {entry.path}"
                 )
-
-    _copy(source_dir, target_dir)
+            copied_entries += 1
+            if copied_entries > _MAX_STEP_PACKAGE_FILES:
+                raise StepInstallError(
+                    "Step package contains too many entries, exceeding the "
+                    f"{_MAX_STEP_PACKAGE_FILES}-file limit"
+                )
+            if stat.S_ISDIR(mode):
+                pending.append((Path(entry.path), target, depth + 1))
+            else:
+                remaining_bytes -= _copy_regular_file(
+                    entry.path, target, mode, remaining_bytes
+                )
 
 
 def _copy_regular_file(

@@ -242,6 +242,76 @@ def test_file_limit_boundary(tmp_path, monkeypatch):
     assert "2-file limit" in str(exc.value)
 
 
+def _nest_dirs(root: Path, depth: int) -> Path:
+    current = root
+    for _ in range(depth):
+        current = current / "d"
+    current.mkdir(parents=True)
+    (current / "leaf.py").write_text("x", encoding="utf-8")
+    return current
+
+
+def test_directories_count_toward_file_limit(tmp_path, monkeypatch):
+    pkg = _write_package(tmp_path / "pkg")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 3)
+    (pkg / "empty-a").mkdir()
+    installer.validate_step_package(pkg, "my-step")
+
+    (pkg / "empty-b").mkdir()
+    with pytest.raises(installer.StepInstallError) as exc:
+        installer.validate_step_package(pkg, "my-step")
+    assert "3-file limit" in str(exc.value)
+
+
+def test_depth_limit_boundary(tmp_path, monkeypatch):
+    pkg = _write_package(tmp_path / "pkg")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_DEPTH", 4)
+    deepest = _nest_dirs(pkg, 4)
+    installer.validate_step_package(pkg, "my-step")
+
+    (deepest / "d").mkdir()
+    with pytest.raises(installer.StepInstallError, match="4-level directory depth"):
+        installer.validate_step_package(pkg, "my-step")
+
+
+def test_default_depth_limit_rejects_deep_tree_without_recursion_error(tmp_path):
+    pkg = _write_package(tmp_path / "pkg")
+    _nest_dirs(pkg, installer._MAX_STEP_PACKAGE_DEPTH)
+    installer.validate_step_package(pkg, "my-step")
+
+    _nest_dirs(tmp_path / "deep", installer._MAX_STEP_PACKAGE_DEPTH + 1)
+    deep = _write_package(tmp_path / "deep")
+    with pytest.raises(installer.StepInstallError, match="directory depth limit"):
+        installer.validate_step_package(deep, "my-step")
+
+
+def test_copy_enforces_depth_limit_if_source_deepens_after_validation(
+    tmp_path, monkeypatch
+):
+    pkg = _write_package(tmp_path / "pkg")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_DEPTH", 4)
+    deepest = _nest_dirs(pkg, 4)
+    installer._copy_package_tree(pkg, tmp_path / "ok")
+    assert (tmp_path / "ok" / "d" / "d" / "d" / "d" / "leaf.py").is_file()
+
+    (deepest / "d").mkdir()
+    with pytest.raises(installer.StepInstallError, match="4-level directory depth"):
+        installer._copy_package_tree(pkg, tmp_path / "too-deep")
+
+
+def test_copy_enforces_entry_limit_if_source_grows_after_validation(
+    tmp_path, monkeypatch
+):
+    pkg = _write_package(tmp_path / "pkg")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 3)
+    (pkg / "empty-a").mkdir()
+    installer._copy_package_tree(pkg, tmp_path / "ok")
+
+    (pkg / "empty-b").mkdir()
+    with pytest.raises(installer.StepInstallError, match="3-file limit"):
+        installer._copy_package_tree(pkg, tmp_path / "too-many")
+
+
 def test_byte_limit_boundary(tmp_path, monkeypatch):
     pkg = _write_package(tmp_path / "pkg")
     total = (pkg / "step.yml").stat().st_size + (pkg / "__init__.py").stat().st_size

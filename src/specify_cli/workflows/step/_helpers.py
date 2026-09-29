@@ -11,6 +11,7 @@ from __future__ import annotations
 from .. import _commands as cli
 from .installer import (
     _MAX_STEP_PACKAGE_BYTES,
+    _MAX_STEP_PACKAGE_DEPTH,
     _MAX_STEP_PACKAGE_FILES,
     StepInstallError,
     resolve_steps_base_dir,
@@ -19,6 +20,7 @@ from .installer import (
 
 __all__ = [
     "_MAX_STEP_PACKAGE_BYTES",
+    "_MAX_STEP_PACKAGE_DEPTH",
     "_MAX_STEP_PACKAGE_FILES",
     "StepInstallError",
     "resolve_steps_base_dir",
