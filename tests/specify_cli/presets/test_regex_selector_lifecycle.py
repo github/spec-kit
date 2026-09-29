@@ -42,16 +42,19 @@ def test_extension_change_refresh_skips_when_no_integration_selected(
     _commands._refresh_presets_and_warn(tmp_path)
 
 
-def test_disabling_preset_keeps_registered_command_artifacts(monkeypatch, tmp_path):
+def test_disabling_preset_reconciles_registered_artifacts(monkeypatch, tmp_path):
     state = {"enabled": True}
     calls = []
 
     class FakeRegistry:
+        def list_by_priority(self, include_disabled=False):
+            return [("demo", {"enabled": state["enabled"]})]
+
         def is_installed(self, preset_id):
             return preset_id == "demo"
 
         def get(self, preset_id):
-            return {"enabled": state["enabled"]}
+            return {"enabled": state["enabled"], "registered_commands": {}}
 
         def update(self, preset_id, updates):
             state.update(updates)
@@ -60,8 +63,8 @@ def test_disabling_preset_keeps_registered_command_artifacts(monkeypatch, tmp_pa
         def __init__(self, project_root):
             self.registry = FakeRegistry()
 
-        def reconcile_constitution(self, message):
-            calls.append(("constitution", message))
+        def _collect_selector_command_names(self, resolver):
+            return {"speckit.plan"}
 
         def _reconcile_composed_commands(self, names):
             calls.append(("commands", names))
@@ -69,10 +72,14 @@ def test_disabling_preset_keeps_registered_command_artifacts(monkeypatch, tmp_pa
         def _reconcile_skills(self, names):
             calls.append(("skills", names))
 
+        def reconcile_constitution(self, message):
+            calls.append(("constitution", message))
+
     monkeypatch.setattr("specify_cli._require_specify_project", lambda: tmp_path)
     monkeypatch.setattr("specify_cli.presets.PresetManager", FakePresetManager)
 
     preset_disable("demo")
 
     assert state["enabled"] is False
-    assert [call[0] for call in calls] == ["constitution"]
+    assert [call[0] for call in calls] == ["commands", "skills", "constitution"]
+    assert calls[0][1] == ["speckit.plan"]

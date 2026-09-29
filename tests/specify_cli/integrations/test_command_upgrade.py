@@ -846,7 +846,7 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, f"preset disable failed: {result.output}"
 
         cmd_file = commands / "speckit.plan.md"
-        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+        assert "Overridden plan content" not in cmd_file.read_text(encoding="utf-8")
 
         result = _run_in_project(project, [
             "integration", "upgrade", "bob",
@@ -858,8 +858,8 @@ class TestIntegrationUpgradeDetailed:
         )
         assert "cmd-preset" in result.output
         assert not skills.exists(), "no skills layout must be scaffolded on rejection"
-        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
-            "the disabled preset's command file must be left untouched"
+        assert "Overridden plan content" not in cmd_file.read_text(encoding="utf-8"), (
+            "disable reconciliation should remove the disabled override"
         )
 
         # Enabled presets are also rejected: rescaffolding can still fail.

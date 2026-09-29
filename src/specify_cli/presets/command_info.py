@@ -32,27 +32,41 @@ def _diagnostic_selector_matches(resolver, preset_dir, selector, resource_type):
     ]
     candidates = set()
     for base in [*lower_presets, *lower_extensions]:
-        manifest = (
-            resolver._get_manifest(base)
-            if base.parent == resolver.presets_dir
-            else None
+        if base.parent == resolver.presets_dir:
+            manifest = resolver._get_manifest(base)
+            declarations = manifest.templates if manifest is not None else []
+        else:
+            from ..extensions import ExtensionManifest
+
+            manifest_path = base / "extension.yml"
+            try:
+                manifest = (
+                    ExtensionManifest(manifest_path)
+                    if manifest_path.is_file()
+                    else None
+                )
+            except Exception:
+                manifest = None
+            declarations = []
+            if manifest is not None:
+                provides = manifest.data.get("provides", {})
+                key = {"template": "templates", "script": "scripts"}.get(resource_type)
+                declarations = provides.get(key, []) if key else []
+        candidates.update(
+            item["name"]
+            for item in declarations
+            if isinstance(item, dict)
+            and item.get("type", resource_type) == resource_type
+            and isinstance(item.get("name"), str)
+            and not is_regex_selector(item["name"])
         )
-        if manifest:
-            candidates.update(
-                item["name"]
-                for item in manifest.templates
-                if item.get("type") == resource_type
-                and isinstance(item.get("name"), str)
-                and not is_regex_selector(item["name"])
-            )
         subdir = "templates" if resource_type == "template" else "scripts"
         suffix = ".sh" if resource_type == "script" else ".md"
-        for path in (base / subdir).glob("**/*") if (base / subdir).is_dir() else []:
+        root = base / subdir
+        for path in root.glob("**/*") if root.is_dir() else []:
             if path.is_file() and path.name.endswith(suffix):
                 candidates.add(
-                    os.path.relpath(path, base / subdir)[: -len(suffix)].replace(
-                        os.sep, "-"
-                    )
+                    os.path.relpath(path, root)[: -len(suffix)].replace(os.sep, "-")
                 )
     suffix = ".sh" if resource_type == "script" else ".md"
     core_roots = [

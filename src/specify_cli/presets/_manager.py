@@ -30,7 +30,7 @@ from ._manifest import (
 )
 from ._registry import PresetRegistry
 from ._resolver import PresetResolver
-from ._selectors import is_regex_selector
+from ._selectors import is_regex_selector, selector_matches
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 _CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
@@ -447,6 +447,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             for template in manifest.templates
             if template.get("type") == "command"
         ]
+        self._warn_unmatched_resource_selectors(manifest, dest_dir)
         command_templates = self._expand_command_selectors(
             PresetResolver(self.project_root), dest_dir, raw_command_templates
         )
@@ -537,6 +538,76 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         return manifest
 
+    def _warn_unmatched_resource_selectors(
+        self, manifest: PresetManifest, preset_dir: Path
+    ) -> None:
+        """Warn, without persisting state, for selectors with no lower-layer match."""
+        import warnings
+
+        from ._selectors import is_regex_selector, selector_matches
+
+        resolver = PresetResolver(self.project_root)
+        for declaration in manifest.templates:
+            selector = declaration.get("name")
+            resource_type = declaration.get("type")
+            if not isinstance(selector, str) or not is_regex_selector(selector):
+                continue
+            if resource_type == "command":
+                matches = self._expand_command_selectors(
+                    resolver, preset_dir, [declaration]
+                )
+            elif resource_type in {"template", "script"}:
+                from ..artifacts.catalog import ArtifactCatalog
+
+                inventory = ArtifactCatalog(self.project_root).list_artifacts()
+                candidates = {
+                    artifact.name
+                    for artifact in inventory
+                    if artifact.kind == resource_type
+                    and isinstance(artifact.name, str)
+                    and selector_matches(selector, artifact.name)
+                    and self._has_lower_resource(
+                        preset_dir, artifact.name, resource_type
+                    )
+                }
+                matches = [{"name": name} for name in sorted(candidates)]
+            else:
+                continue
+            if not matches:
+                warnings.warn(
+                    f"Preset '{manifest.id}' selector '{selector}' currently matches no {resource_type} resources. "
+                    "Regex selectors only match concrete resources from lower layers.",
+                    stacklevel=2,
+                )
+
+    def _has_lower_resource(
+        self, preset_dir: Path, name: str, resource_type: str
+    ) -> bool:
+        try:
+            resolver = PresetResolver(self.project_root)
+        except Exception:
+            return False
+        stack = self.registry.list_by_priority()
+        try:
+            index = next(
+                i for i, (pid, _meta) in enumerate(stack) if pid == preset_dir.name
+            )
+        except StopIteration:
+            return False
+        if any(
+            resolver._has_concrete_resource(self.presets_dir / pid, name, resource_type)
+            for pid, _meta in stack[index + 1 :]
+        ):
+            return True
+        if any(
+            resolver._extension_has_concrete_resource(
+                resolver.extensions_dir / ext_id, name, resource_type
+            )
+            for _priority, ext_id, _meta in resolver._get_all_extensions_by_priority()
+        ):
+            return True
+        return resolver._core_has_concrete_resource(name, resource_type)
+
     def _seed_constitution_from_preset(
         self, manifest: PresetManifest, preset_dir: Path
     ) -> None:
@@ -549,8 +620,20 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         provides_constitution = (
             manifest.id == _CONSTITUTION_SYNC_PRESET_ID
             or any(
-                t.get("type") == "template" and t.get("name") == "constitution-template"
-                for t in manifest.templates
+                declaration.get("type") == "template"
+                and isinstance(declaration.get("name"), str)
+                and declaration.get("name") == "constitution-template"
+                for declaration in manifest.templates
+            )
+            or any(
+                declaration.get("type") == "template"
+                and isinstance(declaration.get("name"), str)
+                and is_regex_selector(declaration["name"])
+                and selector_matches(declaration["name"], "constitution-template")
+                and self._has_lower_resource(
+                    preset_dir, "constitution-template", "template"
+                )
+                for declaration in manifest.templates
             )
             or any(
                 (preset_dir / relative_path).is_file()

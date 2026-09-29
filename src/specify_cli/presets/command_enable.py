@@ -41,27 +41,17 @@ def preset_enable(
     try:
         from ._manifest import PresetManifest
         from ._resolver import PresetResolver
-        from ._selectors import is_regex_selector
 
         manifest_path = manager.presets_dir / preset_id / "preset.yml"
+        names: list[str] = []
         if manifest_path.is_file():
-            manifest = PresetManifest(manifest_path)
-            expanded = manager._expand_command_selectors(
-                PresetResolver(project_root),
-                manager.presets_dir / preset_id,
-                [item for item in manifest.templates if item.get("type") == "command"],
-            )
+            PresetManifest(manifest_path)
             names = sorted(
-                {
-                    item["name"]
-                    for item in expanded
-                    if isinstance(item.get("name"), str)
-                    and not is_regex_selector(item["name"])
-                }
+                manager._collect_selector_command_names(PresetResolver(project_root))
             )
-            if names:
-                manager._reconcile_composed_commands(names)
-                manager._reconcile_skills(names)
+        if names:
+            manager._reconcile_composed_commands(names)
+            manager._reconcile_skills(names)
     except Exception as exc:
         import warnings
 

@@ -30,15 +30,18 @@ class _PresetSkillMethods:
         that aren't being reconciled.
         """
 
-        def __init__(self, manifest: "PresetManifest", cmd_names: set):
+        def __init__(self, manifest: "PresetManifest", cmd_names: set, commands=None):
             self._manifest = manifest
             self._cmd_names = cmd_names
+            self._commands = commands
 
         def __getattr__(self, name: str):
             return getattr(self._manifest, name)
 
         @property
         def templates(self) -> List[Dict[str, Any]]:
+            if self._commands is not None:
+                return [t for t in self._commands if t.get("name") in self._cmd_names]
             return [
                 t for t in self._manifest.templates if t.get("name") in self._cmd_names
             ]
@@ -327,7 +330,22 @@ class _PresetSkillMethods:
                 except PresetValidationError:
                     continue
                 cmds_set = set(dir_cmds)
-                filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+                from ._manager_commands import _PresetCommandMethods
+
+                command_methods = _PresetCommandMethods()
+                command_methods.__dict__.update(self.__dict__)
+                concrete_declarations = command_methods._expand_command_selectors(
+                    PresetResolver(self.project_root),
+                    pack_dir,
+                    [
+                        item
+                        for item in manifest.templates
+                        if item.get("type") == "command"
+                    ],
+                )
+                filtered_manifest = self._FilteredManifest(
+                    manifest, cmds_set, concrete_declarations
+                )
                 # Not dead code: _register_skills only *overwrites* skill
                 # subdirectories that already exist (plus brand-new ones for
                 # the active ai_skills agent). For a restore into a

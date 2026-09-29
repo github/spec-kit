@@ -92,6 +92,34 @@ def _substitute_core_template(
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
 
+    def _collect_selector_command_names(self, resolver: PresetResolver) -> set[str]:
+        """Collect concrete command names referenced by installed preset declarations."""
+        names: set[str] = set()
+        for preset_id, _metadata in self.registry.list_by_priority(
+            include_disabled=True
+        ):
+            preset_dir = self.presets_dir / preset_id
+            manifest = resolver._get_manifest(preset_dir)
+            if manifest is None:
+                continue
+            declarations = [
+                item for item in manifest.templates if item.get("type") == "command"
+            ]
+            expanded = _PresetCommandMethods._expand_command_selectors(
+                self, resolver, preset_dir, declarations
+            )
+            names.update(
+                item["name"]
+                for item in expanded
+                if isinstance(item.get("name"), str)
+                and not is_regex_selector(item["name"])
+            )
+            metadata = self.registry.get(preset_id) or {}
+            for per_agent in (metadata.get("registered_commands", {}) or {}).values():
+                if isinstance(per_agent, list):
+                    names.update(name for name in per_agent if isinstance(name, str))
+        return names
+
     def _expand_command_selectors(
         self,
         resolver: PresetResolver,
