@@ -395,7 +395,11 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     f"Preset '{manifest.id}' is already installed. "
                     f"Use 'specify preset remove {manifest.id}' first."
                 )
-            self.remove(manifest.id)
+            if not self.remove(manifest.id):
+                raise PresetError(
+                    f"Refusing to reinstall '{manifest.id}': existing "
+                    f"installation could not be safely removed"
+                )
 
         dest_dir = self.presets_dir / manifest.id
         if dest_dir.exists():

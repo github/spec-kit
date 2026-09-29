@@ -3337,6 +3337,23 @@ class TestExtensionManager:
             )
         assert (real_target / "extension.yml").exists()
 
+    def test_force_reinstall_refuses_symlinked_backup_root(self, extension_dir, project_dir):
+        """Stale-backup cleanup must not delete through a symlinked .backup root."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        outside = project_dir.parent / "outside-backup"
+        (outside / "test-ext").mkdir(parents=True)
+        (outside / "test-ext" / "keep.txt").write_text("keep")
+        (project_dir / ".specify" / "extensions" / ".backup").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        with pytest.raises(ExtensionError, match="symlink"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False, force=True
+            )
+        assert (outside / "test-ext" / "keep.txt").exists()
+
     def test_remove_refuses_symlinked_backup_dir(self, extension_dir, project_dir):
         """Config backups must not be redirected through a symlinked destination."""
         manager = ExtensionManager(project_dir)

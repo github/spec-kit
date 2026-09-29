@@ -2159,6 +2159,11 @@ class ExtensionManager:
             # Clear any stale backup from a previous remove so that only the
             # backup produced by the current remove() call is restored later.
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            if backup_config_dir.parent.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to reinstall '{manifest.id}': "
+                    f"'.backup' is a symlink"
+                )
             # Check is_symlink first: is_dir() follows symlinks so a
             # symlink-to-directory would pass, but rmtree() raises on them.
             if backup_config_dir.is_symlink():

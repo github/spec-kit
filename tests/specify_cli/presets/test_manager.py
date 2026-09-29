@@ -1,6 +1,7 @@
 """Tests for preset installation and removal in specify_cli.presets._manager."""
 
 import json
+import shutil
 import tarfile
 import zipfile
 from pathlib import Path
@@ -334,6 +335,19 @@ class TestPresetManager:
         assert (real_target / "important.txt").exists()
         assert pack_dir.is_symlink()
         assert manager.registry.is_installed("test-pack")
+
+    def test_force_reinstall_aborts_when_removal_refused(self, project_dir, pack_dir):
+        """install_from_directory(force=True) must abort if remove() refuses."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        installed = project_dir / ".specify" / "presets" / "test-pack"
+        real_target = project_dir.parent / "real-target"
+        shutil.move(str(installed), str(real_target))
+        installed.symlink_to(real_target, target_is_directory=True)
+
+        with pytest.raises(PresetError, match="could not be safely removed"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+        assert (real_target / "preset.yml").exists()
 
     def test_remove_refuses_dangling_symlinked_preset_dir(self, project_dir):
         """A dangling symlink must fail explicitly rather than be silently skipped.
