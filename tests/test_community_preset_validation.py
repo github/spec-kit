@@ -245,6 +245,66 @@ def test_unrelated_scoped_release_stays_accepted_with_submitted_scope(submission
     assert run_verifier(paths).returncode == 0
 
 
+@pytest.mark.parametrize("archive_url", [False, True])
+def test_unrelated_unscoped_monorepo_release_stays_accepted(submission, archive_url):
+    issue, _, paths = submission
+    if archive_url:
+        issue["download_url"] = (
+            "https://github.com/example/presets/archive/refs/tags/"
+            "spec-kit-sample-v1.2.3.zip"
+        )
+        unrelated = (
+            "https://github.com/example/presets/archive/refs/tags/v2.0.0.zip"
+        )
+    else:
+        issue["download_url"] = issue["download_url"].replace(
+            "sample-v1.2.3", "spec-kit-sample-v1.2.3"
+        )
+        unrelated = (
+            "https://github.com/example/presets/releases/download/v2.0.0/other.zip"
+        )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        f"specify preset add --from {unrelated}\n",
+        encoding="utf-8",
+    )
+    assert run_verifier(paths).returncode == 0
+
+
+def test_same_asset_on_unscoped_tag_is_reported_as_stale(submission):
+    issue, _, paths = submission
+    issue["download_url"] = issue["download_url"].replace(
+        "sample-v1.2.3", "v1.2.3"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        f"specify preset add --from {issue['download_url'].replace('v1.2.3', 'v1.2.2')}\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README --from URL" in result.stdout
+
+
+def test_same_asset_on_bare_tag_stays_stale_for_scoped_submission(submission):
+    issue, _, paths = submission
+    issue["download_url"] = issue["download_url"].replace(
+        "sample-v1.2.3", "spec-kit-sample-v1.2.3"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        "specify preset add --from "
+        "https://github.com/example/presets/releases/download/v1.2.2/sample.zip\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README --from URL" in result.stdout
+
+
 def test_stale_scoped_release_in_another_repository_fails(submission):
     _, _, paths = submission
     paths["README.md"].write_text(
@@ -332,10 +392,30 @@ def test_generated_update_rejects_matching_stale_updated_dates(submission):
     assert "updated_at" in result.stdout
 
 
+def test_generated_update_rejects_stale_homepage(submission):
+    issue, _, paths = submission
+    entry = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    entry["homepage"] = "https://example.com/old"
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": entry["updated_at"], "presets": {"sample": entry},
+    }), encoding="utf-8")
+    assert run_verifier(paths).returncode == 0
+    entry = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    entry["homepage"] = "https://example.com/old"
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": entry["updated_at"], "presets": {"sample": entry},
+    }), encoding="utf-8")
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 3
+    assert "homepage" in result.stdout
+
+
 @pytest.mark.parametrize(("damage", "message"), [
     ("catalog-json", "catalog"),
     ("catalog-order", "alphabetical"),
     ("catalog-metadata", "version"),
+    ("homepage-missing", "homepage"),
+    ("homepage-stale", "homepage"),
     ("catalog-timestamp", "top-level updated_at"),
     ("docs-order", "alphabetical"),
     ("docs-row", "documentation row"),
@@ -361,6 +441,16 @@ def test_generated_defects_are_fixable_not_submission_failures(submission, damag
         }), encoding="utf-8")
     elif damage == "catalog-metadata":
         entry["version"] = "1.2.4"
+        paths["catalog.json"].write_text(
+            json.dumps({"updated_at": entry["updated_at"], "presets": {
+                "sample": entry,
+            }}), encoding="utf-8"
+        )
+    elif damage in ("homepage-missing", "homepage-stale"):
+        if damage == "homepage-missing":
+            del entry["homepage"]
+        else:
+            entry["homepage"] = "https://github.com/example/other"
         paths["catalog.json"].write_text(
             json.dumps({"updated_at": entry["updated_at"], "presets": {
                 "sample": entry,

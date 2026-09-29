@@ -182,10 +182,11 @@ preset** — not just any file named `README.md`, and not a product/framework pi
 
   A `specify preset add --from <url>` command only counts when its `<url>` **matches the
   submitted Download URL exactly**. If the README also contains a `--from` release URL
-  for this preset in the submitted repository that differs from the Download URL, **fail**
-  even if another accepted command (`specify preset add <preset-id>` or
-  `specify preset add --dev <path>`) is present. A README with only a valid `--dev`
-  command remains acceptable. The verifier in Step 2g enforces this comparison.
+  identifiable as this preset by its tag scope or matching release asset that differs
+  from the Download URL, **fail** even if another accepted command (`specify preset add
+  <preset-id>` or `specify preset add --dev <path>`) is present. Do not flag a different
+  preset's unscoped release URL in a monorepo as stale. A README with only a valid
+  `--dev` command remains acceptable. The verifier in Step 2g enforces this comparison.
 
   If **no** accepted `specify preset add ...` command is present, the README is treated as a
   generic description/pitch rather than preset-usage documentation — **fail this check** and
@@ -371,7 +372,7 @@ Insert the entry in **alphabetical order by preset ID** within the
     "repository": "<repository>",
     "download_url": "<download_url>",
     "sha256": "<actual_sha256>",
-    "homepage": "<homepage or repository>",
+    "homepage": "<submitted repository URL>",
     "documentation": "<documentation URL — the validated preset-usage README>",
     "license": "<license>",
     "requires": {
@@ -403,7 +404,9 @@ If the preset provides scripts, add `"scripts": <N>` inside `"provides"`.
 ### For an update
 
 Replace only the changed fields (typically `version`, `download_url`,
-`description`, `provides`, `requires`, `tags`, `updated_at`). **Preserve**
+`description`, `homepage`, `provides`, `requires`, `tags`, `updated_at`). Set
+`homepage` to the submitted repository URL; the form has no separate homepage
+field. **Preserve**
 `created_at` from the existing entry. Use the verifier snapshot's validated UTC
 date for `updated_at`, even if the UTC date changes during the run.
 
@@ -453,7 +456,8 @@ Before labeling success or requesting a PR, run this fixed command unchanged:
 python3 .github/scripts/validate_community_preset.py generated --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --docs docs/community/presets.md --snapshot /tmp/gh-aw/preset-validation.json
 ```
 
-The verifier checks JSON parsing, the validated catalog metadata and digest,
+The verifier checks JSON parsing, the validated catalog metadata (including
+`homepage` set to the submitted repository URL) and digest,
 the top-level and entry `updated_at` timestamps against the recorded UTC date
 (and `created_at` for new entries),
 alphabetical ID order, the documentation row's name, purpose, counts, extension

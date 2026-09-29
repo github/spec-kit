@@ -163,6 +163,7 @@ def check_readme(text: str, issue: dict) -> None:
     accepted_scopes = {preset_id}
     if submitted_scope:
         accepted_scopes.add(submitted_scope[1])
+    expected_path = urlsplit(expected).path.split("/")
     accepted = False
     for match in re.finditer(
         r"(?<![\w-])specify\s+preset\s+add\s+"
@@ -189,8 +190,21 @@ def check_readme(text: str, issue: dict) -> None:
                 parsed.netloc.lower() == "github.com"
                 and parsed.path.lower().startswith(f"/{owner}/{repo}/")
             )
+            # An unscoped tag alone does not identify a preset in a monorepo.
+            same_release_asset = (
+                len(expected_path) > 6
+                and expected_path[3:5] == ["releases", "download"]
+                and len(parts) > 6
+                and parts[3:5] == ["releases", "download"]
+                and expected_path[6] == parts[6]
+            )
+            unscoped_archive = (
+                submitted_scope is None
+                and expected_path[3:6] == ["archive", "refs", "tags"]
+                and parts[3:6] == ["archive", "refs", "tags"]
+            )
             if (scoped and scoped[1] in accepted_scopes) or (
-                same_repository and not scoped
+                same_repository and not scoped and (same_release_asset or unscoped_archive)
             ):
                 raise SubmissionMismatch(
                     f"README --from URL for {preset_id} differs from Download URL: {value}"
@@ -253,6 +267,7 @@ def expected_values(issue: dict, manifest: dict, digest: str) -> dict:
         "description": field(issue, "description"),
         "author": field(issue, "author"),
         "repository": field(issue, "repository"),
+        "homepage": field(issue, "repository"),
         "download_url": field(issue, "download_url"),
         "sha256": digest,
         "documentation": field(issue, "documentation"),
