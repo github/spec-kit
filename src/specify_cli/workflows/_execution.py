@@ -474,6 +474,9 @@ class Execution:
         if node["phase"] in {"ready", "blocked"}:
             with self.state._lock:
                 self.state.current_step_id = qualified
+            # Persist the active occurrence before it runs, as on main, so status
+            # reports it for the whole duration of a long step and after a crash.
+            self.commit()
             self.emit(
                 "step_started",
                 qualified,

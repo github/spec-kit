@@ -2347,7 +2347,9 @@ def test_fan_out_saves_once_per_item_transition(tmp_path, monkeypatch, probe, it
     )
 
     assert state.status == RunStatus.COMPLETED
-    assert saves == items + 5
+    # Each started occurrence (fan and items) is checkpointed before it runs,
+    # and each item result once more before it is done.
+    assert saves == 2 * items + 6
 
 
 def test_fan_out_snapshot_size_does_not_scale_with_template_length(tmp_path, probe):
@@ -2430,7 +2432,8 @@ def test_tree_backed_resume_has_no_setup_checkpoint(tmp_path, monkeypatch, probe
     state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
     assert state.status == RunStatus.COMPLETED
-    assert saves == 3
+    # Restarting ``wait`` persists it as active before it runs, then its result.
+    assert saves == 4
 
 
 def test_exact_depth_limit_is_allowed(tmp_path, probe):
@@ -2603,6 +2606,62 @@ def test_paused_later_loop_iteration_reports_qualified_current_step_id(
     assert state.current_step_id == "loop:body:1"
     assert "loop:body:1" in state.step_results
     assert RunState.load(state.run_id, tmp_path).current_step_id == "loop:body:1"
+
+
+@pytest.mark.parametrize(
+    ("steps", "expected"),
+    [
+        (
+            [{"id": "first", "type": "probe"}, {"id": "observe", "type": "observe"}],
+            [("observe", 1)],
+        ),
+        (
+            [
+                {"id": "first", "type": "probe"},
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 2,
+                    "steps": [{"id": "observe", "type": "observe"}],
+                },
+            ],
+            [("observe", 1), ("loop:observe:1", 1)],
+        ),
+        (
+            [
+                {"id": "first", "type": "probe"},
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1, 2],
+                    "step": {"id": "observe", "type": "observe"},
+                },
+            ],
+            [("fan:observe:0", 1), ("fan:observe:1", 1)],
+        ),
+    ],
+    ids=["root", "later-loop-iteration", "fan-out-item"],
+)
+def test_running_step_is_persisted_before_it_executes(
+    tmp_path, monkeypatch, probe, steps, expected
+):
+    seen = []
+
+    class Observe(StepBase):
+        type_key = "observe"
+
+        def execute(self, config, context):
+            persisted = RunState.load(context.run_id, tmp_path)
+            seen.append((persisted.current_step_id, persisted.current_step_index))
+            return StepResult(output={})
+
+    monkeypatch.setitem(STEP_REGISTRY, "observe", Observe())
+
+    state = WorkflowEngine(tmp_path).execute(definition("parent", steps))
+
+    assert state.status == RunStatus.COMPLETED
+    assert seen == expected
 
 
 def test_failed_fan_out_item_exception_reports_qualified_current_step_id(
