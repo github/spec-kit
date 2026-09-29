@@ -820,9 +820,11 @@ def test_force_removal_failure_warns_reinstall(tmp_path, project_dir, monkeypatc
     new_pkg = _write_package(tmp_path / "pkg", init_body="# new\n")
 
     real_rmtree = installer.shutil.rmtree
+    # The installer operates on resolved paths (e.g. /private/var on macOS).
+    resolved_target = target.resolve()
 
     def _rmtree(path, *args, **kwargs):
-        if Path(path) == target:
+        if Path(path).resolve() == resolved_target:
             raise OSError("cannot remove")
         return real_rmtree(path, *args, **kwargs)
 
@@ -843,9 +845,10 @@ def test_force_publication_failure_warns_reinstall(tmp_path, project_dir, monkey
     new_pkg = _write_package(tmp_path / "pkg", init_body="# new\n")
 
     real_replace = installer.os.replace
+    resolved_target = target.resolve()
 
     def _replace(src, dst, *args, **kwargs):
-        if Path(dst) == target:
+        if Path(dst).resolve() == resolved_target:
             raise OSError("rename failed")
         return real_replace(src, dst, *args, **kwargs)
 
