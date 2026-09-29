@@ -1256,7 +1256,7 @@ class WorkflowEngine:
         finally:
             active = active_step(state.execution)
             if active is not None:
-                state.current_step_id = active[0][-1]
+                state.current_step_id = active[2]
         state.status = RunStatus.RUNNING if outcome == "completed" else RunStatus(outcome)
         state.error = error
 

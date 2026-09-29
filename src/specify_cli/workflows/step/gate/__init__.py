@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -40,9 +41,11 @@ class GateStep(StepBase):
         message = config.get("message", "Review required.")
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
-        # Step results are persisted as JSON. Keep the display value serializable
-        # while _compose_prompt() independently accepts synthetic non-string data.
-        if message is not None:
+        # Keep JSON values typed; only values the JSON checkpoint cannot
+        # persist (e.g. native YAML dates) are stored as text.
+        try:
+            json.dumps(message)
+        except (TypeError, ValueError):
             message = str(message)
 
         options = config.get("options", ["approve", "reject"])

@@ -992,8 +992,7 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
         active = active_step(state.execution)
         if active is None:
             return None
-        path, node = active
-        step_id = path[-1]
+        path, node, step_id = active
         scope_path = path[:-1]
         step = node.get("result")
     if not isinstance(step, dict) or not _is_gate_step(step):

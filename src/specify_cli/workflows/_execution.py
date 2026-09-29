@@ -94,16 +94,29 @@ def child_path(config, path, item):
 
 
 def walk_execution(
-    seq, path=(), *, children_first=False, skip_done=False, steps=None
+    seq,
+    path=(),
+    *,
+    children_first=False,
+    skip_done=False,
+    steps=None,
+    loop_alias=None,
 ):
-    """Yield execution occurrences with one shared path rule."""
+    """Yield execution occurrences with one shared path and ID rule.
+
+    Each item is ``(config, node, path, step_id)``; ``step_id`` is the
+    occurrence ID used by events, relative to the enclosing workflow scope.
+    """
     steps = steps_of(seq) if steps is None else steps
     for index, (config, node) in enumerate(zip(steps, seq["nodes"])):
         if skip_done and node["phase"] == "done":
             continue
-        here = [*path, config.get("id", f"step-{index}")]
+        name = config.get("id", f"step-{index}")
+        here = [*path, name]
+        qualified = qualified_id(name, loop_alias)
+        kind = config.get("type", "command")
         if not children_first:
-            yield config, node, here
+            yield config, node, here, qualified
         for item, child in enumerate(node.get("children", [])):
             yield from walk_execution(
                 child,
@@ -111,9 +124,14 @@ def walk_execution(
                 children_first=children_first,
                 skip_done=skip_done,
                 steps=child_steps(config, node, item),
+                loop_alias=(
+                    (qualified, item)
+                    if kind == "fan-out"
+                    else loop_alias_for(kind, qualified, item)
+                ),
             )
         if children_first:
-            yield config, node, here
+            yield config, node, here, qualified
 
 
 def validate_execution(tree: Any) -> None:
@@ -244,18 +262,21 @@ def validate_execution(tree: Any) -> None:
 
 
 def active_step(tree):
-    """First unfinished leaf in execution order, including nested workflow scopes."""
-    for _, node, path in walk_execution(
+    """First unfinished leaf in execution order, including nested workflow scopes.
+
+    Returns ``(path, node, step_id)``.
+    """
+    for _, node, path, step_id in walk_execution(
         tree["sequence"], children_first=True, skip_done=True
     ):
-        return path, node
+        return path, node, step_id
     return None
 
 
 def scope_summaries(tree):
     """Report workflow boundaries without exposing private inputs or results."""
     summaries = []
-    for _, node, path in walk_execution(tree["sequence"]):
+    for _, node, path, _ in walk_execution(tree["sequence"]):
         binding = node.get("binding")
         if binding:
             output = node.get("result", {}).get("output", {})
@@ -452,7 +473,7 @@ class Execution:
 
         if node["phase"] in {"ready", "blocked"}:
             with self.state._lock:
-                self.state.current_step_id = name
+                self.state.current_step_id = qualified
             self.emit(
                 "step_started",
                 qualified,
@@ -838,8 +859,16 @@ class Execution:
                 if outcome in HALTING:
                     return outcome, error, results
             return "completed", None, results
+
+        def run_item_guarded(index):
+            try:
+                return run_item(index)
+            except BaseException:
+                halted.set()
+                raise
+
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {i: pool.submit(run_item, i) for i in range(workers)}
+            futures = {i: pool.submit(run_item_guarded, i) for i in range(workers)}
             for index in range(len(items)):
                 try:
                     outcome, error, value = futures.pop(index).result()
@@ -854,5 +883,5 @@ class Execution:
                     return outcome, error, results
                 following = index + workers
                 if following < len(items) and not halted.is_set():
-                    futures[following] = pool.submit(run_item, following)
+                    futures[following] = pool.submit(run_item_guarded, following)
         return "completed", None, results

@@ -694,8 +694,11 @@ cause ordinary step failures. Legacy runs without a tree enter through their
 saved root index, then use tree-backed resume. Resume is available only for
 runs in the `paused` or `failed` state.
 
-`current_step_index` is the root-sequence index; `current_step_id` is the local
-ID of the active leaf. Structured run/status output includes `workflow_scopes`
+`current_step_index` is the root-sequence index; `current_step_id` is the
+occurrence ID of the active leaf, matching the event `step_id` (for example
+`fan:item:0` for a fan-out item or `loop:body:1` for a later loop iteration).
+Inside a workflow call, IDs are relative to the called workflow. Structured
+run/status output includes `workflow_scopes`
 summaries when calls exist and reports an active nested gate with its
 `scope_path`. Private log events add `workflow_id` and `execution_path` to the
 qualified `step_id`. A step emits completion after its checkpoint; containers

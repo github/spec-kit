@@ -1909,6 +1909,8 @@ def test_nested_gate_reporting_uses_active_occurrence(tmp_path, probe):
     )
     assert state.status == RunStatus.PAUSED
     payload = _workflow_run_payload(RunState.load(state.run_id, tmp_path))
+    # Private scopes report the child-relative occurrence ID (own namespace).
+    assert payload["current_step_id"] == "review"
     assert payload["gate"]["step_id"] == "review"
     assert payload["gate"]["scope_path"] == ["route", "call"]
     assert payload["workflow_scopes"][0]["status"] == "paused"
@@ -2540,3 +2542,201 @@ def test_resume_rejects_changed_workflow_snapshot(tmp_path, probe):
 
     with pytest.raises(ValueError, match="root sequence differs"):
         WorkflowEngine(tmp_path).resume("changed", {"approve": True})
+
+def test_paused_fan_out_item_reports_qualified_current_step_id(tmp_path, probe):
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, _label: callbacks.append(step_id)
+
+    state = engine.execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "item", "type": "probe", "status": "paused"},
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.PAUSED
+    assert state.current_step_id == "fan:item:0"
+    assert "fan:item:0" in state.step_results
+    assert RunState.load(state.run_id, tmp_path).current_step_id == "fan:item:0"
+    assert callbacks[-1] == "fan:item:0"
+
+
+def test_paused_later_loop_iteration_reports_qualified_current_step_id(
+    tmp_path, monkeypatch
+):
+    calls = Counter()
+
+    class PauseSecond(StepBase):
+        type_key = "pause-second"
+
+        def execute(self, config, context):
+            calls[config["id"]] += 1
+            if calls[config["id"]] == 2:
+                return StepResult(StepStatus.PAUSED)
+            return StepResult(output={})
+
+    monkeypatch.setitem(STEP_REGISTRY, "pause-second", PauseSecond())
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "loop",
+                    "type": "do-while",
+                    "condition": True,
+                    "max_iterations": 3,
+                    "steps": [{"id": "body", "type": "pause-second"}],
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.PAUSED
+    assert state.current_step_id == "loop:body:1"
+    assert "loop:body:1" in state.step_results
+    assert RunState.load(state.run_id, tmp_path).current_step_id == "loop:body:1"
+
+
+def test_failed_fan_out_item_exception_reports_qualified_current_step_id(
+    tmp_path, monkeypatch
+):
+    class Boom(StepBase):
+        type_key = "boom"
+
+        def execute(self, config, context):
+            raise RuntimeError("boom")
+
+    monkeypatch.setitem(STEP_REGISTRY, "boom", Boom())
+    engine = WorkflowEngine(tmp_path)
+    with pytest.raises(RuntimeError, match="boom"):
+        engine.execute(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "fan",
+                        "type": "fan-out",
+                        "items": [1],
+                        "step": {"id": "blast", "type": "boom"},
+                    }
+                ],
+            ),
+            run_id="boom",
+        )
+
+    loaded = RunState.load("boom", tmp_path)
+    assert loaded.status == RunStatus.FAILED
+    assert loaded.current_step_id == "fan:blast:0"
+
+
+def test_paused_fan_out_gate_payload_reports_qualified_step_id(tmp_path):
+    from specify_cli.workflows._commands import _workflow_run_payload
+
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {
+                    "id": "fan",
+                    "type": "fan-out",
+                    "items": [1],
+                    "step": {"id": "review", "type": "gate", "message": "Approve"},
+                }
+            ],
+        )
+    )
+
+    assert state.status == RunStatus.PAUSED
+    payload = _workflow_run_payload(RunState.load(state.run_id, tmp_path))
+    assert payload["current_step_id"] == "fan:review:0"
+    assert payload["gate"]["step_id"] == "fan:review:0"
+    assert payload["gate"]["message"] == "Approve"
+
+
+def test_gate_message_keeps_typed_template_result(tmp_path):
+    from specify_cli.workflows._commands import _workflow_run_payload
+
+    workflow = definition(
+        "parent",
+        [{"id": "gate", "type": "gate", "message": "{{ inputs.notice }}"}],
+        inputs={"notice": {"type": "number"}},
+    )
+    assert validate_workflow(workflow) == []
+
+    state = WorkflowEngine(tmp_path).execute(workflow, {"notice": 42})
+
+    assert state.status == RunStatus.PAUSED
+    loaded = RunState.load(state.run_id, tmp_path)
+    message = loaded.step_results["gate"]["output"]["message"]
+    assert message == 42
+    assert isinstance(message, int)
+    assert _workflow_run_payload(loaded)["gate"]["message"] == "42"
+
+
+def test_gate_message_stores_non_json_literal_as_text(tmp_path):
+    state = WorkflowEngine(tmp_path).execute(
+        definition("parent", [{"id": "gate", "type": "gate", "message": date(2026, 1, 1)}])
+    )
+
+    assert state.status == RunStatus.PAUSED
+    loaded = RunState.load(state.run_id, tmp_path)
+    assert loaded.step_results["gate"]["output"]["message"] == "2026-01-01"
+
+
+def test_fan_out_worker_exception_stops_dispatch_before_earlier_items_finish(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from specify_cli.workflows import _execution
+
+    halted_seen = threading.Event()
+
+    class ObservedEvent(threading.Event):
+        def set(self):
+            super().set()
+            halted_seen.set()
+
+    monkeypatch.setattr(_execution, "threading", SimpleNamespace(Event=ObservedEvent))
+    started = set()
+    lock = threading.Lock()
+
+    class Blow(StepBase):
+        type_key = "blow"
+
+        def execute(self, config, context):
+            with lock:
+                started.add(context.item)
+            if context.item == 2:
+                raise RuntimeError("boom")
+            if context.item in {0, 1}:
+                # Earlier items finish only after the failure halts dispatch.
+                halted_seen.wait(2)
+            return StepResult(output={"value": context.item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "blow", Blow())
+    with pytest.raises(RuntimeError, match="boom"):
+        WorkflowEngine(tmp_path).execute(
+            definition(
+                "parent",
+                [
+                    {
+                        "id": "fan",
+                        "type": "fan-out",
+                        "items": [0, 1, 2, 3, 4, 5],
+                        "max_concurrency": 3,
+                        "step": {"id": "item", "type": "blow"},
+                    }
+                ],
+            )
+        )
+
+    assert started == {0, 1, 2}
