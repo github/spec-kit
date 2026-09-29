@@ -2089,6 +2089,28 @@ class ExtensionManager:
                 owned.append(name)
         return owned
 
+    def _complete_generic_refresh(
+        self,
+        extension_id: str,
+        metadata: Dict[str, Any],
+        expected: List[str],
+        registered: List[str],
+        *,
+        skills: bool,
+    ) -> List[str]:
+        """Require each invocation to be newly written or still hash-owned."""
+        missing = sorted(set(expected) - set(registered))
+        retained = (
+            self._generic_owned_names(metadata, missing, skills=skills)
+            if missing else []
+        )
+        absent = sorted(set(missing) - set(retained))
+        if absent:
+            raise ExtensionError(
+                f"Missing invocation artifacts for '{extension_id}': {', '.join(absent)}"
+            )
+        return list(dict.fromkeys(registered + retained))
+
     def _remove_generic_artifact_paths(
         self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True
     ) -> None:
@@ -3471,10 +3493,12 @@ class ExtensionManager:
         registered = metadata.get("registered_commands", {})
         commands = self._valid_name_list(registered.get("generic")) if isinstance(registered, dict) else []
         skills = self._valid_name_list(metadata.get("registered_skills", []))
+        hashes = metadata.get("generic_artifact_hashes", {})
+        if not commands and not skills and not hashes:
+            return
         from ..integrations.generic import registration_directory
 
         directory = registration_directory(self.project_root)
-        hashes = metadata.get("generic_artifact_hashes", {})
         if isinstance(hashes, dict):
             for relative, expected in hashes.items():
                 if not isinstance(relative, str) or not isinstance(expected, str):
@@ -3800,6 +3824,14 @@ class ExtensionManager:
                     registered = registrar.register_commands_for_agent(
                         agent_name, manifest, ext_dir, self.project_root
                     )
+                    if agent_name == "generic":
+                        registered = self._complete_generic_refresh(
+                            ext_id,
+                            metadata,
+                            list(self._collect_manifest_command_names(manifest)),
+                            registered,
+                            skills=False,
+                        )
                     registered_commands = metadata.get("registered_commands", {})
                     if not isinstance(registered_commands, dict):
                         registered_commands = {}
@@ -3851,6 +3883,17 @@ class ExtensionManager:
                         registered_skills = self._register_extension_skills(
                             manifest, ext_dir, force=force
                         )
+                        if agent_name == "generic" and skills_mode_active:
+                            registered_skills = self._complete_generic_refresh(
+                                ext_id,
+                                metadata,
+                                [
+                                    self._skill_name_for_command(cmd["name"])
+                                    for cmd in manifest.commands
+                                ],
+                                registered_skills,
+                                skills=True,
+                            )
                     except Exception as skills_err:
                         # Skills are a companion artifact.  If command registration
                         # already succeeded, still persist it so later cleanup can

@@ -31,6 +31,8 @@ specify extension add <name>
 
 Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The core `speckit.taskstoissues` command remains available alongside the GitHub extension's namespaced replacement during migration.
 
+If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
+
 > **Note:** All extension commands require a project already initialized with `specify init`.
 
 ## Remove an Extension
@@ -100,7 +102,7 @@ specify extension enable <name>
 specify extension disable <name>
 ```
 
-Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Re-enable with `enable`.
+Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be disabled even if generic command-output settings are missing or invalid. Re-enable with `enable`.
 
 ## Set Extension Priority
 
