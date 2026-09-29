@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-24T00:00:00Z",
+  "updated_at": "2026-09-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -853,7 +853,7 @@
     "blueprint": {
       "name": "Blueprint",
       "id": "blueprint",
-      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit.implement runs",
+      "description": "Stay code-literate in AI-driven development: review a complete code blueprint for every task from spec artifacts before /speckit-implement runs",
       "author": "chordpli",
       "version": "1.0.0",
       "download_url": "https://github.com/chordpli/spec-kit-blueprint/archive/refs/tags/v1.0.0.zip",
@@ -882,7 +882,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-17T00:00:00Z",
-      "updated_at": "2026-04-17T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "blueprint-index": {
       "name": "Blueprint Index — Living Architecture Map",
@@ -2058,7 +2058,7 @@
     "figma-starter": {
       "name": "Figma Starter",
       "id": "figma-starter",
-      "description": "Turns a Figma section's screens into Figma-derived specs — per-screen spec.md files, app-level user-stories.md, and a build-order.md — and turns an OpenAPI/Swagger document into an entity model plus per-page UI-to-API bindings, then hands off to /speckit.specify.",
+      "description": "Turns a Figma section's screens into Figma-derived specs — per-screen spec.md files, app-level user-stories.md, and a build-order.md — and turns an OpenAPI/Swagger document into an entity model plus per-page UI-to-API bindings, then hands off to /speckit-specify.",
       "author": "WaveMaker",
       "version": "1.1.0",
       "download_url": "https://github.com/OmneWave/spec-kit-figma-starter/archive/refs/tags/v1.1.0.zip",
@@ -2097,7 +2097,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-15T00:00:00Z",
-      "updated_at": "2026-09-09T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -4133,7 +4133,7 @@
     "prespec": {
       "name": "Pre-Spec Cards",
       "id": "prespec",
-      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit.specify.",
+      "description": "Card-based pre-spec thinking: paste an idea, get your card plus the paths you'd miss, then play each through — story, snags, trade-offs, difficulty vs payoff — before /speckit-specify.",
       "author": "bendlikeabamboo",
       "version": "0.3.0",
       "download_url": "https://github.com/bendlikeabamboo/pre-spec/archive/refs/tags/v0.3.0.zip",
@@ -4162,7 +4162,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-28T00:00:00Z",
-      "updated_at": "2026-08-28T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "preview": {
       "name": "Spec Kit Preview",
@@ -4436,7 +4436,7 @@
     "red-team": {
       "name": "Red Team",
       "id": "red-team",
-      "description": "Adversarial review of functional specs before /speckit.plan. Parallel adversarial lens agents catch hostile actors, silent failures, and regulatory blind spots that clarify/analyze cannot.",
+      "description": "Adversarial review of functional specs before /speckit-plan. Parallel adversarial lens agents catch hostile actors, silent failures, and regulatory blind spots that clarify/analyze cannot.",
       "author": "Ash Brener",
       "version": "1.0.2",
       "download_url": "https://github.com/ashbrener/spec-kit-red-team/releases/download/v1.0.2/red-team-v1.0.2.zip",
@@ -4465,7 +4465,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-22T00:00:00Z",
-      "updated_at": "2026-04-22T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "refine": {
       "name": "Spec Refine",
@@ -5028,7 +5028,7 @@
     "spec-validate": {
       "name": "Spec Validate",
       "id": "spec-validate",
-      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts — staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
+      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts — staged-reveal quizzes, peer review SLA, and a hard gate before /speckit-implement.",
       "author": "Ahmed Eltayeb",
       "version": "1.0.1",
       "download_url": "https://github.com/aeltayeb/spec-kit-spec-validate/archive/refs/tags/v1.0.1.zip",
@@ -5057,7 +5057,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
-      "updated_at": "2026-04-21T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "spec2cloud": {
       "name": "Spec2Cloud",
@@ -6422,7 +6422,7 @@
     "wireframe": {
       "name": "Wireframe Visual Feedback Loop",
       "id": "wireframe",
-      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit.plan, /speckit.tasks, and /speckit.implement.",
+      "description": "SVG wireframe generation, review, and sign-off for spec-driven development. Approved wireframes become spec constraints honored by /speckit-plan, /speckit-tasks, and /speckit-implement.",
       "author": "TortoiseWolfe",
       "version": "0.1.1",
       "download_url": "https://github.com/TortoiseWolfe/spec-kit-extension-wireframe/archive/refs/tags/v0.1.1.zip",
@@ -6454,7 +6454,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-22T00:00:00Z",
-      "updated_at": "2026-04-22T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "workiq": {
       "name": "Work IQ",
