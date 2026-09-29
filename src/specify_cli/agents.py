@@ -634,7 +634,7 @@ class CommandRegistrar:
         if path.stat().st_nlink > 1:
             return False
         if path.is_symlink() and not path.resolve().is_relative_to(
-            (project_root / ".specify/extensions").resolve()
+            (project_root / ".specify/extensions" / source_id).resolve()
         ):
             return False
         relative = path.relative_to(project_root.resolve()).as_posix()

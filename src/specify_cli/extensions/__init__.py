@@ -1680,7 +1680,7 @@ class ExtensionManager:
             if selected_ai == "generic" and skill_dir_preexists:
                 metadata = self.registry.get(manifest.id) or {}
                 if skill_name not in self._generic_owned_names(
-                    metadata, [skill_name], skills=True
+                    metadata, [skill_name], skills=True, extension_id=manifest.id
                 ):
                     continue
             if skill_file.exists() or skill_file.is_symlink():
@@ -2082,7 +2082,8 @@ class ExtensionManager:
             raise ExtensionError("Could not restore generic artifacts: " + "; ".join(errors))
 
     def _generic_owned_names(
-        self, metadata: Dict[str, Any], names: List[str], *, skills: bool
+        self, metadata: Dict[str, Any], names: List[str], *,
+        skills: bool, extension_id: str,
     ) -> List[str]:
         """Keep customized or untracked generic artifacts out of cleanup."""
         from ..integrations.generic import registration_directory
@@ -2105,7 +2106,7 @@ class ExtensionManager:
             if path.stat().st_nlink > 1:
                 continue
             if path.is_symlink() and not path.resolve().is_relative_to(
-                self.extensions_dir.resolve()
+                (self.extensions_dir / extension_id).resolve()
             ):
                 continue
             relative = path.relative_to(root).as_posix()
@@ -2125,7 +2126,9 @@ class ExtensionManager:
         """Require each invocation to be newly written or still hash-owned."""
         missing = sorted(set(expected) - set(registered))
         retained = (
-            self._generic_owned_names(metadata, missing, skills=skills)
+            self._generic_owned_names(
+                metadata, missing, skills=skills, extension_id=extension_id
+            )
             if missing else []
         )
         absent = sorted(set(missing) - set(retained))
@@ -2236,6 +2239,14 @@ class ExtensionManager:
             skill_names, extension_id, skills_dir=skills_dir
         ):
             skill_file = skill_subdir / "SKILL.md"
+            if (
+                generic_hashes is not None
+                and skill_file.is_symlink()
+                and not skill_file.resolve().is_relative_to(
+                    (self.extensions_dir / extension_id).resolve()
+                )
+            ):
+                continue
             if generic_hashes is not None and skill_file.is_relative_to(
                 self.project_root.resolve()
             ):
@@ -2510,7 +2521,8 @@ class ExtensionManager:
             )
             owned = (
                 set(self._generic_owned_names(
-                    self.registry.get(manifest.id) or {}, list(names), skills=skills,
+                    self.registry.get(manifest.id) or {}, list(names),
+                    skills=skills, extension_id=manifest.id,
                 ))
                 if force and self.registry.is_installed(manifest.id) else set()
             )
@@ -3696,7 +3708,7 @@ class ExtensionManager:
                 )
                 if agent_name == "generic":
                     command_names = self._generic_owned_names(
-                        metadata, command_names, skills=False
+                        metadata, command_names, skills=False, extension_id=ext_id
                     )
                 if command_names:
                     registrar.unregister_commands(
@@ -3713,7 +3725,7 @@ class ExtensionManager:
             if registered_skills and not commands_only:
                 if agent_name == "generic":
                     registered_skills = self._generic_owned_names(
-                        metadata, registered_skills, skills=True
+                        metadata, registered_skills, skills=True, extension_id=ext_id
                     )
                 # Always pass the explicit, agent-scoped skills_dir — even
                 # when it doesn't currently exist on disk. This method must
@@ -4051,7 +4063,7 @@ class ExtensionManager:
                             ]
                             if agent_name == "generic":
                                 to_remove = self._generic_owned_names(
-                                    metadata, to_remove, skills=True
+                                    metadata, to_remove, skills=True, extension_id=ext_id
                                 )
                             if to_remove:
                                 self._unregister_extension_skills(
@@ -4139,7 +4151,8 @@ class ExtensionManager:
                             if fully_replaced:
                                 if agent_name == "generic":
                                     fully_replaced = self._generic_owned_names(
-                                        metadata, fully_replaced, skills=False
+                                        metadata, fully_replaced, skills=False,
+                                        extension_id=ext_id,
                                     )
                                 registrar.unregister_commands(
                                     {agent_name: fully_replaced}, self.project_root

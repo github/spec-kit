@@ -169,7 +169,8 @@ def test_generic_skill_symlinked_directory_is_not_owned(
         source.write_text(source.read_text(encoding="utf-8") + "\nnew source\n", encoding="utf-8")
         manager.register_enabled_extensions_for_agent("generic", force=True)
         assert manager._generic_owned_names(
-            manager.registry.get("sample"), ["speckit-sample-run"], skills=True,
+            manager.registry.get("sample"), ["speckit-sample-run"],
+            skills=True, extension_id="sample",
         ) == []
     elif operation == "force":
         with pytest.raises(ExtensionError, match="cannot be replaced safely"):
@@ -1453,6 +1454,71 @@ def test_generic_extension_update_uses_project_registrar(
     assert not artifact.exists()
 
 
+def test_generic_update_rollback_preserves_cross_extension_skill_link(
+    tmp_path, generic_extension, monkeypatch,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0", link_commands=True)
+    artifact = project / ".custom/commands/speckit-sample-run/SKILL.md"
+    if not artifact.is_symlink():
+        pytest.skip("dev-mode symlinks are unavailable")
+    other_file = manager.extensions_dir / "other/file.md"
+    other_file.parent.mkdir()
+    original = artifact.read_bytes()
+    other_file.write_bytes(original)
+    artifact.unlink()
+    artifact.symlink_to(os.path.relpath(other_file, artifact.parent))
+    metadata = manager.registry.get("sample")
+
+    updated_source = tmp_path / "updated-source"
+    shutil.copytree(generic_extension, updated_source)
+    manifest_path = updated_source / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["extension"]["version"] = "2.0.0"
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    archive = tmp_path / "sample-update.zip"
+    with zipfile.ZipFile(archive, "w") as zip_file:
+        for file in updated_source.rglob("*"):
+            if file.is_file():
+                zip_file.write(file, file.relative_to(updated_source))
+
+    original_unlink = Path.unlink
+    removed_user_link = []
+
+    def track_unlink(path, *args, **kwargs):
+        if path == artifact:
+            removed_user_link.append(path)
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", track_unlink)
+    with (
+        patch.object(Path, "cwd", return_value=project),
+        patch.object(ExtensionCatalog, "get_extension_info", return_value={
+            "id": "sample",
+            "name": "Sample",
+            "version": "2.0.0",
+            "_install_allowed": True,
+        }),
+        patch.object(ExtensionCatalog, "download_extension", return_value=archive),
+        patch.object(ExtensionManager, "install_from_zip", side_effect=RuntimeError("update failed")),
+    ):
+        result = CliRunner().invoke(
+            app, ["extension", "update", "sample"], input="y\n",
+        )
+
+    assert result.exit_code == 1
+    assert "update failed" in result.output
+    assert not removed_user_link
+    assert artifact.is_symlink()
+    assert artifact.resolve() == other_file.resolve()
+    assert other_file.read_bytes() == original
+    assert ExtensionManager(project).registry.get("sample") == metadata
+
+
 @pytest.mark.parametrize("skills", [False, True])
 @pytest.mark.parametrize("collision", [False, True])
 @pytest.mark.parametrize("multiple_prior_dirs", [False, True])
@@ -1721,6 +1787,46 @@ def test_generic_dev_extension_removes_links(tmp_path, generic_extension, skills
     assert manager.remove("sample")
     assert not artifact.exists()
     assert not artifact.is_symlink()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("operation", ["refresh", "force", "remove"])
+def test_generic_retargeted_cross_extension_link_is_not_owned(
+    tmp_path, generic_extension, skills, operation, capsys,
+):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0", link_commands=True)
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    if not artifact.is_symlink():
+        pytest.skip("dev-mode symlinks are unavailable")
+    other_file = manager.extensions_dir / "other" / "file.md"
+    other_file.parent.mkdir()
+    original = artifact.read_bytes()
+    other_file.write_bytes(original)
+    artifact.unlink()
+    artifact.symlink_to(os.path.relpath(other_file, artifact.parent))
+    metadata = manager.registry.get("sample")
+
+    if operation == "refresh":
+        source = manager.extensions_dir / "sample/commands/run.md"
+        source.write_text(source.read_text(encoding="utf-8") + "\nnew source\n", encoding="utf-8")
+        manager.register_enabled_extensions_for_agent("generic", force=skills)
+        warning = capsys.readouterr().out
+        assert "Missing" in warning and "invocation artifacts" in warning
+        assert manager.registry.get("sample") == metadata
+    elif operation == "force":
+        with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+            manager.install_from_directory(generic_extension, "1.0.0", force=True)
+        assert manager.registry.get("sample") == metadata
+    else:
+        assert manager.remove("sample")
+
+    assert artifact.is_symlink()
+    assert artifact.resolve() == other_file.resolve()
+    assert other_file.read_bytes() == original
 
 
 @pytest.mark.parametrize("skills", [False, True])

@@ -66,7 +66,7 @@ def extension_enable(
                     if skills else set(manager._collect_manifest_command_names(manifest))
                 )
                 owned = set(manager._generic_owned_names(
-                    refreshed, list(expected), skills=skills,
+                    refreshed, list(expected), skills=skills, extension_id=extension_id,
                 ))
                 missing = expected - owned
                 if missing:
