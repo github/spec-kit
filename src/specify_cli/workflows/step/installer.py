@@ -448,13 +448,20 @@ def _check_duplicate(
             )
 
     try:
-        existing_names = (item.name for item in step_dir.parent.iterdir())
-        for existing_name in existing_names:
-            if existing_name == step_id or existing_name.casefold() != folded_id:
+        destination_exists = step_dir.exists()
+        for existing_path in step_dir.parent.iterdir():
+            existing_name = existing_path.name
+            if existing_name == step_id:
+                continue
+            aliases_destination = (
+                destination_exists and existing_path.samefile(step_dir)
+            )
+            if existing_name.casefold() != folded_id and not aliases_destination:
                 continue
             raise StepInstallError(
-                f"Step ID '{step_id}' collides case-insensitively with "
-                f"existing step directory '{existing_name}'"
+                f"Step ID '{step_id}' collides case-insensitively or resolves to "
+                f"the same filesystem path as existing step directory "
+                f"'{existing_name}'"
             )
     except FileNotFoundError:
         pass
