@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-28T00:00:00Z",
+  "updated_at": "2026-09-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5253,10 +5253,11 @@
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
       "id": "speckit-superpowers-bridge",
-      "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
+      "description": "Thin orchestrator between Spec Kit design artifacts and Superpowers implementation discipline. Cross-agent; verified for Codex and Claude Code.",
       "author": "lihan3238",
-      "version": "1.2.0",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.2.0/speckit-superpowers-bridge-v1.2.0.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.3.0/speckit-superpowers-bridge-v1.3.0.zip",
+      "sha256": "2caba4377f003a6229585f1d559de6dedc1d5654e7f2566dcf9b98462c154525",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -5299,7 +5300,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-08-18T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
