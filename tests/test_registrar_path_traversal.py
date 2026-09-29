@@ -400,7 +400,7 @@ class TestReadSkipWarning:
             / "SKILL.md"
         ).exists()
 
-    def test_copilot_nested_alias_creates_companion_prompt(self, tmp_path):
+    def test_copilot_nested_alias_creates_and_removes_companion_prompt(self, tmp_path):
         project, ext_dir = _project_and_source(tmp_path)
         agents_dir = project / ".github" / "agents"
         agents_dir.mkdir(parents=True)
@@ -423,3 +423,14 @@ class TestReadSkipWarning:
             / "group"
             / "run.prompt.md"
         ).is_file()
+
+        registrar.unregister_commands({"copilot": registered}, project)
+
+        assert not (agents_dir / "group" / "run.agent.md").exists()
+        assert not (
+            project
+            / ".github"
+            / "prompts"
+            / "group"
+            / "run.prompt.md"
+        ).exists()

@@ -19,6 +19,41 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
+def windows_path_is_junction(path: Path) -> bool:
+    """Detect a Windows junction using Python 3.11-compatible reparse data."""
+    try:
+        path_stat = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise ValueError(
+            f"Cannot determine whether path is a junction: {path}: {exc}"
+        ) from exc
+
+    reparse_tag = getattr(path_stat, "st_reparse_tag", None)
+    if reparse_tag is None:
+        raise ValueError(f"Cannot determine whether path is a junction: {path}")
+    mount_point_tag = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+    return reparse_tag == mount_point_tag
+
+
+def path_is_junction(path: Path) -> bool:
+    """Return whether *path* is a junction on supported Python versions."""
+    checker = getattr(path, "is_junction", None)
+    if callable(checker):
+        try:
+            return checker()
+        except AttributeError:
+            pass
+        except OSError as exc:
+            raise ValueError(
+                f"Cannot determine whether path is a junction: {path}: {exc}"
+            ) from exc
+    if os.name == "nt":
+        return windows_path_is_junction(path)
+    return False
+
+
 def docker_agent_command(executable: str | None = None) -> list[str] | None:
     """Return a runnable Docker Agent command, or ``None`` if unavailable.
 
