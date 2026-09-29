@@ -18,6 +18,26 @@ from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration, ya
 from ..manifest import IntegrationManifest
 
 
+def registration_directory(project_root: Path) -> Path:
+    """Resolve the installed generic output root, never the class-level placeholder."""
+    from ...integration_state import integration_setting, try_read_integration_json
+
+    state, error = try_read_integration_json(project_root)
+    if error is not None:
+        raise ValueError(f"Cannot read generic integration settings: {error.detail}")
+    settings = integration_setting(state or {}, "generic")
+    commands_dir = GenericIntegration._resolve_commands_dir(
+        settings.get("parsed_options"), {"raw_options": settings.get("raw_options")}
+    )
+    if not isinstance(commands_dir, str):
+        raise ValueError("Invalid --commands-dir in generic integration settings")
+    root = project_root.resolve()
+    destination = (project_root / commands_dir).resolve()
+    if not destination.is_relative_to(root):
+        raise ValueError(f"Generic command directory {destination} escapes project root {root}")
+    return destination
+
+
 class _GenericSkillsHelper(SkillsIntegration):
     """Internal helper supplying skills-mode post-processing for
     ``GenericIntegration`` (e.g. the dot-to-hyphen hook invocation note).
@@ -48,6 +68,9 @@ class GenericIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
+
+    def post_process_skill_content(self, content: str) -> str:
+        return _GenericSkillsHelper().post_process_skill_content(content)
 
     def effective_invoke_separator(
         self,

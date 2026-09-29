@@ -6,6 +6,7 @@ Used by both the extension system and the preset system to write
 command files into agent-specific directories in the correct format.
 """
 
+import hashlib
 import os
 import re
 from copy import deepcopy
@@ -58,8 +59,23 @@ class CommandRegistrar:
     AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
     _configs_loaded: bool = False
 
-    def __init__(self) -> None:
+    def __init__(self, project_root: Path | None = None) -> None:
         self._ensure_configs()
+        self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
+        if project_root is not None:
+            from .integrations.generic import registration_directory
+
+            from ._init_options import load_init_options
+
+            opts = load_init_options(project_root)
+            if isinstance(opts, dict) and opts.get("ai") == "generic":
+                self.AGENT_CONFIGS["generic"] = {
+                    "dir": str(registration_directory(project_root)),
+                    "format": "markdown",
+                    "args": "$ARGUMENTS",
+                    "extension": ".md",
+                    "invoke_separator": ".",
+                }
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -605,6 +621,24 @@ class CommandRegistrar:
         return os.path.normpath(name) == name
 
     @staticmethod
+    def _generic_owned_output(path: Path, source_id: str, project_root: Path) -> bool:
+        """Only reuse a generated file if its installed extension still owns its bytes."""
+        from .extensions import ExtensionRegistry
+
+        metadata = ExtensionRegistry(
+            project_root / ".specify" / "extensions"
+        ).get(source_id)
+        hashes = metadata.get("generic_artifact_hashes", {}) if metadata else {}
+        if not isinstance(hashes, dict) or not path.is_file():
+            return False
+        if path.is_symlink() and not path.resolve().is_relative_to(
+            (project_root / ".specify/extensions").resolve()
+        ):
+            return False
+        relative = path.relative_to(project_root.resolve()).as_posix()
+        return hashes.get(relative) == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    @staticmethod
     def _same_lexical_path(left: Path, right: Path) -> bool:
         """Compare paths after lexical normalization without resolving symlinks."""
         return os.path.normcase(os.path.normpath(os.fspath(left))) == os.path.normcase(
@@ -872,6 +906,11 @@ class CommandRegistrar:
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
+            if agent_name == "generic" and (dest_file.exists() or dest_file.is_symlink()):
+                if not self._generic_owned_output(dest_file, source_id, project_root):
+                    continue
+                registered.append(cmd_name)
+                continue
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             self._write_registered_output(
                 dest_file,
@@ -954,6 +993,11 @@ class CommandRegistrar:
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
                 self._ensure_inside(alias_file, commands_dir)
+                if agent_name == "generic" and (alias_file.exists() or alias_file.is_symlink()):
+                    if not self._generic_owned_output(alias_file, source_id, project_root):
+                        continue
+                    registered.append(alias)
+                    continue
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 self._write_registered_output(
                     alias_file,

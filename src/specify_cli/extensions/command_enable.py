@@ -44,6 +44,24 @@ def extension_enable(
 
     manager.registry.update(extension_id, {"enabled": True})
 
+    from .. import load_init_options
+
+    if load_init_options(project_root).get("ai") == "generic":
+        manager.register_enabled_extensions_for_agent("generic")
+        refreshed = manager.registry.get(extension_id) or {}
+        commands = refreshed.get("registered_commands", {})
+        manifest = manager.get_extension(extension_id)
+        if manifest and manifest.commands and not (
+            (isinstance(commands, dict) and commands.get("generic"))
+            or refreshed.get("registered_skills")
+        ):
+            manager.registry.update(extension_id, {"enabled": False})
+            console.print(
+                f"[red]Error:[/red] Could not register generic invocations "
+                f"for '{_escape_markup(str(extension_id))}'."
+            )
+            raise typer.Exit(1)
+
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
     if "hooks" in config:

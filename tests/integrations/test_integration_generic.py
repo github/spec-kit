@@ -3,10 +3,402 @@
 import os
 
 import pytest
+import yaml
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
+from specify_cli.integration_state import write_integration_json
+from specify_cli.extensions import ExtensionError, ExtensionManager
+from specify_cli import save_init_options
+
+
+@pytest.fixture
+def generic_extension(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {
+            "id": "sample", "name": "Sample", "version": "1.0.0",
+            "description": "Sample commands", "author": "Test",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{
+            "name": "speckit.sample.run",
+            "file": "commands/run.md",
+            "description": "Run sample",
+        }]},
+    }), encoding="utf-8")
+    (source / "commands").mkdir()
+    (source / "scripts").mkdir()
+    (source / "scripts" / "run.sh").write_text("echo sample\n", encoding="utf-8")
+    (source / "commands" / "run.md").write_text(
+        "---\ndescription: Run sample\nscripts:\n  sh: scripts/run.sh\n---\n"
+        "Execute {SCRIPT} with {ARGS}; see scripts/run.sh. "
+        "Then __SPECKIT_COMMAND_TASKS__.\n",
+        encoding="utf-8",
+    )
+    return source
+
+
+def generic_project(tmp_path, *, skills=False, commands_dir=".custom/commands"):
+    project = tmp_path / "project"
+    project.mkdir()
+    opts = {"commands_dir": commands_dir, "skills": skills}
+    integration = get_integration("generic")
+    manifest = IntegrationManifest("generic", project)
+    integration.setup(project, manifest, parsed_options=opts)
+    manifest.save()
+    write_integration_json(
+        project, version="1.0.0", integration_key="generic",
+        settings={"generic": {"parsed_options": opts}},
+    )
+    save_init_options(project, {"ai": "generic", "ai_skills": skills, "script": "sh"})
+    return project
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_lifecycle(tmp_path, generic_extension, skills):
+    project = generic_project(
+        tmp_path, skills=skills,
+        commands_dir=".custom/skills" if skills else ".custom/commands",
+    )
+    output_dir = project / ".custom" / ("skills" if skills else "commands")
+    core = output_dir / ("speckit-taskstoissues/SKILL.md" if skills else "speckit.taskstoissues.md")
+    core_content = core.read_bytes()
+    unrelated = output_dir / ("user-skill/SKILL.md" if skills else "user.md")
+    unrelated.parent.mkdir(parents=True, exist_ok=True)
+    unrelated.write_text("user-owned", encoding="utf-8")
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = output_dir / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    assert artifact.is_file()
+    content = artifact.read_text(encoding="utf-8")
+    assert ".specify/extensions/sample/scripts/run.sh" in content
+    assert "{SCRIPT}" not in content
+    assert "$ARGUMENTS" in content
+    assert ("/speckit-tasks" if skills else "/speckit.tasks") in content
+    manager.register_enabled_extensions_for_agent("generic")
+    assert artifact.read_text(encoding="utf-8") == content
+    if skills:
+        sibling = artifact.parent / "user-notes.md"
+        sibling.write_text("keep this", encoding="utf-8")
+    assert manager.remove("sample")
+    assert not artifact.exists()
+    if skills:
+        assert sibling.read_text(encoding="utf-8") == "keep this"
+    assert core.read_bytes() == core_content
+    assert unrelated.read_text(encoding="utf-8") == "user-owned"
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_preserves_modified_artifact(tmp_path, generic_extension, skills):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    artifact.write_text(artifact.read_text(encoding="utf-8") + "\nuser edit\n", encoding="utf-8")
+    assert manager.remove("sample")
+    assert artifact.read_text(encoding="utf-8").endswith("user edit\n")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_rejects_modified_artifact_on_disable(
+    tmp_path, generic_extension, skills,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    artifact.write_text("user edit", encoding="utf-8")
+    manager.register_enabled_extensions_for_agent("generic")
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(app, ["extension", "disable", "sample"])
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 1
+    assert "modified or is not owned" in result.output
+    assert artifact.read_text(encoding="utf-8") == "user edit"
+    assert manager.registry.get("sample")["enabled"] is True
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_reports_missing_registration_options(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    (project / ".specify/integration.json").unlink()
+    with pytest.raises(ExtensionError, match="generic"):
+        ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
+    assert not ExtensionManager(project).registry.is_installed("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_after_cli_init(tmp_path, generic_extension, skills):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = tmp_path / "initialized"
+    project.mkdir()
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(app, [
+            "init", "--here", "--integration", "generic",
+            "--integration-options=--commands-dir .myagent/commands" + (
+                " --skills" if skills else ""
+            ),
+            "--script", "sh",
+        ], catch_exceptions=False)
+    finally:
+        os.chdir(old_cwd)
+    assert result.exit_code == 0, result.output
+    runner = CliRunner()
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        installed = runner.invoke(
+            app, ["extension", "add", str(generic_extension), "--dev"]
+        )
+        assert installed.exit_code == 0, installed.output
+    finally:
+        os.chdir(old_cwd)
+    output = project / ".myagent/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    assert output.is_file()
+    try:
+        os.chdir(project)
+        removed = runner.invoke(app, ["extension", "remove", "sample", "--force"])
+        assert removed.exit_code == 0, removed.output
+    finally:
+        os.chdir(old_cwd)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_remove_after_directory_upgrade(
+    tmp_path, generic_extension, skills,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = tmp_path / "upgrade"
+    project.mkdir()
+    runner = CliRunner()
+    suffix = " --skills" if skills else ""
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        init = runner.invoke(app, [
+            "init", "--here", "--integration", "generic",
+            f"--integration-options=--commands-dir .old/output{suffix}",
+            "--script", "sh",
+        ], catch_exceptions=False)
+        assert init.exit_code == 0, init.output
+        manager = ExtensionManager(project)
+        manager.install_from_directory(generic_extension, "1.0.0")
+        name = "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+        old_output = project / ".old/output" / name
+        assert old_output.is_file()
+        upgrade = runner.invoke(app, [
+            "integration", "upgrade", "generic", "--force",
+            f"--integration-options=--commands-dir .new/output{suffix}",
+        ], catch_exceptions=False)
+        assert upgrade.exit_code == 0, upgrade.output
+        new_output = project / ".new/output" / name
+        assert new_output.is_file()
+        manager = ExtensionManager(project)
+        assert f".new/output/{name}" in manager.registry.get("sample")["generic_artifact_hashes"]
+        assert manager.remove("sample")
+        assert not old_output.exists()
+        assert not new_output.exists()
+    finally:
+        os.chdir(old_cwd)
+
+
+@pytest.mark.parametrize("replacement_content", [
+    "replacement with different bytes",
+    "---\nmetadata:\n  source: extension:sample\n---\nedited generated skill",
+])
+def test_generic_skills_upgrade_preserves_replaced_or_modified_skill(
+    tmp_path, generic_extension, replacement_content,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = tmp_path / "upgrade-preserves-edited-skill"
+    project.mkdir()
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        initialized = runner.invoke(app, [
+            "init", "--here", "--integration", "generic",
+            "--integration-options=--commands-dir .custom/skills --skills",
+            "--script", "sh",
+        ], catch_exceptions=False)
+        assert initialized.exit_code == 0, initialized.output
+
+        manager = ExtensionManager(project)
+        manager.install_from_directory(generic_extension, "1.0.0")
+        skill = project / ".custom/skills/speckit-sample-run/SKILL.md"
+        assert skill.is_file()
+        skill.write_text(replacement_content, encoding="utf-8")
+
+        upgraded = runner.invoke(app, [
+            "integration", "upgrade", "generic", "--force",
+            "--integration-options=--commands-dir .custom/skills --skills",
+        ], catch_exceptions=False)
+        assert upgraded.exit_code == 0, upgraded.output
+        assert skill.read_text(encoding="utf-8") == replacement_content
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_generic_extension_skills_accepts_project_alias(tmp_path, generic_extension):
+    project = generic_project(tmp_path, skills=True)
+    alias = tmp_path / "project-alias"
+    try:
+        alias.symlink_to(project, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    manager = ExtensionManager(alias)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = alias / ".custom/commands/speckit-sample-run/SKILL.md"
+    assert skill.is_file()
+    assert manager.remove("sample")
+    assert not skill.exists()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_does_not_overwrite_existing_command_or_skill(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    output = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("<!-- Extension: sample -->\nmy own command", encoding="utf-8")
+    with pytest.raises(ExtensionError, match="no invocation artifacts"):
+        ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
+    assert output.read_text(encoding="utf-8") == "<!-- Extension: sample -->\nmy own command"
+    assert not ExtensionManager(project).registry.is_installed("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_rejects_escaping_directory(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    write_integration_json(
+        project, version="1.0.0", integration_key="generic",
+        settings={"generic": {"parsed_options": {"commands_dir": "../outside"}}},
+    )
+    with pytest.raises(ExtensionError, match="escapes project root"):
+        ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
+    assert not (tmp_path / "outside").exists()
+    assert not ExtensionManager(project).registry.is_installed("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_dev_extension_removes_links(tmp_path, generic_extension, skills):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0", link_commands=True)
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    assert artifact.is_file()
+    assert manager.remove("sample")
+    assert not artifact.exists()
+    assert not artifact.is_symlink()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_dev_extension_preserves_edited_link(tmp_path, generic_extension, skills):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0", link_commands=True)
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    if not artifact.is_symlink():
+        pytest.skip("symlink creation is unavailable")
+    artifact.write_text("user edit", encoding="utf-8")
+    assert manager.remove("sample")
+    assert not artifact.is_symlink()
+    assert artifact.read_text(encoding="utf-8") == "user edit"
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_disable_and_enable(tmp_path, generic_extension, skills):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        disabled = runner.invoke(app, ["extension", "disable", "sample"])
+        assert disabled.exit_code == 0, disabled.output
+        assert not output.exists()
+        assert (project / ".specify/extensions/sample/extension.yml").exists()
+        enabled = runner.invoke(app, ["extension", "enable", "sample"])
+        assert enabled.exit_code == 0, enabled.output
+        assert output.is_file()
+    finally:
+        os.chdir(old_cwd)
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_enable_reports_colliding_user_file(
+    tmp_path, generic_extension, skills,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        disabled = runner.invoke(app, ["extension", "disable", "sample"])
+        assert disabled.exit_code == 0, disabled.output
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text("user-owned", encoding="utf-8")
+        enabled = runner.invoke(app, ["extension", "enable", "sample"])
+    finally:
+        os.chdir(old_cwd)
+    assert enabled.exit_code == 1
+    assert "Could not register generic invocations" in enabled.output
+    assert artifact.read_text(encoding="utf-8") == "user-owned"
+    assert ExtensionManager(project).registry.get("sample")["enabled"] is False
 
 
 class TestGenericIntegration:
@@ -537,22 +929,23 @@ class TestGenericIntegration:
         assert "/speckit.plan" in result.output
         assert "/speckit-plan" not in result.output
 
-    def test_generic_skills_mode_does_not_register_addon_skills_elsewhere(
+    def test_generic_skills_mode_resolves_configured_dir_not_default(
         self, tmp_path
     ):
-        """Copilot review (PR #4562): a generic --skills project persists
-        ai_skills=True, but generic's output directory is a runtime
-        --commands-dir option, not a static per-agent folder — there is no
-        directory extension/preset skill registration could safely resolve.
-        resolve_active_skills_dir() must stay disabled for generic rather
-        than silently falling back to .agents/skills."""
+        """Skills register under the persisted generic directory, never .agents/skills."""
         from specify_cli import resolve_active_skills_dir
         from specify_cli._init_options import save_init_options
 
+        write_integration_json(
+            tmp_path, version="1.0.0", integration_key="generic",
+            settings={"generic": {"parsed_options": {
+                "commands_dir": ".myagent/skills", "skills": True,
+            }}},
+        )
         save_init_options(
             tmp_path, {"ai": "generic", "ai_skills": True}
         )
-        assert resolve_active_skills_dir(tmp_path) is None
+        assert resolve_active_skills_dir(tmp_path) == tmp_path / ".myagent/skills"
         assert not (tmp_path / ".agents" / "skills").exists()
 
     def test_complete_file_inventory_ps(self, tmp_path):

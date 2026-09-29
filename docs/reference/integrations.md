@@ -259,7 +259,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
-| `generic`   | `--skills`          | Render commands as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. Generic's output directory is a runtime option rather than a static per-agent folder, so this does not enable extension/preset add-on skill registration in either layout. |
+| `generic`   | `--skills`          | Render commands and installed extension invocations as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
@@ -270,6 +270,14 @@ Example:
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
+
+Once `generic` is the active integration, `specify extension add` registers
+extension commands in its configured `--commands-dir` (as command files or
+skills according to `--skills`). `specify extension remove` removes unchanged
+extension-owned artifacts while leaving core commands, user files, and edited
+extension files intact. The core `speckit.taskstoissues` command remains
+available; installing the GitHub extension adds the namespaced replacement
+without deprecating or removing the core command.
 
 ## Scaffold a New Integration
 
