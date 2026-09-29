@@ -2482,3 +2482,61 @@ def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch):
     state = WorkflowEngine(tmp_path).resume(state.run_id)
     assert state.status == RunStatus.ABORTED
     assert counts == {0: 2, 1: 1}
+
+
+NAN_SNAPSHOT = """
+schema_version: "1.0"
+workflow:
+  id: nan-snapshot
+  name: NaN Snapshot
+  version: "1.0.0"
+inputs:
+  approve:
+    type: boolean
+    default: false
+steps:
+  - id: fan
+    type: fan-out
+    items: [1, 2]
+    max_concurrency: .nan
+    step:
+      type: probe
+      value: "{{ item }}"
+  - id: wait
+    type: probe
+    await: true
+"""
+
+
+def test_resume_accepts_native_yaml_nan_in_snapshot(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        WorkflowDefinition.from_string(NAN_SNAPSHOT), run_id="nan"
+    )
+    assert state.status == RunStatus.PAUSED
+    copy = tmp_path / ".specify/workflows/runs/nan/workflow.yml"
+    data = yaml.safe_load(copy.read_text(encoding="utf-8"))
+    # Key order is not part of the snapshot identity.
+    data["steps"][0] = dict(reversed(list(data["steps"][0].items())))
+    copy.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    state = WorkflowEngine(tmp_path).resume("nan", {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED, state.error
+    assert state.step_results["fan"]["output"]["results"] == [
+        {"value": 1}, {"value": 2}
+    ]
+    assert probe == {"item": 2, "wait": 2}
+
+
+def test_resume_rejects_changed_workflow_snapshot(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        WorkflowDefinition.from_string(NAN_SNAPSHOT), run_id="changed"
+    )
+    assert state.status == RunStatus.PAUSED
+    copy = tmp_path / ".specify/workflows/runs/changed/workflow.yml"
+    data = yaml.safe_load(copy.read_text(encoding="utf-8"))
+    data["steps"][0]["items"] = [1, 2, 3]
+    copy.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="root sequence differs"):
+        WorkflowEngine(tmp_path).resume("changed", {"approve": True})
