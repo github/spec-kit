@@ -413,8 +413,11 @@ Supported filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`,
 
 The new filters validate their input types and raise a `ValueError` naming
 the problem instead of coercing — so `upper`/`lower` take strings only, `split`
-takes a string value and a non-empty string separator, and `length` accepts
-lists and strings but rejects mappings. A filter used with the wrong number of
+takes a string value and a non-empty string separator, `length` accepts
+lists and strings but rejects mappings, and `to_json` rejects values it
+cannot serialize — including non-finite floats (`NaN`, `Infinity`,
+`-Infinity`), which would otherwise serialize to tokens that are not valid
+JSON. A filter used with the wrong number of
 arguments
 (`| upper('x')`, bare `| split`) is reported as a known filter misused, which is
 distinct from an entirely unknown filter name. The older filters are more

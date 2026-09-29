@@ -801,6 +801,29 @@ class TestExpressions:
         with pytest.raises(ValueError, match="to_json: value is not JSON-serializable"):
             evaluate_expression("{{ inputs.step | to_json }}", ctx)
 
+    def test_filter_to_json_rejects_non_finite_floats(self):
+        # json.dumps defaults to allow_nan=True, which would emit bare
+        # NaN/Infinity/-Infinity — none of them valid JSON. All three must
+        # take the ValueError path instead, both at the top level and when
+        # they are buried inside a container.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "nan": float("nan"),
+                "inf": float("inf"),
+                "ninf": float("-inf"),
+                "nested": [float("nan")],
+            }
+        )
+        for name in ("nan", "inf", "ninf", "nested"):
+            with pytest.raises(
+                ValueError, match="to_json: value is not JSON-serializable"
+            ):
+                evaluate_expression(f"{{{{ inputs.{name} | to_json }}}}", ctx)
+
     def test_zero_arg_filters_reject_miswired_forms(self):
         # The strict no-argument branch is shared by from_json/upper/lower/
         # length/to_json. Every mis-wired form — parenthesized, accidental arg,

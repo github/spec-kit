@@ -228,10 +228,13 @@ def _filter_to_json(value: Any) -> str:
     "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
 
     Raises ``ValueError`` when *value* is not JSON-serializable, chained from
-    the underlying error so the offending type stays visible.
+    the underlying error so the offending type stays visible. ``allow_nan=False``
+    is what makes that true for non-finite floats: ``json.dumps`` would
+    otherwise emit bare ``NaN``/``Infinity``/``-Infinity``, none of which is
+    valid JSON, and hand downstream parsers a string they must reject.
     """
     try:
-        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"to_json: value is not JSON-serializable: {exc}") from exc
 
