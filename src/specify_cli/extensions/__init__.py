@@ -1517,10 +1517,8 @@ class ExtensionManager:
         Projects without a recorded active integration at all (pre-init-options
         layouts or direct library use, i.e. init-options.json does not
         exist) fall back to detection-based registration for all agents. A
-        *recorded* active key that has no registrar config (e.g. ``generic``,
-        which is deliberately excluded from ``AGENT_CONFIGS``) is not treated
-        as "no active integration" — it must not cause registration to
-        target other detected agents.
+        recorded active generic key uses its persisted output directory,
+        not detection-based fallback to other agents.
 
         An init-options.json that exists but is corrupted, unreadable, or
         has a malformed/empty ``ai`` value (e.g. ``[]`` or ``null``) is also
@@ -1914,9 +1912,13 @@ class ExtensionManager:
         if error is None and integration_setting(state or {}, "generic"):
             from ..integrations.generic import registration_directory
 
-            add_candidate(registration_directory(self.project_root))
+            try:
+                add_candidate(registration_directory(self.project_root))
+            except (OSError, ValueError):
+                # Recorded paths and static roots still allow safe cleanup.
+                pass
 
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar()
         for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
             if agent_config.get("extension") != "/SKILL.md":
                 continue
@@ -1950,8 +1952,7 @@ class ExtensionManager:
                 continue
             relative = path.relative_to(self.project_root.resolve()).as_posix()
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if relative not in hashes:
-                hashes[relative] = digest
+            hashes[relative] = digest
         return hashes
 
     def _generic_owned_names(
@@ -2289,9 +2290,32 @@ class ExtensionManager:
             from ..integrations.generic import registration_directory
 
             try:
-                registration_directory(self.project_root)
+                output_dir = registration_directory(self.project_root)
             except (OSError, ValueError) as exc:
                 raise ExtensionError(f"Cannot register generic extension commands: {exc}") from exc
+            skills = is_ai_skills_enabled(active_options)
+            names = (
+                {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+                if skills else self._collect_manifest_command_names(manifest)
+            )
+            owned = (
+                set(self._generic_owned_names(
+                    self.registry.get(manifest.id) or {}, list(names), skills=skills,
+                ))
+                if force and self.registry.is_installed(manifest.id) else set()
+            )
+            for name in sorted(names):
+                target = output_dir / name if skills else output_dir / f"{name}.md"
+                if not (target.exists() or target.is_symlink()):
+                    continue
+                if name in owned and (
+                    not skills or not any(child.name != "SKILL.md" for child in target.iterdir())
+                ):
+                    continue
+                raise ExtensionError(
+                    "Cannot register generic extension commands: existing invocation "
+                    f"artifact or directory '{target}' cannot be replaced safely"
+                )
 
         # Refuse to install an extension from its own install destination — with
         # --force this would delete the source before copying it (issue #2990).

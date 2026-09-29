@@ -1,6 +1,11 @@
 """Tests for GenericIntegration."""
 
 import os
+import shutil
+import zipfile
+from hashlib import sha256
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -9,7 +14,7 @@ from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integration_state import write_integration_json
-from specify_cli.extensions import ExtensionError, ExtensionManager
+from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager
 from specify_cli import save_init_options
 
 
@@ -145,6 +150,29 @@ def test_generic_extension_reports_missing_registration_options(
     assert not ExtensionManager(project).registry.is_installed("sample")
 
 
+@pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])
+def test_generic_skills_remove_with_invalid_settings(
+    tmp_path, generic_extension, invalid_settings,
+):
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/commands/speckit-sample-run/SKILL.md"
+    other_root = project / ".github/skills/speckit-sample-run/SKILL.md"
+    other_root.parent.mkdir(parents=True)
+    other_root.write_bytes(skill.read_bytes())
+    state_file = project / ".specify/integration.json"
+    if invalid_settings == "missing":
+        state_file.unlink()
+    else:
+        state_file.write_text("{", encoding="utf-8")
+
+    assert manager.remove("sample")
+    assert not skill.exists()
+    assert not other_root.exists()
+    assert not manager.registry.is_installed("sample")
+
+
 @pytest.mark.parametrize("skills", [False, True])
 def test_generic_extension_after_cli_init(tmp_path, generic_extension, skills):
     from typer.testing import CliRunner
@@ -268,6 +296,41 @@ def test_generic_skills_upgrade_preserves_replaced_or_modified_skill(
         os.chdir(old_cwd)
 
 
+def test_generic_skills_upgrade_refreshes_artifact_digest(
+    tmp_path, generic_extension,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    skill = project / ".custom/commands/speckit-sample-run/SKILL.md"
+    relative = skill.relative_to(project).as_posix()
+    original_digest = manager.registry.get("sample")["generic_artifact_hashes"][relative]
+    source = manager.extensions_dir / "sample/commands/run.md"
+    source.write_text(source.read_text(encoding="utf-8") + "\nupdated source\n", encoding="utf-8")
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        upgraded = CliRunner().invoke(app, [
+            "integration", "upgrade", "generic", "--force",
+            "--integration-options=--commands-dir .custom/commands --skills",
+        ], catch_exceptions=False)
+        assert upgraded.exit_code == 0, upgraded.output
+    finally:
+        os.chdir(old_cwd)
+
+    assert "updated source" in skill.read_text(encoding="utf-8")
+    manager = ExtensionManager(project)
+    current_digest = manager.registry.get("sample")["generic_artifact_hashes"][relative]
+    assert current_digest != original_digest
+    assert current_digest == sha256(skill.read_bytes()).hexdigest()
+    assert manager.remove("sample")
+    assert not skill.exists()
+
+
 def test_generic_extension_skills_accepts_project_alias(tmp_path, generic_extension):
     project = generic_project(tmp_path, skills=True)
     alias = tmp_path / "project-alias"
@@ -294,10 +357,121 @@ def test_generic_extension_does_not_overwrite_existing_command_or_skill(
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("<!-- Extension: sample -->\nmy own command", encoding="utf-8")
-    with pytest.raises(ExtensionError, match="no invocation artifacts"):
+    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
         ExtensionManager(project).install_from_directory(generic_extension, "1.0.0")
     assert output.read_text(encoding="utf-8") == "<!-- Extension: sample -->\nmy own command"
-    assert not ExtensionManager(project).registry.is_installed("sample")
+    manager = ExtensionManager(project)
+    assert not manager.registry.is_installed("sample")
+    assert not (manager.extensions_dir / "sample").exists()
+    output.unlink()
+    if skills:
+        output.parent.rmdir()
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert manager.registry.is_installed("sample")
+    assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_force_reinstall_only_replaces_owned_artifacts(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert artifact.is_file()
+    assert manager.remove("sample")
+    assert not artifact.exists()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_force_reinstall_preserves_edited_artifacts(
+    tmp_path, generic_extension, skills,
+):
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    artifact.write_text("edited output", encoding="utf-8")
+    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
+        manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    assert artifact.read_text(encoding="utf-8") == "edited output"
+    assert manager.registry.is_installed("sample")
+    assert (manager.extensions_dir / "sample/extension.yml").is_file()
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("fail_install", [False, True])
+def test_generic_extension_update_uses_project_registrar(
+    tmp_path, generic_extension, skills, fail_install,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    original = artifact.read_bytes()
+    updated_source = tmp_path / "updated-source"
+    shutil.copytree(generic_extension, updated_source)
+    manifest_path = updated_source / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["extension"]["version"] = "2.0.0"
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    command_file = updated_source / "commands/run.md"
+    command_file.write_text(
+        command_file.read_text(encoding="utf-8") + "\nupdated command\n",
+        encoding="utf-8",
+    )
+    archive = tmp_path / "sample-update.zip"
+    with zipfile.ZipFile(archive, "w") as zip_file:
+        for file in updated_source.rglob("*"):
+            if file.is_file():
+                zip_file.write(file, file.relative_to(updated_source))
+
+    def install_update(self, _zip_path, speckit_version, *, catalog_name=None):
+        if fail_install:
+            raise RuntimeError("simulated update failure")
+        return self.install_from_directory(
+            updated_source, speckit_version, catalog_name=catalog_name
+        )
+
+    with (
+        patch.object(Path, "cwd", return_value=project),
+        patch.object(ExtensionCatalog, "get_extension_info", return_value={
+            "id": "sample",
+            "name": "Sample",
+            "version": "2.0.0",
+            "_install_allowed": True,
+        }),
+        patch.object(ExtensionCatalog, "download_extension", return_value=archive),
+        patch.object(ExtensionManager, "install_from_zip", install_update),
+    ):
+        result = CliRunner().invoke(
+            app, ["extension", "update", "sample"], input="y\n",
+        )
+
+    manager = ExtensionManager(project)
+    if fail_install:
+        assert result.exit_code == 1
+        assert "simulated update failure" in result.output
+        assert manager.registry.get("sample")["version"] == "1.0.0"
+        assert artifact.read_bytes() == original
+    else:
+        assert result.exit_code == 0, result.output
+        assert manager.registry.get("sample")["version"] == "2.0.0"
+        assert artifact.read_bytes() != original
+        assert "updated command" in artifact.read_text(encoding="utf-8")
+    assert manager.remove("sample")
+    assert not artifact.exists()
 
 
 @pytest.mark.parametrize("skills", [False, True])

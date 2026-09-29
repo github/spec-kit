@@ -75,7 +75,7 @@ def run_update_command(extension: str | None) -> None:
         console.print()
         updated_extensions = []
         failed_updates = []
-        registrar = CommandRegistrar()
+        registrar = CommandRegistrar(project_root)
         hook_executor = HookExecutor(project_root)
         from ..agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
 
