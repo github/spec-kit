@@ -515,8 +515,9 @@ def test_generic_extension_force_reinstall_preserves_edited_artifacts(
 
 @pytest.mark.parametrize("skills", [False, True])
 @pytest.mark.parametrize("fail_install", [False, True])
+@pytest.mark.parametrize("disabled", [False, True])
 def test_generic_extension_update_uses_project_registrar(
-    tmp_path, generic_extension, skills, fail_install,
+    tmp_path, generic_extension, skills, fail_install, disabled,
 ):
     from typer.testing import CliRunner
     from specify_cli import app
@@ -528,6 +529,15 @@ def test_generic_extension_update_uses_project_registrar(
         "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
     )
     original = artifact.read_bytes()
+    if disabled:
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, ["extension", "disable", "sample"])
+            assert result.exit_code == 0, result.output
+        finally:
+            os.chdir(old_cwd)
+        assert not artifact.exists()
     updated_source = tmp_path / "updated-source"
     shutil.copytree(generic_extension, updated_source)
     manifest_path = updated_source / "extension.yml"
@@ -572,12 +582,30 @@ def test_generic_extension_update_uses_project_registrar(
         assert result.exit_code == 1
         assert "simulated update failure" in result.output
         assert manager.registry.get("sample")["version"] == "1.0.0"
-        assert artifact.read_bytes() == original
+        if disabled:
+            assert not artifact.exists()
+        else:
+            assert artifact.read_bytes() == original
     else:
         assert result.exit_code == 0, result.output
         assert manager.registry.get("sample")["version"] == "2.0.0"
-        assert artifact.read_bytes() != original
-        assert "updated command" in artifact.read_text(encoding="utf-8")
+        if disabled:
+            assert not artifact.exists()
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(project)
+                enabled = CliRunner().invoke(app, ["extension", "enable", "sample"])
+                assert enabled.exit_code == 0, enabled.output
+            finally:
+                os.chdir(old_cwd)
+            assert "updated command" in artifact.read_text(encoding="utf-8")
+        else:
+            assert artifact.read_bytes() != original
+            assert "updated command" in artifact.read_text(encoding="utf-8")
+    assert ExtensionManager(project).registry.get("sample")["enabled"] is (
+        not (disabled and fail_install)
+    )
+    manager = ExtensionManager(project)
     assert manager.remove("sample")
     assert not artifact.exists()
 
@@ -681,6 +709,57 @@ def test_generic_extension_enable_reports_colliding_user_file(
     assert "Could not register generic invocations" in enabled.output
     assert artifact.read_text(encoding="utf-8") == "user-owned"
     assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_generic_extension_enable_rejects_partial_registration(
+    tmp_path, generic_extension, skills,
+):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    manifest_path = generic_extension / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"].append({
+        "name": "speckit.sample.other",
+        "file": "commands/other.md",
+        "description": "Another command",
+    })
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    (generic_extension / "commands/other.md").write_text(
+        "---\ndescription: Another command\n---\ncontent\n", encoding="utf-8",
+    )
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output = project / ".custom/commands"
+    collision = output / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    other = output / (
+        "speckit-sample-other/SKILL.md" if skills else "speckit.sample.other.md"
+    )
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project)
+        runner = CliRunner()
+        assert runner.invoke(app, ["extension", "disable", "sample"]).exit_code == 0
+        collision.parent.mkdir(parents=True, exist_ok=True)
+        collision.write_text("edited replacement", encoding="utf-8")
+        enabled = runner.invoke(app, ["extension", "enable", "sample"])
+        assert enabled.exit_code == 1
+        assert "Could not register generic invocations" in enabled.output
+        assert collision.read_text(encoding="utf-8") == "edited replacement"
+        assert not other.exists()
+        assert ExtensionManager(project).registry.get("sample")["enabled"] is False
+        collision.unlink()
+        if skills:
+            collision.parent.rmdir()
+        enabled = runner.invoke(app, ["extension", "enable", "sample"])
+        assert enabled.exit_code == 0, enabled.output
+    finally:
+        os.chdir(old_cwd)
+    assert collision.is_file() and other.is_file()
 
 
 @pytest.mark.parametrize("invalid_settings", ["missing", "malformed"])

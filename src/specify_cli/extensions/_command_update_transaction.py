@@ -538,6 +538,14 @@ def run_update_command(extension: str | None) -> None:
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
                     if backup_registry_entry and isinstance(backup_registry_entry, dict):
+                        init_options = _commands.load_init_options(project_root)
+                        if (
+                            not backup_registry_entry.get("enabled", True)
+                            and isinstance(init_options, dict)
+                            and init_options.get("ai") == "generic"
+                        ):
+                            manager.disable_generic_extension_artifacts(extension_id)
+
                         # Copy current registry entry to avoid mutating internal
                         # registry state before explicit restore().
                         current_metadata = manager.registry.get(extension_id)

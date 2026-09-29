@@ -46,9 +46,34 @@ def extension_enable(
 
     from .. import load_init_options
 
-    if load_init_options(project_root).get("ai") == "generic":
+    init_options = load_init_options(project_root)
+    if init_options.get("ai") == "generic":
         try:
             manager.register_enabled_extensions_for_agent("generic")
+            refreshed = manager.registry.get(extension_id) or {}
+            manifest = manager.get_extension(extension_id)
+            if manifest is None:
+                raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+            if manifest.commands:
+                from .._init_options import is_ai_skills_enabled
+
+                skills = is_ai_skills_enabled(init_options)
+                expected = (
+                    {
+                        manager._skill_name_for_command(command["name"])
+                        for command in manifest.commands
+                    }
+                    if skills else set(manager._collect_manifest_command_names(manifest))
+                )
+                owned = set(manager._generic_owned_names(
+                    refreshed, list(expected), skills=skills,
+                ))
+                missing = expected - owned
+                if missing:
+                    manager.disable_generic_extension_artifacts(extension_id)
+                    raise ExtensionError(
+                        "Missing invocation artifacts: " + ", ".join(sorted(missing))
+                    )
         except (ExtensionError, OSError, ValueError) as exc:
             manager.registry.update(extension_id, {"enabled": False})
             console.print(
@@ -56,19 +81,6 @@ def extension_enable(
                 f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1) from exc
-        refreshed = manager.registry.get(extension_id) or {}
-        commands = refreshed.get("registered_commands", {})
-        manifest = manager.get_extension(extension_id)
-        if manifest and manifest.commands and not (
-            (isinstance(commands, dict) and commands.get("generic"))
-            or refreshed.get("registered_skills")
-        ):
-            manager.registry.update(extension_id, {"enabled": False})
-            console.print(
-                f"[red]Error:[/red] Could not register generic invocations "
-                f"for '{_escape_markup(str(extension_id))}'."
-            )
-            raise typer.Exit(1)
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
