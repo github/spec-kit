@@ -174,6 +174,8 @@ from; `discovery-only` sources appear in `search` and `info` but refuse
 installation. Inspect the active stack before installing a bundle from a
 non-default source.
 
+> **Vet both the bundle source and its component catalogs.** A project can supply its own bundle catalog and `install-allowed` component catalogs (extension, preset, workflow, and step) under `.specify/`; that project configuration existing is not evidence anything in it was reviewed. Before installing a bundle from an unfamiliar project, run `specify bundle catalog list` — and the equivalent `extension`/`preset`/`workflow catalog list` and `specify workflow step catalog list` commands for the components it pulls in — and treat any source you didn't add yourself as unvetted until you've reviewed it.
+
 ### List the Catalog Stack
 
 ```bash
