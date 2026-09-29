@@ -2875,6 +2875,8 @@ class ExtensionManager:
             else:
                 shutil.rmtree(dest_dir)
 
+        hooks_started = False
+        registry_started = False
         try:
             # Register commands with AI agents (active integration only, #2948)
             registered_commands = {}
@@ -2903,66 +2905,95 @@ class ExtensionManager:
                 self._generic_artifact_hashes(registered_commands, registered_skills)
                 if generic_active else {}
             )
-        except (ExtensionError, OSError, ValueError, RuntimeError) as exc:
+
+            # Register hooks and update installed list in extensions.yml
+            hook_executor = HookExecutor(self.project_root)
+            hooks_started = True
+            hook_executor.register_hooks(manifest)
+
+            # Restore config files from backup when --force triggered a removal.
+            # Only restore *.yml config files to match what remove() backs up,
+            # so unexpected artifacts in .backup/ are not resurrected.
+            if did_remove:
+                backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+                if backup_config_dir.is_symlink():
+                    backup_config_dir.unlink()
+                elif backup_config_dir.is_dir():
+                    for cfg_file in backup_config_dir.iterdir():
+                        if (
+                            cfg_file.is_file()
+                            and not cfg_file.is_symlink()
+                            and (
+                                cfg_file.name.endswith("-config.yml")
+                                or cfg_file.name.endswith("-config.local.yml")
+                            )
+                        ):
+                            shutil.copy2(cfg_file, dest_dir / cfg_file.name)
+                elif backup_config_dir.exists():
+                    backup_config_dir.unlink()
+
+            normalized_catalog_name = (
+                catalog_name.strip() if isinstance(catalog_name, str) else ""
+            )
+            source = (
+                {"kind": "catalog", "catalog": normalized_catalog_name}
+                if normalized_catalog_name
+                else "local"
+            )
+            registry_started = True
+            self.registry.add(
+                manifest.id,
+                {
+                    "version": manifest.version,
+                    "source": source,
+                    "manifest_hash": manifest.get_hash(),
+                    "enabled": True,
+                    "priority": priority,
+                    "registered_commands": registered_commands,
+                    "registered_skills": registered_skills,
+                    "generic_artifact_hashes": generic_hashes,
+                },
+            )
+        except Exception as exc:
+            # Any failed commit must retire outputs before the original error
+            # is re-raised, including errors from hook serialization.
             if register_commands and generic_active and manifest.commands:
+                rollback_errors = []
+                if registry_started:
+                    try:
+                        self.registry.remove(manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"registry: {error}")
+                if hooks_started:
+                    try:
+                        hook_executor.unregister_hooks(manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"hooks: {error}")
                 try:
                     rollback_generic_registration()
-                except (OSError, ValueError) as rollback_error:
+                except Exception as error:
+                    rollback_errors.append(f"artifacts: {error}")
+                if rollback_errors:
                     raise ExtensionError(
-                        f"Generic registration failed ({exc}); rollback failed: {rollback_error}"
-                    ) from rollback_error
+                        f"Generic registration failed ({exc}); rollback failed: "
+                        + "; ".join(rollback_errors)
+                    ) from exc
             raise
 
-        # Register hooks and update installed list in extensions.yml
-        hook_executor = HookExecutor(self.project_root)
-        hook_executor.register_hooks(manifest)
-
-        # Restore config files from backup when --force triggered a removal.
-        # Only restore *.yml config files to match what remove() backs up,
-        # so unexpected artifacts in .backup/ are not resurrected.
         if did_remove:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
-            # is_symlink first: is_dir() follows symlinks, but rmtree()
-            # raises on them — and we shouldn't follow symlinks to restore.
-            if backup_config_dir.is_symlink():
-                backup_config_dir.unlink()
-            elif backup_config_dir.is_dir():
-                for cfg_file in backup_config_dir.iterdir():
-                    if (
-                        cfg_file.is_file()
-                        and not cfg_file.is_symlink()
-                        and (
-                            cfg_file.name.endswith("-config.yml")
-                            or cfg_file.name.endswith("-config.local.yml")
-                        )
-                    ):
-                        shutil.copy2(cfg_file, dest_dir / cfg_file.name)
-                shutil.rmtree(backup_config_dir)
-            elif backup_config_dir.exists():
-                backup_config_dir.unlink()
+            if backup_config_dir.is_dir() and not backup_config_dir.is_symlink():
+                # Retain the backup until registry commit so failed force
+                # reinstalls can still restore the user's configuration.
+                try:
+                    shutil.rmtree(backup_config_dir)
+                except OSError as exc:
+                    from .. import _print_cli_warning
 
-        # Update registry
-        normalized_catalog_name = (
-            catalog_name.strip() if isinstance(catalog_name, str) else ""
-        )
-        source = (
-            {"kind": "catalog", "catalog": normalized_catalog_name}
-            if normalized_catalog_name
-            else "local"
-        )
-        self.registry.add(
-            manifest.id,
-            {
-                "version": manifest.version,
-                "source": source,
-                "manifest_hash": manifest.get_hash(),
-                "enabled": True,
-                "priority": priority,
-                "registered_commands": registered_commands,
-                "registered_skills": registered_skills,
-                "generic_artifact_hashes": generic_hashes,
-            },
-        )
+                    _print_cli_warning(
+                        "remove", "configuration backup", str(backup_config_dir),
+                        exc, continuing="The extension was installed; the backup remains.",
+                    )
 
         # Post-commit cleanup: the registry now records this extension as
         # installed, so the rescue guard (`not self.registry.is_installed`)
@@ -3775,9 +3806,17 @@ class ExtensionManager:
                                 name for name in owned_here
                                 if name in replaced_skill_names
                             ]
+                            if agent_name == "generic":
+                                to_remove = self._generic_owned_names(
+                                    metadata, to_remove, skills=True
+                                )
                             if to_remove:
                                 self._unregister_extension_skills(
-                                    to_remove, ext_id, skills_dir=agent_skills_dir
+                                    to_remove, ext_id, skills_dir=agent_skills_dir,
+                                    generic_hashes=(
+                                        metadata.get("generic_artifact_hashes")
+                                        if agent_name == "generic" else None
+                                    ),
                                 )
                                 # registered_skills is a single flat list
                                 # shared across every agent this extension

@@ -14,7 +14,7 @@ from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integration_state import write_integration_json
-from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager
+from specify_cli.extensions import ExtensionCatalog, ExtensionError, ExtensionManager, HookExecutor
 from specify_cli import save_init_options
 
 
@@ -532,6 +532,124 @@ def test_generic_registration_write_error_rolls_back_partial_install(
     manager.install_from_directory(generic_extension, "1.0.0")
     assert first.is_file() and second.is_file()
     assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("failure", [
+    "hooks-before", "hooks-after", "hooks-yaml", "registry-before", "registry-after",
+])
+def test_generic_install_commit_error_rolls_back(
+    tmp_path, generic_extension, skills, failure, monkeypatch,
+):
+    manifest_path = generic_extension / "extension.yml"
+    manifest_data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest_data["hooks"] = {
+        "after_tasks": {"command": "speckit.sample.run", "optional": True}
+    }
+    manifest_path.write_text(yaml.safe_dump(manifest_data), encoding="utf-8")
+    project = generic_project(tmp_path, skills=skills)
+    manager = ExtensionManager(project)
+    artifact = project / ".custom/commands" / (
+        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
+    )
+    error_type = yaml.YAMLError if failure == "hooks-yaml" else OSError
+    if failure.startswith("hooks"):
+        original_register = HookExecutor.register_hooks
+
+        def fail_register_hooks(executor, manifest):
+            if failure == "hooks-after":
+                original_register(executor, manifest)
+            raise error_type("simulated hook write failure")
+
+        monkeypatch.setattr(HookExecutor, "register_hooks", fail_register_hooks)
+    else:
+        original_save = manager.registry._save
+
+        def fail_registry_save():
+            monkeypatch.setattr(manager.registry, "_save", original_save)
+            if failure == "registry-after":
+                original_save()
+            raise OSError("simulated registry write failure")
+
+        monkeypatch.setattr(manager.registry, "_save", fail_registry_save)
+
+    with pytest.raises(error_type, match="simulated .* write failure"):
+        manager.install_from_directory(generic_extension, "1.0.0")
+    monkeypatch.undo()
+
+    assert not artifact.exists()
+    assert not (manager.extensions_dir / "sample").exists()
+    assert not manager.registry.is_installed("sample")
+    assert not ExtensionManager(project).registry.is_installed("sample")
+    config = HookExecutor(project).get_project_config()
+    assert "sample" not in config["installed"]
+    assert not config["hooks"]
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert artifact.is_file()
+    assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("previous_install", ["kept-config", "forced"])
+def test_generic_commit_error_preserves_user_config(
+    tmp_path, generic_extension, previous_install, monkeypatch,
+):
+    (generic_extension / "sample-config.yml").write_text(
+        "default: true\n", encoding="utf-8",
+    )
+    project = generic_project(tmp_path)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(
+        generic_extension, "1.0.0",
+        register_commands=previous_install != "kept-config",
+    )
+    if previous_install == "kept-config":
+        assert manager.remove("sample", keep_config=True)
+    config = manager.extensions_dir / "sample/sample-config.yml"
+    config.write_text("user: preserved\n", encoding="utf-8")
+
+    def fail_register_hooks(executor, manifest):
+        raise OSError("simulated hook write failure")
+
+    monkeypatch.setattr(HookExecutor, "register_hooks", fail_register_hooks)
+    with pytest.raises(OSError, match="simulated hook write failure"):
+        manager.install_from_directory(
+            generic_extension, "1.0.0", force=previous_install == "forced",
+        )
+    monkeypatch.undo()
+
+    assert config.read_text(encoding="utf-8") == "user: preserved\n"
+    assert (config.parent / ".keep-config").is_file()
+    assert not (config.parent / "extension.yml").exists()
+    assert not (project / ".custom/commands/speckit.sample.run.md").exists()
+    assert not manager.registry.is_installed("sample")
+    manager.install_from_directory(generic_extension, "1.0.0")
+    assert config.read_text(encoding="utf-8") == "user: preserved\n"
+    assert manager.remove("sample")
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_generic_skills_to_commands_preserves_edited_skill(
+    tmp_path, generic_extension, edited,
+):
+    project = generic_project(tmp_path, skills=True)
+    manager = ExtensionManager(project)
+    manager.install_from_directory(generic_extension, "1.0.0")
+    output_dir = project / ".custom/commands"
+    skill = output_dir / "speckit-sample-run/SKILL.md"
+    original = skill.read_text(encoding="utf-8")
+    if edited:
+        skill.write_text(original + "\nuser edit\n", encoding="utf-8")
+
+    save_init_options(project, {"ai": "generic", "ai_skills": False, "script": "sh"})
+    manager.register_enabled_extensions_for_agent("generic")
+
+    assert (output_dir / "speckit.sample.run.md").is_file()
+    assert skill.exists() is edited
+    if edited:
+        assert skill.read_text(encoding="utf-8") == original + "\nuser edit\n"
+    assert manager.remove("sample")
+    assert not (output_dir / "speckit.sample.run.md").exists()
+    assert skill.exists() is edited
 
 
 def test_generic_failed_registration_preserves_reinstall_config(
