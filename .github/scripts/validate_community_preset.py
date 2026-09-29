@@ -10,6 +10,7 @@ import json
 import re
 import sys
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -158,6 +159,10 @@ def check_readme(text: str, issue: dict) -> None:
     expected = field(issue, "download_url")
     preset_id = field(issue, "preset_id")
     owner, repo = repository_parts(field(issue, "repository"))
+    submitted_scope = re.fullmatch(r"(.+)-v?\d+\.\d+\.\d+", release_tag(issue))
+    accepted_scopes = {preset_id}
+    if submitted_scope:
+        accepted_scopes.add(submitted_scope[1])
     accepted = False
     for match in re.finditer(
         r"(?<![\w-])specify\s+preset\s+add\s+"
@@ -184,8 +189,8 @@ def check_readme(text: str, issue: dict) -> None:
                 parsed.netloc.lower() == "github.com"
                 and parsed.path.lower().startswith(f"/{owner}/{repo}/")
             )
-            if (scoped and scoped[1] == preset_id) or (
-                same_repository and (not scoped or scoped[1] == preset_id)
+            if (scoped and scoped[1] in accepted_scopes) or (
+                same_repository and not scoped
             ):
                 raise SubmissionMismatch(
                     f"README --from URL for {preset_id} differs from Download URL: {value}"
@@ -281,6 +286,7 @@ def submission(args: argparse.Namespace) -> None:
     snapshot = {
         "expected": expected,
         "created_at": previous.get("created_at") if previous else None,
+        "expected_timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z"),
     }
     try:
         args.snapshot.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -313,6 +319,9 @@ def generated(args: argparse.Namespace) -> None:
     expected = snapshot.get("expected")
     if not isinstance(expected, dict) or not isinstance(expected.get("id"), str):
         raise Blocked("verifier snapshot lacks validated expected values")
+    expected_timestamp = snapshot.get("expected_timestamp")
+    if not isinstance(expected_timestamp, str):
+        raise Blocked("verifier snapshot lacks the expected UTC timestamp")
     catalog = read_json(args.catalog, "generated catalog", GeneratedError)
     entries = catalog.get("presets")
     if not isinstance(entries, dict):
@@ -329,12 +338,12 @@ def generated(args: argparse.Namespace) -> None:
     if snapshot.get("created_at") is not None:
         if entry.get("created_at") != snapshot["created_at"]:
             raise GeneratedError("catalog created_at was not preserved on update")
-    elif not isinstance(entry.get("created_at"), str):
-        raise GeneratedError("new catalog entry has no created_at")
-    if not isinstance(entry.get("updated_at"), str):
-        raise GeneratedError("catalog entry has no updated_at")
-    if catalog.get("updated_at") != entry["updated_at"]:
-        raise GeneratedError("catalog top-level updated_at does not match entry updated_at")
+    elif entry.get("created_at") != expected_timestamp:
+        raise GeneratedError("new catalog created_at does not match the expected UTC date")
+    if entry.get("updated_at") != expected_timestamp:
+        raise GeneratedError("catalog entry updated_at does not match the expected UTC date")
+    if catalog.get("updated_at") != expected_timestamp:
+        raise GeneratedError("catalog top-level updated_at does not match the expected UTC date")
     docs = read_text(args.docs, "generated documentation", GeneratedError)
     lines = docs.splitlines()
     try:

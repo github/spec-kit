@@ -292,7 +292,8 @@ The verifier reads `preset.yml` from the downloaded ZIP, including preset-scoped
 paths in monorepos; it parses YAML without executing archive content. It checks
 the published ID, version, Spec Kit requirement, required extension IDs, release
 tag, and README install references against the issue, then records the validated
-values and existing `created_at` for the generated-file check. Exit 1 (`FAILED`)
+values, current UTC date at submission validation, and existing `created_at`
+for the generated-file check. Exit 1 (`FAILED`)
 is a confirmed submission mismatch: report it on the issue under Failed, with
 no PR. Exit 2 (`BLOCKED`) means the verifier could not read the archive or other
 required inputs (including a missing Python dependency): report the exact error
@@ -381,8 +382,8 @@ Insert the entry in **alphabetical order by preset ID** within the
       "commands": <N>
     },
     "tags": ["<tag1>", "<tag2>"],
-    "created_at": "<today>T00:00:00Z",
-    "updated_at": "<today>T00:00:00Z"
+    "created_at": "<validated UTC date>T00:00:00Z",
+    "updated_at": "<validated UTC date>T00:00:00Z"
   }
 }
 ```
@@ -403,7 +404,8 @@ If the preset provides scripts, add `"scripts": <N>` inside `"provides"`.
 
 Replace only the changed fields (typically `version`, `download_url`,
 `description`, `provides`, `requires`, `tags`, `updated_at`). **Preserve**
-`created_at` from the existing entry.
+`created_at` from the existing entry. Use the verifier snapshot's validated UTC
+date for `updated_at`, even if the UTC date changes during the run.
 
 ### Counting templates and commands
 
@@ -413,8 +415,8 @@ Parse the "Templates Provided" and "Commands Provided" issue fields:
 
 ### After editing
 
-Update the **top-level `"updated_at"` timestamp** in the catalog to today's date
-in ISO 8601 format.
+Update the **top-level `"updated_at"` timestamp** in the catalog to the
+verifier snapshot's UTC date in ISO 8601 format.
 
 The generated-file verifier in Step 5 parses and checks the JSON. Fix any
 catalog error it reports and rerun it before continuing.
@@ -452,7 +454,8 @@ python3 .github/scripts/validate_community_preset.py generated --issue /tmp/gh-a
 ```
 
 The verifier checks JSON parsing, the validated catalog metadata and digest,
-the top-level and entry `updated_at` timestamps,
+the top-level and entry `updated_at` timestamps against the recorded UTC date
+(and `created_at` for new entries),
 alphabetical ID order, the documentation row's name, purpose, counts, extension
 requirements and repository link, alphabetical name order, and preservation of
 `created_at` on updates. Exit 3 (`REPAIR`) is an agent-generated catalog or

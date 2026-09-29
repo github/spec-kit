@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -84,7 +85,12 @@ def write_archive(paths, manifest):
         archive.writestr("release/sample/preset.yml", yaml.safe_dump(manifest))
 
 
-def write_generated(issue, paths, *, created_at="2025-01-01T00:00:00Z"):
+def write_generated(issue, paths, *, created_at=None):
+    timestamp = (
+        json.loads(paths["snapshot.json"].read_text(encoding="utf-8"))["expected_timestamp"]
+        if paths["snapshot.json"].exists()
+        else "2026-01-01T00:00:00Z"
+    )
     entry = {
         "id": issue["preset_id"], "name": issue["preset_name"],
         "version": issue["version"], "description": issue["description"],
@@ -96,7 +102,8 @@ def write_generated(issue, paths, *, created_at="2025-01-01T00:00:00Z"):
                      "extensions": ["aide", "canon"]},
         "provides": {"templates": 1, "commands": 1},
         "tags": ["sample", "example"],
-        "created_at": created_at, "updated_at": "2026-01-01T00:00:00Z",
+        "created_at": created_at if created_at is not None else timestamp,
+        "updated_at": timestamp,
     }
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": entry["updated_at"], "presets": {"sample": entry},
@@ -114,8 +121,12 @@ def write_generated(issue, paths, *, created_at="2025-01-01T00:00:00Z"):
 
 def test_matching_monorepo_submission_and_generated_files_pass(submission):
     issue, _, paths = submission
+    before = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
     first = run_verifier(paths)
     assert first.returncode == 0, first.stdout + first.stderr
+    snapshot = json.loads(paths["snapshot.json"].read_text(encoding="utf-8"))
+    after = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+    assert snapshot["expected_timestamp"] in (before, after)
     write_generated(issue, paths)
     second = run_verifier(paths, "generated")
     assert second.returncode == 0, second.stdout + second.stderr
@@ -168,6 +179,29 @@ def test_stale_from_url_fails_even_with_valid_dev_command(submission):
     assert "README" in result.stdout
 
 
+@pytest.mark.parametrize("archive_url", [False, True])
+def test_stale_from_url_with_submitted_scoped_tag_fails(submission, archive_url):
+    issue, _, paths = submission
+    if archive_url:
+        issue["download_url"] = (
+            "https://github.com/example/presets/archive/refs/tags/"
+            "spec-kit-sample-v1.2.3.zip"
+        )
+    else:
+        issue["download_url"] = issue["download_url"].replace(
+            "sample-v1.2.3", "spec-kit-sample-v1.2.3"
+        )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        f"specify preset add --from {issue['download_url'].replace('v1.2.3', 'v1.2.2')}\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "README --from URL" in result.stdout
+
+
 def test_dev_only_readme_is_accepted(submission):
     _, _, paths = submission
     paths["README.md"].write_text(
@@ -187,6 +221,21 @@ def test_quoted_from_url_with_sentence_punctuation_is_accepted(submission):
 
 def test_id_install_and_unrelated_monorepo_release_are_accepted(submission):
     _, _, paths = submission
+    paths["README.md"].write_text(
+        "specify preset add sample\n"
+        "specify preset add --from "
+        "https://github.com/example/presets/releases/download/other-v2.0.0/other.zip\n",
+        encoding="utf-8",
+    )
+    assert run_verifier(paths).returncode == 0
+
+
+def test_unrelated_scoped_release_stays_accepted_with_submitted_scope(submission):
+    issue, _, paths = submission
+    issue["download_url"] = issue["download_url"].replace(
+        "sample-v1.2.3", "spec-kit-sample-v1.2.3"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
     paths["README.md"].write_text(
         "specify preset add sample\n"
         "specify preset add --from "
@@ -256,6 +305,33 @@ def test_existing_entry_without_creation_date_blocks_update(submission):
     assert "created_at" in result.stdout
 
 
+@pytest.mark.parametrize("timestamp_field", ["created_at", "updated_at"])
+def test_generated_new_entry_rejects_stale_dates(submission, timestamp_field):
+    issue, _, paths = submission
+    assert run_verifier(paths).returncode == 0
+    entry = write_generated(issue, paths)
+    entry[timestamp_field] = "2000-01-01T00:00:00Z"
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": entry["updated_at"], "presets": {"sample": entry},
+    }), encoding="utf-8")
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert timestamp_field in result.stdout
+
+
+def test_generated_update_rejects_matching_stale_updated_dates(submission):
+    issue, _, paths = submission
+    entry = write_generated(issue, paths)
+    assert run_verifier(paths).returncode == 0
+    entry["updated_at"] = "2000-01-01T00:00:00Z"
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": entry["updated_at"], "presets": {"sample": entry},
+    }), encoding="utf-8")
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "updated_at" in result.stdout
+
+
 @pytest.mark.parametrize(("damage", "message"), [
     ("catalog-json", "catalog"),
     ("catalog-order", "alphabetical"),
@@ -309,7 +385,7 @@ def test_generated_defects_are_fixable_not_submission_failures(submission, damag
             ), encoding="utf-8",
         )
     elif damage == "created-at":
-        entry["created_at"] = "2026-01-01T00:00:00Z"
+        entry["created_at"] = "2000-01-01T00:00:00Z"
         paths["catalog.json"].write_text(
             json.dumps({"updated_at": entry["updated_at"], "presets": {
                 "sample": entry,
