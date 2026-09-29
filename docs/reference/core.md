@@ -78,9 +78,10 @@ bash .specify/scripts/bash/create-new-feature.sh --json --short-name 用户管�
 
 The Python helper also accepts `--short-name`; the PowerShell helper uses
 `-ShortName`. A supplied short name is cleaned by the same rules, so it must
-contain at least one letter or digit. The Bash helper needs an installed UTF-8
-locale to recognize Unicode letters and digits. ASCII capitals are lowercased;
-non-ASCII letter casing is preserved across the script variants.
+contain at least one letter or digit. For non-ASCII names, the Bash helper needs
+an installed UTF-8 locale and a Python 3 interpreter for Unicode classification.
+ASCII capitals are lowercased; non-ASCII letter casing is preserved across the
+script variants.
 
 ## Check Installed Tools
 

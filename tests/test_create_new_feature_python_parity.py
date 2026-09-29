@@ -213,6 +213,35 @@ def test_bash_reports_missing_utf8_locale_for_unicode_only(
         assert not (repo / "specs").exists()
 
 
+@requires_bash
+def test_bash_requires_python_only_for_unicode_names(
+    repo: Path, tmp_path: Path
+) -> None:
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    for name in ("python3", "python", "py"):
+        shim = shim_dir / name
+        shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+
+    ascii_result = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "Add user authentication"),
+        repo,
+        env,
+    )
+    assert ascii_result.returncode == 0, ascii_result.stderr
+    assert json_stdout(ascii_result)["BRANCH_NAME"] == "001-user-authentication"
+
+    unicode_result = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "添加用户"), repo, env
+    )
+    assert unicode_result.returncode == 1
+    assert unicode_result.stdout == ""
+    assert "Error: Python 3 is required to create a Unicode feature name" in unicode_result.stderr
+
+
 def _run_all_variants_allow_existing(
     repo: Path, *, number: str, short_name: str
 ):

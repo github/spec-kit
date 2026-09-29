@@ -147,13 +147,13 @@ spec_prefix_exists() {
 # Function to clean and format a branch name
 #
 # Three details keep this consistent with the Python and PowerShell twins:
-#   * A UTF-8 locale makes [:alnum:] recognize Unicode letters and decimal digits.
+#   * Unicode classification uses Python: POSIX [:alnum:] differs by platform.
 #   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
 #     '+', leaving repeated separators uncollapsed on macOS.
 #   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
 UNICODE_LOCALE=""
 for candidate in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"; do
-    if [ -n "$candidate" ] && [ "$(printf 'é٥²Ⅻ。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é٥---' ]; then
+    if [ -n "$candidate" ] && [ "$(printf 'é。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é-' ]; then
         UNICODE_LOCALE="$candidate"
         break
     fi
@@ -167,10 +167,37 @@ if [ -z "$UNICODE_LOCALE" ]; then
     fi
 fi
 
+unicode_words() {
+    local name="$1"
+    local separator="$2"
+    if printf '%s' "$name" | LC_ALL=C grep -q '[^ -~]'; then
+        local python_spec
+        if ! python_spec=$(_python3_command); then
+            echo "Error: Python 3 is required to create a Unicode feature name" >&2
+            return 1
+        fi
+        local -a python_cmd
+        read -r -a python_cmd <<< "$python_spec"
+        printf '%s' "$name" | "${python_cmd[@]}" -c '
+import sys
+value = sys.stdin.buffer.read().decode("utf-8")
+lower = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+result = "".join(
+    char if char.isalpha() or char.isdecimal() else sys.argv[1]
+    for char in value.translate(lower)
+)
+sys.stdout.buffer.write(result.encode("utf-8"))
+' "$separator"
+    else
+        printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed "s/[^a-z0-9]/$separator/g"
+    fi
+}
+
 clean_branch_name() {
     local name="$1"
-    local -x LC_ALL="$UNICODE_LOCALE"
-    printf '%s\n' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
+    local cleaned
+    cleaned=$(unicode_words "$name" '-') || return 1
+    printf '%s\n' "$cleaned" | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
 branch_byte_count() {
@@ -232,10 +259,10 @@ generate_branch_name() {
     # Common stop words to filter out
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
 
-    # Use a UTF-8 locale for Unicode character classes. Lowercase only ASCII
-    # so results do not depend on the platform's multibyte case conversion.
+    # Use a UTF-8 locale for character-safe length checks and split words.
     local -x LC_ALL="$UNICODE_LOCALE"
-    local clean_name=$(printf '%s\n' "$description" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]/ /g')
+    local clean_name
+    clean_name=$(unicode_words "$description" ' ') || return 1
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     local meaningful_words=()
