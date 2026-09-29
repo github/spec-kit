@@ -327,7 +327,9 @@ def test_exact_add_rejects_inconsistent_archive(
     monkeypatch, project_dir, download, entry_change, error
 ):
     from specify_cli.authentication import http
+    from specify_cli.workflows import _commands as workflow_cli
 
+    monkeypatch.setattr(workflow_cli.console, "width", 68)
     entry = _entry()
     if entry_change == "bad-digest":
         entry["releases"]["1.0.0"]["sha256"] = "0" * 64
@@ -338,7 +340,7 @@ def test_exact_add_rejects_inconsistent_archive(
     monkeypatch.chdir(project_dir)
     result = runner.invoke(app, ["workflow", "add", "history-wf", "--version", "1.0.0"])
     assert result.exit_code == 1
-    assert error in result.output
+    assert error in " ".join(result.output.split())
     assert WorkflowRegistry(project_dir).get("history-wf") is None
     assert not (
         project_dir / ".specify" / "workflows" / "history-wf" / "workflow.yml"
