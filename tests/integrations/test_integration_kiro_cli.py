@@ -45,6 +45,63 @@ class TestKiroCliIntegration(MarkdownIntegrationTests):
     def test_declares_multi_install_safe(self):
         assert get_integration(self.KEY).multi_install_safe is True
 
+    def test_build_exec_args_uses_headless_chat(self):
+        """``kiro-cli -p`` exits 2 (``unexpected argument '-p'``).
+
+        Kiro CLI runs one prompt through ``chat --no-interactive``, and in
+        that mode it denies every tool call unless ``--trust-all-tools`` is
+        set, while still exiting 0.
+        """
+        args = get_integration(self.KEY).build_exec_args(
+            "/speckit.plan", output_json=False
+        )
+
+        assert args == [
+            "kiro-cli",
+            "chat",
+            "--no-interactive",
+            "--trust-all-tools",
+            "/speckit.plan",
+        ]
+        assert "-p" not in args
+
+    def test_build_exec_args_forwards_model_and_stream_json(self):
+        """Kiro has no ``json`` output format; structured output is ``stream-json``."""
+        args = get_integration(self.KEY).build_exec_args(
+            "/speckit.plan", model="claude-sonnet-4.5", output_json=True
+        )
+
+        assert args == [
+            "kiro-cli",
+            "chat",
+            "--no-interactive",
+            "--trust-all-tools",
+            "--model",
+            "claude-sonnet-4.5",
+            "--output-format",
+            "stream-json",
+            "/speckit.plan",
+        ]
+
+    def test_build_exec_args_applies_extra_args_before_prompt(self, monkeypatch):
+        """Operator-injected flags reach ``chat`` ahead of the positional prompt."""
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_KIRO_CLI_EXTRA_ARGS", "--agent reviewer"
+        )
+        args = get_integration(self.KEY).build_exec_args(
+            "/speckit.plan", output_json=False
+        )
+
+        assert args == [
+            "kiro-cli",
+            "chat",
+            "--no-interactive",
+            "--trust-all-tools",
+            "--agent",
+            "reviewer",
+            "/speckit.plan",
+        ]
+
     def test_registrar_config(self):
         """Override base assertion: kiro-cli uses a prose fallback for args
         because Kiro CLI file-based prompts do not natively substitute
