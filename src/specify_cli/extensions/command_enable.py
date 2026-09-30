@@ -47,6 +47,17 @@ def extension_enable(
 
     manager.registry.update(extension_id, {"enabled": True})
 
+    # Re-register only after the enabled bit is visible to the manager. If
+    # registration fails, restore the disabled state so metadata does not
+    # claim the extension is active when its artifacts were not restored.
+    agent = _commands.load_init_options(project_root).get("ai")
+    if agent:
+        try:
+            manager.register_enabled_extensions_for_agent(agent)
+        except Exception:
+            manager.registry.update(extension_id, {"enabled": False})
+            raise
+
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()
     if "hooks" in config:

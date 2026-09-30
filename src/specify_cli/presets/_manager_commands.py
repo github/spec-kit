@@ -1138,6 +1138,44 @@ class _PresetCommandMethods:
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
+                # A disabled/removed sole-layer preset leaves no source to
+                # re-register. Clean only integrations with recorded ownership
+                # provenance; callers update that provenance after cleanup.
+                tracked: Dict[str, List[str]] = {}
+                tracked_skills: Dict[str, Dict[str, List[str]]] = {}
+                for pack_id, metadata in self.registry.list_by_priority(
+                    include_disabled=True
+                ):
+                    if not isinstance(metadata, dict):
+                        continue
+                    recorded = metadata.get("registered_commands", {})
+                    if isinstance(recorded, dict):
+                        for agent_name, names in recorded.items():
+                            if isinstance(names, list) and cmd_name in names:
+                                tracked.setdefault(agent_name, []).append(cmd_name)
+                    skills = metadata.get("registered_skills", {})
+                    if isinstance(skills, dict):
+                        for agent_name, names in skills.items():
+                            if not isinstance(names, list):
+                                continue
+                            expected = set(self._skill_names_for_command(cmd_name))
+                            matched = [name for name in names if name in expected]
+                            if matched:
+                                tracked_skills.setdefault(pack_id, {}).setdefault(
+                                    agent_name, []
+                                ).extend(matched)
+                if tracked:
+                    registrar.unregister_commands(tracked, self.project_root)
+                for pack_id, per_agent_skills in tracked_skills.items():
+                    for agent_name, skill_names in per_agent_skills.items():
+                        # Verify the on-disk ownership marker against the actual
+                        # preset ID before deleting; never infer ownership from
+                        # the selector name alone.
+                        self._unregister_skills(
+                            {agent_name: skill_names},
+                            pack_id,
+                            restore_from_bundled_core=False,
+                        )
                 continue
 
             # If the top layer is replace, it wins entirely — lower layers

@@ -116,5 +116,10 @@ class TestIntegrationUpgradeLayout:
         ]
         assert _installed_command_presets_affecting_agent(project, "bob") == [
             "p1",
-            "p7",
         ]
+        assert _installed_presets_affecting_agent(
+            project, "bob", include_disabled=False
+        ) == ["p1", "p3", "p4"]
+        assert _installed_presets_affecting_agent(
+            project, "bob", include_disabled=True
+        ) == ["p1", "p3", "p4", "p7"]

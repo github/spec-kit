@@ -85,8 +85,22 @@ def preset_disable(
         )
     manager.registry.update(preset_id, {"enabled": False})
     if names:
-        manager._reconcile_composed_commands(sorted(names))
-        manager._reconcile_skills(sorted(names))
+        try:
+            manager._reconcile_composed_commands(sorted(names))
+            manager._reconcile_skills(sorted(names))
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"Could not clean preset artifacts after disabling {preset_id}: {exc}. "
+                "Tracked artifact provenance was preserved for retry.",
+                stacklevel=2,
+            )
+            console.print(
+                f"[yellow]Preset '{preset_id}' disabled; artifact cleanup failed. "
+                "Tracked files remain recorded for retry.[/yellow]"
+            )
+            return
     concrete_skills = {
         skill_name
         for command_name in names

@@ -104,22 +104,7 @@ class PresetResolver:
     def _extension_manifest_declared_template(
         self, ext_dir: Path, template_name: str, template_type: str
     ) -> tuple[dict | None, Path | None]:
-        """Resolve an extension's manifest-declared command/template/script entry and usable file.
-
-        Mirrors ``_manifest_declared_template`` (for presets): returns ``(entry, candidate)``
-        where ``entry`` is the matching ``provides.<type>`` mapping, or ``None`` if the
-        extension has no (valid) manifest or doesn't declare this ``(name, type)``.
-        ``candidate`` is the declared ``file:`` resolved under ``ext_dir`` IFF it is a
-        regular file that stays within ``ext_dir`` (guards against path traversal via a
-        malformed manifest, mirroring ``resolve_extension_command_via_manifest``);
-        ``None`` otherwise.
-
-        The manifest is authoritative: when ``entry`` is not ``None`` but ``candidate`` is
-        ``None``, callers must NOT fall back to convention-based lookup — that would mask
-        a typo or pick up an undeclared file. Shared by ``resolve()`` and
-        ``collect_all_layers()`` so their manifest-first resolution cannot silently
-        diverge (the divergence flagged in review on #4012).
-        """
+        """Resolve an extension manifest declaration with conventional fallback."""
         if template_type not in ("command", "template", "script"):
             return None, None
         ext_manifest_path = ext_dir / "extension.yml"
@@ -132,14 +117,17 @@ class PresetResolver:
             ext_manifest = ExtensionManifest(ext_manifest_path)
         except (ExtValidationError, yaml.YAMLError, OSError, TypeError, AttributeError):
             return None, None
-        if template_type == "command":
-            entries = ext_manifest.commands
-        elif template_type == "template":
-            entries = ext_manifest.templates
-        else:
-            entries = ext_manifest.scripts
+        entries = {
+            "command": ext_manifest.commands,
+            "template": ext_manifest.templates,
+            "script": ext_manifest.scripts,
+        }[template_type]
         for entry in entries:
-            if entry.get("name") != template_name:
+            name = entry.get("name")
+            if name != template_name and not (
+                template_type == "command"
+                and name == template_name.removeprefix("speckit.")
+            ):
                 continue
             file_rel = entry.get("file")
             if not file_rel:
@@ -149,18 +137,38 @@ class PresetResolver:
                 return entry, None
             candidate = ext_dir / rel_path
             try:
-                # Resolve only for the containment check, not for the
-                # returned path -- resolving the returned path would follow
-                # symlinks in ext_dir's ancestors (e.g. a symlinked tmp dir
-                # on macOS) and diverge from the unresolved paths convention
-                # lookup returns for the same directory.
-                candidate.resolve().relative_to(
-                    ext_dir.resolve()
-                )  # raises ValueError if outside
+                candidate.resolve().relative_to(ext_dir.resolve())
             except (OSError, ValueError):
                 return entry, None
             return entry, (candidate if candidate.is_file() else None)
         return None, None
+
+    def _find_unregistered_extension_command(self, template_name: str) -> Path | None:
+        """Find the legacy extension filename only for unregistered extensions."""
+        extension_template_name = template_name.removeprefix("speckit.")
+        namespace = extension_template_name.split(".", 1)[0]
+        ext_dir = self.extensions_dir / namespace
+        registry = ExtensionRegistry(self.extensions_dir)
+        if namespace in registry.keys():
+            metadata = registry.get(namespace)
+            if metadata is None or not metadata.get("enabled", True):
+                return None
+        manifest_path = ext_dir / "extension.yml"
+        if manifest_path.is_file():
+            entry, candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, "command"
+            )
+            if entry is not None:
+                return candidate
+        fallback_name = extension_template_name
+        alternate_candidates = (
+            ext_dir / "commands" / f"{fallback_name}.md",
+            ext_dir / "templates" / "commands" / f"{fallback_name}.md",
+        )
+        for candidate in alternate_candidates:
+            if candidate.is_file():
+                return candidate
+        return None
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
@@ -798,6 +806,8 @@ class PresetResolver:
             )
             if entry is None:
                 candidate = _find_in_subdirs(ext_dir)
+            if candidate is None and ext_meta is None:
+                candidate = self._find_unregistered_extension_command(template_name)
             if candidate:
                 if ext_meta:
                     version = ext_meta.get("version", "?")
@@ -816,30 +826,30 @@ class PresetResolver:
 
         if template_type == "command":
             extension_template_name = template_name.removeprefix("speckit.")
-            extension_candidates = [
-                self.extensions_dir
-                / extension_template_name.split(".", 1)[0]
-                / "commands"
-                / f"{extension_template_name}.md",
-                self.extensions_dir
-                / extension_template_name.split(".", 1)[0]
-                / "templates"
-                / "commands"
-                / f"{extension_template_name}.md",
-            ]
-            for candidate in extension_candidates:
-                if candidate.is_file():
-                    ext_id = extension_template_name.split(".", 1)[0]
+            namespace = extension_template_name.split(".", 1)[0]
+            ext_dir = self.extensions_dir / namespace
+            extension_registry = ExtensionRegistry(self.extensions_dir)
+            extension_metadata = extension_registry.get(namespace)
+            namespace_is_registered = namespace in extension_registry.keys()
+            if not namespace_is_registered or (
+                extension_metadata is not None
+                and extension_metadata.get("enabled", True)
+            ):
+                candidate = self._find_unregistered_extension_command(template_name)
+                if candidate is not None:
                     layers.append(
                         {
                             "path": candidate,
-                            "source": f"extension:{ext_id} (unregistered)",
+                            "source": (
+                                f"extension:{namespace} v{extension_metadata.get('version', '?')}"
+                                if extension_metadata
+                                else f"extension:{namespace} (unregistered)"
+                            ),
                             "strategy": "replace",
-                            "extension_id": ext_id,
-                            "extension_dir": self.extensions_dir / ext_id,
+                            "extension_id": namespace,
+                            "extension_dir": ext_dir,
                         }
                     )
-                    break
 
         # Priority 4: Core templates (always "replace")
         core = None

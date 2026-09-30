@@ -164,6 +164,92 @@ def _run_preset_command(project: Path, *args: str) -> None:
     assert result.exit_code == 0, result.output
 
 
+def test_disabling_sole_layer_custom_preset_cleans_tracked_artifacts(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    _active_claude(project)
+    source = _write_preset(
+        tmp_path,
+        "sole-owner",
+        [
+            {
+                "type": "command",
+                "name": "speckit.custom.only",
+                "file": "commands/only.md",
+                "description": "custom only",
+            }
+        ],
+        {"commands/only.md": "---\ndescription: custom only\n---\nOnly body\n"},
+    )
+    manager = PresetManager(project)
+    manager.install_from_directory(source, "0.1.5")
+
+    skill = project / ".claude" / "skills" / "speckit-custom-only" / "SKILL.md"
+    assert skill.is_file()
+    metadata = manager.registry.get("sole-owner")
+    assert metadata["registered_commands"]["claude"] == ["speckit.custom.only"]
+    assert metadata["registered_skills"]["claude"] == ["speckit-custom-only"]
+
+    _run_preset_command(project, "disable", "sole-owner")
+
+    assert not skill.exists()
+    metadata = PresetManager(project).registry.get("sole-owner")
+    assert metadata["enabled"] is False
+    assert metadata["registered_commands"] == {}
+    assert metadata["registered_skills"] == {}
+
+
+def test_failed_zero_layer_cleanup_preserves_registry_provenance(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    _active_claude(project)
+    source = _write_preset(
+        tmp_path,
+        "cleanup-failure-owner",
+        [
+            {
+                "type": "command",
+                "name": "speckit.custom.failure",
+                "file": "commands/failure.md",
+                "description": "cleanup failure",
+            }
+        ],
+        {
+            "commands/failure.md": "---\ndescription: cleanup failure\n---\nFailure body\n"
+        },
+    )
+    manager = PresetManager(project)
+    manager.install_from_directory(source, "0.1.5")
+    skill = project / ".claude" / "skills" / "speckit-custom-failure" / "SKILL.md"
+    assert skill.is_file()
+    assert manager.registry.get("cleanup-failure-owner")["registered_skills"][
+        "claude"
+    ] == ["speckit-custom-failure"]
+
+    original = PresetManager._reconcile_composed_commands
+    calls = 0
+
+    def fail_during_disabled_reconciliation(self, names, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("cleanup blocked")
+        return original(self, names, *args, **kwargs)
+
+    monkeypatch.setattr(
+        PresetManager,
+        "_reconcile_composed_commands",
+        fail_during_disabled_reconciliation,
+    )
+    _run_preset_command(project, "disable", "cleanup-failure-owner")
+
+    metadata = PresetManager(project).registry.get("cleanup-failure-owner")
+    assert metadata["enabled"] is False
+    assert metadata["registered_commands"]["claude"] == ["speckit.custom.failure"]
+    assert metadata["registered_skills"]["claude"] == ["speckit-custom-failure"]
+    assert skill.is_file()
+
+
 def test_regex_selector_disable_and_reenable_materializes_real_artifacts(tmp_path):
     project = tmp_path / "project"
     project.mkdir()

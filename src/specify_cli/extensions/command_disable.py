@@ -45,6 +45,13 @@ def extension_disable(
         )
         raise typer.Exit(0)
 
+    # Remove this agent's tracked artifacts before flipping the enabled bit.
+    # If cleanup fails, registry metadata remains intact and the extension is
+    # still enabled, so a retry can safely find the artifacts again.
+    agent = _commands.load_init_options(project_root).get("ai")
+    if agent:
+        manager.unregister_agent_artifacts(agent, extension_ids={extension_id})
+
     manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml

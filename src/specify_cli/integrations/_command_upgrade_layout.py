@@ -148,11 +148,10 @@ def _installed_presets_affecting_agent(
                 f"preset '{preset_id}' registered_commands is malformed"
             )
         if not meta.get("enabled", True):
-            # Disabled presets can leave old-layout artifacts tracked in the
-            # integration manifest even after reconciliation clears their
-            # active registration lists. Refuse a layout migration while the
-            # preset remains installed; removal is the safe boundary.
-            affected.append(preset_id)
+            # Disabled presets are only relevant to callers that explicitly
+            # request installed-but-disabled provenance.
+            if include_disabled:
+                affected.append(preset_id)
             continue
         registered_skills = meta.get("registered_skills", [])
         if isinstance(registered_skills, dict):

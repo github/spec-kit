@@ -38,6 +38,55 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    @pytest.mark.parametrize("failure_point", ["hooks", "registry"])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_install_failure_rolls_back_files_registry_and_hooks(
+        self, extension_dir, project_dir, monkeypatch, failure_point, force
+    ):
+        manager = ExtensionManager(project_dir)
+        if force:
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+            installed = manager.extensions_dir / "test-ext"
+            (installed / "user-data.txt").write_text("keep me", encoding="utf-8")
+        installed = manager.extensions_dir / "test-ext"
+        previous_tree = (
+            {p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()}
+            if force else None
+        )
+        previous_registry = manager.registry.registry_path.read_bytes() if manager.registry.registry_path.exists() else None
+        hooks_path = project_dir / ".specify" / "extensions.yml"
+        previous_hooks = hooks_path.read_bytes() if hooks_path.exists() else None
+
+        if failure_point == "hooks":
+            original = __import__("specify_cli.extensions", fromlist=["HookExecutor"]).HookExecutor.register_hooks
+
+            def fail_after_hooks(executor, manifest):
+                original(executor, manifest)
+                raise OSError("injected hook registration failure")
+
+            monkeypatch.setattr(
+                "specify_cli.extensions.HookExecutor.register_hooks", fail_after_hooks
+            )
+        else:
+            monkeypatch.setattr(
+                manager.registry, "add",
+                lambda *args, **kwargs: (_ for _ in ()).throw(OSError("injected registry failure")),
+            )
+
+        with pytest.raises(OSError, match="injected"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False, force=force
+            )
+
+        assert manager.registry.registry_path.read_bytes() == previous_registry if previous_registry else not manager.registry.registry_path.exists()
+        assert hooks_path.read_bytes() == previous_hooks if previous_hooks else not hooks_path.exists()
+        if force:
+            assert {p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()} == previous_tree
+            assert manager.registry.is_installed("test-ext")
+        else:
+            assert not manager.registry.is_installed("test-ext")
+            assert not installed.exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):
