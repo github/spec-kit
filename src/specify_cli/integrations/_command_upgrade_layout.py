@@ -62,6 +62,22 @@ def _legacy_command_root_changed(
     return old_had_legacy and new_has_canonical
 
 
+def _command_file_names_changed(integration, old_manifest, new_manifest) -> bool:
+    """Return True when core command files were renamed inside the command dir.
+
+    Kiro CLI moved from ``speckit.<cmd>.md`` to ``speckit-<cmd>.md`` in the
+    same ``.kiro/prompts`` directory (#4797). Enabled extension commands are
+    tracked in the extension registry rather than the manifest, so
+    re-registering them alone would leave their old names beside the new ones.
+    """
+    commands_dir = (integration.registrar_config or {}).get("dir")
+    if not isinstance(commands_dir, str) or not commands_dir.strip():
+        return False
+    old = {rel for rel in old_manifest.files if _manifest_path_under(rel, commands_dir)}
+    new = {rel for rel in new_manifest.files if _manifest_path_under(rel, commands_dir)}
+    return bool(old - new) and bool(new - old)
+
+
 def _legacy_command_root_upgrade_pending(integration, old_manifest) -> bool:
     """Return True when the old manifest tracks command files under legacy_dir."""
     config = integration.registrar_config or {}

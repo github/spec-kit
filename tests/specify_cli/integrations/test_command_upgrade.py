@@ -299,18 +299,25 @@ class TestIntegrationUpgradeDetailed:
 
     def test_upgrade_replaces_dotted_kiro_prompts(self, tmp_path, monkeypatch):
         """Kiro installs used to write ``.kiro/prompts/speckit.<cmd>.md``,
-        which Kiro CLI cannot invoke (#4797). Upgrade stale-removes them and
-        installs ``speckit-<cmd>.md``, but a user-modified one blocks it."""
+        which Kiro CLI cannot invoke (#4797). Upgrade replaces them, including
+        enabled extension prompts, with ``speckit-<cmd>.md``, but a
+        user-modified one blocks it."""
+        from specify_cli.agents import CommandRegistrar
         from specify_cli.integrations.base import MarkdownIntegration
         from specify_cli.integrations.kiro_cli import KiroCliIntegration
 
+        CommandRegistrar._ensure_configs()
         with monkeypatch.context() as m:
             m.setattr(
                 KiroCliIntegration, "command_filename",
                 MarkdownIntegration.command_filename,
             )
+            m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name")
             project = _init_project(tmp_path, "kiro-cli")
+            added = _run_in_project(project, ["extension", "add", "git"])
+            assert added.exit_code == 0, added.output
         prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit.git.commit.md").is_file()
         dotted_plan = prompts / "speckit.plan.md"
         # Bytes, not text: write_text() would turn "\n" into "\r\n" on
         # Windows, so the restored file would no longer match the manifest.
@@ -327,6 +334,7 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, result.output
         assert sorted(prompts.glob("speckit.*.md")) == []
         assert (prompts / "speckit-plan.md").is_file()
+        assert (prompts / "speckit-git-commit.md").is_file()
 
     def test_upgrade_migrates_qodercli_extension_commands_to_skills(self, tmp_path):
         """Qoder upgrade retires old extension commands after skills exist."""

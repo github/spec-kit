@@ -15,6 +15,7 @@ from ..integration_runtime import (
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
+    _command_file_names_changed,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
@@ -317,13 +318,15 @@ def integration_upgrade(
         old_manifest,
         new_manifest,
     )
-    if legacy_command_root_changed:
+    if legacy_command_root_changed or _command_file_names_changed(
+        integration, old_manifest, new_manifest
+    ):
         _unregister_enabled_extension_commands_for_agent(
             project_root,
             key,
             continuing=(
-                "The integration command directory changed, but legacy enabled "
-                "extension artifacts may need manual cleanup."
+                "The integration command directory or file names changed, but "
+                "legacy enabled extension artifacts may need manual cleanup."
             ),
         )
 
