@@ -218,6 +218,32 @@ def test_bash_reports_missing_utf8_locale_for_unicode_only(
 
 
 @requires_bash
+@pytest.mark.parametrize("locale_name", ["C", "POSIX"])
+def test_bash_respects_explicit_non_utf8_lc_all(repo: Path, locale_name: str) -> None:
+    env = clean_env()
+    env["LC_ALL"] = locale_name
+    env["LANG"] = "C.UTF-8"
+
+    ascii_result = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "Add user authentication"),
+        repo,
+        env,
+    )
+    assert ascii_result.returncode == 0, ascii_result.stderr
+    assert json_stdout(ascii_result)["BRANCH_NAME"] == "001-user-authentication"
+
+    for args in (("添加用户",), ("--short-name", "用户", "Add users")):
+        unicode_result = run(
+            bash_cmd(repo, SCRIPT, "--json", "--dry-run", *args), repo, env
+        )
+        assert unicode_result.returncode == 1
+        assert unicode_result.stdout == ""
+        assert "A UTF-8 locale is required" in unicode_result.stderr
+        assert "LC_ALL" in unicode_result.stderr
+        assert not (repo / "specs").exists()
+
+
+@requires_bash
 def test_bash_requires_python_only_for_unicode_names(
     repo: Path, tmp_path: Path
 ) -> None:
@@ -379,6 +405,54 @@ def test_python_branch_name_generation_matches_bash(
     assert py.returncode == bash.returncode == 0
     assert py.stderr == bash.stderr == ""
     assert json_stdout(py) == json_stdout(bash)
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [("ſet account", "001-ſet-account"), ("Set account", "001-account")],
+)
+def test_bash_stop_words_match_only_ascii_words(
+    repo: Path, description: str, expected: str
+) -> None:
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", description), repo)
+
+    assert bash.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(py)
+    assert json_stdout(bash)["BRANCH_NAME"] == expected
+
+
+@requires_bash
+def test_bash_stop_words_ignore_locale_case_folding(repo: Path, tmp_path: Path) -> None:
+    real_grep = shutil.which("grep")
+    assert real_grep is not None
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    grep_shim = shim_dir / "grep"
+    grep_cmd = shlex.quote(_bash_posix_path(Path(real_grep)))
+    grep_shim.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "-qiE" ]; then\n'
+        "  IFS= read -r word\n"
+        '  [ "$word" = "ſet" ] && exit 0\n'
+        f'  printf "%s\\n" "$word" | {grep_cmd} "$@"\n'
+        "  exit $?\n"
+        "fi\n"
+        f'exec {grep_cmd} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    grep_shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "ſet account"), repo, env)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", "ſet account"), repo, env)
+
+    assert bash.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(py)
+    assert json_stdout(bash)["BRANCH_NAME"] == "001-ſet-account"
 
 
 @requires_bash
@@ -1489,7 +1563,8 @@ def test_no_ascii_word_description_matches_across_twins(
     ps_repo = _setup_repo(tmp_path, "s")
 
     env = clean_env()
-    env["LC_ALL"] = env["LANG"] = "C"
+    env.pop("LC_ALL", None)
+    env["LANG"] = "C"
     bash = run(
         bash_cmd(bash_repo, SCRIPT, "--json", "--dry-run", description), bash_repo, env
     )

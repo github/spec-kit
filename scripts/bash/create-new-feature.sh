@@ -152,7 +152,11 @@ spec_prefix_exists() {
 #     '+', leaving repeated separators uncollapsed on macOS.
 #   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
 UNICODE_LOCALE=""
-for candidate in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"; do
+locale_candidates=(C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_CTYPE:-${LANG:-}}")
+if [ -n "${LC_ALL:-}" ]; then
+    locale_candidates=("$LC_ALL")
+fi
+for candidate in "${locale_candidates[@]}"; do
     if [ -n "$candidate" ] && [ "$(printf 'é。' | LC_ALL="$candidate" sed 's/[^[:alnum:]]/-/g' 2>/dev/null)" = 'é-' ]; then
         UNICODE_LOCALE="$candidate"
         break
@@ -162,7 +166,11 @@ done
 if [ -z "$UNICODE_LOCALE" ]; then
     UNICODE_LOCALE=C
     if printf '%s' "${SHORT_NAME:-$FEATURE_DESCRIPTION}" | LC_ALL=C grep -q '[^ -~]'; then
-        echo "Error: A UTF-8 locale is required to create a Unicode feature name" >&2
+        if [ -n "${LC_ALL:-}" ]; then
+            echo "Error: A UTF-8 locale is required to create a Unicode feature name; LC_ALL=$LC_ALL is not usable" >&2
+        else
+            echo "Error: A UTF-8 locale is required to create a Unicode feature name" >&2
+        fi
         exit 1
     fi
 fi
@@ -279,7 +287,7 @@ generate_branch_name() {
         [ -z "$word" ] && continue
 
         # Retain non-ASCII words even when shorter than three characters.
-        if ! echo "$word" | grep -qiE "$stop_words"; then
+        if ! printf '%s\n' "$word" | LC_ALL=C grep -qE "$stop_words"; then
             if [ ${#word} -ge 3 ] || printf '%s' "$word" | LC_ALL=C grep -q '[^ -~]'; then
                 meaningful_words+=("$word")
             # Keep short words that appear as an uppercase acronym in the original.
