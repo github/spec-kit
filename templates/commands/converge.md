@@ -151,7 +151,9 @@ Create an internal model (do not echo raw artifacts):
 - **Task inventory**: every task in `tasks.md` — all of them checked by this point — with
   the work it describes and the file paths it names. A task marked done whose work is
   absent from the code, or only partly there, is a finding like any other, traced to
-  that task's ID.
+  that task's ID. Most such tasks exist because a requirement asked for them, so the same
+  gap is reachable from both inventories; Step 4 coalesces those into one finding rather
+  than reporting the work twice.
 - **Code-scope map**: from the file paths named in `plan.md` and `tasks.md`, plus a keyword
   search for the concepts each requirement describes, derive the set of source files and
   components in scope for assessment. Bound the assessment to these — do **not** infer
@@ -177,8 +179,19 @@ For each item in the intent inventory, inspect the current code in scope and pro
   (surfaced for awareness — converge does **not** delete code, it only appends a task to
   review/justify or remove it).
 
-Each `Finding` records: a stable id, the `source-ref` it traces to, the `gap-type`, a
-severity, and a short human-readable description with the evidence (the file/area observed).
+Each `Finding` records: a stable id, the `source-refs` it traces to (one or more), the
+`gap-type`, a severity, and a short human-readable description with the evidence (the
+file/area observed).
+
+**One finding per piece of work, however many inventory items point at it.** The two
+inventories overlap by design: `T017` exists because `FR-003` asked for it, so code that
+is absent produces a gap under both, and emitting one finding each would append two tasks
+for one gap in Step 7 — each carrying half the trace, and each re-appearing together on
+the next run. Coalesce them into a single `Finding` and list every item that led to it in
+`source-refs` (`FR-003, T017`). Keep all of them: the requirement says what is owed, the
+task ID says where the bookkeeping went wrong, and dropping either loses that half. Two
+items are the same work when one change to the same code would close both — findings that
+merely sit in the same file are not, and must stay separate.
 
 **Edge cases:**
 
@@ -227,12 +240,15 @@ Append to the **end** of `tasks.md`, per the append contract:
    zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`:
 
    ```markdown
-   - [ ] T042 <imperative description> per <source-ref> (<gap-type>)
+   - [ ] T042 <imperative description> per <source-refs> (<gap-type>)
    ```
 
-   `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
+   `<source-refs>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
    `US1/AC2`, `plan: storage decision`, `Constitution II`, or a task ID such as `T017`
-   when a task marked done is not reflected in the code.
+   when a task marked done is not reflected in the code. A coalesced finding names every
+   origin it was coalesced from, comma-separated (`FR-003, T017`), in **one** checklist
+   item — one finding is one task, so a gap that both a requirement and a done-but-absent
+   task point at is appended once, with the whole trace.
 
    `<gap-type>` is one of `missing`, `partial`, `contradicts`, `unrequested`.
 

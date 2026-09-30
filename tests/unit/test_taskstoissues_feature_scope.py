@@ -86,6 +86,39 @@ def test_a_bare_title_is_never_decided_on_the_agents_own(template_text: str) -> 
     )
 
 
+def test_the_early_exit_requires_a_scoped_match_for_every_id(template_text: str) -> None:
+    """A bare match must not end the search that could still have scoped it.
+
+    Scoping split "matched" into two outcomes, and only one of them is an answer. The
+    early exit still read "every task ID has been matched", so a first page carrying
+    bare `T001: ...` titles for every ID ends pagination — and the scoped
+    `[002-billing] T001: ...` issues on the next page are never seen. Every ID is then
+    classified bare-only: the user is asked about issues that were already matched, and
+    a wrong answer creates a duplicate for each.
+
+    So a bare-only classification is only a fact once the pages have run out.
+    """
+    stop_rule = _line_containing(template_text, "Stop paginating")
+    assert re.search(r"only\b.*\bscoped match", stop_rule), (
+        "the early exit fires on any match again, so bare matches on an early page end "
+        f"the search before the scoped issues on a later one are seen:\n  {stop_rule.strip()}"
+    )
+    assert re.search(r"exhaust the pages before classifying", stop_rule), (
+        "nothing requires pagination to finish before an ID is called bare-only, which "
+        f"is the misclassification itself:\n  {stop_rule.strip()}"
+    )
+    assert not re.search(r"as soon as every task ID has been matched", template_text), (
+        "the unconditional early exit is back verbatim"
+    )
+
+    # And the question to the user must be gated on the same fact, where it is asked.
+    legacy_rule = _line_containing(template_text, "before this scoping exists")
+    assert re.search(r"once the pages have run out", legacy_rule), (
+        "the bare-only list is assembled without waiting for pagination to finish, so "
+        f"it can name an ID whose scoped issue was never fetched:\n  {legacy_rule.strip()}"
+    )
+
+
 def test_confirmed_legacy_issues_are_only_retitled_with_consent(template_text: str) -> None:
     """Retitling is what stops the question recurring, and it edits the user's issues."""
     legacy_rule = _line_containing(template_text, "before this scoping exists")
