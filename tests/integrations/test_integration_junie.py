@@ -109,6 +109,34 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_junie_argument_placeholders_adapted(self):
+        """$ARGUMENTS / $speckit-... must not become required Junie arguments."""
+        junie = get_integration("junie")
+        content = (
+            "---\ndescription: x\n---\n$ARGUMENTS\n"
+            "run as `/skill:speckit-...` or `$speckit-...`).\n"
+        )
+        out = junie.post_process_command_content(content)
+        assert out.startswith("---\nallowPromptArgument: true\n")
+        assert "$prompt" in out
+        assert "$ARGUMENTS" not in out
+        assert "$speckit" not in out
+
+    def test_junie_setup_leaves_no_stray_dollar_arguments(self, tmp_path):
+        """Installed commands only reference Junie's own ``$prompt`` token."""
+        import re
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        junie = get_integration("junie")
+        m = IntegrationManifest("junie", tmp_path)
+        junie.setup(tmp_path, m, script_type="sh")
+        files = list((tmp_path / ".junie" / "commands").glob("*.md"))
+        assert files
+        for f in files:
+            text = f.read_text(encoding="utf-8")
+            assert set(re.findall(r"\$[A-Za-z_][A-Za-z0-9_-]*", text)) <= {"$prompt"}, f
+            assert "allowPromptArgument: true" in text
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):

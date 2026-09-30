@@ -132,6 +132,27 @@ class JunieIntegration(MarkdownIntegration):
             lambda m: f"{m.group(1)}{format_junie_command_name(m.group(2))}",
             content,
         )
+
+    @staticmethod
+    def _adapt_argument_placeholders(content: str) -> str:
+        """Stop Junie from auto-detecting required ``$identifier`` arguments.
+
+        Junie treats every ``$name`` token in a command body as a required
+        named argument. Map ``$ARGUMENTS`` to Junie's free-text ``$prompt``
+        (enabled via ``allowPromptArgument`` frontmatter) and drop the prose
+        example ``$speckit-...`` describing other agents' invocation syntax.
+        """
+        content = content.replace(" or `$speckit-...`", "")
+        content = content.replace("$ARGUMENTS", "$prompt")
+        if "$prompt" in content and "allowPromptArgument:" not in content:
+            content = re.sub(
+                r"\A---(\r?\n)",
+                lambda m: f"---{m.group(1)}allowPromptArgument: true{m.group(1)}",
+                content,
+                count=1,
+            )
+        return content
+
     def post_process_command_content(self, content: str) -> str:
         """Apply Junie-specific transformations to command content.
 
@@ -142,7 +163,7 @@ class JunieIntegration(MarkdownIntegration):
         """
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
-        return updated
+        return self._adapt_argument_placeholders(updated)
 
     def setup(
         self,
