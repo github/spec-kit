@@ -405,6 +405,48 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, result.output
         assert prompt.read_bytes() == original
 
+    def test_upgrade_keeps_dotted_kiro_prompts_when_reregistration_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """A dotted extension or preset prompt is removed only after its
+        hyphenated replacement exists (#4797), as in
+        ``test_upgrade_layout_change_preserves_extension_artifacts_when_reregistration_fails``.
+        If re-registration can't rebuild it, the old prompt and its registry
+        entry survive the upgrade."""
+        preset_src = _write_command_preset(tmp_path, "custom-preset")
+        project = _init_dotted_kiro_project(
+            tmp_path,
+            monkeypatch,
+            ["extension", "add", "git"],
+            ["preset", "add", "--dev", str(preset_src)],
+        )
+        specify = project / ".specify"
+        (specify / "extensions" / "git" / "extension.yml").write_text(
+            "invalid: [", encoding="utf-8"
+        )
+        (specify / "presets" / "custom-preset" / "preset.yml").write_text(
+            "invalid: [", encoding="utf-8"
+        )
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit-plan.md").is_file()
+        assert not (prompts / "speckit.plan.md").exists()
+        assert (prompts / "speckit.git.commit.md").is_file()
+        assert (prompts / "speckit.fakeext.cmd.md").is_file()
+        extensions = json.loads(
+            (specify / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        assert "kiro-cli" in extensions["extensions"]["git"]["registered_commands"]
+        presets = json.loads(
+            (specify / "presets" / ".registry").read_text(encoding="utf-8")
+        )
+        assert "kiro-cli" in (
+            presets["presets"]["custom-preset"]["registered_commands"]
+        )
+
     @pytest.mark.parametrize(
         ("old_files", "new_files", "expected"),
         [
@@ -421,7 +463,7 @@ class TestIntegrationUpgradeDetailed:
         self, old_files, new_files, expected
     ):
         """Commands added and dropped in the same release are not a rename,
-        so upgrade must not unregister extension commands for them."""
+        so upgrade must not retire extension or preset command files for them."""
         from types import SimpleNamespace
 
         from specify_cli.integrations._command_upgrade_layout import (
