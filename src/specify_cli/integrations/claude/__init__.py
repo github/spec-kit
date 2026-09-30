@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from typing import Any
 
@@ -74,13 +75,15 @@ class ClaudeIntegration(SkillsIntegration):
         binary under ``~/.claude/local`` without adding it to PATH. Returning
         that absolute path keeps availability checks and dispatch in agreement
         (issues #123 and #550). An operator override or a PATH install still
-        wins where present.
+        wins where present. A candidate that exists but is not executable is
+        skipped, so a stale file left by one installer cannot mask a working
+        install found later in the list.
         """
         resolved = super()._resolve_executable()
         if resolved != self.key or shutil.which(resolved):
             return resolved
         for candidate in (_utils.CLAUDE_LOCAL_PATH, _utils.CLAUDE_NPM_LOCAL_PATH):
-            if candidate.is_file():
+            if candidate.is_file() and os.access(candidate, os.X_OK):
                 return str(candidate)
         return resolved
 

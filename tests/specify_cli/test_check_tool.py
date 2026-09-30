@@ -5,9 +5,13 @@ Covers issue https://github.com/github/spec-kit/issues/550:
   installed via npm-local (the default `claude` installer path).
 """
 
+import sys
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 from specify_cli import check_tool
+from specify_cli.integrations.claude import ClaudeIntegration
 
 
 class TestCheckToolClaude:
@@ -47,6 +51,61 @@ class TestCheckToolClaude:
              patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", fake_npm_claude), \
              patch("shutil.which", return_value=None):
             assert check_tool("claude") is True
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows has no POSIX execute bit; os.access(X_OK) is always true",
+    )
+    def test_non_executable_local_path_does_not_mask_npm_local(self, tmp_path):
+        """A stale, non-executable migrate-installer file must not hide an npm-local install.
+
+        Both candidates exist, so picking on existence alone returns the first
+        one; availability then rejects it on the execute bit and Claude is
+        reported missing even though the second candidate is launchable.
+        """
+        stale_local = tmp_path / "local" / "claude"
+        stale_local.parent.mkdir(parents=True)
+        stale_local.write_text("#!/bin/sh\n")
+        stale_local.chmod(0o644)
+
+        npm_local = tmp_path / "node_modules" / ".bin" / "claude"
+        npm_local.parent.mkdir(parents=True)
+        npm_local.write_text("#!/bin/sh\n")
+        npm_local.chmod(0o755)
+
+        with patch("specify_cli.CLAUDE_LOCAL_PATH", stale_local), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", stale_local), \
+             patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", npm_local), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", npm_local), \
+             patch("shutil.which", return_value=None):
+            integration = ClaudeIntegration()
+            # Dispatch runs this value, so it has to be the launchable candidate.
+            assert integration._resolve_executable() == str(npm_local)
+            assert integration.is_cli_available() is True
+            assert check_tool("claude") is True
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows has no POSIX execute bit; os.access(X_OK) is always true",
+    )
+    def test_not_found_when_candidates_exist_but_none_are_executable(self, tmp_path):
+        """Skipping a non-executable candidate must not invent an install."""
+        stale_local = tmp_path / "local" / "claude"
+        stale_local.parent.mkdir(parents=True)
+        stale_local.write_text("#!/bin/sh\n")
+        stale_local.chmod(0o644)
+
+        stale_npm = tmp_path / "node_modules" / ".bin" / "claude"
+        stale_npm.parent.mkdir(parents=True)
+        stale_npm.write_text("#!/bin/sh\n")
+        stale_npm.chmod(0o644)
+
+        with patch("specify_cli.CLAUDE_LOCAL_PATH", stale_local), \
+             patch("specify_cli._utils.CLAUDE_LOCAL_PATH", stale_local), \
+             patch("specify_cli.CLAUDE_NPM_LOCAL_PATH", stale_npm), \
+             patch("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", stale_npm), \
+             patch("shutil.which", return_value=None):
+            assert check_tool("claude") is False
 
     def test_detected_via_path(self, tmp_path):
         """claude on PATH (global npm install) should still work."""
