@@ -272,6 +272,53 @@ def test_unrelated_unscoped_monorepo_release_stays_accepted(submission, archive_
     assert run_verifier(paths).returncode == 0
 
 
+def test_unrelated_unscoped_archive_stays_accepted_in_monorepo(submission):
+    issue, _, paths = submission
+    issue["download_url"] = (
+        "https://github.com/example/presets/archive/refs/tags/v1.2.3.zip"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        "specify preset add --from "
+        "https://github.com/example/presets/archive/refs/tags/v2.0.0.zip\n",
+        encoding="utf-8",
+    )
+    assert run_verifier(paths).returncode == 0
+
+
+def test_stale_unscoped_archive_fails_for_single_preset(submission):
+    issue, manifest, paths = submission
+    write_archive(paths, manifest)
+    issue["download_url"] = (
+        "https://github.com/example/presets/archive/refs/tags/v1.2.3.zip"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        "specify preset add --from "
+        "https://github.com/example/presets/archive/refs/tags/v1.2.2.zip\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README --from URL" in result.stdout
+
+
+def test_matching_unscoped_archive_passes_for_single_preset(submission):
+    issue, manifest, paths = submission
+    write_archive(paths, manifest)
+    issue["download_url"] = (
+        "https://github.com/example/presets/archive/refs/tags/v1.2.3.zip"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        f"specify preset add --from {issue['download_url']}\n",
+        encoding="utf-8",
+    )
+    assert run_verifier(paths).returncode == 0
+
+
 def test_same_asset_on_unscoped_tag_is_reported_as_stale(submission):
     issue, _, paths = submission
     issue["download_url"] = issue["download_url"].replace(

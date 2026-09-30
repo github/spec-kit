@@ -185,8 +185,11 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   identifiable as this preset by its tag scope or matching release asset that differs
   from the Download URL, **fail** even if another accepted command (`specify preset add
   <preset-id>` or `specify preset add --dev <path>`) is present. Do not flag a different
-  preset's unscoped release URL in a monorepo as stale. A README with only a valid
-  `--dev` command remains acceptable. The verifier in Step 2g enforces this comparison.
+  preset's unscoped release URL in a monorepo as stale. Bare archive tags are only
+  compared when the downloaded archive contains one `preset.yml`: a bare tag alone
+  cannot identify which preset it belongs to in a multi-preset archive. A README
+  with only a valid `--dev` command remains acceptable. The verifier in Step 2g
+  enforces this comparison.
 
   If **no** accepted `specify preset add ...` command is present, the README is treated as a
   generic description/pitch rather than preset-usage documentation — **fail this check** and

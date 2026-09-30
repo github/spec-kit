@@ -97,14 +97,16 @@ def release_tag(issue: dict) -> str:
     return tag
 
 
-def published_manifest(archive_path: Path, preset_id: str) -> dict:
+def published_manifest(archive_path: Path, preset_id: str) -> tuple[dict, bool]:
     try:
         with zipfile.ZipFile(archive_path) as archive:
             matching = []
             invalid = []
+            manifest_count = 0
             for member in archive.infolist():
                 if member.is_dir() or member.filename.rsplit("/", 1)[-1] != "preset.yml":
                     continue
+                manifest_count += 1
                 try:
                     if member.file_size > 1024 * 1024:
                         raise ValueError("preset.yml exceeds 1 MiB")
@@ -133,7 +135,7 @@ def published_manifest(archive_path: Path, preset_id: str) -> dict:
         raise SubmissionMismatch(
             f"expected one published preset.yml for {preset_id!r}, found {len(matching)}"
         )
-    return matching[0][1]
+    return matching[0][1], manifest_count == 1
 
 
 def required_extensions(manifest: dict) -> list[str]:
@@ -155,7 +157,7 @@ def required_extensions(manifest: dict) -> list[str]:
     return result
 
 
-def check_readme(text: str, issue: dict) -> None:
+def check_readme(text: str, issue: dict, *, single_preset_archive: bool) -> None:
     expected = field(issue, "download_url")
     preset_id = field(issue, "preset_id")
     owner, repo = repository_parts(field(issue, "repository"))
@@ -199,7 +201,8 @@ def check_readme(text: str, issue: dict) -> None:
                 and expected_path[6] == parts[6]
             )
             unscoped_archive = (
-                submitted_scope is None
+                single_preset_archive
+                and submitted_scope is None
                 and expected_path[3:6] == ["archive", "refs", "tags"]
                 and parts[3:6] == ["archive", "refs", "tags"]
             )
@@ -281,8 +284,14 @@ def expected_values(issue: dict, manifest: dict, digest: str) -> dict:
 def submission(args: argparse.Namespace) -> None:
     issue = read_json(args.issue, "issue input", Blocked)
     release_tag(issue)
-    manifest = published_manifest(args.archive, field(issue, "preset_id"))
-    check_readme(read_text(args.readme, "fetched README"), issue)
+    manifest, single_preset_archive = published_manifest(
+        args.archive, field(issue, "preset_id")
+    )
+    check_readme(
+        read_text(args.readme, "fetched README"),
+        issue,
+        single_preset_archive=single_preset_archive,
+    )
     try:
         with args.archive.open("rb") as archive:
             digest = hashlib.file_digest(archive, "sha256").hexdigest()
