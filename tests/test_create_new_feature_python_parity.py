@@ -1032,19 +1032,24 @@ def test_bash_reads_unicode_feature_state_without_jq_under_legacy_encoding(
         [
             "bash",
             "-c",
-            'source "$1"; read_feature_json_feature_directory "$2"; printf "\\n"; get_feature_paths --no-persist',
+            (
+                'source "$1"; paths=$(get_feature_paths --no-persist) || exit 1; '
+                'printf -v expected "FEATURE_DIR=%q" "$3"; '
+                '[[ "$paths" == *"$expected"* ]] || exit 1; '
+                'read_feature_json_feature_directory "$2"'
+            ),
             "bash",
             str(common),
             str(repo),
+            str(repo / "specs/001-添加用户"),
         ],
         repo,
         env,
     )
 
     assert resolved.returncode == 0, resolved.stderr
-    assert resolved.stdout.splitlines()[0] == "specs/001-添加用户"
-    assert "CURRENT_BRANCH=" in resolved.stdout
-    assert (repo / resolved.stdout.splitlines()[0] / "spec.md").is_file()
+    assert resolved.stdout == "specs/001-添加用户"
+    assert (repo / resolved.stdout / "spec.md").is_file()
 
 
 def test_persist_feature_json_avoids_platform_newline_translation(
