@@ -2551,6 +2551,23 @@ class ExtensionManager:
                 HookExecutor(self.project_root).unregister_hooks(manifest.id)
             except BaseException:
                 pass
+            # Generic integration rollback deliberately converts a failed install
+            # into a config-only, unregistered extension directory. Preserve that
+            # user-facing recovery state instead of restoring the pre-install
+            # registered snapshot captured by this outer transaction.
+            preserved_generic_config = (
+                dest_dir.is_dir()
+                and self._has_keep_config_marker(dest_dir)
+                and not (dest_dir / "extension.yml").exists()
+                and all(
+                    child.name == ".keep-config"
+                    or child.name.endswith(("-config.yml", "-config.local.yml"))
+                    for child in dest_dir.iterdir()
+                )
+            )
+            if preserved_generic_config:
+                raise
+
             # Remove any partial install, then restore the previous on-disk
             # extension and metadata/config snapshots byte-for-byte.
             try:
