@@ -3411,6 +3411,23 @@ class TestExtensionManager:
         assert ext_dir.exists()
         assert manager.registry.is_installed("test-ext")
 
+    def test_remove_refuses_directory_backup_config_path(
+        self, extension_dir, project_dir
+    ):
+        """A directory at ``.backup/<id>/<config>`` must not be copied into."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        (ext_dir / "test-ext-config.yml").write_text("a: 1\n")
+        backup_cfg = ext_dir.parent / ".backup" / "test-ext" / "test-ext-config.yml"
+        backup_cfg.mkdir(parents=True)
+
+        assert manager.remove("test-ext", keep_config=False) is False
+        assert list(backup_cfg.iterdir()) == []
+        assert ext_dir.exists()
+        assert manager.registry.is_installed("test-ext")
+
     def test_remove_refuses_regular_file_extension_dir(self, project_dir):
         """A regular file at the extension path is preserved and not unregistered."""
         manager = ExtensionManager(project_dir)
