@@ -2664,6 +2664,116 @@ def test_running_step_is_persisted_before_it_executes(
     assert seen == expected
 
 
+def _record_persisted_step_on_start(engine, tmp_path, seen):
+    """Record the persisted ``current_step_id`` whenever a step start is announced."""
+
+    def on_step_start(step_id, label):
+        (path,) = (tmp_path / ".specify/workflows/runs").glob("*/state.json")
+        persisted = json.loads(path.read_text(encoding="utf-8"))["current_step_id"]
+        seen.append((step_id, label, persisted))
+
+    engine.on_step_start = on_step_start
+    return engine
+
+
+def test_workflow_call_is_persisted_before_it_starts(tmp_path, probe):
+    install(tmp_path, definition("grandchild", [{"id": "leaf", "type": "probe"}]))
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {"id": "prepare", "type": "probe"},
+                {"id": "nested", "type": "workflow", "workflow": "grandchild"},
+            ],
+        ),
+    )
+    seen = []
+    engine = _record_persisted_step_on_start(WorkflowEngine(tmp_path), tmp_path, seen)
+
+    state = engine.execute(definition("parent", [{"id": "first", "type": "probe"}, call()]))
+
+    assert state.status == RunStatus.COMPLETED
+    # Like every other step, a call (top-level and nested inside a called
+    # workflow, by its workflow-relative ID) is checkpointed as the active step
+    # before its start is logged and announced.
+    assert seen == [
+        ("first", "probe", "first"),
+        ("call", "workflow", "call"),
+        ("prepare", "probe", "prepare"),
+        ("nested", "workflow", "nested"),
+        ("leaf", "probe", "leaf"),
+    ]
+
+
+def test_resumed_bound_workflow_call_is_persisted_before_it_starts(tmp_path, probe):
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "wait", "type": "probe", "await": True}],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
+    root = definition(
+        "parent",
+        [call(input={"approve": "{{ inputs.approve }}"})],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    assert RunState.load(state.run_id, tmp_path).current_step_id == "wait"
+    seen = []
+    engine = _record_persisted_step_on_start(WorkflowEngine(tmp_path), tmp_path, seen)
+
+    state = engine.resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    # The already-bound call skips binding, which previously held the only
+    # pre-child checkpoint; it must still persist itself before re-announcing.
+    assert seen == [("call", "workflow", "call"), ("wait", "probe", "wait")]
+
+
+def test_workflow_call_start_checkpoint_failure_logs_no_start(tmp_path, monkeypatch, probe):
+    from specify_cli.workflows._execution import CheckpointError
+
+    install(tmp_path, definition("child", [{"id": "inner", "type": "probe"}]))
+    original = RunState._atomic_write_json
+
+    def write(path, data):
+        if path.name == "state.json" and data.get("current_step_id") == "call":
+            raise OSError("checkpoint failure")
+        original(path, data)
+
+    monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
+    callbacks = []
+    engine = WorkflowEngine(tmp_path)
+    engine.on_step_start = lambda step_id, label: callbacks.append(step_id)
+
+    with pytest.raises(CheckpointError, match="checkpoint failure"):
+        engine.execute(
+            definition("parent", [{"id": "first", "type": "probe"}, call()]),
+            run_id="fault",
+        )
+
+    runs = tmp_path / ".specify/workflows/runs/fault"
+    started = [
+        entry["step_id"]
+        for entry in map(json.loads, (runs / "log.jsonl").read_text().splitlines())
+        if entry["event"] == "step_started"
+    ]
+    disk = json.loads((runs / "state.json").read_text())
+    node = disk["execution"]["sequence"]["nodes"][1]
+    # The failed start checkpoint is not followed by a start event, a callback,
+    # or target binding.
+    assert started == ["first"]
+    assert callbacks == ["first"]
+    assert disk["current_step_id"] == "first"
+    assert node["phase"] == "ready"
+    assert "binding" not in node
+    assert probe["inner"] == 0
+
+
 def test_failed_fan_out_item_exception_reports_qualified_current_step_id(
     tmp_path, monkeypatch
 ):

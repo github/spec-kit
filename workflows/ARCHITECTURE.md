@@ -79,8 +79,9 @@ New runs use a versioned execution tree. Each occurrence owns its result,
 selected child sequences, and optional workflow binding. A binding stores the
 target, frozen definition, private inputs, and `workflow_dir`; the called
 workflow remains a private scope in the same run. Fan-out items have separate
-contexts. Each occurrence is checkpointed as the active step before it executes,
-so status reports it while it runs. Binding and selected expansions are
+contexts. Each occurrence, including a workflow call, is checkpointed as the
+active step before its start is logged and before it executes, so status
+reports it while it runs. Binding and selected expansions are
 checkpointed before child side effects, results before an occurrence is done,
 and logs after the checkpoint.
 Legacy runs enter through their top-level index once. Inputs and tree

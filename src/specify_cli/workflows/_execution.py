@@ -380,6 +380,24 @@ class Execution:
             with self.engine._callback_lock:
                 self.engine.on_step_start(qualified, callback_label)
 
+    def start(self, config, qualified, path, ancestry):
+        """Persist an occurrence as the active step, then announce its start.
+
+        Every step path starts here, so the checkpoint always precedes the
+        ``step_started`` event and callback, as on main: status reports the
+        occurrence while it runs and after a crash, and a failed checkpoint
+        leaves no start event behind.
+        """
+        kind = config.get("type", "command")
+        with self.state._lock:
+            self.state.current_step_id = qualified
+            self.commit()
+        # A call is labelled by its type; a stray ``command`` key must not rename it.
+        label = kind if kind == "workflow" else config.get("command", "") or kind
+        self.emit(
+            "step_started", qualified, path, ancestry, type=kind, callback_label=label
+        )
+
     def run(
         self,
         seq,
@@ -472,19 +490,7 @@ class Execution:
             )
 
         if node["phase"] in {"ready", "blocked"}:
-            with self.state._lock:
-                self.state.current_step_id = qualified
-            # Persist the active occurrence before it runs, as on main, so status
-            # reports it for the whole duration of a long step and after a crash.
-            self.commit()
-            self.emit(
-                "step_started",
-                qualified,
-                path,
-                ancestry,
-                type=kind,
-                callback_label=config.get("command", "") or kind,
-            )
+            self.start(config, qualified, path, ancestry)
             impl = self.registry.get(kind)
             if impl is None:
                 # As on main: terminal, only step_failed, no projected result.
@@ -697,14 +703,9 @@ class Execution:
     ):
         from .engine import WorkflowDefinition, workflow_dir_for
 
-        self.emit(
-            "step_started",
-            qualified,
-            path,
-            ancestry,
-            type="workflow",
-            callback_label="workflow",
-        )
+        # Unlike other steps, a call is announced on every entry, including a
+        # resumed call that is already bound and skips the binding checkpoint.
+        self.start(config, qualified, path, ancestry)
         binding = node.get("binding")
         target = binding["workflow"] if binding else config.get("workflow")
         if binding is None:
