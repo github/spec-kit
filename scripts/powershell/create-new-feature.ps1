@@ -167,7 +167,7 @@ function Get-BranchName {
     $meaningfulWords = @()
     foreach ($word in $words) {
         # Skip stop words
-        if ($stopWords -contains $word) { continue }
+        if ($stopWords -ccontains $word) { continue }
 
         # Keep Unicode words even when short; ASCII words still need three
         # characters or an uppercase acronym in the original.

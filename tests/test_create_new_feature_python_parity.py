@@ -26,6 +26,7 @@ from tests.parity_helpers import (
     install_composition_stack,
     install_scripts,
     json_stdout,
+    make_python3_path_shim,
     make_repo,
     make_yaml_less_venv,
     normalize_repo_paths,
@@ -458,6 +459,10 @@ def test_bash_stop_words_match_only_ascii_words(
     assert bash.returncode == py.returncode == 0
     assert json_stdout(bash) == json_stdout(py)
     assert json_stdout(bash)["BRANCH_NAME"] == expected
+    if HAS_POWERSHELL:
+        ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", description), repo)
+        assert ps.returncode == 0, ps.stderr
+        assert json_stdout(ps) == json_stdout(py)
 
 
 @requires_bash
@@ -991,6 +996,55 @@ def test_python_persists_relative_feature_json(repo: Path) -> None:
     branch = json_stdout(py)["BRANCH_NAME"]
     feature_json = (repo / ".specify" / "feature.json").read_text(encoding="utf-8")
     assert feature_json == f'{{"feature_directory":"specs/{branch}"}}\n'
+
+
+@requires_bash
+def test_bash_reads_unicode_feature_state_without_jq_under_legacy_encoding(
+    repo: Path, tmp_path: Path
+) -> None:
+    created = run(bash_cmd(repo, SCRIPT, "--json", "添加用户"), repo)
+    assert created.returncode == 0, created.stderr
+    assert json_stdout(created)["BRANCH_NAME"] == "001-添加用户"
+    assert (repo / "specs/001-添加用户/spec.md").is_file()
+
+    shim_dir = make_python3_path_shim(tmp_path / "bin")
+    (shim_dir / "sitecustomize.py").write_text(
+        "import builtins\n"
+        "_open = builtins.open\n"
+        "def legacy_open(file, *args, **kwargs):\n"
+        "    if str(file).endswith('feature.json') and 'encoding' not in kwargs:\n"
+        "        kwargs['encoding'] = 'cp1252'\n"
+        "    return _open(file, *args, **kwargs)\n"
+        "builtins.open = legacy_open\n",
+        encoding="utf-8",
+    )
+    for name in ("jq", "grep"):
+        shim = shim_dir / name
+        shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+    env["PYTHONPATH"] = str(shim_dir)
+    env["PYTHONIOENCODING"] = "utf-8"
+    common = repo / ".specify/scripts/bash/common.sh"
+
+    resolved = run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; read_feature_json_feature_directory "$2"; printf "\\n"; get_feature_paths --no-persist',
+            "bash",
+            str(common),
+            str(repo),
+        ],
+        repo,
+        env,
+    )
+
+    assert resolved.returncode == 0, resolved.stderr
+    assert resolved.stdout.splitlines()[0] == "specs/001-添加用户"
+    assert "CURRENT_BRANCH=" in resolved.stdout
+    assert (repo / resolved.stdout.splitlines()[0] / "spec.md").is_file()
 
 
 def test_persist_feature_json_avoids_platform_newline_translation(
@@ -1643,6 +1697,25 @@ def test_windows_powershell_51_preserves_unicode_and_utf8_limit(repo: Path) -> N
         assert result.returncode == 0, result.stderr
         assert json_stdout(result)["BRANCH_NAME"] == expected
         assert len(expected.encode("utf-8")) <= 244
+
+    for description, expected in (
+        ("ſet account", "001-ſet-account"),
+        ("Set account", "001-account"),
+    ):
+        result = run(
+            [
+                WINDOWS_POWERSHELL,
+                "-NoProfile",
+                "-File",
+                str(repo / ".specify/scripts/powershell/create-new-feature.ps1"),
+                "-Json",
+                "-DryRun",
+                description,
+            ],
+            repo,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json_stdout(result)["BRANCH_NAME"] == expected
 
 
 @requires_bash
