@@ -196,14 +196,128 @@ def test_validate_package_rejects_descendant_symlink(tmp_path):
         installer.validate_step_package(pkg, "my-step")
 
 
+class _ScandirSpy:
+    """Delegating ``os.scandir`` wrapper that records reads beneath *root*."""
+
+    def __init__(self, root: Path, real=os.scandir):
+        self.root = root
+        self.real = real
+        self.scanned: list[Path] = []
+        self.entries_read: dict[Path, int] = {}
+
+    def __call__(self, path=".", *args, **kwargs):
+        iterator = self.real(path, *args, **kwargs)
+        if not isinstance(path, (str, os.PathLike)):
+            return iterator
+        directory = Path(path)
+        if directory != self.root and self.root not in directory.parents:
+            return iterator
+        self.scanned.append(directory)
+        self.entries_read[directory] = 0
+        spy = self
+
+        class _Counting:
+            def __iter__(self):
+                for entry in iterator:
+                    spy.entries_read[directory] += 1
+                    yield entry
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc_info):
+                iterator.close()
+
+            def close(self):
+                iterator.close()
+
+        return _Counting()
+
+
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-def test_validate_package_rejects_symlink_in_excluded_dir(tmp_path):
+def test_excluded_dirs_are_pruned_not_inspected(tmp_path, project_dir, monkeypatch):
+    """Excluded subtrees are never entered, so their contents cannot fail
+    validation or reach the installed package."""
     pkg = _write_package(tmp_path / "pkg")
     git_dir = pkg / ".git"
     git_dir.mkdir()
     (git_dir / "hook").symlink_to(pkg / "step.yml")
-    with pytest.raises(installer.StepInstallError, match="symlink"):
+    deep = git_dir
+    for _ in range(installer._MAX_STEP_PACKAGE_DEPTH + 2):
+        deep = deep / "objects"
+    deep.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (pkg / "__pycache__").symlink_to(outside, target_is_directory=True)
+
+    spy = _ScandirSpy(pkg)
+    monkeypatch.setattr(os, "scandir", spy)
+    installer.install_step_package(project_dir, "my-step", pkg, source="local")
+
+    assert not any(
+        path == git_dir or git_dir in path.parents for path in spy.scanned
+    )
+    step_dir = _steps_dir(project_dir) / "my-step"
+    assert (step_dir / "step.yml").is_file()
+    assert not (step_dir / ".git").exists()
+    assert not (step_dir / "__pycache__").exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+def test_symlink_named_like_excluded_file_is_still_not_copied(tmp_path, project_dir):
+    pkg = _write_package(tmp_path / "pkg")
+    (pkg / ".DS_Store").symlink_to(pkg / "step.yml")
+    installer.install_step_package(project_dir, "my-step", pkg, source="local")
+    assert not (_steps_dir(project_dir) / "my-step" / ".DS_Store").exists()
+
+
+def test_validation_stops_reading_oversized_directory(tmp_path, monkeypatch):
+    """The entry ceiling bounds how many directory entries are read."""
+    pkg = _write_package(tmp_path / "pkg")
+    for index in range(50):
+        (pkg / f"extra-{index:02}.py").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 3)
+
+    spy = _ScandirSpy(pkg)
+    monkeypatch.setattr(os, "scandir", spy)
+    with pytest.raises(installer.StepInstallError, match="3-file limit"):
         installer.validate_step_package(pkg, "my-step")
+
+    assert spy.entries_read[pkg] <= 4
+
+
+def test_validation_budget_spans_directories(tmp_path, monkeypatch):
+    """Entries already discovered elsewhere shrink the budget for later
+    directories, so many moderately sized directories cannot evade it."""
+    pkg = _write_package(tmp_path / "pkg")
+    for name in ("a", "b", "c"):
+        sub = pkg / name
+        sub.mkdir()
+        for index in range(20):
+            (sub / f"f{index:02}.py").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 10)
+
+    spy = _ScandirSpy(pkg)
+    monkeypatch.setattr(os, "scandir", spy)
+    with pytest.raises(installer.StepInstallError, match="10-file limit"):
+        installer.validate_step_package(pkg, "my-step")
+
+    assert sum(spy.entries_read.values()) <= 11
+
+
+def test_copy_stops_reading_oversized_directory(tmp_path, monkeypatch):
+    pkg = _write_package(tmp_path / "pkg")
+    for index in range(50):
+        (pkg / f"extra-{index:02}.py").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 3)
+
+    spy = _ScandirSpy(pkg)
+    monkeypatch.setattr(os, "scandir", spy)
+    with pytest.raises(installer.StepInstallError, match="3-file limit"):
+        installer._copy_package_tree(pkg, tmp_path / "staged")
+
+    assert spy.entries_read[pkg] <= 4
+    assert not any((tmp_path / "staged").iterdir())
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="mkfifo is unavailable")

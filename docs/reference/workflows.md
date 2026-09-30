@@ -650,13 +650,13 @@ Every source is validated identically before anything is committed:
 - The package tree is copied recursively (relative imports, nested helper
   modules, and data files are supported). A symlinked package root, any
   descendant symlink, and any filesystem object that is not a regular file or
-  directory are rejected — including inside excluded directories.
-- `.git`, `__pycache__`, and `.DS_Store` entries are excluded from the copy and
-  from the limits.
+  directory are rejected.
+- `.git`, `__pycache__`, and `.DS_Store` entries are skipped without being
+  inspected: they are not copied, excluded directories are not entered, and
+  they do not count toward any limit.
 - The installed-package policy permits at most **512 retained entries** (files
   and directories combined), at most **32 levels** of directory nesting, and
-  **50 MiB** of retained content. Excluded entries do not consume the
-  entry-count or byte budgets, but their directory depth is still validated.
+  **50 MiB** of retained content.
 - Archive URLs also pass transport/extraction safety limits before package
   validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
   10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
