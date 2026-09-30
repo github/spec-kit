@@ -45,6 +45,7 @@ class TestShaiCliDispatch:
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
         assert "does not support CLI dispatch" in result.error
+        assert "set the step's 'integration'" in result.error
         run.assert_not_called()
 
     def test_prompt_step_fails_instead_of_running_shai(self, tmp_path):
@@ -54,4 +55,5 @@ class TestShaiCliDispatch:
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is False
         assert "does not support CLI dispatch" in result.error
+        assert "set the step's 'integration'" in result.error
         run.assert_not_called()

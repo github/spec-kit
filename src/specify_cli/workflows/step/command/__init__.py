@@ -191,7 +191,10 @@ class CommandStep(StepBase):
                     f"Cannot dispatch command {command!r}: "
                     f"integration {integration!r} CLI not found or not installed, "
                     f"or the integration does not support CLI dispatch. "
-                    f"Install the CLI tool or check 'specify integration list'."
+                    f"If the CLI is missing, install it or check "
+                    f"'specify integration list'; if the integration does not "
+                    f"support CLI dispatch, set the step's 'integration' to one "
+                    f"that does."
                 ),
             )
 

@@ -138,7 +138,10 @@ class PromptStep(StepBase):
                     f"Cannot dispatch prompt: "
                     f"integration {integration!r} "
                     f"CLI not found or not installed, "
-                    f"or the integration does not support CLI dispatch."
+                    f"or the integration does not support CLI dispatch. "
+                    f"If the CLI is missing, install it; if the integration "
+                    f"does not support CLI dispatch, set the step's "
+                    f"'integration' to one that does."
                 ),
             )
 
