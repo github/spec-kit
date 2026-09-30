@@ -1324,17 +1324,25 @@ def test_generic_extension_does_not_overwrite_existing_command_or_skill(
 
 
 @pytest.mark.parametrize("skills", [False, True])
+@pytest.mark.parametrize("dev_symlink", [False, True])
 def test_generic_extension_force_reinstall_only_replaces_owned_artifacts(
-    tmp_path, generic_extension, skills,
+    tmp_path, generic_extension, skills, dev_symlink,
 ):
     project = generic_project(tmp_path, skills=skills)
     manager = ExtensionManager(project)
-    manager.install_from_directory(generic_extension, "1.0.0")
+    manager.install_from_directory(generic_extension, "1.0.0", link_commands=dev_symlink)
     artifact = project / ".custom/commands" / (
         "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
     )
-    manager.install_from_directory(generic_extension, "1.0.0", force=True)
+    if dev_symlink and not artifact.is_symlink():
+        pytest.skip("dev-mode symlinks are unavailable")
+    manager.install_from_directory(
+        generic_extension, "1.0.0", force=True, link_commands=dev_symlink,
+    )
     assert artifact.is_file()
+    assert artifact.is_symlink() is dev_symlink
+    if dev_symlink:
+        assert artifact.resolve().is_relative_to((manager.extensions_dir / "sample").resolve())
     assert manager.remove("sample")
     assert not artifact.exists()
 
