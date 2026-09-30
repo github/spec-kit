@@ -297,6 +297,35 @@ class TestIntegrationUpgradeDetailed:
             f"after upgrade, found: {[f.name for f in core_remaining]}"
         )
 
+    def test_upgrade_replaces_dotted_kiro_prompts(self, tmp_path, monkeypatch):
+        """Kiro installs used to write ``.kiro/prompts/speckit.<cmd>.md``,
+        which Kiro CLI cannot invoke (#4797). Upgrade stale-removes them and
+        installs ``speckit-<cmd>.md``, but a user-modified one blocks it."""
+        from specify_cli.integrations.base import MarkdownIntegration
+        from specify_cli.integrations.kiro_cli import KiroCliIntegration
+
+        with monkeypatch.context() as m:
+            m.setattr(
+                KiroCliIntegration, "command_filename",
+                MarkdownIntegration.command_filename,
+            )
+            project = _init_project(tmp_path, "kiro-cli")
+        prompts = project / ".kiro" / "prompts"
+        dotted_plan = prompts / "speckit.plan.md"
+        original = dotted_plan.read_text(encoding="utf-8")
+
+        dotted_plan.write_text(original + "my note\n", encoding="utf-8")
+        blocked = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert blocked.exit_code != 0
+        assert "speckit.plan.md" in blocked.output
+        assert dotted_plan.read_text(encoding="utf-8") == original + "my note\n"
+
+        dotted_plan.write_text(original, encoding="utf-8")
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert sorted(prompts.glob("speckit.*.md")) == []
+        assert (prompts / "speckit-plan.md").is_file()
+
     def test_upgrade_migrates_qodercli_extension_commands_to_skills(self, tmp_path):
         """Qoder upgrade retires old extension commands after skills exist."""
         project = _init_project(tmp_path, "qodercli")
