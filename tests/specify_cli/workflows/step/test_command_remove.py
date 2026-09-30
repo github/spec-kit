@@ -182,7 +182,11 @@ class TestWorkflowStepRemoveLocking:
         result = CliRunner().invoke(app, ["workflow", "step", "remove", "my-step"])
 
         assert result.exit_code == 1, result.output
-        assert "Failed to lock step removal" in result.output
+        output = _flat(result.output)
+        assert "Failed to lock step removal 'my-step'" in output
+        # One removal-specific message, not wrapped in the shared helper's text.
+        assert output.count("Failed to") == 1, output
+        assert "installation" not in output
         assert _registered_ids(project_dir) == {"my-step"}
         assert (_steps_dir(project_dir) / "my-step").is_dir()
 

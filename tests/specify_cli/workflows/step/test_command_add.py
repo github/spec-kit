@@ -1028,6 +1028,33 @@ class TestWorkflowStepAddSources:
         assert result.exit_code != 0
         assert "__init__.py" in result.output
 
+    def test_dev_lock_failure_is_reported_once_without_installing(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        package = _write_package(tmp_path, type_key="dev-step")
+        monkeypatch.chdir(project_dir)
+        # A directory at the lock path cannot be opened as the lock file.
+        lock_path = project_dir / ".specify" / ".step-install.lock"
+        if lock_path.exists():
+            lock_path.unlink()
+        lock_path.mkdir()
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "dev-step", "--dev", str(package)]
+        )
+
+        assert result.exit_code == 1, result.output
+        output = result.output.replace("\n", "")
+        assert "Failed to acquire the step lock" in output
+        assert output.count("Failed to") == 1, output
+        assert not (
+            project_dir / ".specify" / "workflows" / "steps" / "dev-step"
+        ).exists()
+
     def test_dev_rejects_symlinked_source_root(self, project_dir, tmp_path, monkeypatch):
         if not hasattr(os, "symlink"):
             pytest.skip("symlinks are unavailable")

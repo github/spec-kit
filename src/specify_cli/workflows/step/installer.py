@@ -85,7 +85,9 @@ def _step_install_transaction(project_root: Path):
     from ...shared_infra import _exclusive_project_lock
 
     # Only acquisition failures are reported as lock errors; exceptions raised
-    # by the caller's critical section propagate unchanged.
+    # by the caller's critical section propagate unchanged. The message is
+    # operation-neutral because both install and remove share this lock; callers
+    # that add their own context should report ``exc.__cause__`` instead.
     with contextlib.ExitStack() as stack:
         try:
             stack.enter_context(
@@ -94,7 +96,7 @@ def _step_install_transaction(project_root: Path):
                 )
             )
         except OSError as exc:
-            raise StepInstallError(f"Failed to lock step installation: {exc}") from exc
+            raise StepInstallError(f"Failed to acquire the step lock: {exc}") from exc
         yield
 
 

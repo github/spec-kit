@@ -114,10 +114,13 @@ def workflow_step_remove(
         with _step_install_transaction(project_root):
             _remove_step_locked(project_root, step_id)
     except StepInstallError as exc:
+        # Report the underlying acquisition error so the message is not
+        # prefixed twice by the helper's own lock-failure text.
+        cause = exc.__cause__ or exc
         cli.console.print(
             "[red]Error:[/red] Failed to lock step removal "
             f"'{cli._escape_markup(step_id)}': "
-            f"{cli._escape_markup(str(exc))}"
+            f"{cli._escape_markup(str(cause))}"
         )
         raise cli.typer.Exit(1)
 
