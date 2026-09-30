@@ -190,6 +190,39 @@ class TestWorkflowStepRemoveLocking:
         assert _registered_ids(project_dir) == {"my-step"}
         assert (_steps_dir(project_dir) / "my-step").is_dir()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_remove_symlinked_lock_error_uses_neutral_lock_wording(
+        self, project_dir, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        _install(project_dir, tmp_path, "my-step")
+        lock_path = project_dir / ".specify" / ".step-install.lock"
+        if lock_path.exists():
+            lock_path.unlink()
+        target = tmp_path / "elsewhere.lock"
+        target.write_text("", encoding="utf-8")
+        try:
+            lock_path.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"cannot create symlink: {exc}")
+
+        result = CliRunner().invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 1, result.output
+        # Rich wraps at spaces; collapse whitespace so wrapping can't split words.
+        output = " ".join(result.output.split())
+        assert (
+            "Failed to lock step removal 'my-step': "
+            "Refusing to use symlinked step lock"
+        ) in output
+        # The shared lock must not describe a removal as an install.
+        assert "install lock" not in output
+        assert _registered_ids(project_dir) == {"my-step"}
+        assert (_steps_dir(project_dir) / "my-step").is_dir()
+
     def test_remove_restores_registry_entry_when_directory_delete_fails(
         self, project_dir, tmp_path, monkeypatch
     ):

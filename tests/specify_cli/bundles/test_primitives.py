@@ -632,3 +632,169 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     # A rollback must be a rollback: the entry comes back byte-for-byte, not
     # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
     assert restored.get("my-step") == seeded
+
+
+def _seed_installed_step(project_root: Path, step_id: str = "my-step") -> None:
+    import json
+
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir = project_root / ".specify" / "workflows" / "steps"
+    (steps_dir / step_id).mkdir(parents=True)
+    (steps_dir / step_id / "step.yml").write_text(
+        f"step:\n  type_key: {step_id}\n", encoding="utf-8"
+    )
+    (steps_dir / step_id / "__init__.py").write_text("", encoding="utf-8")
+    (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "steps": {
+                    step_id: {
+                        "name": "My Step",
+                        "version": "1.0.0",
+                        "type_key": step_id,
+                        "installed_at": "2020-01-01T00:00:00+00:00",
+                        "updated_at": "2020-02-02T00:00:00+00:00",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_step_refresh_rollback_waits_for_concurrent_registry_writer(
+    tmp_path: Path, monkeypatch
+):
+    """The refresh rollback must restore the registry under the step lock.
+
+    A concurrent step operation holds the lock with a registry snapshot taken
+    after the refresh removed the entry. If the rollback restores the entry
+    without the lock, that writer's stale save drops the restored entry. With
+    the lock, the rollback waits and restores against the committed registry,
+    so both entries survive.
+    """
+    import threading
+
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+    from specify_cli.workflows.step.installer import _step_install_transaction
+    from tests.lock_helpers import watch_lock_attempt, wait_until_blocked_or_done
+
+    _seed_installed_step(tmp_path)
+    install_failed = threading.Event()
+    writer_loaded = threading.Event()
+    refresh_done = threading.Event()
+    errors: list[BaseException] = []
+
+    def _failing_install(step_id, *args, **kwargs):
+        install_failed.set()
+        assert writer_loaded.wait(10), "writer never loaded the registry"
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _failing_install)
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    def _refresh():
+        try:
+            manager.refresh(_component("steps", "my-step"))
+        except BundlerError:
+            pass
+        except BaseException as exc:  # noqa: BLE001 - surfaced by the test
+            errors.append(exc)
+        finally:
+            refresh_done.set()
+
+    refresher = threading.Thread(target=_refresh, name="refresher")
+    refresher.start()
+    try:
+        assert install_failed.wait(10), "refresh never reached the reinstall"
+        # Watch only the rollback's lock attempt: removal has already taken
+        # and released the lock in this thread.
+        attempted = watch_lock_attempt(monkeypatch, "refresher")
+        with _step_install_transaction(tmp_path):
+            writer = StepRegistry(tmp_path)
+            assert not writer.is_installed("my-step")
+            writer_loaded.set()
+            wait_until_blocked_or_done(attempted, refresh_done)
+            writer.add("other-step", {"name": "Other", "version": "1.0.0"})
+    finally:
+        writer_loaded.set()
+        refresher.join(10)
+
+    assert not refresher.is_alive()
+    assert errors == []
+    registry = StepRegistry(tmp_path)
+    assert registry.is_installed("other-step")
+    assert registry.is_installed("my-step"), (
+        tmp_path / ".specify" / "workflows" / "steps" / StepRegistry.REGISTRY_FILE
+    ).read_text(encoding="utf-8")
+
+
+def test_step_refresh_rollback_lock_failure_keeps_install_error(
+    tmp_path: Path, monkeypatch
+):
+    """If the rollback cannot take the step lock, it leaves state untouched.
+
+    The reinstall error is still raised, with a note explaining that the
+    previous step was not restored, instead of restoring without the lock.
+    """
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    _seed_installed_step(tmp_path)
+    lock_path = tmp_path / ".specify" / ".step-install.lock"
+
+    def _failing_install(step_id, *args, **kwargs):
+        # Make the lock unobtainable for the rollback only; removal has
+        # already released it.
+        if lock_path.exists():
+            lock_path.unlink()
+        lock_path.mkdir()
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _failing_install)
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    with pytest.raises(BundlerError, match="Failed to install step 'my-step'") as info:
+        manager.refresh(_component("steps", "my-step"))
+
+    notes = "\n".join(getattr(info.value, "__notes__", ()))
+    assert "was not restored" in notes
+    assert "Failed to acquire the step lock" in notes
+    assert not StepRegistry(tmp_path).is_installed("my-step")
+    assert not (tmp_path / ".specify" / "workflows" / "steps" / "my-step").exists()
+
+
+def test_step_refresh_rollback_keeps_concurrently_installed_step(
+    tmp_path: Path, monkeypatch
+):
+    """The rollback must not overwrite a step installed after the removal.
+
+    If another operation registers the same step before the rollback takes
+    the lock, the backup is stale: restoring it would overwrite the new
+    package files and registry entry.
+    """
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    _seed_installed_step(tmp_path)
+    step_dir = tmp_path / ".specify" / "workflows" / "steps" / "my-step"
+    new_entry = {"name": "My Step", "version": "2.0.0", "type_key": "my-step"}
+
+    def _concurrent_install_then_fail(step_id, *args, **kwargs):
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text("new package\n", encoding="utf-8")
+        StepRegistry(tmp_path).add(step_id, new_entry)
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _concurrent_install_then_fail)
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
+        manager.refresh(_component("steps", "my-step"))
+
+    assert StepRegistry(tmp_path).get("my-step")["version"] == "2.0.0"
+    assert (step_dir / "step.yml").read_text(encoding="utf-8") == "new package\n"
+    assert not (step_dir / "__init__.py").exists()
