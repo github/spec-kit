@@ -125,12 +125,22 @@ class SwitchStep(StepBase):
         # flagged, not every string without braces. And a composite key such as
         # `{{ inputs.a }}-{{ inputs.b }}` is legitimate here even though the same
         # shape would be a fault in a boolean condition.
-        elif switch_expression_is_never_evaluated(config["expression"]):
+        #
+        # The declared keys settle the remaining ambiguity, which the expression text
+        # cannot: `inputs.mode` reads like a reference, but against a declared
+        # `inputs.mode:` case it is a literal that dispatches that case on every run,
+        # so it is passed through. Only a reference matching no declared key is left
+        # with nowhere to go but `default`.
+        elif switch_expression_is_never_evaluated(
+            config["expression"],
+            config["cases"].keys() if isinstance(config.get("cases"), dict) else (),
+        ):
             errors.append(
                 f"Switch step {config.get('id', '?')!r}: 'expression' "
                 f"{config['expression']!r} has no usable '{{ }}' block, so it is "
                 "never evaluated: the literal text is matched against the case keys, "
-                "which falls through to 'default' on every run."
+                "none of which declares it, so the switch falls through to 'default' "
+                "on every run."
             )
         elif condition_has_malformed_expression_block(config["expression"]):
             errors.append(

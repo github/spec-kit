@@ -3833,6 +3833,65 @@ class TestSwitchStep:
                 e for e in SwitchStep().validate(config) if "'expression'" in e
             ] == [], expression
 
+    def test_a_reference_declared_as_a_case_key_stays_accepted(self):
+        """The declared keys decide this, not the shape of the expression text.
+
+        `expression: inputs.mode` reads like a reference written without its braces,
+        but with an `inputs.mode:` case declared it is a literal the switch really
+        dispatches, on every run: `execute` matches the resolved value -- for a
+        braceless expression, this very text, stripped -- against `str(case_key)`.
+        That switch is constant, not unevaluated, so the guard leaves it alone.
+        """
+        from specify_cli.workflows.step.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        branch = [{"id": "r", "type": "command", "command": "echo"}]
+        for expression, declared in (
+            ("inputs.mode", "inputs.mode"),
+            ("item[0]", "item[0]"),
+            ("context.run_id", "context.run_id"),
+            # `execute` strips the resolved value before matching, so the padded
+            # form dispatches the unpadded key and must be accepted with it.
+            ("  inputs.mode  ", "inputs.mode"),
+        ):
+            cases = {declared: branch, "review": branch}
+            config = {"id": "route", "expression": expression, "cases": cases}
+
+            # Ground truth first: it really does dispatch the declared case.
+            result = SwitchStep().execute(config, StepContext(inputs={"mode": "review"}))
+            assert result.status == StepStatus.COMPLETED, expression
+            assert result.output["matched_case"] == declared, expression
+            assert [
+                e for e in SwitchStep().validate(config) if "'expression'" in e
+            ] == [], expression
+
+            # Withdraw just that key and the same text has nowhere to go but
+            # `default`, so the guard must fire again. This is what stops the
+            # exemption above from disarming it.
+            without = {"id": "route", "expression": expression, "cases": {"review": branch}}
+            fallthrough = SwitchStep().execute(without, StepContext(inputs={"mode": "review"}))
+            assert fallthrough.output["matched_case"] == "__default__", expression
+            errors = [e for e in SwitchStep().validate(without) if "'expression'" in e]
+            assert len(errors) == 1, expression
+            assert "never evaluated" in errors[0], expression
+
+    def test_a_reference_is_still_rejected_when_cases_are_unusable(self):
+        """A malformed or absent `cases` cannot exempt anything.
+
+        The exemption reads the declared keys, and a non-mapping `cases` has none --
+        it is itself an error `validate` reports separately. The expression must keep
+        its own error rather than fall silent because the keys could not be read.
+        """
+        from specify_cli.workflows.step.switch import SwitchStep
+
+        for cases in ({}, None, [], "review", 3):
+            config = {"id": "route", "expression": "inputs.mode"}
+            if cases is not None:
+                config["cases"] = cases
+            errors = [e for e in SwitchStep().validate(config) if "'expression'" in e]
+            assert len(errors) == 1, cases
+            assert "never evaluated" in errors[0], cases
+
 
 class TestWhileStep:
     """Test the while loop step type."""
