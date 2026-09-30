@@ -133,36 +133,6 @@ class ForgeIntegration(MarkdownIntegration):
             invocation = f"{invocation} {args}"
         return invocation
 
-    def build_exec_args(
-        self,
-        prompt: str,
-        *,
-        model: str | None = None,
-        output_json: bool = True,
-        integration_args: Sequence[str] | None = None,
-        integration_options: Mapping[str, Any] | None = None,
-        project_root: Path | None = None,
-    ) -> list[str] | None:
-        self.validate_runtime_config(integration_args, integration_options)
-        args = [self._resolve_executable()]
-        # Operator-injected extra args go before -p: Forge parses its global
-        # flags ahead of the prompt flag, matching the opencode/goose/codex
-        # ordering.
-        self._apply_extra_args_env_var(args)
-
-        args.extend(["-p", prompt])
-
-        # `model` is deliberately dropped: Forge has no model-selection flag.
-        # Model choice is a persisted setting (`forge config set model`), and
-        # `--agent` takes an agent ID rather than a model identifier, so
-        # forwarding the caller's model onto it would silently select the
-        # wrong thing.
-        #
-        # `output_json` is likewise dropped: Forge has no `--output-format`.
-        # Its machine-readable `--porcelain` exists only on certain
-        # subcommands, not on the top-level prompt invocation.
-        return args
-
     def setup(
         self,
         project_root: Path,

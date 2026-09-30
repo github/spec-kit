@@ -4,7 +4,6 @@
 # dependencies = [
 #     "typer",
 #     "rich",
-#     "platformdirs",
 #     "readchar",
 #     "json5",
 #     "pyyaml",
@@ -273,6 +272,12 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     Returns ``project_path / <agent_folder> / "skills"``, falling back
     to ``project_path / ".agents/skills"`` for unknown agents.
     """
+    if selected_ai == "generic":
+        from .integrations.generic import registration_directory
+
+        return project_path / registration_directory(project_path).relative_to(
+            project_path.resolve()
+        )
     agent_config = AGENT_CONFIG.get(selected_ai, {})
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
@@ -306,15 +311,6 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
 
     agent = opts.get("ai")
     if not isinstance(agent, str) or not agent:
-        return None
-
-    # generic's output directory is a runtime --commands-dir CLI option, not
-    # a static per-agent folder (its config["folder"] is None), so there is
-    # no directory extension/preset skill registration could safely resolve
-    # here even when the project was scaffolded with --skills. Registration
-    # stays disabled for generic in both layouts, matching flat-mode generic
-    # (which never persists ai_skills=True and so never reaches this point).
-    if agent == "generic":
         return None
 
     ai_skills_enabled = _is_ai_skills_enabled(opts)

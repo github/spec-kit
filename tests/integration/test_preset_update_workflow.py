@@ -1,6 +1,6 @@
 """Workflow-level integration tests for ``specify preset update``.
 
-``tests/test_presets.py`` covers the orchestration contract with mocked
+``tests/specify_cli/presets/test_command_update.py`` covers the orchestration contract with mocked
 ``preset_remove``/``preset_add`` calls, which proves *what* the wrapper calls
 but not that the calls are wired to the real install/remove machinery. These
 tests drive the CLI through ``CliRunner`` against a real project and a real

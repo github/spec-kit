@@ -37,6 +37,112 @@ class TestAlquimiaAIIntegration:
         assert integration.config["requires_cli"] is True
         assert integration.multi_install_safe is True
 
+    def test_is_slash_skills_agent(self):
+        """Alquimia installs `.alquimia/skills/speckit-<name>/SKILL.md`, so the
+        invocation helper must report the hyphenated form when skills are on.
+
+        It was the only `SkillsIntegration` subclass absent from every set in
+        `_invocation_style`, so `is_slash_skills_agent` returned False and the
+        two callers that consult it — `HookExecutor._render_hook_invocation`
+        and `specify init`'s Next Steps panel — emitted the dotted
+        `/speckit.<name>` form Alquimia never registers.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert is_slash_skills_agent("alquimia", True) is True
+        # Conditional, not always -- matching the other *conditionally
+        # classified* skills-only agents. Being skills-only does not by itself
+        # imply always-slash: Droid, Grok, Trae and Zed are skills-only too and
+        # sit in `ALWAYS_SLASH_AGENTS`.
+        #
+        # This is NOT a claim that the dotted form is ever right for Alquimia:
+        # it never is. It records what the function returns. The `False`
+        # argument does not arise in practice because `ai_skills` is persisted
+        # straight from `is_skills_mode()`, which `SkillsIntegration` returns
+        # unconditionally -- see
+        # `test_ai_skills_is_always_persisted_for_alquimia`.
+        assert is_slash_skills_agent("alquimia", False) is False
+
+    def test_ai_skills_is_always_persisted_for_alquimia(self):
+        """The conditional resolves to True for every real Alquimia project.
+
+        Both writers of `ai_skills` key off `integration.is_skills_mode(...)`
+        (`commands/init.py` on init, `integrations/_helpers.py` on
+        install/use/upgrade), and `SkillsIntegration.is_skills_mode` returns
+        True unconditionally. So `is_ai_skills_enabled(opts)` is True for any
+        Alquimia project written by any supported path, and the conditional
+        classification behaves exactly like an always-slash one *for Alquimia*.
+
+        This is deliberately not offered as a discriminator between the two
+        sets: every `SkillsIntegration` subclass records `ai_skills` the same
+        way, including the always-slash ones, so persistence does not tell the
+        sets apart. It says only that the conditional is satisfied here.
+        """
+        integration = get_integration("alquimia")
+        assert integration.is_skills_mode() is True
+        assert integration.is_skills_mode({}, project_root=None) is True
+
+    def test_classified_as_a_conditional_slash_agent(self):
+        """Alquimia is classified in `CONDITIONAL_SLASH_AGENTS`, not the always set.
+
+        This asserts Alquimia's own classification only. Being a
+        `SkillsIntegration` does not by itself imply always-slash --
+        `ALWAYS_SLASH_AGENTS` and `CONDITIONAL_SLASH_AGENTS` both contain
+        `SkillsIntegration` subclasses, and the split is a conventional grouping
+        rather than a rule the code enforces. For a skills-only integration the
+        two are behaviourally equivalent anyway, since `ai_skills` is always
+        recorded.
+
+        Other integrations' classification is deliberately NOT asserted here:
+        that would make this suite fail whenever one of them is legitimately
+        reclassified, and any fixed peer list is liable to drift out of date.
+        """
+        from specify_cli._invocation_style import (
+            ALWAYS_SLASH_AGENTS,
+            CONDITIONAL_SLASH_AGENTS,
+        )
+
+        assert "alquimia" in CONDITIONAL_SLASH_AGENTS
+        assert "alquimia" not in ALWAYS_SLASH_AGENTS
+
+    def test_hook_invocation_renders_the_hyphenated_form(
+        self, tmp_path, monkeypatch
+    ):
+        """The real hook renderer must emit `/speckit-git-commit`.
+
+        This drives `HookExecutor._render_hook_invocation` -- one of the two
+        production consumers of `is_slash_skills_agent` -- rather than
+        re-deciding the branch in the test. Its non-slash path ends at
+        `return f"/{command_id}"`, so before this change the renderer emitted
+        the dotted `/speckit.git.commit`, a command Alquimia never registers.
+        """
+        import specify_cli
+        from specify_cli.extensions import HookExecutor
+
+        monkeypatch.setattr(
+            specify_cli,
+            "load_init_options",
+            lambda _root: {"ai": "alquimia", "ai_skills": True},
+        )
+
+        rendered = HookExecutor(tmp_path)._render_hook_invocation("speckit.git.commit")
+
+        assert rendered == "/speckit-git-commit"
+        assert "/speckit." not in rendered
+
+    def test_build_command_invocation_matches_the_invocation_helper(self):
+        """The integration's own renderer and the helper must agree.
+
+        `SkillsIntegration.build_command_invocation` already returned
+        `/speckit-plan`; only the helper disagreed, which is why the two
+        outputs diverged for the same on-disk layout.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        integration = get_integration("alquimia")
+        assert integration.build_command_invocation("plan") == "/speckit-plan"
+        assert is_slash_skills_agent("alquimia", True) is True
+
     def test_build_exec_args_uses_headless_prompt_flag(self):
         """Workflow dispatch relies on the inherited
         ``SkillsIntegration.build_exec_args()`` — pin its argv shape so a

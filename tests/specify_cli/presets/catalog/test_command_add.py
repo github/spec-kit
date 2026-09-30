@@ -9,6 +9,33 @@ import yaml
 class TestPresetCatalogAdd:
     """Test multi-catalog support in PresetCatalog."""
 
+    def test_catalog_add_is_idempotent_for_identical_entry(self, project_dir):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        args = [
+            "preset",
+            "catalog",
+            "add",
+            "https://example.com/catalog.json",
+            "--name",
+            "community",
+        ]
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            assert runner.invoke(app, args).exit_code == 0
+            config_path = project_dir / ".specify" / "preset-catalogs.yml"
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            config["catalogs"][0]["metadata"] = "preserve me"
+            config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+            original = config_path.read_bytes()
+            assert runner.invoke(app, args).exit_code == 0
+            assert config_path.read_bytes() == original
+            assert runner.invoke(app, [*args, "--priority", "11"]).exit_code == 1
+
     def test_catalog_add_escapes_rich_markup(self, project_dir):
         """`preset catalog add` must not parse the name/url as Rich markup.
 

@@ -1717,7 +1717,7 @@ class TestExtensionSkillRegistration:
 
         Mirrors the analogous preset-side fix
         (``test_toggle_command_to_skills_preserves_old_command_on_skills_failure``
-        in ``tests/test_presets.py``): before the fix, the stale
+        in ``tests/specify_cli/presets/test_manager_commands.py``): before the fix, the stale
         command-mode file/tracking was unregistered unconditionally as soon
         as the commands phase was skipped for ``skills_mode_active``,
         regardless of whether the subsequent, independently-fallible

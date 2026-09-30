@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -1280,6 +1281,194 @@ class TestIntegrationUpgradeDetailed:
         ])
         assert result.exit_code == 0, result.output
         assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+
+    def test_upgrade_force_syncs_manifest_hash_for_preset_overridden_skill(
+        self, tmp_path
+    ):
+        """Regression for #4696.
+
+        A preset overriding a core command that renders as a skill
+        (e.g. ``speckit.tasks`` for ``codex``/``claude``) is rewritten by
+        ``_register_presets_for_agent`` *after* ``new_manifest.save()`` during
+        ``integration upgrade --force``. Without a post-registration resync,
+        the manifest keeps the base template's hash for that skill file, so
+        ``integration status`` immediately reports it as modified and a
+        subsequent ``upgrade`` (without ``--force``) is blocked.
+        """
+        import yaml
+
+        project = _init_project(tmp_path, "claude")
+
+        preset_src = tmp_path / "tasks-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.tasks.md").write_text(
+            "---\ndescription: Tasks override\n---\nPreset tasks body\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "tasks-preset",
+                "name": "Tasks Preset",
+                "version": "1.0.0",
+                "description": "Preset overriding speckit.tasks",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.tasks",
+                        "file": "commands/speckit.tasks.md",
+                    }
+                ]
+            },
+        }
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest), encoding="utf-8"
+        )
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, result.output
+
+        skill_rel = ".claude/skills/speckit-tasks/SKILL.md"
+        skill_file = project / skill_rel
+        assert "Preset tasks body" in skill_file.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        manifest_path = project / ".specify" / "integrations" / "claude.manifest.json"
+        recorded_hash = json.loads(manifest_path.read_text(encoding="utf-8"))["files"][skill_rel]
+        actual_hash = hashlib.sha256(skill_file.read_bytes()).hexdigest()
+        assert recorded_hash == actual_hash, (
+            "manifest hash for the preset-overridden skill must match the "
+            "file `_register_presets_for_agent` just wrote"
+        )
+
+        status_result = _run_in_project(project, ["integration", "status"])
+        assert "Integration status: OK" in status_result.output, status_result.output
+        assert "Modified managed files: 0" in status_result.output
+        assert "managed-files-modified" not in status_result.output
+
+    def test_resync_manifest_warns_on_per_file_failure_and_keeps_going(
+        self, tmp_path, capsys
+    ):
+        """A single file's rehash failure must warn, not vanish silently.
+
+        ``_resync_manifest_after_registration`` best-effort-skips files it
+        can't rehash, but a skip that produces no warning leaves the user
+        with a stale hash and no signal that the manifest wasn't fully
+        synchronized. Rehashing must also continue for the remaining files.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+        (project / "bad.md").write_text("bad content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("ok.md")
+        manifest.record_existing("bad.md")
+        stale_hash = manifest._files["bad.md"]
+        manifest.save()
+
+        # Both files' bytes changed on disk after the manifest was saved
+        # (simulating registration overwriting them), but only "bad.md"
+        # fails to rehash.
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+        (project / "bad.md").write_text("bad content v2\n", encoding="utf-8")
+
+        real_record_existing = IntegrationManifest.record_existing
+
+        def fake_record_existing(self, rel_path, **kwargs):
+            if str(rel_path) == "bad.md":
+                raise OSError("permission denied")
+            return real_record_existing(self, rel_path, **kwargs)
+
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            IntegrationManifest, "record_existing", fake_record_existing
+        ):
+            _resync_manifest_after_registration(
+                manifest, "claude", continuing="Continuing."
+            )
+
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "bad.md" in captured
+
+        reloaded = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+        ok_hash = hashlib.sha256(
+            (project / "ok.md").read_bytes()
+        ).hexdigest()
+        assert reloaded["files"]["ok.md"] == ok_hash
+        assert reloaded["files"]["bad.md"] == stale_hash
+
+    def test_resync_manifest_probe_error_does_not_abort_remaining_files(
+        self, tmp_path, capsys
+    ):
+        """An ``OSError`` from the pre-rehash filesystem probes must warn
+        and continue, not abort the whole resync loop.
+
+        ``is_symlink()``/``is_file()`` run before the per-file ``try`` that
+        wraps ``record_existing()``. If one of those probes raises (e.g. an
+        inaccessible path), it must not jump past the remaining files in
+        ``new_manifest.files`` and leave their hashes stale.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "bad.md").write_text("bad content\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("bad.md")
+        manifest.record_existing("ok.md")
+        manifest.save()
+
+        # Both files' bytes changed on disk after the manifest was saved
+        # (simulating registration overwriting them), but "bad.md" fails
+        # during the pre-rehash filesystem probe, not during rehashing.
+        (project / "bad.md").write_text("bad content v2\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+
+        real_is_file = Path.is_file
+
+        def fake_is_file(self):
+            if self.name == "bad.md":
+                raise OSError("permission denied")
+            return real_is_file(self)
+
+        import unittest.mock as mock
+
+        with mock.patch.object(Path, "is_file", fake_is_file):
+            _resync_manifest_after_registration(
+                manifest, "claude", continuing="Continuing."
+            )
+
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "bad.md" in captured
+
+        reloaded = json.loads(manifest.manifest_path.read_text(encoding="utf-8"))
+        ok_hash = hashlib.sha256((project / "ok.md").read_bytes()).hexdigest()
+        assert reloaded["files"]["ok.md"] == ok_hash, (
+            "a probe error on an earlier file must not abort rehashing of "
+            "the remaining tracked files"
+        )
 
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.

@@ -28,6 +28,7 @@ PUBLISH_VALIDATION_STEPS = (
     "Verify tag format",
     "Verify tag matches package version",
 )
+LINT_WORKFLOW = WORKFLOWS_DIR / "lint.yml"
 FEATURE_ASSESS_WORKFLOW = WORKFLOWS_DIR / "feature-assess.md"
 FEATURE_ASSESS_COMPILED_WORKFLOW = WORKFLOWS_DIR / "feature-assess.lock.yml"
 FEATURE_ASSESS_LABELS = {
@@ -1448,3 +1449,42 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
     )
     assert result.stdout.splitlines() == ["pip", "install", "--system", "-e", ".[test]"]
     assert result.returncode == exit_code, result.stderr
+
+
+def _markdownlint_job() -> dict:
+    workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
+    return workflow["jobs"]["markdownlint"]
+
+
+def _documentation_globs() -> list[str]:
+    raw = _markdownlint_job()["env"]["DOC_GLOBS"]
+    return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+def test_markdownlint_globs_are_not_quoted():
+    """A quoted glob is taken literally, matches nothing, and still exits 0 (#4526)."""
+    for glob in _documentation_globs():
+        assert glob[0] not in "'\"", f"{glob} is quoted, so it would match literally"
+        assert glob[-1] not in "'\"", f"{glob} is quoted, so it would match literally"
+
+
+def test_every_markdownlint_glob_matches_a_file():
+    """A stale glob leaves that part of the docs silently unlinted (#4526)."""
+    empty = [
+        glob
+        for glob in _documentation_globs()
+        if not any(path.is_file() for path in REPO_ROOT.glob(glob))
+    ]
+    assert empty == [], f"globs matching no files: {empty}"
+
+
+def test_markdownlint_step_lints_the_documentation_globs():
+    steps = _markdownlint_job()["steps"]
+    linters = [
+        step
+        for step in steps
+        if isinstance(step.get("uses"), str)
+        and "markdownlint-cli2-action" in step["uses"]
+    ]
+    assert len(linters) == 1
+    assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"

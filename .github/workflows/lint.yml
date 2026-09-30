@@ -10,6 +10,20 @@ on:
 jobs:
   markdownlint:
     runs-on: ubuntu-latest
+    env:
+      DOC_GLOBS: |
+        docs/**/*.md
+        README.md
+        README.zh-CN.md
+        CODE_OF_CONDUCT.md
+        CONTRIBUTING.md
+        DEVELOPMENT.md
+        SECURITY.md
+        SUPPORT.md
+        spec-driven.md
+        integrations/*.md
+        presets/*.md
+        workflows/*.md
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,12 +50,46 @@ jobs:
             git diff --check refs/checks/push-before HEAD
           fi
 
+      # Documentation only. Commands, skills, prompt templates, agent
+      # instructions (AGENTS.md) and .github/ content are inputs to coding
+      # agents rather than prose, and are deliberately left unlinted so a
+      # documentation pass never reformats them. Add new documentation
+      # paths to the DOC_GLOBS list above.
+      - name: Verify the documentation globs match files
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          # Checked per glob, not on the total: one stale entry among several
+          # still leaves that part of the documentation unlinted, which is the
+          # failure #4526 was about.
+          count=0
+          empty=()
+          while IFS= read -r glob; do
+            [ -z "$glob" ] && continue
+            matched=0
+            for path in $glob; do
+              [ -f "$path" ] && matched=$((matched + 1))
+            done
+            # An array, not a string: nullglob is on, so re-expanding an
+            # unquoted list of unmatched globs would erase it.
+            [ "$matched" -eq 0 ] && empty+=("$glob")
+            count=$((count + matched))
+          done <<< "$DOC_GLOBS"
+
+          echo "documentation files matched: $count"
+          if [ ${#empty[@]} -gt 0 ]; then
+            for glob in "${empty[@]}"; do
+              echo "::error::markdownlint glob matches no files: $glob (see #4526)"
+            done
+            exit 1
+          fi
+
       - name: Run markdownlint-cli2
         uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
-          globs: |
-            '**/*.md'
-            !extensions/**/*.md
+          globs: ${{ env.DOC_GLOBS }}
 
   shellcheck:
     runs-on: ubuntu-latest
