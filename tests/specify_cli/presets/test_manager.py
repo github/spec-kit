@@ -349,6 +349,14 @@ class TestPresetManager:
             manager.install_from_directory(pack_dir, "0.1.5", force=True)
         assert (real_target / "preset.yml").exists()
 
+    def test_remove_registered_preset_with_missing_dir(self, project_dir):
+        """A valid registered preset whose directory is already gone is removed."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        assert manager.remove("test-pack") is True
+        assert not manager.registry.is_installed("test-pack")
+
     def test_remove_refuses_dangling_symlinked_preset_dir(self, project_dir):
         """A dangling symlink must fail explicitly rather than be silently skipped.
 

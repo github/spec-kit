@@ -230,7 +230,7 @@ class _PresetKindManager:
         if not removed:
             raise BundlerError(
                 f"Failed to remove preset '{component.id}': removal was "
-                "refused (unsafe registry id or symlinked target)."
+                "refused (unsafe registry id or unexpected on-disk target)."
             )
 
 
@@ -326,7 +326,7 @@ class _ExtensionKindManager:
         if not removed:
             raise BundlerError(
                 f"Failed to remove extension '{component.id}': removal was "
-                "refused (unsafe registry id or symlinked target)."
+                "refused (unsafe registry id or unexpected on-disk target)."
             )
 
 
