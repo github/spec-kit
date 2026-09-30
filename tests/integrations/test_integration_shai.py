@@ -18,11 +18,12 @@ class TestShaiIntegration(MarkdownIntegrationTests):
 
 
 class TestShaiCliDispatch:
-    """SHAI has no argv form that runs a prompt (#2416).
+    """SHAI's CLI can't run an installed Spec Kit command (#2416).
 
-    Its CLI treats every argument, `-p` included, as text for its auto-fix
-    agent and exits 0, so dispatching `shai -p <prompt>` marked workflow steps
-    completed without running the command.
+    Its argument, stdin and `shai agent <name> <prompt>` routes all hand the
+    text to its auto-fix agent, which exits 0, and `.shai/commands` is never
+    loaded, so dispatching `shai -p <prompt>` marked workflow steps completed
+    without running the command.
     """
 
     def test_build_exec_args_opts_out(self):
