@@ -152,9 +152,12 @@ following skills available in your coding agent. For other agents or modes, see
 - `/speckit-taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
   `/speckit-github-taskstoissues`; install it with `specify extension add github`)
 
-The `generic` integration scaffolds core commands or skills, but does not
-register extension add-ons; installing `github` there does not make its
-replacement command invokable. See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
+The `generic` integration also registers extension commands in its configured
+`--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`
+available there as a command file, or as `/speckit-github-taskstoissues` when
+`--skills` is enabled. The core `/speckit.taskstoissues` (or
+`/speckit-taskstoissues` with `--skills`) remains available.
+See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
