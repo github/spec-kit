@@ -20,10 +20,10 @@ class TestShaiIntegration(MarkdownIntegrationTests):
 class TestShaiCliDispatch:
     """SHAI's CLI can't run an installed Spec Kit command (#2416).
 
-    Its argument, stdin and `shai agent <name> <prompt>` routes all hand the
-    text to its auto-fix agent, which exits 0, and `.shai/commands` is never
-    loaded, so dispatching `shai -p <prompt>` marked workflow steps completed
-    without running the command.
+    SHAI's argument, stdin and `shai agent <name> <prompt>` routes all pass
+    the text to its auto-fix agent, which exits 0, and `.shai/commands` is
+    never loaded, so dispatching `shai -p <prompt>` marked workflow steps
+    completed without running the command.
     """
 
     def test_build_exec_args_opts_out(self):
