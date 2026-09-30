@@ -45,7 +45,7 @@ class KiroCliIntegration(MarkdownIntegration):
         with only the legacy binary passes preflight and then fails to launch.
         """
         resolved = super()._resolve_executable()
-        if resolved != self.key:
+        if self._executable_override() is not None:
             return resolved
         if shutil.which(resolved) is None and shutil.which("kiro"):
             return "kiro"

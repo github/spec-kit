@@ -80,7 +80,7 @@ class ClaudeIntegration(SkillsIntegration):
         install found later in the list.
         """
         resolved = super()._resolve_executable()
-        if resolved != self.key or shutil.which(resolved):
+        if self._executable_override() is not None or shutil.which(resolved):
             return resolved
         for candidate in (_utils.CLAUDE_LOCAL_PATH, _utils.CLAUDE_NPM_LOCAL_PATH):
             if candidate.is_file() and os.access(candidate, os.X_OK):
