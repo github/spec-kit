@@ -681,6 +681,86 @@ def test_checkpoint_failure_leaves_running_run_not_resumable(
     assert probe["work"] == 1
 
 
+def _interrupt_state_write(monkeypatch, when):
+    """Raise ``KeyboardInterrupt`` from the first ``state.json`` write matching *when*."""
+    original = RunState._atomic_write_json
+    fired = []
+
+    def write(path, data):
+        if path.name == "state.json" and not fired and when(data):
+            fired.append(path)
+            raise KeyboardInterrupt
+        original(path, data)
+
+    monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
+    return fired
+
+
+def _logged_events(state):
+    log = (state.runs_dir / "log.jsonl").read_text(encoding="utf-8").splitlines()
+    return [json.loads(line)["event"] for line in log]
+
+
+@pytest.mark.parametrize("scope", ["root", "workflow-call"])
+def test_interrupt_during_checkpoint_pauses_run(tmp_path, monkeypatch, probe, scope):
+    steps = [{"id": "first", "type": "probe"}, {"id": "second", "type": "probe"}]
+    if scope == "workflow-call":
+        install(tmp_path, definition("child", steps))
+        steps = [call()]
+    # Interrupt the checkpoint that marks ``second`` active, after ``first`` ran.
+    fired = _interrupt_state_write(
+        monkeypatch, lambda data: data.get("current_step_id") == "second"
+    )
+
+    state = WorkflowEngine(tmp_path).execute(definition("parent", steps))
+
+    # A graceful interrupt is not a checkpoint failure: it reaches the engine's
+    # pause path, as on main, even inside a called workflow.
+    assert fired
+    assert state.status == RunStatus.PAUSED
+    assert RunState.load(state.run_id, tmp_path).status == RunStatus.PAUSED
+    assert _logged_events(state)[-1] == "workflow_interrupted"
+    assert probe == {"first": 1}
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {"first": 1, "second": 1}
+
+
+def test_interrupt_during_resume_checkpoint_pauses_run(tmp_path, monkeypatch, probe):
+    root = definition(
+        "parent",
+        [
+            {"id": "wait", "type": "probe", "await": True},
+            {"id": "next", "type": "probe"},
+        ],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    # Interrupt the checkpoint that records ``wait`` as completed on resume.
+    fired = _interrupt_state_write(
+        monkeypatch,
+        lambda data: data.get("step_results", {}).get("wait", {}).get("status")
+        == "completed",
+    )
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert fired
+    assert state.status == RunStatus.PAUSED
+    assert RunState.load(state.run_id, tmp_path).status == RunStatus.PAUSED
+    assert _logged_events(state)[-1] == "workflow_interrupted"
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    # The interrupted checkpoint's transition is saved by the pause, so the
+    # completed ``wait`` is not run a third time.
+    assert state.status == RunStatus.COMPLETED
+    assert probe == {"wait": 2, "next": 1}
+
+
 def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypatch):
     import specify_cli.workflows._execution as execution
     from specify_cli.workflows._execution import CheckpointError

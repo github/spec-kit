@@ -774,7 +774,10 @@ class RunState:
             try:
                 self._atomic_write_json(runs_dir / "state.json", state_data)
                 self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
-            except BaseException as exc:
+            except Exception as exc:
+                # Only write failures poison the instance. A graceful interrupt
+                # (KeyboardInterrupt) propagates unchanged so execute()/resume()
+                # pause the run, as on main; the pause re-saves from memory.
                 from ._execution import CheckpointError
 
                 self._checkpoint_failed = True
