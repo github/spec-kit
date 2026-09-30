@@ -152,7 +152,7 @@ class _PresetKindManager:
 
     def is_installed(self, component: ComponentRef) -> bool:
         try:
-            return self._manager.get_pack(component.id) is not None
+            return self._manager.registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
 

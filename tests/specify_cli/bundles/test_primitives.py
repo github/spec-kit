@@ -116,6 +116,21 @@ def test_preset_remove_propagates_refusal_as_bundler_error(tmp_path: Path):
     assert manager._manager.registry.is_installed("test-preset")
 
 
+def test_preset_is_installed_uses_registry_for_corrupt_symlink_target(tmp_path: Path):
+    """``remove_bundle()`` only calls ``remove()`` when ``is_installed()`` is
+    true, so a registered preset behind a symlink must still count as installed.
+    """
+    manager = primitive_manager("presets", tmp_path)
+    manager._manager.registry.add("test-preset", {"version": "1.0.0"})
+    pack_dir = tmp_path / ".specify" / "presets" / "test-preset"
+    pack_dir.parent.mkdir(parents=True, exist_ok=True)
+    real_target = tmp_path / "real-target"
+    real_target.mkdir()
+    pack_dir.symlink_to(real_target, target_is_directory=True)
+
+    assert manager.is_installed(_component("presets", "test-preset"))
+
+
 @pytest.mark.parametrize("kind", ["presets", "extensions", "workflows", "steps"])
 def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: str):
     installer = DefaultPrimitiveInstaller(allow_network=False)

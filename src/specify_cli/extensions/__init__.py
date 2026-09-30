@@ -2990,6 +2990,11 @@ class ExtensionManager:
                 or backup_dir.is_symlink()
                 or (backup_root.exists() and not backup_root.is_dir())
                 or (backup_dir.exists() and not backup_dir.is_dir())
+                or any(
+                    (backup_dir / f.name).is_symlink()
+                    for f in list(extension_dir.glob("*-config.yml"))
+                    + list(extension_dir.glob("*-config.local.yml"))
+                )
             ):
                 return False
 

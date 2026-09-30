@@ -3391,6 +3391,38 @@ class TestExtensionManager:
         assert ext_dir.exists()
         assert manager.registry.is_installed("test-ext")
 
+    def test_remove_refuses_symlinked_backup_config_file(
+        self, extension_dir, project_dir
+    ):
+        """A symlink at ``.backup/<id>/<config>`` must not be written through."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        (ext_dir / "test-ext-config.yml").write_text("a: 1\n")
+        backup_dir = ext_dir.parent / ".backup" / "test-ext"
+        backup_dir.mkdir(parents=True)
+        outside = project_dir.parent / "outside-target.yml"
+        outside.write_text("original")
+        (backup_dir / "test-ext-config.yml").symlink_to(outside)
+
+        assert manager.remove("test-ext", keep_config=False) is False
+        assert outside.read_text() == "original"
+        assert ext_dir.exists()
+        assert manager.registry.is_installed("test-ext")
+
+    def test_remove_refuses_regular_file_extension_dir(self, project_dir):
+        """A regular file at the extension path is preserved and not unregistered."""
+        manager = ExtensionManager(project_dir)
+        manager.registry.add("test-ext", {"version": "1.0.0"})
+        ext_path = project_dir / ".specify" / "extensions" / "test-ext"
+        ext_path.parent.mkdir(parents=True, exist_ok=True)
+        ext_path.write_text("not a directory")
+
+        assert manager.remove("test-ext") is False
+        assert ext_path.read_text() == "not a directory"
+        assert manager.registry.is_installed("test-ext")
+
     def test_remove_refuses_dangling_symlinked_extension_dir(self, project_dir):
         """A dangling symlink must fail explicitly rather than be silently skipped.
 
