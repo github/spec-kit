@@ -1054,6 +1054,30 @@ def _collect_reserved_step_ids(steps: list[dict[str, Any]]) -> frozenset[str]:
     return frozenset(ids)
 
 
+#: Marks a reserved id that was absent from ``context.steps`` when a
+#: sequential fan-out item first overwrote it (see ``_journal_reserved_write``).
+_MISSING_STEP = object()
+
+
+def _journal_reserved_write(
+    steps: dict[str, Any], journal: dict[str, Any] | None, orig_id: str
+) -> None:
+    """Remember *orig_id*'s current value in *steps* before an item-local
+    write overwrites it, so ``_run_fan_out``'s ``run_item`` can restore it
+    once the sequential item that owns *journal* finishes.
+
+    Only the first write per id is recorded (that is the pre-item value);
+    later writes within the same item are ignored. ``journal`` is ``None``
+    everywhere except inside a sequential (non-isolated) fan-out item, so
+    this is a no-op on every other path. Capturing lazily at write time
+    keeps the per-item cost proportional to the reserved ids the item
+    actually touches, rather than snapshotting every reserved id in the
+    workflow for every item.
+    """
+    if journal is not None and orig_id not in journal:
+        journal[orig_id] = steps.get(orig_id, _MISSING_STEP)
+
+
 # -- Workflow Engine ------------------------------------------------------
 
 
@@ -1360,6 +1384,7 @@ class WorkflowEngine:
         alias_local_only: bool = False,
         alias_may_collide: bool = False,
         alias_records: dict[str, dict[str, Any]] | None = None,
+        restore_journal: dict[str, Any] | None = None,
     ) -> None:
         """Execute a list of steps sequentially.
 
@@ -1408,6 +1433,13 @@ class WorkflowEngine:
         renames itself dynamically at runtime (see ``_rename_step_tree_ids``)
         and so has no entry in the caller's static ``alias_map`` — only a
         write-time accumulator sees aliases at every nesting depth.
+
+        ``restore_journal``, when given, is the enclosing sequential fan-out
+        item's ``{original_id: pre-item value}`` journal (see
+        ``_journal_reserved_write``): every collision-guard write of a
+        reserved id into the shared ``context.steps`` records that id's prior
+        value there first, so ``run_item`` can undo exactly those writes
+        once the item finishes.
         """
         for i, step_config in enumerate(steps):
             step_id = step_config.get("id", f"step-{i}")
@@ -1475,6 +1507,9 @@ class WorkflowEngine:
                         alias_may_collide and orig_id in context.reserved_step_ids
                     )
                     if alias_local_only or skip_shared:
+                        _journal_reserved_write(
+                            context.steps, restore_journal, orig_id
+                        )
                         context.steps[orig_id] = step_data
                         if alias_records is not None:
                             alias_records[orig_id] = step_data
@@ -1614,6 +1649,7 @@ class WorkflowEngine:
                                 alias_local_only=alias_local_only,
                                 alias_may_collide=alias_may_collide,
                                 alias_records=alias_records,
+                                restore_journal=restore_journal,
                             )
                             if state.status in (
                                 RunStatus.PAUSED,
@@ -1628,6 +1664,7 @@ class WorkflowEngine:
                         alias_local_only=alias_local_only,
                         alias_may_collide=alias_may_collide,
                         alias_records=alias_records,
+                        restore_journal=restore_journal,
                     )
                     if state.status in (
                         RunStatus.PAUSED,
@@ -1650,6 +1687,7 @@ class WorkflowEngine:
                         result.output.get("max_concurrency", 1),
                         parent_local_only=alias_local_only,
                         parent_alias_records=alias_records,
+                        parent_restore_journal=restore_journal,
                     )
                     # No ``context.item = None`` reset here: _run_fan_out
                     # restores (sequential) or never touches (concurrent) the
@@ -1685,6 +1723,7 @@ class WorkflowEngine:
         *,
         parent_local_only: bool = False,
         parent_alias_records: dict[str, dict[str, Any]] | None = None,
+        parent_restore_journal: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Run a fan-out template once per item; return per-item outputs in item order.
 
@@ -1726,6 +1765,10 @@ class WorkflowEngine:
         this fan-out's bare-id aliases too, so they are still published when
         the enclosing item finishes, mirroring how a nested while/do-while
         body's dynamic alias already reaches that accumulator.
+        ``parent_restore_journal`` is the enclosing sequential item's
+        reserved-id journal (see ``_journal_reserved_write``), so a reserved
+        alias this fan-out publishes into that item's steps view is undone
+        when that item finishes.
         """
         if not items:
             return []
@@ -1802,20 +1845,19 @@ class WorkflowEngine:
             # value into ``context.steps[orig_id]`` (so a later sibling step
             # within THIS item's own template resolves correctly — see
             # _execute_steps), but that write lands directly in the shared
-            # object. Snapshot each colliding id's pre-item value here so it
-            # can be restored once this item finishes, so that transient
+            # object. Each such write first records the id's pre-item value
+            # in ``restore_journal`` (see _journal_reserved_write) so it can
+            # be restored once this item finishes, so that transient
             # item-local write never leaks to the next item or to code
-            # outside this fan-out. The concurrent path needs no equivalent:
-            # its writes land in the private ``item_steps`` copy above, which
-            # is simply discarded below instead of merged back wholesale.
-            restore_values: dict[str, Any] = {}
-            restore_missing: set[str] = set()
-            if not local_only:
-                for orig in context.reserved_step_ids:
-                    if orig in original_steps:
-                        restore_values[orig] = original_steps[orig]
-                    else:
-                        restore_missing.add(orig)
+            # outside this fan-out. Recording lazily at write time — rather
+            # than snapshotting every reserved id up front — keeps the
+            # per-item cost bounded by the ids this item actually touches,
+            # including ones aliased dynamically by a nested while/do-while
+            # body or published by a nested fan-out. The concurrent path
+            # needs no journal: its writes land in the private
+            # ``item_steps`` copy above, which is simply discarded below
+            # instead of merged back wholesale.
+            restore_journal: dict[str, Any] | None = None if local_only else {}
 
             # Accumulates every context.steps-only alias write from anywhere
             # in this item's subtree, including inside a nested while/do-while
@@ -1831,14 +1873,16 @@ class WorkflowEngine:
                     [item_step], item_ctx, state, registry, step_offset=-1,
                     alias_map=id_map, alias_local_only=local_only,
                     alias_may_collide=True, alias_records=alias_records,
+                    restore_journal=restore_journal,
                 )
             finally:
                 item_ctx.steps = original_steps
-                if not local_only:
-                    for orig, val in restore_values.items():
-                        original_steps[orig] = val
-                    for orig in restore_missing:
-                        original_steps.pop(orig, None)
+                if restore_journal:
+                    for orig, val in restore_journal.items():
+                        if val is _MISSING_STEP:
+                            original_steps.pop(orig, None)
+                        else:
+                            original_steps[orig] = val
             steps_view = item_steps if local_only else item_ctx.steps
             if local_only and original_steps is not state.step_results:
                 for new_id in id_map:
@@ -1890,6 +1934,11 @@ class WorkflowEngine:
                         # item's own run_item snapshot/restore still keeps a
                         # reserved id's transient value from leaking past
                         # that item.
+                        for orig_id in item_alias_records:
+                            if orig_id in context.reserved_step_ids:
+                                _journal_reserved_write(
+                                    context.steps, parent_restore_journal, orig_id
+                                )
                         context.steps.update(item_alias_records)
                         if parent_alias_records is not None:
                             parent_alias_records.update(item_alias_records)
@@ -2050,8 +2099,12 @@ class WorkflowEngine:
                         # still expose the item-local value to a later
                         # sibling within that enclosing item, via its own
                         # steps view and accumulator only. The enclosing
-                        # item's run_item restores every reserved id once it
-                        # finishes, so this never outlives that item.
+                        # item's run_item restores every reserved id it
+                        # journaled (recorded just below) once it finishes,
+                        # so this never outlives that item.
+                        _journal_reserved_write(
+                            context.steps, parent_restore_journal, orig_id
+                        )
                         context.steps[orig_id] = data
                         parent_alias_records[orig_id] = data
                     continue

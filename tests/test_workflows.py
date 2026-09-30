@@ -7156,6 +7156,101 @@ steps:
         assert state.step_results["leaf"] == unrelated_result
         assert context.steps["leaf"] == unrelated_result
 
+    def test_fan_out_sequential_restore_touches_only_written_reserved_ids(
+        self, tmp_path
+    ):
+        """The sequential path's reserved-id restore must be proportional to
+        the ids an item actually overwrites, not to the workflow size.
+
+        Previously every sequential item snapshotted (and afterwards
+        restored) EVERY reserved id in the workflow, i.e. O(items x
+        workflow steps) work for a template that collides with none of
+        them. The steps dict here records every key it is asked about; a
+        reserved id the template never aliases must never be looked up.
+        """
+        from specify_cli.workflows.base import RunStatus, StepBase, StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _TrackingSteps(dict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.touched: set[str] = set()
+
+            def __contains__(self, key):
+                self.touched.add(key)
+                return super().__contains__(key)
+
+            def __getitem__(self, key):
+                self.touched.add(key)
+                return super().__getitem__(key)
+
+            def get(self, key, default=None):
+                self.touched.add(key)
+                return super().get(key, default)
+
+            def pop(self, key, *args):
+                self.touched.add(key)
+                return super().pop(key, *args)
+
+        class _LeafStep(StepBase):
+            type_key = "leaf-step"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        unrelated = [f"other-{i}" for i in range(50)]
+        context = StepContext(reserved_step_ids=frozenset({"leaf", *unrelated}))
+        context.steps = _TrackingSteps(
+            {oid: {"output": {"marker": oid}} for oid in unrelated}
+        )
+        leaf_result = {"output": {"marker": "outside"}}
+        context.steps["leaf"] = leaf_result
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"leaf-step": _LeafStep()}
+        template = {"id": "leaf", "type": "leaf-step"}
+        engine._run_fan_out(["a", "b"], template, "fan", context, state, registry, 1)
+
+        assert context.steps.touched.isdisjoint(unrelated)
+        # The id the template DID collide with is still restored.
+        assert context.steps["leaf"] == leaf_result
+        for oid in unrelated:
+            assert dict.__getitem__(context.steps, oid) == {"output": {"marker": oid}}
+
+    def test_fan_out_sequential_restore_removes_reserved_id_absent_before_item(
+        self, tmp_path
+    ):
+        """A reserved id that has no result yet (its real step runs AFTER
+        the fan-out) must not be left behind in the live context by a
+        colliding template's item-local write: once the item finishes the
+        key is removed again, so the later real step is the first to set it.
+        """
+        from specify_cli.workflows.base import RunStatus, StepBase, StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _LeafStep(StepBase):
+            type_key = "leaf-step"
+
+            def execute(self, config, context):
+                return StepResult(
+                    status=StepStatus.COMPLETED, output={"marker": context.item}
+                )
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext(reserved_step_ids=frozenset({"leaf"}))
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"leaf-step": _LeafStep()}
+        template = {"id": "leaf", "type": "leaf-step"}
+        engine._run_fan_out(["a", "b"], template, "fan", context, state, registry, 1)
+
+        assert "leaf" not in context.steps
+        assert "leaf" not in state.step_results
+        assert context.steps["fan:leaf:1"]["output"]["marker"] == "b"
+
     @pytest.mark.parametrize("max_concurrency", [1, 2])
     def test_fan_out_reserved_id_collision_still_resolves_item_local_sibling(
         self, tmp_path, max_concurrency
