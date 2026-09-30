@@ -92,7 +92,7 @@ def _step_install_transaction(project_root: Path):
         try:
             stack.enter_context(
                 _exclusive_project_lock(
-                    Path(project_root), ".step-install.lock", context="step install"
+                    Path(project_root), ".step-install.lock", context="step"
                 )
             )
         except OSError as exc:
