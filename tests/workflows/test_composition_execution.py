@@ -2532,7 +2532,21 @@ def test_exact_depth_limit_is_allowed(tmp_path, probe):
     assert probe["work"] == 1
 
 
-def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "template",
+    [
+        {"id": "mixed", "type": "mixed"},
+        {
+            "id": "mixed",
+            "type": "if",
+            "condition": True,
+            "then": [{"id": "inner", "type": "mixed"}],
+        },
+        call("child", id="mixed", input={"n": "{{ item }}"}),
+    ],
+    ids=["step", "if-container", "workflow-call"],
+)
+def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch, template):
     barrier = threading.Barrier(2, timeout=5)
     counts = Counter()
 
@@ -2540,16 +2554,25 @@ def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch):
         type_key = "mixed"
 
         def execute(self, config, context):
-            counts[context.item] += 1
+            item = context.item if context.item is not None else context.inputs["n"]
+            counts[item] += 1
             if not context.is_resume:
                 barrier.wait()
-            if context.item == 0:
+            if item == 0:
                 return StepResult(
                     StepStatus.COMPLETED if context.is_resume else StepStatus.PAUSED
                 )
             return StepResult(StepStatus.FAILED, output={"aborted": True})
 
     monkeypatch.setitem(STEP_REGISTRY, "mixed", Mixed())
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "inner", "type": "mixed"}],
+            inputs={"n": {"type": "number"}},
+        ),
+    )
     root = definition(
         "parent",
         [
@@ -2558,7 +2581,7 @@ def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch):
                 "type": "fan-out",
                 "items": [0, 1],
                 "max_concurrency": 2,
-                "step": {"id": "mixed", "type": "mixed"},
+                "step": template,
             }
         ],
     )
@@ -2567,6 +2590,16 @@ def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch):
     state = WorkflowEngine(tmp_path).resume(state.run_id)
     assert state.status == RunStatus.ABORTED
     assert counts == {0: 2, 1: 1}
+    # Replaying the aborted item keeps the result it published when it ran.
+    published = state.step_results["spread:mixed:1"]["output"]
+    assert published
+    for results in (
+        state.step_results["spread"]["output"]["results"],
+        RunState.load(state.run_id, tmp_path).step_results["spread"]["output"][
+            "results"
+        ],
+    ):
+        assert results[1] == published
 
 
 NAN_SNAPSHOT = """

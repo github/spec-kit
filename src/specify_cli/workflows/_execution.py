@@ -476,6 +476,12 @@ class Execution:
                 )
             return "completed"
         if node.get("outcome") == "aborted":
+            # Replay the result the aborted occurrence projected when it ran, so
+            # its fan-out item keeps its published output (see run_item).
+            if node.get("result") is not None:
+                self.project(
+                    context, name, node["result"], public=public, qualified=qualified
+                )
             return "aborted"
 
         if kind == "workflow":
