@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
     clean_env,
@@ -23,6 +26,7 @@ from tests.parity_helpers import (
     install_scripts,
     json_stdout,
     make_repo,
+    make_yaml_less_venv,
     normalize_repo_paths,
     normalize_script_names,
     ps_cmd,
@@ -240,6 +244,56 @@ def test_bash_requires_python_only_for_unicode_names(
     assert unicode_result.returncode == 1
     assert unicode_result.stdout == ""
     assert "Error: Python 3 is required to create a Unicode feature name" in unicode_result.stderr
+
+
+@requires_bash
+def test_bash_unicode_uses_configured_python_without_pyyaml_in_spaced_path(
+    repo: Path, tmp_path: Path
+) -> None:
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "tool env")
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    for name in ("python3", "python", "py"):
+        shim = shim_dir / name
+        shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        shim.chmod(0o755)
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = _bash_posix_path(no_yaml_exe)
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+
+    result = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "添加用户"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == "001-添加用户"
+
+
+@requires_bash
+def test_bash_unicode_uses_py_launcher_with_separate_version_arg(
+    repo: Path, tmp_path: Path
+) -> None:
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    for name in ("python3", "python"):
+        shim = shim_dir / name
+        shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        shim.chmod(0o755)
+    launcher = shim_dir / "py"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = "-3" ] || exit 1\n'
+        "shift\n"
+        f'exec {shlex.quote(_bash_posix_path(Path(sys.executable)))} "$@"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    launcher.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+
+    result = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "添加用户"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == "001-添加用户"
 
 
 def _run_all_variants_allow_existing(

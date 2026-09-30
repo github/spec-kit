@@ -171,13 +171,21 @@ unicode_words() {
     local name="$1"
     local separator="$2"
     if printf '%s' "$name" | LC_ALL=C grep -q '[^ -~]'; then
-        local python_spec
-        if ! python_spec=$(_python3_command); then
+        local -a python_cmd=()
+        local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
+        if [ -n "$override" ] && command -v "$override" >/dev/null 2>&1 &&
+            "$override" -c 'import sys; raise SystemExit(sys.version_info.major != 3)' >/dev/null 2>&1; then
+            python_cmd=("$override")
+        else
+            local python_line
+            while IFS= read -r python_line; do
+                python_cmd+=("$python_line")
+            done < <(_python3_command)
+        fi
+        if [ "${#python_cmd[@]}" -eq 0 ]; then
             echo "Error: Python 3 is required to create a Unicode feature name" >&2
             return 1
         fi
-        local -a python_cmd
-        read -r -a python_cmd <<< "$python_spec"
         printf '%s' "$name" | "${python_cmd[@]}" -c '
 import sys
 value = sys.stdin.buffer.read().decode("utf-8")
