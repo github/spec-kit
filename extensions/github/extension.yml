@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: github
   name: "GitHub Integration"
-  version: "1.0.0"
+  version: "1.0.1"
   description: "GitHub platform integration for Spec Kit - create GitHub issues from a feature's task list"
   author: spec-kit-core
   repository: https://github.com/github/spec-kit
