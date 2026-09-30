@@ -26,6 +26,61 @@ from tests.specify_cli.integrations._helpers import (
     runner,  # noqa: F401
 )
 
+def _write_command_preset(tmp_path, preset_id):
+    """Write a dev preset that adds the custom ``speckit.fakeext.cmd`` command."""
+    import yaml
+
+    preset_src = tmp_path / preset_id
+    (preset_src / "commands").mkdir(parents=True)
+    (preset_src / "commands" / "speckit.fakeext.cmd.md").write_text(
+        "---\ndescription: Custom command\n---\nCustom preset content\n",
+        encoding="utf-8",
+    )
+    (preset_src / "preset.yml").write_text(
+        yaml.dump({
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": "Custom Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a custom command",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }),
+        encoding="utf-8",
+    )
+    return preset_src
+
+
+def _init_dotted_kiro_project(tmp_path, monkeypatch, *commands):
+    """Init a Kiro project and run ``commands`` with the old dotted prompt names."""
+    from specify_cli.agents import CommandRegistrar
+    from specify_cli.integrations.base import MarkdownIntegration
+    from specify_cli.integrations.kiro_cli import KiroCliIntegration
+
+    CommandRegistrar._ensure_configs()
+    with monkeypatch.context() as m:
+        m.setattr(
+            KiroCliIntegration, "command_filename",
+            MarkdownIntegration.command_filename,
+        )
+        m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name")
+        project = _init_project(tmp_path, "kiro-cli")
+        for args in commands:
+            result = _run_in_project(project, args)
+            assert result.exit_code == 0, result.output
+    return project
+
+
 class TestIntegrationUpgradeDetailed:
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -302,55 +357,13 @@ class TestIntegrationUpgradeDetailed:
         which Kiro CLI cannot invoke (#4797). Upgrade replaces them, including
         enabled extension and preset prompts, with ``speckit-<cmd>.md``, but a
         user-modified one blocks it."""
-        import yaml
-
-        from specify_cli.agents import CommandRegistrar
-        from specify_cli.integrations.base import MarkdownIntegration
-        from specify_cli.integrations.kiro_cli import KiroCliIntegration
-
-        preset_src = tmp_path / "custom-preset"
-        (preset_src / "commands").mkdir(parents=True)
-        (preset_src / "commands" / "speckit.fakeext.cmd.md").write_text(
-            "---\ndescription: Custom command\n---\nCustom preset content\n",
-            encoding="utf-8",
+        preset_src = _write_command_preset(tmp_path, "custom-preset")
+        project = _init_dotted_kiro_project(
+            tmp_path,
+            monkeypatch,
+            ["extension", "add", "git"],
+            ["preset", "add", "--dev", str(preset_src)],
         )
-        (preset_src / "preset.yml").write_text(
-            yaml.dump({
-                "schema_version": "1.0",
-                "preset": {
-                    "id": "custom-preset",
-                    "name": "Custom Preset",
-                    "version": "1.0.0",
-                    "description": "Test preset with a custom command",
-                },
-                "requires": {"speckit_version": ">=0.1.0"},
-                "provides": {
-                    "templates": [
-                        {
-                            "type": "command",
-                            "name": "speckit.fakeext.cmd",
-                            "file": "commands/speckit.fakeext.cmd.md",
-                        }
-                    ]
-                },
-            }),
-            encoding="utf-8",
-        )
-
-        CommandRegistrar._ensure_configs()
-        with monkeypatch.context() as m:
-            m.setattr(
-                KiroCliIntegration, "command_filename",
-                MarkdownIntegration.command_filename,
-            )
-            m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name")
-            project = _init_project(tmp_path, "kiro-cli")
-            added = _run_in_project(project, ["extension", "add", "git"])
-            assert added.exit_code == 0, added.output
-            added = _run_in_project(
-                project, ["preset", "add", "--dev", str(preset_src)]
-            )
-            assert added.exit_code == 0, added.output
         prompts = project / ".kiro" / "prompts"
         assert (prompts / "speckit.git.commit.md").is_file()
         assert (prompts / "speckit.fakeext.cmd.md").is_file()
@@ -375,6 +388,23 @@ class TestIntegrationUpgradeDetailed:
             prompts / "speckit-fakeext-cmd.md"
         ).read_text(encoding="utf-8")
 
+    def test_upgrade_keeps_disabled_preset_kiro_prompts(self, tmp_path, monkeypatch):
+        """A disabled preset's prompts stay until the preset is removed, so
+        the Kiro prompt rename must not delete them (#4797)."""
+        preset_src = _write_command_preset(tmp_path, "custom-preset")
+        project = _init_dotted_kiro_project(
+            tmp_path,
+            monkeypatch,
+            ["preset", "add", "--dev", str(preset_src)],
+            ["preset", "disable", "custom-preset"],
+        )
+        prompt = project / ".kiro" / "prompts" / "speckit.fakeext.cmd.md"
+        original = prompt.read_bytes()
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert prompt.read_bytes() == original
+
     @pytest.mark.parametrize(
         ("old_files", "new_files", "expected"),
         [
@@ -383,6 +413,8 @@ class TestIntegrationUpgradeDetailed:
             (["speckit.plan.md", "speckit.old.md"],
              ["speckit.plan.md", "speckit.new.md"], False),
             (["speckit.plan.md"], ["speckit.plan.md", "speckit.new.md"], False),
+            (["speckit-plan/SKILL.md", "speckit-old/SKILL.md"],
+             ["speckit-plan/SKILL.md", "speckit-new/SKILL.md"], False),
         ],
     )
     def test_command_file_names_changed_needs_a_rename(

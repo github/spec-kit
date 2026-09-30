@@ -343,8 +343,9 @@ def integration_upgrade(
             continuing="The integration was upgraded, but installed extensions may need re-registration.",
         )
         if command_file_names_changed:
-            # Preset commands aren't in the manifest either, so drop them
-            # under their old file names before re-registering.
+            # Preset commands aren't in the manifest either, so drop enabled
+            # ones under their old file names before re-registering. Disabled
+            # presets keep their files until removal.
             _unregister_presets_for_agent(
                 project_root,
                 key,
@@ -352,6 +353,7 @@ def integration_upgrade(
                     "The integration command file names changed, but old "
                     "preset command files may need manual cleanup."
                 ),
+                enabled_only=True,
             )
         _register_presets_for_agent(
             project_root,

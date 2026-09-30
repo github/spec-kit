@@ -673,7 +673,9 @@ class _PresetCommandMethods:
                 pack_id, {"registered_skills": merged_skills}
             )
 
-    def unregister_agent_artifacts(self, agent_name: str) -> None:
+    def unregister_agent_artifacts(
+        self, agent_name: str, *, enabled_only: bool = False
+    ) -> None:
         """Remove ``agent_name``'s tracked preset command/skill artifacts.
 
         Mirrors ``ExtensionManager.unregister_agent_artifacts()`` (#2948):
@@ -689,6 +691,10 @@ class _PresetCommandMethods:
         tracking, and preset packs themselves are left untouched, and no
         priority-stack reconciliation runs — this is agent-scoped cleanup
         only, not preset removal.
+
+        Set ``enabled_only=True`` when a caller is about to re-register
+        enabled presets and must keep disabled presets' artifacts, which
+        stay in place until the preset is removed.
         """
         if not agent_name:
             return
@@ -705,6 +711,9 @@ class _PresetCommandMethods:
             return
 
         for pack_id, metadata in list(self.registry.list().items()):
+            if enabled_only and not metadata.get("enabled", True):
+                continue
+
             updates: Dict[str, Any] = {}
 
             raw_skills = metadata.get("registered_skills", [])

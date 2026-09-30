@@ -77,8 +77,9 @@ def _command_file_names_changed(integration, old_manifest, new_manifest) -> bool
         return False
     old = {rel for rel in old_manifest.files if _manifest_path_under(rel, commands_dir)}
     new = {rel for rel in new_manifest.files if _manifest_path_under(rel, commands_dir)}
-    removed = {PurePath(rel).name.replace(".", "-") for rel in old - new}
-    added = {PurePath(rel).name.replace(".", "-") for rel in new - old}
+    # Compare whole paths: skill layouts name every file SKILL.md.
+    removed = {rel.replace(".", "-") for rel in old - new}
+    added = {rel.replace(".", "-") for rel in new - old}
     return bool(removed & added)
 
 
