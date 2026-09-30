@@ -592,63 +592,61 @@ def _retire_renamed_command_files(
     *,
     continuing: str,
 ) -> None:
-    """Remove enabled extension and preset command files under old names.
+    """Remove enabled extension command files left under their old names.
 
     ``upgrade`` calls this after re-registration when the core command files
     were renamed in place, as Kiro CLI's ``speckit.<cmd>.md`` prompts became
-    ``speckit-<cmd>.md`` (#4797). Extension and preset commands are tracked in
-    their registries, not the integration manifest, so stale cleanup leaves
+    ``speckit-<cmd>.md`` (#4797). Extension commands are tracked in the
+    extension registry, not the integration manifest, so stale cleanup leaves
     their old files. An old file is removed only when the file under the new
     name exists, so a command whose re-registration failed keeps its old file
     and its registry entry (replacement before retirement, as in
-    ``ExtensionManager._retire_legacy_flat_extension_commands``).
+    ``ExtensionManager._retire_legacy_flat_extension_commands``). Preset
+    overrides can share a path with another layer, so ``upgrade`` refuses the
+    rename while presets have commands registered for the agent.
 
     Best-effort: never aborts the surrounding integration operation.
     """
-    try:
+
+    def retire(ext_mgr: Any, key: str) -> None:
         from ..agents import CommandRegistrar
-        from ..extensions import ExtensionManager
-        from ..presets import PresetManager
 
         registrar = CommandRegistrar()
-        agent_config = registrar.AGENT_CONFIGS.get(agent_key)
+        agent_config = registrar.AGENT_CONFIGS.get(key)
         if not agent_config:
             return
-        commands_dir = registrar._resolve_agent_dir(agent_key, agent_config, project_root)
+        commands_dir = registrar._resolve_agent_dir(key, agent_config, project_root)
         suffix = agent_config["extension"]
-        for manager in (ExtensionManager(project_root), PresetManager(project_root)):
-            for metadata in manager.registry.list().values():
-                if not isinstance(metadata, dict) or not metadata.get("enabled", True):
+        for metadata in ext_mgr.registry.list().values():
+            if not isinstance(metadata, dict) or not metadata.get("enabled", True):
+                continue
+            registered = metadata.get("registered_commands")
+            names = registered.get(key) if isinstance(registered, dict) else None
+            if not isinstance(names, list):
+                continue
+            for name in names:
+                if not isinstance(name, str) or not registrar._is_safe_command_name(name):
                     continue
-                registered = metadata.get("registered_commands")
-                names = registered.get(agent_key) if isinstance(registered, dict) else None
-                if not isinstance(names, list):
+                new_name = registrar._compute_output_name(key, name, agent_config)
+                old_file = commands_dir / f"{name}{suffix}"
+                try:
+                    registrar._ensure_inside(old_file, commands_dir)
+                except ValueError:
                     continue
-                for name in names:
-                    if not isinstance(name, str) or not registrar._is_safe_command_name(name):
-                        continue
-                    new_name = registrar._compute_output_name(agent_key, name, agent_config)
-                    old_file = commands_dir / f"{name}{suffix}"
-                    try:
-                        registrar._ensure_inside(old_file, commands_dir)
-                    except ValueError:
-                        continue
-                    if (
-                        new_name != name
-                        and old_file.is_file()
-                        and (commands_dir / f"{new_name}{suffix}").is_file()
-                    ):
-                        old_file.unlink()
-    except Exception as exc:
-        from .. import _print_cli_warning
+                if (
+                    new_name != name
+                    and old_file.is_file()
+                    and (commands_dir / f"{new_name}{suffix}").is_file()
+                ):
+                    old_file.unlink()
 
-        _print_cli_warning(
-            "clean up renamed command files for",
-            "integration",
-            agent_key,
-            exc,
-            continuing=continuing,
-        )
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        retire,
+        phase="clean up renamed extension command files for",
+        continuing=continuing,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -62,21 +62,34 @@ def _legacy_command_root_changed(
     return old_had_legacy and new_has_canonical
 
 
-def _command_file_names_changed(integration, old_manifest, new_manifest) -> bool:
-    """Return True when core command files were renamed inside the command dir.
+def _planned_command_files(integration) -> set[str]:
+    """Return the manifest keys ``setup()`` will write for core command templates."""
+    commands_dir = (integration.registrar_config or {}).get("dir")
+    if not isinstance(commands_dir, str) or not commands_dir.strip():
+        return set()
+    return {
+        (PurePath(commands_dir) / integration.command_filename(template.stem)).as_posix()
+        for template in integration.list_command_templates()
+    }
+
+
+def _command_file_names_changed(integration, old_files, new_files) -> bool:
+    """Return True when core command files are renamed inside the command dir.
 
     Kiro CLI moved from ``speckit.<cmd>.md`` to ``speckit-<cmd>.md`` in the
-    same ``.kiro/prompts`` directory (#4797). Only a removed file that matches
-    an added one up to ``.``/``-`` separators counts, so a release that just
-    adds and drops commands is not a rename. Enabled extension and preset
+    same ``.kiro/prompts`` directory (#4797). *old_files* and *new_files* are
+    manifest keys; ``upgrade`` passes ``_planned_command_files()`` as the new
+    ones so it can decide before changing files. Only a removed file that
+    matches an added one up to ``.``/``-`` separators counts, so a release
+    that just adds and drops commands is not a rename. Extension and preset
     commands are tracked outside the manifest, so re-registering them alone
     would leave their old names beside the new ones.
     """
     commands_dir = (integration.registrar_config or {}).get("dir")
     if not isinstance(commands_dir, str) or not commands_dir.strip():
         return False
-    old = {rel for rel in old_manifest.files if _manifest_path_under(rel, commands_dir)}
-    new = {rel for rel in new_manifest.files if _manifest_path_under(rel, commands_dir)}
+    old = {rel for rel in old_files if _manifest_path_under(rel, commands_dir)}
+    new = {rel for rel in new_files if _manifest_path_under(rel, commands_dir)}
     # Compare whole paths: skill layouts name every file SKILL.md.
     removed = {rel.replace(".", "-") for rel in old - new}
     added = {rel.replace(".", "-") for rel in new - old}
