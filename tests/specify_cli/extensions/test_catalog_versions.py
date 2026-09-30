@@ -216,6 +216,12 @@ def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
         {
             "0.4.12": {
                 "download_url": "https://example.com/a.zip",
+                "sha256": "md5:" + "a" * 64,
+            }
+        },
+        {
+            "0.4.12": {
+                "download_url": "https://example.com/a.zip",
                 "sha256": "a" * 64,
                 "id": "other",
             }
@@ -254,6 +260,27 @@ def test_selected_release_download_uses_its_url_without_relookup(tmp_path, monke
     assert downloaded.read_bytes() == archive.read_bytes()
 
 
+def test_historical_release_accepts_prefixed_digest(tmp_path, monkeypatch):
+    archive = _archive(tmp_path, "0.4.12")
+    entry = _entry(archive)
+    digest = entry["releases"]["0.4.12"]["sha256"]
+    entry["releases"]["0.4.12"]["sha256"] = f" SHA256: {digest.upper()} "
+    catalog = _catalog(monkeypatch, tmp_path, entry)
+    selected = catalog.get_extension_info("demo-history", "0.4.12")
+
+    monkeypatch.setattr(
+        catalog,
+        "_open_url",
+        lambda url, **_kwargs: _ArchiveResponse(archive.read_bytes(), url),
+    )
+    downloaded = catalog.download_extension_info(
+        selected, target_dir=tmp_path / "downloads"
+    )
+
+    assert selected["sha256"] == f" SHA256: {digest.upper()} "
+    assert downloaded.read_bytes() == archive.read_bytes()
+
+
 def test_selected_discovery_release_cannot_be_downloaded(tmp_path, monkeypatch):
     entry = _entry(_archive(tmp_path, "0.4.12"))
     entry["_install_allowed"] = False
@@ -284,6 +311,33 @@ def test_exact_cli_install_rejects_wrong_archive_before_writing(tmp_path, monkey
     assert not (
         project / ".specify" / "extensions" / "demo-history" / "extension.yml"
     ).exists()
+
+
+def test_exact_cli_install_reports_invalid_legacy_catalog_version(
+    tmp_path, monkeypatch
+):
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    archive = _archive(tmp_path, "0.4.12")
+    entry = _entry(archive)
+    entry["version"] = "legacy-current"
+    del entry["releases"]
+    _catalog(monkeypatch, project, entry)
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", lambda self, _info: archive
+    )
+
+    result = CliRunner().invoke(
+        app, ["extension", "add", "demo-history", "--version", "legacy-current"]
+    )
+
+    assert result.exit_code == 1
+    assert "Validation Error" in result.output
+    assert "declares version 0.4.12, expected legacy-current" in " ".join(
+        result.output.split()
+    )
+    assert not (project / ".specify" / "extensions" / "demo-history").exists()
 
 
 def test_exact_cli_install_rejects_wrong_archive_id_before_writing(

@@ -2780,15 +2780,18 @@ class ExtensionManager:
                         f"Downloaded extension declares ID '{archive_manifest.id}', "
                         f"expected '{expected_id}'."
                     )
-                if (
-                    expected_version is not None
-                    and pkg_version.Version(archive_manifest.version)
-                    != pkg_version.Version(expected_version)
-                ):
-                    raise ValidationError(
-                        f"Downloaded extension '{archive_manifest.id}' declares version "
-                        f"{archive_manifest.version}, expected {expected_version}."
-                    )
+                if expected_version is not None:
+                    try:
+                        version_matches = pkg_version.Version(
+                            archive_manifest.version
+                        ) == pkg_version.Version(expected_version)
+                    except pkg_version.InvalidVersion:
+                        version_matches = False
+                    if not version_matches:
+                        raise ValidationError(
+                            f"Downloaded extension '{archive_manifest.id}' declares version "
+                            f"{archive_manifest.version}, expected {expected_version}."
+                        )
 
             # Install from extracted directory
             return self.install_from_directory(

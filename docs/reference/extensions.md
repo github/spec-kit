@@ -101,6 +101,8 @@ historical releases in a `releases` mapping. Older single-version catalogs
 continue to work unchanged. Each historical release needs its own download URL
 and SHA-256 digest; release-specific requirements or provided capabilities must
 be placed in that release's record rather than inherited from the current one.
+As with current releases, a digest may use a case-insensitive `sha256:` prefix
+and surrounding whitespace.
 
 ```json
 {
