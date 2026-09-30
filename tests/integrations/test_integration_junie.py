@@ -122,6 +122,15 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert "$ARGUMENTS" not in out
         assert "$speckit" not in out
 
+    def test_junie_allow_prompt_argument_false_is_enabled(self):
+        junie = get_integration("junie")
+        content = "---\nallowPromptArgument: false\n---\n$ARGUMENTS\n"
+        out = junie.post_process_command_content(content)
+        assert out == "---\nallowPromptArgument: true\n---\n$prompt\n"
+        body = "---\ndescription: x\n---\nallowPromptArgument: no\n$ARGUMENTS\n"
+        out = junie.post_process_command_content(body)
+        assert out.startswith("---\nallowPromptArgument: true\ndescription: x\n---\n")
+
     def test_junie_setup_leaves_no_stray_dollar_arguments(self, tmp_path):
         """Installed commands only reference Junie's own ``$prompt`` token."""
         import re

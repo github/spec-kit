@@ -144,13 +144,15 @@ class JunieIntegration(MarkdownIntegration):
         """
         content = content.replace(" or `$speckit-...`", "")
         content = content.replace("$ARGUMENTS", "$prompt")
-        if "$prompt" in content and "allowPromptArgument:" not in content:
-            content = re.sub(
-                r"\A---(\r?\n)",
-                lambda m: f"---{m.group(1)}allowPromptArgument: true{m.group(1)}",
-                content,
-                count=1,
+        fm = re.match(r"\A---(\r?\n)(.*?)(\r?\n)---(?=\r?\n|\Z)", content, re.S)
+        if "$prompt" in content and fm:
+            nl, block = fm.group(1), fm.group(2)
+            block, n = re.subn(
+                r"(?m)^allowPromptArgument:[^\r\n]*", "allowPromptArgument: true", block
             )
+            if not n:
+                block = f"allowPromptArgument: true{nl}{block}"
+            content = f"---{nl}{block}{content[fm.end(2):]}"
         return content
 
     def post_process_command_content(self, content: str) -> str:
