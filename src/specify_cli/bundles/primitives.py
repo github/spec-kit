@@ -459,70 +459,35 @@ class _StepKindManager:
             self.remove(component)
             try:
                 self.install(component)
-            except BundlerError as exc:
-                from ..workflows.step.installer import (
-                    StepInstallError,
-                    _step_install_transaction,
-                )
+            except BundlerError:
+                if backup_dir.exists():
+                    shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
+                # Re-read the registry: ``StepRegistry`` snapshots the file once
+                # in ``__init__`` (``self.data = self._load()``) and
+                # ``is_installed`` only consults that snapshot. ``self.remove()``
+                # above has already deleted the entry from disk, but
+                # ``self._registry``'s snapshot still contains it -- so the
+                # guard was always False here and the restore never ran, in
+                # exactly the failure case it was written for. The step package
+                # came back but stayed unregistered: ``workflow step list``
+                # stopped showing it and ``workflow step add`` then refused with
+                # "Step directory already exists".
+                from ..workflows.catalog import StepRegistry
 
-                # Restore under the step lock that `step add` / `step remove`
-                # hold, so a concurrent step operation can't commit between the
-                # registry reload and save below (or save a stale snapshot over
-                # the restored entry). If the lock can't be taken, leave the
-                # project as it is rather than restoring unlocked.
-                try:
-                    with _step_install_transaction(self._root):
-                        self._restore_refresh_backup(
-                            component.id, step_dir, backup_dir, metadata
-                        )
-                except StepInstallError as lock_exc:
-                    exc.add_note(
-                        f"Step '{component.id}' was not restored after the failed "
-                        f"refresh: {lock_exc}"
-                    )
+                current = StepRegistry(self._root)
+                if metadata is not None and not current.is_installed(component.id):
+                    # Restore the saved entry verbatim rather than via ``add()``,
+                    # which would rewrite the metadata it is meant to roll back:
+                    # this registry is freshly constructed *after*
+                    # ``self.remove()`` deleted the entry, so ``add()`` sees no
+                    # existing record and stamps ``installed_at`` with
+                    # ``datetime.now()`` (it also overwrites ``updated_at``
+                    # unconditionally). ``workflow_step_remove`` bypasses
+                    # ``add()`` for exactly this reason.
+                    current.data["steps"][component.id] = metadata
+                    current.save()
                 raise
         finally:
-            shutil.rmtree(backup_dir.parent, ignore_errors=True)
-
-    def _restore_refresh_backup(
-        self,
-        step_id: str,
-        step_dir: Path,
-        backup_dir: Path,
-        metadata: dict | None,
-    ) -> None:
-        """Put back a step removed by a failed refresh. Caller holds the step lock."""
-        import shutil
-
-        # Re-read the registry: ``StepRegistry`` snapshots the file once in
-        # ``__init__`` (``self.data = self._load()``) and ``is_installed`` only
-        # consults that snapshot. ``self.remove()`` has already deleted the entry
-        # from disk, but ``self._registry``'s snapshot still contains it -- so a
-        # guard on it was always False and the restore never ran, in exactly the
-        # failure case it was written for. The step package came back but stayed
-        # unregistered: ``workflow step list`` stopped showing it and
-        # ``workflow step add`` then refused with "Step directory already
-        # exists". Reading it under the lock also picks up entries committed by
-        # concurrent step operations, so saving it cannot drop them.
-        from ..workflows.catalog import StepRegistry
-
-        current = StepRegistry(self._root)
-        if current.is_installed(step_id):
-            # A concurrent operation registered this step after the removal;
-            # don't overwrite its package or entry with the backup.
-            return
-        if backup_dir.exists():
-            shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
-        if metadata is not None:
-            # Restore the saved entry verbatim rather than via ``add()``, which
-            # would rewrite the metadata it is meant to roll back: this registry
-            # is freshly constructed *after* ``self.remove()`` deleted the entry,
-            # so ``add()`` sees no existing record and stamps ``installed_at``
-            # with ``datetime.now()`` (it also overwrites ``updated_at``
-            # unconditionally). ``workflow_step_remove`` bypasses ``add()`` for
-            # exactly this reason.
-            current.data["steps"][step_id] = metadata
-            current.save()
             shutil.rmtree(backup_dir.parent, ignore_errors=True)
 
     def remove(self, component: ComponentRef) -> None:
