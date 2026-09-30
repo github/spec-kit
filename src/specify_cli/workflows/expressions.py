@@ -291,14 +291,6 @@ _ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
     "to_json": _filter_to_json,
 }
 
-# Parenthesized filters that take exactly one argument. Used to report an
-# extra argument by name *before* the argument expression is evaluated:
-# _evaluate_simple_expression has no comma operator, so ``| split(',', 1)``
-# would otherwise hand split an unparseable fragment, which reads back as
-# "expected a string separator, got NoneType" -- the arity mistake, which is
-# what the author actually got wrong, never surfaces.
-_SINGLE_ARG_FILTERS = frozenset({"default", "join", "map", "contains", "split"})
-
 
 # -- Expression resolution ------------------------------------------------
 
@@ -682,15 +674,7 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
         filter_match = None
     if filter_match:
         fname = filter_match.group(1)
-        farg_text = filter_match.group(2).strip()
-        if fname in _SINGLE_ARG_FILTERS:
-            arg_parts = _split_top_level_commas(farg_text)
-            if len(arg_parts) > 1:
-                raise ValueError(
-                    f"{fname}: expected exactly one argument, got "
-                    f"{len(arg_parts)}: '| {filter_expr}'"
-                )
-        farg = _evaluate_simple_expression(farg_text, namespace)
+        farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
         if fname == "default":
             return _filter_default(value, farg)
         if fname == "join":

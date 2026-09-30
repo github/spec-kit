@@ -853,29 +853,28 @@ class TestExpressions:
             == '{"1": "a", "2": "b"}'
         )
 
-    def test_single_arg_filters_reject_extra_argument(self):
-        # Arity is checked before the argument expression is evaluated.
-        # split(',', 1) used to evaluate that fragment first, so the reported
-        # error was "expected a string separator, got NoneType" -- the arity
-        # mistake, which is what the author got wrong, stayed hidden behind a
-        # type error.
+    def test_split_with_extra_argument_reports_unsupported_form(self):
+        # split is new in this PR, so main's multi-argument guard has to cover
+        # it as well. Without that it evaluated the argument fragment first and
+        # reported "expected a string separator, got NoneType" -- the extra
+        # argument, which is what the author actually got wrong, never
+        # surfaced. main already pins default() and join() the same way; this
+        # pins the filter added here.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(inputs={"s": "a,b,c", "n": 0})
+        ctx = StepContext(inputs={"s": "a,b,c"})
         with pytest.raises(
-            ValueError, match="split: expected exactly one argument, got 2"
+            ValueError, match="filter 'split' used in an unsupported form"
         ):
             evaluate_expression("{{ inputs.s | split(',', 1) }}", ctx)
-        with pytest.raises(
-            ValueError, match="default: expected exactly one argument, got 2"
-        ):
-            evaluate_expression("{{ inputs.n | default(0, 'x') }}", ctx)
-        # A comma inside quotes or brackets is still one argument.
-        assert (
-            evaluate_expression("{{ inputs.s | split(',') }}", ctx) == ["a", "b", "c"]
-        )
+        # A comma inside quotes is still a single argument.
+        assert evaluate_expression("{{ inputs.s | split(',') }}", ctx) == [
+            "a",
+            "b",
+            "c",
+        ]
 
     def test_zero_arg_filters_reject_miswired_forms(self):
         # The strict no-argument branch is shared by from_json/upper/lower/
