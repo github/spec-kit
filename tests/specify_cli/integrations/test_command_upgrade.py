@@ -312,15 +312,17 @@ class TestIntegrationUpgradeDetailed:
             project = _init_project(tmp_path, "kiro-cli")
         prompts = project / ".kiro" / "prompts"
         dotted_plan = prompts / "speckit.plan.md"
-        original = dotted_plan.read_text(encoding="utf-8")
+        # Bytes, not text: write_text() would turn "\n" into "\r\n" on
+        # Windows, so the restored file would no longer match the manifest.
+        original = dotted_plan.read_bytes()
 
-        dotted_plan.write_text(original + "my note\n", encoding="utf-8")
+        dotted_plan.write_bytes(original + b"my note\n")
         blocked = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
         assert blocked.exit_code != 0
         assert "speckit.plan.md" in blocked.output
-        assert dotted_plan.read_text(encoding="utf-8") == original + "my note\n"
+        assert dotted_plan.read_bytes() == original + b"my note\n"
 
-        dotted_plan.write_text(original, encoding="utf-8")
+        dotted_plan.write_bytes(original)
         result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
         assert result.exit_code == 0, result.output
         assert sorted(prompts.glob("speckit.*.md")) == []
