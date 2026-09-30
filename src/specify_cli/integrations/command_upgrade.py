@@ -23,7 +23,7 @@ from ._command_upgrade_layout import (
     _manifest_tracks_skill_layout,
 )
 from ._commands import integration_app
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _unregister_presets_for_agent, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("upgrade")
@@ -318,9 +318,10 @@ def integration_upgrade(
         old_manifest,
         new_manifest,
     )
-    if legacy_command_root_changed or _command_file_names_changed(
+    command_file_names_changed = _command_file_names_changed(
         integration, old_manifest, new_manifest
-    ):
+    )
+    if legacy_command_root_changed or command_file_names_changed:
         _unregister_enabled_extension_commands_for_agent(
             project_root,
             key,
@@ -341,6 +342,17 @@ def integration_upgrade(
             force=True,
             continuing="The integration was upgraded, but installed extensions may need re-registration.",
         )
+        if command_file_names_changed:
+            # Preset commands aren't in the manifest either, so drop them
+            # under their old file names before re-registering.
+            _unregister_presets_for_agent(
+                project_root,
+                key,
+                continuing=(
+                    "The integration command file names changed, but old "
+                    "preset command files may need manual cleanup."
+                ),
+            )
         _register_presets_for_agent(
             project_root,
             key,

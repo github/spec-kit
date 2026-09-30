@@ -300,11 +300,42 @@ class TestIntegrationUpgradeDetailed:
     def test_upgrade_replaces_dotted_kiro_prompts(self, tmp_path, monkeypatch):
         """Kiro installs used to write ``.kiro/prompts/speckit.<cmd>.md``,
         which Kiro CLI cannot invoke (#4797). Upgrade replaces them, including
-        enabled extension prompts, with ``speckit-<cmd>.md``, but a
+        enabled extension and preset prompts, with ``speckit-<cmd>.md``, but a
         user-modified one blocks it."""
+        import yaml
+
         from specify_cli.agents import CommandRegistrar
         from specify_cli.integrations.base import MarkdownIntegration
         from specify_cli.integrations.kiro_cli import KiroCliIntegration
+
+        preset_src = tmp_path / "custom-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Custom command\n---\nCustom preset content\n",
+            encoding="utf-8",
+        )
+        (preset_src / "preset.yml").write_text(
+            yaml.dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "custom-preset",
+                    "name": "Custom Preset",
+                    "version": "1.0.0",
+                    "description": "Test preset with a custom command",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.fakeext.cmd",
+                            "file": "commands/speckit.fakeext.cmd.md",
+                        }
+                    ]
+                },
+            }),
+            encoding="utf-8",
+        )
 
         CommandRegistrar._ensure_configs()
         with monkeypatch.context() as m:
@@ -316,8 +347,13 @@ class TestIntegrationUpgradeDetailed:
             project = _init_project(tmp_path, "kiro-cli")
             added = _run_in_project(project, ["extension", "add", "git"])
             assert added.exit_code == 0, added.output
+            added = _run_in_project(
+                project, ["preset", "add", "--dev", str(preset_src)]
+            )
+            assert added.exit_code == 0, added.output
         prompts = project / ".kiro" / "prompts"
         assert (prompts / "speckit.git.commit.md").is_file()
+        assert (prompts / "speckit.fakeext.cmd.md").is_file()
         dotted_plan = prompts / "speckit.plan.md"
         # Bytes, not text: write_text() would turn "\n" into "\r\n" on
         # Windows, so the restored file would no longer match the manifest.
@@ -335,6 +371,41 @@ class TestIntegrationUpgradeDetailed:
         assert sorted(prompts.glob("speckit.*.md")) == []
         assert (prompts / "speckit-plan.md").is_file()
         assert (prompts / "speckit-git-commit.md").is_file()
+        assert "Custom preset content" in (
+            prompts / "speckit-fakeext-cmd.md"
+        ).read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        ("old_files", "new_files", "expected"),
+        [
+            (["speckit.plan.md", "speckit.tasks.md"],
+             ["speckit-plan.md", "speckit-tasks.md"], True),
+            (["speckit.plan.md", "speckit.old.md"],
+             ["speckit.plan.md", "speckit.new.md"], False),
+            (["speckit.plan.md"], ["speckit.plan.md", "speckit.new.md"], False),
+        ],
+    )
+    def test_command_file_names_changed_needs_a_rename(
+        self, old_files, new_files, expected
+    ):
+        """Commands added and dropped in the same release are not a rename,
+        so upgrade must not unregister extension commands for them."""
+        from types import SimpleNamespace
+
+        from specify_cli.integrations._command_upgrade_layout import (
+            _command_file_names_changed,
+        )
+
+        integration = SimpleNamespace(registrar_config={"dir": ".kiro/prompts"})
+
+        def manifest(names):
+            return SimpleNamespace(
+                files={f".kiro/prompts/{name}": "hash" for name in names}
+            )
+
+        assert _command_file_names_changed(
+            integration, manifest(old_files), manifest(new_files)
+        ) is expected
 
     def test_upgrade_migrates_qodercli_extension_commands_to_skills(self, tmp_path):
         """Qoder upgrade retires old extension commands after skills exist."""
