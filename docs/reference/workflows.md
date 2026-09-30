@@ -594,7 +594,7 @@ Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`,
 
 | Filter   | Example                                    | Behavior                                                                                        |
 | -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `default`| `{{ val \| default('fb') }}`               | Fallback for `None`/empty values                                                                  |
+| `default`| `{{ val \| default('fb') }}`               | Fallback for `None` or an empty string                                                                  |
 | `join`   | `{{ list \| join(', ') }}`                 | Join list elements into a string                                                                   |
 | `contains`| `{{ text \| contains('sub') }}`           | Substring or membership check                                                                      |
 | `map`    | `{{ list \| map('attr') }}`                | Extract an attribute from each item                                                                |
@@ -604,6 +604,8 @@ Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`,
 | `lower`  | `{{ text \| lower }}`                      | Lowercase a string                                                                                 |
 | `split`  | `{{ csv \| split(',') }}`                  | Split a string on a separator into a list of strings                                               |
 | `length` | `{{ items \| length }}`                    | Number of elements in a list, or characters in a string                                            |
+
+`default` falls back only for `None` and the empty string. Other falsy values — `0`, `false`, `[]`, `{}` — are passed through unchanged, so `{{ count | default(10) }}` still yields `0` for a zero count. Falsy is not the same as empty here.
 
 Notes on the newer filters:
 

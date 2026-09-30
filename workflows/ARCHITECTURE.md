@@ -118,7 +118,7 @@ Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic value
 | Boolean logic | `and`, `or`, `not` | `{{ items and status == 'ok' }}` |
 | Membership | `in`, `not in` | `{{ 'error' not in status }}` |
 | Literals | strings, numbers, booleans, lists | `{{ true }}`, `{{ [1, 2] }}` |
-| Filter: `default` | `{{ val \| default('fallback') }}` | Fallback for None/empty |
+| Filter: `default` | `{{ val \| default('fallback') }}` | Fallback for `None` or an empty string |
 | Filter: `join` | `{{ list \| join(', ') }}` | Join list elements |
 | Filter: `contains` | `{{ text \| contains('sub') }}` | Substring/membership check |
 | Filter: `map` | `{{ list \| map('attr') }}` | Extract attribute from each item |
