@@ -357,7 +357,8 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
     if package_file_count > installer._MAX_STEP_PACKAGE_FILES:
         raise installer.StepInstallError(
             f"Step package declares {package_file_count} files, exceeding the "
-            f"{installer._MAX_STEP_PACKAGE_FILES}-file limit"
+            f"{installer._MAX_STEP_PACKAGE_FILES}-entry limit (files and "
+            "directories combined)"
         )
 
     from specify_cli.authentication.http import open_url as _open_url

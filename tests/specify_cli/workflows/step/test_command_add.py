@@ -630,7 +630,7 @@ class TestWorkflowStepAddCLI:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "exceeding the 3-file limit" in result.output
+        assert "exceeding the 3-entry limit" in result.output
         steps_dir = project_dir / ".specify" / "workflows" / "steps"
         assert not (steps_dir / "my-step").exists()
         assert list(steps_dir.glob("speckit_step_tmp_*")) == []

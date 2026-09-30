@@ -194,7 +194,7 @@ def _reject_unsafe_destination(step_dir: Path) -> None:
 def _entry_limit_error() -> StepInstallError:
     return StepInstallError(
         "Step package contains too many entries, exceeding the "
-        f"{_MAX_STEP_PACKAGE_FILES}-file limit"
+        f"{_MAX_STEP_PACKAGE_FILES}-entry limit (files and directories combined)"
     )
 
 

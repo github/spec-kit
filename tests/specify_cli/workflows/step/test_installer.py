@@ -280,7 +280,7 @@ def test_validation_stops_reading_oversized_directory(tmp_path, monkeypatch):
 
     spy = _ScandirSpy(pkg)
     monkeypatch.setattr(os, "scandir", spy)
-    with pytest.raises(installer.StepInstallError, match="3-file limit"):
+    with pytest.raises(installer.StepInstallError, match="3-entry limit"):
         installer.validate_step_package(pkg, "my-step")
 
     assert spy.entries_read[pkg] <= 4
@@ -299,7 +299,7 @@ def test_validation_budget_spans_directories(tmp_path, monkeypatch):
 
     spy = _ScandirSpy(pkg)
     monkeypatch.setattr(os, "scandir", spy)
-    with pytest.raises(installer.StepInstallError, match="10-file limit"):
+    with pytest.raises(installer.StepInstallError, match="10-entry limit"):
         installer.validate_step_package(pkg, "my-step")
 
     assert sum(spy.entries_read.values()) <= 11
@@ -313,7 +313,7 @@ def test_copy_stops_reading_oversized_directory(tmp_path, monkeypatch):
 
     spy = _ScandirSpy(pkg)
     monkeypatch.setattr(os, "scandir", spy)
-    with pytest.raises(installer.StepInstallError, match="3-file limit"):
+    with pytest.raises(installer.StepInstallError, match="3-entry limit"):
         installer._copy_package_tree(pkg, tmp_path / "staged")
 
     assert spy.entries_read[pkg] <= 4
@@ -336,7 +336,7 @@ def test_excludes_are_not_copied(tmp_path, project_dir, monkeypatch):
     (pkg / "__pycache__" / "helper.pyc").write_text("x", encoding="utf-8")
     (pkg / ".DS_Store").write_text("x", encoding="utf-8")
 
-    # The excluded entries must not count against the file limit.
+    # The excluded entries must not count against the entry limit.
     monkeypatch.setattr(installer, "_MAX_STEP_PACKAGE_FILES", 2)
     installer.install_step_package(project_dir, "my-step", pkg, source="local")
 
@@ -354,7 +354,7 @@ def test_file_limit_boundary(tmp_path, monkeypatch):
     (pkg / "extra.py").write_text("x", encoding="utf-8")
     with pytest.raises(installer.StepInstallError) as exc:
         installer.validate_step_package(pkg, "my-step")
-    assert "2-file limit" in str(exc.value)
+    assert "2-entry limit" in str(exc.value)
 
 
 def _nest_dirs(root: Path, depth: int) -> Path:
@@ -375,7 +375,7 @@ def test_directories_count_toward_file_limit(tmp_path, monkeypatch):
     (pkg / "empty-b").mkdir()
     with pytest.raises(installer.StepInstallError) as exc:
         installer.validate_step_package(pkg, "my-step")
-    assert "3-file limit" in str(exc.value)
+    assert "3-entry limit" in str(exc.value)
 
 
 def test_depth_limit_boundary(tmp_path, monkeypatch):
@@ -423,7 +423,7 @@ def test_copy_enforces_entry_limit_if_source_grows_after_validation(
     installer._copy_package_tree(pkg, tmp_path / "ok")
 
     (pkg / "empty-b").mkdir()
-    with pytest.raises(installer.StepInstallError, match="3-file limit"):
+    with pytest.raises(installer.StepInstallError, match="3-entry limit"):
         installer._copy_package_tree(pkg, tmp_path / "too-many")
 
 
