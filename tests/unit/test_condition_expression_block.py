@@ -946,16 +946,17 @@ def test_a_literal_never_reaches_the_resolver():
 def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     """Widening `_INDEXED_SEGMENT` alone must reach the gate.
 
-    `steps.…​.task_list[-1]` is rejected today because `_INDEXED_SEGMENT` — the
-    one place `_resolve_dot_path` says what an index looks like — accepts digits
-    only. Widening it there and nowhere else must be enough; if the gate keeps
-    its own copy of the shape (as `_PATH_SEGMENT` used to), this fails.
+    `steps.…​.task_list[+1]` is rejected today because `_INDEXED_SEGMENT` — the
+    one place `_resolve_dot_path` says what an index looks like — accepts an
+    optional minus sign and digits only. Widening it there and nowhere else must
+    be enough; if the gate keeps its own copy of the shape (as `_PATH_SEGMENT`
+    used to), this fails.
     """
-    path = "steps.tasks.output.task_list[-1].file"
+    path = "steps.tasks.output.task_list[+1].file"
     assert expressions._unresolvable_term(path) is not None
 
     monkeypatch.setattr(
-        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
     )
     assert expressions._unresolvable_term(path) is None
 
@@ -963,20 +964,14 @@ def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
 def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
     """The gate's operands come from the evaluator's own walk, not a second parse.
 
-    If `_evaluate_simple_expression` stops treating something as a leaf — which
-    is what unwrapping a parenthesised group does — the gate stops checking it,
-    with no change to the gate itself.
+    What `_evaluate_simple_expression` treats as a leaf is what the gate checks.
+    Unwrapping a parenthesised group takes that group off the list, so the gate
+    stops checking it, with no change to the gate itself.
     """
     grouped = "(inputs.a or inputs.b) and inputs.c"
-    assert expressions._unresolvable_term(grouped) is not None
-
-    real = expressions._evaluate_simple_expression
-
-    def unwrapping(expr, namespace):
-        stripped = expr.strip()
-        if stripped.startswith("(") and stripped.endswith(")"):
-            return unwrapping(stripped[1:-1], namespace)
-        return real(expr, namespace)
-
-    monkeypatch.setattr(expressions, "_evaluate_simple_expression", unwrapping)
     assert expressions._unresolvable_term(grouped) is None
+
+    # Stop the evaluator unwrapping the group and it becomes a leaf again, so
+    # the gate goes back to reporting it as a name it cannot resolve.
+    monkeypatch.setattr(expressions, "_is_wrapped_in_parens", lambda text: False)
+    assert expressions._unresolvable_term(grouped) is not None

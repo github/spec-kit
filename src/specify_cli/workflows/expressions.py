@@ -139,7 +139,7 @@ _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 # against it, and the condition gate below reuses it rather than describing the
 # same shape a second time, so widening what indexing accepts cannot leave the
 # evaluator and the gate disagreeing.
-_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(\d+)\]$")
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
 
 _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 
@@ -147,12 +147,13 @@ _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
-    Supports dict key access and list indexing (e.g., ``task_list[0]``).
+    Supports dict key access and list indexing, including the negative form
+    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0]
+        # Handle list indexing: name[0], name[-1]
         idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
@@ -160,7 +161,7 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
                 current = current.get(key)
             else:
                 return None
-            if isinstance(current, list) and 0 <= idx < len(current):
+            if isinstance(current, list) and -len(current) <= idx < len(current):
                 current = current[idx]
             else:
                 return None
@@ -552,6 +553,31 @@ _COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
 _leaf_sink: ContextVar[list[str] | None] = ContextVar("_leaf_sink", default=None)
 
 
+def _is_wrapped_in_parens(text: str) -> bool:
+    """True when *text* is one parenthesised group, brackets and all.
+
+    ``(a or b)`` is; ``(a) and (b)`` is not, because the opening paren closes
+    before the end. Quote-aware, so ``('(')`` does not count its own literal.
+    """
+    if not (text.startswith("(") and text.endswith(")")):
+        return False
+    quote: str | None = None
+    depth = 0
+    for index, ch in enumerate(text):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return index == len(text) - 1
+    return False
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -572,6 +598,16 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # strings containing `|` or operator keywords are not mis-parsed downstream.
     if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
+
+    # A parenthesised group. The operator scans below deliberately skip over
+    # bracketed text so an operator inside a quoted or nested operand is not
+    # split on -- which also means nothing ever looked inside a group that
+    # wraps the WHOLE expression. `(a or b) and c` split at the top-level
+    # `and`, then evaluated `(a or b)` as a dot path, found no such key, and
+    # returned None: the `or` was never evaluated and the whole thing read
+    # false. Unwrap here so grouping means what it says.
+    if _is_wrapped_in_parens(expr):
+        return _evaluate_simple_expression(expr[1:-1], namespace)
 
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is

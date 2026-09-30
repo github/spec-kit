@@ -27,7 +27,7 @@ specify preset add [<preset_id>]
 | `--from <url>`   | Install from a custom URL instead of the catalog         |
 | `--priority <N>` | Resolution priority (default: 10; lower = higher precedence) |
 
-Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with the currently installed AI coding agent integration.
+Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with supported active AI coding agent integrations. The generic integration currently delivers extension invocations but does not register preset command or skill overrides.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
@@ -138,6 +138,8 @@ Changes the resolution priority of an installed preset. Lower numbers take prece
 
 Preset catalogs control where `search` and `add` look for presets. Catalogs are checked in priority order (lower number = higher precedence).
 
+> **A project's `.specify/preset-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before installing a preset in an unfamiliar project, run `specify preset catalog list` and inspect any catalog marked install-allowed — a project supplying that config, or marking a catalog install-allowed, is not evidence its presets were reviewed. Only mark a catalog `install_allowed` for one you authored or have vetted yourself; leave unfamiliar and community catalogs discovery-only.
+
 ### List Catalogs
 
 ```bash
@@ -156,7 +158,7 @@ specify preset catalog add <url>
 | -------------------------------------------- | -------------------------------------------------- |
 | `--name <name>`                              | Required. Unique name for the catalog              |
 | `--priority <N>`                             | Priority (default: 10; lower = higher precedence)  |
-| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only) |
+| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only). Only enable for a catalog you own and vet; never enable it for an unvetted public catalog. |
 | `--description <text>`                       | Optional description                               |
 
 Adds a catalog to the project's `.specify/preset-catalogs.yml`.

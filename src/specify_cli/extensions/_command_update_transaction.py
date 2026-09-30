@@ -75,7 +75,12 @@ def run_update_command(extension: str | None) -> None:
         console.print()
         updated_extensions = []
         failed_updates = []
-        registrar = CommandRegistrar()
+        try:
+            registrar = CommandRegistrar(project_root)
+        except (OSError, ValueError) as exc:
+            raise ExtensionError(
+                f"Cannot resolve extension update registration settings: {exc}"
+            ) from exc
         hook_executor = HookExecutor(project_root)
         from ..agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
 
@@ -104,6 +109,7 @@ def run_update_command(extension: str | None) -> None:
 
             # Store backup state
             backup_registry_entry = None  # None means registry entry not yet captured
+            backup_generic_artifacts = None
             backup_installed = UNSET  # Original installed list from extensions.yml
             backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
@@ -221,6 +227,28 @@ def run_update_command(extension: str | None) -> None:
 
                 # 1. Backup registry entry (always, even if extension dir doesn't exist)
                 backup_registry_entry = manager.registry.get(extension_id)
+                if (
+                    isinstance(backup_registry_entry, dict)
+                    and (
+                        "generic" in registrar.AGENT_CONFIGS
+                        or backup_registry_entry.get("generic_artifact_hashes")
+                    )
+                ):
+                    generic_active = "generic" in registrar.AGENT_CONFIGS
+                    backup_generic_artifacts = (
+                        manager._snapshot_generic_refresh_artifacts(
+                            extension_id,
+                            (
+                                manager.get_extension(extension_id)
+                                if generic_active else None
+                            ),
+                            backup_registry_entry,
+                            skills_mode_active=is_ai_skills_enabled(
+                                _commands.load_init_options(project_root)
+                            ),
+                            include_current_candidates=generic_active,
+                        )
+                    )
 
                 # 2. Backup extension directory
                 extension_dir = manager.extensions_dir / extension_id
@@ -538,6 +566,14 @@ def run_update_command(extension: str | None) -> None:
 
                     # 9. Restore metadata from backup (installed_at, enabled state)
                     if backup_registry_entry and isinstance(backup_registry_entry, dict):
+                        init_options = _commands.load_init_options(project_root)
+                        if (
+                            not backup_registry_entry.get("enabled", True)
+                            and isinstance(init_options, dict)
+                            and init_options.get("ai") == "generic"
+                        ):
+                            manager.disable_generic_extension_artifacts(extension_id)
+
                         # Copy current registry entry to avoid mutating internal
                         # registry state before explicit restore().
                         current_metadata = manager.registry.get(extension_id)
@@ -750,6 +786,11 @@ def run_update_command(extension: str | None) -> None:
                             backup_skill_dir,
                             original_skill_dir,
                             symlinks=True,
+                        )
+
+                    if backup_generic_artifacts is not None:
+                        manager._restore_generic_refresh_artifacts(
+                            backup_generic_artifacts, extension_id
                         )
 
                     # Remove empty artifact directories that did not exist at

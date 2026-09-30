@@ -11,6 +11,8 @@
   items:
     - name: Installation
       href: installation.md
+    - name: Spec Kit's Agentic SDLC
+      href: guides/agentic-sdlc.md
     - name: Spec-Driven Development
       href: quickstart.md
     - name: Bug Fixing

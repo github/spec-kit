@@ -105,6 +105,7 @@ specify workflow add <source>
 | --------------- | ------------------------------------------------------ |
 | `--dev`         | Install from a local YAML file, package directory, or archive |
 | `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
+| `--version <version>` | Install an exact advertised catalog release (`<source>` must be a workflow ID) |
 
 Installs a workflow from the catalog, an HTTPS URL, a local YAML file, a
 directory containing `workflow.yml`, or a `.zip`, `.tar.gz`, or `.tgz`
@@ -114,6 +115,37 @@ top-level directory.
 Directory and archive installs preserve the complete workflow package,
 including scripts and other companion files. ZIP, `.tar.gz`, and `.tgz`
 archives follow the same validation and installation behavior.
+
+Catalog entries keep the current release's `version`, `url`, optional `sha256`,
+and optional `requires` at the top level. An optional `releases` mapping
+advertises historical versions without changing what unqualified `add`,
+`search`, `info`, or `update` select:
+
+```json
+{
+  "id": "example",
+  "version": "2.0.0",
+  "url": "https://example.com/example-2.0.0.zip",
+  "releases": {
+    "1.0.0": {
+      "url": "https://example.com/example-1.0.0.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requires": {"speckit_version": ">=1.0.0"}
+    }
+  }
+}
+```
+
+Each historical release needs its own URL and SHA-256 digest; `requires` is
+optional and, when present, must match the downloaded workflow definition.
+Advertised versions use the workflow definition's `X.Y.Z` version format;
+`--version` also accepts equivalent spellings such as `v1.0` when selecting an
+advertised `1.0.0` release.
+The requested version must exist in the highest-priority catalog that provides
+the workflow. A missing version does not fall back to another source, and
+discovery-only catalogs cannot be installed from. The downloaded workflow ID,
+version, and declared digest are verified before installation. `--version` does
+not apply to local paths, direct URLs, or `--from` installations.
 
 ## Workflow Overlays
 
@@ -378,13 +410,20 @@ Searches all active catalogs for workflows matching the query.
 
 ```bash
 specify workflow info <workflow_id>
+specify workflow info <workflow_id> --versions
 ```
 
 Shows detailed information about a workflow, including its steps, inputs, and requirements.
+`--versions` lists the current catalog version followed by advertised historical
+versions and indicates whether the winning catalog is installable or
+discovery-only (not installable). It also works when a different version is
+installed locally.
 
 ## Catalog Management
 
 Workflow catalogs control where `search` and `add` look for workflows. Catalogs are checked in priority order.
+
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 

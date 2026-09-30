@@ -464,6 +464,9 @@ class _PresetSkillMethods:
         )
         from ..shared_infra import _ensure_safe_shared_directory
 
+        opts = load_init_options(self.project_root)
+        if isinstance(opts, dict) and opts.get("ai") == "generic":
+            return None
         try:
             skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -478,7 +481,6 @@ class _PresetSkillMethods:
         if skills_dir is None:
             return None
 
-        opts = load_init_options(self.project_root)
         selected_ai = opts.get("ai") if isinstance(opts, dict) else None
         if not isinstance(selected_ai, str) or not selected_ai:
             return skills_dir

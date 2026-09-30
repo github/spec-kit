@@ -32,7 +32,7 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None or not isinstance(metadata, dict):
+    if not extension_id or metadata is None or not isinstance(metadata, dict):
         console.print(
             f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
             "not found in registry (corrupted state)"
@@ -45,14 +45,23 @@ def extension_disable(
         )
         raise typer.Exit(0)
 
-    # Remove this agent's tracked artifacts before flipping the enabled bit.
-    # If cleanup fails, registry metadata remains intact and the extension is
-    # still enabled, so a retry can safely find the artifacts again.
-    agent = _commands.load_init_options(project_root).get("ai")
-    if agent:
-        manager.unregister_agent_artifacts(agent, extension_ids={extension_id})
+    from .. import load_init_options
 
-    manager.registry.update(extension_id, {"enabled": False})
+    agent = load_init_options(project_root).get("ai")
+    if agent == "generic":
+        from . import ExtensionError
+
+        try:
+            manager.disable_generic_extension_artifacts(extension_id)
+        except (ExtensionError, ValueError, OSError) as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
+    else:
+        # Remove this agent's tracked artifacts before flipping enabled. If
+        # cleanup fails, ownership metadata and enabled state remain retryable.
+        if agent:
+            manager.unregister_agent_artifacts(agent, extension_ids={extension_id})
+        manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
     config = hook_executor.get_project_config()
