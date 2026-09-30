@@ -54,10 +54,12 @@ class DockerAgentIntegration(SkillsIntegration):
         """Return the available Docker Agent command form."""
 
         # The shared executable override supports both a standalone
-        # ``docker-agent`` binary and the Docker CLI plugin form.
+        # ``docker-agent`` binary and the Docker CLI plugin form. Whether an
+        # override is in effect decides which of those applies; its value does
+        # not, because an operator may legitimately pin the default name.
         executable = self._resolve_executable()
         command = docker_agent_command(
-            None if executable == self.key else executable
+            executable if self._executable_override() is not None else None
         )
         if command is None:
             # Preserve the normal executable-shaped argv for dispatch callers;
@@ -78,7 +80,7 @@ class DockerAgentIntegration(SkillsIntegration):
         case, keeping preflight and dispatch in agreement.
         """
         executable = self._resolve_executable()
-        if executable == self.key:
+        if self._executable_override() is None:
             return docker_agent_command(None) is not None
         if not super().is_cli_available():
             return False

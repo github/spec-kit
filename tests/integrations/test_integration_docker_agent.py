@@ -308,3 +308,68 @@ def test_default_key_availability_still_uses_the_shared_probe(monkeypatch):
 
     # No override: the PATH-based probe stays authoritative.
     assert DockerAgentIntegration().is_cli_available() is True
+
+
+def test_override_equal_to_the_key_selects_the_pinned_standalone_binary(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "docker-agent")
+    # Only the Docker CLI plugin form is discoverable on PATH, which is what
+    # an unset override would fall back to.
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0})(),
+    )
+
+    args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
+
+    # The operator pinned the standalone binary. That it happens to spell the
+    # integration key does not make it an absent override, so the plugin form
+    # is not substituted for it.
+    assert args == ["docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+
+
+def test_override_equal_to_the_key_keeps_the_inherited_availability_check(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "docker-agent")
+    # The pinned binary is not installed; only the plugin form is.
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0})(),
+    )
+
+    # An override is in effect, so the inherited PATH/executable check applies
+    # and the missing binary makes the integration unavailable — preflight and
+    # dispatch have to agree on the pinned name.
+    assert DockerAgentIntegration().is_cli_available() is False
+
+
+def test_override_equal_to_the_key_is_available_when_installed(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "docker-agent")
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker-agent" if name == "docker-agent" else None,
+    )
+
+    assert DockerAgentIntegration().is_cli_available() is True
+
+
+def test_whitespace_only_override_keeps_the_plugin_fallback(monkeypatch):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "   ")
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: "/usr/bin/docker" if name == "docker" else None,
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 0})(),
+    )
+
+    # Whitespace is treated as unset, so the plugin fallback stays in play.
+    assert DockerAgentIntegration().is_cli_available() is True
