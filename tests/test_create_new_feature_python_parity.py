@@ -17,6 +17,7 @@ from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    WINDOWS_POWERSHELL,
     _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
@@ -241,6 +242,42 @@ def test_bash_respects_explicit_non_utf8_lc_all(repo: Path, locale_name: str) ->
         assert "A UTF-8 locale is required" in unicode_result.stderr
         assert "LC_ALL" in unicode_result.stderr
         assert not (repo / "specs").exists()
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "short_name", ["foo\tbar", "foo\nbar"], ids=["tab", "newline"]
+)
+def test_bash_ascii_controls_need_no_utf8_locale_or_python(
+    repo: Path, tmp_path: Path, short_name: str
+) -> None:
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    for name in ("python3", "python", "py"):
+        shim = shim_dir / name
+        shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8", newline="\n")
+        shim.chmod(0o755)
+
+    for lc_all in ("C", None):
+        env = clean_env()
+        if lc_all is not None:
+            env["LC_ALL"] = lc_all
+        else:
+            env.pop("LC_ALL", None)
+        env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+        bash = run(
+            bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", short_name, "x"),
+            repo,
+            env,
+        )
+        py = run(
+            py_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", short_name, "x"),
+            repo,
+            env,
+        )
+        assert bash.returncode == py.returncode == 0, bash.stderr
+        assert json_stdout(bash) == json_stdout(py)
+        assert json_stdout(bash)["BRANCH_NAME"] == "001-foo-bar"
 
 
 @requires_bash
@@ -1582,6 +1619,32 @@ def test_no_ascii_word_description_matches_across_twins(
     assert names == {expected}, names
 
 
+@pytest.mark.skipif(WINDOWS_POWERSHELL is None, reason="Windows PowerShell unavailable")
+def test_windows_powershell_51_preserves_unicode_and_utf8_limit(repo: Path) -> None:
+    assert WINDOWS_POWERSHELL is not None
+    for short_name, expected in (
+        ("添加用户", "001-添加用户"),
+        ("𠀀" * 240, "001-" + "𠀀" * 60),
+    ):
+        result = run(
+            [
+                WINDOWS_POWERSHELL,
+                "-NoProfile",
+                "-File",
+                str(repo / ".specify/scripts/powershell/create-new-feature.ps1"),
+                "-Json",
+                "-DryRun",
+                "-ShortName",
+                short_name,
+                "x",
+            ],
+            repo,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json_stdout(result)["BRANCH_NAME"] == expected
+        assert len(expected.encode("utf-8")) <= 244
+
+
 @requires_bash
 @pytest.mark.parametrize("variant", ["bash", "python", "powershell"])
 @pytest.mark.parametrize(
@@ -1589,8 +1652,9 @@ def test_no_ascii_word_description_matches_across_twins(
     [
         ("客" * 100, "客" * 80),
         ("a" + "客" * 80, "a" + "客" * 79),
+        ("𠀀" * 240, "𠀀" * 60),
     ],
-    ids=["exact_boundary", "partial_codepoint"],
+    ids=["exact_boundary", "partial_codepoint", "four_byte_long_suffix"],
 )
 def test_unicode_branch_name_fits_244_bytes(
     repo: Path, variant: str, short_name: str, expected_suffix: str
@@ -1615,3 +1679,33 @@ def test_unicode_branch_name_fits_244_bytes(
     assert subprocess.run(
         ["git", "check-ref-format", "--branch", branch], capture_output=True
     ).returncode == 0
+
+
+@requires_bash
+def test_bash_truncation_uses_bounded_byte_checks(repo: Path, tmp_path: Path) -> None:
+    real_wc = shutil.which("wc")
+    assert real_wc is not None
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    count_file = tmp_path / "wc-count"
+    shim = shim_dir / "wc"
+    shim.write_text(
+        "#!/bin/sh\n"
+        f"printf . >> {shlex.quote(_bash_posix_path(count_file))}\n"
+        f"exec {shlex.quote(_bash_posix_path(Path(real_wc)))} \"$@\"\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env['PATH']}"
+
+    result = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--short-name", "𠀀" * 240, "x"),
+        repo,
+        env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result)["BRANCH_NAME"] == "001-" + "𠀀" * 60
+    assert count_file.read_text(encoding="utf-8").count(".") <= 16

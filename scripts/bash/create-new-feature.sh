@@ -151,6 +151,10 @@ spec_prefix_exists() {
 #   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
 #     '+', leaving repeated separators uncollapsed on macOS.
 #   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
+contains_non_ascii() {
+    LC_ALL=C grep -q '[^[:print:][:cntrl:]]'
+}
+
 UNICODE_LOCALE=""
 locale_candidates=(C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 "${LC_CTYPE:-${LANG:-}}")
 if [ -n "${LC_ALL:-}" ]; then
@@ -165,7 +169,7 @@ done
 
 if [ -z "$UNICODE_LOCALE" ]; then
     UNICODE_LOCALE=C
-    if printf '%s' "${SHORT_NAME:-$FEATURE_DESCRIPTION}" | LC_ALL=C grep -q '[^ -~]'; then
+    if printf '%s' "${SHORT_NAME:-$FEATURE_DESCRIPTION}" | contains_non_ascii; then
         if [ -n "${LC_ALL:-}" ]; then
             echo "Error: A UTF-8 locale is required to create a Unicode feature name; LC_ALL=$LC_ALL is not usable" >&2
         else
@@ -176,9 +180,9 @@ if [ -z "$UNICODE_LOCALE" ]; then
 fi
 
 unicode_words() {
-    local name="$1"
+    local name="${1//$'\n'/ }"
     local separator="$2"
-    if printf '%s' "$name" | LC_ALL=C grep -q '[^ -~]'; then
+    if printf '%s' "$name" | contains_non_ascii; then
         local -a python_cmd=()
         local override="${SPECKIT_PYTHON_EXECUTABLE:-${SPECKIT_PYTHON:-}}"
         if [ -n "$override" ] && command -v "$override" >/dev/null 2>&1 &&
@@ -231,10 +235,19 @@ fit_branch_name() {
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
         local truncated_suffix
         local -x LC_ALL="$UNICODE_LOCALE"
-        truncated_suffix="${branch_suffix:0:$max_suffix_length}"
-        while [ "$(branch_byte_count "$truncated_suffix")" -gt "$max_suffix_length" ]; do
-            truncated_suffix="${truncated_suffix%?}"
+        local low=0 high=${#branch_suffix} mid
+        if (( high > max_suffix_length )); then
+            high=$max_suffix_length
+        fi
+        while (( low < high )); do
+            mid=$(((low + high + 1) / 2))
+            if [ "$(branch_byte_count "${branch_suffix:0:$mid}")" -le "$max_suffix_length" ]; then
+                low=$mid
+            else
+                high=$((mid - 1))
+            fi
         done
+        truncated_suffix="${branch_suffix:0:$low}"
         truncated_suffix="${truncated_suffix%-}"
         branch_name="${feature_num}-${truncated_suffix}"
     fi
@@ -288,7 +301,7 @@ generate_branch_name() {
 
         # Retain non-ASCII words even when shorter than three characters.
         if ! printf '%s\n' "$word" | LC_ALL=C grep -qE "$stop_words"; then
-            if [ ${#word} -ge 3 ] || printf '%s' "$word" | LC_ALL=C grep -q '[^ -~]'; then
+            if [ ${#word} -ge 3 ] || printf '%s' "$word" | contains_non_ascii; then
                 meaningful_words+=("$word")
             # Keep short words that appear as an uppercase acronym in the original.
             # Uppercase via tr and match with grep -w (both portable) rather than
