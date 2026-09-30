@@ -1876,14 +1876,20 @@ class WorkflowEngine:
                     output, item_alias_records = run_item(
                         item_idx, context, local_only=parent_local_only
                     )
-                    if parent_local_only:
-                        # run_item discarded this item's private snapshot, so
-                        # publish its aliases into the enclosing item's own
-                        # steps view too (not just its accumulator) — a later
-                        # sibling of this nested fan-out, still inside the
-                        # enclosing item, must resolve ``steps.<inner-id>``
-                        # exactly as it would after a concurrent nested
-                        # fan-out (see the post-join publish below).
+                    if parent_local_only or parent_alias_records is not None:
+                        # run_item discarded this item's private snapshot
+                        # (isolated parent) or restored every reserved id it
+                        # touched (sequential parent), so publish its
+                        # context.steps-only aliases into the enclosing
+                        # item's own steps view too (not just its
+                        # accumulator) — a later sibling of this nested
+                        # fan-out, still inside the enclosing item, must
+                        # resolve ``steps.<inner-id>`` exactly as it would
+                        # after a concurrent nested fan-out (see the
+                        # post-join publish below). A sequential enclosing
+                        # item's own run_item snapshot/restore still keeps a
+                        # reserved id's transient value from leaking past
+                        # that item.
                         context.steps.update(item_alias_records)
                         if parent_alias_records is not None:
                             parent_alias_records.update(item_alias_records)
@@ -2039,6 +2045,15 @@ class WorkflowEngine:
                 # skip only this bare-id convenience alias so it can never
                 # clobber that unrelated step's result.
                 if orig_id in context.reserved_step_ids:
+                    if parent_alias_records is not None:
+                        # Nested inside a SEQUENTIAL enclosing fan-out item:
+                        # still expose the item-local value to a later
+                        # sibling within that enclosing item, via its own
+                        # steps view and accumulator only. The enclosing
+                        # item's run_item restores every reserved id once it
+                        # finishes, so this never outlives that item.
+                        context.steps[orig_id] = data
+                        parent_alias_records[orig_id] = data
                     continue
                 self._record_result(context, state, orig_id, data)
 

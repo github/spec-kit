@@ -7290,6 +7290,73 @@ steps:
             )
         assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
 
+    @pytest.mark.parametrize("inner_concurrency", [1, 2])
+    def test_reserved_alias_visible_after_nested_fan_out_in_sequential_item(
+        self, project_dir, inner_concurrency
+    ):
+        """A fan-out nested inside a SEQUENTIAL outer fan-out item whose
+        template id collides with a reserved workflow id (`leaf`) must still
+        expose its item-local `leaf` to a later sibling inside that outer
+        item -- the same view a concurrent outer item already gets.
+
+        Previously the sequential inner path republished aliases only when
+        the enclosing item was isolated, and the concurrent inner path
+        dropped every reserved alias outright, so `inner_after` read the
+        unrelated outside `leaf` ("outside") instead of "q". After the outer
+        fan-out, the outside result must still win.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "nested-reserved-alias"
+  name: "Nested Reserved Alias"
+  version: "1.0.0"
+steps:
+  - id: leaf
+    type: shell
+    run: "echo outside"
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['x', 'y'] }}}}"
+    max_concurrency: 1
+    step:
+      id: item
+      type: if
+      condition: "true"
+      then:
+        - id: inner
+          type: fan-out
+          items: "{{{{ ['p', 'q'] }}}}"
+          max_concurrency: {inner_concurrency}
+          step:
+            id: leaf
+            type: shell
+            run: "echo {{{{ item }}}}"
+        - id: inner_after
+          type: shell
+          run: "echo {{{{ steps.leaf.output.stdout }}}}"
+  - id: after
+    type: shell
+    run: "echo {{{{ steps.leaf.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        inner_after = {
+            k: v["output"]["stdout"].strip()
+            for k, v in state.step_results.items()
+            if k.startswith("fan:") and "inner_after" in k
+        }
+        assert len(inner_after) == 2, inner_after
+        assert set(inner_after.values()) == {"q"}
+        assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
+        assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
+
     @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
     def test_fan_out_namespaces_nested_descendant_steps(self, project_dir, container):
         """A step nested inside a fan-out template's `if`/`switch` branch
@@ -7432,7 +7499,6 @@ steps:
         outcome -- not "x", which a completion-order race would produce.
         """
         import threading
-        import time
 
         from specify_cli.workflows.base import (
             RunStatus,
@@ -7464,19 +7530,24 @@ steps:
 
             def execute(self, config, context):
                 marker = outer_marker[id(context)]
-                if marker == "y":
-                    result = StepResult(
-                        status=StepStatus.COMPLETED, output={"marker": marker}
-                    )
-                    y_done.set()
-                    return result
-                # "x": wait for "y" to finish first, then give the engine
-                # time to complete y's post-execute alias write before x's
-                # own alias write can happen -- forcing x to complete LAST
-                # in wall-clock order despite being FIRST in item order.
-                assert y_done.wait(timeout=5), "y never completed"
-                time.sleep(0.05)
+                if marker == "x":
+                    # Wait until "y"'s whole nested fan-out -- including the
+                    # engine's alias write for y's "leaf" -- has finished
+                    # (signalled by the step AFTER it, see _SignalStep),
+                    # forcing x to complete LAST in wall-clock order despite
+                    # being FIRST in item order.
+                    assert y_done.wait(timeout=5), "y never completed"
                 return StepResult(status=StepStatus.COMPLETED, output={"marker": marker})
+
+        class _SignalStep(StepBase):
+            type_key = "signal"
+
+            def execute(self, config, context):
+                # Runs only after the preceding nested fan-out step has
+                # returned, i.e. after its alias for "leaf" was published.
+                if outer_marker[id(context)] == "y":
+                    y_done.set()
+                return StepResult(status=StepStatus.COMPLETED, output={})
 
         engine = WorkflowEngine(project_root=tmp_path)
         context = StepContext()
@@ -7487,6 +7558,7 @@ steps:
             "mark": _MarkStep(),
             "fan-out": FanOutStep(),
             "write": _WriteStep(),
+            "signal": _SignalStep(),
         }
         template = {
             "id": "item",
@@ -7501,6 +7573,7 @@ steps:
                     "max_concurrency": 1,
                     "step": {"id": "leaf", "type": "write"},
                 },
+                {"id": "signal", "type": "signal"},
             ],
         }
         items = ["x", "y"]
