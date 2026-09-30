@@ -2602,6 +2602,126 @@ def test_aborted_fanout_sibling_is_never_restarted(tmp_path, monkeypatch, templa
         assert results[1] == published
 
 
+FAN_OUT_ITEM_TEMPLATES = [
+    {"id": "tmpl", "type": "snap"},
+    {
+        "id": "tmpl",
+        "type": "if",
+        "condition": True,
+        "then": [{"id": "inner", "type": "snap"}],
+    },
+    call("child", id="tmpl", input={"n": "{{ item }}"}),
+]
+FAN_OUT_ITEM_TEMPLATE_IDS = ["step", "if-container", "workflow-call"]
+
+
+@pytest.mark.parametrize("max_concurrency", [1, 3], ids=["sequential", "parallel"])
+@pytest.mark.parametrize(
+    "template", FAN_OUT_ITEM_TEMPLATES, ids=FAN_OUT_ITEM_TEMPLATE_IDS
+)
+def test_resumed_fan_out_item_sees_its_uninterrupted_context(
+    tmp_path, monkeypatch, probe, template, max_concurrency
+):
+    """Exact resume must re-run a fan-out item in the context it has in a run
+    that never paused. Replay reconstructs item contexts from the checkpoint,
+    so any difference (for example, a result the live run adds only after its
+    items) is a live/replay gap."""
+    from dataclasses import asdict
+
+    pause = {"enabled": False}
+    seen = {}
+
+    class Snap(StepBase):
+        type_key = "snap"
+
+        def execute(self, config, context):
+            item = context.item if context.item is not None else context.inputs["n"]
+            view = asdict(context)
+            del view["run_id"], view["is_resume"]
+            phase = "resume" if context.is_resume else pause["enabled"]
+            seen.setdefault(phase, {})[item] = view
+            if item == 1 and pause["enabled"] and not context.is_resume:
+                return StepResult(StepStatus.PAUSED, output={"item": item})
+            return StepResult(output={"item": item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "snap", Snap())
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [{"id": "inner", "type": "snap"}],
+            inputs={"n": {"type": "number"}},
+        ),
+    )
+    root = definition(
+        "parent",
+        [
+            {"id": "setup", "type": "probe", "value": "ready"},
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [0, 1, 2],
+                "max_concurrency": max_concurrency,
+                "step": template,
+            },
+        ],
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.COMPLETED
+    pause["enabled"] = True
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert state.status == RunStatus.COMPLETED
+    resumed = seen["resume"]
+    assert 1 in resumed
+    for item, view in resumed.items():
+        assert view == seen[False][item], f"item {item} context differs on resume"
+
+
+def test_resumed_fan_out_items_do_not_see_partial_results(tmp_path, monkeypatch):
+    seen = []
+
+    class Look(StepBase):
+        type_key = "look"
+
+        def execute(self, config, context):
+            seen.append("results" in context.steps["fan"]["output"])
+            if context.item == 1 and not context.is_resume:
+                return StepResult(StepStatus.PAUSED, output={"item": 1})
+            return StepResult(output={"item": context.item})
+
+    monkeypatch.setitem(STEP_REGISTRY, "look", Look())
+    root = definition(
+        "parent",
+        [
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [0, 1, 2],
+                "step": {"id": "look", "type": "look"},
+            }
+        ],
+    )
+    state = WorkflowEngine(tmp_path).execute(root)
+    assert state.status == RunStatus.PAUSED
+    # The paused fan-out still reports its partial results.
+    assert state.step_results["fan"]["output"]["results"] == [{"item": 0}, {"item": 1}]
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert state.status == RunStatus.COMPLETED
+    # Items never see the engine-added results: not live, not after resume.
+    assert seen == [False, False, False, False]
+    assert state.step_results["fan"]["output"]["results"] == [
+        {"item": 0},
+        {"item": 1},
+        {"item": 2},
+    ]
+
+
 NAN_SNAPSHOT = """
 schema_version: "1.0"
 workflow:

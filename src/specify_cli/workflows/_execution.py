@@ -821,6 +821,14 @@ class Execution:
             workers = 1
         workers = min(workers, len(items))
         initial = deepcopy(context.steps)
+        # Items run before the engine adds ``results`` to the fan-out record. A
+        # resumed fan-out's checkpointed record carries the partial results, so
+        # hide them from item contexts; the reporting view keeps them.
+        for key in {config.get("id", "step-0"), qualified}:
+            record = initial.get(key)
+            if isinstance(record, dict) and "results" in record.get("output", {}):
+                output = {k: v for k, v in record["output"].items() if k != "results"}
+                initial[key] = {**record, "output": output}
         halted = threading.Event()
         template_name = child_steps(config, node, 0)[0]["id"]
 
