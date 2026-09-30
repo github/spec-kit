@@ -38,6 +38,27 @@ class TestWorkflowStepAddCLI:
         assert result.exit_code != 0
         assert "Refusing to use symlinked step directory" in result.output
 
+    def test_add_discovery_only_warning_prints_step_id_literally(
+        self, project_dir, monkeypatch
+    ):
+        """A valid step ID containing Rich markup brackets is shown verbatim."""
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {"id": step_id, "_install_allowed": False},
+        )
+
+        result = CliRunner().invoke(app, ["workflow", "step", "add", "[red]step"])
+
+        assert result.exit_code == 1, result.output
+        assert "Step type '[red]step' is from a" in result.output
+
     def test_add_rejects_oversized_step_response(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
 

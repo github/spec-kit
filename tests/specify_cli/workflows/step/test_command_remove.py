@@ -296,3 +296,95 @@ class TestWorkflowStepRemoveCLI:
 
         assert result.exit_code != 0
         assert "Refusing to use symlinked step directory" in result.output
+
+
+# A valid step ID (brackets are allowed) that Rich would otherwise parse as a
+# style tag and drop from the output.
+_MARKUP_STEP_ID = "[red]step"
+
+
+def _flat(output: str) -> str:
+    """Undo Rich line wrapping so long messages can be matched."""
+    return output.replace("\n", "")
+
+
+class TestWorkflowStepRemoveMarkupEscaping:
+    """User-controlled values are printed literally, not parsed as markup."""
+
+    def test_not_installed_error(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "remove", _MARKUP_STEP_ID]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert f"Step type '{_MARKUP_STEP_ID}' is not installed" in result.output
+
+    def test_lock_failure_error(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        lock_path = project_dir / ".specify" / ".step-install.lock"
+        if lock_path.exists():
+            lock_path.unlink()
+        lock_path.mkdir()
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "remove", _MARKUP_STEP_ID]
+        )
+
+        assert result.exit_code == 1, result.output
+        assert f"Failed to lock step removal '{_MARKUP_STEP_ID}'" in _flat(
+            result.output
+        )
+
+    def test_orphan_warning_and_success_message(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        step_dir = _steps_dir(project_dir) / _MARKUP_STEP_ID
+        step_dir.mkdir(parents=True)
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "remove", _MARKUP_STEP_ID]
+        )
+
+        assert result.exit_code == 0, result.output
+        output = _flat(result.output)
+        assert f"'{_MARKUP_STEP_ID}' has no registry entry" in output
+        assert f"Step type '{_MARKUP_STEP_ID}' uninstalled" in output
+        assert not step_dir.exists()
+
+    def test_directory_delete_failure_error(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+        StepRegistry(project_dir).add(
+            _MARKUP_STEP_ID, {"name": "x", "type_key": _MARKUP_STEP_ID}
+        )
+        step_dir = _steps_dir(project_dir) / _MARKUP_STEP_ID
+        step_dir.mkdir(parents=True)
+        real_rmtree = shutil.rmtree
+
+        def _failing_rmtree(path, *args, **kwargs):
+            if Path(path).name == _MARKUP_STEP_ID:
+                raise OSError("simulated [bold]delete[/bold] failure")
+            return real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", _failing_rmtree)
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "remove", _MARKUP_STEP_ID]
+        )
+
+        assert result.exit_code == 1, result.output
+        output = _flat(result.output)
+        assert f"{_MARKUP_STEP_ID}: simulated [bold]delete[/bold] failure" in output
+        assert step_dir.is_dir()

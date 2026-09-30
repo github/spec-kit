@@ -19,6 +19,7 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
 
     from .catalog import StepRegistry, StepValidationError
 
+    safe_step_id = cli._escape_markup(step_id)
     registry = StepRegistry(project_root)
     in_registry = registry.is_installed(step_id)
 
@@ -30,16 +31,16 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
     try:
         rel_parts = step_dir.relative_to(steps_base_dir).parts
     except ValueError:
-        cli.console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
+        cli.console.print(f"[red]Error:[/red] Invalid step id '{safe_step_id}'")
         raise cli.typer.Exit(1)
     if rel_parts != (step_id,):
-        cli.console.print(f"[red]Error:[/red] Invalid step id '{step_id}'")
+        cli.console.print(f"[red]Error:[/red] Invalid step id '{safe_step_id}'")
         raise cli.typer.Exit(1)
 
     dir_exists = step_dir.exists()
 
     if not in_registry and not dir_exists:
-        cli.console.print(f"[red]Error:[/red] Step type '{step_id}' is not installed")
+        cli.console.print(f"[red]Error:[/red] Step type '{safe_step_id}' is not installed")
         raise cli.typer.Exit(1)
 
     if not in_registry and dir_exists:
@@ -47,7 +48,7 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
         # directory is being removed even though there is no registry entry, so
         # the orphaned package can be cleaned up and a fresh install attempted.
         cli.console.print(
-            f"[yellow]Warning:[/yellow] '{step_id}' has no registry entry "
+            f"[yellow]Warning:[/yellow] '{safe_step_id}' has no registry entry "
             "(registry may have been reset). Removing the orphaned directory."
         )
 
@@ -57,7 +58,8 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
             shutil.rmtree(step_dir)
         except OSError as exc:
             cli.console.print(
-                f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
+                "[red]Error:[/red] Failed to remove step directory "
+                f"{cli._escape_markup(str(step_dir))}: {cli._escape_markup(str(exc))}"
             )
             raise cli.typer.Exit(1)
     elif in_registry:
@@ -69,7 +71,7 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
         try:
             registry.remove(step_id)
         except StepValidationError as exc:
-            cli.console.print(f"[red]Error:[/red] {exc}")
+            cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
             raise cli.typer.Exit(1)
         if dir_exists:
             try:
@@ -84,10 +86,13 @@ def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
                 except Exception as restore_exc:  # noqa: BLE001
                     cli.console.print(
                         f"[yellow]Warning:[/yellow] Failed to restore registry entry "
-                        f"for '{step_id}' after directory removal failure: {restore_exc}"
+                        f"for '{safe_step_id}' after directory removal failure: "
+                        f"{cli._escape_markup(str(restore_exc))}"
                     )
                 cli.console.print(
-                    f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
+                    "[red]Error:[/red] Failed to remove step directory "
+                    f"{cli._escape_markup(str(step_dir))}: "
+                    f"{cli._escape_markup(str(exc))}"
                 )
                 raise cli.typer.Exit(1)
 
@@ -110,9 +115,12 @@ def workflow_step_remove(
             _remove_step_locked(project_root, step_id)
     except StepInstallError as exc:
         cli.console.print(
-            f"[red]Error:[/red] Failed to lock step removal '{step_id}': "
+            "[red]Error:[/red] Failed to lock step removal "
+            f"'{cli._escape_markup(step_id)}': "
             f"{cli._escape_markup(str(exc))}"
         )
         raise cli.typer.Exit(1)
 
-    cli.console.print(f"[green]✓[/green] Step type '{step_id}' uninstalled")
+    cli.console.print(
+        f"[green]✓[/green] Step type '{cli._escape_markup(step_id)}' uninstalled"
+    )

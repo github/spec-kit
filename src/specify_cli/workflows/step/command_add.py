@@ -281,7 +281,8 @@ def _install_from_catalog(project_root: cli.Path, step_id: str, *, force: bool) 
 
     if not info.get("_install_allowed", True):
         cli.console.print(
-            f"[yellow]Warning:[/yellow] Step type '{step_id}' is from a "
+            "[yellow]Warning:[/yellow] Step type "
+            f"'{cli._escape_markup(step_id)}' is from a "
             "discovery-only catalog"
         )
         cli.console.print("Direct installation is not enabled for this catalog source.")
