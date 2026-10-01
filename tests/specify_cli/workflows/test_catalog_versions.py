@@ -49,7 +49,11 @@ def _archive(version: str, workflow_id: str = "history-wf", requires=None) -> by
         document["requires"] = requires
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
-        archive.writestr("workflow.yml", yaml.safe_dump(document))
+        # Pin the entry time: tests hash one build for the catalog and serve
+        # another as the download, and the current time (2 s resolution) can
+        # differ between the two.
+        info = zipfile.ZipInfo("workflow.yml", date_time=(1980, 1, 1, 0, 0, 0))
+        archive.writestr(info, yaml.safe_dump(document))
     return output.getvalue()
 
 
