@@ -611,7 +611,7 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.empty | lower }}", ctx) == ""
         # Case-only transforms are no-ops on already-conforming input.
         assert evaluate_expression("{{ inputs.mixed | upper }}", ctx) == "ABC"
-        # Non-ASCII must pass through unchanged (no transliteration/loss).
+        # Non-ASCII text uses Unicode case mapping without transliteration or loss.
         assert evaluate_expression("{{ inputs.uni | upper }}", StepContext(inputs={"uni": "café"})) == "CAFÉ"
         # Filters compose left to right with the rest of the chain.
         assert evaluate_expression("{{ inputs.s | upper | lower }}", ctx) == "hello world"
@@ -662,7 +662,7 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.nodelim | split(',') }}", ctx) == ["abc"]
         # Trailing empty field is preserved, so round-tripping is lossless.
         assert evaluate_expression("{{ inputs.trailing | split(',') }}", ctx) == ["a", "b", ""]
-        # split is the inverse of join.
+        # split composes with join to convert delimiters.
         assert evaluate_expression("{{ inputs.csv | split(',') | join('-') }}", ctx) == "a-b-c"
 
     def test_filter_split_rejects_non_string_inputs(self):
