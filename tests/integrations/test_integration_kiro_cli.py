@@ -102,6 +102,55 @@ class TestKiroCliIntegration(MarkdownIntegrationTests):
             "/speckit-constitution",
         ]
 
+    @pytest.mark.parametrize("step_type", ["command", "prompt"])
+    def test_steps_do_not_dispatch_the_kiro_ide_launcher(
+        self, tmp_path, monkeypatch, step_type
+    ):
+        """A bare ``kiro`` launches Kiro IDE unless Kiro's command router,
+        which ``kiro-cli`` itself installs, is set to the CLI. Kiro IDE 1.2.4
+        takes ``kiro chat --no-interactive --trust-all-tools /speckit-plan``,
+        warns about the unknown options and exits 0 without running anything,
+        so ``specify check``/``init`` and both workflow preflights must report
+        Kiro CLI as missing. The executable override still opts in to ``kiro``.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli import check_tool
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.command import CommandStep
+        from specify_cli.workflows.step.prompt import PromptStep
+
+        if step_type == "command":
+            step, config = CommandStep(), {"id": "plan", "command": "speckit.plan"}
+        else:
+            step = PromptStep()
+            config = {"id": "plan", "type": "prompt", "prompt": "/speckit-plan"}
+        ctx = StepContext(
+            inputs={}, default_integration=self.KEY, project_root=str(tmp_path)
+        )
+        done = MagicMock(returncode=0, stdout="", stderr="")
+
+        def which(name):
+            return "/usr/bin/kiro" if name == "kiro" else None
+
+        with patch("shutil.which", side_effect=which), \
+             patch("subprocess.run", return_value=done) as mock_run:
+            assert check_tool(self.KEY) is False
+            assert step.execute(config, ctx).status == StepStatus.FAILED
+            mock_run.assert_not_called()
+
+            monkeypatch.setenv("SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE", "kiro")
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert mock_run.call_args[0][0] == [
+            "/usr/bin/kiro",
+            "chat",
+            "--no-interactive",
+            "--trust-all-tools",
+            "/speckit-plan",
+        ]
+
     def test_post_process_adds_hook_note_and_rewrites_handoffs(self):
         i = get_integration(self.KEY)
         content = (

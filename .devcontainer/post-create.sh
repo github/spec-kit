@@ -75,17 +75,12 @@ run_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -
 
 run_command "bash \"$KIRO_INSTALLER_PATH\""
 
-kiro_binary=""
-if command -v kiro-cli >/dev/null 2>&1; then
-  kiro_binary="kiro-cli"
-elif command -v kiro >/dev/null 2>&1; then
-  kiro_binary="kiro"
-else
-  echo -e "\033[0;31m[ERROR] Kiro CLI installation did not create 'kiro-cli' or 'kiro' in PATH.\033[0m" >&2
+if ! command -v kiro-cli >/dev/null 2>&1; then
+  echo -e "\033[0;31m[ERROR] Kiro CLI installation did not create 'kiro-cli' in PATH.\033[0m" >&2
   exit 1
 fi
 
-run_command "$kiro_binary --help > /dev/null"
+run_command "kiro-cli --help > /dev/null"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing Kimi Code CLI..."
