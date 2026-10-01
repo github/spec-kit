@@ -98,6 +98,31 @@ and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
 
+### GitHub Enterprise Cloud with data residency (GHE.com)
+
+GHE.com tenants use separate web and REST API hostnames. List both hosts so
+Specify can authenticate the release-metadata lookup and asset download:
+
+```json
+{
+  "providers": [
+    {
+      "hosts": ["tenant.ghe.com", "api.tenant.ghe.com"],
+      "provider": "github",
+      "auth": "bearer",
+      "token_env": "GH_ENTERPRISE_TOKEN"
+    }
+  ]
+}
+```
+
+For a release URL on `tenant.ghe.com`, Specify resolves metadata and release
+assets through `api.tenant.ghe.com`. The returned asset must identify the same
+owner and repository and use the exact numeric
+`/repos/.../releases/assets/...` endpoint. A wildcard such as
+`*.tenant.ghe.com` matches the API hostname but not the bare tenant web
+hostname, so list the web hostname explicitly.
+
 ### Azure DevOps (`azure-devops`)
 
 | Scheme | Header | Use for |
