@@ -51,6 +51,12 @@ frozen across resume. This is intentionally forward-only: new resume inputs do
 not reinterpret or repeat completed work. Legacy states enter the tree once
 through their saved top-level index.
 
+The common occurrence runner owns start, checkpoint, replay, and finalization.
+Step implementations return results or expansions; they do not manage persisted
+lifecycle state. Internal workflow-call and registered-step paths share the
+same checked transitions and post-checkpoint notifications. Per-occurrence
+activity belongs to the execution tree, never to the shared step instance.
+
 Fan-out items have independent expression contexts. Their internal results do
 not enter the shared parent context; the parent receives the qualified item
 result and the fan-out step's ordered `output.results`. Fan-out item aliases are

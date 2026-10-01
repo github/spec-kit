@@ -89,6 +89,59 @@ transitions share one atomic state checkpoint; the inputs file is a
 compatibility mirror. A checkpoint failure prevents further writes by that
 executor instance.
 
+### Occurrence lifecycle
+
+`Execution.step()` is the common runner for registered steps and workflow calls.
+`execute_step()` and `workflow()` return a `StepResult`, a subtree outcome, or an
+unknown-implementation failure. The runner alone performs `begin`, `finish`,
+`settle`, and best-effort `leave` on exception unwinding; the phase and field
+allow-lists in `transition()` reject invalid operations. The public, stateless
+`StepBase.execute()` extension contract is unchanged.
+
+All occurrence mutations pass through `Execution.transition()`. It checks the
+allowed source phase and fields, derives the destination phase, validates the
+candidate with the same node rules used on load, projects results, and saves
+under the run lock. Callers cannot supply a destination phase.
+
+| Operation | Meaning |
+|-----------|---------|
+| `begin` | Mark this occurrence active and checkpoint before `step_started` or its callback; a failed checkpoint leaves no start event |
+| `expand` / `bind` | Freeze children and their source before child execution |
+| `rebind` / `iterate` | Persist updated binding or the next loop occurrence |
+| `outputs` | Children finished; declared workflow outputs remain to finalize |
+| `finish` / `settle` | Record an own-step result or subtree outcome; clear activity |
+| `leave` | Clear activity on exception unwinding; the run handler saves the failure/pause |
+
+`phase` identifies the continuation point, `active` identifies entered occurrences
+(several may be active in a fan-out), and `outcome` identifies a subtree halt or
+completion. A container's own result may be completed while its children are
+paused. `current_step_id` is a compatibility status view, updated on entry and
+reconciled against the tree on exit, rather than a resume cursor.
+Status reporting uses a bound call's recorded result when available. If an
+interruption or exception leaves the active call unfinished without a result,
+its scope inherits the run's paused or failed status; completed calls keep
+their own recorded status.
+
+`notify()` emits events and callbacks only after the corresponding checkpoint.
+Persistence is mandatory lifecycle behavior, not a listener. Existing container
+events describe completion of their own expansion; calls finish after their
+children and declared outputs. Completed replay emits neither events nor saves.
+Entering an unfinished container on resume checkpoints activity without repeating
+its expansion event.
+
+Execution schema version 2 stores fan-out templates as shared YAML sources on
+their parent occurrence. Raw `step_template` configuration is not published in
+persisted step outputs. Frozen expansion results and aggregated `fan_results`
+are separate: `result_view()` adds the aggregate for reporting and downstream
+steps, while items always receive the frozen expansion view. This also preserves
+YAML-native template scalars without putting them in JSON result records.
+
+Resume validates tree structure, root snapshot, and the legacy offset together,
+before any writes. The offset must be within the workflow and no later than the
+saved root index. Main-format checkpoints without a tree still adapt once;
+private, unreleased version-1 trees are rejected rather than silently interpreted
+as the new format.
+
 ## Step Types
 
 The engine ships with 13 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:

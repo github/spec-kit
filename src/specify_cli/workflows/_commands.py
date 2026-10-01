@@ -950,7 +950,7 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     if getattr(state, "execution", None):
         from ._execution import scope_summaries
 
-        scopes = scope_summaries(state.execution)
+        scopes = scope_summaries(state.execution, state.status.value)
         if scopes:
             payload["workflow_scopes"] = scopes
     return payload

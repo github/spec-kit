@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import threading
 from typing import Any
 
@@ -25,6 +25,7 @@ from .composition import (
 from .expressions import evaluate_condition, evaluate_expression
 
 HALTING = {"paused", "failed", "aborted"}
+EXECUTION_VERSION = 2
 
 def unknown_step_error(kind):
     return f"Unknown step type: {kind!r}"
@@ -51,7 +52,7 @@ def new_execution(
 ) -> dict[str, Any]:
     """Create the persisted root execution tree."""
     return {
-        "version": 1,
+        "version": EXECUTION_VERSION,
         "sequence": sequence(steps),
         "offset": max(0, offset),
         "initial": deepcopy(initial),
@@ -64,6 +65,17 @@ def steps_of(seq: dict[str, Any]) -> Any:
 
 
 LOOP_TYPES = frozenset({"while", "do-while"})
+TRANSITIONS = {
+    "begin": (frozenset({"ready", "blocked", "children", "outputs"}), frozenset()),
+    "expand": (frozenset({"ready", "blocked"}), frozenset({"result", "children", "template"})),
+    "bind": (frozenset({"ready", "blocked"}), frozenset({"binding", "children"})),
+    "rebind": (frozenset({"children", "blocked", "outputs"}), frozenset({"binding"})),
+    "iterate": (frozenset({"children"}), frozenset({"children"})),
+    "outputs": (frozenset({"children", "blocked", "outputs"}), frozenset()),
+    "finish": (frozenset({"ready", "blocked", "children", "outputs"}), frozenset({"result", "outcome", "error"})),
+    "settle": (frozenset({"children"}), frozenset({"outcome", "error", "fan_results"})),
+    "leave": (frozenset({"ready", "blocked", "children", "outputs", "done"}), frozenset()),
+}
 
 
 def shares_source(kind, index):
@@ -79,7 +91,7 @@ def child_steps(config, node, index):
     if kind == "workflow":
         return yaml.safe_load(node["binding"]["definition"])["steps"]
     if kind == "fan-out":
-        template = node["result"]["output"]["step_template"]
+        template = yaml.safe_load(node["template"])
         return [{"id": "item", **template}]
     return steps_of(node["children"][0])
 
@@ -134,120 +146,161 @@ def walk_execution(
             yield config, node, here, qualified
 
 
-def validate_execution(tree: Any) -> None:
+def check_sequence(seq, steps=None, *, shared=False):
+    """Walk a stored sequence, checking every occurrence and its descendants."""
+    if not isinstance(seq, dict) or (shared and "source" in seq):
+        raise ValueError("Invalid execution sequence")
+    if shared:
+        if not isinstance(steps, list):
+            raise ValueError("Invalid shared execution source")
+    else:
+        if not isinstance(seq.get("source"), str):
+            raise ValueError("Invalid execution sequence")
+        steps = steps_of(seq)
+    nodes = seq.get("nodes")
+    if (
+        not isinstance(steps, list)
+        or not all(isinstance(s, dict) for s in steps)
+        or not isinstance(nodes, list)
+        or len(nodes) != len(steps)
+    ):
+        raise ValueError("Invalid execution sequence length or steps")
+    for step, node in zip(steps, nodes):
+        check_node(step, node)
+        for index, child in enumerate(node.get("children", [])):
+            if shares_source(step.get("type"), index):
+                check_sequence(child, child_steps(step, node, index), shared=True)
+            else:
+                check_sequence(child)
+
+
+def check_node(step, node, *, changed=None, new_children=()):
+    """Validate one occurrence and its direct children without walking descendants.
+
+    On a transition, unchanged YAML sources and existing child shapes were
+    checked when they were created or loaded. Load checks everything.
+    """
+    if not isinstance(node, dict) or node.get("phase") not in {
+        "ready", "children", "outputs", "blocked", "done",
+    }:
+        raise ValueError("Invalid execution phase")
+    result = node.get("result")
+    if result is not None and (
+        not isinstance(result, dict)
+        or result.get("status") not in {s.value for s in StepStatus}
+        or not isinstance(result.get("output"), dict)
+    ):
+        raise ValueError("Invalid execution result")
+    if node["phase"] == "done" and result is None:
+        raise ValueError("Completed execution lacks a result")
+    if "active" in node and type(node["active"]) is not bool:
+        raise ValueError("Invalid execution activity")
+    if node["phase"] == "done" and node.get("active"):
+        raise ValueError("Completed execution is still active")
+    if node.get("outcome", "completed") not in {"completed", *HALTING}:
+        raise ValueError("Invalid execution outcome")
+    if node["phase"] == "done" and node.get("outcome", "completed") != "completed":
+        raise ValueError("Completed execution has a blocking outcome")
+    if node["phase"] == "blocked" and (
+        result is None or result["status"] not in {"failed", "paused"}
+        or node.get("outcome") not in HALTING
+    ):
+        raise ValueError("Blocked execution lacks a blocking result")
+    children = node.get("children", [])
+    if not isinstance(children, list):
+        raise ValueError("Invalid execution children")
+    kind = step.get("type")
+    if "fan_results" in node and (
+        kind != "fan-out" or not isinstance(node["fan_results"], list)
+    ):
+        raise ValueError("Invalid fan-out aggregate results")
+    if "template" in node and (kind != "fan-out" or not isinstance(node["template"], str)):
+        raise ValueError("Invalid fan-out template")
+    binding = node.get("binding")
+    if binding is not None:
+        if kind != "workflow" or not isinstance(binding, dict):
+            raise ValueError("Invalid workflow binding")
+        if changed is None or "binding" in changed:
+            source = binding.get("definition")
+            if not isinstance(source, str):
+                raise ValueError("Invalid bound workflow definition or inputs")
+            bound_definition = yaml.safe_load(source)
+            if (
+                not isinstance(bound_definition, dict)
+                or not isinstance(bound_definition.get("workflow"), dict)
+                or bound_definition["workflow"].get("id") != binding.get("workflow")
+                or not isinstance(binding.get("inputs"), dict)
+                or "workflow_dir" not in binding
+                or not isinstance(binding["workflow_dir"], (str, type(None)))
+                or len(children) != 1
+                or not isinstance(bound_definition.get("steps"), list)
+            ):
+                raise ValueError("Invalid bound workflow definition or inputs")
+    elif kind == "workflow" and children:
+        raise ValueError("Workflow children require a binding")
+    if kind == "fan-out" and children and (changed is None or "template" in changed):
+        source = node.get("template")
+        template = yaml.safe_load(source) if isinstance(source, str) else None
+        if not isinstance(template, dict):
+            raise ValueError("Invalid fan-out template")
+    if changed is None or new_children:
+        shared_steps = None
+        for index, child in enumerate(children):
+            if changed is not None and not any(child is fresh for fresh in new_children):
+                continue
+            if shares_source(kind, index):
+                if shared_steps is None:
+                    shared_steps = child_steps(step, node, index)
+                check_sequence_shape(child, shared_steps, shared=True)
+            else:
+                check_sequence_shape(child)
+    handled_child_failure = (
+        kind == "workflow" and step.get("continue_on_error") is True
+        and node.get("outcome") == "completed" and result is not None
+        and result["status"] == "failed"
+    )
+    if node["phase"] == "done" and not handled_child_failure:
+        for child in children:
+            if any(nested["phase"] != "done" for nested in child["nodes"]):
+                raise ValueError("Completed execution has unfinished children")
+    if node["phase"] == "outputs" and binding is None:
+        raise ValueError("Output finalization requires a workflow binding")
+    if node["phase"] == "children" and (
+        not children or (binding is None and result is None)
+    ):
+        raise ValueError("Expanded execution lacks its children or result")
+    if node["phase"] == "ready" and (result is not None or children or binding):
+        raise ValueError("Unstarted execution already has progress")
+    if kind == "fan-out" and children:
+        items = (result or {}).get("output", {}).get("items")
+        if not isinstance(items, list) or len(items) != len(children):
+            raise ValueError("Fan-out items do not match execution children")
+
+
+def check_sequence_shape(seq, steps=None, *, shared=False):
+    """Check a newly attached child sequence without visiting its nodes' descendants."""
+    if not isinstance(seq, dict) or (shared and "source" in seq):
+        raise ValueError("Invalid execution sequence")
+    if shared:
+        if not isinstance(steps, list):
+            raise ValueError("Invalid shared execution source")
+    else:
+        if not isinstance(seq.get("source"), str):
+            raise ValueError("Invalid execution sequence")
+        steps = steps_of(seq)
+    nodes = seq.get("nodes")
+    if (
+        not isinstance(steps, list) or not all(isinstance(s, dict) for s in steps)
+        or not isinstance(nodes, list) or len(nodes) != len(steps)
+    ):
+        raise ValueError("Invalid execution sequence length or steps")
+
+
+def validate_execution(tree: Any, *, workflow_steps=None, current_step_index=None) -> None:
     """Validate stored structure without importing a project's custom steps."""
 
-    def check_sequence(seq, steps=None, *, shared=False):
-        if not isinstance(seq, dict) or (shared and "source" in seq):
-            raise ValueError("Invalid execution sequence")
-        if shared:
-            if not isinstance(steps, list):
-                raise ValueError("Invalid shared execution source")
-        else:
-            if not isinstance(seq.get("source"), str):
-                raise ValueError("Invalid execution sequence")
-            steps = steps_of(seq)
-        nodes = seq.get("nodes")
-        if (
-            not isinstance(steps, list)
-            or not all(isinstance(s, dict) for s in steps)
-            or not isinstance(nodes, list)
-            or len(nodes) != len(steps)
-        ):
-            raise ValueError("Invalid execution sequence length or steps")
-        for step, node in zip(steps, nodes):
-            if not isinstance(node, dict) or node.get("phase") not in {
-                "ready",
-                "children",
-                "outputs",
-                "blocked",
-                "done",
-            }:
-                raise ValueError("Invalid execution phase")
-            result = node.get("result")
-            if result is not None and (
-                not isinstance(result, dict)
-                or result.get("status") not in {s.value for s in StepStatus}
-                or not isinstance(result.get("output"), dict)
-            ):
-                raise ValueError("Invalid execution result")
-            if node["phase"] == "done" and result is None:
-                raise ValueError("Completed execution lacks a result")
-            if node.get("outcome", "completed") not in {"completed", *HALTING}:
-                raise ValueError("Invalid execution outcome")
-            if (
-                node["phase"] == "done"
-                and node.get("outcome", "completed") != "completed"
-            ):
-                raise ValueError("Completed execution has a blocking outcome")
-            if node["phase"] == "blocked" and (
-                result is None
-                or result["status"] not in {"failed", "paused"}
-                or node.get("outcome") not in HALTING
-            ):
-                raise ValueError("Blocked execution lacks a blocking result")
-            children = node.get("children", [])
-            if not isinstance(children, list):
-                raise ValueError("Invalid execution children")
-            kind = step.get("type")
-            binding = node.get("binding")
-            if binding is not None:
-                if kind != "workflow" or not isinstance(binding, dict):
-                    raise ValueError("Invalid workflow binding")
-                source = binding.get("definition")
-                if not isinstance(source, str):
-                    raise ValueError("Invalid bound workflow definition or inputs")
-                definition = yaml.safe_load(source)
-                if (
-                    not isinstance(definition, dict)
-                    or not isinstance(definition.get("workflow"), dict)
-                    or definition["workflow"].get("id") != binding.get("workflow")
-                    or not isinstance(binding.get("inputs"), dict)
-                    or "workflow_dir" not in binding
-                    or not isinstance(binding["workflow_dir"], (str, type(None)))
-                    or len(children) != 1
-                    or not isinstance(definition.get("steps"), list)
-                ):
-                    raise ValueError("Invalid bound workflow definition or inputs")
-            elif kind == "workflow" and children:
-                raise ValueError("Workflow children require a binding")
-            if kind == "fan-out" and children:
-                template = (result or {}).get("output", {}).get("step_template")
-                if not isinstance(template, dict):
-                    raise ValueError("Invalid fan-out template")
-            for index, child in enumerate(children):
-                if shares_source(kind, index):
-                    check_sequence(child, child_steps(step, node, index), shared=True)
-                else:
-                    check_sequence(child)
-                handled_child_failure = (
-                    kind == "workflow"
-                    and step.get("continue_on_error") is True
-                    and node.get("outcome") == "completed"
-                    and result is not None
-                    and result["status"] == "failed"
-                )
-                if (
-                    node["phase"] == "done"
-                    and any(nested["phase"] != "done" for nested in child["nodes"])
-                    and not handled_child_failure
-                ):
-                    raise ValueError("Completed execution has unfinished children")
-            if node["phase"] == "outputs" and binding is None:
-                raise ValueError("Output finalization requires a workflow binding")
-            if node["phase"] == "children" and (
-                not children or (binding is None and result is None)
-            ):
-                raise ValueError("Expanded execution lacks its children or result")
-            if node["phase"] == "ready" and (result is not None or children or binding):
-                raise ValueError("Unstarted execution already has progress")
-            if step.get("type") == "fan-out" and children:
-                items = (result or {}).get("output", {}).get("items")
-                if not isinstance(items, list) or len(items) != len(children):
-                    raise ValueError("Fan-out items do not match execution children")
-
     try:
-        if not isinstance(tree, dict) or tree.get("version") != 1:
+        if not isinstance(tree, dict) or tree.get("version") != EXECUTION_VERSION:
             raise ValueError("Unsupported execution version")
         offset = tree.get("offset", 0)
         if (
@@ -257,6 +310,11 @@ def validate_execution(tree: Any) -> None:
         ):
             raise ValueError("Invalid execution offset or initial aliases")
         check_sequence(tree["sequence"])
+        if workflow_steps is not None:
+            if offset >= len(workflow_steps) or offset > current_step_index:
+                raise ValueError("Invalid execution offset for workflow position")
+            if steps_of(tree["sequence"]) != workflow_steps[offset:]:
+                raise ValueError("Invalid execution state: root sequence differs from workflow snapshot")
     except (KeyError, TypeError, yaml.YAMLError, RecursionError) as exc:
         raise ValueError(f"Invalid execution state: {exc}") from exc
 
@@ -273,18 +331,31 @@ def active_step(tree):
     return None
 
 
-def scope_summaries(tree):
-    """Report workflow boundaries without exposing private inputs or results."""
+def scope_summaries(tree, run_status="running"):
+    """Report workflow boundaries without exposing private inputs or results.
+
+    Only an unfinished scope containing the active occurrence inherits a
+    terminal run status; completed scopes retain their recorded result.
+    """
     summaries = []
+    active = active_step(tree)
+    active_path = active[0] if active is not None else ()
     for _, node, path, _ in walk_execution(tree["sequence"]):
         binding = node.get("binding")
         if binding:
             output = node.get("result", {}).get("output", {})
+            status = output.get("status")
+            if status is None:
+                status = (
+                    run_status
+                    if run_status in HALTING and active_path[:len(path)] == path
+                    else "running"
+                )
             summaries.append(
                 {
                     "scope_path": path,
                     "workflow_id": binding["workflow"],
-                    "status": output.get("status", "running"),
+                    "status": status,
                 }
             )
     return summaries
@@ -317,6 +388,39 @@ def loop_alias_for(kind, qualified, iteration):
     return (qualified, iteration) if kind in LOOP_TYPES and iteration else None
 
 
+def result_view(node):
+    """Public result, distinct from the frozen result used to execute children."""
+    result = node["result"]
+    if "fan_results" in node:
+        return {**result, "output": {**result["output"], "results": node["fan_results"]}}
+    return result
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    """One invocation, never stored on a shared step implementation."""
+
+    config: dict
+    node: dict
+    context: StepContext
+    ancestry: tuple
+    path: tuple
+    public: bool
+    qualified: str
+
+
+@dataclass(frozen=True)
+class SubtreeResult:
+    outcome: str
+    error: str | None
+    outputs: list | None = None
+
+
+@dataclass(frozen=True)
+class MissingImplementation:
+    error: str
+
+
 class Execution:
     def __init__(self, engine, state, registry, *, rebind=False):
         self.engine, self.state, self.registry = engine, state, registry
@@ -335,31 +439,91 @@ class Execution:
         """Project a fan-out item result into its enclosing workflow scope."""
         context.steps[name] = result
 
-    def commit(
+    def transition(
         self,
-        node=None,
+        operation,
+        occurrence,
         changes=None,
         *,
-        context=None,
-        name=None,
-        public=False,
-        qualified=None,
+        publish=False,
+        announce=True,
     ):
-        """Mutate an occurrence and its compatibility views in one checkpoint."""
+        """The only writer of occurrence progress and its checkpointed views.
+
+        Phase is the continuation point; active marks entry into that continuation.
+        Own-step results and subtree outcomes deliberately remain distinct.
+        Validate the candidate before changing memory or writing anything.
+        """
+        node = occurrence.node
         with self.state._lock:
             if self.state._checkpoint_failed:
                 raise CheckpointError("A previous checkpoint failed")
-            if node is not None:
-                node.update(changes or {})
-                if context is not None and "result" in node:
-                    self.project(
-                        context,
-                        name,
-                        node["result"],
-                        public=public,
-                        qualified=qualified or name,
-                    )
-            self.state.save()
+            phases, fields = TRANSITIONS[operation]
+            if node["phase"] not in phases:
+                raise ValueError(f"Invalid {operation} transition from {node['phase']}")
+            if set(changes or {}) - fields:
+                raise ValueError(f"Invalid fields for {operation} transition")
+            candidate = {**node, **(changes or {})}
+            if operation in {"expand", "bind"}:
+                candidate["phase"] = "children"
+            elif operation == "outputs":
+                candidate["phase"] = "outputs"
+            elif operation in {"finish", "settle"}:
+                candidate["phase"] = (
+                    "done" if candidate["outcome"] == "completed"
+                    else "blocked" if operation == "finish" else "children"
+                )
+            if operation == "begin":
+                candidate["active"] = True
+            elif operation in {"finish", "settle", "leave"}:
+                candidate["active"] = False
+            previous = node.get("children", [])
+            new_children = ()
+            if "children" in (changes or {}):
+                existing = {id(child) for child in previous}
+                new_children = tuple(
+                    child for child in candidate["children"] if id(child) not in existing
+                )
+            # The same node rules are checked when a checkpoint is loaded.
+            check_node(occurrence.config, candidate, changed=set(changes or ()),
+                       new_children=new_children)
+            node.update(candidate)
+            if operation == "begin":
+                self.state.current_step_id = occurrence.qualified
+            if publish and "result" in node:
+                self.project(
+                    occurrence.context,
+                    occurrence.config["id"],
+                    result_view(node),
+                    public=occurrence.public,
+                    qualified=occurrence.qualified,
+                )
+            # Leave is memory-only and best-effort; the run-level handler
+            # checkpoints the unwound tree on an exception.
+            # Do not insert a second checkpoint between completion and its event.
+            if operation != "leave":
+                self.state.save()
+        if announce:
+            self.notify(operation, occurrence, publish=publish)
+
+    def notify(self, operation, occurrence, *, publish):
+        """Post-checkpoint notifications; never responsible for persistence."""
+        config, node = occurrence.config, occurrence.node
+        kind = config.get("type", "command")
+        args = occurrence.qualified, occurrence.path, occurrence.ancestry
+        if operation == "begin":
+            label = kind if kind == "workflow" else config.get("command", "") or kind
+            self.emit("step_started", *args, type=kind, callback_label=label)
+        elif operation in {"expand", "finish"}:
+            result = node["result"]
+            if publish:
+                self.emit("step_completed", *args, status=result["status"])
+            if result["status"] == "failed":
+                event = {
+                    "aborted": "workflow_aborted",
+                    "completed": "step_continue_on_error",
+                }.get(node.get("outcome"), "step_failed")
+                self.emit(event, *args, error=result.get("error"))
 
     def emit(
         self,
@@ -379,24 +543,6 @@ class Execution:
         if callback_label is not None and self.engine.on_step_start is not None:
             with self.engine._callback_lock:
                 self.engine.on_step_start(qualified, callback_label)
-
-    def start(self, config, qualified, path, ancestry):
-        """Persist an occurrence as the active step, then announce its start.
-
-        Every step path starts here, so the checkpoint always precedes the
-        ``step_started`` event and callback, as on main: status reports the
-        occurrence while it runs and after a crash, and a failed checkpoint
-        leaves no start event behind.
-        """
-        kind = config.get("type", "command")
-        with self.state._lock:
-            self.state.current_step_id = qualified
-            self.commit()
-        # A call is labelled by its type; a stray ``command`` key must not rename it.
-        label = kind if kind == "workflow" else config.get("command", "") or kind
-        self.emit(
-            "step_started", qualified, path, ancestry, type=kind, callback_label=label
-        )
 
     def run(
         self,
@@ -421,7 +567,6 @@ class Execution:
                     self.state.current_step_index = index + self.state.execution.get(
                         "offset", 0
                     )
-                    self.state.current_step_id = name
             outcome = self.step(
                 config,
                 node,
@@ -457,7 +602,7 @@ class Execution:
         kind = config.get("type", "command")
         if node["phase"] == "done":
             self.project(
-                context, name, node["result"], public=public, qualified=qualified
+                context, name, result_view(node), public=public, qualified=qualified
             )
             if kind == "fan-out" and node.get("children"):
                 self.fan_out(
@@ -480,55 +625,53 @@ class Execution:
             # its fan-out item keeps its published output (see run_item).
             if node.get("result") is not None:
                 self.project(
-                    context, name, node["result"], public=public, qualified=qualified
+                    context, name, result_view(node), public=public, qualified=qualified
                 )
             return "aborted"
 
-        if kind == "workflow":
-            return self.workflow(
-                config,
-                node,
-                context,
-                ancestry,
-                path,
-                public,
-                qualified,
+        occurrence = Occurrence(config, node, context, ancestry, path, public, qualified)
+        calls = kind == "workflow"
+        try:
+            # Workflow calls are announced on every entry, including resumed bound calls.
+            self.transition(
+                "begin", occurrence,
+                announce=node["phase"] in {"ready", "blocked"} or calls,
             )
+            result = self.workflow(occurrence) if calls else self.execute_step(occurrence)
+            return self.finish(occurrence, result)
+        except BaseException:
+            if node.get("active"):
+                try:
+                    self.transition("leave", occurrence)
+                except Exception:
+                    pass  # A crash-shaped active node is valid on resume.
+            raise
+
+    def execute_step(self, occurrence):
+        config, node, context = occurrence.config, occurrence.node, occurrence.context
+        ancestry, path = occurrence.ancestry, occurrence.path
+        public, qualified = occurrence.public, occurrence.qualified
+        name, kind = config["id"], config.get("type", "command")
 
         if node["phase"] in {"ready", "blocked"}:
-            self.start(config, qualified, path, ancestry)
             impl = self.registry.get(kind)
             if impl is None:
                 # As on main: terminal, only step_failed, no projected result.
                 # The node keeps its result so resume can retry after reinstalling.
                 error = unknown_step_error(kind)
-                result = StepResult(StepStatus.FAILED, error=error)
-                self.commit(
-                    node,
-                    {
-                        "phase": "blocked",
-                        "result": self.record(config, result, context),
-                        "outcome": "failed",
-                        "error": error,
-                    },
-                )
-                self.emit("step_failed", qualified, path, ancestry, error=error)
-                return "failed"
+                return MissingImplementation(error)
             result = impl.execute(config, context)
+            expansion = {}
+            if kind == "fan-out":
+                # Definitions belong to the tree, never to JSON result records.
+                output = dict(result.output)
+                template = output.pop("step_template", {})
+                expansion["template"] = yaml.safe_dump(template, sort_keys=False)
+                result = replace(result, output=output)
             if result.status in {StepStatus.FAILED, StepStatus.PAUSED}:
-                return self.finish(
-                    config,
-                    node,
-                    result,
-                    context,
-                    ancestry,
-                    path,
-                    public,
-                    qualified,
-                )
+                return result
             children = [sequence(result.next_steps)] if result.next_steps else []
             if kind == "fan-out":
-                template = result.output.get("step_template", {})
                 children = (
                     [occurrences([template]) for _ in result.output.get("items", [])]
                     if template
@@ -538,44 +681,21 @@ class Execution:
             if not children:
                 if kind == "fan-out":
                     result.output = {**result.output, "results": []}
-                return self.finish(
-                    config,
-                    node,
-                    result,
-                    context,
-                    ancestry,
-                    path,
-                    public,
-                    qualified,
-                )
-            self.commit(
-                node,
-                {"phase": "children", "result": data, "children": children},
-                context=context,
-                name=name,
-                public=public,
-                qualified=qualified,
-            )
-            self.emit(
-                "step_completed",
-                qualified,
-                path,
-                ancestry,
-                status=result.status.value,
+                return result
+            self.transition(
+                "expand", occurrence,
+                {"result": data, "children": children, **expansion},
+                publish=True,
             )
         else:
             self.project(
-                context, name, node["result"], public=public, qualified=qualified
+                context, name, result_view(node), public=public, qualified=qualified
             )
 
         if kind == "fan-out":
             outcome, error, outputs = self.fan_out(
                 config, node, context, ancestry, path, public, qualified
             )
-            data = {
-                **node["result"],
-                "output": {**node["result"]["output"], "results": outputs},
-            }
         else:
             outcome, error = self.run_children(
                 config, node, context, ancestry, path, public, qualified
@@ -588,7 +708,7 @@ class Execution:
                     config.get("condition", False), context
                 ):
                     child = occurrences(steps_of(node["children"][0]))
-                    self.commit(node, {"children": [*node["children"], child]})
+                    self.transition("iterate", occurrence, {"children": [*node["children"], child]})
                     outcome, error = self.run(
                         child,
                         context,
@@ -602,20 +722,7 @@ class Execution:
                     )
                     if outcome in HALTING:
                         break
-        self.commit(
-            node,
-            {
-                "phase": "done" if outcome == "completed" else "children",
-                "outcome": outcome,
-                "error": error,
-                **({"result": data} if kind == "fan-out" else {}),
-            },
-            context=context if kind == "fan-out" else None,
-            name=name if kind == "fan-out" else None,
-            public=public,
-            qualified=qualified,
-        )
-        return outcome
+        return SubtreeResult(outcome, error, outputs if kind == "fan-out" else None)
 
     @staticmethod
     def record(config, result, context):
@@ -644,74 +751,42 @@ class Execution:
             )
         return data
 
-    def finish(
-        self,
-        config,
-        node,
-        result,
-        context,
-        ancestry,
-        path,
-        public,
-        qualified,
-    ):
-        name = config.get("id", "step-0")
+    def finish(self, occurrence, result):
+        config, context = occurrence.config, occurrence.context
+        if isinstance(result, SubtreeResult):
+            self.transition(
+                "settle", occurrence,
+                {"outcome": result.outcome, "error": result.error,
+                 **({"fan_results": result.outputs} if result.outputs is not None else {})},
+                publish=result.outputs is not None,
+            )
+            return result.outcome
+        missing = isinstance(result, MissingImplementation)
+        if missing:
+            result = StepResult(StepStatus.FAILED, error=result.error)
         outcome = "completed"
         if result.status == StepStatus.PAUSED:
             outcome = "paused"
         elif result.status == StepStatus.FAILED:
             outcome = "aborted" if result.output.get("aborted") else "failed"
-            if outcome == "failed" and config.get("continue_on_error") is True:
+            if not missing and outcome == "failed" and config.get("continue_on_error") is True:
                 outcome = "completed"
-        self.commit(
-            node,
+        self.transition(
+            "finish", occurrence,
             {
-                "phase": "done" if outcome == "completed" else "blocked",
                 "result": self.record(config, result, context),
                 "outcome": outcome,
                 "error": result.error,
             },
-            context=context,
-            name=name,
-            public=public,
-            qualified=qualified,
+            publish=not missing,
         )
-        self.emit(
-            "step_completed",
-            qualified,
-            path,
-            ancestry,
-            status=result.status.value,
-        )
-        if result.status == StepStatus.FAILED:
-            event = {
-                "aborted": "workflow_aborted",
-                "completed": "step_continue_on_error",
-            }.get(outcome, "step_failed")
-            self.emit(
-                event,
-                qualified,
-                path,
-                ancestry,
-                error=result.error,
-            )
         return outcome
 
-    def workflow(
-        self,
-        config,
-        node,
-        context,
-        ancestry,
-        path,
-        public,
-        qualified,
-    ):
+    def workflow(self, occurrence):
         from .engine import WorkflowDefinition, workflow_dir_for
 
-        # Unlike other steps, a call is announced on every entry, including a
-        # resumed call that is already bound and skips the binding checkpoint.
-        self.start(config, qualified, path, ancestry)
+        config, node, context = occurrence.config, occurrence.node, occurrence.context
+        ancestry, path = occurrence.ancestry, occurrence.path
         binding = node.get("binding")
         target = binding["workflow"] if binding else config.get("workflow")
         if binding is None:
@@ -725,30 +800,19 @@ class Execution:
                     "inputs": bind_inputs(self.engine, definition, config, context),
                     "workflow_dir": workflow_dir_for(definition),
                 }
-                self.commit(
-                    node,
+                self.transition(
+                    "bind", occurrence,
                     {
                         "binding": binding,
                         "children": [occurrences(definition.steps)],
-                        "phase": "children",
                     },
                 )
             except CallError as exc:
                 target = target if isinstance(target, str) else repr(target)
-                result = StepResult(
+                return StepResult(
                     StepStatus.FAILED,
                     output={"workflow": target, "status": "failed", "error": str(exc)},
                     error=str(exc),
-                )
-                return self.finish(
-                    config,
-                    node,
-                    result,
-                    context,
-                    ancestry,
-                    path,
-                    public,
-                    qualified,
                 )
         else:
             definition = WorkflowDefinition(yaml.safe_load(binding["definition"]))
@@ -757,7 +821,7 @@ class Execution:
                     self.engine, definition, config, context, binding["inputs"]
                 )
                 binding = {**binding, "inputs": inputs}
-                self.commit(node, {"binding": binding})
+                self.transition("rebind", occurrence, {"binding": binding})
         child_context = child_context_for_call(context, binding, definition)
         outcome, error = self.run(
             node["children"][0],
@@ -769,22 +833,12 @@ class Execution:
         )
         output = {"workflow": target, "status": outcome}
         if outcome == "completed":
-            self.commit(node, {"phase": "outputs"})
+            self.transition("outputs", occurrence)
             try:
                 output.update(evaluate_outputs(definition, child_context))
             except CallError as exc:
                 output.update(status="failed", error=str(exc))
-                result = StepResult(StepStatus.FAILED, output=output, error=str(exc))
-                return self.finish(
-                    config,
-                    node,
-                    result,
-                    context,
-                    ancestry,
-                    path,
-                    public,
-                    qualified,
-                )
+                return StepResult(StepStatus.FAILED, output=output, error=str(exc))
         elif outcome == "aborted":
             output["aborted"] = True
         if error is not None:
@@ -796,17 +850,7 @@ class Execution:
             if outcome == "paused"
             else StepStatus.FAILED
         )
-        result = StepResult(status, output=output, error=error)
-        return self.finish(
-            config,
-            node,
-            result,
-            context,
-            ancestry,
-            path,
-            public,
-            qualified,
-        )
+        return StepResult(status, output=output, error=error)
 
     def fan_out(
         self, config, node, context, ancestry, path, public, qualified, *, sequential=False
@@ -821,14 +865,11 @@ class Execution:
             workers = 1
         workers = min(workers, len(items))
         initial = deepcopy(context.steps)
-        # Items run before the engine adds ``results`` to the fan-out record. A
-        # resumed fan-out's checkpointed record carries the partial results, so
-        # hide them from item contexts; the reporting view keeps them.
+        # Children always consume the frozen expansion result. Aggregate outputs
+        # belong to the reporting view, never to the item execution context.
         for key in {config.get("id", "step-0"), qualified}:
-            record = initial.get(key)
-            if isinstance(record, dict) and "results" in record.get("output", {}):
-                output = {k: v for k, v in record["output"].items() if k != "results"}
-                initial[key] = {**record, "output": output}
+            if key in initial:
+                initial[key] = deepcopy(node["result"])
         halted = threading.Event()
         template_name = child_steps(config, node, 0)[0]["id"]
 
@@ -851,6 +892,8 @@ class Execution:
             if outcome in HALTING:
                 halted.set()
             record = child["nodes"][0].get("result")
+            if record is not None:
+                record = result_view(child["nodes"][0])
             # Expose only results projected by the item traversal. Missing step
             # implementations keep an internal retry record but publish nothing.
             if local.steps.get(local_name) is inherited:

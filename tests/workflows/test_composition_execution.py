@@ -461,6 +461,22 @@ def test_legacy_resume_adapts_once(tmp_path, probe):
     assert probe == {"before": 1, "wait": 3}
 
 
+def test_version_one_tree_rejected_without_writes(tmp_path, probe):
+    state = WorkflowEngine(tmp_path).execute(
+        definition("parent", [{"id": "wait", "type": "probe", "await": True}])
+    )
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["execution"]["version"] = 1
+    path.write_text(json.dumps(data))
+    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+
+    with pytest.raises(ValueError, match="Unsupported execution version"):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -761,6 +777,38 @@ def test_interrupt_during_resume_checkpoint_pauses_run(tmp_path, monkeypatch, pr
     assert probe == {"wait": 2, "next": 1}
 
 
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, RuntimeError])
+def test_leave_failure_preserves_step_exception(tmp_path, monkeypatch, failure):
+    from specify_cli.workflows._execution import Execution
+
+    class Explode(StepBase):
+        type_key = "explode"
+
+        def execute(self, config, context):
+            raise failure("boom")
+
+    original_transition = Execution.transition
+
+    def transition(self, operation, occurrence, *args, **kwargs):
+        if operation == "leave":
+            raise ValueError("leave failed")
+        return original_transition(self, operation, occurrence, *args, **kwargs)
+
+    monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+    monkeypatch.setattr(Execution, "transition", transition)
+    engine = WorkflowEngine(tmp_path)
+    root = definition("parent", [{"id": "work", "type": "explode"}])
+    if failure is KeyboardInterrupt:
+        state = engine.execute(root, run_id="leave-failure")
+        assert state.status == RunStatus.PAUSED
+        assert _logged_events(state)[-1] == "workflow_interrupted"
+    else:
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.execute(root, run_id="leave-failure")
+        state = RunState.load("leave-failure", tmp_path)
+        assert state.error == "boom"
+
+
 def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypatch):
     import specify_cli.workflows._execution as execution
     from specify_cli.workflows._execution import CheckpointError
@@ -778,22 +826,26 @@ def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypat
                 assert first_committed.wait(5)
             return StepResult(output={"value": context.item})
 
-    original_commit = execution.Execution.commit
+    original_transition = execution.Execution.transition
+    original_notify = execution.Execution.notify
     original_write = RunState._atomic_write_json
 
-    def commit(self, *args, **kwargs):
+    def transition(self, *args, **kwargs):
         item = items.get(threading.current_thread())
         try:
-            original_commit(self, *args, **kwargs)
+            original_transition(self, *args, **kwargs)
         except CheckpointError:
             if item == 2:
                 second_failed.set()
             raise
-        if item == 1 and not first_committed.is_set():
+
+    def notify(self, operation, occurrence, **kwargs):
+        if items.get(threading.current_thread()) == 1 and operation == "finish":
             # Item 1 committed and released the lock; item 2 now fails its
             # checkpoint before item 1 emits its completion event.
             first_committed.set()
             assert second_failed.wait(5)
+        return original_notify(self, operation, occurrence, **kwargs)
 
     def write(path, data):
         if items.get(threading.current_thread()) == 2:
@@ -801,7 +853,8 @@ def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypat
         original_write(path, data)
 
     monkeypatch.setitem(STEP_REGISTRY, "sync", Sync())
-    monkeypatch.setattr(execution.Execution, "commit", commit)
+    monkeypatch.setattr(execution.Execution, "transition", transition)
+    monkeypatch.setattr(execution.Execution, "notify", notify)
     monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
     with pytest.raises(CheckpointError):
         WorkflowEngine(tmp_path).execute(
@@ -1226,15 +1279,15 @@ def test_replay_does_not_commit_completed_nodes(tmp_path, monkeypatch, probe):
         )
     )
     assert state.status == RunStatus.PAUSED
-    original = execution.Execution.commit
+    original = execution.Execution.transition
     committed = []
 
-    def commit(self, node=None, changes=None, **kwargs):
-        if node is not None and node["phase"] == "done":
-            committed.append(node)
-        return original(self, node, changes, **kwargs)
+    def transition(self, operation, occurrence, changes=None, **kwargs):
+        if occurrence.node["phase"] == "done":
+            committed.append(occurrence.node)
+        return original(self, operation, occurrence, changes, **kwargs)
 
-    monkeypatch.setattr(execution.Execution, "commit", commit)
+    monkeypatch.setattr(execution.Execution, "transition", transition)
 
     state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
 
@@ -1996,6 +2049,39 @@ def test_nested_gate_reporting_uses_active_occurrence(tmp_path, probe):
     assert payload["workflow_scopes"][0]["status"] == "paused"
 
 
+@pytest.mark.parametrize("failure, expected", [
+    (KeyboardInterrupt, "paused"),
+    (RuntimeError, "failed"),
+])
+def test_interrupted_bound_call_reports_run_outcome(tmp_path, monkeypatch, probe, failure, expected):
+    from specify_cli.workflows._commands import _workflow_run_payload
+
+    class Explode(StepBase):
+        type_key = "explode"
+
+        def execute(self, config, context):
+            raise failure("boom")
+
+    monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+    install(tmp_path, definition("first", [{"id": "done", "type": "probe"}]))
+    install(tmp_path, definition("child", [{"id": "work", "type": "explode"}]))
+    engine = WorkflowEngine(tmp_path)
+    root = definition("parent", [call("first", id="prior"), call()])
+    if failure is RuntimeError:
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.execute(root, run_id="interrupted-call")
+    else:
+        assert engine.execute(root, run_id="interrupted-call").status == RunStatus.PAUSED
+
+    saved = RunState.load("interrupted-call", tmp_path)
+    payload = _workflow_run_payload(saved)
+    assert payload["status"] == expected
+    assert payload["workflow_scopes"] == [
+        {"scope_path": ["prior"], "workflow_id": "first", "status": "completed"},
+        {"scope_path": ["call"], "workflow_id": "child", "status": expected},
+    ]
+
+
 def test_rebind_failure_has_one_failed_caller_outcome(tmp_path, probe):
     install(
         tmp_path,
@@ -2304,6 +2390,162 @@ def test_native_yaml_definition_and_long_id_roundtrip(tmp_path, probe):
     assert WorkflowEngine(tmp_path).resume(state.run_id).status == RunStatus.PAUSED
 
 
+@pytest.mark.parametrize("scope", ["root", "if", "workflow", "fan-out"])
+def test_yaml_native_gate_template_survives_checkpoint_and_resume(tmp_path, monkeypatch, scope):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    gate = {"id": "wait", "type": "gate", "message": date(2026, 1, 1)}
+    steps = [gate]
+    if scope == "if":
+        steps = [{"id": "branch", "type": "if", "condition": True, "then": steps}]
+    elif scope == "workflow":
+        install(tmp_path, definition("child", steps))
+        steps = [call()]
+    elif scope == "fan-out":
+        steps = [{"id": "fan", "type": "fan-out", "items": [0, 1], "step": gate}]
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", steps))
+    assert state.status == RunStatus.PAUSED
+    state = engine.resume(state.run_id)
+    assert state.status == RunStatus.PAUSED
+    from specify_cli.workflows._execution import walk_execution
+
+    gates = [config for config, _, _, _ in walk_execution(state.execution["sequence"])
+             if config.get("type") == "gate"]
+    assert gates and all(config["message"] == date(2026, 1, 1) for config in gates)
+
+
+@pytest.mark.parametrize("offset", [1, 2, 3])
+def test_resume_rejects_offset_skipping_blocked_step_without_writes(tmp_path, probe, offset):
+    steps = [{"id": "wait", "type": "probe", "await": True},
+             {"id": "later", "type": "probe"}]
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", steps))
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["execution"].update(offset=offset, sequence={
+        "source": yaml.safe_dump(steps[offset:]),
+        "nodes": [{"phase": "ready"} for _ in steps[offset:]],
+    })
+    path.write_text(json.dumps(data))
+    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    with pytest.raises(ValueError, match="offset"):
+        engine.resume(state.run_id)
+    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+    assert probe == {"wait": 1}
+
+
+@pytest.mark.parametrize("scope", ["step", "if", "workflow", "fan-out"])
+def test_lifecycle_start_is_tree_backed_and_replay_does_not_restart(tmp_path, probe, scope):
+    from specify_cli.workflows._execution import walk_execution
+
+    work = {"id": "work", "type": "probe"}
+    steps = [work]
+    if scope == "if":
+        steps = [{"id": "branch", "type": "if", "condition": True, "then": steps}]
+    elif scope == "workflow":
+        install(tmp_path, definition("child", steps))
+        steps = [call()]
+    elif scope == "fan-out":
+        steps = [{"id": "fan", "type": "fan-out", "items": [0, 1],
+                  "max_concurrency": 2, "step": work}]
+    steps.append({"id": "wait", "type": "probe", "await": True})
+    engine = WorkflowEngine(tmp_path)
+    announced = []
+
+    def started(step_id, label):
+        saved = RunState.load("lifecycle", tmp_path)
+        matches = [node for _, node, _, name in walk_execution(saved.execution["sequence"])
+                   if name == step_id]
+        assert any(node.get("active") for node in matches)
+        announced.append(step_id)
+
+    engine.on_step_start = started
+    state = engine.execute(definition("parent", steps), run_id="lifecycle")
+    assert state.status == RunStatus.PAUSED
+    assert all(not node.get("active") for _, node, _, _ in walk_execution(state.execution["sequence"]))
+    before = probe.copy()
+    announced.clear()
+    engine.resume(state.run_id)
+    assert announced == ["wait"]
+    assert probe["work"] == before["work"]
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda node: node.update(active=True),
+    lambda node: node.update(active="yes"),
+    lambda node: node.update(template="- invalid\n"),
+    lambda node: node.update(fan_results={}),
+    lambda node: node.update(fan_results={"a": 1}),
+])
+def test_lifecycle_rejects_invalid_completed_fan_out_without_writes(tmp_path, probe, mutation):
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", [
+        {"id": "fan", "type": "fan-out", "items": [0],
+         "step": {"id": "work", "type": "probe"}},
+        {"id": "wait", "type": "probe", "await": True},
+    ]))
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    mutation(data["execution"]["sequence"]["nodes"][0])
+    path.write_text(json.dumps(data))
+    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    with pytest.raises(ValueError):
+        engine.resume(state.run_id)
+    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+
+
+@pytest.mark.parametrize("field,value", [("fan_results", []), ("template", "{}\n")])
+def test_non_fan_out_rejects_fan_out_fields(tmp_path, probe, field, value):
+    state = WorkflowEngine(tmp_path).execute(definition("parent", [
+        {"id": "work", "type": "probe"},
+        {"id": "wait", "type": "probe", "await": True},
+    ]))
+    path = state.runs_dir / "state.json"
+    data = json.loads(path.read_text())
+    data["execution"]["sequence"]["nodes"][0][field] = value
+    path.write_text(json.dumps(data))
+    before = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+
+    with pytest.raises(ValueError, match="Invalid fan-out"):
+        WorkflowEngine(tmp_path).resume(state.run_id)
+
+    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before
+
+
+@pytest.mark.parametrize("invalid", ["restart-completed", "override-phase", "finish-unfinished", "foreign-field"])
+def test_lifecycle_rejects_invalid_transitions_before_mutation(tmp_path, probe, invalid):
+    from copy import deepcopy
+    from specify_cli.workflows._execution import Execution, Occurrence
+    from specify_cli.workflows.base import StepContext
+
+    config = {"id": "branch", "type": "if", "condition": True,
+              "then": [{"id": "wait", "type": "probe", "await": True}]}
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", [config]))
+    node = state.execution["sequence"]["nodes"][0]
+    occurrence = Occurrence(config, node, StepContext(), ("parent",), (0,), True, "branch")
+    executor = Execution(engine, state, STEP_REGISTRY)
+    if invalid == "restart-completed":
+        occurrence = Occurrence(
+            {"id": "done", "type": "probe"},
+            {"phase": "done", "result": {"status": "completed", "output": {}}},
+            StepContext(), ("parent",), (0,), True, "done",
+        )
+        operation, changes = "begin", {}
+    elif invalid == "override-phase":
+        operation, changes = "begin", {"phase": "done"}
+    elif invalid == "foreign-field":
+        operation, changes = "iterate", {"result": {"status": "completed", "output": {}}}
+    else:
+        operation, changes = "settle", {"outcome": "completed", "error": None}
+    before_node = deepcopy(occurrence.node)
+    before_files = {p.name: p.read_bytes() for p in state.runs_dir.iterdir()}
+    with pytest.raises(ValueError):
+        executor.transition(operation, occurrence, changes)
+    assert occurrence.node == before_node
+    assert {p.name: p.read_bytes() for p in state.runs_dir.iterdir()} == before_files
+
+
 def test_execution_shares_workflow_fan_out_and_loop_sources(tmp_path, probe):
     child = definition(
         "child",
@@ -2490,6 +2732,32 @@ def test_loop_snapshot_size_does_not_scale_with_body_length(tmp_path, probe):
     small_many, large_many = size(4, 128), size(4, 4096)
 
     assert large_many - small_many <= large_one - small_one + 256
+
+
+def test_loop_transition_validation_does_not_rewalk_prior_iterations(
+    tmp_path, monkeypatch, probe
+):
+    import specify_cli.workflows._execution as execution
+
+    original = execution.yaml.safe_load
+    counts = []
+
+    def parse(source):
+        counts[-1] += 1
+        return original(source)
+
+    monkeypatch.setattr(execution.yaml, "safe_load", parse)
+    for iterations in (20, 40):
+        counts.append(0)
+        state = WorkflowEngine(tmp_path / str(iterations)).execute(
+            definition("parent", [{
+                "id": "loop", "type": "do-while", "condition": True,
+                "max_iterations": iterations,
+                "steps": [{"id": "body", "type": "probe"}],
+            }])
+        )
+        assert state.status == RunStatus.COMPLETED
+    assert counts[1] < counts[0] * 2.5
 
 
 def test_tree_backed_resume_has_no_setup_checkpoint(tmp_path, monkeypatch, probe):

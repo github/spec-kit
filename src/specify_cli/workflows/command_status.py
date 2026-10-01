@@ -93,7 +93,7 @@ def workflow_status(
         if state.execution:
             from ._execution import scope_summaries
 
-            for scope in scope_summaries(state.execution):
+            for scope in scope_summaries(state.execution, state.status.value):
                 path = " / ".join(scope["scope_path"])
                 cli.console.print(
                     f"  {cli._escape_markup(path)} → "

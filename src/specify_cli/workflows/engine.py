@@ -1174,12 +1174,13 @@ class WorkflowEngine:
             raise ValueError(msg)
 
         if state.execution is not None:
-            from ._execution import steps_of
+            from ._execution import validate_execution
 
-            persisted_steps = steps_of(state.execution["sequence"])
-            offset = state.execution.get("offset", 0)
-            if persisted_steps != definition.steps[offset:]:
-                raise ValueError("Invalid execution state: root sequence differs from workflow snapshot")
+            validate_execution(
+                state.execution,
+                workflow_steps=definition.steps,
+                current_step_index=state.current_step_index,
+            )
 
         dispatch_default_errors = _dispatch_default_errors(definition)
         if dispatch_default_errors:
