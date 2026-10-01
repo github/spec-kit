@@ -1,0 +1,241 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site, services, process, testimonials } from "../data/site";
+
+const waText = encodeURIComponent(
+  `Hi ${site.name}, I'd like to learn more about your coaching.`,
+);
+const waLink = `https://wa.me/${site.whatsapp}?text=${waText}`;
+const mailLink = `mailto:${site.email}`;
+
+const icons: Record<string, string> = {
+  life: "M12 21s-7-4.5-9-9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c-2 4.5-9 9-9 9z",
+  career:
+    "M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+  business:
+    "M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6",
+};
+---
+
+<Layout>
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container nav">
+      <a href="#top" class="brand">{site.name.split(" ")[0]}<span>.</span></a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#services">Services</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#process">Process</a></li>
+        <li><a href="#testimonials">Results</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+      <a href="#contact" class="btn btn-primary nav-cta">Book a call</a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle menu"
+        >☰</button
+      >
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <span class="eyebrow">{site.role}</span>
+          <h1>{site.tagline}</h1>
+          <p class="lead">{site.description}</p>
+          <div class="hero-actions">
+            <a href="#contact" class="btn btn-primary">Book a free call</a>
+            <a href="#services" class="btn btn-ghost">Explore services</a>
+          </div>
+        </div>
+        <div class="hero-portrait">
+          Add your photo here<br />(replace this block in
+          <code>src/pages/index.astro</code>)
+        </div>
+      </div>
+    </section>
+
+    <!-- Services -->
+    <section id="services">
+      <div class="container">
+        <h2 class="section-title">How I can help you</h2>
+        <p class="section-sub">
+          Coaching tailored to where you are — in life, in your career, and in
+          your business.
+        </p>
+        <div class="grid-3">
+          {
+            services.map((s) => (
+              <article class="card">
+                <div class="icon">
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d={icons[s.icon]} />
+                  </svg>
+                </div>
+                <h3>{s.title}</h3>
+                <p>{s.summary}</p>
+                <ul>
+                  {s.points.map((p) => (
+                    <li>{p}</li>
+                  ))}
+                </ul>
+              </article>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section id="about">
+      <div class="container about-grid">
+        <div class="about-photo">
+          Add your photo here<br />(replace this block in
+          <code>src/pages/index.astro</code>)
+        </div>
+        <div class="about-text">
+          <span class="eyebrow">About me</span>
+          <h2>A partner in your growth</h2>
+          <p>
+            I'm {site.name}, a {site.role.toLowerCase()}. I work with
+            individuals and leaders who feel stuck, stretched, or ready for
+            their next chapter — and want a clear, honest path forward.
+          </p>
+          <p>
+            My approach blends structure with deep listening: practical tools
+            and accountability, combined with the space to think clearly and
+            act with confidence. Every engagement is built around your goals,
+            not a fixed formula.
+          </p>
+          <p>
+            <strong>{site.location}.</strong>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Process -->
+    <section id="process">
+      <div class="container">
+        <h2 class="section-title">How we'll work together</h2>
+        <p class="section-sub">
+          A simple, proven path from where you are to where you want to be.
+        </p>
+        <div class="process-grid">
+          {
+            process.map((p) => (
+              <div class="process-item">
+                <div class="step">{p.step}</div>
+                <h3>{p.title}</h3>
+                <p>{p.text}</p>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section id="testimonials" class="testimonials">
+      <div class="container">
+        <h2 class="section-title">What clients say</h2>
+        <p class="section-sub">
+          Real change, in their words.
+        </p>
+        <div class="quote-grid">
+          {
+            testimonials.map((t) => (
+              <figure class="quote">
+                <p>“{t.quote}”</p>
+                <figcaption class="author">{t.author}</figcaption>
+              </figure>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact -->
+    <section id="contact">
+      <div class="container contact-grid">
+        <div class="contact-info">
+          <span class="eyebrow">Get in touch</span>
+          <h2>Let's start the conversation</h2>
+          <p>
+            Book a free, no-pressure discovery call or send a message. I
+            usually reply within one business day.
+          </p>
+          <div class="contact-methods">
+            <a href={waLink} target="_blank" rel="noopener">
+              <span>💬</span>
+              <span>
+                <span class="label">WhatsApp</span><br />
+                <span class="value">Chat with me</span>
+              </span>
+            </a>
+            <a href={mailLink}>
+              <span>✉️</span>
+              <span>
+                <span class="label">Email</span><br />
+                <span class="value">{site.email}</span>
+              </span>
+            </a>
+          </div>
+        </div>
+
+        <form action={mailLink} method="post" enctype="text/plain">
+          <div>
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required />
+          </div>
+          <div>
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required />
+          </div>
+          <div>
+            <label for="message">How can I help?</label>
+            <textarea id="message" name="message" required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Send message</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <small>© {new Date().getFullYear()} {site.name}. All rights reserved.</small>
+      <ul class="footer-social">
+        {site.social.linkedin && (
+          <li><a href={site.social.linkedin} target="_blank" rel="noopener">LinkedIn</a></li>
+        )}
+        {site.social.instagram && (
+          <li><a href={site.social.instagram} target="_blank" rel="noopener">Instagram</a></li>
+        )}
+        {site.social.facebook && (
+          <li><a href={site.social.facebook} target="_blank" rel="noopener">Facebook</a></li>
+        )}
+      </ul>
+    </div>
+  </footer>
+
+  <script>
+    const toggle = document.getElementById("navToggle");
+    const links = document.getElementById("navLinks");
+    toggle?.addEventListener("click", () => links?.classList.toggle("open"));
+    links?.querySelectorAll("a").forEach((a) =>
+      a.addEventListener("click", () => links.classList.remove("open")),
+    );
+  </script>
+</Layout>
