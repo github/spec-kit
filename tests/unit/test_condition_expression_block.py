@@ -560,10 +560,6 @@ MULTI_POSITION_UNFIXABLE = [
     ("inputs.a === inputs.b", "is not a name the evaluator can resolve"),
     ("bogus == 'x'", "is not one of the namespace roots"),
     ("inputs.payload | from_json()", "the evaluator rejects it"),
-    # `_find_top_level` matches " and " with literal spaces, so a newline before
-    # the keyword is not an operator: the wrapped form evaluates False where the
-    # same expression with a space evaluates True.
-    ("inputs.x == 1\nand inputs.name == 'abc'", "is not a name the evaluator can resolve"),
 ]
 
 
@@ -576,6 +572,25 @@ def test_gates_inspect_every_position_not_just_the_first(step_cls, condition, ex
     assert len(errors) == 1
     assert "Wrap the expression" not in errors[0]
     assert expected in errors[0]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_a_condition_wrapped_across_lines_gets_a_paste_ready_correction(step_cls):
+    """A line break before ``and`` no longer hides the operator.
+
+    The evaluator used to match " and " with literal spaces, so the wrapped form
+    of this condition read False where the one-line form read True, and the gate
+    had to withhold the correction. It now splits on any whitespace, so wrapping
+    repairs the condition and the correction is offered.
+    """
+    condition = "inputs.x == 1\nand inputs.name == 'abc'"
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "Wrap the expression" in errors[0]
+    ctx = StepContext(inputs={"x": 1, "name": "abc"})
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
 
 
 @pytest.mark.parametrize(

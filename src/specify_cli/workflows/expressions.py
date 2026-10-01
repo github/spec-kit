@@ -578,6 +578,40 @@ def _is_wrapped_in_parens(text: str) -> bool:
     return False
 
 
+def _collapse_whitespace(text: str) -> str:
+    """Strip *text* and turn each run of whitespace outside a quoted string into
+    one space.
+
+    The operator scans below match word operators by their surrounding spaces
+    (``" or "``, ``" not in "``, ``expr.startswith("not ")``), so an operator
+    next to a newline or tab was never found. A condition wrapped across lines
+    in YAML keeps those newlines -- a ``|`` block scalar keeps every one, and a
+    ``>`` folded scalar keeps the break before a more-indented continuation
+    line -- so ``{{ inputs.a or\\n   inputs.b }}`` was resolved as one dot path,
+    came back ``None``, and read false with no error. Jinja2 treats any
+    whitespace between tokens alike; so does this, while quoted operands keep
+    their text exactly.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    pending_space = False
+    for ch in text.strip():
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch.isspace():
+            pending_space = True
+        else:
+            if pending_space:
+                out.append(" ")
+                pending_space = False
+            if ch in ("'", '"'):
+                quote = ch
+            out.append(ch)
+    return "".join(out)
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -589,7 +623,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
     - String and numeric literals
     """
-    expr = expr.strip()
+    expr = _collapse_whitespace(expr)
 
     # String literal — only when the WHOLE expression is one quoted string,
     # i.e. the opening quote's matching close is the final character. Checking

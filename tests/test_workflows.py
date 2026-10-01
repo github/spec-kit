@@ -1030,6 +1030,64 @@ class TestExpressions:
         assert evaluate_expression("{{ 'a(b' }}", ctx) == "a(b"
         assert evaluate_expression("{{ ('(') }}", ctx) == "("
 
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("{{ inputs.b or\n  inputs.a }}", True),
+            ("{{ inputs.a and\n  inputs.c }}", True),
+            ("{{ inputs.b\nor inputs.a }}", True),
+            ("{{ inputs.a\tand inputs.c }}", True),
+            ("{{ not\n  inputs.b }}", True),
+            ("{{ 'x' in\n  inputs.tags }}", True),
+            ("{{ 'z' not\n  in inputs.tags }}", True),
+            ("{{ 'z' not in\n  inputs.tags }}", True),
+            ("{{ (inputs.b or\r\n  inputs.a) and inputs.c }}", True),
+        ],
+    )
+    def test_operators_separated_by_any_whitespace(self, expression, expected):
+        """Word operators are found across newlines and tabs, as in Jinja2.
+
+        The operator scans match ``" or "`` and friends by their spaces, so an
+        operator next to a line break was never split on: the whole expression
+        was looked up as one dot path and came back ``None`` -- a false
+        condition with no error.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"a": True, "b": False, "c": True, "mode": "fast", "tags": ["x", "y"]}
+        )
+        assert evaluate_expression(expression, ctx) is expected
+
+    def test_condition_wrapped_across_lines_in_yaml(self):
+        """A long condition broken after its operator keeps the line break in
+        YAML (the continuation line is more indented, so ``>`` does not fold
+        it), and still has to evaluate as written."""
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        step = yaml.safe_load(
+            "condition: >-\n"
+            "  {{ inputs.skip_review or\n"
+            "     inputs.scope == 'docs' }}\n"
+        )
+        assert "\n" in step["condition"]
+
+        ctx = StepContext(inputs={"skip_review": False, "scope": "docs"})
+        assert evaluate_condition(step["condition"], ctx) is True
+
+    def test_whitespace_inside_quoted_operand_is_kept(self):
+        """Collapsing whitespace between tokens leaves string literals alone."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"title": "two  spaces", "text": "tab\there"})
+        assert evaluate_expression("{{ inputs.title == 'two  spaces' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.title == 'two spaces' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.text\n  == 'tab\there' }}", ctx) is True
+        assert evaluate_expression("{{ 'a  or  b' }}", ctx) == "a  or  b"
+
     def test_list_indexing(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
