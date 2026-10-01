@@ -7385,6 +7385,112 @@ steps:
             )
         assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
 
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    def test_fan_out_reserved_id_collision_end_to_end_on_resume(
+        self, project_dir, max_concurrency
+    ):
+        """`resume()` builds its own run context, separately from
+        `execute()`, so it needs its own end-to-end coverage of the
+        `reserved_step_ids` wiring.
+
+        The outside `leaf` step completes, a gate pauses the run, and the
+        colliding fan-out only runs after `engine.resume()`. On resume
+        `context.steps` IS `state.step_results`, so a missing reserved set
+        there would let the fan-out's bare `leaf` alias overwrite the
+        persisted outside result directly.
+        """
+        from unittest.mock import patch
+
+        from specify_cli.workflows.base import RunStatus, StepResult
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "fan-out-reserved-collision-resume"
+  name: "Fan Out Reserved Collision Resume"
+  version: "1.0.0"
+steps:
+  - id: leaf
+    type: shell
+    run: "echo outside"
+  - id: approve
+    type: gate
+    message: "Approve?"
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b', 'c'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+      id: leaf
+      type: shell
+      run: "echo {{{{ item }}}}"
+  - id: after
+    type: shell
+    run: "echo {{{{ steps.leaf.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+
+        with patch(
+            "specify_cli.workflows.step.gate.GateStep.execute",
+            return_value=StepResult(output={"approved": True}),
+        ):
+            state = engine.resume(state.run_id)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
+        for idx, item in enumerate(["a", "b", "c"]):
+            assert (
+                state.step_results[f"fan:leaf:{idx}"]["output"]["stdout"]
+                == f"{item}\n"
+            )
+        assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
+
+    def test_concurrent_fan_out_items_copy_fixed_pre_fan_out_snapshot(
+        self, tmp_path
+    ):
+        """Every concurrent item must copy the namespace as it was before
+        the fan-out started, not the live steps dict.
+
+        Completed items publish their namespaced keys back into the shared
+        steps dict. With 2 workers, item 2 is only submitted once item 0
+        has been collected, so if items copied the live dict, item 2 would
+        see `fan:probe:0`, item 4 would see three earlier keys, and so on.
+        That makes the copies grow with the item count (quadratic overall)
+        and makes what an item sees depend on scheduling.
+        """
+        from specify_cli.workflows.base import RunStatus, StepBase, StepContext, StepResult, StepStatus
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        seen: dict[int, list[str]] = {}
+
+        class _ProbeStep(StepBase):
+            type_key = "probe"
+
+            def execute(self, config, context):
+                seen[context.item] = sorted(
+                    k for k in context.steps if k.startswith("fan:")
+                )
+                return StepResult(status=StepStatus.COMPLETED, output={})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        context.steps["before"] = {"output": {}}
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        registry = {"probe": _ProbeStep()}
+        template = {"id": "probe", "type": "probe"}
+        items = list(range(6))
+        engine._run_fan_out(items, template, "fan", context, state, registry, 2)
+
+        assert seen == {i: [] for i in items}
+        # Every item's namespaced result is still published afterwards.
+        for i in items:
+            assert f"fan:probe:{i}" in context.steps
+
     @pytest.mark.parametrize("inner_concurrency", [1, 2])
     def test_reserved_alias_visible_after_nested_fan_out_in_sequential_item(
         self, project_dir, inner_concurrency

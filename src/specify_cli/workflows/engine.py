@@ -1791,7 +1791,11 @@ class WorkflowEngine:
             return f"{step_id}:{base_id}:{idx}"
 
         def run_item(
-            idx: int, item_ctx: StepContext, *, local_only: bool
+            idx: int,
+            item_ctx: StepContext,
+            *,
+            local_only: bool,
+            base_steps: dict[str, Any] | None = None,
         ) -> tuple[Any, dict[str, dict[str, Any]]]:
             # Namespace every id in the template's subtree (not just the
             # template's own top-level id) so a step nested inside e.g. an
@@ -1820,9 +1824,21 @@ class WorkflowEngine:
             # shared steps dict that other concurrently-running items also
             # read from — the actual race Copilot flagged: every worker
             # writing the same bare-id key could otherwise expose another
-            # item's value to a sibling read. The caller applies exactly
-            # one item's aliases to shared state — deterministically the
-            # last item in item order — once every item has finished.
+            # item's value to a sibling read. Each item returns its aliases
+            # instead; the concurrent caller folds every collected item's
+            # aliases in item order once the pool has joined (so an id
+            # resolves to the latest item that actually wrote it), and the
+            # sequential caller publishes them after each item.
+            #
+            # ``base_steps``, when given, is the dict to snapshot instead of
+            # the live ``original_steps``. The concurrent path passes one
+            # snapshot taken before any item starts: completed items keep
+            # publishing their namespaced keys into ``original_steps``
+            # (below), so copying it per item would cost O(items x keys)
+            # per copy and O(K * N^2) overall, and what a late-starting item
+            # saw would depend on scheduling. Copying the fixed pre-fan-out
+            # snapshot keeps each copy the same size and makes every
+            # concurrent item see the same namespace.
             #
             # A plain dict copy, not a ``ChainMap`` overlay: expression
             # interpolation (``{{ steps.x.output... }}``, via
@@ -1834,7 +1850,12 @@ class WorkflowEngine:
             # the shared dict made after this item started, but fan-out
             # items were never entitled to see those anyway.
             original_steps = item_ctx.steps
-            item_steps = dict(original_steps) if local_only else original_steps
+            if local_only:
+                item_steps = dict(
+                    original_steps if base_steps is None else base_steps
+                )
+            else:
+                item_steps = original_steps
             item_ctx.steps = item_steps
 
             # Sequential items (not local_only) execute directly against the
@@ -1954,6 +1975,10 @@ class WorkflowEngine:
         n = len(items)
         slots: list[Any] = [None] * n
         alias_slots: list[dict[str, dict[str, Any]]] = [{}] * n
+        # Taken once, before any worker starts, so every item copies the
+        # same fixed-size namespace rather than the live dict that completed
+        # items keep growing (see ``base_steps`` in run_item).
+        base_steps = dict(context.steps)
 
         def run_isolated(idx: int) -> tuple[Any, dict[str, dict[str, Any]]]:
             # Each item runs against its own context copy so context.item is not
@@ -1968,6 +1993,7 @@ class WorkflowEngine:
                     inside_fan_out=True,
                 ),
                 local_only=True,
+                base_steps=base_steps,
             )
 
         def item_halt_status(idx: int) -> RunStatus | None:
