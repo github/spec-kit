@@ -68,7 +68,8 @@ get_repo_root() {
     fi
 
     # Final fallback to script location
-    local script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local script_dir
+    script_dir="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     (cd "$script_dir/../../.." && pwd)
 }
 
@@ -95,7 +96,10 @@ get_current_branch() {
 read_feature_json_feature_directory() {
     local repo_root="$1"
     local fj="$repo_root/.specify/feature.json"
-    [[ -f "$fj" ]] || { printf '%s' ''; return 0; }
+    [[ -f "$fj" ]] || {
+        printf '%s' ''
+        return 0
+    }
 
     # Try parsers in order (jq -> python3 -> grep/sed), falling through on
     # failure. Selection is by *parse success*, not mere availability: on
@@ -119,9 +123,9 @@ read_feature_json_feature_directory() {
     if [[ -z "$_fd" ]]; then
         # Last-resort single-line grep/sed fallback. The `|| true` guards against
         # grep returning 1 (no match) aborting under `set -e` / `pipefail`.
-        _fd=$( { grep -E '"feature_directory"[[:space:]]*:' "$fj" 2>/dev/null || true; } \
-            | head -n 1 \
-            | sed -E 's/^[^:]*:[[:space:]]*"([^"]*)".*$/\1/' )
+        _fd=$({ grep -E '"feature_directory"[[:space:]]*:' "$fj" 2>/dev/null || true; } |
+            head -n 1 |
+            sed -E 's/^[^:]*:[[:space:]]*"([^"]*)".*$/\1/')
     fi
 
     printf '%s' "$_fd"
@@ -154,9 +158,9 @@ _persist_feature_json() {
 
     # Write feature.json — prefer jq for safe JSON, fall back to printf
     if command -v jq >/dev/null 2>&1; then
-        jq -cn --arg fd "$feature_dir_value" '{feature_directory:$fd}' > "$fj"
+        jq -cn --arg fd "$feature_dir_value" '{feature_directory:$fd}' >"$fj"
     else
-        printf '{"feature_directory":"%s"}\n' "$(json_escape "$feature_dir_value")" > "$fj"
+        printf '{"feature_directory":"%s"}\n' "$(json_escape "$feature_dir_value")" >"$fj"
     fi
 }
 
@@ -266,14 +270,18 @@ get_invoke_separator() {
             local jq_separator
             if jq_separator=$(jq -r '(.default_integration // .integration // "") as $k | if $k == "" then "." else (.integration_settings[$k].invoke_separator // ".") end' "$integration_json" 2>/dev/null); then
                 case "$jq_separator" in
-                    "."|"-") separator="$jq_separator"; parsed=1 ;;
+                    "." | "-")
+                        separator="$jq_separator"
+                        parsed=1
+                        ;;
                 esac
             fi
         fi
 
         if [[ "$parsed" -eq 0 ]] && command -v python3 >/dev/null 2>&1; then
             local py_separator
-            if py_separator=$(python3 - "$integration_json" <<'PY' 2>/dev/null
+            if py_separator=$(
+                python3 - "$integration_json" <<'PY' 2>/dev/null
 import json
 import sys
 
@@ -291,9 +299,12 @@ try:
 except Exception:
     sys.exit(1)
 PY
-); then
+            ); then
                 case "$py_separator" in
-                    "."|"-") separator="$py_separator"; parsed=1 ;;
+                    "." | "-")
+                        separator="$py_separator"
+                        parsed=1
+                        ;;
                 esac
             fi
         fi
@@ -344,7 +355,7 @@ PY
                 }
             ' "$integration_json" 2>/dev/null)
             case "$awk_separator" in
-                "."|"-") separator="$awk_separator" ;;
+                "." | "-") separator="$awk_separator" ;;
             esac
         fi
     fi
@@ -391,10 +402,10 @@ json_escape() {
     # so multi-byte UTF-8 sequences (first byte >= 0xC0) pass through intact.
     local LC_ALL=C
     local i char code
-    for (( i=0; i<${#s}; i++ )); do
+    for ((i = 0; i < ${#s}; i++)); do
         char="${s:$i:1}"
         printf -v code '%d' "'$char" 2>/dev/null || code=256
-        if (( code >= 1 && code <= 31 )); then
+        if ((code >= 1 && code <= 31)); then
             printf '\\u%04x' "$code"
         else
             printf '%s' "$char"
@@ -519,7 +530,7 @@ resolve_template() {
     local repo_root="$2"
     local base="$repo_root/.specify/templates"
 
-    case "$template_name" in ""|*[!a-z0-9-]*) return 1 ;; esac
+    case "$template_name" in "" | *[!a-z0-9-]*) return 1 ;; esac
 
     # Priority 1: Project overrides
     local override="$base/overrides/${template_name}.md"
@@ -566,7 +577,7 @@ except Exception:
                         [ -f "$candidate" ] && echo "$candidate" && return 0
                         candidate="$presets_dir/$preset_id/${template_name}.md"
                         [ -f "$candidate" ] && echo "$candidate" && return 0
-                    done <<< "$sorted_presets"
+                    done <<<"$sorted_presets"
                 fi
                 # python3 succeeded but registry has no presets — nothing to search
             else
@@ -604,7 +615,7 @@ except Exception:
             local candidate="$ext/templates/${template_name}.md"
             [ -f "$candidate" ] || candidate="$ext/${template_name}.md"
             [ -f "$candidate" ] && echo "$candidate" && return 0
-        done <<< "$sorted_extensions"
+        done <<<"$sorted_extensions"
     fi
 
     # Priority 4: Core templates
@@ -628,7 +639,7 @@ resolve_template_content() {
     local repo_root="$2"
     local base="$repo_root/.specify/templates"
 
-    case "$template_name" in ""|*[!a-z0-9-]*) return 1 ;; esac
+    case "$template_name" in "" | *[!a-z0-9-]*) return 1 ;; esac
 
     # Collect all layers (highest priority first)
     local -a layer_paths=()
@@ -776,7 +787,7 @@ except Exception as exc:
                     fi
                     if [ -n "$result" ]; then
                         local declaration
-                        IFS=$'\t' read -r declaration strategy manifest_file <<< "$result"
+                        IFS=$'\t' read -r declaration strategy manifest_file <<<"$result"
                         [ "$declaration" = "found" ] && manifest_declared=true
                         strategy=$(printf '%s' "$strategy" | tr '[:upper:]' '[:lower:]')
                     fi
@@ -786,7 +797,7 @@ except Exception as exc:
                 local candidate=""
                 if [ -n "$manifest_file" ]; then
                     case "$manifest_file" in
-                        /*|*../*) manifest_file="" ;;
+                        /* | *../*) manifest_file="" ;;
                     esac
                 fi
                 if [ -n "$manifest_file" ]; then
@@ -809,7 +820,7 @@ except Exception as exc:
                         break
                     fi
                 fi
-            done <<< "$sorted_presets"
+            done <<<"$sorted_presets"
         fi
     fi
 
@@ -831,7 +842,7 @@ except Exception as exc:
                 effective_base_found=true
                 break
             fi
-        done <<< "$sorted_extensions"
+        done <<<"$sorted_extensions"
     fi
 
     # Priority 4: Core templates (always "replace")
@@ -872,7 +883,7 @@ except Exception as exc:
     # to find the nearest replace layer. Only compose layers above that base.
     local base_idx=-1
     local i
-    for (( i=0; i<count; i++ )); do
+    for ((i = 0; i < count; i++)); do
         if [ "${layer_strategies[$i]}" = "replace" ]; then
             base_idx=$i
             break
@@ -886,18 +897,28 @@ except Exception as exc:
 
     # Read the base content; compose layers above the base (higher priority)
     local content
-    if ! content=$(cat "${layer_paths[$base_idx]}"; status=$?; printf x; exit "$status"); then
+    if ! content=$(
+        cat "${layer_paths[$base_idx]}"
+        status=$?
+        printf x
+        exit "$status"
+    ); then
         echo "Error: failed to read template layer ${layer_paths[$base_idx]}" >&2
         return 2
     fi
     content="${content%x}"
 
-    for (( i=base_idx-1; i>=0; i-- )); do
+    for ((i = base_idx - 1; i >= 0; i--)); do
         local path="${layer_paths[$i]}"
         local strat="${layer_strategies[$i]}"
         local layer_content
         # Preserve trailing newlines
-        if ! layer_content=$(cat "$path"; status=$?; printf x; exit "$status"); then
+        if ! layer_content=$(
+            cat "$path"
+            status=$?
+            printf x
+            exit "$status"
+        ); then
             echo "Error: failed to read template layer $path" >&2
             return 2
         fi
@@ -906,17 +927,26 @@ except Exception as exc:
         case "$strat" in
             replace) content="$layer_content" ;;
             prepend)
-                content=$(printf '%s\n\n%s' "$layer_content" "$content"; printf x)
+                content=$(
+                    printf '%s\n\n%s' "$layer_content" "$content"
+                    printf x
+                )
                 content="${content%x}"
                 ;;
             append)
-                content=$(printf '%s\n\n%s' "$content" "$layer_content"; printf x)
+                content=$(
+                    printf '%s\n\n%s' "$content" "$layer_content"
+                    printf x
+                )
                 content="${content%x}"
                 ;;
             wrap)
                 case "$layer_content" in
                     *'{CORE_TEMPLATE}'*) ;;
-                    *) echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2; return 2 ;;
+                    *)
+                        echo "Error: wrap strategy missing {CORE_TEMPLATE} placeholder" >&2
+                        return 2
+                        ;;
                 esac
                 # Consume the wrapper left to right instead of rewriting it in
                 # place. Rewriting re-scanned the string just modified, so base
@@ -933,7 +963,10 @@ except Exception as exc:
                 done
                 content="${wrapped}${rest}"
                 ;;
-            *) echo "Error: unknown strategy '$strat'" >&2; return 2 ;;
+            *)
+                echo "Error: unknown strategy '$strat'" >&2
+                return 2
+                ;;
         esac
     done
 
