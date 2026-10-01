@@ -400,7 +400,19 @@ class IntegrationManifest:
         # Remove the manifest file itself
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
         if remove_manifest and manifest.exists():
-            manifest.unlink()
+            try:
+                manifest.unlink()
+            except OSError:
+                # An undeletable manifest (read-only file, a directory left at
+                # the path, a Windows lock) must not abort the uninstall after
+                # the tracked files were already removed: the caller would lose
+                # the (removed, skipped) result and never run its post-uninstall
+                # bookkeeping. Report it like any other file we could not
+                # remove, mirroring the path.unlink() guard above. The
+                # empty-parent cleanup below is left unconditional: with the
+                # manifest still on disk its parent is non-empty, so the first
+                # rmdir() raises and breaks immediately.
+                skipped.append(manifest)
             parent = manifest.parent
             while parent != root:
                 try:
@@ -439,8 +451,7 @@ class IntegrationManifest:
             _ensure_safe_manifest_destination(self.project_root, path)
             os.replace(temp_path, path)
         finally:
-            if temp_path.exists():
-                temp_path.unlink()
+            temp_path.unlink(missing_ok=True)
         return path
 
     @classmethod
@@ -459,6 +470,10 @@ class IntegrationManifest:
         path = inst.manifest_path
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Integration manifest at {path} is not valid UTF-8"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Integration manifest at {path} contains invalid JSON"

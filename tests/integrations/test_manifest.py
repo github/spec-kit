@@ -242,6 +242,34 @@ class TestManifestUninstall:
             "remove_manifest=False must keep the manifest file on disk"
         )
 
+    def test_undeletable_manifest_is_skipped_not_raised(self, tmp_path):
+        """An undeletable manifest must not abort the whole uninstall.
+
+        The tracked files are removed *before* the manifest, so raising here
+        loses the ``(removed, skipped)`` result the caller needs: the CLI's
+        post-uninstall bookkeeping (reassigning the default integration,
+        rewriting/removing ``integration.json``, clearing init options) never
+        runs, leaving a removed integration still recorded as installed.
+
+        Leaving a directory at the manifest path is a portable way to make
+        ``unlink()`` fail with no chmod and no monkeypatch: it raises
+        ``IsADirectoryError`` on Linux and ``PermissionError`` on
+        Windows/macOS, both ``OSError`` subclasses.
+        """
+        m = IntegrationManifest("test", tmp_path, version="1.0")
+        m.record_file("f.txt", "content")
+        m.save()
+        m.manifest_path.unlink()
+        m.manifest_path.mkdir()
+
+        removed, skipped = m.uninstall()
+
+        assert removed == [tmp_path / "f.txt"]
+        assert not (tmp_path / "f.txt").exists()
+        assert m.manifest_path in skipped, (
+            "an undeletable manifest must be reported in skipped"
+        )
+
     def test_cleans_empty_parent_dirs(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("a/b/c/f.txt", "content")
@@ -345,6 +373,14 @@ class TestManifestLoadValidation:
         path.parent.mkdir(parents=True)
         path.write_text("{not valid json", encoding="utf-8")
         with pytest.raises(ValueError, match="invalid JSON"):
+            IntegrationManifest.load("bad", tmp_path)
+
+    def test_load_non_utf8_json_raises_value_error(self, tmp_path):
+        path = tmp_path / ".specify" / "integrations" / "bad.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\xff\xfe")
+
+        with pytest.raises(ValueError, match="valid UTF-8"):
             IntegrationManifest.load("bad", tmp_path)
 
     def test_load_filters_recovered_files_not_in_files(self, tmp_path):

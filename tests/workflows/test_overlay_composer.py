@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from specify_cli.workflows.overlays import WorkflowResolver
-from specify_cli.workflows.overlays.composer import StepListComposer
-from specify_cli.workflows.overlays.layer_sources import BaseWorkflowSource, Layer
-from specify_cli.workflows.overlays.schema import Overlay, OverlayEdit
+from specify_cli.workflows.overlay import WorkflowResolver
+from specify_cli.workflows.overlay.composer import StepListComposer
+from specify_cli.workflows.overlay.layer_sources import BaseWorkflowSource, Layer
+from specify_cli.workflows.overlay.schema import Overlay, OverlayEdit
 
 
 def _write_workflow(project_root: Path, workflow_id: str, data: dict) -> Path:

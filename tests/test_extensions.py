@@ -17,12 +17,12 @@ import platform
 import tempfile
 import shutil
 import tomllib
+import yaml
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from tests.conftest import strip_ansi
 from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 from specify_cli import extensions as _ext_module
 from specify_cli.extensions import (
@@ -47,6 +47,38 @@ from specify_cli._utils import version_satisfies
 # Minimal valid ZIP (empty end-of-central-directory record). Passes
 # zipfile.is_zipfile() so --from download tests exercise the content guard.
 _MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
+
+
+def _open_test_download_zip(project_root, download_dir, zip_filename):
+    """Cross-platform stand-in for the POSIX-only secure cache primitive.
+
+    Mirrors production behavior by making the leaf disappear from disk while
+    the descriptor stays open. On POSIX the file is unlinked immediately; on
+    Windows an in-use file cannot be unlinked, so it is opened with
+    ``O_TEMPORARY`` and removed automatically when the descriptor closes.
+    """
+    target = download_dir / zip_filename
+    o_temporary = getattr(os, "O_TEMPORARY", 0)
+    if o_temporary:
+        return os.open(
+            target,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary,
+            0o600,
+        )
+    fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.unlink(target)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _validate_safe_cache_dir_test_stand_in(project_root):
+    """Cross-platform stand-in for the secure cache validator."""
+    download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+    download_dir.mkdir(parents=True, exist_ok=True)
+    return download_dir
 
 
 def can_create_symlink(tmp_path: Path) -> bool:
@@ -378,6 +410,55 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid version"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            1.0,            # unquoted YAML float -- the likeliest authoring slip
+            5,              # unquoted int
+            True,           # YAML `yes`/`true`
+            None,           # `speckit_version:` written but left empty
+            [">=0.1.0"],    # iterable: slips past SpecifierSet() entirely
+            {"min": "0.1"},  # iterable: same
+        ],
+    )
+    def test_non_string_speckit_version(self, temp_dir, valid_manifest_data, bad):
+        """A non-string requires.speckit_version must be a ValidationError.
+
+        It was presence-checked only, so it reached ``SpecifierSet(required)`` in
+        check_compatibility(), which is guarded by ``except InvalidSpecifier``
+        alone. A non-string escapes that guard two ways: scalars raise TypeError
+        from the constructor, and a list/dict is iterable so SpecifierSet accepts
+        it and the failure surfaces later as ``AttributeError: 'str' object has no
+        attribute 'filter'`` from inside .contains().
+        """
+        import yaml
+
+        valid_manifest_data["requires"]["speckit_version"] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError, match="Invalid requires.speckit_version"
+        ):
+            ExtensionManifest(manifest_path)
+
+    def test_empty_speckit_version(self, temp_dir, valid_manifest_data):
+        """A blank requires.speckit_version must be rejected, not treated as any."""
+        import yaml
+
+        valid_manifest_data["requires"]["speckit_version"] = "   "
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError, match="Invalid requires.speckit_version"
+        ):
+            ExtensionManifest(manifest_path)
+
     def test_valid_category(self, temp_dir, valid_manifest_data):
         """Test manifest with various category values (free-form string)."""
         import yaml
@@ -576,7 +657,7 @@ class TestExtensionManifest:
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_manifest_data, f)
 
-        with pytest.raises(ValidationError, match="must provide at least one command or hook"):
+        with pytest.raises(ValidationError, match="must provide at least one command, hook, or event"):
             ExtensionManifest(manifest_path)
 
     def test_hooks_only_extension(self, temp_dir, valid_manifest_data):
@@ -612,6 +693,163 @@ class TestExtensionManifest:
             yaml.dump(valid_manifest_data, f)
 
         with pytest.raises(ValidationError, match="Invalid provides.commands"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["extension", "requires", "provides"])
+    @pytest.mark.parametrize("bad", [None, [], "text"])
+    def test_required_section_not_mapping_rejected(
+        self, temp_dir, valid_manifest_data, section, bad
+    ):
+        """A required section that is written but empty or wrongly shaped must
+        raise ValidationError, not a raw TypeError/AttributeError.
+
+        REQUIRED_FIELDS only checks key presence, so `provides:` with no value
+        passed it and then hit `None.get(...)`. That AttributeError escaped
+        list_installed()'s ValidationError-only "Corrupted extension" fallback,
+        so one bad extension made `specify extension list` exit 1 instead of
+        listing the others.
+        """
+        import yaml
+
+        valid_manifest_data[section] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid {section}"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("field", ["id", "name", "version", "description"])
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_extension_metadata_field_not_string_rejected(
+        self, temp_dir, valid_manifest_data, field, bad
+    ):
+        """A non-string extension.<field> must raise ValidationError, not a raw
+        TypeError.
+
+        The loop over these four fields only checked key PRESENCE, then fed the
+        values to ``re.match`` (id) and ``packaging.Version`` (version), both of
+        which raise a bare TypeError on a non-string. YAML makes that an easy
+        authoring slip: unquoted ``version: 1.0`` parses as a float and ``id: 2``
+        as an int. TypeError is not a ValidationError, so it escaped
+        list_installed()'s "Corrupted extension" fallback and made
+        `specify extension list` exit 1 with a raw traceback, hiding every
+        healthy extension too. The sibling IntegrationDescriptor already
+        type-checks the same four fields.
+        """
+        import yaml
+
+        valid_manifest_data["extension"][field] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid extension.{field}"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("bad", [1.0, 5, None, ["a"], {"a": 1}, True])
+    def test_command_name_not_string_rejected(
+        self, temp_dir, valid_manifest_data, bad
+    ):
+        """A non-string command name must raise ValidationError, not a raw
+        TypeError from the name-pattern match.
+
+        The sibling ``file`` field was already covered, since
+        relative_extension_path_violation() rejects a non-string value; ``name``
+        went straight into EXTENSION_COMMAND_NAME_PATTERN.match().
+        """
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["name"] = bad
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command name"):
+            ExtensionManifest(manifest_path)
+
+    def test_one_bad_manifest_does_not_hide_healthy_extensions(self, temp_dir):
+        """End-to-end guard for the symptom: an unquoted ``version: 1.0`` in one
+        installed extension must degrade to "Corrupted extension" and still let
+        list_installed() report the healthy ones, instead of raising TypeError
+        out of the whole call.
+        """
+        ext_root = temp_dir / ".specify" / "extensions"
+        for ext_id, version in (("good-ext", '"1.0.0"'), ("bad-ext", "1.0")):
+            ext_path = ext_root / ext_id
+            ext_path.mkdir(parents=True, exist_ok=True)
+            (ext_path / "extension.yml").write_text(
+                f"""schema_version: "1.0"
+extension:
+  id: {ext_id}
+  name: {ext_id}
+  version: {version}
+  description: desc
+requires:
+  speckit_version: ">=0.1.0"
+provides:
+  commands:
+    - name: speckit.{ext_id}.hello
+      file: commands/hello.md
+""",
+                encoding="utf-8",
+            )
+        (ext_root / ".registry").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "extensions": {
+                        "good-ext": {"version": "1.0.0", "enabled": True},
+                        "bad-ext": {"version": "1.0", "enabled": True},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        listed = {row["id"]: row for row in ExtensionManager(temp_dir).list_installed()}
+
+        assert set(listed) == {"good-ext", "bad-ext"}
+        assert "Corrupted" not in listed["good-ext"]["description"]
+        assert "Corrupted" in listed["bad-ext"]["description"]
+
+    def test_empty_provides_mapping_is_still_accepted_with_hooks(
+        self, temp_dir, valid_manifest_data
+    ):
+        """Regression guard: `provides: {}` is a well-SHAPED mapping, so the new
+        shape check must not reject it — an extension may provide only hooks."""
+        import yaml
+
+        valid_manifest_data["provides"] = {}
+        assert valid_manifest_data.get("hooks"), "fixture is expected to define hooks"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        ExtensionManifest(manifest_path)  # must not raise
+
+    def test_empty_provides_and_no_hooks_keeps_its_own_message(
+        self, temp_dir, valid_manifest_data
+    ):
+        """...and with no hooks (or events) either, it reports the "nothing
+        provided" message rather than the new shape error."""
+        import yaml
+
+        valid_manifest_data["provides"] = {}
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data.pop("events", None)
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError, match="at least one command, hook, or event"
+        ):
             ExtensionManifest(manifest_path)
 
     def test_hooks_not_dict_rejected(self, temp_dir, valid_manifest_data):
@@ -737,6 +975,23 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="must contain at least one entry"):
             ExtensionManifest(manifest_path)
 
+    def test_hook_colons_remain_accepted(self, temp_dir, valid_manifest_data):
+        """Artifact identifiers must not narrow the existing hook manifest contract."""
+        import yaml
+
+        valid_manifest_data["hooks"] = {
+            "custom:after": {"command": "/skill:speckit-test-ext-hello"}
+        }
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.hooks["custom:after"]["command"] == (
+            "/skill:speckit-test-ext-hello"
+        )
+
     def test_hook_priority_field_validation(self, temp_dir, valid_manifest_data):
         """Hook entry ``priority`` must be a positive integer when provided."""
         import yaml
@@ -779,6 +1034,268 @@ class TestExtensionManifest:
         hash_value = manifest.get_hash()
         assert hash_value.startswith("sha256:")
         assert len(hash_value) > 10
+
+
+class TestExtensionManifestTemplatesAndScripts:
+    """Tests for the optional provides.templates / provides.scripts sections."""
+
+    def test_templates_and_scripts_declared(self, temp_dir, valid_manifest_data):
+        """A manifest declaring templates and scripts exposes them via properties."""
+        import yaml
+
+        valid_manifest_data["provides"]["templates"] = [
+            {
+                "name": "myext-template",
+                "file": "templates/myext-template.md",
+                "description": "Report scaffold contributed by myext",
+            }
+        ]
+        valid_manifest_data["provides"]["scripts"] = [
+            {
+                "name": "myext-collect",
+                "file": "scripts/bash/myext-collect.sh",
+                "description": "Data-collection helper",
+                "runtimes": ["bash", "python"],
+            }
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.templates == valid_manifest_data["provides"]["templates"]
+        assert manifest.scripts == valid_manifest_data["provides"]["scripts"]
+        assert manifest.warnings == []
+
+    def test_templates_only_extension_is_valid(self, temp_dir, valid_manifest_data):
+        """An extension with only a declared template (no commands/hooks/events) is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["templates"] = [
+            {"name": "myext-template", "file": "templates/myext-template.md"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.templates) == 1
+        assert len(manifest.commands) == 0
+
+    def test_scripts_only_extension_is_valid(self, temp_dir, valid_manifest_data):
+        """An extension with only a declared script (no commands/hooks/events) is valid."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert len(manifest.scripts) == 1
+
+    def test_no_provides_at_all_still_rejected(self, temp_dir, valid_manifest_data):
+        """Without commands, hooks, events, templates, or scripts the manifest is
+        still rejected — the relaxed rule only widens what counts, it doesn't
+        drop the requirement that an extension provide *something*."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data.pop("hooks", None)
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="must provide at least one command, hook, or event"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_section_must_be_a_list(self, temp_dir, valid_manifest_data, section):
+        """provides.templates / provides.scripts must be a list, not e.g. a mapping."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = {"not": "a list"}
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Invalid provides.{section}: expected a list"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_must_be_a_mapping(self, temp_dir, valid_manifest_data, section):
+        """Each provides.templates / provides.scripts entry must be a mapping."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = ["not-a-mapping"]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Each entry in 'provides.{section}' must be a mapping"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_missing_name_or_file(self, temp_dir, valid_manifest_data, section):
+        """Each entry requires both 'name' and 'file'."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [{"name": "only-a-name"}]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="missing 'name' or 'file'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_invalid_name_format(self, temp_dir, valid_manifest_data, section):
+        """Names must be lowercase alphanumeric with hyphens only."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "Bad_Name", "file": f"{section}/bad.txt"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="must be lowercase alphanumeric with hyphens only"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_duplicate_name_rejected(self, temp_dir, valid_manifest_data, section):
+        """Two entries in the same section sharing a name are rejected.
+
+        The resolver (PresetResolver._extension_manifest_declared_template)
+        returns the first entry matching a name, so a later duplicate would
+        be silently unreachable while still counted by ExtensionManifest
+        properties -- reject it up front instead.
+        """
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "dup", "file": f"{section}/a.txt"},
+            {"name": "dup", "file": f"{section}/b.txt"},
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match=f"Duplicate .* name 'dup' in 'provides.{section}'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_path_traversal_rejected(self, temp_dir, valid_manifest_data, section):
+        """The 'file' field is checked with the same path-safety policy as commands."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "escape", "file": "../evil"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="relative path within the extension directory"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("section", ["templates", "scripts"])
+    def test_provides_entry_strategy_rejected(self, temp_dir, valid_manifest_data, section):
+        """'strategy' is preset-only; extension-provided artifacts are always 'replace'."""
+        import yaml
+
+        valid_manifest_data["provides"][section] = [
+            {"name": "has-strategy", "file": f"{section}/x.txt", "strategy": "replace"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="'strategy' is not authorable"):
+            ExtensionManifest(manifest_path)
+
+    def test_script_runtimes_accepted(self, temp_dir, valid_manifest_data):
+        """A valid 'runtimes' list on a script entry is accepted as-is."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {
+                "name": "myext-collect",
+                "file": "scripts/bash/myext-collect.sh",
+                "runtimes": ["bash", "powershell", "python"],
+            }
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.scripts[0]["runtimes"] == ["bash", "powershell", "python"]
+
+    def test_script_runtimes_must_be_a_list_of_strings(self, temp_dir, valid_manifest_data):
+        """A non-list 'runtimes' value is rejected."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh", "runtimes": "bash"}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="expected a list of strings"):
+            ExtensionManifest(manifest_path)
+
+    def test_script_runtimes_rejects_unknown_runtime(self, temp_dir, valid_manifest_data):
+        """An unrecognized runtime name is rejected with the valid set in the message."""
+        import yaml
+
+        valid_manifest_data["provides"]["scripts"] = [
+            {"name": "myext-collect", "file": "scripts/bash/myext-collect.sh", "runtimes": ["ruby"]}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid runtimes.*must be one of"):
+            ExtensionManifest(manifest_path)
+
+    def test_provides_entry_description_must_be_a_string(self, temp_dir, valid_manifest_data):
+        """An optional 'description' field must be a string when present."""
+        import yaml
+
+        valid_manifest_data["provides"]["templates"] = [
+            {"name": "myext-template", "file": "templates/myext-template.md", "description": 123}
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="expected a string"):
+            ExtensionManifest(manifest_path)
 
 
 # ===== ExtensionRegistry Tests =====
@@ -1052,6 +1569,31 @@ class TestExtensionRegistry:
         result = registry.list()
         assert result == {}
 
+    def test_load_starts_fresh_for_non_utf8_registry(self, temp_dir):
+        """A registry file with undecodable bytes must start fresh, not raise.
+
+        ``_load()`` already treats malformed JSON as "corrupted registry,
+        start fresh", but a registry whose *bytes* cannot be decoded as UTF-8
+        raised a raw ``UnicodeDecodeError`` from the text-mode read before
+        JSON parsing began — the same corruption class reaching a different
+        exception type. Because the registry is loaded in ``__init__``, that
+        traceback broke *every* extension command on the project.
+        """
+        extensions_dir = temp_dir / "extensions"
+        extensions_dir.mkdir()
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe not utf-8 \xc3\x28"
+        )
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        assert registry.data == {
+            "schema_version": ExtensionRegistry.SCHEMA_VERSION,
+            "extensions": {},
+        }
+        assert registry.list() == {}
+        assert not registry.is_installed("test-ext")
+
 
 # ===== ExtensionManager Tests =====
 
@@ -1075,6 +1617,28 @@ class TestExtensionManager:
         # Requires >=0.1.0, but we have 0.0.1
         with pytest.raises(CompatibilityError, match="Extension requires spec-kit"):
             manager.check_compatibility(manifest, "0.0.1")
+
+    @pytest.mark.parametrize(
+        "bad",
+        [1.0, 5, True, None, [">=0.1.0"], {"min": "0.1"}],
+    )
+    def test_check_compatibility_non_string_specifier(self, project_dir, bad):
+        """check_compatibility() must report a non-string as CompatibilityError.
+
+        Defense in depth for the validator check above: this method is public and
+        reachable with a hand-built manifest, and ``except InvalidSpecifier`` does
+        not cover a non-string. Without the guard, scalars raise a bare TypeError
+        and iterables construct fine only to break inside .contains() -- neither
+        is a CompatibilityError, so both bypass the CLI's "Compatibility Error"
+        handler and exit 1 with a raw traceback naming no field.
+        """
+        from types import SimpleNamespace
+
+        manager = ExtensionManager(project_dir)
+        manifest = SimpleNamespace(requires_speckit_version=bad)
+
+        with pytest.raises(CompatibilityError, match="Invalid version specifier"):
+            manager.check_compatibility(manifest, "0.15.2")
 
     def test_check_compatibility_allows_prerelease_builds(self, extension_dir, project_dir):
         """Prerelease spec-kit builds should satisfy compatible version ranges."""
@@ -1198,6 +1762,7 @@ class TestExtensionManager:
             create_missing_active_skills_dir=False,
             extension_id=None,
             only_agent=None,
+            author="github-spec-kit",
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -1410,6 +1975,57 @@ class TestExtensionManager:
         # The symlink and its target survive; nothing was silently discarded.
         assert config_file.is_symlink()
         assert external_target.read_text() == "model: linked-model\n"
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_reinstall_with_unreadable_kept_config_aborts_with_guidance(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """An unreadable kept config must abort reinstall, not crash it.
+
+        The sibling symlink guard four lines above raises ``ValidationError``
+        with resolution guidance, but the rescue read itself
+        (``cfg_file.read_bytes()``/``stat()``) had no boundary, so a kept
+        config that cannot be read (permission or I/O error) crashed the
+        reinstall with a raw ``OSError``. It must reject the reinstall while
+        dest_dir is untouched so the preserved bytes are never rescued
+        half-read or lost to the rmtree below.
+        """
+        manager = ExtensionManager(project_dir)
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        kept_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.is_file()
+
+        # Simulate a kept config that can no longer be read (e.g. a
+        # permission or I/O error) without touching real permissions so the
+        # test also runs on platforms where chmod is a no-op.
+        original_read_bytes = Path.read_bytes
+
+        def failing_read_bytes(self_path, *args, **kwargs):
+            if self_path == config_file:
+                raise PermissionError(13, "Permission denied")
+            return original_read_bytes(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", failing_read_bytes)
+
+        with pytest.raises(ValidationError, match="cannot be read"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The kept config survives untouched; nothing was rescued half-read.
+        monkeypatch.undo()
+        assert config_file.read_bytes() == kept_bytes
         assert not manager.registry.is_installed("test-ext")
 
     def test_retry_with_symlinked_live_config_aborts_and_preserves_both(
@@ -1902,6 +2518,87 @@ class TestExtensionManager:
         assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
         assert not manager.registry.is_installed("test-ext")
 
+    def test_retry_with_unreadable_staged_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """An unreadable staged backup must abort the retry, not crash it.
+
+        Every sibling read in the retry path (the live twin, the packaged
+        baseline check, the mode sidecar) already catches ``OSError``, but the
+        staged file's own ``stat()``/``read_bytes()`` had no boundary, so a
+        staged config that cannot be read crashed the reinstall with a raw
+        ``OSError`` instead of the conflict guidance. It must be treated like
+        an uncomparable live config: preserve both copies and abort while
+        dest_dir is untouched.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        live_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        staged_file = staging_dir / "test-ext-config.yml"
+        assert staged_file.is_file()
+
+        # Simulate a staged backup that can no longer be read (e.g. a
+        # permission or I/O error) without touching real permissions so the
+        # test also runs on platforms where chmod is a no-op.
+        original_read_bytes = Path.read_bytes
+
+        def failing_read_bytes(self_path, *args, **kwargs):
+            if self_path == staged_file:
+                raise PermissionError(13, "Permission denied")
+            return original_read_bytes(self_path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", failing_read_bytes)
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies must survive: the live config and the staged backup.
+        monkeypatch.undo()
+        assert config_file.read_bytes() == live_bytes
+        assert staging_dir.exists()
+        assert staged_file.is_file()
+        assert not manager.registry.is_installed("test-ext")
+
     @pytest.mark.parametrize(
         "failure_mode",
         [
@@ -2137,11 +2834,15 @@ class TestExtensionManager:
 
             # Force-reinstall from ZIP
             manifest = manager.install_from_zip(
-                zip_path, "0.1.0", force=True
+                zip_path, "0.1.0", force=True, catalog_name="extension-catalog"
             )
 
         assert manifest.id == "test-ext"
         assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext")["source"] == {
+            "kind": "catalog",
+            "catalog": "extension-catalog",
+        }
         ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
         assert ext_dir.exists()
 
@@ -2166,6 +2867,85 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="Unsafe symlink"):
             manager.install_from_zip(zip_path, "0.1.0")
 
+        assert not manager.registry.is_installed("test-ext")
+
+    @pytest.mark.skipif(os.name == "nt", reason="requires replacing an open file")
+    def test_install_from_zip_uses_open_archive_after_path_replacement(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """An authoritative archive stream must survive pathname replacement."""
+        import zipfile
+
+        zip_path = temp_dir / "original-extension.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    archive.write(file_path, file_path.relative_to(extension_dir))
+
+        manager = ExtensionManager(project_dir)
+        with zip_path.open("rb") as archive_file:
+            zip_path.unlink()
+            with zipfile.ZipFile(zip_path, "w"):
+                pass
+            manifest = manager.install_from_zip(
+                zip_path,
+                "0.1.0",
+                archive_file=archive_file,
+            )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_install_from_tar_archive(
+        self, extension_dir, project_dir, temp_dir, suffix, nested
+    ):
+        """Tar archives install with the same flat/nested behavior as ZIP."""
+        import tarfile
+
+        archive_path = temp_dir / f"test-ext{suffix}"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    relative = file_path.relative_to(extension_dir)
+                    arcname = Path("test-ext-v1") / relative if nested else relative
+                    archive.add(file_path, arcname=arcname)
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_archive(
+            archive_path, "0.1.0", catalog_name="extension-catalog"
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert manager.registry.get("test-ext")["source"] == {
+            "kind": "catalog",
+            "catalog": "extension-catalog",
+        }
+
+    def test_install_from_tar_rejects_symlink_entry(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        import tarfile
+
+        archive_path = temp_dir / "symlink-extension.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for file_path in extension_dir.rglob("*"):
+                if file_path.is_file():
+                    archive.add(
+                        file_path,
+                        arcname=file_path.relative_to(extension_dir),
+                    )
+            link = tarfile.TarInfo("templates/escape")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            archive.addfile(link)
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="Unsafe symlink"):
+            manager.install_from_archive(archive_path, "0.1.0")
+        assert not manager.registry.is_installed("test-ext")
         assert not manager.registry.is_installed("test-ext")
 
     def test_install_duplicate_error_mentions_force(self, extension_dir, project_dir):
@@ -2344,6 +3124,94 @@ class TestExtensionManager:
 
         with pytest.raises(ValidationError, match="already provided by extension 'ext-one'"):
             manager.install_from_directory(second_dir, "0.1.0", register_commands=False)
+
+    def test_install_rejects_alias_shadowing_core_command(self, temp_dir, project_dir):
+        """An alias equal to a core command's qualified name must not install.
+
+        Regression test for #4555: a primary name is namespace-checked
+        against CORE_COMMAND_NAMES, but aliases are intentionally free-form
+        and previously went unchecked against core commands entirely, so an
+        extension could claim e.g. 'speckit.taskstoissues' as an alias and
+        shadow the core command of the same name.
+        """
+        import yaml
+
+        ext_dir = temp_dir / "probe-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "probe",
+                "name": "Probe",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.probe.taskstoissues",
+                        "file": "commands/cmd.md",
+                        "aliases": ["speckit.taskstoissues"],
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="conflicts with core command"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    @pytest.mark.parametrize("alias", ["taskstoissues", "speckit-taskstoissues"])
+    def test_install_rejects_equivalent_alias_shadowing_core_command(
+        self, temp_dir, project_dir, alias
+    ):
+        """Plain and hyphenated alias spellings must be rejected too.
+
+        Regression test for the reviewer follow-up on #4555: agent-specific
+        name transformation (``CommandRegistrar._compute_output_name`` and the
+        Cline/Forge/Junie formatters) collapses ``speckit.taskstoissues``,
+        ``taskstoissues``, and ``speckit-taskstoissues`` to the same on-disk
+        command name, so all three spellings must be rejected, not just the
+        exact dotted one.
+        """
+        import yaml
+
+        ext_dir = temp_dir / "probe-ext"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "probe",
+                "name": "Probe",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.probe.taskstoissues",
+                        "file": "commands/cmd.md",
+                        "aliases": [alias],
+                    }
+                ]
+            },
+        }
+
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+        (ext_dir / "commands" / "cmd.md").write_text("---\ndescription: Test\n---\n\nBody")
+
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="conflicts with core command"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""
@@ -2531,6 +3399,30 @@ Real body starts here.
         assert "Prüfe Konformität" in output
         assert "\\u" not in output
 
+    def test_render_frontmatter_keeps_long_description_on_one_line(self):
+        """A long description must not be folded across lines.
+
+        PyYAML wraps plain scalars at ~80 columns by default, which splits a
+        long ``description`` onto a continuation line. The YAML stays valid,
+        but the rendered frontmatter then differs in shape from the
+        hand-written core command templates, where ``description`` is always a
+        single line -- and consumers that read frontmatter line-wise see a
+        truncated description followed by a stray line.
+        """
+        long_description = (
+            "Execute the implementation plan by processing and executing all "
+            "tasks defined in tasks.md"
+        )
+        frontmatter = {"name": "speckit-implement", "description": long_description}
+
+        registrar = CommandRegistrar()
+        output = registrar.render_frontmatter(frontmatter)
+
+        assert f"description: {long_description}\n" in output
+
+        body = output.split("---\n")[1]
+        assert yaml.safe_load(body)["description"] == long_description
+
     def test_adjust_script_paths_does_not_mutate_input(self):
         """Path adjustments should not mutate caller-owned frontmatter dicts."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
@@ -2620,6 +3512,159 @@ Real body starts here.
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten
         assert ".specify/templates/checklist.md" in rewritten
 
+    def test_rewrite_project_relative_paths_idempotency(self):
+        """Repeated applications must produce identical results with no double prefixing."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        samples = [
+            ("Run scripts/bash/setup-plan.sh --json", None, "Run .specify/scripts/bash/setup-plan.sh --json"),
+            ("Run ./scripts/bash/setup-plan.sh --json", None, "Run .specify/scripts/bash/setup-plan.sh --json"),
+            ("Run ../../scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Run ../../../scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Read memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read /memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read ./memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read ../../memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Read ./templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Read ../../templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Run .specify/scripts/bash/setup-plan.sh", None, "Run .specify/scripts/bash/setup-plan.sh"),
+            ("Read .specify/memory/constitution.md", None, "Read .specify/memory/constitution.md"),
+            ("Read .specify/templates/spec.md", None, "Read .specify/templates/spec.md"),
+            ("Run scripts/tool.sh", "my-ext", "Run .specify/extensions/my-ext/scripts/tool.sh"),
+            ("Run ./scripts/tool.sh", "my-ext", "Run .specify/extensions/my-ext/scripts/tool.sh"),
+            ("Run ../../scripts/tool.sh", "my-ext", "Run .specify/scripts/tool.sh"),
+            (
+                "Run .specify/extensions/my-ext/scripts/tool.sh",
+                "my-ext",
+                "Run .specify/extensions/my-ext/scripts/tool.sh",
+            ),
+            (
+                "--template=../../templates/spec.md",
+                None,
+                "--template=.specify/templates/spec.md",
+            ),
+            (
+                "SCRIPT=../../scripts/bash/run.sh",
+                None,
+                "SCRIPT=.specify/scripts/bash/run.sh",
+            ),
+            (
+                "--template=templates/spec.md",
+                None,
+                "--template=.specify/templates/spec.md",
+            ),
+            (
+                "SCRIPT=scripts/bash/run.sh",
+                "my-ext",
+                "SCRIPT=.specify/extensions/my-ext/scripts/bash/run.sh",
+            ),
+        ]
+
+        for text, ext_id, expected in samples:
+            once = AgentCommandRegistrar.rewrite_project_relative_paths(text, extension_id=ext_id)
+            assert once == expected
+            twice = AgentCommandRegistrar.rewrite_project_relative_paths(once, extension_id=ext_id)
+            assert twice == expected
+            thrice = AgentCommandRegistrar.rewrite_project_relative_paths(twice, extension_id=ext_id)
+            assert thrice == expected
+            assert ".specify/.specify/" not in thrice
+            assert ".specify.specify/" not in thrice
+
+    def test_rewrite_project_relative_paths_various_delimiters(self):
+        """Paths enclosed by backticks, quotes, brackets, parens, and = should be rewritten."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Inline `scripts/bash/run.sh` and \"scripts/bash/run.sh\" and 'scripts/bash/run.sh'\n"
+            "Parens (scripts/bash/run.sh) and brackets [scripts/bash/run.sh]\n"
+            "Braces {scripts/bash/run.sh} and angles <scripts/bash/run.sh>\n"
+            "Flag --template=../../templates/spec.md and assign SCRIPT=../../scripts/bash/run.sh\n"
+            "Start of text: scripts/bash/run.sh\n"
+        )
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(body)
+
+        assert "`.specify/scripts/bash/run.sh`" in rewritten
+        assert "\".specify/scripts/bash/run.sh\"" in rewritten
+        assert "'.specify/scripts/bash/run.sh'" in rewritten
+        assert "(.specify/scripts/bash/run.sh)" in rewritten
+        assert "[.specify/scripts/bash/run.sh]" in rewritten
+        assert "{.specify/scripts/bash/run.sh}" in rewritten
+        assert "<.specify/scripts/bash/run.sh>" in rewritten
+        assert "--template=.specify/templates/spec.md" in rewritten
+        assert "SCRIPT=.specify/scripts/bash/run.sh" in rewritten
+        assert rewritten.splitlines()[-1] == "Start of text: .specify/scripts/bash/run.sh"
+
+        # Verify idempotency on multiline text with diverse delimiters
+        again = AgentCommandRegistrar.rewrite_project_relative_paths(rewritten)
+        assert again == rewritten
+        assert ".specify/.specify/" not in again
+
+    def test_rewrite_project_relative_paths_punctuation_and_shell_operator_boundaries(self):
+        """Parent-relative paths rewrite after punctuation/shell operators.
+
+        Two or more ``../`` segments are a repo-root signal and must not
+        depend on the delimiter allowlist. A single ``../`` stays untouched,
+        including when ``extension_id`` is set, so it is not routed to root
+        ``.specify/scripts/`` or to extension-local scripts. Bare
+        ``scripts/`` / ``templates/`` / ``memory/`` paths still require a
+        recognized boundary so ``myscripts/`` and ``run;scripts/`` stay
+        untouched.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        samples = [
+            ("run;../../scripts/a.sh", None, "run;.specify/scripts/a.sh"),
+            ("path:../../templates/a.md", None, "path:.specify/templates/a.md"),
+            ("run&&../../scripts/a.sh", None, "run&&.specify/scripts/a.sh"),
+            ("run||../../scripts/a.sh", None, "run||.specify/scripts/a.sh"),
+            ("cmd|../../scripts/a.sh", None, "cmd|.specify/scripts/a.sh"),
+            ("x,../../memory/constitution.md", None, "x,.specify/memory/constitution.md"),
+            ("run;../../../scripts/a.sh", None, "run;.specify/scripts/a.sh"),
+            (
+                "run;../../scripts/a.sh",
+                "my-ext",
+                "run;.specify/scripts/a.sh",
+            ),
+            (
+                "foo/../../scripts/a.sh",
+                None,
+                "foo/.specify/scripts/a.sh",
+            ),
+            # Bare paths still need a recognized boundary.
+            ("run;scripts/a.sh", None, "run;scripts/a.sh"),
+            ("path:templates/a.md", None, "path:templates/a.md"),
+            ("run&&scripts/a.sh", None, "run&&scripts/a.sh"),
+            ("myscripts/a.sh", None, "myscripts/a.sh"),
+            # ``../`` must not match inside an identifier or extra dots.
+            ("not../scripts/a.sh", None, "not../scripts/a.sh"),
+            ("..../scripts/a.sh", None, "..../scripts/a.sh"),
+            # One ``../`` is one directory up, not the repository root.
+            ("Run ../scripts/a.sh", None, "Run ../scripts/a.sh"),
+            ("Run ../scripts/a.sh", "my-ext", "Run ../scripts/a.sh"),
+            ("run;../scripts/a.sh", "my-ext", "run;../scripts/a.sh"),
+            ("Read ../memory/constitution.md", "my-ext", "Read ../memory/constitution.md"),
+            ("Read ../templates/spec.md", "my-ext", "Read ../templates/spec.md"),
+        ]
+
+        for text, ext_id, expected in samples:
+            once = AgentCommandRegistrar.rewrite_project_relative_paths(
+                text, extension_id=ext_id
+            )
+            assert once == expected, text
+            twice = AgentCommandRegistrar.rewrite_project_relative_paths(
+                once, extension_id=ext_id
+            )
+            assert twice == expected, text
+
+    def test_rewrite_project_relative_paths_non_string_or_empty(self):
+        """Non-string and falsy inputs should be returned as-is."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        assert AgentCommandRegistrar.rewrite_project_relative_paths("") == ""
+        assert AgentCommandRegistrar.rewrite_project_relative_paths(None) is None
+        assert AgentCommandRegistrar.rewrite_project_relative_paths(123) == 123
+
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
@@ -2661,6 +3706,36 @@ Real body starts here.
         parsed = tomllib.loads(output)
 
         assert parsed["description"] == "first line\nsecond line\n"
+
+    @pytest.mark.parametrize(
+        ("description", "expected"),
+        [
+            (None, ""),                    # "description:" with no value
+            (42, "42"),                    # unquoted number
+            (True, "True"),                # unquoted boolean
+            (["a", "b"], "['a', 'b']"),    # was silently concatenated to "ab"
+        ],
+    )
+    def test_render_toml_command_coerces_non_string_description(
+        self, description, expected
+    ):
+        """Frontmatter comes from yaml.safe_load, so description can be any type.
+
+        _render_basic_toml_string iterates the value and calls ord() per
+        character, so a non-string raised a raw TypeError and a list of
+        single-character items was silently concatenated into a wrong value.
+        render_yaml_command (same class) already coerces; this brings the TOML
+        branch to parity.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": description}, "body", "extension:test-ext"
+        )
+
+        parsed = tomllib.loads(output)
+        assert parsed["description"] == expected
 
     def test_render_toml_command_escapes_control_characters(self):
         """Control characters and a lone CR must be escaped so the TOML parses.
@@ -2969,6 +4044,68 @@ Agent __AGENT__
         assert "__AGENT__" not in content
         assert "{ARGS}" not in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+
+    def test_command_mode_registration_strips_scripts_key(self, project_dir, temp_dir):
+        """Extension commands rendered in command mode (non-SKILL.md agents)
+        must not leak the build-time ``scripts:`` key into agent-facing
+        frontmatter, matching the core template render (#4554)."""
+        import yaml
+
+        ext_dir = temp_dir / "ext-scripted-commands"
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "ext-scripted-commands",
+                "name": "Scripted Commands Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.ext-scripted-commands.plan",
+                        "file": "commands/plan.md",
+                        "description": "Scripted command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "plan.md").write_text(
+            "---\n"
+            "description: Scripted command\n"
+            "scripts:\n"
+            '  sh: ../../scripts/bash/setup-plan.sh --json "{ARGS}"\n'
+            "  ps: ../../scripts/powershell/setup-plan.ps1 -Json\n"
+            "---\n\n"
+            "Run {SCRIPT}\n"
+        )
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text('{"ai":"copilot","script":"sh"}')
+
+        agents_dir = project_dir / ".github" / "agents"
+        agents_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("copilot", manifest, ext_dir, project_dir)
+
+        command_file = agents_dir / "speckit.ext-scripted-commands.plan.agent.md"
+        assert command_file.exists()
+
+        content = command_file.read_text()
+        assert "{SCRIPT}" not in content
+        assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        assert "scripts:" not in content
+        assert "sh:" not in content
 
     @pytest.mark.parametrize("agent_name,skills_path", [
         ("codex", ".agents/skills"),
@@ -4127,90 +5264,8 @@ class TestExtensionCatalog:
         results = catalog.search()
         assert len(results) == 2
 
-    @pytest.mark.parametrize(
-        "downloads",
-        [
-            "1500",          # plain string: crashed the ``:,`` format
-            "[/red]foo",      # unbalanced closing tag: raises MarkupError unescaped
-            "[bold]x[/bold]",  # balanced tags: would silently restyle the output
-        ],
-    )
-    def test_info_renders_non_numeric_downloads(self, downloads):
-        """A non-numeric ``downloads`` from an untrusted catalog must not crash the
-        info renderer — neither with 'Cannot specify ',' with 's'' (the ``:,``
-        format) nor with a Rich MarkupError (the joined stats are markup)."""
-        from unittest.mock import MagicMock
-        from specify_cli.extensions._commands import _print_extension_info
 
-        manager = MagicMock()
-        manager.registry.is_installed.return_value = False
-        ext_info = {
-            "name": "Jira", "id": "jira", "version": "1.0.0",
-            "description": "desc", "downloads": downloads,  # from catalog JSON
-        }
-        # Must not raise ValueError or rich.errors.MarkupError.
-        _print_extension_info(ext_info, manager)
 
-    def test_info_renders_markup_bearing_stars(self):
-        """``stars`` sits in the same joined stats string as ``downloads`` and is
-        equally catalog-controlled, so it must be escaped too."""
-        from unittest.mock import MagicMock
-        from specify_cli.extensions._commands import _print_extension_info
-
-        manager = MagicMock()
-        manager.registry.is_installed.return_value = False
-        ext_info = {
-            "name": "Jira", "id": "jira", "version": "1.0.0",
-            "description": "desc", "stars": "[/red]x",
-        }
-        _print_extension_info(ext_info, manager)  # must not raise MarkupError
-
-    @pytest.mark.parametrize("downloads", ["1500", "[/red]foo"])
-    def test_search_survives_non_numeric_downloads(self, temp_dir, downloads):
-        """`specify extension search` must not abort when a catalog entry's
-        ``downloads`` is a non-numeric string — not with a raw ValueError from the
-        ``:,`` format, nor with a Rich MarkupError from unescaped markup."""
-        import yaml as yaml_module
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = temp_dir / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        config_path = project_dir / ".specify" / "extension-catalogs.yml"
-        with open(config_path, "w") as f:
-            yaml_module.dump(
-                {"catalogs": [{
-                    "name": "test-catalog",
-                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
-                    "priority": 1, "install_allowed": True,
-                }]}, f,
-            )
-
-        catalog = ExtensionCatalog(project_dir)
-        catalog_data = {
-            "schema_version": "1.0",
-            "extensions": {"jira": {
-                "name": "Jira", "id": "jira", "version": "1.0.0",
-                "description": "Jira integration", "author": "x",
-                "tags": ["jira"], "verified": True,
-                "downloads": downloads,  # non-numeric, straight from catalog JSON
-            }},
-        }
-        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
-        catalog.cache_file.write_text(json.dumps(catalog_data))
-        catalog.cache_metadata_file.write_text(json.dumps({
-            "cached_at": datetime.now(timezone.utc).isoformat(),
-            "catalog_url": "http://test.com",
-        }))
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "search"], catch_exceptions=True)
-        assert result.exit_code == 0, result.output
-        # Rendered literally (escaped), not interpreted as markup or dropped.
-        assert f"Downloads: {downloads}" in result.output
 
     def test_search_by_query(self, temp_dir):
         """Test searching by query text."""
@@ -4412,43 +5467,6 @@ class TestExtensionCatalog:
         results = catalog.search(query="jira")
         assert {r["id"] for r in results} == {"jira"}
 
-    def test_search_and_info_tolerate_non_list_tags(self, temp_dir):
-        """A scalar ``tags:`` value must not crash the search/info display.
-
-        ``ExtensionCatalog.search`` guards its tag *filter* with
-        ``isinstance(raw_tags, list)``, but the ``extension search`` and
-        ``extension info`` display paths only tested truthiness before
-        iterating. ``tags: 5`` is truthy and not iterable, so both raised
-        ``TypeError: 'int' object is not iterable``.
-        """
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = temp_dir / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        merged = [{
-            "id": "jira",
-            "name": "Jira",
-            "version": "1.0.0",
-            "description": "Jira",
-            "tags": 5,
-        }]
-
-        with patch.object(ExtensionCatalog, "_get_merged_extensions", return_value=merged), \
-                patch("specify_cli.extensions._commands._require_specify_project",
-                      return_value=project_dir):
-            searched = CliRunner().invoke(app, ["extension", "search", "Jira"])
-            info = CliRunner().invoke(app, ["extension", "info", "jira"])
-
-        assert searched.exit_code == 0, searched.output
-        assert "Jira" in searched.output
-        assert "Tags:" not in searched.output
-
-        assert info.exit_code == 0, info.output
-        assert "Tags:" not in info.output
 
     def test_search_tolerates_non_string_author_and_name(self, temp_dir):
         """Non-string catalog author/name must not crash author/query search.
@@ -4672,7 +5690,7 @@ class TestExtensionCatalog:
         return ExtensionCatalog(project_dir)
 
     def _inject_github_config(self, monkeypatch, token_env="GH_TOKEN"):
-        from tests.auth_helpers import inject_github_config
+        from tests.specify_cli.authentication.helpers import inject_github_config
         inject_github_config(monkeypatch, token_env)
 
     def test_make_request_no_token_no_auth_header(self, temp_dir, monkeypatch):
@@ -4807,9 +5825,9 @@ class TestExtensionCatalog:
         catalog = self._make_catalog(temp_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+        mock_response.read.side_effect = io.BytesIO(json.dumps(
             {"schema_version": "1.0", "extensions": {}}
-        ).encode()
+        ).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "http://evil.test/catalog.json"
@@ -4855,9 +5873,9 @@ class TestExtensionCatalog:
 
         catalog = self._make_catalog(temp_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+        mock_response.read.side_effect = io.BytesIO(json.dumps(
             {"schema_version": "1.0", "extensions": {}}
-        ).encode()
+        ).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "http://evil.test/catalog.json"
@@ -5614,6 +6632,35 @@ class TestExtensionCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    @pytest.mark.parametrize("suffix", [".tar.gz", ".tgz"])
+    def test_download_extension_preserves_tar_archive_format(
+        self, temp_dir, suffix
+    ):
+        import tarfile
+        from unittest.mock import patch
+
+        archive_buffer = io.BytesIO()
+        with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+            content = b"extension:\n  id: test-ext\n"
+            member = tarfile.TarInfo("extension.yml")
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+        archive_bytes = archive_buffer.getvalue()
+        catalog = self._make_catalog(temp_dir)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": f"https://example.com/test-ext{suffix}",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=self._mock_response(archive_bytes)):
+            archive_path = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert archive_path.name == "test-ext-1.0.0.tar.gz"
+        assert archive_path.read_bytes() == archive_bytes
 
 
 
@@ -6551,1075 +7598,6 @@ class TestExtensionIgnore:
         assert (dest / "docs" / "api.md").exists()
 
 
-class TestExtensionAddCLI:
-    """CLI integration tests for extension add command."""
-
-    def test_catalog_add_escapes_url_markup(self, tmp_path):
-        """Catalog add should render user-supplied URLs literally."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        url = "https://example.com/[red]catalog[/red].json"
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    url,
-                    "--name",
-                    "community",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert f"URL: {url}" in result.output
-
-    def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
-        """Catalog add's saved-path label should render literally under Rich."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        display_path = "project[red]/.specify/extension-catalogs.yml"
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    "community",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert f"Config saved to {display_path}" in result.output
-
-    def test_catalog_list_escapes_config_path_markup(self, tmp_path):
-        """Catalog list's config-path label should render literally under Rich."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        import yaml
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        specify_dir = project_dir / ".specify"
-        specify_dir.mkdir()
-        (specify_dir / "extension-catalogs.yml").write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": "community",
-                            "url": "https://example.com/catalog.json",
-                            "priority": 10,
-                            "install_allowed": False,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        display_path = "project[red]/.specify/extension-catalogs.yml"
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
-            result = runner.invoke(
-                app,
-                ["extension", "catalog", "list"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert f"Config: {display_path}" in result.output
-
-    def test_catalog_add_escapes_config_read_exception_markup(self, tmp_path):
-        """Catalog config parse errors can include user-controlled file content."""
-        import yaml
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        specify_dir = project_dir / ".specify"
-        specify_dir.mkdir()
-        (specify_dir / "extension-catalogs.yml").write_text("[red]bad[/red]", encoding="utf-8")
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch(
-                 "specify_cli.extensions._commands.yaml.safe_load",
-                 side_effect=yaml.YAMLError("bad [red]catalog[/red] yaml"),
-             ):
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/catalog.json",
-                    "--name",
-                    "community",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "bad [red]catalog[/red]" in result.output
-        assert "yaml" in result.output
-
-    def test_catalog_add_escapes_url_validation_exception_markup(self, tmp_path):
-        """URL validation errors may include user-controlled URL text."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(
-                 ExtensionCatalog,
-                 "_validate_catalog_url",
-                 side_effect=ValidationError("bad [red]url[/red]"),
-             ):
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "catalog",
-                    "add",
-                    "https://example.com/[red]catalog[/red].json",
-                    "--name",
-                    "community",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "bad [red]url[/red]" in result.output
-
-    def test_add_dev_links_copilot_agent_when_supported(
-        self, extension_dir, project_dir, temp_dir
-    ):
-        """extension add --dev should link generated agent files when possible."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        (project_dir / ".github" / "agents").mkdir(parents=True)
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(extension_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-
-        agent_file = (
-            project_dir
-            / ".github"
-            / "agents"
-            / "speckit.test-ext.hello.agent.md"
-        )
-        assert agent_file.exists()
-        if can_create_symlink(temp_dir):
-            assert agent_file.is_symlink()
-            assert ".specify-dev" in agent_file.resolve().parts
-        else:
-            assert not agent_file.is_symlink()
-
-    @pytest.mark.skipif(
-        os.name == "nt", reason="POSIX execute bits are not meaningful on Windows"
-    )
-    def test_add_makes_shipped_scripts_executable(self, extension_dir, project_dir):
-        """extension add must restore execute bits on bundled POSIX scripts.
-
-        Archives are unpacked with zipfile.extractall and --dev installs copy the
-        tree; neither restores a stripped Unix mode, so a shipped *.sh can land
-        non-executable and a documented `.specify/extensions/<id>/scripts/...`
-        invocation then fails with "Permission denied". init / migrate /
-        integration-install already call ensure_executable_scripts(); this guards
-        that `extension add` does too.
-        """
-        import stat
-
-        scripts_dir = extension_dir / "scripts"
-        scripts_dir.mkdir()
-        script = scripts_dir / "gate.sh"
-        script.write_text("#!/usr/bin/env bash\necho hi\n")
-        script.chmod(0o644)  # non-executable, as an unpacked/copied script may be
-        assert not os.access(script, os.X_OK)
-
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(extension_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        installed = (
-            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "gate.sh"
-        )
-        assert installed.exists(), result.output
-        assert os.access(installed, os.X_OK), (
-            f"installed script not executable: mode="
-            f"{stat.S_IMODE(installed.stat().st_mode):o}"
-        )
-
-    def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
-        """Codex dev skills should be written as files so Codex can load them."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        init_options = project_dir / ".specify" / "init-options.json"
-        init_options.write_text(
-            json.dumps({"ai": "codex", "ai_skills": True}), encoding="utf-8"
-        )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(extension_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-
-        skill_file = (
-            project_dir
-            / ".agents"
-            / "skills"
-            / "speckit-test-ext-hello"
-            / "SKILL.md"
-        )
-        assert skill_file.exists()
-        assert not skill_file.is_symlink()
-
-        content = skill_file.read_text(encoding="utf-8")
-        assert "name: speckit-test-ext-hello" in content
-        assert "metadata:" in content
-        assert "source: test-ext:commands/hello.md" in content
-
-    def test_add_dev_replaces_existing_codex_skill_symlink(
-        self, extension_dir, project_dir, temp_dir
-    ):
-        """Codex dev installs should migrate expected dev symlinks to files."""
-        if not can_create_symlink(temp_dir):
-            pytest.skip("Current platform/user cannot create symlinks")
-
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        init_options = project_dir / ".specify" / "init-options.json"
-        init_options.write_text(
-            json.dumps({"ai": "codex", "ai_skills": True}), encoding="utf-8"
-        )
-
-        skill_file = (
-            project_dir
-            / ".agents"
-            / "skills"
-            / "speckit-test-ext-hello"
-            / "SKILL.md"
-        )
-        skill_file.parent.mkdir(parents=True)
-        cache_file = (
-            extension_dir
-            / ".specify-dev"
-            / "extension-skills"
-            / "speckit-test-ext-hello"
-            / "SKILL.md"
-        )
-        cache_file.parent.mkdir(parents=True)
-        cache_file.write_text("old linked content", encoding="utf-8")
-        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(extension_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert skill_file.exists()
-        assert not skill_file.is_symlink()
-        content = skill_file.read_text(encoding="utf-8")
-        assert "name: speckit-test-ext-hello" in content
-        assert "source: test-ext:commands/hello.md" in content
-        assert cache_file.read_text(encoding="utf-8") == "old linked content"
-
-    def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
-        self, extension_dir, project_dir, monkeypatch
-    ):
-        """extension add --dev should work when Windows cannot create symlinks."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        (project_dir / ".github" / "agents").mkdir(parents=True)
-
-        def raise_windows_symlink_error(target, link):
-            raise OSError("A required privilege is not held by the client")
-
-        monkeypatch.setattr(
-            "specify_cli.agents.os.symlink", raise_windows_symlink_error
-        )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(extension_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-
-        agent_file = (
-            project_dir
-            / ".github"
-            / "agents"
-            / "speckit.test-ext.hello.agent.md"
-        )
-        assert agent_file.exists()
-        assert not agent_file.is_symlink()
-        assert "Extension: test-ext" in agent_file.read_text(encoding="utf-8")
-        assert (
-            project_dir
-            / ".specify"
-            / "extensions"
-            / "test-ext"
-            / ".specify-dev"
-            / "agent-commands"
-            / "copilot"
-            / "speckit.test-ext.hello.agent.md"
-        ).exists()
-
-    def test_add_by_display_name_uses_resolved_id_for_download(self, tmp_path):
-        """extension add by display name should use resolved ID for download_extension()."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch, MagicMock
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Create project structure
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".specify" / "extensions").mkdir(parents=True)
-
-        # Mock catalog that returns extension by display name
-        mock_catalog = MagicMock()
-        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
-        mock_catalog.search.return_value = [
-            {
-                "id": "acme-jira-integration",
-                "name": "Jira Integration",
-                "version": "1.0.0",
-                "description": "Jira integration extension",
-                "_install_allowed": True,
-            }
-        ]
-
-        # Track what ID was passed to download_extension
-        download_called_with = []
-        def mock_download(extension_id):
-            download_called_with.append(extension_id)
-            # Return a path that will fail install (we just want to verify the ID)
-            raise ExtensionError("Mock download - checking ID was resolved")
-
-        mock_catalog.download_extension.side_effect = mock_download
-
-        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
-             patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "Jira Integration"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code != 0, (
-            f"Expected non-zero exit code since mock download raises, got {result.exit_code}"
-        )
-
-        # Verify download_extension was called with the resolved ID, not the display name
-        assert len(download_called_with) == 1
-        assert download_called_with[0] == "acme-jira-integration", (
-            f"Expected download_extension to be called with resolved ID 'acme-jira-integration', "
-            f"but was called with '{download_called_with[0]}'"
-        )
-
-    def test_info_by_name_tolerates_non_string_catalog_name(self, tmp_path):
-        """Display-name resolution must not crash on a non-string catalog name.
-
-        Catalog JSON is user-editable, so ``catalog.search()`` may return an
-        entry whose ``name`` is a non-string (e.g. ``name: 123``). The
-        display-name filter calls ``.lower()`` on it; without coercion this
-        raises ``AttributeError`` and takes down ``extension info``/``add``.
-        The entry with the bad name must simply not match, yielding a clean
-        "not found" rather than a traceback.
-        """
-        from typer.testing import CliRunner
-        from unittest.mock import patch, MagicMock
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".specify" / "extensions").mkdir(parents=True)
-
-        # Catalog search returns an entry with a non-string name.
-        mock_catalog = MagicMock()
-        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
-        mock_catalog.search.return_value = [
-            {
-                "id": "acme-thing",
-                "name": 123,
-                "version": "1.0.0",
-                "description": "A thing",
-                "_install_allowed": True,
-            }
-        ]
-
-        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
-             patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "info", "Some Name"],
-                catch_exceptions=True,
-            )
-
-        # Must not crash with AttributeError; the bad-named entry just doesn't
-        # match, so resolution ends as a clean not-found error exit.
-        assert not isinstance(result.exception, AttributeError), (
-            f"non-string catalog name crashed resolution: {result.exception!r}"
-        )
-        assert result.exit_code != 0
-
-    def test_add_bundled_extension_not_found_gives_clear_error(self, tmp_path):
-        """extension add should give a clear error when a bundled extension is not found locally."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch, MagicMock
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Create project structure
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".specify" / "extensions").mkdir(parents=True)
-
-        # Mock catalog that returns a bundled extension without download_url
-        mock_catalog = MagicMock()
-        mock_catalog.get_extension_info.return_value = {
-            "id": "git",
-            "name": "Git Branching Workflow",
-            "version": "1.0.0",
-            "description": "Git branching extension",
-            "bundled": True,
-            "_install_allowed": True,
-        }
-        mock_catalog.search.return_value = []
-
-        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
-             patch("specify_cli._locate_bundled_extension", return_value=None), \
-             patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "git"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code != 0
-        assert "bundled with spec-kit" in result.output
-        assert "reinstall" in result.output.lower()
-
-    def test_add_from_url_prompts_before_spinner(self, tmp_path):
-        """Confirm prompt for --from <url> must fire before the console.status spinner.
-
-        Regression test for #2783: typer.confirm() inside console.status()
-        was overwritten by the Rich spinner, making the command appear hung.
-        """
-        from typer.testing import CliRunner
-        from unittest.mock import patch, MagicMock
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        call_order: list[str] = []
-
-        original_status = MagicMock()
-
-        def record_status(*args, **kwargs):
-            call_order.append("spinner")
-            return original_status
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.console.status", side_effect=record_status), \
-             patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert "confirm" in call_order, "confirm prompt was never called"
-        # The confirm must fire BEFORE the spinner is entered
-        if "spinner" in call_order:
-            assert call_order.index("confirm") < call_order.index("spinner"), \
-                f"confirm must precede spinner, got: {call_order}"
-        assert result.exit_code == 0  # user declined → clean exit
-
-    def test_add_from_malformed_ipv6_url_exits_cleanly(self, tmp_path):
-        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://[::1/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        plain = strip_ansi(result.output)
-        assert "Invalid URL" in plain
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "https:///ext.zip",
-            "https://example.com:99999/ext.zip",
-        ],
-    )
-    def test_add_from_invalid_url_exits_before_prompt(self, tmp_path, url):
-        """Hostless URLs and invalid ports fail before prompting or downloading."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm") as confirm, \
-             patch("specify_cli.authentication.http.open_url") as open_url:
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", url],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert "Invalid URL" in strip_ansi(result.output)
-        confirm.assert_not_called()
-        open_url.assert_not_called()
-
-    def test_add_from_bracketed_non_ip_url_exits_cleanly(self, tmp_path):
-        """A bracketed-but-invalid IPv6 host must produce a clean error, not a
-        ValueError traceback. "https://[not-an-ip]/ext.zip" is a malformed
-        authority that raises ValueError during URL validation; the try/except
-        guard around parsing and the .hostname read must turn that into a clean
-        "Invalid URL" message.
-        """
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://[not-an-ip]/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        plain = strip_ansi(result.output)
-        assert "Invalid URL" in plain
-
-    def test_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, tmp_path, monkeypatch):
-        """Synthetic defensive coverage: monkeypatch urlparse() to return an
-        object whose .hostname raises ValueError lazily. This does not reproduce
-        any specific CPython behavior -- it just exercises the case where the
-        ValueError surfaces on the .hostname read rather than at parse time, so a
-        raw ValueError would leak if .hostname were read outside the try/except.
-        """
-        import urllib.parse
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        real_urlparse = urllib.parse.urlparse
-
-        class _LazyHostnameRaiser:
-            def __init__(self, parsed):
-                self._parsed = parsed
-
-            @property
-            def hostname(self):
-                raise ValueError("simulated lazy IPv6 hostname failure")
-
-            def __getattr__(self, name):
-                return getattr(self._parsed, name)
-
-        def _fake_urlparse(url, *args, **kwargs):
-            return _LazyHostnameRaiser(real_urlparse(url, *args, **kwargs))
-
-        monkeypatch.setattr(urllib.parse, "urlparse", _fake_urlparse)
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Invalid URL" in strip_ansi(result.output)
-
-    def test_add_status_escapes_extension_markup(self, tmp_path):
-        """User-controlled extension names must not be parsed as Rich markup."""
-        from rich.markup import escape as escape_markup
-        from typer.testing import CliRunner
-        from unittest.mock import MagicMock, patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        status_messages: list[str] = []
-
-        def record_status(message, *args, **kwargs):
-            status_messages.append(message)
-            return MagicMock()
-
-        extension_name = "[red]bad[/red]"
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("specify_cli.console.status", side_effect=record_status):
-            result = runner.invoke(
-                app,
-                ["extension", "add", extension_name, "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert status_messages == [
-            f"[cyan]Installing extension: {escape_markup(extension_name)}[/cyan]"
-        ]
-
-    def test_add_post_install_hint_escapes_manifest_id_markup(self, tmp_path):
-        """Extension IDs printed in Rich-rendered hints must stay literal."""
-        import io
-        from types import SimpleNamespace
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        class FakeResponse(io.BytesIO):
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        manifest_id = "[red]bad[/red]"
-
-        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
-            return SimpleNamespace(
-                id=manifest_id,
-                name="Bad Extension",
-                version="1.0.0",
-                description="Test extension",
-                warnings=[],
-                commands=[],
-                hooks=[],
-            )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
-             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
-             patch.object(ExtensionRegistry, "get", return_value={}):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "bad", "--from", "https://example.com/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert ".specify/extensions/[red]bad[/red]/" in result.output
-
-    def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
-        """Declining the --from <url> confirmation should exit with code 0."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=False):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0
-        assert "Cancelled" in result.output
-
-    def test_add_from_url_escapes_download_exception_markup(self, tmp_path):
-        """Download errors can include user-controlled URL text."""
-        import urllib.error
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch(
-                 "specify_cli.authentication.http.open_url",
-                 side_effect=urllib.error.URLError("bad [red]download[/red]"),
-             ):
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "add",
-                    "my-ext",
-                    "--from",
-                    "https://example.com/[red]ext[/red].zip",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "https://example.com/[red]ext[/red].zip" in result.output
-        assert "bad [red]download[/red]" in result.output
-
-    def test_add_from_url_rejects_non_zip_login_page(self, tmp_path):
-        """An HTML login page (unauthenticated fetch) must fail clearly, not BadZipFile."""
-        import io
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        class FakeResponse(io.BytesIO):
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch(
-                 "specify_cli.authentication.http.open_url",
-                 return_value=FakeResponse(b"<!DOCTYPE html><html>Sign in</html>"),
-             ), \
-             patch.object(ExtensionManager, "install_from_zip") as install:
-            result = runner.invoke(
-                app,
-                ["extension", "add", "my-ext", "--from", "https://raw.ghe.example/o/r/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "did not return a ZIP archive" in result.output
-        install.assert_not_called()
-
-    def test_add_from_url_rejects_oversized_download_before_install(
-        self, tmp_path, monkeypatch
-    ):
-        """The direct URL path must use the same bounded reader as catalogs."""
-        import io
-
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.extensions import _commands as extension_commands
-
-        class FakeResponse(io.BytesIO):
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-        def reject_oversized(*_args, **_kwargs):
-            raise ExtensionError("extension URL download exceeds maximum size")
-
-        monkeypatch.setattr(
-            extension_commands,
-            "read_response_limited",
-            reject_oversized,
-            raising=False,
-        )
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch(
-                 "specify_cli.authentication.http.open_url",
-                 return_value=FakeResponse(_MINIMAL_ZIP_BYTES),
-             ), \
-             patch.object(ExtensionManager, "install_from_zip") as install:
-            result = runner.invoke(
-                app,
-                [
-                    "extension",
-                    "add",
-                    "my-ext",
-                    "--from",
-                    "https://example.com/ext.zip",
-                ],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert "exceeds maximum size" in result.output
-        install.assert_not_called()
-
-    def test_add_from_url_resolves_ghes_release_asset(self, tmp_path):
-        """A GHES release-download URL resolves to /api/v3 with octet-stream Accept."""
-        import io
-        from types import SimpleNamespace
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        import json
-
-        class FakeResponse(io.BytesIO):
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        seen = {}
-
-        def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
-            if "/releases/tags/" in url:
-                body = json.dumps({
-                    "assets": [{
-                        "name": "ext.zip",
-                        "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42",
-                    }]
-                }).encode()
-                return FakeResponse(body)
-            seen["url"] = url
-            seen["headers"] = extra_headers
-            return FakeResponse(_MINIMAL_ZIP_BYTES)
-
-        def fake_install(self_obj, zip_path, speckit_version, priority=10, force=False):
-            return SimpleNamespace(
-                id="x", name="X", version="1.0.0", description="", warnings=[], commands=[], hooks=[]
-            )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.github_provider_hosts", return_value=("ghes.example",)), \
-             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
-             patch.object(ExtensionManager, "install_from_zip", fake_install):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "x", "--from",
-                 "https://ghes.example/org/repo/releases/download/v1.0/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "/api/v3/repos/org/repo/releases/assets/" in seen["url"]
-        assert seen["headers"] == {"Accept": "application/octet-stream"}
-
-    @pytest.mark.parametrize(
-        ("exc_type", "label"),
-        [
-            (ValidationError, "Validation Error"),
-            (CompatibilityError, "Compatibility Error"),
-            (ExtensionError, "Error"),
-        ],
-    )
-    def test_add_exception_handlers_escape_markup(self, tmp_path, exc_type, label):
-        """Extension install exceptions can include manifest-controlled values."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        ext_dir = tmp_path / "ext"
-        ext_dir.mkdir()
-        (ext_dir / "extension.yml").write_text("extension:\n  id: test\n", encoding="utf-8")
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(
-                 ExtensionManager,
-                 "install_from_directory",
-                 side_effect=exc_type("bad [red]extension[/red]"),
-             ):
-            result = runner.invoke(
-                app,
-                ["extension", "add", str(ext_dir), "--dev"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert f"{label}:" in result.output
-        assert "bad [red]extension[/red]" in result.output
-
-    def test_add_from_url_uses_cache_tempfile_for_untrusted_extension_name(self, tmp_path):
-        """The extension argument must not control the downloaded ZIP path."""
-        import io
-        from types import SimpleNamespace
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        class FakeResponse(io.BytesIO):
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-        project_dir = tmp_path / "test-project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        downloads_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
-        installed = {}
-
-        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
-            captured_path = Path(zip_path)
-            installed["zip_path"] = captured_path
-            installed["zip_bytes"] = captured_path.read_bytes()
-            return SimpleNamespace(
-                id="escape",
-                name="Escape Test",
-                version="1.0.0",
-                description="Test extension",
-                warnings=[],
-                commands=[],
-                hooks=[],
-            )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
-             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
-            result = runner.invoke(
-                app,
-                ["extension", "add", "../outside", "--from", "https://example.com/ext.zip"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0
-        assert installed["zip_bytes"] == _MINIMAL_ZIP_BYTES
-        assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
-        assert installed["zip_path"].name.startswith("extension-url-download-")
-        assert not installed["zip_path"].exists()
 
 
 class TestDownloadExtensionBundled:
@@ -7668,7 +7646,7 @@ class TestDownloadExtensionBundled:
         }
 
         mock_response = MagicMock()
-        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
+        mock_response.read.side_effect = io.BytesIO(_MINIMAL_ZIP_BYTES).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -7700,679 +7678,8 @@ class TestDownloadExtensionBundled:
                 catalog.download_extension("some-ext")
 
 
-class TestExtensionUpdateCLI:
-    """CLI integration tests for extension update command."""
 
-    @staticmethod
-    def _create_extension_source(base_dir: Path, version: str, include_config: bool = False) -> Path:
-        """Create a minimal extension source directory for install tests."""
-        import yaml
 
-        ext_dir = base_dir / f"test-ext-{version}"
-        ext_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": "test-ext",
-                "name": "Test Extension",
-                "version": version,
-                "description": "A test extension",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {
-                "commands": [
-                    {
-                        "name": "speckit.test-ext.hello",
-                        "file": "commands/hello.md",
-                        "description": "Test command",
-                    }
-                ]
-            },
-            "hooks": {
-                "after_tasks": {
-                    "command": "speckit.test-ext.hello",
-                    "optional": True,
-                }
-            },
-        }
-
-        (ext_dir / "extension.yml").write_text(yaml.dump(manifest, sort_keys=False))
-        commands_dir = ext_dir / "commands"
-        commands_dir.mkdir(exist_ok=True)
-        (commands_dir / "hello.md").write_text("---\ndescription: Test\n---\n\n$ARGUMENTS\n")
-        if include_config:
-            (ext_dir / "linear-config.yml").write_text("custom: true\nvalue: original\n")
-        return ext_dir
-
-    @staticmethod
-    def _create_catalog_zip(
-        zip_path: Path,
-        version: str,
-        manifest_path: str = "extension.yml",
-        extra_manifest_path: str | None = None,
-    ):
-        """Create a minimal ZIP that passes extension_update ID validation."""
-        import zipfile
-        import yaml
-
-        manifest = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": "test-ext",
-                "name": "Test Extension",
-                "version": version,
-                "description": "A test extension",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {"commands": [{"name": "speckit.test-ext.hello", "file": "commands/hello.md"}]},
-        }
-
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            manifest_text = yaml.dump(manifest, sort_keys=False)
-            zf.writestr(manifest_path, manifest_text)
-            if extra_manifest_path is not None:
-                zf.writestr(extra_manifest_path, manifest_text)
-
-    @pytest.mark.parametrize(
-        "manifest_path",
-        [
-            "../extension.yml",
-            "/extension.yml",
-            "./extension.yml",
-            "C:/extension.yml",
-        ],
-    )
-    def test_update_rejects_unsafe_manifest_path_before_removal(
-        self, tmp_path, manifest_path
-    ):
-        """Unsafe manifest paths fail before the installed extension is removed."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
-        installed_extension_dir = manager.extensions_dir / "test-ext"
-        removed_paths = []
-        real_rmtree = shutil.rmtree
-
-        def track_rmtree(path, *args, **kwargs):
-            removed_paths.append(Path(path).resolve())
-            return real_rmtree(path, *args, **kwargs)
-
-        zip_path = tmp_path / "unsafe-manifest.zip"
-        self._create_catalog_zip(
-            zip_path,
-            "2.0.0",
-            manifest_path=manifest_path,
-        )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(
-                 ExtensionCatalog,
-                 "download_extension",
-                 return_value=zip_path,
-             ), \
-             patch.object(shutil, "rmtree", side_effect=track_rmtree), \
-             patch.object(ExtensionManager, "remove") as remove, \
-             patch.object(ExtensionManager, "install_from_zip") as install:
-            result = runner.invoke(
-                app,
-                ["extension", "update", "test-ext"],
-                input="y\n",
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert "Unsafe path in ZIP archive" in result.output
-        remove.assert_not_called()
-        install.assert_not_called()
-        assert installed_extension_dir.resolve() not in removed_paths
-        assert not list(
-            (manager.extensions_dir / ".backup").glob(
-                "update-*-*"
-            )
-        )
-        assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
-
-    @pytest.mark.parametrize(
-        ("first_path", "second_path"),
-        [
-            ("repo/extension.yml", "repo\\extension.yml"),
-            ("repo/extension.yml", "repo/EXTENSION.YML"),
-            ("caf\u00e9/extension.yml", "cafe\u0301/extension.yml"),
-        ],
-    )
-    def test_update_rejects_normalized_manifest_collision_before_removal(
-        self, tmp_path, first_path, second_path
-    ):
-        """Pre-scan and extraction must agree on the manifest identity."""
-        import yaml
-        import zipfile
-
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
-
-        valid_manifest = yaml.safe_dump(
-            {
-                "schema_version": "1.0",
-                "extension": {
-                    "id": "test-ext",
-                    "name": "Test Extension",
-                    "version": "2.0.0",
-                },
-            }
-        )
-        injected_manifest = yaml.safe_dump(
-            {
-                "schema_version": "1.0",
-                "extension": {
-                    "id": "injected",
-                    "name": "Injected",
-                    "version": "2.0.0",
-                },
-            }
-        )
-        zip_path = tmp_path / "manifest-collision.zip"
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr(first_path, valid_manifest)
-            zf.writestr(second_path, injected_manifest)
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(
-                 ExtensionCatalog,
-                 "download_extension",
-                 return_value=zip_path,
-             ), \
-             patch.object(ExtensionManager, "remove") as remove, \
-             patch.object(ExtensionManager, "install_from_zip") as install:
-            result = runner.invoke(
-                app,
-                ["extension", "update", "test-ext"],
-                input="y\n",
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert "multiple extension.yml" in result.output
-        remove.assert_not_called()
-        install.assert_not_called()
-        assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
-
-    def test_update_preflights_entry_count_before_opening_zip(
-        self, tmp_path
-    ):
-        """Manifest inspection must not bypass the bounded ZIP opener."""
-        import struct
-
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
-
-        zip_path = tmp_path / "too-many.zip"
-        zip_path.write_bytes(
-            struct.pack(
-                "<4s4H2LH",
-                b"PK\x05\x06",
-                0,
-                0,
-                513,
-                513,
-                0,
-                0,
-                0,
-            )
-        )
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(
-                 ExtensionCatalog,
-                 "download_extension",
-                 return_value=zip_path,
-             ), \
-             patch(
-                 "specify_cli._download_security.zipfile.ZipFile",
-                 side_effect=AssertionError("ZipFile constructor was called"),
-             ), \
-             patch.object(ExtensionManager, "remove") as remove, \
-             patch.object(ExtensionManager, "install_from_zip") as install:
-            result = runner.invoke(
-                app,
-                ["extension", "update", "test-ext"],
-                input="y\n",
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1
-        assert "too many entries" in result.output
-        remove.assert_not_called()
-        install.assert_not_called()
-
-    @pytest.mark.parametrize(
-        ("manifest_path", "extra_manifest_path"),
-        [
-            ("extension.yml", None),
-            ("repo/extension.yml", None),
-            ("extension.yml", "repo/extension.yml"),
-        ],
-    )
-    def test_update_success_preserves_installed_at(
-        self, tmp_path, manifest_path, extra_manifest_path
-    ):
-        """Successful update should keep original installed_at and apply new version."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0", include_config=True)
-        manager.install_from_directory(v1_dir, "0.1.0")
-        original_installed_at = manager.registry.get("test-ext")["installed_at"]
-        original_config_content = (
-            project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
-        ).read_text()
-
-        zip_path = tmp_path / "test-ext-update.zip"
-        self._create_catalog_zip(
-            zip_path,
-            "2.0.0",
-            manifest_path=manifest_path,
-            extra_manifest_path=extra_manifest_path,
-        )
-        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
-
-        def fake_install_from_zip(self_obj, _zip_path, speckit_version):
-            return self_obj.install_from_directory(v2_dir, speckit_version)
-
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
-             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
-            result = runner.invoke(app, ["extension", "update", "test-ext"], input="y\n", catch_exceptions=True)
-
-        assert result.exit_code == 0, result.output
-
-        updated = ExtensionManager(project_dir).registry.get("test-ext")
-        assert updated["version"] == "2.0.0"
-        assert updated["installed_at"] == original_installed_at
-        restored_config_content = (
-            project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
-        ).read_text()
-        assert restored_config_content == original_config_content
-
-    def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
-        """Failed update should restore original registry, hooks, and command files."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        import yaml
-
-        # Isolate home directory so Hermes' global ~/.hermes/skills/ doesn't
-        # interfere — without a real skills dir, Hermes is skipped during
-        # command registration, keeping the test focused on Claude/Codex/etc.
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
-
-        runner = CliRunner()
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
-
-        backup_registry_entry = manager.registry.get("test-ext")
-        hooks_before = yaml.safe_load((project_dir / ".specify" / "extensions.yml").read_text())
-
-        registered_commands = backup_registry_entry.get("registered_commands", {})
-        command_files = []
-        from specify_cli.agents import CommandRegistrar as AgentRegistrar
-        agent_registrar = AgentRegistrar()
-        for agent_name, cmd_names in registered_commands.items():
-            if agent_name not in agent_registrar.AGENT_CONFIGS:
-                continue
-            agent_cfg = agent_registrar.AGENT_CONFIGS[agent_name]
-            commands_dir = AgentRegistrar._resolve_agent_dir(
-                agent_name, agent_cfg, project_dir
-            )
-            for cmd_name in cmd_names:
-                output_name = AgentRegistrar._compute_output_name(agent_name, cmd_name, agent_cfg)
-                cmd_path = commands_dir / f"{output_name}{agent_cfg['extension']}"
-                command_files.append(cmd_path)
-
-        assert command_files, "Expected at least one registered command file"
-        for cmd_file in command_files:
-            assert cmd_file.exists(), f"Expected command file to exist before update: {cmd_file}"
-
-        zip_path = tmp_path / "test-ext-update.zip"
-        self._create_catalog_zip(zip_path, "2.0.0")
-
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
-             patch.object(ExtensionManager, "install_from_zip", side_effect=RuntimeError("install failed")):
-            result = runner.invoke(app, ["extension", "update", "test-ext"], input="y\n", catch_exceptions=True)
-
-        assert result.exit_code == 1, result.output
-
-        restored_entry = ExtensionManager(project_dir).registry.get("test-ext")
-        assert restored_entry == backup_registry_entry
-
-        hooks_after = yaml.safe_load((project_dir / ".specify" / "extensions.yml").read_text())
-        assert hooks_after == hooks_before
-
-        for cmd_file in command_files:
-            assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
-
-    def test_update_failure_after_skill_registration_restores_old_skills(
-        self, tmp_path, monkeypatch
-    ):
-        """Rollback must not depend on a new registry entry to restore skills."""
-        import zipfile
-        import yaml
-
-        from specify_cli import app
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        specify_dir = project_dir / ".specify"
-        specify_dir.mkdir()
-        copilot_agents_dir = project_dir / ".github" / "agents"
-        copilot_agents_dir.mkdir(parents=True)
-        (specify_dir / "init-options.json").write_text(
-            json.dumps(
-                {
-                    "ai": "claude",
-                    "ai_skills": True,
-                    "script": "sh",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(
-            v1_dir,
-            "0.1.0",
-            register_commands=False,
-        )
-
-        old_registry_entry = manager.registry.get("test-ext")
-        skills_dir = project_dir / ".claude" / "skills"
-        old_skill = skills_dir / "speckit-test-ext-hello"
-        old_skill_content = (old_skill / "SKILL.md").read_text(encoding="utf-8")
-        assert old_registry_entry["registered_skills"] == [old_skill.name]
-        new_skill = skills_dir / "speckit-test-ext-new"
-        new_skill.mkdir()
-        user_skill_content = (
-            "---\n"
-            "name: user-new-skill\n"
-            "description: User-owned skill\n"
-            "metadata:\n"
-            "  source: user\n"
-            "---\n\nUSER SKILL\n"
-        )
-        (new_skill / "SKILL.md").write_text(
-            user_skill_content,
-            encoding="utf-8",
-        )
-        user_support_file = new_skill / "support.txt"
-        user_support_file.write_text("USER CONTENT", encoding="utf-8")
-
-        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
-        manifest_path = v2_dir / "extension.yml"
-        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        manifest["provides"]["commands"].append(
-            {
-                "name": "speckit.test-ext.new",
-                "file": "commands/new.md",
-                "description": "New command",
-            }
-        )
-        manifest["provides"]["commands"].append(
-            {
-                "name": "speckit.test-ext.fresh",
-                "file": "commands/fresh.md",
-                "description": "Fresh command",
-            }
-        )
-        manifest_path.write_text(
-            yaml.safe_dump(manifest, sort_keys=False),
-            encoding="utf-8",
-        )
-        (v2_dir / "commands" / "hello.md").write_text(
-            "---\ndescription: New hello\n---\n\nNEW HELLO\n",
-            encoding="utf-8",
-        )
-        (v2_dir / "commands" / "new.md").write_text(
-            "---\ndescription: New command\n---\n\nNEW COMMAND\n",
-            encoding="utf-8",
-        )
-        (v2_dir / "commands" / "fresh.md").write_text(
-            "---\ndescription: Fresh command\n---\n\nFRESH COMMAND\n",
-            encoding="utf-8",
-        )
-
-        zip_path = tmp_path / "test-ext-update.zip"
-        with zipfile.ZipFile(zip_path, "w") as archive:
-            for source_path in v2_dir.rglob("*"):
-                if source_path.is_file():
-                    archive.write(
-                        source_path,
-                        source_path.relative_to(v2_dir),
-                    )
-
-        def fail_after_skill_registration(self, manifest):
-            raise RuntimeError("Hook registration failed")
-
-        runner = CliRunner()
-        with (
-            patch.object(Path, "cwd", return_value=project_dir),
-            patch.object(
-                ExtensionCatalog,
-                "get_extension_info",
-                return_value={
-                    "id": "test-ext",
-                    "name": "Test Extension",
-                    "version": "2.0.0",
-                    "_install_allowed": True,
-                },
-            ),
-            patch.object(
-                ExtensionCatalog,
-                "download_extension",
-                return_value=zip_path,
-            ),
-            patch.object(
-                HookExecutor,
-                "register_hooks",
-                fail_after_skill_registration,
-            ),
-        ):
-            result = runner.invoke(
-                app,
-                ["extension", "update", "test-ext"],
-                input="y\n",
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "Hook registration failed" in result.output
-        assert "Rollback successful" in result.output
-        assert ExtensionManager(project_dir).registry.get("test-ext") == old_registry_entry
-        assert (old_skill / "SKILL.md").read_text(encoding="utf-8") == old_skill_content
-        assert user_support_file.read_text(encoding="utf-8") == "USER CONTENT"
-        assert (
-            new_skill / "SKILL.md"
-        ).read_text(encoding="utf-8") == user_skill_content
-        assert not (skills_dir / "speckit-test-ext-fresh").exists()
-        for command_name in ("hello", "new", "fresh"):
-            qualified_name = f"speckit.test-ext.{command_name}"
-            assert not (
-                copilot_agents_dir / f"{qualified_name}.agent.md"
-            ).exists()
-            assert not (
-                project_dir
-                / ".github"
-                / "prompts"
-                / f"{qualified_name}.prompt.md"
-            ).exists()
-
-    @pytest.mark.parametrize(
-        ("manifest_text", "expected_detail"),
-        [
-            ("- not\n- a\n- mapping\n", "YAML mapping"),
-            ("extension: []\n", "'extension' mapping"),
-        ],
-    )
-    def test_update_rejects_malformed_zip_manifest(
-        self, tmp_path, monkeypatch, manifest_text, expected_detail
-    ):
-        """Downloaded extension.yml shape must be valid before ID validation."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        import zipfile
-
-        fake_home = tmp_path / "home"
-        fake_home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
-
-        runner = CliRunner()
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-        (project_dir / ".claude" / "skills").mkdir(parents=True)
-
-        manager = ExtensionManager(project_dir)
-        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
-        manager.install_from_directory(v1_dir, "0.1.0")
-        original_registry_entry = manager.registry.get("test-ext")
-
-        zip_path = tmp_path / "bad-manifest.zip"
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr("extension.yml", manifest_text)
-
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionCatalog, "get_extension_info", return_value={
-                 "id": "test-ext",
-                 "name": "Test Extension",
-                 "version": "2.0.0",
-                 "_install_allowed": True,
-             }), \
-             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path):
-            result = runner.invoke(
-                app,
-                ["extension", "update", "test-ext"],
-                input="y\n",
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "Invalid extension manifest in downloaded archive" in result.output
-        assert expected_detail in result.output
-        assert "AttributeError" not in result.output
-        assert ExtensionManager(project_dir).registry.get("test-ext") == original_registry_entry
-
-
-class TestExtensionListCLI:
-    """Test extension list CLI output format."""
-
-    def test_list_shows_extension_id(self, extension_dir, project_dir):
-        """extension list should display the extension ID."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install the extension using the manager
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "list"])
-
-        assert result.exit_code == 0, result.output
-        plain = strip_ansi(result.output)
-        # Verify the extension ID is shown in the output
-        assert "test-ext" in plain
-        # Verify name and version are also shown
-        assert "Test Extension" in plain
-        assert "1.0.0" in plain
 
 
 class TestExtensionPriority:
@@ -8564,185 +7871,6 @@ class TestExtensionPriority:
         assert "Valid" in valid_resolved.read_text()
 
 
-class TestExtensionPriorityCLI:
-    """Test extension priority CLI integration."""
-
-    def test_add_with_priority_option(self, extension_dir, project_dir):
-        """Test extension add command with --priority option."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, [
-                "extension", "add", str(extension_dir), "--dev", "--priority", "3"
-            ])
-
-        assert result.exit_code == 0, result.output
-
-        manager = ExtensionManager(project_dir)
-        metadata = manager.registry.get("test-ext")
-        assert metadata["priority"] == 3
-
-    def test_list_shows_priority(self, extension_dir, project_dir):
-        """Test extension list shows priority."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install extension with priority
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=7)
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "list"])
-
-        assert result.exit_code == 0, result.output
-        plain = strip_ansi(result.output)
-        assert "Priority: 7" in plain
-
-    def test_set_priority_changes_priority(self, extension_dir, project_dir):
-        """Test set-priority command changes extension priority."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install extension with default priority
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
-
-        # Verify default priority
-        assert manager.registry.get("test-ext")["priority"] == 10
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
-
-        assert result.exit_code == 0, result.output
-        plain = strip_ansi(result.output)
-        assert "priority changed: 10 → 5" in plain
-
-        # Reload registry to see updated value
-        manager2 = ExtensionManager(project_dir)
-        assert manager2.registry.get("test-ext")["priority"] == 5
-
-    def test_set_priority_same_value_no_change(self, extension_dir, project_dir):
-        """Test set-priority with same value shows already set message."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install extension with priority 5
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False, priority=5)
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "5"])
-
-        assert result.exit_code == 0, result.output
-        plain = strip_ansi(result.output)
-        assert "already has priority 5" in plain
-
-    def test_set_priority_repairs_corrupted_bool(self, extension_dir, project_dir):
-        """A corrupted boolean priority must be repaired, not skipped.
-
-        ``isinstance(True, int)`` is True and ``True == 1`` in Python, so a
-        stored ``True`` priority would short-circuit the ``already has
-        priority 1`` skip path and never get rewritten to a real int —
-        contradicting the comment that promises corrupted values are
-        repaired. The guard must exclude bools (like normalize_priority).
-        """
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(
-            extension_dir, "0.1.0", register_commands=False, priority=5
-        )
-        # Inject a corrupted boolean priority (True == 1).
-        manager.registry.update("test-ext", {"priority": True})
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "1"])
-
-        assert result.exit_code == 0, result.output
-        plain = strip_ansi(result.output)
-        # The corrupted bool must be repaired, not reported as already-set.
-        assert "already has priority" not in plain
-        assert "priority changed" in plain
-
-        # The stored value is now a real int, not a bool.
-        reloaded = ExtensionManager(project_dir).registry.get("test-ext")
-        assert reloaded["priority"] == 1
-        assert not isinstance(reloaded["priority"], bool)
-
-    def test_set_priority_invalid_value(self, extension_dir, project_dir):
-        """Test set-priority rejects invalid priority values."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install extension
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "test-ext", "0"])
-
-        assert result.exit_code == 1, result.output
-        assert "Priority must be a positive integer" in result.output
-
-    def test_set_priority_not_installed(self, project_dir):
-        """Test set-priority fails for non-installed extension."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Ensure .specify exists
-        (project_dir / ".specify").mkdir(parents=True, exist_ok=True)
-
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "nonexistent", "5"])
-
-        assert result.exit_code == 1, result.output
-        assert "not installed" in result.output.lower() or "no extensions installed" in result.output.lower()
-
-    def test_set_priority_by_display_name(self, extension_dir, project_dir):
-        """Test set-priority works with extension display name."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        runner = CliRunner()
-
-        # Install extension
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
-
-        # Use display name "Test Extension" instead of ID "test-ext"
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(app, ["extension", "set-priority", "Test Extension", "3"])
-
-        assert result.exit_code == 0, result.output
-        assert "priority changed" in result.output
-
-        # Reload registry to see updated value
-        manager2 = ExtensionManager(project_dir)
-        assert manager2.registry.get("test-ext")["priority"] == 3
 
 
 class TestExtensionPriorityBackwardsCompatibility:
@@ -9459,391 +8587,12 @@ class TestHookInvocationRendering:
         assert "EXECUTE_COMMAND_INVOCATION: /<missing command>" in message
 
 
-class TestExtensionRemoveCLI:
-    """CLI tests for `specify extension remove` confirmation prompt wording."""
 
-    def _install_ext(self, project_dir, ext_dir):
-        """Install extension and return the manager."""
-        manager = ExtensionManager(project_dir)
-        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
-        return manager
 
-    def test_remove_confirmation_singular_command(self, tmp_path, extension_dir):
-        """Confirmation prompt should say '1 command' (singular) when one command registered."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
 
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
 
-        manager = self._install_ext(project_dir, extension_dir)
-        # Inject registered_commands with 1 entry so cmd_count == 1
-        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello"]}})
 
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
-            )
 
-        assert "1 command" in result.output
-        assert "1 commands" not in result.output
-
-    def test_remove_confirmation_plural_commands(self, tmp_path, extension_dir):
-        """Confirmation prompt should say '2 commands' (plural) when two commands registered."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        manager = self._install_ext(project_dir, extension_dir)
-        # Inject registered_commands with 2 entries so cmd_count == 2
-        manager.registry.update("test-ext", {"registered_commands": {"claude": ["speckit.test-ext.hello", "speckit.test-ext.run"]}})
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app, ["extension", "remove", "test-ext"], input="n\n", catch_exceptions=False
-            )
-
-        assert "2 commands" in result.output
-
-    def test_remove_output_escapes_extension_id_markup(self, tmp_path):
-        """Removal paths and reinstall hints must not parse extension IDs as markup."""
-        from types import SimpleNamespace
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        extension_id = "[red]bad[/red]"
-        installed = [
-            {
-                "id": extension_id,
-                "name": "Bad Extension",
-                "version": "1.0.0",
-                "description": "Test extension",
-                "enabled": True,
-            }
-        ]
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionManager, "list_installed", return_value=installed), \
-             patch.object(ExtensionManager, "get_extension", return_value=SimpleNamespace(commands=[])), \
-             patch.object(ExtensionRegistry, "get", return_value={"registered_commands": {}, "registered_skills": []}), \
-             patch.object(ExtensionManager, "remove", return_value=True):
-            result = runner.invoke(
-                app,
-                ["extension", "remove", extension_id, "--force"],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert ".specify/extensions/.backup/[red]bad[/red]/" in result.output
-        assert "specify extension add [red]bad[/red]" in result.output
-
-
-class TestExtensionStateCLI:
-    """CLI tests for installed extension state commands."""
-
-    def test_enable_registry_error_escapes_extension_id_markup(self, tmp_path):
-        """Registry-corruption errors should render extension IDs literally."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        extension_id = "[red]bad[/red]"
-        installed = [
-            {
-                "id": extension_id,
-                "name": "Bad Extension",
-                "version": "1.0.0",
-                "description": "Test extension",
-                "enabled": False,
-            }
-        ]
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionManager, "list_installed", return_value=installed), \
-             patch.object(ExtensionRegistry, "get", return_value=None):
-            result = runner.invoke(
-                app,
-                ["extension", "enable", extension_id],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 1, result.output
-        assert "Extension '[red]bad[/red]' not found in registry" in result.output
-
-    def test_disable_reenable_hint_escapes_extension_id_markup(self, tmp_path):
-        """Disable success hints should not parse extension IDs as markup."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        extension_id = "[red]bad[/red]"
-        installed = [
-            {
-                "id": extension_id,
-                "name": "Bad Extension",
-                "version": "1.0.0",
-                "description": "Test extension",
-                "enabled": True,
-            }
-        ]
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir), \
-             patch.object(ExtensionManager, "list_installed", return_value=installed), \
-             patch.object(ExtensionRegistry, "get", return_value={"enabled": True}), \
-             patch.object(ExtensionRegistry, "update", return_value=None), \
-             patch.object(HookExecutor, "get_project_config", return_value={}):
-            result = runner.invoke(
-                app,
-                ["extension", "disable", extension_id],
-                catch_exceptions=True,
-            )
-
-        assert result.exit_code == 0, result.output
-        assert "specify extension enable [red]bad[/red]" in result.output
-
-
-class TestClineExtensionHyphenation:
-    """Test that Cline integration uses hyphenated commands and frontmatter references."""
-
-    def _setup_mock_extension(self, tmp_path, ai_name):
-        import yaml
-        import json
-
-        # 1. Setup mock project
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        init_options = project_dir / ".specify" / "init-options.json"
-        init_options.write_text(json.dumps({"ai": ai_name}), encoding="utf-8")
-
-        if ai_name == "cline":
-            commands_dest_dir = project_dir / ".clinerules" / "workflows"
-        else:
-            commands_dest_dir = project_dir / ".agents" / "commands"
-        commands_dest_dir.mkdir(parents=True, exist_ok=True)
-
-        # 2. Setup mock extension directory
-        ext_dir = tmp_path / "mock-ext"
-        ext_dir.mkdir()
-
-        manifest_data = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": "mock-ext",
-                "name": "Mock Extension",
-                "version": "1.0.0",
-                "description": f"Mock extension for {ai_name} tests",
-                "author": "Tester",
-                "repository": "https://github.com/test/mock-ext",
-                "license": "MIT",
-            },
-            "requires": {
-                "speckit_version": ">=0.1.0",
-            },
-            "provides": {
-                "commands": [
-                    {
-                        "name": "speckit.mock-ext.hello",
-                        "file": "commands/hello.md",
-                        "description": "Test hello command",
-                        "aliases": ["speckit.mock-ext.greet"]
-                    }
-                ]
-            }
-        }
-
-        with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
-            yaml.dump(manifest_data, f)
-
-        commands_dir = ext_dir / "commands"
-        commands_dir.mkdir()
-
-        # Command file with dotted speckit references in frontmatter and body
-        cmd_content = """---
-description: "Test hello command"
-agent: speckit.tasks
-handoffs:
-  - agent: speckit.iterate.start
-    message: "Hand off to start"
----
-
-# Test Hello Command
-
-Please refer to speckit.mock-ext.greet for instructions.
-$ARGUMENTS
-"""
-        (commands_dir / "hello.md").write_text(cmd_content, encoding="utf-8")
-
-        return project_dir, ext_dir, commands_dest_dir
-
-    def test_cline_extension_hyphenation(self, tmp_path):
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.agents import CommandRegistrar
-
-        project_dir, ext_dir, cline_workflows_dir = self._setup_mock_extension(tmp_path, "cline")
-
-        # 3. Run specify extension add
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
-            )
-
-        # Verify CLI printed hyphenated commands
-        # Note: We assert that the primary command 'speckit-mock-ext-hello' is printed,
-        # but we do not assert that the alias 'speckit-mock-ext-greet' is printed in the console
-        # because manifest.commands only lists primary commands.
-        assert "speckit-mock-ext-hello" in result.output
-        assert "speckit.mock-ext.hello" not in result.output
-
-        # Verify on-disk command names are hyphenated
-        hello_file = cline_workflows_dir / "speckit-mock-ext-hello.md"
-        greet_file = cline_workflows_dir / "speckit-mock-ext-greet.md"
-
-        assert hello_file.exists()
-        assert greet_file.exists()
-
-        # Verify frontmatter in the generated files is recursively hyphenated
-        hello_text = hello_file.read_text(encoding="utf-8")
-        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
-        assert hello_fm["agent"] == "speckit-tasks"
-        assert hello_fm["handoffs"][0]["agent"] == "speckit-iterate-start"
-
-        # Verify body references are hyphenated for Cline
-        assert "speckit-mock-ext-greet" in hello_body
-        assert "speckit.mock-ext.greet" not in hello_body
-
-    def test_non_cline_extension_no_hyphenation(self, tmp_path):
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-        from specify_cli.agents import CommandRegistrar
-
-        project_dir, ext_dir, agents_commands_dir = self._setup_mock_extension(tmp_path, "amp")
-
-        # 3. Run specify extension add
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            result = runner.invoke(
-                app, ["extension", "add", str(ext_dir), "--dev"], catch_exceptions=False
-            )
-
-        # Verify CLI printed dotted commands
-        # Note: We assert that the primary command 'speckit.mock-ext.hello' is printed,
-        # but we do not assert that the alias 'speckit.mock-ext.greet' is printed in the console
-        # because manifest.commands only lists primary commands.
-        assert "speckit.mock-ext.hello" in result.output
-        assert "speckit-mock-ext-hello" not in result.output
-
-        # Verify on-disk command names are dotted
-        hello_file = agents_commands_dir / "speckit.mock-ext.hello.md"
-        greet_file = agents_commands_dir / "speckit.mock-ext.greet.md"
-
-        assert hello_file.exists()
-        assert greet_file.exists()
-
-        # Verify frontmatter references are still dotted
-        hello_text = hello_file.read_text(encoding="utf-8")
-        hello_fm, hello_body = CommandRegistrar.parse_frontmatter(hello_text)
-        assert hello_fm["agent"] == "speckit.tasks"
-        assert hello_fm["handoffs"][0]["agent"] == "speckit.iterate.start"
-
-        # Verify body references are still dotted for non-Cline
-        assert "speckit.mock-ext.greet" in hello_body
-        assert "speckit-mock-ext-greet" not in hello_body
-
-
-class TestExtensionForceCLI:
-    """CLI tests for `specify extension add --dev --force`."""
-
-    def _create_minimal_extension(self, base_dir: str | Path, ext_id: str = "test-ext") -> Path:
-        """Create a minimal extension directory with manifest."""
-        import yaml
-
-        ext_dir = Path(base_dir) / ext_id
-        ext_dir.mkdir(parents=True, exist_ok=True)
-        (ext_dir / "commands").mkdir()
-
-        manifest = {
-            "schema_version": "1.0",
-            "extension": {
-                "id": ext_id,
-                "name": "Test Extension",
-                "version": "1.0.0",
-                "description": "Test",
-            },
-            "requires": {"speckit_version": ">=0.1.0"},
-            "provides": {
-                "commands": [
-                    {
-                        "name": f"speckit.{ext_id}.hello",
-                        "file": "commands/hello.md",
-                        "description": "Test command",
-                    }
-                ]
-            },
-        }
-
-        (ext_dir / "extension.yml").write_text(yaml.dump(manifest))
-        (ext_dir / "commands" / "hello.md").write_text(
-            "---\ndescription: Test\n---\n\nHello $ARGUMENTS\n"
-        )
-        return ext_dir
-
-    def test_add_dev_force_reinstall(self, tmp_path):
-        """extension add --dev --force should reinstall without error."""
-        from typer.testing import CliRunner
-        from unittest.mock import patch
-        from specify_cli import app
-
-        project_dir = tmp_path / "project"
-        project_dir.mkdir()
-        (project_dir / ".specify").mkdir()
-
-        ext_src = self._create_minimal_extension(tmp_path)
-
-        runner = CliRunner()
-        with patch.object(Path, "cwd", return_value=project_dir):
-            # First install
-            result1 = runner.invoke(
-                app, ["extension", "add", str(ext_src), "--dev"], catch_exceptions=False
-            )
-            assert result1.exit_code == 0, strip_ansi(result1.output)
-            assert "installed" in strip_ansi(result1.output)
-
-            # Force reinstall
-            result2 = runner.invoke(
-                app, ["extension", "add", str(ext_src), "--dev", "--force"], catch_exceptions=False
-            )
-            assert result2.exit_code == 0, strip_ansi(result2.output)
-            assert "installed" in strip_ansi(result2.output)
 
 
 def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
@@ -9924,6 +8673,68 @@ class TestConfigManagerNonMappingYaml:
         ext_dir = tmp_path / ".specify" / "extensions" / "jira"
         ext_dir.mkdir(parents=True)
         (ext_dir / "jira-config.yml").write_text("just a string\n", encoding="utf-8")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.x is set", "jira") is False
+
+
+class TestConfigManagerNonMappingManifestConfigSection:
+    """A non-mapping `config:` section in extension.yml must not crash.
+
+    Distinct from TestConfigManagerNonMappingYaml above: that class covers a
+    malformed *root* of the project ``<id>-config.yml`` file, which
+    ``_load_yaml_config`` already coerces to ``{}``. Here the YAML root of
+    ``extension.yml`` is a well-formed mapping, but its own ``config:`` key
+    (read by ``_get_extension_defaults`` for ``config.defaults``) is given
+    the wrong shape -- e.g. a list instead of a mapping. That is one level
+    deeper than ``_load_yaml_config``'s guard and was previously unchecked.
+    """
+
+    def _make(self, tmp_path, config_yaml_body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(config_yaml_body, encoding="utf-8")
+        return ConfigManager(tmp_path, "jira")
+
+    def test_get_config_coerces_list_config_section(self, tmp_path):
+        """A list `config:` section previously raised AttributeError.
+
+        ``manifest_data.get("config", {}).get("defaults", {})`` assumed the
+        'config' value was already a mapping; a list value made the chained
+        `.get()` raise ``AttributeError: 'list' object has no attribute
+        'get'`` instead of degrading like every other malformed config
+        source in this class.
+        """
+        cm = self._make(tmp_path, "config:\n  - foo\n  - bar\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_scalar_config_section(self, tmp_path):
+        cm = self._make(tmp_path, "config: just-a-string\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_non_mapping_defaults(self, tmp_path):
+        """A non-mapping `config.defaults` value degrades to {} as well."""
+        cm = self._make(tmp_path, "config:\n  defaults:\n    - foo\n")
+        assert cm.get_config() == {}
+
+    def test_valid_defaults_still_load(self, tmp_path):
+        """The fix must not regress the well-formed shape."""
+        cm = self._make(
+            tmp_path,
+            "config:\n  defaults:\n    feature:\n      enabled: true\n",
+        )
+        assert cm.get_value("feature.enabled") is True
+
+    def test_hook_condition_returns_false_without_raising(self, tmp_path):
+        """`config.x is set` against a malformed manifest config must not raise.
+
+        Before the fix, _get_extension_defaults raised AttributeError and the
+        exception was swallowed by should_execute_hook, silently disabling
+        every config-based hook for the extension. Assert on
+        _evaluate_condition directly so the crash isn't masked.
+        """
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text("config:\n  - foo\n", encoding="utf-8")
         executor = HookExecutor(tmp_path)
         assert executor._evaluate_condition("config.x is set", "jira") is False
 
@@ -10113,85 +8924,312 @@ class TestConfigManagerCrossExtensionEnvLeak:
         assert cfg == {"url": "v"}
 
 
-def test_forge_extension_install_listing_hyphenates_command_names(
-    extension_dir, project_dir
-):
-    """The post-install 'Provided commands' listing must show hyphenated
-    /speckit-<name> command names for a Forge project (Forge registers
-    hyphenated names), mirroring the existing Cline handling."""
-    import json
-    import os
-
-    from typer.testing import CliRunner
-
-    from specify_cli import app
-
-    init_options = project_dir / ".specify" / "init-options.json"
-    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
-
-    old_cwd = os.getcwd()
-    try:
-        os.chdir(project_dir)
-        result = CliRunner().invoke(
-            app, ["extension", "add", str(extension_dir), "--dev"]
-        )
-    finally:
-        os.chdir(old_cwd)
-
-    assert result.exit_code == 0, result.output
-    # Forge registers hyphenated command names, so the summary must match.
-    assert "speckit-test-ext-hello" in result.output
-    assert "speckit.test-ext.hello" not in result.output
 
 
-def test_forge_extension_info_hyphenates_command_names(
-    extension_dir, project_dir, monkeypatch
-):
-    """`extension info` for an installed extension must show hyphenated
-    /speckit-<name> command names on a Forge project, matching the names Forge
-    actually registers — the same parity `extension add`'s listing already has.
-    """
-    import io
-    import json
-    import os
 
-    from rich.console import Console
+# ===== Extension Config Scaffolding Tests =====
 
-    from specify_cli.extensions import _commands
 
-    init_options = project_dir / ".specify" / "init-options.json"
-    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+class TestExtensionConfigScaffolding:
+    """Test automatic config scaffolding during add/enable lifecycle."""
 
-    manager = ExtensionManager(project_dir)
-    manager.install_from_directory(
-        extension_dir, "1.0.0", register_commands=False
-    )
+    def _make_extension(self, ext_dir, config_entries=None):
+        """Create a minimal extension with optional config templates."""
+        ext_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "author": "Test",
+                "repository": "https://github.com/test/test",
+                "license": "MIT",
+                "homepage": "https://github.com/test/test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [{
+                    "name": "speckit.test-ext.example",
+                    "file": "commands/example.md",
+                    "description": "Example command",
+                }],
+            },
+            "tags": ["test"],
+        }
+        if config_entries:
+            manifest["provides"]["config"] = config_entries
+        import yaml
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest, default_flow_style=False))
+        # Create command file so validation passes
+        (ext_dir / "commands").mkdir(exist_ok=True)
+        (ext_dir / "commands" / "example.md").write_text("# Example")
+        return manifest
 
-    # Force the "installed locally, not in catalog" branch (the one that prints
-    # the local manifest's Commands section) and avoid any network catalog
-    # lookup.
-    monkeypatch.setattr(
-        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
-    )
+    def test_scaffold_config_deploys_template(self, tmp_path):
+        """Config template lands where ConfigManager reads it, not in .specify/ root."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
 
-    # Call the handler directly against a plain captured Console. (Driving it
-    # through CliRunner reformats output via Rich's live console, which
-    # recurses under pytest's captured stdout — unrelated to this code path.)
-    buf = io.StringIO()
-    original_console = _commands.console
-    _commands.console = Console(file=buf, force_terminal=False, width=200)
-    old_cwd = os.getcwd()
-    try:
-        os.chdir(project_dir)
-        _commands.extension_info("test-ext")
-    except SystemExit:
-        pass
-    finally:
-        os.chdir(old_cwd)
-        _commands.console = original_console
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
 
-    output = buf.getvalue()
-    # The Commands section must render the hyphenated form Forge registers,
-    # not the manifest's dotted name.
-    assert "speckit-test-ext-hello" in output, output
-    assert "speckit.test-ext.hello" not in output, output
+        assert deployed == ["test-config.yml"]
+        assert skipped == []
+        assert failed == []
+        # ConfigManager._get_project_config() reads
+        # .specify/extensions/<id>/<name>, so that is where scaffolding must
+        # put it. Deploying to the .specify/ root left the file somewhere the
+        # extension never looks.
+        assert (ext_dir / "test-config.yml").exists()
+        assert (ext_dir / "test-config.yml").read_text() == "setting: default"
+        assert not (specify_dir / "test-config.yml").exists()
+
+    def test_scaffold_config_preserves_existing(self, tmp_path):
+        """Existing config files should never be overwritten."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
+        (ext_dir / "test-config.yml").write_text("setting: custom")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == ["test-config.yml"]
+        assert failed == []
+        assert (ext_dir / "test-config.yml").read_text() == "setting: custom"
+
+    def test_scaffold_config_no_config_section(self, tmp_path):
+        """Extensions without config section should return empty list."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir)
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == []
+
+    def test_scaffold_config_missing_template_file(self, tmp_path):
+        """Missing template files should be reported as failed."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "nonexistent.yml",
+            "description": "Test config",
+        }])
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["test-config.yml"]
+
+    def test_scaffold_config_rejects_path_traversal(self, tmp_path):
+        """Config names with path traversal should be rejected."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[
+            {"name": "../etc/passwd", "template": "config.yml"},
+            {"name": "safe.yml", "template": "../../secrets.yml"},
+            {"name": "/absolute/path.yml", "template": "config.yml"},
+        ])
+        (ext_dir / "config.yml").write_text("safe: true")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["../etc/passwd", "safe.yml", "/absolute/path.yml"]
+
+    def test_scaffold_config_rejects_directory_template(self, tmp_path):
+        """Directory templates should be rejected (must be regular files)."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-dir",
+        }])
+        (ext_dir / "config-dir").mkdir()
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["test-config.yml"]
+
+    def test_scaffold_config_rejects_symlink_template(self, tmp_path):
+        """Symlink templates should not be copied."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-link.yml",
+        }])
+        real_template = ext_dir / "config-template.yml"
+        real_template.write_text("setting: default")
+        (ext_dir / "config-link.yml").symlink_to(real_template)
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["test-config.yml"]
+        assert not (specify_dir / "test-config.yml").exists()
+
+    def test_scaffold_config_malformed_manifest(self, tmp_path):
+        """Malformed config sections should not crash."""
+        from specify_cli.extensions import ExtensionManager, ExtensionManifest
+        import yaml
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        manifest_data = self._make_extension(ext_dir)
+        manifest_data["provides"]["config"] = "not-a-list"
+        (ext_dir / "extension.yml").write_text(yaml.dump(manifest_data))
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        assert manifest.config == []
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["provides.config"]
+
+    def test_scaffold_config_missing_manifest_returns_consistent_result(self, tmp_path):
+        """A missing extension manifest should return the documented tuple."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+
+        manager = ExtensionManager(project)
+
+        assert manager.scaffold_config("missing") == ([], [], [])
+
+    def test_scaffold_config_rejects_symlinked_config_root(self, tmp_path):
+        """A symlinked .specify must not become the containment root.
+
+        Resolving .specify first and trusting the result lets a symlink point
+        anywhere: every target then satisfies relative_to and copy2 writes
+        outside the project.
+        """
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+        ext_dir = outside / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == []
+        assert skipped == []
+        assert failed == ["provides.config"]
+        assert not (outside / "extensions" / "test-ext" / "test-config.yml").exists()
+
+    def test_scaffold_config_rejects_targets_removal_would_not_preserve(self, tmp_path):
+        """Only top-level *-config.yml targets are scaffolded.
+
+        remove(keep_config=True) rmtree's every subdirectory and keeps only
+        top-level -config.yml / -config.local.yml files, and the backup path
+        globs the same pattern. Scaffolding anything else would hand the user a
+        file that `extension add --force` silently replaces with the template
+        default.
+        """
+        from specify_cli.extensions import ExtensionManager
+        for target in ("nested/test-config.yml", "settings.yml", "test-config.yaml"):
+            project = tmp_path / f"project-{target.replace('/', '_')}"
+            specify_dir = project / ".specify"
+            specify_dir.mkdir(parents=True)
+            ext_dir = specify_dir / "extensions" / "test-ext"
+            self._make_extension(ext_dir, config_entries=[{
+                "name": target,
+                "template": "config-template.yml",
+                "description": "Test config",
+                "required": True,
+            }])
+            (ext_dir / "config-template.yml").write_text("setting: default")
+
+            manager = ExtensionManager(project)
+            deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+            assert deployed == [], target
+            assert skipped == [], target
+            assert failed == [target], target
+
+    def test_scaffold_config_accepts_local_override_name(self, tmp_path):
+        """*-config.local.yml is preserved by removal, so it may be scaffolded."""
+        from specify_cli.extensions import ExtensionManager
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        specify_dir.mkdir(parents=True)
+        ext_dir = specify_dir / "extensions" / "test-ext"
+        self._make_extension(ext_dir, config_entries=[{
+            "name": "test-config.local.yml",
+            "template": "config-template.yml",
+            "description": "Test config",
+            "required": True,
+        }])
+        (ext_dir / "config-template.yml").write_text("setting: default")
+
+        manager = ExtensionManager(project)
+        deployed, skipped, failed = manager.scaffold_config("test-ext")
+
+        assert deployed == ["test-config.local.yml"]
+        assert failed == []

@@ -2,8 +2,13 @@
 
 The **bug** extension adds a three-step bug triage process — assess, fix, and validate — that your coding agent runs alongside the core [Agentic SDD](agentic-sdd.md) process. Each bug lives in its own directory under `.specify/bugs/<slug>/`, with one Markdown report per stage.
 
+For a guided example, follow the [Bug Fixing Quickstart](../guides/bugfix.md).
+Bug fixing does not require the SDD feature process first. For evaluating an idea
+rather than repairing broken behavior, see
+[Idea Assessment](agentic-assessment.md).
+
 > [!NOTE]
-> Commands are written in `/speckit.bug.*` form throughout this page. The exact invocation depends on your agent — some skills-based agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). Substitute the form your agent exposes.
+> Commands are written in `/speckit.bug.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-bug-*`; some other agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
 
 The bug extension is a bundled, opt-in extension. Install it before using these commands:
 

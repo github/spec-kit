@@ -121,8 +121,7 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
 def _remove_integration_json(project_root: Path) -> None:
     """Remove ``.specify/integration.json`` if it exists."""
     path = project_root / INTEGRATION_JSON
-    if path.exists():
-        path.unlink()
+    path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +394,7 @@ def _register_extensions_for_agent(
     agent_key: str,
     *,
     continuing: str,
+    force: bool = False,
 ) -> None:
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
@@ -408,6 +408,11 @@ def _register_extensions_for_agent(
     before registering), so extension *skill* rendering — which is scoped to
     the active ``ai`` / ``ai_skills`` init-options — matches ``agent_key``.
 
+    When ``force=True``, existing skill files are overwritten even when they
+    are not dev-mode symlinks. Pass ``force=True`` in the upgrade path so that
+    extension content is layered on top of the core-template files that
+    ``setup()`` just regenerated (fixes the skip-guard bug for skills mode).
+
     Best-effort: never aborts the surrounding integration operation. Callers
     invoke it *after* the use/upgrade/switch transaction has committed so a
     failure here cannot trigger a rollback.
@@ -415,7 +420,7 @@ def _register_extensions_for_agent(
     _best_effort_extension_op(
         project_root,
         agent_key,
-        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key),
+        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key, force=force),
         phase="register extension artifacts for",
         continuing=continuing,
     )
@@ -470,6 +475,60 @@ def _register_presets_for_agent(
             "integration",
             agent_key,
             preset_err,
+            continuing=continuing,
+        )
+
+
+def _resync_manifest_after_registration(
+    new_manifest: Any,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Refresh tracked-file hashes after extensions/presets re-registration.
+
+    ``_register_extensions_for_agent`` / ``_register_presets_for_agent`` run
+    after ``new_manifest`` is saved and can overwrite files it already
+    tracks (e.g. a preset overriding a core command rendered as a skill).
+    Nothing else touches the project between the manifest save and these
+    calls, so any tracked file whose bytes now differ was changed by our own
+    registration step, not by the user — re-hash it and persist the refresh
+    so ``check_modified()`` doesn't misreport a legitimate override as
+    tampering (see #4696).
+
+    Best-effort: registration itself is best-effort, so a failure here must
+    not abort the surrounding upgrade/use/switch transaction.
+    """
+    try:
+        changed = False
+        for rel in new_manifest.files:
+            abs_path = new_manifest.project_root / rel
+            try:
+                if abs_path.is_symlink() or not abs_path.is_file():
+                    continue
+                new_manifest.record_existing(rel)
+                changed = True
+            except (ValueError, OSError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "resync manifest hash for",
+                    "file",
+                    str(rel),
+                    file_err,
+                    continuing="Continuing with the remaining files.",
+                )
+                continue
+        if changed:
+            new_manifest.save()
+    except Exception as resync_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "resync manifest hashes for",
+            "integration",
+            agent_key,
+            resync_err,
             continuing=continuing,
         )
 

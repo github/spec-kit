@@ -199,6 +199,24 @@ class TestKimiTeardownLegacyCleanup:
 
         assert user_skill.exists()
 
+    def test_teardown_preserves_non_utf8_user_skill(self, tmp_path):
+        i = get_integration("kimi")
+
+        user_skill = (
+            tmp_path
+            / ".kimi"
+            / "skills"
+            / "speckit-user-owned"
+            / "SKILL.md"
+        )
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_bytes(b"\xff\xfe")
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.teardown(tmp_path, m)
+
+        assert user_skill.read_bytes() == b"\xff\xfe"
+
 
 class TestKimiCommandInvocation:
     """Kimi dispatch must use the native ``/skill:`` slash command."""

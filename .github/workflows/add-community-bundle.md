@@ -8,13 +8,29 @@ on:
     names: [bundle-submission]
   skip-bots: [github-actions, copilot, dependabot]
 
+engine:
+  id: copilot
+  args:
+    - --allow-url=https://github.com
+    - --allow-url=https://codeload.github.com
+    - --allow-url=https://release-assets.githubusercontent.com
+    - --allow-url=https://raw.githubusercontent.com
+
 tools:
   edit:
-  bash: ["echo", "grep", "sort", "python3", "jq", "date"]
+  bash: ["echo", "grep", "sort", "python3", "jq", "date", "curl", "sha256sum"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
   web-fetch:
+
+network:
+  allowed:
+    - defaults
+    - github.com
+    - codeload.github.com
+    - release-assets.githubusercontent.com
+    - raw.githubusercontent.com
 
 permissions:
   contents: read
@@ -26,6 +42,8 @@ checkout:
 safe-outputs:
   noop:
     report-as-issue: false
+  threat-detection:
+    continue-on-error: false
   create-pull-request:
     title-prefix: "[bundle] "
     labels: [bundle-submission, automated]
@@ -46,6 +64,23 @@ safe-outputs:
     max: 3
   remove-labels:
     allowed: [validation-passed, validation-failed, needs-info]
+
+jobs:
+  conclusion:
+    pre-steps:
+      - name: Mark bundle submission passed after PR creation
+        if: needs.safe_outputs.result == 'success' && needs.safe_outputs.outputs.created_pr_number != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const issue = { ...context.repo, issue_number: context.payload.issue.number };
+            const labels = await github.paginate(github.rest.issues.listLabelsOnIssue, issue);
+            for (const name of ['validation-failed', 'needs-info']) {
+              if (labels.some(label => label.name === name)) {
+                await github.rest.issues.removeLabel({ ...issue, name });
+              }
+            }
+            await github.rest.issues.addLabels({ ...issue, labels: ['validation-passed'] });
 ---
 
 # Add Community Bundle from Issue Submission
@@ -92,6 +127,15 @@ Read issue #${{ github.event.issue.number }} and extract these issue-form fields
 
 Issue-form values appear beneath headings matching their labels.
 
+The optional checksum is free-form submission data, not a dedicated issue-form input.
+Extract `submitted_sha256` from the submitted issue, not release metadata or the
+computed digest. Accept a manually appended `### SHA-256` heading (including
+`### SHA-256 (sha256)`) or the `sha256` field in the Proposed Catalog Entry.
+If both sources supply a checksum, they must agree after trimming whitespace
+and normalizing hexadecimal case. A supplied checksum must contain exactly 64
+hexadecimal characters; malformed or conflicting values are submission failures,
+not an absent checksum.
+
 ## Step 2 - Validate the Submission
 
 Run every check and collect all failures before deciding the outcome.
@@ -118,13 +162,71 @@ Run every check and collect all failures before deciding the outcome.
 
 ### 2c. Release artifact
 
-- The download URL must be an HTTPS GitHub release asset URL under the submitted
-  repository:
+- The download URL MUST belong to the submitted repository
+  (`https://github.com/<owner>/<repo>/...` with the same `<owner>/<repo>` as
+  the Repository URL). Reject URLs for any other GitHub repository.
+- The download URL MUST follow the accepted tag-pinned pattern:
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`.
-- Confirm the release exists, its tag corresponds to the submitted version
-  (`vX.Y.Z` or `X.Y.Z`), and the exact ZIP asset is attached to that release.
+- If the download URL path contains `releases/latest/`, reject with an
+  explanation — this URL is floating and not acceptable. Mark this pinning
+  check failed and skip the HTTP request for this URL, then continue the
+  remaining validations.
+- The `<tag>` segment in the URL MUST correspond to the submitted version.
+  Accept `vX.Y.Z`, `X.Y.Z`, and scoped tags whose version suffix matches
+  (for example `aide-v1.0.0` for version `1.0.0`). Reject a tag whose
+  embedded semver does not equal the submitted version.
+- Only after all pinning checks pass, fetch the download URL and perform the
+  remaining artifact checks:
+  - Verify the URL returns HTTP 200.
+  - If `sha256` is included, verify it matches the downloaded archive. Requiring
+    `sha256` on every catalog entry is follow-up work and MUST NOT fail this
+    check when the field is absent.
+  - Confirm the release exists and the exact ZIP asset is attached to it.
 - Confirm the asset name is versioned and consistent with the submitted bundle
   ID and version.
+
+Use `curl` for binary downloads. After the URL passes the pinning checks,
+require the entire URL to match `^[A-Za-z0-9._~%/:-]+$`, with no whitespace or
+control characters. Reject disallowed characters as a submission failure without
+fetching the URL. Do not decode or rewrite the URL to make it pass.
+
+Then use the edit tool (not a shell command) to write the exact URL as one line
+plus a trailing newline to `/tmp/gh-aw/validated_download_url.txt`. Do not
+interpolate issue values into shell commands, including commands to create this
+file. Run this fixed command unchanged:
+
+```bash
+curl --location --proto '=https' --proto-redir '=https' --max-time 60 --silent --show-error --write-out '%{http_code}' --output /tmp/gh-aw/community-archive.zip "$(cat /tmp/gh-aw/validated_download_url.txt)"
+```
+
+Run the download and checksum as separate shell calls, without `mkdir`, pipelines,
+or chained commands. The fixed, double-quoted `$(cat ...)` above is the only command
+substitution allowed; do not embed issue text in it. `/tmp/gh-aw/` already exists.
+Compute SHA-256 only after a successful download with final HTTP 200.
+Use `sha256sum /tmp/gh-aw/community-archive.zip` to record its digest as `actual_sha256`.
+If no checksum was submitted, skip the comparison without failing validation.
+Otherwise, use the edit tool to write `/tmp/gh-aw/community-archive.sha256` with
+exactly this one line and a trailing newline, replacing `EXPECTED_SHA256` with
+the validated `submitted_sha256` (two spaces before the fixed archive path):
+
+```text
+EXPECTED_SHA256  /tmp/gh-aw/community-archive.zip
+```
+
+Run this comparison as a separate shell call:
+
+```bash
+sha256sum --check --strict /tmp/gh-aw/community-archive.sha256
+```
+
+Require exit code 0 and an `OK` result before marking the checksum check passed.
+A `FAILED` checksum comparison is a Failed outcome: report the submitted and
+actual digests, remove `validation-passed`, add `validation-failed`, and stop
+without catalog/docs edits or a PR. Never replace a mismatching submitted checksum
+with the computed or release-metadata digest. A command that cannot run or read
+the archive is Blocked, not a successful comparison.
+A blocked or failed download must not count as a passed check; repository/release metadata is not a
+substitute for fetching the archive. Never execute downloaded content.
 
 Do not fetch arbitrary user-provided URLs. Do not claim the artifact was
 executed or audited; rely on the required submission attestations for build and
@@ -173,15 +275,41 @@ should add to Spec Kit.
 
 ### Validation outcome
 
-If any check fails:
+Choose exactly one outcome below, in order. A check that could not run is
+incomplete, not a passed check or a confirmed submission defect.
+
+#### Blocked
+
+If a permission denial, sandbox/network restriction, timeout, or service outage
+prevents a required check, validation is blocked by the workflow environment:
+- Comment with the attempted URL, exact error, and workflow run link, asking a
+  maintainer to investigate and rerun validation.
+- Do not ask the submitter to change a URL or resubmit solely
+  because the workflow could not perform the check.
+- Remove `validation-passed`. Do not add `validation-failed` or `needs-info` solely for an
+  environment blocker. Do not describe unperformed checks as passed.
+- If independent submission checks failed, report those separately
+  and apply `validation-failed` for those failures only. An observed HTTP 404
+  or a checksum mismatch is a submission failure, not a permission failure.
+- Stop processing here without editing catalog/docs files or opening a PR.
+  Do not evaluate the Failed or Passed outcomes below.
+
+#### Failed
+
+If there are no environment blockers and a completed check found a submission defect:
 
 1. Comment once with every failed check and a specific correction.
 2. Remove `validation-passed`.
 3. Add `validation-failed`; add `needs-info` when submitter input is needed.
 4. Stop without editing files or creating a pull request.
 
-If all checks pass, remove `validation-failed` and `needs-info`, add
-`validation-passed`, and continue.
+#### Passed
+
+If there are no environment blockers and every required check completed and passed:
+remove `validation-failed` and `needs-info`, add `validation-passed`, and continue.
+After successful PR creation, the `conclusion` job also applies these
+issue labels independently of the agent. It does not run when no PR was created
+or safe-output processing failed.
 
 ## Step 3 - Determine Add or Update
 
@@ -197,7 +325,15 @@ correction at the same version.
 ## Step 4 - Update the Community Catalog
 
 Edit `bundles/catalog.community.json`. Insert new entries alphabetically by
-bundle ID. The entry shape is:
+bundle ID.
+
+For both new entries and updates, only after every required validation passes,
+set `sha256` to `actual_sha256` from the downloaded archive. Do this even when no
+checksum was submitted. Replace any previous catalog digest; do not reuse a digest
+from an older archive. A submitted mismatch must fail validation before this step;
+writing the computed digest must never be used to bypass that failure.
+
+The entry shape is:
 
 ```json
 {
@@ -210,6 +346,7 @@ bundle ID. The entry shape is:
     "author": "<author>",
     "license": "<license>",
     "download_url": "<download-url>",
+    "sha256": "<actual_sha256>",
     "repository": "<repository>",
     "requires": {
       "speckit_version": "<speckit-version>"
@@ -226,7 +363,7 @@ bundle ID. The entry shape is:
 }
 ```
 
-Use the validated proposed entry rather than inventing metadata. Keep
+Use the validated proposed entry for submitted metadata and set `sha256` as above. Keep
 `verified: false`. Update the top-level `updated_at` to today's UTC date at
 midnight and preserve the top-level `catalog_url`.
 
@@ -258,6 +395,11 @@ repository README remains the source for the actual URLs.
 ## Step 6 - Create a Draft Pull Request
 
 Create one draft pull request.
+
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After successful validation and
+allowed catalog/docs file updates, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
 
 - New entry branch:
   `community/${{ github.event.issue.number }}-add-<bundle-id>-bundle`

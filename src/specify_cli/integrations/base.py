@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 from abc import ABC
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,7 @@ import yaml
 from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
+from ..events import install_integration_events, remove_integration_events
 
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
@@ -141,6 +143,12 @@ class IntegrationBase(ABC):
     integration that sets this flag.
     """
 
+    legacy_flat_command_dir: str | None = None
+    """Previous flat command directory retired after skill replacements exist."""
+
+    legacy_flat_command_extension: str | None = None
+    """File extension used by commands in ``legacy_flat_command_dir``."""
+
     def post_process_command_content(self, content: str) -> str:
         """Transform command content after format rendering.
 
@@ -159,7 +167,17 @@ class IntegrationBase(ABC):
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         """Return options this integration accepts. Default: none."""
-        return []
+        opts = []
+        if bool(getattr(cls, "CANONICAL_TO_NATIVE", None) and getattr(cls, "events_config_file", None)):
+            opts.append(
+                IntegrationOption(
+                    "--events",
+                    is_flag=False,
+                    default="true",
+                    help="Enable/disable runtime events (true|false, default: true)",
+                )
+            )
+        return opts
 
     def effective_invoke_separator(
         self,
@@ -214,8 +232,8 @@ class IntegrationBase(ABC):
         on-disk layout to avoid silently migrating an existing project to a
         different mode.  The default ignores it.
 
-        The default (command-first integrations, e.g. Copilot's default
-        layout) is skills mode only when ``--skills`` was requested.
+        The default for command-first integrations is skills mode only when
+        ``--skills`` was requested.
         ``SkillsIntegration`` overrides this to return ``True`` by default;
         skills-first integrations that expose a legacy opt-out (e.g. Bob)
         override it to honor their own flag.
@@ -228,6 +246,9 @@ class IntegrationBase(ABC):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive execution.
 
@@ -237,7 +258,37 @@ class IntegrationBase(ABC):
 
         Subclasses for CLI-based integrations should override this.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         return None
+
+    def validate_runtime_config(
+        self,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Validate per-step CLI configuration for this integration.
+
+        Runtime configuration is deliberately separate from :meth:`options`,
+        which describes install-time ``--integration-options`` accepted by
+        ``specify init`` and the integration management commands. Integrations
+        opt in by overriding this hook and translating the validated values in
+        :meth:`build_exec_args` (or a custom :meth:`dispatch_command`).
+
+        The default accepts empty configuration for backward compatibility and
+        rejects non-empty values instead of silently ignoring a misspelled or
+        unsupported runtime option.
+        """
+        if integration_args:
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                "'integration_args'."
+            )
+        if integration_options:
+            option_names = ", ".join(sorted(str(key) for key in integration_options))
+            raise ValueError(
+                f"Integration {self.key!r} does not support per-step "
+                f"'integration_options' ({option_names})."
+            )
 
     def _resolve_executable(self) -> str:
         """Return the executable for this integration's CLI tool.
@@ -319,6 +370,29 @@ class IntegrationBase(ABC):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def _build_dispatch_prompt(
+        self,
+        command_name: str,
+        args: str,
+        project_root: Path | None,
+    ) -> str:
+        """Return the dispatch prompt, given the target *project_root*.
+
+        Seam for integrations whose invocation depends on the project's
+        on-disk layout.  ``build_command_invocation()`` is a two-argument
+        contract implemented by every integration, so widening it to carry a
+        *project_root* would change a broad public surface for the sake of
+        the one caller that needs it.  Dispatch is that caller: it alone
+        knows which project the command is being run against, so dual-mode
+        integrations (e.g. Bob) resolve the layout here instead.
+
+        The default ignores *project_root* and preserves the previous
+        behaviour exactly.
+
+        See issue #4491.
+        """
+        return self.build_command_invocation(command_name, args)
+
     def dispatch_command(
         self,
         command_name: str,
@@ -328,15 +402,19 @@ class IntegrationBase(ABC):
         model: str | None = None,
         timeout: int = 600,
         stream: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Dispatch a Spec Kit command through this integration's CLI.
 
         By default this builds a slash-command invocation with
-        ``build_command_invocation()`` and passes that prompt to
+        ``_build_dispatch_prompt()`` -- which defers to
+        ``build_command_invocation()`` unless the integration needs the
+        *project_root* to decide -- and passes that prompt to
         ``build_exec_args()`` to construct the CLI command line.
         Integrations with custom dispatch behavior can override
-        ``build_command_invocation()``, ``build_exec_args()``, or
-        ``dispatch_command()`` directly.
+        ``build_command_invocation()``, ``_build_dispatch_prompt()``,
+        ``build_exec_args()``, or ``dispatch_command()`` directly.
 
         When *stream* is ``True`` (the default), stdout and stderr are
         piped directly to the terminal so the user sees live output.
@@ -348,11 +426,17 @@ class IntegrationBase(ABC):
         """
         import subprocess
 
-        prompt = self.build_command_invocation(command_name, args)
+        self.validate_runtime_config(integration_args, integration_options)
+        prompt = self._build_dispatch_prompt(command_name, args, project_root)
         # When streaming to the terminal, request text output so the
         # user sees readable output instead of raw JSONL events.
         exec_args = self.build_exec_args(
-            prompt, model=model, output_json=not stream
+            prompt,
+            model=model,
+            output_json=not stream,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
         )
 
         if exec_args is None:
@@ -480,7 +564,11 @@ class IntegrationBase(ABC):
         tracking) would otherwise be deleted even though they are still
         managed.  Subclasses list such paths here to protect them.
         """
-        return set()
+        exclusions = set()
+        if self.supports_events():
+            from ..events import events_stale_exclusions
+            exclusions.update(events_stale_exclusions(self.key))
+        return exclusions
 
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.
@@ -615,11 +703,15 @@ class IntegrationBase(ABC):
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
 
+        A hyphen belongs to the segment it sits in rather than separating
+        segments, so ``__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__`` resolves to
+        ``/speckit.agent-context.update``.
+
         *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
         native skills invocation uses dollar-prefixed chat commands.
         """
         return re.sub(
-            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__",
             lambda m: prefix
             + "speckit"
             + separator
@@ -916,7 +1008,45 @@ class IntegrationBase(ABC):
 
         Returns ``(removed, skipped)`` file lists.
         """
+        self.remove_events(project_root, manifest)
         return manifest.uninstall(project_root, force=force)
+
+    def emit_events(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        events: dict[str, dict[str, Any]] | None = None,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        """Emit native event configuration for this integration."""
+        return install_integration_events(self, project_root, manifest, events or {})
+
+    def remove_events(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+    ) -> None:
+        """Remove Specify-authored event entries from native config."""
+        remove_integration_events(self, project_root, manifest)
+
+    def supports_events(self) -> bool:
+        """Return True if this integration supports agent-native events."""
+        return bool(getattr(self, "CANONICAL_TO_NATIVE", None) and getattr(self, "events_config_file", None))
+
+    # Context-injection envelope for hook stdout, keyed by canonical event
+    # (with "*" as the fallback). Not every agent injects a hook's plain-text
+    # stdout as model context: Gemini/Tabnine/Qwen/Devin are JSON-only
+    # protocols (plain text becomes user-facing noise), Copilot discards
+    # non-JSON stdout, and Cursor parses stdout as JSON. Values:
+    #   "hookSpecificOutput" → {"hookSpecificOutput": {"additionalContext": ...}}
+    #   "additionalContext"  → {"additionalContext": ...}   (top-level, Copilot)
+    #   "additional_context" → {"additional_context": ...}  (top-level, Cursor)
+    #   "suppress"           → emit nothing (strict-JSON agents on events whose
+    #                          output can't be used)
+    # Absent (no matching key and no "*") → plain stdout passthrough
+    # (Claude/Codex inject plain stdout; opencode injects via its TS plugin).
+    events_context_envelope: dict[str, str] = {}
 
     # -- Convenience helpers for subclasses -------------------------------
 
@@ -962,7 +1092,11 @@ class MarkdownIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
@@ -1022,6 +1156,12 @@ class MarkdownIntegration(IntegrationBase):
             created.append(dst_file)
 
 
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
+
         return created
 
 
@@ -1047,7 +1187,11 @@ class TomlIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
@@ -1228,6 +1372,12 @@ class TomlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
 
         return created
 
@@ -1465,6 +1615,12 @@ class YamlIntegration(IntegrationBase):
             created.append(dst_file)
 
 
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
+
         return created
 
 
@@ -1504,7 +1660,11 @@ class SkillsIntegration(IntegrationBase):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [self._resolve_executable(), "-p", prompt]
@@ -1740,5 +1900,11 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
+
+        # Install agent runtime events
+        event_files = self.emit_events(
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+        )
+        created.extend(event_files)
 
         return created

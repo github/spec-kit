@@ -6,6 +6,7 @@ Used by both the extension system and the preset system to write
 command files into agent-specific directories in the correct format.
 """
 
+import hashlib
 import os
 import re
 from copy import deepcopy
@@ -58,8 +59,23 @@ class CommandRegistrar:
     AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
     _configs_loaded: bool = False
 
-    def __init__(self) -> None:
+    def __init__(self, project_root: Path | None = None) -> None:
         self._ensure_configs()
+        self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
+        if project_root is not None:
+            from .integrations.generic import registration_directory
+
+            from ._init_options import load_init_options
+
+            opts = load_init_options(project_root)
+            if isinstance(opts, dict) and opts.get("ai") == "generic":
+                self.AGENT_CONFIGS["generic"] = {
+                    "dir": str(registration_directory(project_root)),
+                    "format": "markdown",
+                    "args": "$ARGUMENTS",
+                    "extension": ".md",
+                    "invoke_separator": ".",
+                }
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -157,7 +173,11 @@ class CommandRegistrar:
             return ""
 
         yaml_str = yaml.dump(
-            fm, default_flow_style=False, sort_keys=False, allow_unicode=True
+            fm,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+            width=float("inf"),
         )
         return f"---\n{yaml_str}---\n"
 
@@ -197,32 +217,46 @@ class CommandRegistrar:
         if not isinstance(text, str) or not text:
             return text
 
-        for old, new in (
-            ("../../memory/", ".specify/memory/"),
-            ("../../scripts/", ".specify/scripts/"),
-            ("../../templates/", ".specify/templates/"),
-        ):
-            text = text.replace(old, new)
-
-        # Only rewrite top-level style references so existing generated paths
-        # like ".specify/extensions/<ext>/scripts/..." remain intact. When
-        # rendering extension commands, top-level "scripts/" is extension-local.
         scripts_replacement = (
             f".specify/extensions/{extension_id}/scripts/"
             if extension_id
             else ".specify/scripts/"
         )
-        text = re.sub(r'(^|[\s`"\'(])(?:\.?/)?memory/', r"\1.specify/memory/", text)
-        text = re.sub(
-            r'(^|[\s`"\'(])(?:\.?/)?scripts/', rf"\1{scripts_replacement}", text
-        )
-        text = re.sub(
-            r'(^|[\s`"\'(])(?:\.?/)?templates/', r"\1.specify/templates/", text
+
+        # Two or more ``../`` segments are the repo-root signal used by
+        # command templates (``../../scripts/...``) and are matched without
+        # the delimiter allowlist. A single ``../`` stays untouched: from a
+        # nested command file it means one directory up, which is not the
+        # repository root and must not be routed to ``.specify/scripts/``.
+        # A lookbehind only rejects identifier/dot glue (``not../scripts/``,
+        # ``..../scripts/``). Bare ``scripts/`` / ``memory/`` / ``templates/``
+        # still require a recognized boundary so tokens such as
+        # ``myscripts/`` are not rewritten.
+        pattern = re.compile(
+            r"""(?:(?<![.\w])(?P<parent>(?:\.\./){2,})|(?P<boundary>^|[\s`"'(\[{<=])(?P<rel>\.specify/|(?:\.?/))?)(?P<target>scripts|memory|templates)/"""
         )
 
-        return text.replace(".specify/.specify/", ".specify/").replace(
-            ".specify.specify/", ".specify/"
-        )
+        def _replace(m: re.Match) -> str:
+            target = m.group("target")
+
+            if m.group("parent"):
+                # Two or more ../ segments always map to root .specify/<target>/,
+                # including when extension_id would otherwise make scripts/ local.
+                return f".specify/{target}/"
+
+            prefix = m.group("boundary")
+            rel = m.group("rel")
+
+            if rel == ".specify/":
+                # Already normalized to project structure
+                return m.group(0)
+
+            # Top-level or ./ path
+            if target == "scripts":
+                return f"{prefix}{scripts_replacement}"
+            return f"{prefix}.specify/{target}/"
+
+        return pattern.sub(_replace, text)
 
     @staticmethod
     def rewrite_extension_paths(
@@ -302,8 +336,20 @@ class CommandRegistrar:
         toml_lines = []
 
         if "description" in frontmatter:
+            # Frontmatter comes from ``yaml.safe_load``, so ``description`` can
+            # be any YAML type: ``description:`` with no value yields None,
+            # ``description: 2`` an int, an unquoted ``true`` a bool.
+            # ``_render_basic_toml_string`` iterates the value and calls ord()
+            # on each character, so a non-string raises a raw TypeError -- and a
+            # list of single-character items is silently concatenated into a
+            # wrong value (``["a", "b"]`` -> ``"ab"``). Coerce first, matching
+            # ``render_yaml_command`` below and ``TomlIntegration
+            # ._extract_description``, which both normalise it already.
+            description = frontmatter["description"]
+            if not isinstance(description, str):
+                description = str(description) if description is not None else ""
             toml_lines.append(
-                f"description = {self._render_basic_toml_string(frontmatter['description'])}"
+                f"description = {self._render_basic_toml_string(description)}"
             )
             toml_lines.append("")
 
@@ -386,6 +432,7 @@ class CommandRegistrar:
         source_file: str,
         project_root: Path,
         extension_id: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> str:
         """Render a command override as a SKILL.md file.
 
@@ -416,6 +463,7 @@ class CommandRegistrar:
             skill_name,
             description,
             f"{source_id}:{source_file}",
+            author=author,
         )
         return self.render_frontmatter(skill_frontmatter) + "\n" + body
 
@@ -425,14 +473,18 @@ class CommandRegistrar:
         skill_name: str,
         description: str,
         source: str,
+        author: object = "github-spec-kit",
     ) -> dict:
         """Build consistent SKILL.md frontmatter across all skill generators."""
+        normalized_author = (
+            "github-spec-kit" if author is None or author == "" else str(author)
+        )
         skill_frontmatter = {
             "name": skill_name,
             "description": description,
             "compatibility": "Requires spec-kit project structure with .specify/ directory",
             "metadata": {
-                "author": "github-spec-kit",
+                "author": normalized_author,
                 "source": source,
             },
         }
@@ -569,6 +621,26 @@ class CommandRegistrar:
         return os.path.normpath(name) == name
 
     @staticmethod
+    def _generic_owned_output(path: Path, source_id: str, project_root: Path) -> bool:
+        """Only reuse a generated file if its installed extension still owns its bytes."""
+        from .extensions import ExtensionRegistry
+
+        metadata = ExtensionRegistry(
+            project_root / ".specify" / "extensions"
+        ).get(source_id)
+        hashes = metadata.get("generic_artifact_hashes", {}) if metadata else {}
+        if not isinstance(hashes, dict) or not path.is_file():
+            return False
+        if path.stat().st_nlink > 1:
+            return False
+        if path.is_symlink() and not path.resolve().is_relative_to(
+            (project_root / ".specify/extensions" / source_id).resolve()
+        ):
+            return False
+        relative = path.relative_to(project_root.resolve()).as_posix()
+        return hashes.get(relative) == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    @staticmethod
     def _same_lexical_path(left: Path, right: Path) -> bool:
         """Compare paths after lexical normalization without resolving symlinks."""
         return os.path.normcase(os.path.normpath(os.fspath(left))) == os.path.normcase(
@@ -602,6 +674,7 @@ class CommandRegistrar:
         _resolved_dir: Optional[Path] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -620,6 +693,7 @@ class CommandRegistrar:
                 dev cache and symlink the agent command file to it. Falls back
                 to a normal file write when symlinks are unavailable.
             extension_id: Extension id when rendering extension-owned commands.
+            author: Author attributed in generated skill metadata.
 
         Returns:
             List of registered command names
@@ -667,7 +741,7 @@ class CommandRegistrar:
             _integ = get_integration(agent_name)
             if _integ is not None:
                 _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
-        except Exception:
+        except (ImportError, ValueError, KeyError):
             pass
         _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
@@ -786,11 +860,14 @@ class CommandRegistrar:
                     cmd_file,
                     project_root,
                     extension_id=extension_id,
+                    author=author,
                 )
             elif agent_config["format"] == "markdown":
                 body = self.resolve_skill_placeholders(
                     agent_name, frontmatter, body, project_root, extension_id=extension_id
                 )
+                if extension_id:
+                    frontmatter.pop("scripts", None)
                 body = self._convert_argument_placeholder(
                     body, "$ARGUMENTS", agent_config["args"]
                 )
@@ -831,6 +908,9 @@ class CommandRegistrar:
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
+            if agent_name == "generic" and (dest_file.exists() or dest_file.is_symlink()):
+                if not self._generic_owned_output(dest_file, source_id, project_root):
+                    continue
             dest_file.parent.mkdir(parents=True, exist_ok=True)
             self._write_registered_output(
                 dest_file,
@@ -872,6 +952,7 @@ class CommandRegistrar:
                             cmd_file,
                             project_root,
                             extension_id=extension_id,
+                            author=author,
                         )
                     elif agent_config["format"] == "markdown":
                         alias_output = self.render_markdown_command(
@@ -905,12 +986,16 @@ class CommandRegistrar:
                             cmd_file,
                             project_root,
                             extension_id=extension_id,
+                            author=author,
                         )
 
                 alias_file = (
                     commands_dir / f"{alias_output_name}{agent_config['extension']}"
                 )
                 self._ensure_inside(alias_file, commands_dir)
+                if agent_name == "generic" and (alias_file.exists() or alias_file.is_symlink()):
+                    if not self._generic_owned_output(alias_file, source_id, project_root):
+                        continue
                 alias_file.parent.mkdir(parents=True, exist_ok=True)
                 self._write_registered_output(
                     alias_file,
@@ -1044,6 +1129,7 @@ class CommandRegistrar:
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
+        author: object = "github-spec-kit",
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1061,6 +1147,7 @@ class CommandRegistrar:
                 skills directory) and is skipped when safe resolution or
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
+            author: Author attributed in generated skill metadata.
             only_agent: If set, restrict registration to this single agent
                 while keeping all detection and recovery safeguards (#2948).
 
@@ -1168,6 +1255,7 @@ class CommandRegistrar:
                         _resolved_dir=agent_dir,
                         link_outputs=link_outputs,
                         extension_id=extension_id,
+                        author=author,
                     )
                     if registered:
                         results[agent_name] = registered

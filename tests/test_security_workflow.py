@@ -30,7 +30,7 @@ LOCAL_REFRESH_TEST_EXTRA_DEPS = (
     f"--quiet --no-header --output-file {COMMITTED_AUDIT_REQUIREMENTS}"
 )
 WORKFLOW_SYNC_COMPILE_TEST_EXTRA_DEPS = (
-    "uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes "
+    "uv pip compile pyproject.toml --extra test --universal --generate-hashes "
     "--quiet --no-header --output-file"
 )
 WORKFLOW_SYNC_SCRIPT = "python .github/scripts/check_security_requirements.py"
@@ -99,7 +99,9 @@ class TestDependencyAuditWorkflow:
         assert sync_check["env"]["DEPENDENCY_DIFF_BASE"] == (
             "${{ github.event.pull_request.base.sha || github.event.before || '' }}"
         )
-        assert sync_check["env"]["DEPENDENCY_DIFF_HEAD"] == "${{ github.sha }}"
+        assert sync_check["env"]["DEPENDENCY_DIFF_HEAD"] == (
+            "${{ github.event.pull_request.head.sha || github.sha }}"
+        )
         assert sync_check["run"] == WORKFLOW_SYNC_SCRIPT
         assert committed_audit["run"] == LOCAL_PIP_AUDIT
 
@@ -239,10 +241,14 @@ class TestDependencyAuditWorkflow:
 
     def test_sync_script_skips_when_dependency_inputs_are_unchanged(self, monkeypatch, capsys):
         sync_script = _load_sync_script()
+        commands = []
 
         def fake_run(command, **kwargs):
+            commands.append(command)
+            if command[:2] == ["git", "merge-base"]:
+                return subprocess.CompletedProcess(command, 0, stdout="base123\n", stderr="")
             assert command == [
-                "git", "diff", "--name-only", "HEAD^", "HEAD", "--",
+                "git", "diff", "--name-only", "base123", "HEAD", "--",
                 "pyproject.toml", ".github/security-audit-requirements.txt",
             ]
             assert kwargs["check"] is True
@@ -251,16 +257,21 @@ class TestDependencyAuditWorkflow:
         monkeypatch.setattr(sync_script.subprocess, "run", fake_run)
 
         assert sync_script.main() == 0
+        assert commands[0] == ["git", "merge-base", "HEAD^", "HEAD"]
         assert "sync check skipped" in capsys.readouterr().out
 
     def test_sync_script_uses_github_diff_refs_when_available(self, monkeypatch):
         sync_script = _load_sync_script()
         monkeypatch.setenv("DEPENDENCY_DIFF_BASE", "abc123")
         monkeypatch.setenv("DEPENDENCY_DIFF_HEAD", "def456")
+        commands = []
 
         def fake_run(command, **_kwargs):
+            commands.append(command)
+            if command[:2] == ["git", "merge-base"]:
+                return subprocess.CompletedProcess(command, 0, stdout="merge123\n", stderr="")
             assert command == [
-                "git", "diff", "--name-only", "abc123", "def456", "--",
+                "git", "diff", "--name-only", "merge123", "def456", "--",
                 "pyproject.toml", ".github/security-audit-requirements.txt",
             ]
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -268,6 +279,7 @@ class TestDependencyAuditWorkflow:
         monkeypatch.setattr(sync_script.subprocess, "run", fake_run)
 
         assert sync_script._dependency_inputs_changed() is False
+        assert commands[0] == ["git", "merge-base", "abc123", "def456"]
 
     def test_sync_script_compiles_and_compares_when_dependency_inputs_changed(
         self, monkeypatch, tmp_path
@@ -284,10 +296,13 @@ class TestDependencyAuditWorkflow:
         monkeypatch.setenv("GENERATED_REQUIREMENTS", str(generated_requirements))
 
         def fake_run(command, **kwargs):
-            if command[0] == "git":
+            if command[:2] == ["git", "merge-base"]:
+                return subprocess.CompletedProcess(command, 0, stdout="base123\n", stderr="")
+            if command[:2] == ["git", "diff"]:
                 return subprocess.CompletedProcess(command, 0, stdout="pyproject.toml\n", stderr="")
             compile_commands.append(command)
             assert kwargs["check"] is True
+            assert generated_requirements.read_text(encoding="utf-8") == "pytest==1\n"
             generated_requirements.write_text("pytest==1\n", encoding="utf-8")
             return subprocess.CompletedProcess(command, 0)
 
@@ -297,6 +312,7 @@ class TestDependencyAuditWorkflow:
         assert len(compile_commands) == 1
         compile_command = " ".join(compile_commands[0])
         assert WORKFLOW_SYNC_COMPILE_TEST_EXTRA_DEPS in compile_command
+        assert "--upgrade" not in compile_commands[0]
         assert "--output-file" in compile_commands[0]
         assert str(generated_requirements) in compile_commands[0]
 

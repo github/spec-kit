@@ -10,7 +10,9 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
+    break_wrap_layer,
     clean_env,
+    install_composition_stack,
     install_scripts,
     json_stdout,
     make_repo,
@@ -85,6 +87,42 @@ def test_python_override_template_wins_matches_bash(repo: Path) -> None:
     assert py.returncode == bash.returncode == 0
     assert json_stdout(py) == json_stdout(bash)
     assert json_stdout(py)["TASKS_TEMPLATE"].endswith("overrides/tasks-template.md")
+
+
+@requires_bash
+def test_all_variants_return_composed_tasks_template(repo: Path) -> None:
+    expected = install_composition_stack(
+        repo, "tasks-template", "# Tasks Template\n"
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TASKS_TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_fail_for_broken_tasks_composition(repo: Path) -> None:
+    install_composition_stack(repo, "tasks-template", "# Tasks Template\n")
+    break_wrap_layer(repo, "tasks-template")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
 
 
 @requires_bash
@@ -205,3 +243,28 @@ def test_missing_template_error_matches_all_variants(repo: Path) -> None:
     assert bash.returncode == ps.returncode == py.returncode == 1
     assert bash.stdout == ps.stdout == py.stdout == ""
     assert bash.stderr == ps.stderr == py.stderr
+
+
+def test_python_text_output_survives_a_legacy_stdout_code_page(repo: Path) -> None:
+    """Text mode must not crash when stdout cannot encode the status glyphs.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console — which is every time an agent or a workflow step captures the
+    output. U+2713 is unencodable in cp1252, so printing it raised
+    UnicodeEncodeError and truncated the document listing. The ASCII fallback is
+    the rendering these markers already have in-tree (Test-FileExists in
+    scripts/powershell/common.ps1, and normalize_status_text).
+    """
+    feature = repo / "specs" / "001-my-feature"
+    (feature / "research.md").write_text("# research\n", encoding="utf-8")
+    (feature / "contracts").mkdir()
+
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = run(py_cmd(repo, SCRIPT), repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    for doc in ("research.md", "data-model.md", "contracts/", "quickstart.md"):
+        assert doc in result.stdout, (doc, result.stdout)
+    assert "[OK] research.md" in normalize_status_text(result.stdout), result.stdout

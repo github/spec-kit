@@ -8,8 +8,8 @@ import pytest
 import yaml
 
 from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
-from specify_cli.workflows.overlays import WorkflowResolver
-from specify_cli.workflows.overlays.merge import ComposedStep
+from specify_cli.workflows.overlay import WorkflowResolver
+from specify_cli.workflows.overlay.merge import ComposedStep
 
 
 def _write_workflow(project_root: Path, workflow_id: str, data: dict) -> Path:

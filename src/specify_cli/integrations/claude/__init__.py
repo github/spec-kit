@@ -54,9 +54,29 @@ class ClaudeIntegration(SkillsIntegration):
     }
     multi_install_safe = True
 
+    CANONICAL_TO_NATIVE = {
+        "session_start": "SessionStart",
+        "pre_tool_use": "PreToolUse",
+        "post_tool_use": "PostToolUse",
+        "session_end": "SessionEnd",
+        "user_prompt_submit": "UserPromptSubmit",
+        "stop": "Stop",
+    }
+    events_config_file = ".claude/settings.json"
+    events_format = "json-nested"
+
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
-        """Insert ``argument-hint`` after the first ``description:`` in YAML frontmatter.
+        """Insert ``argument-hint`` after the ``description:`` scalar in YAML frontmatter.
+
+        A long ``description`` gets folded by the YAML dumper across
+        indented continuation lines (plain or quoted), and an embedded
+        paragraph break can add unindented blank lines inside a quoted
+        scalar. Inserting the new line right after the *first* line of
+        that scalar — instead of after the whole scalar — either produces
+        invalid YAML or gets silently absorbed into the description
+        string (#4044), so every continuation line (indented, or blank)
+        is skipped first.
 
         Skips injection if ``argument-hint:`` already exists in the
         frontmatter to avoid duplicate keys.
@@ -79,15 +99,29 @@ class ClaudeIntegration(SkillsIntegration):
         in_fm = False
         dash_count = 0
         injected = False
-        for line in lines:
+        i = 0
+        n = len(lines)
+        while i < n:
+            line = lines[i]
             stripped = line.rstrip("\n\r")
             if stripped == "---":
                 dash_count += 1
                 in_fm = dash_count == 1
                 out.append(line)
+                i += 1
                 continue
             if in_fm and not injected and stripped.startswith("description:"):
                 out.append(line)
+                i += 1
+                # Skip past folded/quoted continuation lines of the scalar
+                # before inserting, so the new key lands after it ends.
+                # Blank lines count too: PyYAML emits unindented blank
+                # lines for embedded "\n\n" inside a quoted scalar.
+                while i < n and (
+                    lines[i][:1] in (" ", "\t") or lines[i].rstrip("\r\n") == ""
+                ):
+                    out.append(lines[i])
+                    i += 1
                 # Preserve the exact line-ending style (\r\n vs \n)
                 if line.endswith("\r\n"):
                     eol = "\r\n"
@@ -100,6 +134,7 @@ class ClaudeIntegration(SkillsIntegration):
                 injected = True
                 continue
             out.append(line)
+            i += 1
         return "".join(out)
 
     def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
@@ -138,7 +173,13 @@ class ClaudeIntegration(SkillsIntegration):
             if dash_count == 1 and stripped.startswith(f"{key}:"):
                 return content
 
-        # Inject before the closing --- of frontmatter
+        # Inject before the closing --- of frontmatter. Preserve the
+        # existing EOL style, but default to "\n" (rather than "") when the
+        # closing delimiter is the last line of the file with no trailing
+        # newline -- otherwise the injected text glues onto the "---"
+        # (e.g. "user-invocable: true---"), destroying the delimiter so a
+        # later call's pre-scan/injection never finds a second "---" and
+        # silently drops that key entirely.
         out: list[str] = []
         dash_count = 0
         injected = False
@@ -152,7 +193,7 @@ class ClaudeIntegration(SkillsIntegration):
                     elif line.endswith("\n"):
                         eol = "\n"
                     else:
-                        eol = ""
+                        eol = "\n"
                     out.append(f"{key}: {value}{eol}")
                     injected = True
             out.append(line)

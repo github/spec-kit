@@ -11,6 +11,7 @@ See proposals/monorepo-support and github/spec-kit discussion #2834.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -29,6 +30,11 @@ GIT_CREATE_FEATURE_SH = (
 HAS_PWSH = shutil.which("pwsh") is not None
 _POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
 _PS_EXE = "pwsh" if HAS_PWSH else _POWERSHELL
+
+# Windows PowerShell 5.1 (.NET Framework) specifically, never pwsh: the only
+# host that lacks the .NET Core-only [System.IO.Path] members, so it is the only
+# one that can pin a 5.1 compatibility regression (issue #3749).
+_WINDOWS_POWERSHELL = _POWERSHELL if os.name == "nt" else None
 
 
 def _clean_env() -> dict[str, str]:
@@ -99,6 +105,10 @@ def _bash_path(path: Path) -> str:
 
 requires_pwsh = pytest.mark.skipif(
     not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available"
+)
+
+requires_windows_powershell = pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None, reason="Windows PowerShell 5.1 not available"
 )
 
 
@@ -465,3 +475,131 @@ def test_ps_file_path_errors_no_fallback(tmp_path: Path) -> None:
     result = _ps("Get-RepoRoot", cwd=web, env=env)
     assert result.returncode != 0
     assert "does not point to an existing directory" in result.stderr
+
+
+# ── Windows PowerShell 5.1 compatibility (issue #3749) ──────────────────────
+#
+# The CI matrix runs these PowerShell tests under `pwsh` on every OS, and pwsh
+# is .NET Core, so a .NET Framework-only regression is invisible to it. The
+# static test below therefore runs everywhere and is the one that actually
+# guards CI; the runtime tests pin the real behavior where a 5.1 host exists.
+
+# .NET Core-only [System.IO.Path] members. Absent on .NET Framework, so calling
+# one throws "does not contain a method named ..." on Windows PowerShell 5.1.
+_DOTNET_CORE_ONLY_PATH_MEMBERS = (
+    "TrimEndingDirectorySeparator",
+    "EndsInDirectorySeparator",
+    "GetRelativePath",
+    "Join",
+)
+
+
+@pytest.mark.parametrize("member", _DOTNET_CORE_ONLY_PATH_MEMBERS)
+def test_shipped_ps1_avoids_dotnet_core_only_path_members(member: str) -> None:
+    """No shipped .ps1 may call a .NET Core-only [System.IO.Path] member.
+
+    Windows PowerShell 5.1 ships on every Windows box and runs on .NET
+    Framework, where these members do not exist. A call is not a graceful
+    degradation but a hard "Method invocation failed" at the call site, which
+    for a root resolver aborts the command before it starts.
+
+    Runs on all platforms because the CI matrix only has pwsh (.NET Core),
+    where such a call works fine -- so this static check is what keeps CI able
+    to catch the regression at all.
+    """
+    # Anchored to the Path type: [string]::Join and other same-named members on
+    # .NET Framework types are unaffected and must not be flagged.
+    pattern = re.compile(
+        r"\[(?:System\.IO\.)?Path\]::" + re.escape(member) + r"\s*\(",
+        re.IGNORECASE,
+    )
+    offenders = []
+    for ps1 in sorted(PROJECT_ROOT.glob("scripts/powershell/*.ps1")) + sorted(
+        PROJECT_ROOT.glob("extensions/*/scripts/powershell/*.ps1")
+    ):
+        for lineno, line in enumerate(
+            ps1.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            code = line.split("#", 1)[0]
+            if pattern.search(code):
+                offenders.append(f"{ps1.relative_to(PROJECT_ROOT)}:{lineno}")
+    assert not offenders, (
+        f"[System.IO.Path]::{member}() is .NET Core only and throws on Windows "
+        f"PowerShell 5.1; found at {offenders}. Use a .NET Framework-safe "
+        f"equivalent (e.g. TrimEnd('/', '\\') for a trailing separator)."
+    )
+
+
+@requires_windows_powershell
+def test_ps51_init_dir_resolves(tmp_path: Path) -> None:
+    """SPECIFY_INIT_DIR must resolve under Windows PowerShell 5.1 (issue #3749).
+
+    Before the fix, Resolve-SpecifyInitDir called the .NET Core-only
+    [System.IO.Path]::TrimEndingDirectorySeparator, so every 5.1 invocation
+    threw at that line -- root resolution failed before the requested command
+    ran, and $initRoot stayed $null so the very next Join-Path threw too.
+    """
+    web = _make_project(tmp_path, "web")
+    env = {**_clean_env(), "SPECIFY_INIT_DIR": str(web)}
+    result = subprocess.run(
+        [_WINDOWS_POWERSHELL, "-NoProfile", "-Command", f'. "{COMMON_PS}"; Get-RepoRoot'],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert "does not contain a method named" not in result.stderr, result.stderr
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(web)
+
+
+@requires_windows_powershell
+def test_ps51_init_dir_trailing_separator_trimmed(tmp_path: Path) -> None:
+    """The 5.1-safe trim must still strip a trailing separator, for bash parity.
+
+    Resolve-Path echoes back the input's trailing separator; the bash resolver's
+    `cd && pwd` never yields one, so the two must agree.
+    """
+    web = _make_project(tmp_path, "web")
+    for suffix in ("/", "\\"):
+        env = {**_clean_env(), "SPECIFY_INIT_DIR": f"{web}{suffix}"}
+        result = subprocess.run(
+            [
+                _WINDOWS_POWERSHELL,
+                "-NoProfile",
+                "-Command",
+                f'. "{COMMON_PS}"; Get-RepoRoot',
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(web)
+
+
+@requires_pwsh
+def test_ps_drive_root_reports_root_not_bare_drive(tmp_path: Path) -> None:
+    """A path that IS its own root must survive the trim intact.
+
+    A bare TrimEnd('/', '\\') -- the obvious 5.1-safe swap -- turns 'C:\\' into
+    'C:', which is not the drive root but a drive-relative reference that every
+    later path API re-resolves against the *current directory*. Validation would
+    then probe the wrong tree entirely and, on a cwd that happens to contain
+    .specify/, silently accept 'C:' as the project root. The drive root
+    normally has no .specify/, so assert on the error naming the intact root.
+    """
+    root = Path(tmp_path.anchor or "/")
+    if (root / ".specify").exists():
+        pytest.skip("filesystem root is itself a Spec Kit project")
+    env = {**_clean_env(), "SPECIFY_INIT_DIR": str(root)}
+    result = _ps("Get-RepoRoot", cwd=tmp_path, env=env)
+    assert result.returncode != 0
+    assert "not a Spec Kit project" in result.stderr
+    # The error echoes the resolved root, so it pins what the trim produced:
+    # 'C:\' (or '/') intact, never the bare 'C:' (or '') a naive TrimEnd leaves.
+    reported = result.stderr.replace("\r", "").rstrip("\n").split("directory): ", 1)[-1]
+    assert reported == str(root)
