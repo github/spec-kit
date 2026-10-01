@@ -25,6 +25,8 @@ GITHUB_HOSTS = frozenset({
     "api.github.com",
     "codeload.github.com",
 })
+_GHE_COM_SUFFIX = ".ghe.com"
+_GHE_COM_API_PREFIX = "api."
 _MAX_RELEASE_METADATA_BYTES = 5 * 1024 * 1024
 
 
@@ -81,6 +83,27 @@ def _host_matches(hostname: str, patterns: tuple[str, ...]) -> bool:
     return any(p == hostname or fnmatch(hostname, p) for p in patterns)
 
 
+def _ghe_com_api_hostname(web_hostname: str) -> str | None:
+    """Return the paired GHE.com API hostname for a tenant web hostname."""
+    if (
+        web_hostname == "ghe.com"
+        or web_hostname.startswith(_GHE_COM_API_PREFIX)
+        or not web_hostname.endswith(_GHE_COM_SUFFIX)
+    ):
+        return None
+    return f"{_GHE_COM_API_PREFIX}{web_hostname}"
+
+
+def _ghe_com_web_hostname(api_hostname: str) -> str | None:
+    """Return the paired GHE.com web hostname for a tenant API hostname."""
+    if not api_hostname.startswith(_GHE_COM_API_PREFIX):
+        return None
+    web_hostname = api_hostname.removeprefix(_GHE_COM_API_PREFIX)
+    if web_hostname == "ghe.com" or not web_hostname.endswith(_GHE_COM_SUFFIX):
+        return None
+    return web_hostname
+
+
 def resolve_github_release_asset_api_url(
     download_url: str,
     open_url_fn: Callable,
@@ -91,18 +114,20 @@ def resolve_github_release_asset_api_url(
 ) -> Optional[str]:
     """Resolve a GitHub release browser-download URL to its REST API asset URL.
 
-    Works for public ``github.com`` and for GitHub Enterprise Server (GHES)
-    hosts. A host is treated as GHES when it matches one of *github_hosts*
-    (exact hostname or ``*.suffix``) — supply the hosts the user has trusted
-    under a ``github`` provider in ``auth.json``. This allowlist is the
-    security gate: unlisted hosts never receive GHES API treatment, so a
-    malicious catalog cannot induce an API request to an arbitrary host.
+    Works for public ``github.com``, GitHub Enterprise Cloud with data
+    residency (GHE.com), and GitHub Enterprise Server (GHES). Enterprise hosts
+    must match *github_hosts* (exact hostname or ``*.suffix``), which should be
+    the hosts the user trusted under a ``github`` provider in ``auth.json``.
+    GHE.com additionally requires both the tenant web hostname and its paired
+    ``api.`` hostname to be trusted.
 
-    For a public URL the API base is ``https://api.github.com``; for a GHES
-    host it is ``{scheme}://{host[:port]}/api/v3``. Returns the API asset URL
+    Public GitHub uses ``https://api.github.com``; a GHE.com tenant
+    ``tenant.ghe.com`` uses ``https://api.tenant.ghe.com``; GHES uses
+    ``{scheme}://{host[:port]}/api/v3``. Returns the API asset URL
     (downloadable with ``Accept: application/octet-stream`` + a token), the
-    input unchanged if it is already an API asset URL, or ``None`` when the
-    URL is not a resolvable GitHub release download or the lookup fails.
+    input unchanged if it is already a recognized API asset URL, or ``None``
+    when the URL is not a resolvable GitHub release download or the lookup
+    fails.
 
     Args:
         download_url: The URL to resolve.
@@ -110,7 +135,7 @@ def resolve_github_release_asset_api_url(
             :func:`specify_cli.authentication.http.open_url` used for the
             authenticated release-metadata lookup.
         timeout: Per-request timeout in seconds.
-        github_hosts: Host patterns to treat as GitHub Enterprise Server.
+        github_hosts: Host patterns trusted as GitHub Enterprise deployments.
         redirect_validator: Optional policy applied to metadata redirects.
         max_metadata_bytes: Maximum release-metadata response size.
     """
@@ -128,13 +153,23 @@ def resolve_github_release_asset_api_url(
     try:
         parsed = urlparse(download_url)
         hostname = (parsed.hostname or "").lower()
+        parsed_port = parsed.port
     except ValueError:
         return None
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
 
+    ghe_com_api_hostname = _ghe_com_api_hostname(hostname)
+    is_ghe_com = (
+        ghe_com_api_hostname is not None
+        and parsed.scheme == "https"
+        and parsed_port in (None, 443)
+        and _host_matches(hostname, github_hosts)
+        and _host_matches(ghe_com_api_hostname, github_hosts)
+    )
     is_ghes = (
         bool(hostname)
         and hostname not in GITHUB_HOSTS
+        and not hostname.endswith(_GHE_COM_SUFFIX)
         and _host_matches(hostname, github_hosts)
     )
 
@@ -145,15 +180,36 @@ def resolve_github_release_asset_api_url(
             and segments[3:5] == ["releases", "assets"]
         )
 
-    # Already a REST API asset URL — use it directly. Pure passthrough induces
-    # no new request: the caller fetches this same URL regardless, so it is
-    # gated on path shape alone rather than the GHES allowlist. The token stays
-    # independently gated by auth.json in the download helper, and only the
-    # resolving path below (which issues a tag-lookup request) needs the
-    # allowlist as its anti-SSRF gate.
+    def _is_exact_asset_path(segments: list[str]) -> bool:
+        return (
+            len(segments) == 6
+            and _is_asset_path(segments)
+            and segments[-1].isascii()
+            and segments[-1].isdigit()
+        )
+
+    # Already a REST API asset URL — use it directly. Existing GitHub.com and
+    # GHES passthrough behavior remains path-gated because it induces no new
+    # request; the caller would fetch the same URL regardless. GHE.com is new
+    # here and uses its stricter tenant-pair trust check below.
     if hostname == "api.github.com" and _is_asset_path(parts):
         return download_url
     if hostname and parts[:2] == ["api", "v3"] and _is_asset_path(parts[2:]):
+        return download_url
+    ghe_com_web_hostname = _ghe_com_web_hostname(hostname)
+    if (
+        ghe_com_web_hostname is not None
+        and parsed.scheme == "https"
+        and parsed_port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+        and not parsed.query
+        and not parsed.fragment
+        and not parsed.params
+        and _host_matches(hostname, github_hosts)
+        and _host_matches(ghe_com_web_hostname, github_hosts)
+        and _is_exact_asset_path(parts)
+    ):
         return download_url
 
     # Browser download URLs must be usable HTTP(S) URLs before they can cause
@@ -161,27 +217,23 @@ def resolve_github_release_asset_api_url(
     # retains its existing path-only behavior.
     if parsed.scheme not in {"http", "https"}:
         return None
-    try:
-        _browser_port = parsed.port
-    except ValueError:
-        return None
 
     # Determine the REST API base for browser release-download URLs.
     if hostname == "github.com":
         api_base = "https://api.github.com"
+        expected_asset_prefix = ["", "repos"]
+    elif is_ghe_com:
+        api_base = f"https://{ghe_com_api_hostname}"
+        expected_asset_prefix = ["", "repos"]
     elif is_ghes:
-        # ``parsed.port`` raises ValueError on a malformed port (e.g.
-        # ``host:notaport``); the function's contract is to return None for
-        # anything it can't resolve, not to raise.
-        try:
-            port = parsed.port
-        except ValueError:
-            return None
         # ``urlparse().hostname`` removes IPv6 brackets. Restore them when
         # constructing an authority so the derived API base remains a URL.
         authority_host = f"[{hostname}]" if ":" in hostname else hostname
-        authority = authority_host if port is None else f"{authority_host}:{port}"
+        authority = (
+            authority_host if parsed_port is None else f"{authority_host}:{parsed_port}"
+        )
         api_base = f"{parsed.scheme}://{authority}/api/v3"
+        expected_asset_prefix = ["", "api", "v3", "repos"]
     else:
         return None
 
@@ -250,15 +302,10 @@ def resolve_github_release_asset_api_url(
             return False
 
         asset_parts = asset_parsed.path.split("/")
-        owner_index = 2 if api_base == "https://api.github.com" else 4
-        expected_prefix = (
-            ["", "repos"]
-            if api_base == "https://api.github.com"
-            else ["", "api", "v3", "repos"]
-        )
+        owner_index = len(expected_asset_prefix)
         return (
             len(asset_parts) == owner_index + 5
-            and asset_parts[:owner_index] == expected_prefix
+            and asset_parts[:owner_index] == expected_asset_prefix
             and unquote(asset_parts[owner_index]).casefold() == owner.casefold()
             and unquote(asset_parts[owner_index + 1]).casefold() == repo.casefold()
             and asset_parts[owner_index + 2:owner_index + 4] == ["releases", "assets"]

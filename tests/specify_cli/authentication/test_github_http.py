@@ -315,6 +315,108 @@ class TestResolveGitHubReleaseAssetApiUrl:
         assert len(captured_urls) == 1
         assert "releases/tags/v1%23beta" in captured_urls[0]
 
+    # --- GHE.com (GitHub Enterprise Cloud with data residency) ---
+
+    def test_resolves_ghecom_browser_url_to_api_url(self):
+        """A GHE.com browser URL resolves through its paired API subdomain."""
+        asset_url = "https://api.msft.ghe.com/repos/org/repo/releases/assets/42"
+        captured = []
+
+        @contextmanager
+        def capturing_open(url, timeout=None, extra_headers=None):
+            captured.append(url)
+            resp = MagicMock()
+            resp.read.side_effect = io.BytesIO(
+                json.dumps(
+                    {"assets": [{"name": "bundle.zip", "url": asset_url}]}
+                ).encode()
+            ).read
+            yield resp
+
+        result = resolve_github_release_asset_api_url(
+            "https://msft.ghe.com/org/repo/releases/download/v1.0/bundle.zip",
+            capturing_open,
+            github_hosts=("msft.ghe.com", "api.msft.ghe.com"),
+        )
+
+        assert result == asset_url
+        assert captured == [
+            "https://api.msft.ghe.com/repos/org/repo/releases/tags/v1.0"
+        ]
+
+    def test_passthrough_for_trusted_ghecom_api_asset_url(self):
+        """A trusted direct GHE.com API asset URL receives asset treatment."""
+        url = "https://api.msft.ghe.com/repos/org/repo/releases/assets/42"
+        result = resolve_github_release_asset_api_url(
+            url,
+            lambda *a, **kw: None,
+            github_hosts=("msft.ghe.com", "api.msft.ghe.com"),
+        )
+        assert result == url
+
+    def test_rejects_direct_ghecom_api_asset_url_without_trusted_pair(self):
+        """A direct GHE.com API URL needs both trusted tenant hostnames."""
+        url = "https://api.msft.ghe.com/repos/org/repo/releases/assets/42"
+        result = resolve_github_release_asset_api_url(
+            url,
+            lambda *a, **kw: None,
+            github_hosts=("api.msft.ghe.com",),
+        )
+        assert result is None
+
+    @pytest.mark.parametrize(
+        "github_hosts",
+        [
+            ("msft.ghe.com",),
+            ("api.msft.ghe.com",),
+            ("other.ghe.com", "api.other.ghe.com"),
+        ],
+    )
+    def test_ghecom_resolution_requires_trusted_web_and_api_hosts(self, github_hosts):
+        """GHE.com resolution requires both members of the tenant host pair."""
+        called = []
+
+        @contextmanager
+        def recording_open(url, timeout=None, extra_headers=None):
+            called.append(url)
+            resp = MagicMock()
+            resp.read.side_effect = io.BytesIO(b"{}").read
+            yield resp
+
+        result = resolve_github_release_asset_api_url(
+            "https://msft.ghe.com/org/repo/releases/download/v1.0/bundle.zip",
+            recording_open,
+            github_hosts=github_hosts,
+        )
+
+        assert result is None
+        assert called == []
+
+    @pytest.mark.parametrize(
+        "asset_url",
+        [
+            "https://api.other.ghe.com/repos/org/repo/releases/assets/42",
+            "http://api.msft.ghe.com/repos/org/repo/releases/assets/42",
+            "https://msft.ghe.com/api/v3/repos/org/repo/releases/assets/42",
+            "https://api.msft.ghe.com/repos/other/repo/releases/assets/42",
+            "https://api.msft.ghe.com/repos/org/other/releases/assets/42",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/not-a-number",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42?download=1",
+        ],
+    )
+    def test_rejects_wrong_origin_or_path_for_ghecom_metadata_asset_url(
+        self, asset_url
+    ):
+        """GHE.com metadata must identify the paired tenant and repository."""
+        result = resolve_github_release_asset_api_url(
+            "https://msft.ghe.com/org/repo/releases/download/v1.0/bundle.zip",
+            self._make_open_url_fn(
+                {"assets": [{"name": "bundle.zip", "url": asset_url}]}
+            ),
+            github_hosts=("msft.ghe.com", "api.msft.ghe.com"),
+        )
+        assert result is None
+
     # --- GHES (GitHub Enterprise Server) ---
 
     def test_resolves_ghes_browser_url_to_api_url(self):
