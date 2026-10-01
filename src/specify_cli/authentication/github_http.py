@@ -194,7 +194,12 @@ def resolve_github_release_asset_api_url(
     # here and uses its stricter tenant-pair trust check below.
     if hostname == "api.github.com" and _is_asset_path(parts):
         return download_url
-    if hostname and parts[:2] == ["api", "v3"] and _is_asset_path(parts[2:]):
+    if (
+        hostname
+        and not hostname.endswith(_GHE_COM_SUFFIX)
+        and parts[:2] == ["api", "v3"]
+        and _is_asset_path(parts[2:])
+    ):
         return download_url
     ghe_com_web_hostname = _ghe_com_web_hostname(hostname)
     if (

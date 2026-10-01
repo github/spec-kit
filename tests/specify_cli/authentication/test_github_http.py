@@ -367,6 +367,28 @@ class TestResolveGitHubReleaseAssetApiUrl:
     @pytest.mark.parametrize(
         "github_hosts",
         [
+            (),
+            ("msft.ghe.com", "api.msft.ghe.com"),
+        ],
+    )
+    def test_rejects_direct_ghecom_api_asset_url_with_ghes_path(
+        self, github_hosts
+    ):
+        """A GHE.com API host never accepts the legacy GHES /api/v3 path."""
+        url = (
+            "https://api.msft.ghe.com/api/v3/repos/org/repo/"
+            "releases/assets/42"
+        )
+        result = resolve_github_release_asset_api_url(
+            url,
+            lambda *a, **kw: None,
+            github_hosts=github_hosts,
+        )
+        assert result is None
+
+    @pytest.mark.parametrize(
+        "github_hosts",
+        [
             ("msft.ghe.com",),
             ("api.msft.ghe.com",),
             ("other.ghe.com", "api.other.ghe.com"),
