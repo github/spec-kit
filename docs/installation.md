@@ -136,19 +136,21 @@ This confirms that the `specify` command is available and reporting the expected
 
 **Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 
-After initialization, you should see the following commands available in your coding agent:
+In GitHub Copilot's default skills mode, after initialization you should see the
+following skills available in your coding agent. For other agents or modes, see
+[Command invocation](./reference/integrations.md#command-invocation):
 
-- `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans
-- `/speckit.tasks` - Break down into actionable tasks
-- `/speckit.implement` - Execute implementation tasks
-- `/speckit.analyze` - Validate cross-artifact consistency
-- `/speckit.clarify` - Identify and resolve ambiguities
-- `/speckit.checklist` - Generate quality checklists
-- `/speckit.constitution` - Create or update project principles
-- `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
-  `/speckit.github.taskstoissues`; install it with `specify extension add github`)
+- `/speckit-specify` - Create specifications
+- `/speckit-plan` - Generate implementation plans
+- `/speckit-tasks` - Break down into actionable tasks
+- `/speckit-implement` - Execute implementation tasks
+- `/speckit-analyze` - Validate cross-artifact consistency
+- `/speckit-clarify` - Identify and resolve ambiguities
+- `/speckit-checklist` - Generate quality checklists
+- `/speckit-constitution` - Create or update project principles
+- `/speckit-converge` - Assess codebase against artifacts and append remaining tasks
+- `/speckit-taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
+  `/speckit-github-taskstoissues`; install it with `specify extension add github`)
 
 The `generic` integration also registers extension commands in its configured
 `--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`

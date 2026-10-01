@@ -12,8 +12,8 @@ Install it from an initialized project's root:
 specify extension add assess
 ```
 
-Commands below use `/speckit.assess.*` notation. GitHub Copilot's default skills
-mode uses `/speckit-assess-*`; other integrations may use a different prefix.
+Commands below use GitHub Copilot's default skills notation, `/speckit-assess-*`.
+Other integrations may use a different prefix.
 See [Command invocation](integrations.md#command-invocation).
 
 ## Commands and artifacts
@@ -22,20 +22,20 @@ Every artifact is written under `.specify/assessments/<slug>/`.
 
 | Command | Purpose | Output |
 | --- | --- | --- |
-| `/speckit.assess.intake` | Capture an idea from text, a URL, a ticket, or a codebase pointer | `intake.md` |
-| `/speckit.assess.research` | Gather evidence for and against the idea, with sources and confidence | `research.md` |
-| `/speckit.assess.define` | Define users, the problem, goals, non-goals, metrics, and cost of inaction | `problem.md` |
-| `/speckit.assess.shape` | Compare concept-level options, appetite, and trade-offs | `concept.md` |
-| `/speckit.assess.decide` | Record a scorecard, verdict, rationale, and optional SDD handoff | `decision.md` |
+| `/speckit-assess-intake` | Capture an idea from text, a URL, a ticket, or a codebase pointer | `intake.md` |
+| `/speckit-assess-research` | Gather evidence for and against the idea, with sources and confidence | `research.md` |
+| `/speckit-assess-define` | Define users, the problem, goals, non-goals, metrics, and cost of inaction | `problem.md` |
+| `/speckit-assess-shape` | Compare concept-level options, appetite, and trade-offs | `concept.md` |
+| `/speckit-assess-decide` | Record a scorecard, verdict, rationale, and optional SDD handoff | `decision.md` |
 
 Pass the initial idea and a slug to intake, then reuse the slug:
 
 ```text
-/speckit.assess.intake "Let users work offline and sync when they reconnect." slug=offline-mode
-/speckit.assess.research slug=offline-mode
-/speckit.assess.define slug=offline-mode
-/speckit.assess.shape slug=offline-mode
-/speckit.assess.decide slug=offline-mode
+/speckit-assess-intake "Let users work offline and sync when they reconnect." slug=offline-mode
+/speckit-assess-research slug=offline-mode
+/speckit-assess-define slug=offline-mode
+/speckit-assess-shape slug=offline-mode
+/speckit-assess-decide slug=offline-mode
 ```
 
 ## Prerequisites and scope
@@ -92,7 +92,7 @@ discarded draft. See the
 ## Handoff and guardrails
 
 A `go` decision includes a handoff summary you can choose to pass to
-`/speckit.specify`. No lifecycle hooks install assessment as a prerequisite of
+`/speckit-specify`. No lifecycle hooks install assessment as a prerequisite of
 SDD, and non-software ideas need not enter SDD at all.
 
 Assessment commands write only within `.specify/assessments/<slug>/`; they do not

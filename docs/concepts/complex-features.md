@@ -1,8 +1,8 @@
 # Handling Complex Features
 
-Large or complex features often run smoothly through `/speckit.specify`,
-`/speckit.plan`, and `/speckit.tasks`, then degrade during implementation. In
-the middle of a long `/speckit.implement` run, agents can start to lose track of
+Large or complex features often run smoothly through `/speckit-specify`,
+`/speckit-plan`, and `/speckit-tasks`, then degrade during implementation. In
+the middle of a long `/speckit-implement` run, agents can start to lose track of
 the plan, ignore tasks, or hallucinate — usually right before or after context
 compaction is triggered.
 
@@ -11,37 +11,37 @@ implementation run tries to hold the entire feature in context, the model
 degrades as the window fills. The fix is to scope each run so it stays well
 within context limits.
 
-The `/speckit.implement` command accepts free-form user input that the agent
+The `/speckit-implement` command accepts free-form user input that the agent
 must consider before proceeding. This means you can scope each run without any
 tooling changes.
 
 ## Option 1: Limit How Many Tasks Run Per Invocation
 
-Instead of letting `/speckit.implement` run through every task at once, tell it
+Instead of letting `/speckit-implement` run through every task at once, tell it
 to stop early:
 
 ```text
-/speckit.implement only execute tasks T001-T010, then stop and report progress
+/speckit-implement only execute tasks T001-T010, then stop and report progress
 ```
 
 or scope by phase:
 
 ```text
-/speckit.implement only execute the Setup phase, then stop
+/speckit-implement only execute the Setup phase, then stop
 ```
 
 Because completed tasks are marked `[X]` in `tasks.md`, the next
-`/speckit.implement` invocation picks up where you left off. This keeps each run
+`/speckit-implement` invocation picks up where you left off. This keeps each run
 well within context limits.
 
 ## Option 2: Instruct the Agent to Use Sub-Agents
 
 If your coding agent supports sub-agents (for example, GitHub Copilot CLI or the
-GitHub Copilot extension for VS Code), you can instruct `/speckit.implement` to
+GitHub Copilot extension for VS Code), you can instruct `/speckit-implement` to
 delegate individual tasks:
 
 ```text
-/speckit.implement delegate each parallel [P] task to a sub-agent
+/speckit-implement delegate each parallel [P] task to a sub-agent
 ```
 
 Each sub-agent gets a focused context — one task plus the relevant plan
@@ -53,7 +53,7 @@ in the main session.
 For very large features, combine scoping and delegation:
 
 ```text
-/speckit.implement execute only the Core phase, delegate [P] tasks to sub-agents
+/speckit-implement execute only the Core phase, delegate [P] tasks to sub-agents
 ```
 
 ## Option 4: Decompose the Feature Into Smaller Specs

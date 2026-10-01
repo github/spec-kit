@@ -39,11 +39,11 @@ first task is a repair, you can instead follow the
 use the [idea assessment quickstart](assessment.md). Neither process requires
 completing the SDD steps below first.
 
-Run `/speckit.constitution` with principles that are already true for the
+Run `/speckit-constitution` with principles that are already true for the
 repository or that the team has explicitly agreed to adopt:
 
 ```text
-/speckit.constitution Preserve public API compatibility. Follow the existing
+/speckit-constitution Preserve public API compatibility. Follow the existing
 service boundaries. Every database migration must include a rollback plan.
 Run the repository's established unit and integration test suites.
 ```
@@ -63,7 +63,7 @@ Describe both the requested outcome and the compatibility boundaries that must
 remain intact:
 
 ```text
-/speckit.specify Add CSV export to the existing orders page. Preserve current
+/speckit-specify Add CSV export to the existing orders page. Preserve current
 filters and authorization behavior. Export only the rows visible to the signed-in
 user, and do not change the existing JSON API response.
 ```
@@ -76,14 +76,14 @@ behavior.
 
 Continue through the normal workflow:
 
-1. Run `/speckit.clarify` to resolve uncertain behavior and compatibility
+1. Run `/speckit-clarify` to resolve uncertain behavior and compatibility
    requirements.
-2. Run `/speckit.plan` and verify that the proposed design reuses the existing
+2. Run `/speckit-plan` and verify that the proposed design reuses the existing
    architecture, dependencies, and test conventions.
-3. Run `/speckit.tasks`, then `/speckit.analyze` to check consistency before
+3. Run `/speckit-tasks`, then `/speckit-analyze` to check consistency before
    implementation.
-4. Run `/speckit.implement` and review code and artifact changes together.
-5. Run `/speckit.converge` to find remaining gaps. If it adds tasks, repeat
+4. Run `/speckit-implement` and review code and artifact changes together.
+5. Run `/speckit-converge` to find remaining gaps. If it adds tasks, repeat
    implementation and convergence until the feature is complete.
 
 For command details and optional quality gates, see the

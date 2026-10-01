@@ -77,11 +77,11 @@ agreement; it does not guarantee that the deployed provider still supports it.
 ## Using the Spec Kit workflow
 
 1. **Establish intent and identify the interfaces.** Capture the desired user
-   behavior with `/speckit.specify`. Identify which components provide and
+   behavior with `/speckit-specify`. Identify which components provide and
    consume each interaction. If no contract exists, defining it is part of the
    work, not a prerequisite that must already have been completed elsewhere.
 2. **Agree on the contract before dependent implementation.** During
-   `/speckit.plan`, the owner drafts the interface contract and reviews it with
+   `/speckit-plan`, the owner drafts the interface contract and reviews it with
    consumers. Resolve observable behavior and compatibility questions before
    either side implements assumptions about the other. Each side can then
    develop independently against the agreed version.
@@ -91,12 +91,12 @@ agreement; it does not guarantee that the deployed provider still supports it.
    files available. Each project owns its local `spec.md`, `plan.md`, and
    `tasks.md`; reference the contract rather than copying another project's
    implementation plan.
-4. **Plan verification explicitly.** Ask `/speckit.tasks` to include provider
+4. **Plan verification explicitly.** Ask `/speckit-tasks` to include provider
    and consumer contract tests, including negative cases. Test observable
    behavior as well as data shapes. Consumer tests against mocks are useful,
    but do not establish that the real provider conforms; include provider
    verification and integration validation.
-5. **Implement and validate each side.** Use `/speckit.implement` in each
+5. **Implement and validate each side.** Use `/speckit-implement` in each
    project, then run the agreed checks. If implementation reveals a contract
    problem, revise the authoritative agreement and reconcile the affected
    specs, plans, tests, and consumer versions rather than privately changing a
@@ -106,7 +106,7 @@ agreement; it does not guarantee that the deployed provider still supports it.
    around those dependencies. For breaking changes, agree on a migration and
    overlap period before removing behavior consumers still use.
 
-`/speckit.plan` already produces feature-scoped `contracts/` artifacts when
+`/speckit-plan` already produces feature-scoped `contracts/` artifacts when
 external interfaces are involved. Choose explicitly which artifact is
 authoritative: a feature may draft a new contract there, or propose a change to
 an established contract elsewhere in the project. Record the approved source

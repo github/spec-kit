@@ -23,14 +23,14 @@ For the conceptual model definitions, see
 Use flow-forward when each feature directory should remain a historical record.
 
 When you add another feature or make a substantial follow-up change, create a
-new feature spec through your installed `/speckit.specify` command and continue
+new feature spec through your installed `/speckit-specify` command and continue
 through the standard flow:
 
-1. Run `/speckit.specify` to create a new feature directory under `specs/`.
-2. Run `/speckit.plan` to define the implementation approach.
-3. Run `/speckit.tasks` to derive the work breakdown.
-4. Run `/speckit.implement` and review the resulting code and artifact diffs.
-5. Run `/speckit.converge` to verify completeness and generate tasks for remaining gaps. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
+1. Run `/speckit-specify` to create a new feature directory under `specs/`.
+2. Run `/speckit-plan` to define the implementation approach.
+3. Run `/speckit-tasks` to derive the work breakdown.
+4. Run `/speckit-implement` and review the resulting code and artifact diffs.
+5. Run `/speckit-converge` to verify completeness and generate tasks for remaining gaps. If tasks are appended, repeat `/speckit-implement` and `/speckit-converge` until the feature is fully complete.
 
 The previous feature directory remains intact for audit, comparison, or
 explaining how the project reached its current state. Use clear feature names or
@@ -47,15 +47,15 @@ spec:
 
 1. Start from a clean working tree or a dedicated branch so every generated
    change is reviewable.
-2. Update `spec.md` with `/speckit.clarify` or an explicit edit.
-3. Rerun `/speckit.plan` or revise `plan.md` so the technical approach matches
+2. Update `spec.md` with `/speckit-clarify` or an explicit edit.
+3. Rerun `/speckit-plan` or revise `plan.md` so the technical approach matches
    the revised spec.
-4. Rerun `/speckit.tasks` or revise `tasks.md` so implementation work matches
+4. Rerun `/speckit-tasks` or revise `tasks.md` so implementation work matches
    the revised plan.
-5. Run `/speckit.analyze` before implementation resumes to catch gaps between
+5. Run `/speckit-analyze` before implementation resumes to catch gaps between
    the spec, plan, and tasks.
-6. Run `/speckit.implement`, then review the code and artifact diffs together.
-7. Run `/speckit.converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
+6. Run `/speckit-implement`, then review the code and artifact diffs together.
+7. Run `/speckit-converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit-implement` and `/speckit-converge` until the feature is fully complete.
 
 Preserve important implementation rationale before replacing derived artifacts.
 If a plan or task list contains decisions that still matter, carry them forward
@@ -74,7 +74,7 @@ the artifact set back into alignment:
 2. Decide whether it changes intended behavior, implementation strategy, task
    breakdown, or only code.
 3. Update any other artifacts that now disagree with the accepted direction.
-4. Run `/speckit.analyze` to check for gaps across `spec.md`, `plan.md`, and
+4. Run `/speckit-analyze` to check for gaps across `spec.md`, `plan.md`, and
    `tasks.md`.
 5. Continue implementation only after the artifact set describes the behavior
    and approach you want future contributors to trust.
