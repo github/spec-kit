@@ -43,6 +43,18 @@ def _has_valid_percent_escapes(value: str) -> bool:
     return True
 
 
+def _has_valid_asset_url_spelling(value: str) -> bool:
+    """Return whether an asset URL uses an unambiguous raw spelling."""
+    return (
+        not any(
+            ord(character) <= 0x20 or ord(character) == 0x7F
+            for character in value
+        )
+        and not any(delimiter in value for delimiter in ("?", "#", ";"))
+        and _has_valid_percent_escapes(value)
+    )
+
+
 def build_github_request(url: str) -> urllib.request.Request:
     """Build a urllib Request, adding a GitHub auth header when available.
 
@@ -180,10 +192,14 @@ def resolve_github_release_asset_api_url(
             and segments[3:5] == ["releases", "assets"]
         )
 
-    def _is_exact_asset_path(segments: list[str]) -> bool:
+    def _is_exact_raw_asset_path(path: str) -> bool:
+        segments = path.split("/")
         return (
-            len(segments) == 6
-            and _is_asset_path(segments)
+            len(segments) == 7
+            and segments[:2] == ["", "repos"]
+            and bool(segments[2])
+            and bool(segments[3])
+            and segments[4:6] == ["releases", "assets"]
             and segments[-1].isascii()
             and segments[-1].isdigit()
         )
@@ -204,6 +220,7 @@ def resolve_github_release_asset_api_url(
     ghe_com_web_hostname = _ghe_com_web_hostname(hostname)
     if (
         ghe_com_web_hostname is not None
+        and _has_valid_asset_url_spelling(download_url)
         and parsed.scheme == "https"
         and parsed_port in (None, 443)
         and parsed.username is None
@@ -213,7 +230,7 @@ def resolve_github_release_asset_api_url(
         and not parsed.params
         and _host_matches(hostname, github_hosts)
         and _host_matches(ghe_com_web_hostname, github_hosts)
-        and _is_exact_asset_path(parts)
+        and _is_exact_raw_asset_path(parsed.path)
     ):
         return download_url
 
@@ -259,14 +276,7 @@ def resolve_github_release_asset_api_url(
         # ``urlparse`` tolerates some raw spellings (for example whitespace)
         # even though the original metadata value is returned to the caller.
         # Reject those spellings before parsing rather than normalizing them.
-        if (
-            any(
-                ord(character) <= 0x20 or ord(character) == 0x7F
-                for character in asset_url
-            )
-            or any(delimiter in asset_url for delimiter in ("?", "#", ";"))
-            or not _has_valid_percent_escapes(asset_url)
-        ):
+        if not _has_valid_asset_url_spelling(asset_url):
             return False
         try:
             asset_parsed = urlparse(asset_url)

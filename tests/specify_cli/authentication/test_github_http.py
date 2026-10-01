@@ -354,6 +354,27 @@ class TestResolveGitHubReleaseAssetApiUrl:
         )
         assert result == url
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42?",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42#",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42/",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/%34%32",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42 ",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/42;",
+            "https://api.msft.ghe.com/repos/org/repo/releases/assets/%ZZ",
+        ],
+    )
+    def test_rejects_noncanonical_direct_ghecom_api_asset_url(self, url):
+        """Direct GHE.com asset URLs retain strict raw-spelling validation."""
+        result = resolve_github_release_asset_api_url(
+            url,
+            lambda *a, **kw: None,
+            github_hosts=("msft.ghe.com", "api.msft.ghe.com"),
+        )
+        assert result is None
+
     def test_rejects_direct_ghecom_api_asset_url_without_trusted_pair(self):
         """A direct GHE.com API URL needs both trusted tenant hostnames."""
         url = "https://api.msft.ghe.com/repos/org/repo/releases/assets/42"
