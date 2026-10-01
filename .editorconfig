@@ -20,6 +20,7 @@ trim_trailing_whitespace = false
 
 [*.{sh,bash}]
 indent_size = 4
+switch_case_indent = true
 
 [*.{ps1,psm1,psd1}]
 indent_size = 4

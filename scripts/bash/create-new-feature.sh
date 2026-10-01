@@ -56,7 +56,7 @@ while [ $i -le $# ]; do
         --timestamp)
             USE_TIMESTAMP=true
             ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 [--json] [--dry-run] [--allow-existing-branch] [--short-name <name>] [--number N] [--timestamp] <feature_description>"
             echo ""
             echo "Options:"
@@ -166,7 +166,7 @@ fit_branch_name() {
     local branch_name="${feature_num}-${branch_suffix}"
 
     if [ ${#branch_name} -gt $MAX_BRANCH_LENGTH ]; then
-        local prefix_length=$(( ${#feature_num} + 1 ))
+        local prefix_length=$((${#feature_num} + 1))
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
         local truncated_suffix
         truncated_suffix=$(printf '%s' "$branch_suffix" | cut -c "1-$max_suffix_length" | sed 's/-$//')
@@ -191,6 +191,7 @@ shell_quote() {
 
 # Resolve repository root using common.sh functions which prioritize .specify
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 REPO_ROOT=$(get_repo_root) || exit 1
@@ -214,7 +215,8 @@ generate_branch_name() {
     # acronym probe below uses ASCII word boundaries like the Python twin's
     # (?<![0-9A-Za-z_]) lookarounds.
     local -x LC_ALL=C
-    local clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
+    local clean_name
+    clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     local meaningful_words=()
@@ -251,7 +253,8 @@ generate_branch_name() {
         echo "$result"
     else
         # Fallback to original logic if no meaningful words found
-        local cleaned=$(clean_branch_name "$description")
+        local cleaned
+        cleaned=$(clean_branch_name "$description")
         echo "$cleaned" | tr '-' '\n' | grep -v '^$' | head -3 | tr '\n' '-' | sed 's/-$//'
     fi
 }
@@ -361,7 +364,12 @@ if [ "$DRY_RUN" != true ]; then
     SPEC_TEMPLATE_CONTENT=""
     if [ ! -f "$SPEC_FILE" ]; then
         NEEDS_SPEC=true
-        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+        if SPEC_TEMPLATE_CONTENT=$(
+            resolve_template_content "spec-template" "$REPO_ROOT"
+            status=$?
+            printf x
+            exit "$status"
+        ); then
             SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
             SPEC_TEMPLATE_FOUND=true
         else
@@ -376,7 +384,7 @@ if [ "$DRY_RUN" != true ]; then
 
     if [ "$NEEDS_SPEC" = true ]; then
         if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
-            printf '%s' "$SPEC_TEMPLATE_CONTENT" > "$SPEC_FILE"
+            printf '%s' "$SPEC_TEMPLATE_CONTENT" >"$SPEC_FILE"
         else
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"
