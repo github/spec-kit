@@ -3,6 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(CDPATH="" cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 JSON_MODE=false
@@ -11,7 +12,7 @@ TEMPLATE_NAME=""
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=true ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 <template-name> [--json]"
             exit 0
             ;;
@@ -35,7 +36,12 @@ if [[ -z "$TEMPLATE_NAME" ]]; then
 fi
 
 REPO_ROOT=$(get_repo_root)
-if TEMPLATE_CONTENT=$(resolve_template_content "$TEMPLATE_NAME" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+if TEMPLATE_CONTENT=$(
+    resolve_template_content "$TEMPLATE_NAME" "$REPO_ROOT"
+    status=$?
+    printf x
+    exit "$status"
+); then
     TEMPLATE_CONTENT="${TEMPLATE_CONTENT%x}"
 else
     echo "ERROR: Could not resolve required $TEMPLATE_NAME from the template override stack for $REPO_ROOT" >&2
