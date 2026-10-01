@@ -212,6 +212,24 @@ def test_dev_only_readme_is_accepted(submission):
     assert run_verifier(paths).returncode == 0
 
 
+def test_dev_current_directory_path_is_accepted(submission):
+    _, _, paths = submission
+    paths["README.md"].write_text(
+        "specify preset add --dev .\n", encoding="utf-8"
+    )
+    assert run_verifier(paths).returncode == 0
+
+
+def test_dev_option_without_path_is_rejected(submission):
+    _, _, paths = submission
+    paths["README.md"].write_text(
+        "specify preset add --dev --priority 20\n", encoding="utf-8"
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README" in result.stdout
+
+
 def test_quoted_from_url_with_sentence_punctuation_is_accepted(submission):
     issue, _, paths = submission
     paths["README.md"].write_text(
@@ -494,6 +512,76 @@ def test_generated_documentation_accepts_escaped_pipe_in_preset_name(submission)
     write_generated(issue, paths)
     result = run_verifier(paths, "generated")
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_generated_documentation_allows_duplicate_display_names(submission):
+    issue, _, paths = submission
+    other_row = (
+        "| Sample Preset | Other usage | 1 command | — | "
+        "[other](https://github.com/example/other) |"
+    )
+    paths["catalog.json"].write_text(json.dumps({
+        "presets": {"other": {"name": issue["preset_name"]}},
+    }), encoding="utf-8")
+    paths["presets.md"].write_text(
+        "| Preset | Purpose | Provides | Requires | URL |\n"
+        "|--------|---------|----------|----------|-----|\n"
+        f"{other_row}\n",
+        encoding="utf-8",
+    )
+    assert run_verifier(paths).returncode == 0
+    entry = write_generated(issue, paths)
+    catalog = json.loads(paths["catalog.json"].read_text(encoding="utf-8"))
+    catalog["presets"] = {
+        "other": {"name": issue["preset_name"]},
+        "sample": entry,
+    }
+    paths["catalog.json"].write_text(json.dumps(catalog), encoding="utf-8")
+    paths["presets.md"].write_text(
+        "| Preset | Purpose | Provides | Requires | URL |\n"
+        "|--------|---------|----------|----------|-----|\n"
+        f"{other_row}\n"
+        "| Sample Preset | Sample usage | 1 template, 1 command | "
+        "aide extension, canon extension | "
+        "[presets](https://github.com/example/presets) |\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_generated_documentation_accepts_replaced_renamed_row(submission):
+    issue, _, paths = submission
+    original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": original["updated_at"], "presets": {"sample": original},
+    }), encoding="utf-8")
+    issue["preset_name"] = "Renamed Preset"
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    assert run_verifier(paths).returncode == 0
+    write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_generated_documentation_rejects_stale_row_after_rename(submission):
+    issue, _, paths = submission
+    original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    previous_row = paths["presets.md"].read_text(encoding="utf-8").splitlines()[2]
+    paths["catalog.json"].write_text(json.dumps({
+        "updated_at": original["updated_at"], "presets": {"sample": original},
+    }), encoding="utf-8")
+    issue["preset_name"] = "Renamed Preset"
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    assert run_verifier(paths).returncode == 0
+    write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    paths["presets.md"].write_text(
+        paths["presets.md"].read_text(encoding="utf-8") + previous_row + "\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 3
+    assert "previous documentation row" in result.stdout
 
 
 @pytest.mark.parametrize(("damage", "message"), [

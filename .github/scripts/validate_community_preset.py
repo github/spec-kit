@@ -189,8 +189,9 @@ def check_readme(text: str, issue: dict, *, single_preset_archive: bool) -> None
         text,
     ):
         option = match["option"]
-        value = (match["value"] or "").strip("'\"<>(),.;")
+        raw_value = match["value"] or ""
         if option == "--from":
+            value = raw_value.strip("'\"<>(),.;")
             if value == expected:
                 accepted = True
                 continue
@@ -227,8 +228,10 @@ def check_readme(text: str, issue: dict, *, single_preset_archive: bool) -> None
                 raise SubmissionMismatch(
                     f"README --from URL for {preset_id} differs from Download URL: {value}"
                 )
-        elif option == "--dev" and value:
-            accepted = True
+        elif option == "--dev":
+            value = raw_value.strip("'\"")
+            if value and not value.startswith("-"):
+                accepted = True
         elif option == preset_id:
             accepted = True
     if not accepted:
@@ -322,10 +325,28 @@ def submission(args: argparse.Namespace) -> None:
         raise Blocked("original catalog entry is not an object")
     if previous is not None and not isinstance(previous.get("created_at"), str):
         raise Blocked("original catalog entry has no created_at to preserve")
+    original_rows = documentation_rows(
+        read_text(args.docs, "original documentation", Blocked), Blocked
+    )
+    expected_row = documentation_row(expected)
+    previous_row = None
+    if previous is not None:
+        try:
+            previous_row = documentation_row(previous)
+        except (AttributeError, KeyError, TypeError) as exc:
+            raise Blocked(
+                f"original catalog entry cannot produce a documentation row: {exc}"
+            ) from exc
     snapshot = {
         "expected": expected,
         "created_at": previous.get("created_at") if previous else None,
         "expected_timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z"),
+        "documentation": {
+            "expected_row_count": original_rows.count(expected_row),
+            "previous_row": previous_row,
+            "previous_row_count": original_rows.count(previous_row)
+            if previous_row is not None else 0,
+        },
     }
     try:
         args.snapshot.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -377,6 +398,20 @@ def markdown_table_cells(row: str) -> list[str]:
     return cells
 
 
+def documentation_rows(text: str, error_type: type[Exception]) -> list[str]:
+    lines = text.splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines) if line.startswith("| Preset |"))
+    except StopIteration as exc:
+        raise error_type("documentation has no Community Presets table") from exc
+    rows = []
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        rows.append(line.strip())
+    return rows
+
+
 def generated(args: argparse.Namespace) -> None:
     snapshot = read_json(args.snapshot, "verifier snapshot", Blocked)
     expected = snapshot.get("expected")
@@ -407,25 +442,39 @@ def generated(args: argparse.Namespace) -> None:
         raise GeneratedError("catalog entry updated_at does not match the expected UTC date")
     if catalog.get("updated_at") != expected_timestamp:
         raise GeneratedError("catalog top-level updated_at does not match the expected UTC date")
-    docs = read_text(args.docs, "generated documentation", GeneratedError)
-    lines = docs.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.startswith("| Preset |"))
-    except StopIteration as exc:
-        raise GeneratedError("documentation has no Community Presets table") from exc
-    rows = []
-    for line in lines[start + 2:]:
-        if not line.startswith("|"):
-            break
-        rows.append(line.strip())
+    documentation = snapshot.get("documentation")
+    if not isinstance(documentation, dict):
+        raise Blocked("verifier snapshot lacks original documentation state")
+    expected_row_count = documentation.get("expected_row_count")
+    previous_row = documentation.get("previous_row")
+    previous_row_count = documentation.get("previous_row_count")
+    if (
+        not isinstance(expected_row_count, int)
+        or isinstance(expected_row_count, bool)
+        or expected_row_count < 0
+        or previous_row is not None and not isinstance(previous_row, str)
+        or not isinstance(previous_row_count, int)
+        or isinstance(previous_row_count, bool)
+        or previous_row_count < 0
+    ):
+        raise Blocked("verifier snapshot has invalid original documentation state")
+    rows = documentation_rows(
+        read_text(args.docs, "generated documentation", GeneratedError),
+        GeneratedError,
+    )
     names = [markdown_table_cells(row)[1] for row in rows]
     if names != sorted(names, key=str.casefold):
         raise GeneratedError("documentation preset names are not in alphabetical order")
     expected_row = documentation_row(expected)
-    if rows.count(expected_row) != 1:
+    expected_generated_count = expected_row_count + (
+        0 if previous_row == expected_row else 1
+    )
+    if rows.count(expected_row) != expected_generated_count:
         raise GeneratedError(f"documentation row does not match validated values: {expected_row}")
-    if names.count(expected["name"]) != 1:
-        raise GeneratedError("documentation contains duplicate preset names")
+    if previous_row is not None and previous_row != expected_row:
+        expected_previous_count = max(0, previous_row_count - 1)
+        if rows.count(previous_row) != expected_previous_count:
+            raise GeneratedError("previous documentation row was not replaced")
     print("PASSED: generated catalog and documentation match validated submission")
 
 
