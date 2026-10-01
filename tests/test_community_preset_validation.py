@@ -108,10 +108,12 @@ def write_generated(issue, paths, *, created_at=None):
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": entry["updated_at"], "presets": {"sample": entry},
     }), encoding="utf-8")
+    preset_name = issue["preset_name"].replace("|", r"\|")
+    description = issue["description"].replace("|", r"\|")
     paths["presets.md"].write_text(
         "| Preset | Purpose | Provides | Requires | URL |\n"
         "|--------|---------|----------|----------|-----|\n"
-        "| Sample Preset | Sample usage | 1 template, 1 command | "
+        f"| {preset_name} | {description} | 1 template, 1 command | "
         "aide extension, canon extension | "
         "[presets](https://github.com/example/presets) |\n",
         encoding="utf-8",
@@ -382,6 +384,33 @@ def test_invalid_unrelated_monorepo_manifest_does_not_mask_match(submission):
     assert run_verifier(paths).returncode == 0
 
 
+def test_archive_with_too_many_manifests_is_rejected_before_parsing(submission):
+    _, _, paths = submission
+    with zipfile.ZipFile(paths["archive.zip"], "w") as archive:
+        for index in range(101):
+            archive.writestr(f"release/{index}/preset.yml", "preset: [invalid\n")
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "more than 100 preset.yml files" in result.stdout
+    assert "invalid manifests" not in result.stdout
+
+
+def test_archive_with_excessive_total_manifest_size_is_rejected(submission):
+    _, manifest, paths = submission
+    padding = "#" * (1024 * 1024 - len(yaml.safe_dump(manifest)) - 2)
+    with zipfile.ZipFile(
+        paths["archive.zip"], "w", compression=zipfile.ZIP_DEFLATED
+    ) as archive:
+        for index in range(11):
+            archive.writestr(
+                f"release/{index}/preset.yml",
+                f"{yaml.safe_dump(manifest)}\n{padding}",
+            )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "10 MiB total limit" in result.stdout
+
+
 def test_missing_archive_is_blocked_not_failed(submission):
     _, _, paths = submission
     paths["archive.zip"].unlink()
@@ -455,6 +484,16 @@ def test_generated_update_rejects_stale_homepage(submission):
     result = run_verifier(paths, "generated")
     assert result.returncode == 3
     assert "homepage" in result.stdout
+
+
+def test_generated_documentation_accepts_escaped_pipe_in_preset_name(submission):
+    issue, _, paths = submission
+    issue["preset_name"] = "Data | Governance"
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    assert run_verifier(paths).returncode == 0
+    write_generated(issue, paths)
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(("damage", "message"), [

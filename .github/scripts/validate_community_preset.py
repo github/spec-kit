@@ -20,6 +20,10 @@ except ImportError:
     print("BLOCKED: PyYAML is unavailable; cannot inspect published preset.yml")
     sys.exit(2)
 
+MAX_MANIFEST_COUNT = 100
+MAX_MANIFEST_SIZE = 1024 * 1024
+MAX_TOTAL_MANIFEST_SIZE = 10 * 1024 * 1024
+
 
 class SubmissionMismatch(Exception):
     pass
@@ -102,13 +106,24 @@ def published_manifest(archive_path: Path, preset_id: str) -> tuple[dict, bool]:
         with zipfile.ZipFile(archive_path) as archive:
             matching = []
             invalid = []
-            manifest_count = 0
-            for member in archive.infolist():
-                if member.is_dir() or member.filename.rsplit("/", 1)[-1] != "preset.yml":
-                    continue
-                manifest_count += 1
+            manifests = [
+                member for member in archive.infolist()
+                if not member.is_dir()
+                and member.filename.rsplit("/", 1)[-1] == "preset.yml"
+            ]
+            if len(manifests) > MAX_MANIFEST_COUNT:
+                raise SubmissionMismatch(
+                    f"archive contains more than {MAX_MANIFEST_COUNT} preset.yml files"
+                )
+            total_size = sum(member.file_size for member in manifests)
+            if total_size > MAX_TOTAL_MANIFEST_SIZE:
+                raise SubmissionMismatch(
+                    "archive preset.yml files exceed the "
+                    f"{MAX_TOTAL_MANIFEST_SIZE // (1024 * 1024)} MiB total limit"
+                )
+            for member in manifests:
                 try:
-                    if member.file_size > 1024 * 1024:
+                    if member.file_size > MAX_MANIFEST_SIZE:
                         raise ValueError("preset.yml exceeds 1 MiB")
                     with archive.open(member) as stream:
                         data = yaml.safe_load(stream.read().decode("utf-8"))
@@ -135,7 +150,7 @@ def published_manifest(archive_path: Path, preset_id: str) -> tuple[dict, bool]:
         raise SubmissionMismatch(
             f"expected one published preset.yml for {preset_id!r}, found {len(matching)}"
         )
-    return matching[0][1], manifest_count == 1
+    return matching[0][1], len(manifests) == 1
 
 
 def required_extensions(manifest: dict) -> list[str]:
@@ -338,6 +353,30 @@ def documentation_row(entry: dict) -> str:
     )
 
 
+def markdown_table_cells(row: str) -> list[str]:
+    cells = []
+    cell = []
+    escaped = False
+    for character in row:
+        if escaped:
+            if character == "|":
+                cell.append(character)
+            else:
+                cell.extend(("\\", character))
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == "|":
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(character)
+    if escaped:
+        cell.append("\\")
+    cells.append("".join(cell).strip())
+    return cells
+
+
 def generated(args: argparse.Namespace) -> None:
     snapshot = read_json(args.snapshot, "verifier snapshot", Blocked)
     expected = snapshot.get("expected")
@@ -379,7 +418,7 @@ def generated(args: argparse.Namespace) -> None:
         if not line.startswith("|"):
             break
         rows.append(line.strip())
-    names = [row.split("|", 2)[1].strip() for row in rows]
+    names = [markdown_table_cells(row)[1] for row in rows]
     if names != sorted(names, key=str.casefold):
         raise GeneratedError("documentation preset names are not in alphabetical order")
     expected_row = documentation_row(expected)
