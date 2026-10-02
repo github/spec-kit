@@ -110,11 +110,20 @@ To inspect local CLI capabilities without checking the network:
 
 ```bash
 specify version --features
-specify version --features --json
 ```
 
-The JSON form is intended for scripts and coding agents that need to choose a
-workflow based on the installed CLI's supported features.
+To print complete version, runtime, system, and feature information as JSON,
+use:
+
+```bash
+specify version --json
+```
+
+Combining `--features` and `--json` emits the same complete JSON output;
+`--features` does not filter the result in JSON mode. If OpenSSL information
+is unavailable, `runtime.openssl` is `null`.
+Successful JSON output is written only to stdout. Failures leave stdout empty
+and write one sanitized JSON error object to stderr.
 
 A quick version check is also available via:
 
