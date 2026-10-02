@@ -20,6 +20,11 @@ if ($Help) {
     exit 0
 }
 
+if ($RemainingArgs.Count -gt 0) {
+    [Console]::Error.WriteLine("ERROR: Unknown option '$($RemainingArgs[0])'")
+    exit 1
+}
+
 # Load common functions
 . "$PSScriptRoot/common.ps1"
 
@@ -41,10 +46,8 @@ if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
         Write-Output "Plan already exists at $($paths.IMPL_PLAN), skipping template copy"
     }
 } else {
-    $template = Resolve-Template -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
-    if ($template -and (Test-Path $template)) {
-        # Read the template content and write it to the implementation plan file with UTF-8 encoding without BOM
-        $content = [System.IO.File]::ReadAllText($template)
+    $content = Resolve-TemplateContent -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
+    if ($null -ne $content) {
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
@@ -73,13 +76,13 @@ if ($Json) {
     $result = [PSCustomObject]@{
         FEATURE_SPEC = $paths.FEATURE_SPEC
         IMPL_PLAN = $paths.IMPL_PLAN
-        SPECS_DIR = $paths.FEATURE_DIR
+        FEATURE_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
     }
     $result | ConvertTo-Json -Compress
 } else {
     Write-Output "FEATURE_SPEC: $($paths.FEATURE_SPEC)"
     Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
-    Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
+    Write-Output "FEATURE_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
 }

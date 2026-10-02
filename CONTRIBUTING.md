@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](README.md#-supported-ai-coding-agent-integrations)
+1. Have an [AI coding agent available](https://github.github.io/spec-kit/reference/integrations.html)
 
 <details>
 <summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
@@ -38,7 +38,7 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync --extra test`
 1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b <type>/<number>-<short-slug>` (see [Branch naming](#branch-naming) below)
+1. Create a new branch (see [Branch naming](#branch-naming) below)
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
@@ -55,9 +55,91 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents must follow the [agent-authored PR rules](#agent-authored-git-and-review-activity) before opening another pull request.
+
+### Evidence gate
+
+A contribution is evaluated on the evidence it carries, not on how plausible its reasoning sounds. The same bar applies to everyone — human and AI-assisted contributions are judged identically.
+
+A valid, in-scope change that arrives without evidence is not rejected outright. It may be labeled [`triage-can-wait`](#triage-and-author-labels) and held behind proven work until evidence is added, at which point it can be reprioritized.
+
+What counts as evidence:
+
+- **A reproduction or a linked real-world report** — a failing case, a stack trace, or a link to an issue where the problem actually occurred. "This could theoretically fail" reasoning on its own does not clear the gate.
+- **A regression test that fails on `main` and passes with your change** — this proves both that the problem is real and that your change fixes it.
+- **Scope discipline** — one concern per pull request. Split unrelated changes into separate PRs (see the [focused-change guidance](#submitting-a-pull-request) above); sprawling batch diffs are hard to review and slow to land.
+- **Disclosed AI assistance** — if any AI tooling was involved, disclose it and its extent per [AI contributions in Spec Kit](#ai-contributions-in-spec-kit).
+
+Speculative hardening is welcome, but it sits behind proven, evidence-backed work. If you can attach a reproduction and a failing test, your change moves to the front; if you can't yet, say so, and it will be queued rather than closed.
+
+### Review rubric
+
+Triaged items are weighed across seven dimensions, each scored `0`–`2` (`0` absent, `1` partial, `2` clearly demonstrated), for a maximum of 14. The score guides **prioritization** — it is not a hard pass/fail gate. The one firm rule is the [evidence gate](#evidence-gate) above: theoretical-only changes with no evidence are deprioritized.
+
+| Dimension | What it measures |
+|---|---|
+| D1 — Real-world evidence | A reproduction or linked report, versus theory alone |
+| D2 — Reachability / severity | Whether the issue can actually be hit, and how bad it is |
+| D3 — Scope discipline | One focused concern per PR, no unrelated changes |
+| D4 — Test evidence | A regression test that fails on `main` and passes with the change |
+| D5 — Disclosure / understanding | AI use disclosed, and the author understands the change |
+| D6 — Cost vs. benefit | Value delivered against added complexity and maintenance cost |
+| D7 — Roadmap alignment | Fit with Spec Kit's goals and direction |
+
+### Triage and author labels
+
+Every triaged item receives one **verdict** label recording where it stands. **Author** labels signal the specific action needed to move an item forward.
+
+Verdict (one per item):
+
+| Label | Meaning |
+|---|---|
+| `triage-must-have` | Verdict: high-value, important work for Spec Kit — do first |
+| `triage-nice-to-have` | Verdict: evidence-backed fix or greenlit feature — land after review |
+| `triage-can-wait` | Verdict: valid and in-scope but deprioritized; held behind the evidence gate |
+| `triage-out-of-scope` | Verdict: won't land in core — invalid, duplicate, off-mission, or redirected to an extension |
+
+Author actions:
+
+| Label | Meaning |
+|---|---|
+| `author-needs-proof` | The problem isn't demonstrated yet — supply a reproduction or a test that fails on `main` and passes with the change |
+| `author-needs-tests` | Real change but missing a regression test — add one that fails before / passes after |
+| `author-needs-rescope` | Sprawling or batched diff — split into one focused, single-concern PR |
+| `author-needs-disclosure` | AI assistance not disclosed — disclose AI use per CONTRIBUTING |
+| `author-needs-info` | Missing detail needed to assess — supply requested info |
+| `author-needs-rebase` | Branch conflicts with `main` — rebase and resolve before it can be merged |
+| `author-over-cap` | Over the 3-open-PR cap or repetitive batch submissions — please consolidate |
+| `author-awaiting` | Waiting on author response (handed off to the existing stale workflow) |
+
+Some pull requests are closed as `triage-out-of-scope` rather than merged — most commonly
+when the same change is already in `main`, when a request is better served as a community
+extension, when an existing feature already covers it, or when a catalog change came in as
+a direct edit instead of a submission issue. A close always comes with a comment explaining
+why and, where relevant, where to go instead.
+
+For further reading on the thinking behind this gate, see [one maintainer's perspective on AI-sourced contributions](https://blog.manorrock.com/blog/2026/09/08/spec_kit_ai_source.html). That piece is a personal viewpoint, not project policy — the policy is what's documented here.
+
+### Community catalog submissions
+
+To add or update a community extension, preset, or bundle in the catalog, **open an
+`[Extension]` / `[Preset]` / `[Bundle]` submission issue** — do not edit
+`extensions/catalog.community.json` (or the preset/bundle catalogs) directly in a pull
+request. The submission issue triggers an automated workflow that validates the release,
+verifies the pinned `download_url` and digests, and generates the catalog PR for you.
+A hand-edited catalog PR bypasses that validation and will be closed with a pointer back
+to the issue flow.
+
+This applies to **new entries, version updates, and repairs alike** — a version bump or a
+fix to a broken entry is still an update and needs the same validation. Always pin
+`download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
+`.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
+
 ### Branch naming
 
-We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
+When an issue exists, name the branch `<type>/<issue-number>-<short-slug>`.
+For PR-only changes without an issue, use `<type>/<short-slug>` instead.
+Choose the prefix from:
 
 | Prefix | When to use | Example |
 |---|---|---|
@@ -67,9 +149,32 @@ We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>`
 | `community/` | Community catalog additions | `community/2492-add-mde-extension` |
 | `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
 
-Including the issue or PR number makes branches traceable — especially useful since the project uses squash merges and `git branch --merged` won't detect merged branches. If you start with a PR (no issue), use the PR number once it's assigned.
+Put an existing issue number immediately after the prefix to make the branch
+traceable; do not add a PR number later for PR-only changes. Keep the slug
+short, descriptive, and kebab-case.
 
 ## Development workflow
+
+### Does Spec Kit use Spec Kit?
+
+Yes — we dogfood Spec Kit while developing Spec Kit, especially for substantial
+features and changes to the development workflow. Contributors are asked to test
+relevant changes through the Spec-Driven Development commands. The
+[feature assessment workflow](https://github.com/github/spec-kit/blob/main/.github/workflows/feature-assess.md)
+is currently the automated dogfooding path: its setup uses the CLI from the
+current checkout to initialize Copilot and install the `assess` extension, after
+which Copilot follows the generated assessment skills against feature requests.
+The other agentic workflows currently operate independently of the Specify CLI.
+
+This does not mean every change goes through the full workflow. Small fixes can
+use the normal issue, pull request, review, and test process. Dogfooding
+scaffolding and artifacts under `.github/agents/`, `.github/prompts/`,
+`.github/copilot-instructions.md`, `.grok/`, `.specify/`, and `specs/` are
+intentionally gitignored. The automated assessment workflow is ephemeral and
+neither commits nor pushes its generated Copilot skills, so its output does not
+enter repository history.
+
+### Workflow expectations
 
 When working on spec-kit:
 
@@ -77,6 +182,22 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+### Testing deterministic behavior
+
+Behavioral changes to repository-maintained code or configuration that runs or
+controls execution without an LLM require tests for both intended behavior
+(positive cases) and relevant invalid inputs, failures, or prevented behavior
+(negative cases). This includes Python, shell, and PowerShell code in the CLI,
+core scripts, extensions, presets, and tooling; workflow step types; and
+execution wiring such as script selection, workflow shell steps, and CI `run:`
+steps. Existing tests count when they cover the changed behavior.
+
+Bug fixes also need a regression test that fails before the fix and passes
+afterward. If a baseline or an execution path cannot be tested automatically,
+explain the limitation and provide reproducible evidence for the affected
+success and failure paths. Prompt-only and other non-behavioral edits do not
+require invented tests.
 
 ### Recommended validation flow
 
@@ -177,7 +298,7 @@ Any change that affects a slash command's behavior requires manually testing tha
 
 Paste this into your PR:
 
-~~~markdown
+```markdown
 ## Manual test results
 
 **Agent**: [e.g., GitHub Copilot in VS Code]  |  **OS/Shell**: [e.g., macOS/zsh]
@@ -185,13 +306,13 @@ Paste this into your PR:
 | Command tested | Notes |
 |----------------|-------|
 | `/speckit.command` | |
-~~~
+```
 
 #### Determining which tests to run
 
 Copy this prompt into your agent. Include the agent's response (selected tests plus a brief explanation of the mapping) in your PR.
 
-~~~text
+```text
 Read CONTRIBUTING.md, then run `git diff --name-only main` to get my changed files.
 For each changed file, determine which slash commands it affects by reading
 the command templates in templates/commands/ to understand what each command
@@ -223,7 +344,7 @@ Number each test sequentially (T1, T2, ...). List prerequisite tests first.
 
 - T1: /speckit.command — (reason)
 - T2: /speckit.command — (reason)
-~~~
+```
 
 ## AI contributions in Spec Kit
 
@@ -235,32 +356,75 @@ Number each test sequentially (T1, T2, ...). List prerequisite tests first.
 We welcome and encourage the use of AI tools to help improve Spec Kit! Many valuable contributions have been enhanced with AI assistance for code generation, issue detection, and feature definition.
 
 That being said, if you are using any kind of AI assistance (e.g., agents, ChatGPT) while contributing to Spec Kit,
-**this must be disclosed in the pull request or issue**, along with the extent to which AI assistance was used (e.g., documentation comments vs. code generation).
+**this must be disclosed in the pull request or issue**. When AI assistance was used, the disclosure must name:
 
-If your PR responses or comments are being generated by an AI, disclose that as well.
+- **The agent/tool** — e.g., GitHub Copilot, Claude Code, ChatGPT.
+- **The model(s)** — e.g., Claude Opus 4.x, GPT-5.
+- **The settings/mode** — e.g., reasoning effort, and whether it ran autonomously or under human supervision.
+- **The extent** — e.g., documentation comments vs. code generation.
 
-As an exception, trivial spacing or typo fixes don't need to be disclosed, so long as the changes are limited to small parts of the code or short phrases.
+If your PR responses or comments are being generated by an AI, disclose that as well, naming the same agent, model(s), settings/mode, and extent.
+
+As an exception, trivial spacing or typo fixes don't need to be disclosed, so long as the changes are limited to small parts of the code or short phrases. The catalog-submission issue forms (extension, preset, and bundle submissions) feed content-neutral validation automation rather than code review, so they carry no disclosure field and are exempt from this requirement. Spec Kit's own bundled agentic workflows (the automated bug-fix and community-catalog prompts under `.github/workflows/`) are likewise exempt: they run as a fixed, known agent and open draft PRs for maintainer review, so their agent identity is inherent to the workflow rather than self-declared per contribution.
+The trivial-fix exception does not waive the disclosures below for agents acting
+on behalf of a contributor; the bundled workflows retain their exception.
 
 An example disclosure:
 
-> This PR was written primarily by GitHub Copilot.
+> Implemented with GitHub Copilot using Claude Opus 4.x in agent/autonomous mode; code generation.
 
 Or a more detailed disclosure:
 
-> I consulted ChatGPT to understand the codebase but the solution
+> I consulted ChatGPT (GPT-5, default settings, human-supervised) to understand the codebase, but the solution
 > was fully authored manually by myself.
 
-Failure to disclose this is first and foremost rude to the human operators on the other end of the pull request, but it also makes it difficult to
-determine how much scrutiny to apply to the contribution.
+Failure to disclose this is first and foremost rude to the human operators on the other end of the pull request.
+
+To be clear, this disclosure does not change the level of scrutiny a contribution receives — the same evidence bar applies to
+everyone, human and AI-assisted alike. It simply gives maintainers visibility into which models and settings are being used and to
+what extent, which in turn helps us judge whether our [`AGENTS.md`](./AGENTS.md) guidance needs refinement over time.
 
 In a perfect world, AI assistance would produce equal or higher quality work than any human. That isn't the world we live in today, and in most cases
 where human supervision or expertise is not in the loop, it's generating code that cannot be reasonably maintained or evolved.
+
+### Agent-authored Git and review activity
+
+For an agent acting on behalf of a contributor, disclosure is continuous: the
+PR body, each agent-authored commit, and each AI-generated PR comment or reply
+must independently identify the agent's involvement. A PR-body disclosure does
+not cover later commits or review rounds.
+
+- **Before opening a PR:** Check whether the filing account already has three
+  open PRs in this repository. If so, explain that another submission may
+  receive lower review priority and obtain the filer's explicit permission.
+  Without it, including during autonomous operation, leave the work on a branch
+  and report that confirmation is required. Repository-owned `gh-aw` maintenance
+  workflows are exempt from this count check.
+- **For every agent-authored commit:** Include an `Assisted-by:` trailer naming
+  the actual agent and model and whether it acted `autonomous` or `supervised`,
+  for example, `Assisted-by: GitHub Copilot (model: Claude Opus 4.8, autonomous)`.
+  Use `model: unknown` only if the model genuinely cannot be determined. Use
+  `supervised` only if a human authored or line-by-line reviewed the change
+  before commit. Do not hide agent authorship behind the operator's git
+  identity or remove tool-generated `Co-authored-by:` trailers.
+- **For each AI-generated PR comment:** Identify the contributor on whose
+  behalf it is posted, the agent, model, settings/mode, and extent of AI
+  involvement. Restate this in every review-round summary, not just the PR
+  body. Post one top-level summary per round with the changes and commit SHA;
+  reply inline only for disagreement, deferral, or a non-obvious fix, and keep
+  those replies brief. Do not resolve conversations on a reviewer's behalf.
+  Avoid emoji, celebratory framing, checklist mirroring, and restating the
+  reviewer's comments. Re-request review once, after all feedback is addressed.
+
+Fast responses do not replace disclosure: do not post an unexplained "Done" or
+push an undisclosed fix moments after review. Do not claim personal human review
+or testing for an automated change; describe the automation truthfully.
 
 ### What we're looking for
 
 When submitting AI-assisted contributions, please ensure they include:
 
-- **Clear disclosure of AI use** - You are transparent about AI use and degree to which you're using it for the contribution
+- **Clear disclosure of AI use** - You are transparent about AI use, naming the agent/tool, model(s), settings/mode, and the degree to which you're using it for the contribution
 - **Human understanding and testing** - You've personally tested the changes and understand what they do
 - **Clear rationale** - You can explain why the change is needed and how it fits within Spec Kit's goals
 - **Concrete evidence** - Include test cases, scenarios, or examples that demonstrate the improvement

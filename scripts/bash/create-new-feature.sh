@@ -145,9 +145,18 @@ spec_prefix_exists() {
 }
 
 # Function to clean and format a branch name
+#
+# Three details keep this byte-identical to the Python and PowerShell twins:
+#   * LC_ALL=C -- in a UTF-8 locale glibc resolves the a-z *range* through
+#     collation, so [^a-z0-9] keeps accented lowercase letters that
+#     re.sub(r"[^a-z0-9]", ...) and .NET's -replace both strip.
+#   * `--*` instead of the GNU-only `\+`, which POSIX/BSD sed reads as a literal
+#     '+', leaving repeated separators uncollapsed on macOS.
+#   * printf instead of echo, so a name of "-n"/"-e"/"-E" is text, not options.
 clean_branch_name() {
     local name="$1"
-    echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
+    local -x LC_ALL=C
+    printf '%s\n' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
 # Fit a feature prefix and suffix within GitHub's branch-name limit.
@@ -200,7 +209,11 @@ generate_branch_name() {
     # Common stop words to filter out
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
 
-    # Convert to lowercase and split into words
+    # Convert to lowercase and split into words. LC_ALL=C for the same
+    # collation reason documented on clean_branch_name, and so the `grep -qw`
+    # acronym probe below uses ASCII word boundaries like the Python twin's
+    # (?<![0-9A-Za-z_]) lookarounds.
+    local -x LC_ALL=C
     local clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
@@ -250,6 +263,10 @@ if [ -n "$SHORT_NAME" ]; then
 else
     # Generate from description with smart filtering
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
+fi
+
+if [ -z "$BRANCH_SUFFIX" ]; then
+    echo "[specify] Warning: Feature name is empty after removing unsupported characters. Use --short-name with ASCII letters or digits (for example, user-auth)." >&2
 fi
 
 # Warn if --number and --timestamp are both specified
@@ -339,20 +356,38 @@ if [ "$DRY_RUN" != true ]; then
         exit 1
     fi
 
+    NEEDS_SPEC=false
+    SPEC_TEMPLATE_FOUND=false
+    SPEC_TEMPLATE_CONTENT=""
+    if [ ! -f "$SPEC_FILE" ]; then
+        NEEDS_SPEC=true
+        if SPEC_TEMPLATE_CONTENT=$(resolve_template_content "spec-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+            SPEC_TEMPLATE_CONTENT="${SPEC_TEMPLATE_CONTENT%x}"
+            SPEC_TEMPLATE_FOUND=true
+        else
+            resolve_status=$?
+            if [ "$resolve_status" -ne 1 ]; then
+                exit "$resolve_status"
+            fi
+        fi
+    fi
+
     mkdir -p "$FEATURE_DIR"
 
-    if [ ! -f "$SPEC_FILE" ]; then
-        TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT") || true
-        if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then
-            cp "$TEMPLATE" "$SPEC_FILE"
+    if [ "$NEEDS_SPEC" = true ]; then
+        if [ "$SPEC_TEMPLATE_FOUND" = true ]; then
+            printf '%s' "$SPEC_TEMPLATE_CONTENT" > "$SPEC_FILE"
         else
             echo "Warning: Spec template not found; created empty spec file" >&2
             touch "$SPEC_FILE"
         fi
     fi
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+    # Persist to .specify/feature.json so downstream commands can find the
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if [[ "${SPECIFY_FEATURE_NO_PERSIST:-}" != "1" && "${SPECIFY_FEATURE_NO_PERSIST:-}" != "true" ]]; then
+        _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+    fi
 
     # Inform the user how to set feature state in their own shell
     printf '# To persist: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")" >&2

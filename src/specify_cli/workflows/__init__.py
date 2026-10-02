@@ -44,17 +44,18 @@ def get_step_type(type_key: str) -> StepBase | None:
 
 def _register_builtin_steps() -> None:
     """Register all built-in step types."""
-    from .steps.command import CommandStep
-    from .steps.do_while import DoWhileStep
-    from .steps.fan_in import FanInStep
-    from .steps.fan_out import FanOutStep
-    from .steps.gate import GateStep
-    from .steps.if_then import IfThenStep
-    from .steps.init import InitStep
-    from .steps.prompt import PromptStep
-    from .steps.shell import ShellStep
-    from .steps.switch import SwitchStep
-    from .steps.while_loop import WhileStep
+    from .step.command import CommandStep
+    from .step.do_while import DoWhileStep
+    from .step.fan_in import FanInStep
+    from .step.fan_out import FanOutStep
+    from .step.gate import GateStep
+    from .step.if_then import IfThenStep
+    from .step.init import InitStep
+    from .step.prompt import PromptStep
+    from .step.shell import ShellStep
+    from .step.slot import SlotStep
+    from .step.switch import SwitchStep
+    from .step.while_loop import WhileStep
 
     _register_step(CommandStep())
     _register_step(DoWhileStep())
@@ -65,11 +66,20 @@ def _register_builtin_steps() -> None:
     _register_step(InitStep())
     _register_step(PromptStep())
     _register_step(ShellStep())
+    _register_step(SlotStep())
     _register_step(SwitchStep())
     _register_step(WhileStep())
 
 
 _register_builtin_steps()
+
+# The step types Spec Kit ships, snapshotted before any community step can be
+# loaded. ``load_custom_steps`` adds project-installed ids to the process-global
+# ``STEP_REGISTRY`` and never removes them, so ``STEP_REGISTRY`` cannot answer
+# "is this bundled with Spec Kit?" in a long-lived process: a step loaded for one
+# project would look built-in for the next. Callers that need the immutable set
+# (e.g. the bundler's reference checker) must use this instead.
+BUILTIN_STEP_TYPES: frozenset[str] = frozenset(STEP_REGISTRY)
 
 
 def load_custom_steps(project_root: Path) -> list[str]:

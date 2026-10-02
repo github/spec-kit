@@ -1,5 +1,7 @@
 import stat
 
+import pytest
+
 from specify_cli import merge_json_files
 from specify_cli import handle_vscode_settings
 
@@ -188,3 +190,51 @@ def test_handle_vscode_settings_preserves_mode_on_atomic_write(tmp_path):
 
     after_mode = stat.S_IMODE(dest_file.stat().st_mode)
     assert after_mode == before_mode
+
+
+def test_handle_vscode_settings_propagates_programming_errors(tmp_path):
+    """Unexpected programming errors (TypeError) must propagate, not be silently swallowed."""
+    vscode_dir = tmp_path / ".vscode"
+    vscode_dir.mkdir()
+    dest_file = vscode_dir / "settings.json"
+    dest_file.write_text('{"a": 1}\n', encoding="utf-8")
+    template_file = tmp_path / "template_settings.json"
+    template_file.write_text('{"b": 2}\n', encoding="utf-8")
+
+    import specify_cli._utils as utils_mod
+    original_merge = utils_mod.merge_json_files
+    utils_mod.merge_json_files = lambda *a, **kw: (_ for _ in ()).throw(TypeError("boom"))
+    try:
+        with pytest.raises(TypeError):
+            handle_vscode_settings(
+                template_file, dest_file, "settings.json",
+                verbose=False, tracker=None,
+            )
+    finally:
+        utils_mod.merge_json_files = original_merge
+
+
+def test_merge_json_files_propagates_programming_errors(tmp_path, monkeypatch):
+    """Unexpected programming errors reading the existing file must propagate.
+
+    ``merge_json_files``'s own read of the existing JSON file caught bare
+    ``Exception`` around ``json5.load``, so a real bug there (e.g. a
+    ``TypeError``) was silently treated the same as a normal parse failure --
+    ``None`` returned, existing settings preserved, nothing logged unless
+    ``verbose``. Only ``OSError`` (inaccessible file) and ``ValueError``
+    (malformed JSON5 -- json5's decode error is a ``ValueError`` subclass)
+    are expected outcomes here; anything else must propagate, matching the
+    narrowing already applied to the caller, ``handle_vscode_settings``.
+    """
+    existing_file = tmp_path / "settings.json"
+    existing_file.write_text('{"a": 1}\n', encoding="utf-8")
+
+    import specify_cli._utils as utils_mod
+
+    def _boom(*_a, **_kw):
+        raise TypeError("boom")
+
+    monkeypatch.setattr(utils_mod.json5, "load", _boom)
+
+    with pytest.raises(TypeError):
+        merge_json_files(existing_file, {"b": 2})

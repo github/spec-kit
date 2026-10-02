@@ -6,14 +6,31 @@ Vibe uses ``.vibe/skills/speckit-<name>/SKILL.md`` layout (enforced since v2.0.0
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
+from ..._utils import dump_frontmatter
+
+# Per-command frontmatter overrides for skills that should run in a forked
+# subagent context.
+#
+# This is intentionally empty. ``analyze`` was previously forked (added in
+# #2511) on the assumption that its heavy reads collapse to a short summary,
+# but in practice ``/speckit-analyze`` returns a 300-500 line report that is
+# injected back into the main conversation. In long sessions each subsequent
+# fork inherits that growing context, compounding overhead until the chat
+# freezes (#3185). Until a command genuinely returns a compact result, no
+# command opts into ``context: fork``. The injection mechanism below stays in
+# place so a future command can be added here when that holds true.
+FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
 
 
 class VibeIntegration(SkillsIntegration):
+    """Integration for Mistral Vibe skills."""
+
     key = "vibe"
     config = {
         "name": "Mistral Vibe",
@@ -28,24 +45,90 @@ class VibeIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
+    multi_install_safe = True
+
+    # Vibe's hooks schema supports exactly three hook types (HookConfig
+    # rejects anything else): pre_tool, post_tool, post_agent. Unsupported
+    # canonical events (session_start/session_end/user_prompt_submit) are
+    # intentionally absent so install_integration_events skips them with a
+    # warning instead of writing entries Vibe would refuse to load.
+    CANONICAL_TO_NATIVE = {
+        "pre_tool_use": "pre_tool",
+        "post_tool_use": "post_tool",
+        "stop": "post_agent",
+    }
+    events_config_file = ".vibe/hooks.toml"
+    events_format = "toml-vibe"
+    # Vibe parses any non-empty hook stdout as a JSON HookStructuredResponse;
+    # plain text is reported as a hook failure and its output dropped. The
+    # dispatcher therefore wraps handler stdout as {"decision": "allow",
+    # "hook_specific_output": {"additional_context": ...}} for every event:
+    # post_tool injects additional_context, pre_tool/post_agent ignore it but
+    # still parse cleanly.
+    events_context_envelope = {"*": "hook_specific_output"}
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=True,
                 help="Install as agent skills",
             ),
-        ]
+        )
+        return opts
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``vibe`` execution.
+
+        ``SkillsIntegration``'s default appends ``--model`` and
+        ``--output-format``, neither of which exists in the Vibe CLI, so a
+        dispatched step exits 2 at argument parsing whenever either flag ends
+        up appended (a configured ``model``, or ``output_json=True``). Vibe's
+        structured output is ``--output json``. ``model`` is deliberately
+        dropped: Vibe has no per-invocation model flag and selects its model
+        out of band via ``active_model`` in its config (or ``VIBE_ACTIVE_MODEL``).
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
+        if output_json:
+            args.extend(["--output", "json"])
+        return args
+
+    def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
+        """Render a processed command template as a Vibe skill."""
+        skill_name = f"speckit-{template_name.replace('.', '-')}"
+        description = frontmatter.get(
+            "description",
+            f"Spec-kit workflow command: {template_name}",
+        )
+        skill_frontmatter = self._build_skill_fm(
+            skill_name, description, f"templates/commands/{template_name}.md"
+        )
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
+        return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
+
+    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli.agents import CommandRegistrar
+        return CommandRegistrar.build_skill_frontmatter(
+            self.key, name, description, source
+        )
 
     @staticmethod
     def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
-        """
-        Insert ``key: value`` before the closing ``---`` if not already present.
-        Value: true by default
-        """
+        """Insert ``key: value`` before the closing ``---`` if not already present."""
         lines = content.splitlines(keepends=True)
 
         # Pre-scan: bail out if already present in frontmatter
@@ -60,7 +143,13 @@ class VibeIntegration(SkillsIntegration):
             if dash_count == 1 and stripped.startswith(f"{key}:"):
                 return content
 
-        # Inject before the closing --- of frontmatter
+        # Inject before the closing --- of frontmatter. Preserve the
+        # existing EOL style, but default to "\n" (rather than "") when the
+        # closing delimiter is the last line of the file with no trailing
+        # newline -- otherwise the injected text glues onto the "---"
+        # (e.g. "user-invocable: true---"), destroying the delimiter so a
+        # later call's pre-scan/injection never finds a second "---" and
+        # silently drops that key entirely.
         out: list[str] = []
         dash_count = 0
         injected = False
@@ -74,19 +163,51 @@ class VibeIntegration(SkillsIntegration):
                     elif line.endswith("\n"):
                         eol = "\n"
                     else:
-                        eol = ""
+                        eol = "\n"
                     out.append(f"{key}: {value}{eol}")
                     injected = True
             out.append(line)
         return "".join(out)
 
-    def post_process_skill_content(self, content: str) -> str:
+    @staticmethod
+    def _skill_stem_from_content(content: str) -> str | None:
+        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
+
+        Reads the ``name:`` field of the first frontmatter block and strips
+        the ``speckit-`` prefix. Returns ``None`` when no name is present.
         """
-        Inject shared hook guidance and Vibe-specific frontmatter flags:
-        - user-invocable: allows the skill to be invoked by the user (not just other agents)
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                if name.startswith("speckit-"):
+                    return name[len("speckit-"):]
+                return name or None
+        return None
+
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject Vibe-specific frontmatter flags.
+
+        Applied by every skill-generation path (setup, presets, extensions),
+        so Vibe-specific frontmatter stays consistent however the SKILL.md
+        was produced.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
+        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+
+        stem = self._skill_stem_from_content(updated)
+        if stem:
+            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
+            if fork_config:
+                for key, value in fork_config.items():
+                    updated = self._inject_frontmatter_flag(updated, key, value)
         return updated
 
     def setup(

@@ -1,5 +1,9 @@
 # Evolving Specs in Existing Projects
 
+If the repository has not been initialized with Spec Kit yet, start with
+[Adopting Spec Kit in an Existing Project](existing-projects.md). This page
+covers how to maintain artifacts after adoption.
+
 Existing projects need two separate maintenance loops:
 
 - **Spec Kit project-file updates** refresh managed commands, scripts,

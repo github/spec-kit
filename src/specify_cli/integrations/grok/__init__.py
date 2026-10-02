@@ -6,6 +6,10 @@ Grok Build discovers project skills from ``.grok/skills/speckit-<name>/SKILL.md`
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import SkillsIntegration
 
@@ -35,6 +39,9 @@ class GrokIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``grok`` execution.
 
@@ -44,6 +51,7 @@ class GrokIntegration(SkillsIntegration):
           dispatch and ``dispatch_command()`` are not blocked at permission
           gates (same role as Cursor's ``--force`` / Copilot's ``--yolo``).
         """
+        self.validate_runtime_config(integration_args, integration_options)
         if not self.config or not self.config.get("requires_cli"):
             return None
         args = [

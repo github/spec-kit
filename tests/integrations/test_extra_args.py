@@ -426,7 +426,7 @@ class _RunCapture:
         return _Result()
 
 
-def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
+def test_copilot_commands_dispatch_includes_extra_args(monkeypatch):
     """Locks the bypass fix: `CopilotIntegration.dispatch_command`
     must honour `SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS`, not just `build_exec_args`.
     """
@@ -441,9 +441,9 @@ def test_copilot_dispatch_command_includes_extra_args(monkeypatch):
         "SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS", "--allow-tool 'shell(echo)'"
     )
 
-    CopilotIntegration().dispatch_command(
-        "speckit.plan", args="body", stream=False
-    )
+    integration = CopilotIntegration()
+    integration._skills_mode = False
+    integration.dispatch_command("speckit.plan", args="body", stream=False)
 
     assert capture.captured_args is not None
     # Hook inserted between `-p prompt` and the canonical Copilot flags.
@@ -565,6 +565,49 @@ def test_executable_env_var_devin_integration(monkeypatch):
     assert args[0] == "/opt/devin"
 
 
+def test_goose_integration_honours_extra_args(monkeypatch):
+    """Goose gained ``build_exec_args()`` (the Goose item in #2416), so it must
+    honour the shared extra-args hook like every other dispatching integration."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("hi", output_json=False)
+    assert args == ["goose", "run", "--debug", "-t", "hi"]
+
+
+def test_goose_extra_args_precede_canonical_flags(monkeypatch):
+    """Extra args are applied before Spec Kit's canonical flags, matching the
+    opencode / codex / cursor-agent ordering.
+
+    Ordering parity only. This deliberately does not assert that a duplicated
+    canonical flag gets overridden: ``goose run`` is clap-derive based, and its
+    ``--recipe`` / ``--model`` / ``--output-format`` are single-value args with
+    no ``args_override_self``, so duplicating one makes goose exit with "cannot
+    be used multiple times" regardless of which side wins the ordering.
+    """
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXTRA_ARGS", "--debug")
+    args = GooseIntegration().build_exec_args("/speckit.specify", model="gpt-4o")
+    assert args[:3] == ["goose", "run", "--debug"]
+    assert args.index("--debug") < args.index("--model")
+    assert args.index("--debug") < args.index("--output-format")
+    assert args.index("--debug") < args.index("--recipe")
+    # Spec Kit itself must never emit a duplicate single-value flag.
+    for flag in ("--recipe", "--model", "--output-format"):
+        assert args.count(flag) == 1
+
+
+def test_executable_env_var_goose_integration(monkeypatch):
+    """GooseIntegration honours the executable env var."""
+    from specify_cli.integrations.goose import GooseIntegration
+
+    monkeypatch.setenv("SPECKIT_INTEGRATION_GOOSE_EXECUTABLE", "/opt/goose")
+    args = GooseIntegration().build_exec_args("hi")
+    assert args[0] == "/opt/goose"
+    assert args[1] == "run"
+
+
 def test_executable_env_var_opencode_integration(monkeypatch):
     """OpencodeIntegration honours the executable env var."""
     from specify_cli.integrations.opencode import OpencodeIntegration
@@ -594,6 +637,59 @@ def test_executable_env_var_copilot_unset_uses_platform_default(monkeypatch):
     monkeypatch.setenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", "0")
     args = CopilotIntegration().build_exec_args("p")
     assert args[0] == _copilot_executable()
+
+
+def test_copilot_executable_windows_prefers_exe_on_path(monkeypatch):
+    """On Windows, `_copilot_executable()` must detect a `copilot.exe`
+    install rather than assuming the npm `copilot.cmd` shim (#4755)."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    paths = {"copilot.exe": r"C:\tools\copilot.exe", "copilot.cmd": r"C:\tools\copilot.cmd"}
+    monkeypatch.setattr(shutil, "which", lambda name: paths.get(name))
+    assert _copilot_executable() == "copilot.exe"
+
+
+def test_copilot_executable_windows_falls_back_to_cmd_shim(monkeypatch):
+    """A Windows install exposing only `copilot.cmd` (npm shim) still works."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        shutil, "which", lambda name: r"C:\tools\copilot.cmd" if name == "copilot.cmd" else None
+    )
+    assert _copilot_executable() == "copilot.cmd"
+
+
+def test_copilot_executable_windows_nothing_on_path_keeps_historical_default(monkeypatch):
+    """Nothing found on PATH keeps the historical `copilot.cmd` default so
+    the resulting error still names the previously expected executable."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert _copilot_executable() == "copilot.cmd"
+
+
+def test_copilot_executable_windows_ignores_unlaunchable_bare_name(monkeypatch):
+    """A bare `copilot` match (e.g. a `.bat`/`.com` resolved via `PATHEXT`)
+    must not be returned: `CreateProcess` doesn't consult `PATHEXT`, so a
+    bare name detected this way can't actually be launched."""
+    import shutil
+
+    from specify_cli.integrations.copilot import _copilot_executable
+
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr(
+        shutil, "which", lambda name: r"C:\tools\copilot.bat" if name == "copilot" else None
+    )
+    assert _copilot_executable() == "copilot.cmd"
 
 
 def test_executable_env_var_copilot_dispatch_command(monkeypatch):

@@ -26,6 +26,12 @@ Presets customize how Spec Kit works — overriding command files, template file
 
 [Presets reference →](presets.md)
 
+## Artifacts
+
+Artifacts are the commands, templates, and scripts a project exposes, whichever layer contributes them. The `specify artifact` command group is the read-only introspection surface over that inventory — a flat list of everything visible, plus the full composition stack behind any single entry, including which layer wins and which layers are hidden.
+
+[Artifacts reference →](artifacts.md)
+
 ## Workflows
 
 Workflows automate multi-step Spec-Driven Development processes into repeatable sequences. They chain commands, prompts, shell steps, and human checkpoints together, with support for conditional logic, loops, fan-out/fan-in, and the ability to pause and resume from the exact point of interruption.
@@ -40,7 +46,12 @@ Bundles compose existing extensions, presets, workflows, and steps into a single
 
 ## Agentic Commands
 
-The sections above cover primitives managed by the `specify` CLI. The following are the `/speckit.*` slash commands your coding agent runs step by step inside the editor — the agentic processes built on top of that foundation.
+The sections above cover primitives managed by the `specify` CLI. The following
+are independent processes your coding agent runs, not terminal commands. The
+references use `/speckit.*` notation; see
+[Command invocation](integrations.md#command-invocation) for your agent's syntax.
+For guided examples, start with [SDD](../quickstart.md),
+[bug fixing](../guides/bugfix.md), or [idea assessment](../guides/assessment.md).
 
 ### Agentic SDD
 
@@ -53,3 +64,12 @@ The `/speckit.*` slash commands that drive the core Spec-Driven Development proc
 The bundled **bug** extension adds a three-step bug triage process — assess, fix, and validate — with each bug tracked in its own directory under `.specify/bugs/`. Install it with `specify extension add bug`.
 
 [Agentic Bug Fix reference →](agentic-bugfix.md)
+
+### Agentic Idea Assessment
+
+The bundled, opt-in **assess** extension evaluates an idea through intake,
+research, definition, shaping, and a go / needs-clarification / kill decision.
+It works without source code and does not require or automatically start SDD.
+Install it with `specify extension add assess`.
+
+[Agentic Idea Assessment reference →](agentic-assessment.md)
