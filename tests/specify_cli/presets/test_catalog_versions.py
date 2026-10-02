@@ -673,12 +673,18 @@ def test_cli_rejects_missing_release_and_discovery_without_download(project_dir)
     "args",
     [
         ["preset", "add", "sample", "--from", OLD_URL, "--version", "1.0"],
+        ["preset", "add", "sample", "--from", "", "--version", "1.0"],
         ["preset", "add", "sample", "--dev", ".", "--version", "1.0"],
+        ["preset", "add", "sample", "--dev", "", "--version", "1.0"],
         ["preset", "add", "sample", "--version", ""],
     ],
 )
 def test_cli_rejects_version_with_non_catalog_source(project_dir, args):
-    with patch.object(Path, "cwd", return_value=project_dir):
+    with (
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch.object(PresetCatalog, "get_pack_info") as lookup,
+    ):
         result = CliRunner().invoke(app, args)
     assert result.exit_code == 1
     assert "--version requires a catalog" in result.output
+    lookup.assert_not_called()

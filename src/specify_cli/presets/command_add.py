@@ -167,7 +167,12 @@ def preset_add(
     # Direct callers of the command function receive Typer's OptionInfo default.
     if not isinstance(version, str):
         version = None
-    if version is not None and (not version.strip() or dev or from_url or not preset_id):
+    if version is not None and (
+        not version.strip()
+        or dev is not None
+        or from_url is not None
+        or not preset_id
+    ):
         console.print(
             "[red]Error:[/red] --version requires a catalog preset ID "
             "(without --dev or --from)."
