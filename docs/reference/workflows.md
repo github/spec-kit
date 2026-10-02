@@ -582,6 +582,154 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
+### Custom step packages
+
+Custom step types are installed with `specify workflow step`. A step is a
+directory package containing metadata and executable Python:
+
+```text
+my-step/
+├── step.yml        # required, at the package root
+├── __init__.py     # required, at the package root
+└── helpers.py      # optional nested modules and data files
+```
+
+`step.yml` declares the step's identity. `step.type_key` must exactly match the
+`<step_id>` passed on the command line — the ID is never inferred from package
+content:
+
+```yaml
+step:
+  type_key: my-step
+  name: My Step
+  version: 0.1.0
+  author: you
+  description: What this step does
+```
+
+`__init__.py` must define a `StepBase` subclass whose `type_key` matches:
+
+```python
+from specify_cli.workflows.base import StepBase, StepResult
+
+
+class MyStep(StepBase):
+    type_key = "my-step"
+
+    def execute(self, config, context):
+        return StepResult(output={"ok": True})
+```
+
+#### Install from a local directory
+
+```bash
+specify workflow step add my-step --dev /path/to/my-step
+```
+
+`--dev` takes a **directory** (not an archive, not a bare `step.yml`) that is a
+complete package. This needs no catalog, server, or network, which makes it the
+supported local-authoring loop:
+
+```bash
+specify workflow step add my-step --dev ./my-step
+specify workflow step list
+specify workflow step info my-step
+# edit ./my-step, then replace the installed copy:
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step remove my-step
+```
+
+#### Install from an archive URL
+
+```bash
+specify workflow step add my-step --from https://example.com/my-step.zip
+```
+
+`--from` accepts a `.zip`, `.tar.gz`, or `.tgz` archive (a bare `step.yml`
+URL is **not** a package). The archive may place `step.yml` and `__init__.py`
+at its root or under exactly one top-level directory; unrelated top-level
+siblings are rejected. Because a step package contains executable Python, a
+direct URL install shows a default-deny trust confirmation before any network
+request; declining cancels with no request and no error. HTTPS is required
+(HTTP is permitted only for loopback hosts), redirects must remain secure, and
+downloads are size-bounded.
+
+#### Install from the catalog
+
+```bash
+specify workflow step add my-step
+```
+
+Catalog installs resolve individual file URLs from the active step catalogs and
+then go through the same validation and commit path as `--dev` and `--from`.
+Discovery-only catalogs cannot be installed from.
+
+#### Replacement and force
+
+```bash
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step add my-step --from https://example.com/my-step.zip --force
+```
+
+`--force` first stages and validates the replacement before touching the
+existing installation, and can replace both a registered install and a leftover
+unregistered directory. Validation and staging failures leave the previous
+package untouched. If removing the old directory fails, the replacement is not
+published. If publishing the replacement or updating the registry fails after
+the old directory has been removed, the installation may be left incomplete:
+rerun the command with the original source and `--force` to reinstall. No
+automatic rollback is attempted.
+
+#### Package validation
+
+Every source is validated identically before anything is committed:
+
+- `step.yml` and `__init__.py` must be regular, non-symlink files at the package
+  root.
+- The package tree is copied recursively (relative imports, nested helper
+  modules, and data files are supported). A symlinked package root, any
+  descendant symlink, and any filesystem object that is not a regular file or
+  directory are rejected.
+- `.git`, `__pycache__`, and `.DS_Store` entries are skipped without being
+  inspected: they are not copied, excluded directories are not entered, and
+  they do not count toward any limit.
+- The installed-package policy permits at most **512 retained entries** (files
+  and directories combined), at most **32 levels** of directory nesting, and
+  **50 MiB** of retained content.
+- Archive URLs also pass transport/extraction safety limits before package
+  validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
+  10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
+- Installation validates and copies the package but does **not** import or
+  execute `__init__.py`. Installed custom step modules are loaded during startup
+  of `workflow add`, `workflow run`, and `workflow resume`, before any particular
+  custom step necessarily executes.
+
+> **Security note:** Loading a custom step runs its Python with **your**
+> privileges. Only install and retain step packages from sources you trust.
+
+#### Listing, running, and removing
+
+Installed custom steps appear in `specify workflow step list` and are loaded
+automatically by `workflow add`, `workflow run`, and `workflow resume`. Remove
+one with:
+
+```bash
+specify workflow step remove my-step
+```
+
+#### Registry provenance
+
+Each installed step records only the *kind* of its source — `catalog`
+(optionally with the catalog name), `local`, or `url`. Local paths and source
+URLs are never persisted. `specify workflow step info <id>` shows the source.
+
+#### Bundle-local limitation
+
+A bundle's `provides.steps` still resolves only through the active step
+catalogs. Bundle-local `steps/<id>/` payloads and relative
+`provides.steps[].source` overrides are **not** resolved in this release, so
+such steps are not installable offline. See the [Bundles reference](bundles.md).
+
 ### Per-Step Integration Configuration
 
 Command steps may pass structured runtime configuration to integrations that

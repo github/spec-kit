@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-29T00:00:00Z",
+  "updated_at": "2026-10-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -604,8 +604,9 @@
       "id": "archive",
       "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
       "author": "Stanislav Deviatov",
-      "version": "1.3.0",
-      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.3.0.zip",
+      "version": "1.4.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.4.0.zip",
+      "sha256": "c4341808d7ab659fd154ad7850a4f37a422fcefec0ee0c079e9def4e0f775200",
       "repository": "https://github.com/stn1slv/spec-kit-archive",
       "homepage": "https://github.com/stn1slv/spec-kit-archive",
       "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
@@ -630,7 +631,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-24T00:00:00Z"
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "ascii-diagram": {
       "name": "ASCII Diagram Renderer",
@@ -1485,6 +1486,55 @@
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
     },
+    "conformidad": {
+      "name": "Conformidad Software Humano",
+      "id": "conformidad",
+      "description": "Checks that the project's artifacts contain what the Software Humano manifesto requires, and that every absence is declared as an approved exception with its reason and its approver.",
+      "author": "Damián Acuña",
+      "version": "2.2.3",
+      "download_url": "https://github.com/dacunao/software-humano-speckit/releases/download/extension-conformidad-v2.2.3/Software_Humano_Conformidad_v2.2.3.zip",
+      "sha256": "9a1209e43bc3b4a6765c0150d419d91c4fbca79244c377bb34990cd90c4e7a62",
+      "repository": "https://github.com/dacunao/software-humano-speckit",
+      "homepage": "https://manifiesto.softwarehumano.com",
+      "documentation": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/README.md",
+      "changelog": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "conformance",
+        "governance",
+        "human-centered",
+        "quality",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
+    },
     "contextforge-mcp": {
       "name": "ContextForge MCP",
       "id": "contextforge-mcp",
@@ -2242,10 +2292,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit across agent hooks, git checks, and CI pipelines with one policy file and one verify entrypoint for identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.3",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.3/gates-0.3.3.zip",
+      "version": "0.3.5",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.5/gates-0.3.5.zip",
+      "sha256": "c80e935ca0da2a09a8745e35fd1daa81e52419d0d6d8ee73a818b3da6fcb6a7e",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2289,7 +2340,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
@@ -2953,6 +3004,47 @@
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
       "updated_at": "2026-07-27T00:00:00Z"
+    },
+    "logreduce": {
+      "name": "Log Intake (logreduce)",
+      "id": "logreduce",
+      "description": "Reduce large logs attached to a bug report into .specify/bugs/<slug>/evidence.md before assessment. This is a log-intake step for the bundled bug triage workflow: /speckit.bug.assess, fix and test then work from one saved, reduced log instead of each re-reading a raw log that may run to thousands or millions of lines.",
+      "author": "Alex Punnen",
+      "version": "0.3.1",
+      "download_url": "https://github.com/alexcpn/log_tfidf_reducer/releases/download/v0.3.1/logreduce-speckit.zip",
+      "sha256": "97a495b3ad823a36ad6da9d01127c8121954d464531e61eed21d2f052f04bb47",
+      "repository": "https://github.com/alexcpn/log_tfidf_reducer",
+      "homepage": "https://github.com/alexcpn/log_tfidf_reducer/tree/main/speckit",
+      "documentation": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "logreduce",
+            "version": ">=0.3.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "bug",
+        "logs",
+        "triage",
+        "debugging"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
@@ -6253,7 +6345,7 @@
       ],
       "verified": false,
       "downloads": 0,
-      "stars": 21,
+      "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
     },

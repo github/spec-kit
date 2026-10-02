@@ -817,10 +817,21 @@ def test_community_archive_permission_failures_are_not_submission_failures(kind)
         "If there are no environment blockers and every required check completed "
         "and passed:"
     )
-    assert re.search(
-        r"remove `validation-failed`.*add (?:the )?`validation-passed`",
-        passed, re.IGNORECASE | re.DOTALL,
-    )
+    if kind == "preset":
+        assert "Remove any stale `validation-passed` and `validation-failed`" in passed
+        assert "Do not add `validation-passed` yet" in passed
+        generated = source_text.split("### Verify the generated files", 1)[1].split(
+            "\n## Step 6", 1
+        )[0]
+        assert "validate_community_preset.py generated" in generated
+        assert "add the `validation-passed`" in source_text.split(
+            "\n## Step 6", 1
+        )[1]
+    else:
+        assert re.search(
+            r"remove `validation-failed`.*add (?:the )?`validation-passed`",
+            passed, re.IGNORECASE | re.DOTALL,
+        )
     assert "validation-failed" in source["safe-outputs"]["remove-labels"]["allowed"]
     assert "validation-failed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
     assert "validation-passed" in source["safe-outputs"]["remove-labels"]["allowed"]

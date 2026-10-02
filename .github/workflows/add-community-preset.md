@@ -39,6 +39,16 @@ permissions:
 checkout:
   fetch-depth: 0
 
+steps:
+  - name: Set up Python for preset verification
+    continue-on-error: true
+    uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+    with:
+      python-version: "3.13"
+  - name: Install preset verifier dependency
+    continue-on-error: true
+    run: python3 -m pip install 'PyYAML==6.0.3'
+
 safe-outputs:
   noop:
     report-as-issue: false
@@ -130,7 +140,8 @@ deciding pass/fail:
 
 ### 2c. Repository validation
 - Fetch the repository URL — confirm it exists and is publicly accessible
-- Confirm the repository contains a `preset.yml` file
+- Confirm the repository contains a `preset.yml` file (in the preset's
+  subdirectory for a monorepo)
 - Confirm the repository contains a `LICENSE` file
 
 > The README requirement is enforced once, in **Step 2d**, against the specific file the
@@ -170,10 +181,15 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   - `specify preset add --dev <path>`
 
   A `specify preset add --from <url>` command only counts when its `<url>` **matches the
-  submitted Download URL exactly**. A `--from` command pointing at a *different* URL does
-  **not** satisfy the install-command requirement (treat it as if absent) — but the README
-  may still pass on one of the other accepted forms (`specify preset add <preset-id>` or
-  `specify preset add --dev <path>`).
+  submitted Download URL exactly**. If the README also contains a `--from` release URL
+  identifiable as this preset by its tag scope or matching release asset that differs
+  from the Download URL, **fail** even if another accepted command (`specify preset add
+  <preset-id>` or `specify preset add --dev <path>`) is present. Do not flag a different
+  preset's unscoped release URL in a monorepo as stale. Bare archive tags are only
+  compared when the downloaded archive contains one `preset.yml`: a bare tag alone
+  cannot identify which preset it belongs to in a multi-preset archive. A README
+  with only a valid `--dev` command remains acceptable. The verifier in Step 2g
+  enforces this comparison.
 
   If **no** accepted `specify preset add ...` command is present, the README is treated as a
   generic description/pitch rather than preset-usage documentation — **fail this check** and
@@ -258,6 +274,35 @@ substitute for fetching the archive. Never execute downloaded content.
 - Confirm that all required checkboxes in the Testing Checklist and Submission
   Requirements sections are checked (`[x]`)
 
+### 2g. Reproducible published-artifact and README comparison
+
+After the pinned download has returned HTTP 200 and the optional checksum comparison
+has succeeded, use the edit tool to save the fetched **exact documentation README**
+as `/tmp/gh-aw/preset-readme.md`. Use the edit tool to save
+`/tmp/gh-aw/preset-submission.json` as a JSON object with these keys copied from the
+issue form (not inferred from the README or archive):
+`preset_id`, `preset_name`, `version`, `description`, `author`, `repository`,
+`download_url`, `documentation`, `license`, `speckit_version`,
+`required_extensions` (empty string when absent), `templates_provided`,
+`commands_provided`, `scripts_count` (string `"0"` when absent), and `tags`.
+Retain multiline list values as strings. Do not interpolate issue or README text
+into shell commands. Run this fixed command unchanged:
+
+```bash
+python3 .github/scripts/validate_community_preset.py submission --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --docs docs/community/presets.md --snapshot /tmp/gh-aw/preset-validation.json
+```
+
+The verifier reads `preset.yml` from the downloaded ZIP, including preset-scoped
+paths in monorepos; it parses YAML without executing archive content. It checks
+the published ID, version, Spec Kit requirement, required extension IDs, release
+tag, and README install references against the issue, then records the validated
+values, current UTC date at submission validation, and existing `created_at`
+for the generated-file check. Exit 1 (`FAILED`)
+is a confirmed submission mismatch: report it on the issue under Failed, with
+no PR. Exit 2 (`BLOCKED`) means the verifier could not read the archive or other
+required inputs (including a missing Python dependency): report the exact error
+and run link under Blocked. Do not treat either exit as a pass.
+
 ### Validation outcome
 
 Choose exactly one outcome below, in order. A check that could not run is
@@ -291,9 +336,10 @@ If there are no environment blockers and a completed check found a submission de
 #### Passed
 
 If there are no environment blockers and every required check completed and passed:
-1. Remove `validation-failed`
-2. Add the `validation-passed` label
-3. Continue to Step 3
+1. Remove any stale `validation-passed` and `validation-failed` labels from
+   earlier runs.
+2. Continue to Step 3. **Do not add `validation-passed` yet**: the generated
+   catalog and documentation must pass Step 5's verifier before success is recorded.
 
 ## Step 3 — Determine Add vs Update
 
@@ -329,7 +375,7 @@ Insert the entry in **alphabetical order by preset ID** within the
     "repository": "<repository>",
     "download_url": "<download_url>",
     "sha256": "<actual_sha256>",
-    "homepage": "<homepage or repository>",
+    "homepage": "<submitted repository URL>",
     "documentation": "<documentation URL — the validated preset-usage README>",
     "license": "<license>",
     "requires": {
@@ -340,8 +386,8 @@ Insert the entry in **alphabetical order by preset ID** within the
       "commands": <N>
     },
     "tags": ["<tag1>", "<tag2>"],
-    "created_at": "<today>T00:00:00Z",
-    "updated_at": "<today>T00:00:00Z"
+    "created_at": "<validated UTC date>T00:00:00Z",
+    "updated_at": "<validated UTC date>T00:00:00Z"
   }
 }
 ```
@@ -361,8 +407,11 @@ If the preset provides scripts, add `"scripts": <N>` inside `"provides"`.
 ### For an update
 
 Replace only the changed fields (typically `version`, `download_url`,
-`description`, `provides`, `requires`, `tags`, `updated_at`). **Preserve**
-`created_at` from the existing entry.
+`description`, `homepage`, `provides`, `requires`, `tags`, `updated_at`). Set
+`homepage` to the submitted repository URL; the form has no separate homepage
+field. **Preserve**
+`created_at` from the existing entry. Use the verifier snapshot's validated UTC
+date for `updated_at`, even if the UTC date changes during the run.
 
 ### Counting templates and commands
 
@@ -372,16 +421,11 @@ Parse the "Templates Provided" and "Commands Provided" issue fields:
 
 ### After editing
 
-Update the **top-level `"updated_at"` timestamp** in the catalog to today's date
-in ISO 8601 format.
+Update the **top-level `"updated_at"` timestamp** in the catalog to the
+verifier snapshot's UTC date in ISO 8601 format.
 
-Validate the JSON by running:
-
-```bash
-python3 -c "import json; json.load(open('presets/catalog.community.json')); print('Valid JSON')"
-```
-
-If validation fails, fix the JSON and re-validate before continuing.
+The generated-file verifier in Step 5 parses and checks the JSON. Fix any
+catalog error it reports and rerun it before continuing.
 
 ## Step 5 — Update `docs/community/presets.md`
 
@@ -398,7 +442,8 @@ Insert a new row in **alphabetical order by preset name**:
 
 For the Requires column:
 - Use `—` if no extensions are required
-- List required extension names if any (e.g., `AIDE extension`)
+- List required extension IDs if any (e.g., `aide extension`), comma-separated
+- Omit zero-count kinds from Provides and use singular nouns for counts of one
 
 If the preset provides scripts, include them: `<N> templates, <N> commands, <N> scripts`
 
@@ -406,9 +451,34 @@ If the preset provides scripts, include them: `<N> templates, <N> commands, <N> 
 
 Find the existing row and update any changed fields in-place.
 
+### Verify the generated files
+
+Before labeling success or requesting a PR, run this fixed command unchanged:
+
+```bash
+python3 .github/scripts/validate_community_preset.py generated --issue /tmp/gh-aw/preset-submission.json --archive /tmp/gh-aw/community-archive.zip --readme /tmp/gh-aw/preset-readme.md --catalog presets/catalog.community.json --docs docs/community/presets.md --snapshot /tmp/gh-aw/preset-validation.json
+```
+
+The verifier checks JSON parsing, the validated catalog metadata (including
+`homepage` set to the submitted repository URL) and digest,
+the top-level and entry `updated_at` timestamps against the recorded UTC date
+(and `created_at` for new entries),
+alphabetical ID order, the documentation row's name, purpose, counts, extension
+requirements and repository link, alphabetical name order, and preservation of
+`created_at` on updates. Exit 3 (`REPAIR`) is an agent-generated catalog or
+documentation error, **not** a submitter defect: fix the files and re-run this
+command until it exits 0. Do not label `validation-failed` for an error in
+generated files. Exit 2 (`BLOCKED`) means an input or tool is unavailable: report
+the exact error and workflow run link to the maintainer, remove
+`validation-passed`, and stop without a PR. If a generated-file error cannot be
+corrected, remove `validation-passed`, stop without a PR, and report the problem for
+maintainer investigation.
+
 ## Step 6 — Create Pull Request
 
-Create a pull request with the changes. Use this branch naming convention:
+Only after the generated-file verifier exits 0, add the `validation-passed`
+label and request the configured draft pull request with the changes. Use this
+branch naming convention:
 
 This repository-owned gh-aw maintenance workflow does not perform the contributor
 open-PR count check or request confirmation. After successful validation and

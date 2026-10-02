@@ -1030,6 +1030,64 @@ class TestExpressions:
         assert evaluate_expression("{{ 'a(b' }}", ctx) == "a(b"
         assert evaluate_expression("{{ ('(') }}", ctx) == "("
 
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("{{ inputs.b or\n  inputs.a }}", True),
+            ("{{ inputs.a and\n  inputs.c }}", True),
+            ("{{ inputs.b\nor inputs.a }}", True),
+            ("{{ inputs.a\tand inputs.c }}", True),
+            ("{{ not\n  inputs.b }}", True),
+            ("{{ 'x' in\n  inputs.tags }}", True),
+            ("{{ 'z' not\n  in inputs.tags }}", True),
+            ("{{ 'z' not in\n  inputs.tags }}", True),
+            ("{{ (inputs.b or\r\n  inputs.a) and inputs.c }}", True),
+        ],
+    )
+    def test_operators_separated_by_any_whitespace(self, expression, expected):
+        """Word operators are found across newlines and tabs, as in Jinja2.
+
+        The operator scans match ``" or "`` and friends by their spaces, so an
+        operator next to a line break was never split on: the whole expression
+        was looked up as one dot path and came back ``None`` -- a false
+        condition with no error.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"a": True, "b": False, "c": True, "mode": "fast", "tags": ["x", "y"]}
+        )
+        assert evaluate_expression(expression, ctx) is expected
+
+    def test_condition_wrapped_across_lines_in_yaml(self):
+        """A long condition broken after its operator keeps the line break in
+        YAML (the continuation line is more indented, so ``>`` does not fold
+        it), and still has to evaluate as written."""
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        step = yaml.safe_load(
+            "condition: >-\n"
+            "  {{ inputs.skip_review or\n"
+            "     inputs.scope == 'docs' }}\n"
+        )
+        assert "\n" in step["condition"]
+
+        ctx = StepContext(inputs={"skip_review": False, "scope": "docs"})
+        assert evaluate_condition(step["condition"], ctx) is True
+
+    def test_whitespace_inside_quoted_operand_is_kept(self):
+        """Collapsing whitespace between tokens leaves string literals alone."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"title": "two  spaces", "text": "tab\there"})
+        assert evaluate_expression("{{ inputs.title == 'two  spaces' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.title == 'two spaces' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.text\n  == 'tab\there' }}", ctx) is True
+        assert evaluate_expression("{{ 'a  or  b' }}", ctx) == "a  or  b"
+
     def test_list_indexing(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -9150,6 +9208,94 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
             catalog.remove_catalog(0)
 
+    def test_oversized_workflow_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows import catalog as catalog_module
+
+        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"workflows": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = WorkflowCatalog(project_dir)
+
+        bad_entry = WorkflowCatalogEntry(
+            url="https://bad.example.com/catalog.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = WorkflowCatalogEntry(
+            url="https://good.example.com/catalog.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
+
 
 # ===== Integration Test =====
 
@@ -9980,6 +10126,94 @@ class TestStepCatalog:
 
         missing = catalog.get_step_info("nonexistent")
         assert missing is None
+
+    def test_oversized_step_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy step catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step import catalog as step_catalog_module
+
+        monkeypatch.setattr(step_catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"steps": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = StepCatalog(project_dir)
+
+        bad_entry = StepCatalogEntry(
+            url="https://bad.example.com/steps.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = StepCatalogEntry(
+            url="https://good.example.com/steps.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
 
 
 # ===== Load Custom Steps Tests =====
