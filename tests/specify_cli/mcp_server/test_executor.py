@@ -46,6 +46,7 @@ def test_run_version_invokes_canonical_cli_without_shell_and_returns_direct_payl
     assert result.model_dump() == VERSION_PAYLOAD
     assert subprocess_run.call_args.args[0] == [
         sys.executable,
+        "-P",
         "-m",
         "specify_cli.mcp_server._worker",
         "version",
@@ -64,6 +65,25 @@ def test_run_rejects_unsupported_command_without_starting_process():
 
     assert captured.value.code == "unavailable_command"
     subprocess_run.assert_not_called()
+
+
+def test_run_version_ignores_shadow_worker_in_current_directory(
+    monkeypatch,
+    tmp_path,
+):
+    shadow_package = tmp_path / "specify_cli" / "mcp_server"
+    shadow_package.mkdir(parents=True)
+    (shadow_package.parent / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_package / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_package / "_worker.py").write_text(
+        "print('shadow worker executed')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_command("version")
+
+    assert result.cli_version != "shadow worker executed"
 
 
 def test_run_propagates_structured_cli_failure():

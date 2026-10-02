@@ -73,6 +73,7 @@ def _parse_object(raw: str, *, reason: str) -> dict[str, Any]:
 def _run_version() -> VersionResult:
     argv = [
         sys.executable,
+        "-P",
         "-m",
         "specify_cli.mcp_server._worker",
         "version",
