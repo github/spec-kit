@@ -362,7 +362,7 @@ def submission(args: argparse.Namespace) -> None:
 
 def documentation_row(entry: dict) -> str:
     def cell(value: str) -> str:
-        return value.replace("|", r"\|").replace("\n", " ")
+        return value.replace("\\", r"\\").replace("|", r"\|").replace("\n", " ")
 
     provided = entry["provides"]
     quantities = [
@@ -385,7 +385,7 @@ def markdown_table_cells(row: str) -> list[str]:
     escaped = False
     for character in row:
         if escaped:
-            if character == "|":
+            if character in ("\\", "|"):
                 cell.append(character)
             else:
                 cell.extend(("\\", character))

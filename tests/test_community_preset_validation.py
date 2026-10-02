@@ -108,8 +108,8 @@ def write_generated(issue, paths, *, created_at=None):
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": entry["updated_at"], "presets": {"sample": entry},
     }), encoding="utf-8")
-    preset_name = issue["preset_name"].replace("|", r"\|")
-    description = issue["description"].replace("|", r"\|")
+    preset_name = issue["preset_name"].replace("\\", r"\\").replace("|", r"\|")
+    description = issue["description"].replace("\\", r"\\").replace("|", r"\|")
     paths["presets.md"].write_text(
         "| Preset | Purpose | Provides | Requires | URL |\n"
         "|--------|---------|----------|----------|-----|\n"
@@ -538,6 +538,16 @@ def test_generated_update_rejects_stale_homepage(submission):
 def test_generated_documentation_accepts_escaped_pipe_in_preset_name(submission):
     issue, _, paths = submission
     issue["preset_name"] = "Data | Governance"
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    assert run_verifier(paths).returncode == 0
+    write_generated(issue, paths)
+    result = run_verifier(paths, "generated")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_generated_documentation_accepts_backslash_before_pipe(submission):
+    issue, _, paths = submission
+    issue["preset_name"] = r"Data \| Governance"
     paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
     assert run_verifier(paths).returncode == 0
     write_generated(issue, paths)
