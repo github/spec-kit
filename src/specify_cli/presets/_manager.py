@@ -683,7 +683,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 canonical.unlink()
 
     def reconcile_all_script_chains(self) -> None:
-        """Re-materialize every active preset-provided script's canonical file.
+        """Re-materialize every active preset- or override-provided script.
 
         ``install_shared_infra`` (re)writes ``.specify/scripts/bash/<name>.sh``
         from the bundled core on ``specify init --force`` and forced
@@ -694,6 +694,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         Call this once after any shared-infrastructure refresh to restore
         dispatchers for every script name currently provided by an enabled
         preset.
+
+        A standalone project-local override (``.specify/templates/overrides/
+        scripts/<name>.sh``) with no preset declaring that name is the other
+        way a script can be "provided" (see #4551's override-only
+        reproduction): this is the only lifecycle point that iterates every
+        known script name, so it also scans the overrides directory and
+        reconciles those names, not just ones a preset manifest declares.
         """
         script_names: Set[str] = set()
         for pack_id, _metadata in self.registry.list_by_priority():
@@ -706,6 +713,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 t["name"]
                 for t in manifest.templates
                 if t.get("type") == "script" and isinstance(t.get("name"), str)
+            )
+        overrides_scripts_dir = (
+            self.project_root / ".specify" / "templates" / "overrides" / "scripts"
+        )
+        if overrides_scripts_dir.is_dir():
+            script_names.update(
+                override_file.stem
+                for override_file in overrides_scripts_dir.glob("*.sh")
             )
         for script_name in script_names:
             try:

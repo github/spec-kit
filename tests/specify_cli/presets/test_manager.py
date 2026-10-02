@@ -1864,3 +1864,27 @@ class TestScriptChainReconciliation:
         manager.reconcile_all_script_chains()
 
         assert "speckit-generated: script continuation dispatcher" in canonical.read_text()
+
+    def test_reconcile_all_script_chains_covers_standalone_override(
+        self, project_dir
+    ):
+        """A project-local override with no preset declaring its script name
+        (the override-only reproduction from #4551) is still "provided": it
+        must get a dispatcher once shared infrastructure is reconciled, not
+        just names that appear in an installed preset's manifest."""
+        override_dir = (
+            project_dir / ".specify" / "templates" / "overrides" / "scripts"
+        )
+        override_dir.mkdir(parents=True, exist_ok=True)
+        (override_dir / "setup-plan.sh").write_text("echo overridden\n")
+
+        canonical = self._canonical(project_dir, "setup-plan")
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("echo bundled-core\n")
+
+        manager = PresetManager(project_dir)
+        manager.reconcile_all_script_chains()
+
+        assert "speckit-generated: script continuation dispatcher" in canonical.read_text()
+        chain = PresetResolver(project_dir).resolve_script_chain("setup-plan")
+        assert [p.read_text() for p in chain] == ["echo overridden\n"]
