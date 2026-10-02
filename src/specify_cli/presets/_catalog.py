@@ -46,6 +46,10 @@ def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
         raise PresetCatalogValidationError(
             f"Invalid preset catalog format from {url}: invalid JSON ({exc})"
         ) from exc
+    except UnicodeError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid encoding ({exc})"
+        ) from exc
 
 
 @dataclass
@@ -792,8 +796,13 @@ class PresetCatalog:
         if pack_id in packs:
             pack = packs[pack_id]
             if "releases" in pack and pack.get("id", pack_id) != pack_id:
-                raise PresetError(f"Preset '{pack_id}' has an inconsistent catalog ID.")
-            return select_release({**pack, "id": pack_id}, version)
+                raise PresetCatalogValidationError(
+                    f"Preset '{pack_id}' has an inconsistent catalog ID."
+                )
+            try:
+                return select_release({**pack, "id": pack_id}, version)
+            except PresetError as exc:
+                raise PresetCatalogValidationError(str(exc)) from exc
         return None
 
     def get_pack_versions(self, pack_id: str) -> list[str]:

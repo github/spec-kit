@@ -22,6 +22,7 @@ from specify_cli.presets import (
     PresetManager,
     PresetValidationError,
 )
+from specify_cli.presets._catalog import PresetCatalogValidationError
 
 CURRENT_URL = "https://example.com/preset-current.zip"
 OLD_URL = "https://example.com/preset-old.zip"
@@ -206,6 +207,10 @@ def test_single_release_entry_remains_compatible(project_dir):
             "SHA-256",
         ),
         (
+            {"releases": {"1.0": {"download_url": OLD_URL, "sha256": "md5:" + "f" * 64}}},
+            "SHA-256",
+        ),
+        (
             {
                 "releases": {
                     "1.0": {
@@ -298,6 +303,39 @@ def test_historical_release_accepts_manifest_extension_dependencies(project_dir)
     assert selected["requires"]["extensions"] == dependencies
 
 
+def test_malformed_history_info_reports_validation_error(project_dir):
+    entry = {**_entry(), "releases": []}
+    with (
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch.object(PresetCatalog, "_get_merged_packs", return_value={"sample": entry}),
+    ):
+        with pytest.raises(PresetCatalogValidationError, match="releases mapping"):
+            PresetCatalog(project_dir).get_pack_info("sample")
+        result = CliRunner().invoke(app, ["preset", "info", "sample"])
+    assert result.exit_code == 1
+    assert "invalid releases mapping" in result.output
+    assert "not found" not in result.output
+
+
+@pytest.mark.parametrize("digest_format", ["plain", "prefix", "uppercase-prefix"])
+def test_historical_digest_accepts_download_supported_forms(project_dir, digest_format):
+    old_bytes = _archive()
+    digest = hashlib.sha256(old_bytes).hexdigest()
+    declared = {
+        "plain": f" {digest} ",
+        "prefix": f" sha256:{digest} ",
+        "uppercase-prefix": f" SHA256: {digest} ",
+    }[digest_format]
+    entry = _entry(old_bytes)
+    entry["releases"]["1.0.0"]["sha256"] = declared
+    catalog = PresetCatalog(project_dir)
+    with patch.object(catalog, "_get_merged_packs", return_value={"sample": entry}):
+        selected = catalog.get_pack_info("sample", "1.0.0")
+    with patch.object(catalog, "_open_url", return_value=_response(old_bytes, OLD_URL)):
+        downloaded = catalog.download_pack_info(selected, target_dir=project_dir)
+    assert downloaded.read_bytes() == old_bytes
+
+
 def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
     catalog = PresetCatalog(project_dir)
     sources = [
@@ -324,6 +362,7 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         (_duplicate_release_json, "duplicate JSON key"),
         (lambda: b'{"schema_version": "1.0", "presets": []}', "Invalid preset catalog format"),
         (lambda: b'{"schema_version":', "invalid JSON"),
+        (lambda: b'{"schema_version":"1.0","presets":' + b"\xff" + b"}", "invalid encoding"),
     ],
 )
 def test_invalid_discovery_catalog_cannot_delegate_install(

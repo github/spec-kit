@@ -77,9 +77,12 @@ def _validated_releases(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise PresetError(
                 f"Preset '{pack_id}' release '{release_version}' has an invalid download_url."
             )
-        if not isinstance(record.get("sha256"), str) or not _SHA256.fullmatch(
-            record["sha256"]
-        ):
+        digest = record.get("sha256")
+        if isinstance(digest, str):
+            digest = digest.strip()
+            if digest[:7].lower() == "sha256:":
+                digest = digest[7:].strip()
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             raise PresetError(
                 f"Preset '{pack_id}' release '{release_version}' needs a SHA-256 digest."
             )
