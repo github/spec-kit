@@ -10,6 +10,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ._console import console, show_banner
+from ._json_output import failure_envelope, success_envelope
+
+_COMMAND_NAME = "version"
+_INTERNAL_ERROR_MESSAGE = "Unable to collect version information."
 
 
 def _feature_capabilities() -> dict[str, bool]:
@@ -25,6 +29,39 @@ def _feature_capabilities() -> dict[str, bool]:
     }
 
 
+def _openssl_version() -> str | None:
+    """Return the loaded OpenSSL version, or None when unavailable."""
+    try:
+        import ssl
+    except ImportError:
+        return None
+
+    value = getattr(ssl, "OPENSSL_VERSION", None)
+    return value if isinstance(value, str) and value else None
+
+
+def _json_result(cli_version: str) -> dict[str, object]:
+    """Collect the complete machine-readable version result."""
+    return {
+        "cli_version": cli_version,
+        "runtime": {
+            "python": platform.python_version(),
+            "openssl": _openssl_version(),
+        },
+        "system": {
+            "platform": platform.system(),
+            "architecture": platform.machine(),
+            "os_version": platform.version(),
+        },
+        "features": _feature_capabilities(),
+    }
+
+
+def _serialize_json(payload: dict[str, object]) -> str:
+    """Serialize one JSON envelope without terminal formatting."""
+    return json.dumps(payload, indent=2)
+
+
 def version(
     features: bool = typer.Option(
         False,
@@ -34,25 +71,35 @@ def version(
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Emit feature capabilities as JSON. Requires --features.",
+        help="Emit complete version information as JSON.",
     ),
 ) -> None:
     """Display version and system information."""
     from . import get_speckit_version
 
+    if json_output:
+        try:
+            payload = success_envelope(
+                _COMMAND_NAME,
+                _json_result(get_speckit_version()),
+            )
+            rendered = _serialize_json(payload)
+        except Exception:  # noqa: BLE001
+            # JSON mode must normalize every unexpected command failure.
+            failure = failure_envelope(
+                _COMMAND_NAME,
+                code="internal_error",
+                message=_INTERNAL_ERROR_MESSAGE,
+            )
+            typer.echo(_serialize_json(failure), err=True)
+            raise typer.Exit(1)
+
+        typer.echo(rendered)
+        return
+
     cli_version = get_speckit_version()
-
-    if json_output and not features:
-        console.print("[red]Error:[/red] --json requires --features.")
-        raise typer.Exit(1)
-
     if features:
         capabilities = _feature_capabilities()
-        if json_output:
-            payload = {"version": cli_version, "features": capabilities}
-            console.print(json.dumps(payload, indent=2))
-            return
-
         console.print(f"Spec Kit CLI: {cli_version}")
         console.print()
         console.print("Features:")
@@ -77,12 +124,7 @@ def version(
     # reports (#4433) hinge on which OpenSSL is in play, and on Windows it is
     # not obvious from the outside, so surface it here. An interpreter built
     # without the ssl extension skips the row rather than failing the command.
-    try:
-        import ssl
-
-        openssl_version = getattr(ssl, "OPENSSL_VERSION", "")
-    except ImportError:
-        openssl_version = ""
+    openssl_version = _openssl_version()
     if openssl_version:
         info_table.add_row("OpenSSL", openssl_version)
 
