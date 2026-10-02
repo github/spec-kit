@@ -101,6 +101,15 @@ def release_tag(issue: dict) -> str:
     return tag
 
 
+def normalized_release_asset(filename: str) -> str:
+    return re.sub(
+        r"(?<!\d)v?\d+\.\d+\.\d+(?!\d)",
+        "{version}",
+        filename,
+        flags=re.IGNORECASE,
+    )
+
+
 def published_manifest(archive_path: Path, preset_id: str) -> tuple[dict, bool]:
     try:
         with zipfile.ZipFile(archive_path) as archive:
@@ -183,9 +192,9 @@ def check_readme(text: str, issue: dict, *, single_preset_archive: bool) -> None
     expected_path = urlsplit(expected).path.split("/")
     accepted = False
     for match in re.finditer(
-        r"(?<![\w-])specify\s+preset\s+add\s+"
+        r"(?<![\w-])specify[ \t]+preset[ \t]+add[ \t]+"
         r"(?P<option>--from|--dev|[a-z][a-z0-9-]*)"
-        r"(?:\s+(?P<value>[^\s`]+))?",
+        r"(?:[ \t]+(?P<value>[^\s`]+))?",
         text,
     ):
         option = match["option"]
@@ -214,7 +223,8 @@ def check_readme(text: str, issue: dict, *, single_preset_archive: bool) -> None
                 and expected_path[3:5] == ["releases", "download"]
                 and len(parts) > 6
                 and parts[3:5] == ["releases", "download"]
-                and expected_path[6] == parts[6]
+                and normalized_release_asset(expected_path[6])
+                == normalized_release_asset(parts[6])
             )
             unscoped_archive = (
                 single_preset_archive

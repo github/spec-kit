@@ -230,6 +230,18 @@ def test_dev_option_without_path_is_rejected(submission):
     assert "README" in result.stdout
 
 
+def test_dev_without_path_does_not_consume_next_paragraph(submission):
+    _, _, paths = submission
+    paths["README.md"].write_text(
+        "specify preset add --dev\n"
+        "Next paragraph describes the preset.\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README" in result.stdout
+
+
 def test_quoted_from_url_with_sentence_punctuation_is_accepted(submission):
     issue, _, paths = submission
     paths["README.md"].write_text(
@@ -348,6 +360,25 @@ def test_same_asset_on_unscoped_tag_is_reported_as_stale(submission):
     paths["README.md"].write_text(
         "specify preset add --dev ./sample\n"
         f"specify preset add --from {issue['download_url'].replace('v1.2.3', 'v1.2.2')}\n",
+        encoding="utf-8",
+    )
+    result = run_verifier(paths)
+    assert result.returncode == 1
+    assert "README --from URL" in result.stdout
+
+
+def test_versioned_asset_on_unscoped_tag_is_reported_as_stale(submission):
+    issue, _, paths = submission
+    issue["download_url"] = (
+        "https://github.com/example/presets/releases/download/"
+        "v1.2.3/sample-1.2.3.zip"
+    )
+    paths["issue.json"].write_text(json.dumps(issue), encoding="utf-8")
+    paths["README.md"].write_text(
+        "specify preset add --dev ./sample\n"
+        "specify preset add --from "
+        "https://github.com/example/presets/releases/download/"
+        "v1.2.2/sample-1.2.2.zip\n",
         encoding="utf-8",
     )
     result = run_verifier(paths)
