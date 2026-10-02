@@ -318,6 +318,81 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         assert catalog.get_pack_info("sample", "1.0.0") is None
 
 
+@pytest.mark.parametrize(
+    "bad_payload, error",
+    [
+        (_duplicate_release_json, "duplicate JSON key"),
+        (lambda: b'{"schema_version": "1.0", "presets": []}', "Invalid preset catalog format"),
+        (lambda: b'{"schema_version":', "invalid JSON"),
+    ],
+)
+def test_invalid_discovery_catalog_cannot_delegate_install(
+    project_dir, bad_payload, error
+):
+    high_url = "https://example.com/discovery.json"
+    low_url = "https://example.com/trusted.json"
+    sources = [
+        PresetCatalogEntry(high_url, "discovery", 1, False),
+        PresetCatalogEntry(low_url, "trusted", 2, True),
+    ]
+    old_bytes = _archive()
+    lower = json.dumps({
+        "schema_version": "1.0",
+        "presets": {"sample": _entry(old_bytes)},
+    }).encode()
+    opened: list[str] = []
+
+    def open_url(_self, url, **_kwargs):
+        opened.append(url)
+        data = {
+            high_url: bad_payload(),
+            low_url: lower,
+            OLD_URL: old_bytes,
+        }
+        return _response(data[url], url)
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_open_url", open_url),
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch("specify_cli.get_speckit_version", return_value="1.0.0"),
+    ):
+        with pytest.raises(PresetError, match=error):
+            PresetCatalog(project_dir).get_pack_info("sample", "1.0.0")
+        result = CliRunner().invoke(
+            app, ["preset", "add", "sample", "--version", "1.0.0"]
+        )
+        info = CliRunner().invoke(app, ["preset", "info", "sample"])
+        search = CliRunner().invoke(app, ["preset", "search", "sample"])
+    assert result.exit_code == 1, result.output
+    assert error in result.output
+    assert info.exit_code == 1 and error in info.output
+    assert search.exit_code == 1 and error in search.output
+    assert OLD_URL not in opened
+    assert PresetManager(project_dir).get_pack("sample") is None
+
+
+def test_unreachable_high_priority_catalog_still_uses_lower_source(project_dir):
+    catalog = PresetCatalog(project_dir)
+    sources = [
+        PresetCatalogEntry("https://example.com/unavailable.json", "high", 1, False),
+        PresetCatalogEntry("https://example.com/trusted.json", "low", 2, True),
+    ]
+
+    def fetch(source, _refresh):
+        if source.name == "high":
+            raise PresetError("Failed to fetch preset catalog: offline")
+        return {"presets": {"sample": _entry()}}
+
+    with (
+        patch.object(catalog, "get_active_catalogs", return_value=sources),
+        patch.object(catalog, "_fetch_single_catalog", side_effect=fetch),
+    ):
+        selected = catalog.get_pack_info("sample", "1.0.0")
+    assert selected["_catalog_name"] == "low"
+    assert selected["_install_allowed"] is True
+
+
 def test_discovery_only_winner_does_not_delegate_exact_release(project_dir):
     catalog = PresetCatalog(project_dir)
     sources = [

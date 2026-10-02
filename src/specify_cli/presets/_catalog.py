@@ -23,6 +23,10 @@ from ._catalog_versions import available_versions, select_release
 from ._manifest import PresetError, PresetValidationError
 
 
+class PresetCatalogValidationError(PresetError):
+    """A catalog supplied invalid content rather than being unreachable."""
+
+
 def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
     """Reject duplicate keys before JSON parsing discards conflicting records."""
 
@@ -30,13 +34,18 @@ def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
         result: dict[str, Any] = {}
         for key, value in pairs:
             if key in result:
-                raise PresetError(
+                raise PresetCatalogValidationError(
                     f"Invalid preset catalog format from {url}: duplicate JSON key '{key}'."
                 )
             result[key] = value
         return result
 
-    return json.loads(raw, object_pairs_hook=unique_object)
+    try:
+        return json.loads(raw, object_pairs_hook=unique_object)
+    except json.JSONDecodeError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid JSON ({exc})"
+        ) from exc
 
 
 @dataclass
@@ -190,7 +199,7 @@ class PresetCatalog:
             PresetError: If the payload's shape is invalid.
         """
         if not isinstance(catalog_data, dict):
-            raise PresetError(
+            raise PresetCatalogValidationError(
                 f"Invalid preset catalog format from {url}: "
                 "expected a JSON object"
             )
@@ -198,9 +207,9 @@ class PresetCatalog:
             "schema_version" not in catalog_data
             or "presets" not in catalog_data
         ):
-            raise PresetError(f"Invalid preset catalog format from {url}")
+            raise PresetCatalogValidationError(f"Invalid preset catalog format from {url}")
         if not isinstance(catalog_data.get("presets"), dict):
-            raise PresetError(
+            raise PresetCatalogValidationError(
                 f"Invalid preset catalog format from {url}: "
                 "'presets' must be a JSON object"
             )
@@ -545,6 +554,8 @@ class PresetCatalog:
                         continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[pack_id] = pack_data_with_catalog
+            except PresetCatalogValidationError:
+                raise
             except PresetError:
                 continue
 
@@ -713,6 +724,8 @@ class PresetCatalog:
         """
         try:
             packs = self._get_merged_packs()
+        except PresetCatalogValidationError:
+            raise
         except PresetError:
             return []
 
@@ -771,6 +784,8 @@ class PresetCatalog:
         """
         try:
             packs = self._get_merged_packs()
+        except PresetCatalogValidationError:
+            raise
         except PresetError:
             return None
 

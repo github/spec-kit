@@ -6,6 +6,7 @@ import typer
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from ._catalog import PresetCatalogValidationError
 from ._catalog_versions import available_versions
 from ._commands import preset_app
 
@@ -86,6 +87,9 @@ def preset_info(
     catalog = PresetCatalog(project_root)
     try:
         pack_info = catalog.get_pack_info(preset_id)
+    except PresetCatalogValidationError as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
     except PresetError:
         pack_info = None
 

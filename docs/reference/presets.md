@@ -216,6 +216,9 @@ Duplicate JSON keys are rejected before parsing can discard a release record.
 Historical `requires.extensions` entries follow the preset manifest format:
 extension IDs or mappings with an `id`, optional version constraint, and
 optional boolean `required` flag.
+An invalid catalog payload fails resolution rather than allowing an entry
+from a lower-priority catalog to bypass its installation policy. Unreachable
+catalogs can still be skipped so other configured sources remain available.
 
 ```json
 {
