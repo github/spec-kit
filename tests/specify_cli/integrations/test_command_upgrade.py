@@ -436,6 +436,79 @@ class TestIntegrationUpgradeDetailed:
         )
         assert "kiro-cli" in registry["extensions"]["git"]["registered_commands"]
 
+    @pytest.mark.parametrize("activate", ["use", "switch"])
+    def test_activating_kiro_after_secondary_upgrade_retires_dotted_prompts(
+        self, tmp_path, monkeypatch, activate
+    ):
+        """Upgrading Kiro while another integration is active skips extension
+        registration (#2948), so its dotted extension prompts survive, and the
+        new manifest no longer shows a rename. ``use`` or ``switch`` registers
+        the hyphenated prompts and then retires the dotted ones (#4797)."""
+        project = _init_dotted_kiro_project(
+            tmp_path,
+            monkeypatch,
+            ["extension", "add", "git"],
+            ["integration", "install", "claude"],
+            ["integration", "use", "claude"],
+        )
+        prompts = project / ".kiro" / "prompts"
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert (prompts / "speckit-plan.md").is_file()
+        assert (prompts / "speckit.git.commit.md").is_file()
+
+        result = _run_in_project(project, ["integration", activate, "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert sorted(prompts.glob("speckit.*.md")) == []
+        assert (prompts / "speckit-git-commit.md").is_file()
+
+    def test_enabling_extension_after_kiro_rename_retires_its_dotted_prompts(
+        self, tmp_path, monkeypatch
+    ):
+        """A disabled extension keeps its dotted prompts through the rename.
+        Once it is enabled, the next registration pass replaces them, although
+        that upgrade no longer sees a rename (#4797)."""
+        project = _init_dotted_kiro_project(
+            tmp_path,
+            monkeypatch,
+            ["extension", "add", "git"],
+            ["extension", "disable", "git"],
+        )
+        prompts = project / ".kiro" / "prompts"
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert (prompts / "speckit.git.commit.md").is_file()
+
+        for args in (
+            ["extension", "enable", "git"],
+            ["integration", "upgrade", "kiro-cli"],
+        ):
+            result = _run_in_project(project, args)
+            assert result.exit_code == 0, result.output
+        assert sorted(prompts.glob("speckit.*.md")) == []
+        assert (prompts / "speckit-git-commit.md").is_file()
+
+    def test_kiro_prompt_named_without_dots_is_not_retired(self, tmp_path):
+        """Aliases are free-form, and one without dots is already its Kiro
+        prompt name, so its old and new prompt are the same file."""
+        import yaml
+
+        project = _init_project(tmp_path, "kiro-cli")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify" / "extensions" / "git" / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for command in manifest["provides"]["commands"]:
+            if command["name"] == "speckit.git.commit":
+                command["aliases"] = ["speckit-git-c"]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert (project / ".kiro" / "prompts" / "speckit-git-c.md").is_file()
+
     @pytest.mark.parametrize(
         ("old_files", "new_files", "expected"),
         [
@@ -452,8 +525,7 @@ class TestIntegrationUpgradeDetailed:
         self, old_files, new_files, expected
     ):
         """Commands added and dropped in the same release are not a rename,
-        so upgrade must neither refuse over presets nor retire extension
-        command files for them."""
+        so upgrade must not refuse them while presets are installed."""
         from types import SimpleNamespace
 
         from specify_cli.integrations._command_upgrade_layout import (

@@ -70,6 +70,13 @@ class KiroCliIntegration(MarkdownIntegration):
         "invoke_separator": "-",
     }
     invoke_separator = "-"
+    # Prompts used to be named after the dotted command
+    # (``.kiro/prompts/speckit.<cmd>.md``), which Kiro CLI cannot invoke.
+    # ``integration upgrade`` stale-removes the core ones through the
+    # manifest; ExtensionManager retires an extension's dotted prompt once
+    # registration writes its hyphenated replacement (#4797).
+    legacy_flat_command_dir = ".kiro/prompts"
+    legacy_flat_command_extension = ".md"
 
     def command_filename(self, template_name: str) -> str:
         return format_kiro_command_name(template_name) + ".md"

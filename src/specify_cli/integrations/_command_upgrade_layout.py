@@ -79,11 +79,10 @@ def _command_file_names_changed(integration, old_files, new_files) -> bool:
     Kiro CLI moved from ``speckit.<cmd>.md`` to ``speckit-<cmd>.md`` in the
     same ``.kiro/prompts`` directory (#4797). *old_files* and *new_files* are
     manifest keys; ``upgrade`` passes ``_planned_command_files()`` as the new
-    ones so it can decide before changing files. Only a removed file that
-    matches an added one up to ``.``/``-`` separators counts, so a release
-    that just adds and drops commands is not a rename. Extension and preset
-    commands are tracked outside the manifest, so re-registering them alone
-    would leave their old names beside the new ones.
+    ones so it can refuse the rename while presets have commands registered
+    for the agent, before changing files. Only a removed file that matches an
+    added one up to ``.``/``-`` separators counts, so a release that just adds
+    and drops commands is not a rename.
     """
     commands_dir = (integration.registrar_config or {}).get("dir")
     if not isinstance(commands_dir, str) or not commands_dir.strip():

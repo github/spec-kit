@@ -24,7 +24,7 @@ from ._command_upgrade_layout import (
     _planned_command_files,
 )
 from ._commands import integration_app
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _retire_renamed_command_files, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("upgrade")
@@ -197,10 +197,9 @@ def integration_upgrade(
     # the preset can't be re-registered, stale cleanup or the other layer's
     # new file would replace the override. Refuse before any mutation, as for
     # the layout changes above.
-    command_file_names_changed = _command_file_names_changed(
+    if _command_file_names_changed(
         integration, old_manifest.files, _planned_command_files(integration)
-    )
-    if command_file_names_changed:
+    ):
         try:
             affected_presets = _installed_command_presets_affecting_agent(
                 project_root,
@@ -392,15 +391,6 @@ def integration_upgrade(
             key,
             continuing="The integration was upgraded, but installed presets may need re-registration.",
         )
-        if command_file_names_changed:
-            _retire_renamed_command_files(
-                project_root,
-                key,
-                continuing=(
-                    "The integration was upgraded, but extension command files "
-                    "under the old names may need manual cleanup."
-                ),
-            )
         _resync_manifest_after_registration(
             new_manifest,
             key,
