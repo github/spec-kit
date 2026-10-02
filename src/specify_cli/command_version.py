@@ -10,9 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ._console import console, show_banner
-from ._json_output import failure_envelope, success_envelope
 
-_COMMAND_NAME = "version"
 _INTERNAL_ERROR_MESSAGE = "Unable to collect version information."
 
 
@@ -79,18 +77,17 @@ def version(
 
     if json_output:
         try:
-            payload = success_envelope(
-                _COMMAND_NAME,
-                _json_result(get_speckit_version()),
-            )
+            payload = _json_result(get_speckit_version())
             rendered = _serialize_json(payload)
         except Exception:  # noqa: BLE001
             # JSON mode must normalize every unexpected command failure.
-            failure = failure_envelope(
-                _COMMAND_NAME,
-                code="internal_error",
-                message=_INTERNAL_ERROR_MESSAGE,
-            )
+            failure = {
+                "error": {
+                    "code": "internal_error",
+                    "message": _INTERNAL_ERROR_MESSAGE,
+                    "details": {},
+                }
+            }
             typer.echo(_serialize_json(failure), err=True)
             raise typer.Exit(1)
 

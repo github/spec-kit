@@ -104,7 +104,8 @@ To inspect local CLI capabilities without checking the network:
 specify version --features
 ```
 
-For the stable machine-readable contract, use:
+To print complete version, runtime, system, and feature information as JSON,
+use:
 
 ```bash
 specify version --json
@@ -112,83 +113,9 @@ specify version --json
 
 `specify version --features --json` remains a compatibility alias and emits
 the same complete payload. In JSON mode, `--features` does not filter the
-result.
-
-Successful commands write exactly one JSON object to stdout, write nothing to
-stderr, and exit with status 0:
-
-```json
-{
-  "schema_version": "1.0",
-  "command": "version",
-  "ok": true,
-  "result": {
-    "cli_version": "1.0.14",
-    "runtime": {
-      "python": "3.13.1",
-      "openssl": "OpenSSL 3.4.0 22 Oct 2024"
-    },
-    "system": {
-      "platform": "Darwin",
-      "architecture": "arm64",
-      "os_version": "Darwin Kernel Version 24.3.0"
-    },
-    "features": {
-      "controlled_multi_install_integrations": true,
-      "integration_use_command": true,
-      "multi_install_safe_registry_metadata": true,
-      "integration_upgrade_command": true,
-      "self_check_command": true,
-      "workflow_catalog": true,
-      "bundled_templates": true
-    }
-  },
-  "warnings": []
-}
-```
-
-| Field | Definition |
-| ----- | ---------- |
-| `schema_version` | Version of this JSON contract. The initial stable contract is `"1.0"`. |
-| `command` | Command that produced the envelope; always `"version"` here. |
-| `ok` | `true` for success and `false` for failure. |
-| `result.cli_version` | Installed Spec Kit CLI version. |
-| `result.runtime.python` | Python runtime version. |
-| `result.runtime.openssl` | OpenSSL runtime loaded by Python, or JSON `null` when the `ssl` module or its version value is unavailable. The field is never omitted. |
-| `result.system.platform` | Operating-system family reported by Python. |
-| `result.system.architecture` | Machine architecture reported by Python. |
-| `result.system.os_version` | Operating-system version reported by Python. |
-| `result.features` | Complete map of local CLI capability names to booleans. |
-| `warnings` | Reserved list of non-fatal warnings; empty in schema version 1.0. |
-
-If version information cannot be collected, the command exits nonzero, leaves
-stdout empty, and writes exactly one failure envelope to stderr. Unexpected
-exceptions use a sanitized message: exception text, tracebacks, environment
-values, paths, and terminal formatting are not included.
-
-```json
-{
-  "schema_version": "1.0",
-  "command": "version",
-  "ok": false,
-  "error": {
-    "code": "internal_error",
-    "message": "Unable to collect version information.",
-    "details": {}
-  }
-}
-```
-
-| Failure field | Definition |
-| ------------- | ---------- |
-| `error.code` | Stable machine-readable failure category. |
-| `error.message` | Safe human-readable summary. |
-| `error.details` | Structured failure context. It is empty for sanitized unexpected failures. |
-
-Earlier releases exposed a provisional `{"version": ..., "features": ...}`
-object only through `--features --json` and rejected `--json` by itself. Schema
-version 1.0 intentionally replaces that provisional shape with the complete
-envelope above and makes `specify version --json` canonical.
+result. If OpenSSL information is unavailable, `runtime.openssl` is `null`.
+Successful JSON output is written only to stdout. Failures leave stdout empty
+and write one sanitized JSON error object to stderr.
 
 A quick version check is also available via:
 

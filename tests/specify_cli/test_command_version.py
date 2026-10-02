@@ -38,8 +38,8 @@ class TestVersionCommand:
         assert "- integration use command: yes" in result.output
         assert "- self check command: yes" in result.output
 
-    def test_version_json_emits_complete_stable_envelope(self):
-        """specify version --json emits the complete versioned contract."""
+    def test_version_json_emits_complete_stable_payload(self):
+        """specify version --json emits the complete machine-readable result."""
         with (
             patch("specify_cli.get_speckit_version", return_value="1.2.3"),
             patch(
@@ -66,23 +66,17 @@ class TestVersionCommand:
             result = runner.invoke(app, ["version", "--json"])
 
         expected = {
-            "schema_version": "1.0",
-            "command": "version",
-            "ok": True,
-            "result": {
-                "cli_version": "1.2.3",
-                "runtime": {
-                    "python": "3.13.1",
-                    "openssl": "OpenSSL 3.4.0",
-                },
-                "system": {
-                    "platform": "ExampleOS",
-                    "architecture": "example64",
-                    "os_version": "ExampleOS 4.5",
-                },
-                "features": EXPECTED_FEATURES,
+            "cli_version": "1.2.3",
+            "runtime": {
+                "python": "3.13.1",
+                "openssl": "OpenSSL 3.4.0",
             },
-            "warnings": [],
+            "system": {
+                "platform": "ExampleOS",
+                "architecture": "example64",
+                "os_version": "ExampleOS 4.5",
+            },
+            "features": EXPECTED_FEATURES,
         }
         assert result.exit_code == 0
         assert result.stdout == f"{json.dumps(expected, indent=2)}\n"
@@ -108,10 +102,10 @@ class TestVersionCommand:
 
         assert result.exit_code == 0
         assert result.stderr == ""
-        assert json.loads(result.stdout)["result"]["runtime"]["openssl"] is None
+        assert json.loads(result.stdout)["runtime"]["openssl"] is None
 
     def test_version_json_sanitizes_unexpected_failures(self):
-        """Unexpected failures emit one safe envelope and no traceback."""
+        """Unexpected failures emit one safe error object and no traceback."""
         unsafe = (
             "\x1b[31mSECRET_TOKEN=do-not-print /Users/example/private/project\x1b[0m"
         )
@@ -122,9 +116,6 @@ class TestVersionCommand:
             result = runner.invoke(app, ["version", "--json"])
 
         expected = {
-            "schema_version": "1.0",
-            "command": "version",
-            "ok": False,
             "error": {
                 "code": "internal_error",
                 "message": "Unable to collect version information.",
