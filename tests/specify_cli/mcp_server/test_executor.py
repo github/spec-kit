@@ -93,6 +93,18 @@ def test_run_propagates_structured_cli_failure():
             "invalid_success_payload",
         ),
         (
+            _completed(
+                0,
+                stdout=json.dumps(
+                    {
+                        **VERSION_PAYLOAD,
+                        "features": {"workflow_catalog": "true"},
+                    }
+                ),
+            ),
+            "invalid_success_payload",
+        ),
+        (
             _completed(0, stdout=json.dumps(VERSION_PAYLOAD), stderr="warning"),
             "mixed_success_output",
         ),
@@ -153,3 +165,26 @@ def test_run_sanitizes_process_launch_failure():
         "reason": "process_launch_failed",
     }
     assert "SECRET" not in json.dumps(captured.value.payload())
+
+
+def test_run_normalizes_invalid_utf8_as_adapter_failure():
+    completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=b"\xff",
+        stderr=b"",
+    )
+    with (
+        patch(
+            "specify_cli.mcp_server.executor.subprocess.run",
+            return_value=completed,
+        ),
+        pytest.raises(CommandAdapterError) as captured,
+    ):
+        run_command("version")
+
+    assert captured.value.code == "adapter_internal_error"
+    assert captured.value.details == {
+        "command": "version",
+        "reason": "invalid_utf8",
+    }

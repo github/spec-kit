@@ -89,7 +89,7 @@ def _run_version() -> VersionResult:
             raise _adapter_failure("mixed_success_output")
         payload = _parse_object(stdout, reason="invalid_success_output")
         try:
-            return VersionResult.model_validate(payload)
+            return VersionResult.model_validate(payload, strict=True)
         except ValidationError as exc:
             raise _adapter_failure("invalid_success_payload") from exc
 
@@ -97,7 +97,7 @@ def _run_version() -> VersionResult:
         raise _adapter_failure("mixed_failure_output")
     payload = _parse_object(stderr, reason="invalid_failure_output")
     try:
-        failure = _CliFailure.model_validate(payload)
+        failure = _CliFailure.model_validate(payload, strict=True)
     except ValidationError as exc:
         raise _adapter_failure("invalid_failure_payload") from exc
     raise CommandAdapterError(
