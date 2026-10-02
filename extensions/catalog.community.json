@@ -2957,7 +2957,7 @@
     "logreduce": {
       "name": "Log Intake (logreduce)",
       "id": "logreduce",
-      "description": "Reduce large logs attached to a bug report into .specify/bugs//evidence.md before assessment. This is a log-intake step for the bundled bug triage workflow: /speckit.bug.assess, fix and test then work from one saved, reduced log instead of each re-reading a raw log that may run to thousands or millions of lines.",
+      "description": "Reduce large logs attached to a bug report into .specify/bugs/<slug>/evidence.md before assessment. This is a log-intake step for the bundled bug triage workflow: /speckit.bug.assess, fix and test then work from one saved, reduced log instead of each re-reading a raw log that may run to thousands or millions of lines.",
       "author": "Alex Punnen",
       "version": "0.3.1",
       "download_url": "https://github.com/alexcpn/log_tfidf_reducer/releases/download/v0.3.1/logreduce-speckit.zip",
