@@ -145,9 +145,9 @@ class JunieIntegration(MarkdownIntegration):
             # No frontmatter at all? Create one.
             return f"---\nallowPromptArgument: {value}\n---\n\n" + content
 
-        parts = content.split("---", 2)
+        parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
         if len(parts) < 3:
-            # Malformed frontmatter?
+            # Malformed frontmatter (e.g. missing closing dashes)?
             return content
 
         frontmatter = parts[1]
@@ -156,7 +156,7 @@ class JunieIntegration(MarkdownIntegration):
         if "allowPromptArgument:" in frontmatter:
             # Overwrite existing key
             frontmatter = re.sub(
-                r"(?m)^(\s*allowPromptArgument:\s*).*",
+                r"(?m)^(allowPromptArgument:\s*).*",
                 fr"\1{value}",
                 frontmatter
             )

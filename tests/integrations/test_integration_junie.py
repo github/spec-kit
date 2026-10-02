@@ -166,6 +166,30 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         updated = junie.post_process_command_content(content)
         assert updated == content
 
+    def test_junie_frontmatter_non_standalone_delimiter(self):
+        """Verify --- not on standalone line is NOT identified as delimiter."""
+        junie = get_integration("junie")
+        content = "---\ntitle: Foo\n--- not a delimiter\nbody"
+        updated = junie.post_process_command_content(content)
+        assert updated == content
+
+    def test_junie_frontmatter_with_horizontal_rule_in_body(self):
+        """Verify valid frontmatter is preserved and horizontal rule in body is untouched."""
+        junie = get_integration("junie")
+        content = "---\ntitle: Foo\n---\nBody with\n---\nhorizontal rule"
+        updated = junie.post_process_command_content(content)
+        assert "---" in updated
+        assert "horizontal rule" in updated
+        assert updated.count("---") == 3
+
+    def test_junie_nested_yaml_protection(self):
+        """Verify regex does not match nested allowPromptArgument."""
+        junie = get_integration("junie")
+        content = "---\nconfig:\n  allowPromptArgument: nested\n---\nBody"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: nested" in updated
+        assert "allowPromptArgument: false" not in updated
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):

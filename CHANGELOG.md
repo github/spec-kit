@@ -150,7 +150,7 @@
 - fix(agy): support --model, --add-dir workspace, and pre-prompt extra args (#4481)
 - Remove a dead case pattern in common.sh (SC2221/SC2222) (#4605)
 - fix: support SKILL.md rendering for the generic integration (#4562)
- - chore: release 1.0.8, begin 1.0.9.dev0 development (#4619)
+- chore: release 1.0.8, begin 1.0.9.dev0 development (#4619)
 
 ## [1.0.8] - 2026-09-17
 
@@ -176,9 +176,6 @@
 - Update adrkit extension to v0.1.4 (#4600)
 - chore: upgrade feature-assess to gh-aw v0.88.7 (#4546)
 - chore: release 1.0.7, begin 1.0.8.dev0 development (#4592)
-- feat(integrations): enhance Junie integration with prompt arguments and variable escaping (#4600)
-- fix(junie): ensure `allowPromptArgument` is unique and correctly set in command frontmatter
-- feat(junie): map `$ARGUMENTS` to `$prompt` and generically escape other variables with `$$`
 
 ## [1.0.7] - 2026-09-15
 
