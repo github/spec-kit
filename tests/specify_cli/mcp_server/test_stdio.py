@@ -7,6 +7,9 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
+_READ_TIMEOUT_SECONDS = 10
+_TEST_TIMEOUT_SECONDS = 30
+
 
 def test_real_stdio_server_initializes_discovers_and_runs_version():
     async def exercise() -> None:
@@ -17,24 +20,29 @@ def test_real_stdio_server_initializes_discovers_and_runs_version():
             cwd=repo_root,
         )
 
-        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
-            async with (
-                stdio_client(parameters, errlog=errlog) as (read, write),
-                ClientSession(read, write) as session,
-            ):
-                initialized = await session.initialize()
-                tools = await session.list_tools()
-                listed = await session.call_tool("specify_list_commands", {})
-                ran = await session.call_tool(
-                    "specify_run_command",
-                    {"command": "version"},
-                )
-                unavailable = await session.call_tool(
-                    "specify_describe_command",
-                    {"command": "artifact.list"},
-                )
-            errlog.seek(0)
-            stderr = errlog.read()
+        async with asyncio.timeout(_TEST_TIMEOUT_SECONDS):
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
+                async with (
+                    stdio_client(parameters, errlog=errlog) as (read, write),
+                    ClientSession(
+                        read,
+                        write,
+                        read_timeout_seconds=_READ_TIMEOUT_SECONDS,
+                    ) as session,
+                ):
+                    initialized = await session.initialize()
+                    tools = await session.list_tools()
+                    listed = await session.call_tool("specify_list_commands", {})
+                    ran = await session.call_tool(
+                        "specify_run_command",
+                        {"command": "version"},
+                    )
+                    unavailable = await session.call_tool(
+                        "specify_describe_command",
+                        {"command": "artifact.list"},
+                    )
+                errlog.seek(0)
+                stderr = errlog.read()
 
         assert initialized.server_info.name == "specify"
         assert [tool.name for tool in tools.tools] == [
