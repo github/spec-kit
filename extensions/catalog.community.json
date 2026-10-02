@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-29T00:00:00Z",
+  "updated_at": "2026-10-02T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2953,6 +2953,47 @@
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
       "updated_at": "2026-07-27T00:00:00Z"
+    },
+    "logreduce": {
+      "name": "Log Intake (logreduce)",
+      "id": "logreduce",
+      "description": "Reduce large logs attached to a bug report into .specify/bugs//evidence.md before assessment. This is a log-intake step for the bundled bug triage workflow: /speckit.bug.assess, fix and test then work from one saved, reduced log instead of each re-reading a raw log that may run to thousands or millions of lines.",
+      "author": "Alex Punnen",
+      "version": "0.3.1",
+      "download_url": "https://github.com/alexcpn/log_tfidf_reducer/releases/download/v0.3.1/logreduce-speckit.zip",
+      "sha256": "97a495b3ad823a36ad6da9d01127c8121954d464531e61eed21d2f052f04bb47",
+      "repository": "https://github.com/alexcpn/log_tfidf_reducer",
+      "homepage": "https://github.com/alexcpn/log_tfidf_reducer/tree/main/speckit",
+      "documentation": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "logreduce",
+            "version": ">=0.3.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "bug",
+        "logs",
+        "triage",
+        "debugging"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
