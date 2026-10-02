@@ -553,6 +553,12 @@ def test_generated_documentation_allows_duplicate_display_names(submission):
 def test_generated_documentation_accepts_replaced_renamed_row(submission):
     issue, _, paths = submission
     original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    paths["presets.md"].write_text(
+        paths["presets.md"].read_text(encoding="utf-8").replace(
+            "Sample usage", "Legacy documentation wording"
+        ),
+        encoding="utf-8",
+    )
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": original["updated_at"], "presets": {"sample": original},
     }), encoding="utf-8")
@@ -567,6 +573,12 @@ def test_generated_documentation_accepts_replaced_renamed_row(submission):
 def test_generated_documentation_rejects_stale_row_after_rename(submission):
     issue, _, paths = submission
     original = write_generated(issue, paths, created_at="2024-12-01T00:00:00Z")
+    paths["presets.md"].write_text(
+        paths["presets.md"].read_text(encoding="utf-8").replace(
+            "Sample usage", "Legacy documentation wording"
+        ),
+        encoding="utf-8",
+    )
     previous_row = paths["presets.md"].read_text(encoding="utf-8").splitlines()[2]
     paths["catalog.json"].write_text(json.dumps({
         "updated_at": original["updated_at"], "presets": {"sample": original},

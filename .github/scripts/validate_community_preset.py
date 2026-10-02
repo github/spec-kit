@@ -331,12 +331,7 @@ def submission(args: argparse.Namespace) -> None:
     expected_row = documentation_row(expected)
     previous_row = None
     if previous is not None:
-        try:
-            previous_row = documentation_row(previous)
-        except (AttributeError, KeyError, TypeError) as exc:
-            raise Blocked(
-                f"original catalog entry cannot produce a documentation row: {exc}"
-            ) from exc
+        previous_row = existing_documentation_row(original_rows, previous)
     snapshot = {
         "expected": expected,
         "created_at": previous.get("created_at") if previous else None,
@@ -410,6 +405,28 @@ def documentation_rows(text: str, error_type: type[Exception]) -> list[str]:
             break
         rows.append(line.strip())
     return rows
+
+
+def existing_documentation_row(rows: list[str], entry: dict) -> str:
+    name = entry.get("name")
+    repository = entry.get("repository")
+    if not isinstance(name, str) or not isinstance(repository, str):
+        raise Blocked("original catalog entry lacks documentation row identity")
+    matches = []
+    for row in rows:
+        cells = markdown_table_cells(row)
+        if len(cells) < 3 or cells[1] != name:
+            continue
+        url_cell = cells[-2] if cells[-1] == "" else cells[-1]
+        link = re.fullmatch(r"\[[^\]]*\]\(([^)]+)\)", url_cell)
+        if link and link[1].rstrip("/") == repository.rstrip("/"):
+            matches.append(row)
+    if len(matches) != 1:
+        raise Blocked(
+            "original documentation must contain exactly one row matching the "
+            f"catalog name and repository for {name!r}; found {len(matches)}"
+        )
+    return matches[0]
 
 
 def generated(args: argparse.Namespace) -> None:
