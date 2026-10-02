@@ -21,6 +21,24 @@ run_command() {
     fi
 }
 
+# Function to run an optional command and continue on error
+run_optional_command() {
+    local command_to_run="$*"
+    local output
+    local exit_code
+
+    output=$(eval "$command_to_run" 2>&1) || exit_code=$?
+    exit_code=${exit_code:-0}
+
+    if [ $exit_code -ne 0 ]; then
+        echo -e "\033[0;33m[WARN] Optional command failed (Exit Code $exit_code): $command_to_run\033[0m" >&2
+        echo -e "\033[0;33m$output\033[0m" >&2
+        return $exit_code
+    fi
+
+    return 0
+}
+
 # Installing CLI-based AI Agents
 
 echo -e "\n🤖 Installing Copilot CLI..."
@@ -70,23 +88,39 @@ cleanup_kiro_installer() {
 }
 trap cleanup_kiro_installer EXIT
 
-run_command "curl -fsSL \"$KIRO_INSTALLER_URL\" -o \"$KIRO_INSTALLER_PATH\""
-run_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -c -"
+kiro_install_ok=true
 
-run_command "bash \"$KIRO_INSTALLER_PATH\""
+run_optional_command "curl -fsSL \"$KIRO_INSTALLER_URL\" -o \"$KIRO_INSTALLER_PATH\"" || kiro_install_ok=false
 
-kiro_binary=""
-if command -v kiro-cli >/dev/null 2>&1; then
-  kiro_binary="kiro-cli"
-elif command -v kiro >/dev/null 2>&1; then
-  kiro_binary="kiro"
-else
-  echo -e "\033[0;31m[ERROR] Kiro CLI installation did not create 'kiro-cli' or 'kiro' in PATH.\033[0m" >&2
-  exit 1
+if [ "$kiro_install_ok" = true ]; then
+  run_optional_command "echo \"$KIRO_INSTALLER_SHA256  $KIRO_INSTALLER_PATH\" | sha256sum -c -" || kiro_install_ok=false
 fi
 
-run_command "$kiro_binary --help > /dev/null"
-echo "✅ Done"
+if [ "$kiro_install_ok" = true ]; then
+  run_optional_command "bash \"$KIRO_INSTALLER_PATH\"" || kiro_install_ok=false
+fi
+
+if [ "$kiro_install_ok" = true ]; then
+  kiro_binary=""
+  if command -v kiro-cli >/dev/null 2>&1; then
+    kiro_binary="kiro-cli"
+  elif command -v kiro >/dev/null 2>&1; then
+    kiro_binary="kiro"
+  else
+    echo -e "\033[0;33m[WARN] Kiro CLI installation did not create 'kiro-cli' or 'kiro' in PATH.\033[0m" >&2
+    kiro_install_ok=false
+  fi
+fi
+
+if [ "$kiro_install_ok" = true ]; then
+  run_optional_command "$kiro_binary --help > /dev/null" || kiro_install_ok=false
+fi
+
+if [ "$kiro_install_ok" = true ]; then
+  echo "✅ Done"
+else
+  echo -e "\033[0;33m[WARN] Skipping Kiro CLI installation; continuing devcontainer setup.\033[0m" >&2
+fi
 
 echo -e "\n🤖 Installing Kimi Code CLI..."
 # https://code.kimi.com
