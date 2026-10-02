@@ -42,7 +42,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
 | [RovoDev](https://www.atlassian.com/software/rovo-dev)                               | `rovodev`        | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev`                                   |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
+| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           | Workflow `command` and `prompt` steps can't run through SHAI: its CLI accepts prompt text (as arguments, on stdin, or through `shai agent`), but hands it to its auto-fix agent and never loads `.shai/commands`, so those steps fail |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
@@ -260,7 +260,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
-| `generic`   | `--skills`          | Render commands as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. Generic's output directory is a runtime option rather than a static per-agent folder, so this does not enable extension/preset add-on skill registration in either layout. |
+| `generic`   | `--skills`          | Render commands and installed extension invocations as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
@@ -271,6 +271,14 @@ Example:
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
+
+Once `generic` is the active integration, `specify extension add` registers
+extension commands in its configured `--commands-dir` (as command files or
+skills according to `--skills`). `specify extension remove` removes unchanged
+extension-owned artifacts while leaving core commands, user files, and edited
+extension files intact. The core `speckit.taskstoissues` command remains
+available; installing the GitHub extension adds the namespaced replacement
+without deprecating or removing the core command.
 
 ## Scaffold a New Integration
 

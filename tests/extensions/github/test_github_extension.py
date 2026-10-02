@@ -104,11 +104,11 @@ class TestExtensionLayout:
         assert "/speckit.taskstoissues" in text
         assert COMMAND_NAME in text
 
-    def test_readme_discloses_generic_registration_exception(self):
+    def test_readme_documents_generic_registration(self):
         text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
         assert "`generic`" in text
-        assert "does **not** create" in text
-        assert "either layout" in text
+        assert "configured `--commands-dir`" in text
+        assert "commands and skills layouts" in text
 
     def test_command_file_exists(self):
         assert COMMAND_FILE.is_file()
@@ -158,7 +158,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.0"
+        assert m.version == "1.0.1"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_command_files_exist(self):
@@ -215,7 +215,7 @@ class TestManifest:
 
 class TestExtensionInstall:
     @pytest.mark.parametrize("skills_mode", [False, True], ids=["commands", "skills"])
-    def test_generic_installs_sources_without_registering_an_artifact(
+    def test_generic_registers_and_removes_artifact_in_configured_directory(
         self, tmp_path: Path, skills_mode: bool
     ):
         from specify_cli.extensions import ExtensionManager
@@ -248,6 +248,12 @@ class TestExtensionInstall:
         )
         commands_dir = project / ".myagent" / "commands"
         commands_dir.mkdir(parents=True)
+        core = commands_dir / (
+            "speckit-taskstoissues/SKILL.md"
+            if skills_mode else "speckit.taskstoissues.md"
+        )
+        core.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text("core command remains unchanged\n", encoding="utf-8")
 
         manager = ExtensionManager(project)
         manager.install_from_directory(
@@ -258,17 +264,20 @@ class TestExtensionInstall:
         assert (
             project / ".specify" / "extensions" / "github" / "extension.yml"
         ).is_file()
-        assert not (
-            commands_dir
-            / (
-                "speckit-github-taskstoissues/SKILL.md"
-                if skills_mode
-                else f"{COMMAND_NAME}.md"
-            )
-        ).exists()
+        artifact = commands_dir / (
+            "speckit-github-taskstoissues/SKILL.md"
+            if skills_mode else f"{COMMAND_NAME}.md"
+        )
+        assert artifact.is_file()
+        content = artifact.read_text(encoding="utf-8")
+        assert ".specify/extensions/github/scripts/bash/resolve-tasks.sh" in content
+        assert "{SCRIPT}" not in content
         assert not (
             project / ".agents" / "skills" / "speckit-github-taskstoissues" / "SKILL.md"
         ).exists()
+        assert manager.remove("github")
+        assert not artifact.exists()
+        assert core.read_text(encoding="utf-8") == "core command remains unchanged\n"
 
     def test_install_copies_command_and_scripts(self, tmp_path: Path):
         from specify_cli.extensions import ExtensionManager

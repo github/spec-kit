@@ -26,10 +26,20 @@ specify extension add <name>
 | --------------- | -------------------------------------------------------- |
 | `--dev`         | Install from a local directory (for development)         |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
+| `--version <v>` | Install an exact version advertised by a catalog        |
 | `--force`       | Overwrite if the extension is already installed          |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
-Installs an extension from the catalog, a URL, or a local directory. Extension commands are automatically registered with the currently installed AI coding agent integration.
+Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The core `speckit.taskstoissues` command remains available alongside the GitHub extension's namespaced replacement during migration.
+
+If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
+
+An unqualified catalog install still selects the advertised current version.
+`--version` uses only the winning catalog source for that extension ID; it does
+not fall back to a lower-priority source when the requested version is absent.
+Discovery-only catalogs remain non-installable. `--version` cannot be combined
+with `--dev` or the direct-URL `--from` option. The downloaded archive's extension
+ID and version are checked before installation.
 
 > **Note:** All extension commands require a project already initialized with `specify init`.
 
@@ -79,9 +89,47 @@ including for help, the existing human-readable behavior is unchanged.
 
 ```bash
 specify extension info <name>
+specify extension info <name> --versions
 ```
 
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
+`--versions` lists the current and historical versions advertised by the
+winning catalog source; it labels discovery-only sources as non-installable.
+Equivalent PEP 440 version spellings (for example, `v1.0` and `1.0`) select
+the same release; the catalog's advertised spelling remains visible.
+
+Catalogs may keep the current release in the existing top-level fields and add
+historical releases in a `releases` mapping. Older single-version catalogs
+continue to work unchanged. Each historical release needs its own download URL
+and SHA-256 digest; release-specific requirements or provided capabilities must
+be placed in that release's record rather than inherited from the current one.
+As with current releases, a digest may use a case-insensitive `sha256:` prefix
+and surrounding whitespace.
+
+```json
+{
+  "extensions": {
+    "my-extension": {
+      "name": "My Extension",
+      "version": "0.5.1",
+      "download_url": "https://example.com/my-extension-0.5.1.zip",
+      "sha256": "<64-character SHA-256 for 0.5.1>",
+      "releases": {
+        "0.4.12": {
+          "download_url": "https://example.com/my-extension-0.4.12.zip",
+          "sha256": "<64-character SHA-256 for 0.4.12>"
+        }
+      }
+    }
+  }
+}
+```
+
+The example omits other catalog metadata for brevity. The current version must
+not be repeated in `releases`; malformed or duplicate release records are
+rejected. Bundle pins still use the current catalog resolution path until the
+separate bundle work described in [#4719](https://github.com/github/spec-kit/issues/4719)
+adds exact-version component lookup.
 
 ## Update Extensions
 
@@ -93,6 +141,8 @@ Updates a specific extension, or all installed extensions if no name is given.
 
 Bundled extensions (such as `agent-context` and `git`) have no download URL; their updates install from the copy shipped with the running spec-kit release. When the catalog advertises a newer version than your spec-kit release ships, the update is reported as requiring a spec-kit upgrade first.
 
+For `generic`, a failed update restores hash-owned invocations from previously configured `--commands-dir` locations as well as the current location, even if another integration is now active.
+
 ## Enable / Disable an Extension
 
 ```bash
@@ -100,7 +150,9 @@ specify extension enable <name>
 specify extension disable <name>
 ```
 
-Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Re-enable with `enable`.
+Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
+
+For `generic`, disabling removes hash-owned invocations even after the output directory moves, but preserves unrelated same-named files in the new directory.
 
 ## Set Extension Priority
 
