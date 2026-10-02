@@ -38,8 +38,10 @@ remain independent of catalog lookup. Without `--version`, installation still
 selects the advertised current release (or the locally bundled preset). A
 requested release absent from the winning catalog is an error; lower-priority
 catalogs cannot supply it. Discovery-only catalogs cannot install any release.
-Version-specific catalog installs verify the selected archive's SHA-256 and
-its `preset.yml` ID and version before modifying installed presets.
+Version-specific catalog installs verify the selected archive's `preset.yml` ID
+and version before modifying installed presets. Historical releases require a
+SHA-256 digest, which is also verified on download; a legacy current release
+may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
