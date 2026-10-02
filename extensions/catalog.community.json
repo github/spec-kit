@@ -1501,7 +1501,21 @@
       "category": "docs",
       "effect": "read-only",
       "requires": {
-        "speckit_version": ">=1.0.0,<2.0.0"
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 1,
