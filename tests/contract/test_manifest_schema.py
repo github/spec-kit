@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundler.models.manifest import BundleManifest
-from tests.bundler_helpers import valid_manifest_dict
+from specify_cli.bundles.manifest import BundleManifest
+from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 
 def test_valid_manifest_has_no_structural_errors():
@@ -162,6 +162,25 @@ def test_string_mcp_rejected_not_split_per_character():
     data = valid_manifest_dict()
     data["requires"]["mcp"] = "github"
     with pytest.raises(BundlerError, match="'requires.mcp' must be a list of strings"):
+        BundleManifest.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tags", [1]),
+        ("requires.tools", [False]),
+        ("requires.mcp", [{}]),
+    ],
+)
+def test_string_list_fields_reject_non_string_members(field, value):
+    data = valid_manifest_dict()
+    if field == "tags":
+        data["tags"] = value
+    else:
+        data["requires"][field.split(".", 1)[1]] = value
+
+    with pytest.raises(BundlerError, match="must be a list of strings"):
         BundleManifest.from_dict(data)
 
 

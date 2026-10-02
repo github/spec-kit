@@ -51,7 +51,9 @@ fi
 
 # Resolve tasks template through override stack
 TASKS_TEMPLATE=$(resolve_template "tasks-template" "$REPO_ROOT") || true
-if [[ -z "$TASKS_TEMPLATE" ]] || [[ ! -f "$TASKS_TEMPLATE" ]]; then
+if TASKS_TEMPLATE_CONTENT=$(resolve_template_content "tasks-template" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+    TASKS_TEMPLATE_CONTENT="${TASKS_TEMPLATE_CONTENT%x}"
+else
     echo "ERROR: Could not resolve required tasks-template from the template override stack for $REPO_ROOT" >&2
     echo "Template 'tasks-template' was not found in any supported location (overrides, presets, extensions, or shared core). Add an override at .specify/templates/overrides/tasks-template.md, or run 'specify init' / reinstall shared infra to restore the core .specify/templates/tasks-template.md template." >&2
     exit 1
@@ -69,7 +71,8 @@ if $JSON_MODE; then
             --arg feature_dir "$FEATURE_DIR" \
             --argjson docs "$json_docs" \
             --arg tasks_template "${TASKS_TEMPLATE:-}" \
-            '{FEATURE_DIR:$feature_dir,AVAILABLE_DOCS:$docs,TASKS_TEMPLATE:$tasks_template}'
+            --arg tasks_template_content "$TASKS_TEMPLATE_CONTENT" \
+            '{FEATURE_DIR:$feature_dir,AVAILABLE_DOCS:$docs,TASKS_TEMPLATE:$tasks_template,TASKS_TEMPLATE_CONTENT:$tasks_template_content}'
     else
         if [[ ${#docs[@]} -eq 0 ]]; then
             json_docs="[]"
@@ -77,8 +80,8 @@ if $JSON_MODE; then
             json_docs=$(for d in "${docs[@]}"; do printf '"%s",' "$(json_escape "$d")"; done)
             json_docs="[${json_docs%,}]"
         fi
-        printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s,"TASKS_TEMPLATE":"%s"}\n' \
-            "$(json_escape "$FEATURE_DIR")" "$json_docs" "$(json_escape "${TASKS_TEMPLATE:-}")"
+        printf '{"FEATURE_DIR":"%s","AVAILABLE_DOCS":%s,"TASKS_TEMPLATE":"%s","TASKS_TEMPLATE_CONTENT":"%s"}\n' \
+            "$(json_escape "$FEATURE_DIR")" "$json_docs" "$(json_escape "${TASKS_TEMPLATE:-}")" "$(json_escape "$TASKS_TEMPLATE_CONTENT")"
     fi
 else
     echo "FEATURE_DIR: $FEATURE_DIR"

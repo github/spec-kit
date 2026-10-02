@@ -14,6 +14,8 @@ body:
         - Create a GitHub release with a version tag (e.g., v1.0.0)
         - Test installation from the release archive: `specify preset add --from <download-url>`
 
+        **After submitting:** a maintainer applies the `preset-submission` label during issue triage, which starts the automated catalog validation. You don't need to apply any label or ask for one.
+
   - type: input
     id: preset-id
     attributes:

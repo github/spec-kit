@@ -10,6 +10,7 @@ import yaml
 from rich.console import Console
 
 from tests.conftest import strip_ansi
+from tests.specify_cli.integrations._catalog_helpers import IntegrationCatalogCliTestBase
 
 
 class _NoopConsole:
@@ -69,8 +70,11 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-        assert (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
+        assert not (project / ".github" / "agents").exists()
+        assert not (project / ".github" / "prompts").exists()
         assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
@@ -78,6 +82,7 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
+        assert opts["ai_skills"] is True
         # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
@@ -111,10 +116,140 @@ class TestInitIntegrationFlag:
 
         assert result.exit_code == 0, result.output
         assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_skips_pickers_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """Agent harnesses often allocate a PTY (isatty True) but cannot send
+        arrow keys. ``--non-interactive`` must still skip both pickers and apply
+        documented defaults — the hang reported in #4152.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli
+        import specify_cli.command_init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not open select_with_arrows even on a TTY"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        runner = CliRunner()
+        project = tmp_path / "agent-pty"
+        result = runner.invoke(
+            app,
+            ["init", str(project), "--non-interactive", "--ignore-agent-tools"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
+
+    def test_noninteractive_flag_here_nonempty_requires_force(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` on a non-empty --here directory must fail fast
+        asking for --force, even when stdin looks like a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.command_init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not call typer.confirm for a non-empty --here directory"
+            )
+
+        monkeypatch.setattr("typer.confirm", fail_confirm)
+
+        project = tmp_path / "nonempty-here-flag"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--non-interactive",
+                    "--integration",
+                    "copilot",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        assert "--non-interactive" in result.output
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_noninteractive_flag_here_force_completes_without_script_flag(
+        self, tmp_path, monkeypatch
+    ):
+        """The #4152 reproduction: ``--here --force --integration`` without
+        ``--script`` must not hang on the script picker when --non-interactive
+        is set, even if stdin is a TTY.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.command_init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("script picker must not run under --non-interactive")
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        project = tmp_path / "here-force-agent"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--force",
+                    "--non-interactive",
+                    "--integration",
+                    "claude",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".specify" / "init-options.json").exists()
 
     def test_noninteractive_init_honors_default_integration_env_var(
         self, tmp_path, monkeypatch
@@ -151,14 +286,14 @@ class TestInitIntegrationFlag:
         # hardcoded constant (guards the picker wiring against regression).
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
         monkeypatch.setenv("SPECKIT_INTEGRATION_DEFAULT", "gemini")
 
         captured = {}
 
-        def fake_select(options, prompt_text=None, default_key=None):
+        def fake_select(options, prompt_text=None, default_key=None, **_kwargs):
             # Only capture the integration picker (not the script picker).
             if "Choose your coding agent integration" in (prompt_text or ""):
                 captured["default_key"] = default_key
@@ -212,7 +347,7 @@ class TestInitIntegrationFlag:
         an exit-1 --force error."""
         from typer.testing import CliRunner
         from specify_cli import app
-        import specify_cli.commands.init as init_mod
+        import specify_cli.command_init as init_mod
 
         # Simulate an interactive terminal so the Abort is treated as a cancel.
         monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
@@ -250,7 +385,9 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-plan" / "SKILL.md"
+        ).exists()
 
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
@@ -1059,6 +1196,99 @@ class TestInitIntegrationFlag:
         assert "not updated" in result.output
 
 
+    def test_init_here_force_reapplies_installed_presets(self, tmp_path, monkeypatch):
+        """Regression for #3990: init --here --force must call _register_presets_for_agent
+        after setup() so preset-composed files are not silently reverted to core."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "force-preset-reapply"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+
+            # First init to create a valid project structure.
+            result = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+            assert result.exit_code == 0, result.output
+
+            # Second init --here --force: verify _register_presets_for_agent is called.
+            # Patch at the source module since init.py does a lazy import of these functions.
+            mock_presets = MagicMock()
+            mock_extensions = MagicMock()
+            with (
+                patch(
+                    "specify_cli.integrations._helpers._register_presets_for_agent",
+                    mock_presets,
+                ),
+                patch(
+                    "specify_cli.integrations._helpers._register_extensions_for_agent",
+                    mock_extensions,
+                ),
+            ):
+                result2 = runner.invoke(app, [
+                    "init", "--here", "--force",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result2.exit_code == 0, result2.output
+        assert mock_presets.called, (
+            "_register_presets_for_agent was not called during init --here --force"
+        )
+        assert mock_extensions.called, (
+            "_register_extensions_for_agent was not called during init --here --force"
+        )
+
+    def test_init_here_without_force_does_not_reapply_presets(self, tmp_path):
+        """Without --force (fresh project), _register_presets_for_agent should NOT be called."""
+        from unittest.mock import MagicMock, patch
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "no-force-preset"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            mock_presets = MagicMock()
+            with patch(
+                "specify_cli.integrations._helpers._register_presets_for_agent",
+                mock_presets,
+            ):
+                result = runner.invoke(app, [
+                    "init", "--here",
+                    "--integration", "claude",
+                    "--script", "sh",
+                    "--ignore-agent-tools",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        # On a fresh project without --force the reapply guard should not fire.
+        assert not mock_presets.called, (
+            "_register_presets_for_agent should not be called on a fresh init without --force"
+        )
+
+
 class TestForceExistingDirectory:
     """Tests for --force merging into an existing named directory."""
 
@@ -1373,7 +1603,7 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.specify" not in script_content
 
     def test_full_init_copilot_resolves_page_templates(self, tmp_path):
-        """Full CLI init with Copilot (markdown agent) produces dot refs in page templates."""
+        """Default Copilot skills mode produces hyphen refs in page templates."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -1395,27 +1625,28 @@ class TestSharedInfraCommandRefs:
 
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
-        assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
+        assert "/speckit-plan" in content, "Copilot skills should use /speckit-plan"
+        assert "/speckit.plan" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
-        assert "/speckit.specify" in script_content
-        assert "/speckit-specify" not in script_content
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
 
-    def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
-        """Full CLI init with Copilot --skills produces hyphen refs in page templates."""
+    def test_full_init_copilot_commands_resolves_page_templates(self, tmp_path):
+        """Copilot --commands produces dot refs in page templates."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         runner = CliRunner()
-        project = tmp_path / "init-copilot-skills"
+        project = tmp_path / "init-copilot-commands"
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
             result = runner.invoke(app, [
                 "init", str(project),
                 "--integration", "copilot",
-                "--integration-options", "--skills",
+                "--integration-options", "--commands",
                 "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
@@ -1426,273 +1657,17 @@ class TestSharedInfraCommandRefs:
 
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
-        assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
-        assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
+        assert "/speckit.plan" in content, "Copilot --commands should use /speckit.plan"
+        assert "/speckit-plan" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
-        assert "/speckit-specify" in script_content
-        assert "/speckit.specify" not in script_content
+        assert "/speckit.specify" in script_content
+        assert "/speckit-specify" not in script_content
 
 
-class TestIntegrationCatalogDiscoveryCLI:
-    """End-to-end CLI tests for `integration search`, `info`, and `catalog …`.
-
-    All tests patch `IntegrationCatalog._get_merged_integrations` so no network
-    or on-disk cache is touched. Adds #2344 coverage without affecting any
-    existing integration install/switch/uninstall/upgrade behavior.
-    """
-
-    FAKE_INTEGRATIONS = [
-        {
-            "id": "acme-coder",
-            "name": "Acme Coder",
-            "version": "2.0.0",
-            "description": "Community integration for Acme Coder",
-            "author": "acme-org",
-            "tags": ["cli", "acme"],
-            "_catalog_name": "community",
-            "_install_allowed": False,
-        },
-        {
-            "id": "stellar-agent",
-            "name": "Stellar Agent",
-            "version": "1.3.0",
-            "description": "First-party Stellar agent integration",
-            "author": "stellar-labs",
-            "tags": ["ide"],
-            "_catalog_name": "default",
-            "_install_allowed": True,
-        },
-    ]
-    MARKUP_INTEGRATION = {
-        "id": "[red]markup-id[/red]",
-        "name": "[green]Markup Name[/green]",
-        "version": "[blue]1.0.0[/blue]",
-        "description": "[yellow]Markup Description[/yellow]",
-        "author": "[magenta]Markup Author[/magenta]",
-        "license": "[cyan]Markup License[/cyan]",
-        "repository": "[bold]Markup Repository[/bold]",
-        "tags": ["[italic]markup-tag[/italic]"],
-        "_catalog_name": "[underline]markup-catalog[/underline]",
-        "_install_allowed": False,
-    }
-
-    def _make_project(self, tmp_path):
-        project = tmp_path / "proj"
-        project.mkdir()
-        (project / ".specify").mkdir()
-        return project
-
-    def _patch_catalog(self, monkeypatch, integrations=None):
-        """Return a stubbed `_get_merged_integrations` that yields *integrations*."""
-        from specify_cli.integrations.catalog import IntegrationCatalog
-
-        data = list(integrations if integrations is not None else self.FAKE_INTEGRATIONS)
-
-        def fake_merged(self, force_refresh=False):
-            return data
-
-        monkeypatch.setattr(IntegrationCatalog, "_get_merged_integrations", fake_merged)
-
-    def _invoke(self, argv, cwd):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        runner = CliRunner()
-        old = os.getcwd()
-        try:
-            os.chdir(cwd)
-            return runner.invoke(app, argv, catch_exceptions=False)
-        finally:
-            os.chdir(old)
-
-    def test_integration_install_failure_reports_phase_target_and_rollback(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.integrations import INTEGRATION_REGISTRY
-        from specify_cli.integrations.base import IntegrationBase
-
-        class BrokenIntegration(IntegrationBase):
-            key = "broken-test"
-            config = {
-                "name": "Broken Test",
-                "folder": ".broken/",
-                "commands_subdir": "commands",
-                "install_url": None,
-                "requires_cli": False,
-            }
-            registrar_config = {
-                "dir": ".broken/commands",
-                "format": "markdown",
-                "args": "$ARGUMENTS",
-                "extension": ".md",
-            }
-
-            def setup(self, project_root, manifest, **kwargs):
-                raise OSError("setup exploded\nwith context")
-
-            def teardown(self, project_root, manifest, force=False):
-                raise OSError("rollback exploded")
-
-        project = self._make_project(tmp_path)
-        monkeypatch.setitem(INTEGRATION_REGISTRY, "broken-test", BrokenIntegration())
-
-        result = self._invoke(["integration", "install", "broken-test"], project)
-        normalized = _normalize_cli_output(result.output)
-
-        assert result.exit_code == 1, result.output
-        assert "Failed to rollback integration 'broken-test'" in normalized
-        assert "rollback exploded" in normalized
-        assert "Failed to install integration 'broken-test'" in normalized
-        assert "setup exploded with context" in normalized
-
-    def test_integration_upgrade_failure_reports_phase_and_target(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.integrations import INTEGRATION_REGISTRY
-        from specify_cli.integrations.copilot import CopilotIntegration
-
-        class UpgradeBrokenIntegration(CopilotIntegration):
-            key = "upgrade-broken"
-            config = dict(CopilotIntegration.config)
-            config["name"] = "Upgrade Broken"
-
-            def setup(self, project_root, manifest, **kwargs):
-                raise OSError("upgrade exploded\nwith context")
-
-        project = self._make_project(tmp_path)
-        monkeypatch.setitem(
-            INTEGRATION_REGISTRY, "upgrade-broken", UpgradeBrokenIntegration()
-        )
-
-        (project / ".specify" / "integrations").mkdir(parents=True, exist_ok=True)
-        (project / ".specify" / "integration.json").write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "integration": "upgrade-broken",
-                    "integrations": ["upgrade-broken"],
-                    "integration_settings": {"upgrade-broken": {"script": "sh"}},
-                }
-            ),
-            encoding="utf-8",
-        )
-        (
-            project / ".specify" / "integrations" / "upgrade-broken.manifest.json"
-        ).write_text(
-            json.dumps(
-                {
-                    "integration": "upgrade-broken",
-                    "version": "0.0.0",
-                    "installed_at": "2026-05-16T00:00:00+00:00",
-                    "files": {},
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        result = self._invoke(["integration", "upgrade", "upgrade-broken"], project)
-        normalized = _normalize_cli_output(result.output)
-
-        assert result.exit_code == 1, result.output
-        assert "Failed to upgrade integration 'upgrade-broken'" in normalized
-        assert "upgrade exploded with context" in normalized
-        assert "previous integration files may still be in place" in normalized
-
-    def test_integration_switch_cleanup_warning_reports_phase_and_targets(
-        self, tmp_path, monkeypatch
-    ):
-        from specify_cli.extensions import ExtensionManager
-
-        project = self._make_project(tmp_path)
-        (project / ".specify" / "integrations").mkdir(parents=True, exist_ok=True)
-        (project / ".specify" / "integration.json").write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "integration": "copilot",
-                    "integrations": ["copilot"],
-                    "integration_settings": {"copilot": {"script": "sh"}},
-                }
-            ),
-            encoding="utf-8",
-        )
-        (project / ".specify" / "integrations" / "copilot.manifest.json").write_text(
-            json.dumps(
-                {
-                    "integration": "copilot",
-                    "version": "0.0.0",
-                    "installed_at": "2026-05-16T00:00:00+00:00",
-                    "files": {},
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        def fail_cleanup(self, integration_key):
-            raise OSError("cleanup exploded")
-
-        monkeypatch.setattr(ExtensionManager, "unregister_agent_artifacts", fail_cleanup)
-
-        result = self._invoke(["integration", "switch", "claude"], project)
-        normalized = _normalize_cli_output(result.output)
-
-        assert result.exit_code == 0, result.output
-        assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
-        assert "cleanup exploded" in normalized
-        assert "Switched to integration" in normalized
-
-    # -- Project guard -----------------------------------------------------
-
-    def test_search_requires_specify_project(self, tmp_path):
-        project = tmp_path / "bare"
-        project.mkdir()
-        result = self._invoke(["integration", "search"], project)
-        assert result.exit_code == 1
-        assert "Not a Spec Kit project" in result.output
-
-    def test_catalog_list_requires_specify_project(self, tmp_path):
-        project = tmp_path / "bare"
-        project.mkdir()
-        result = self._invoke(["integration", "catalog", "list"], project)
-        assert result.exit_code == 1
-        assert "Not a Spec Kit project" in result.output
-
-    def test_primary_integration_commands_require_specify_project(self, tmp_path):
-        project = tmp_path / "bare"
-        project.mkdir()
-        commands = [
-            ["integration", "list"],
-            ["integration", "install", "codex"],
-            ["integration", "use", "codex"],
-            ["integration", "uninstall"],
-            ["integration", "switch", "codex"],
-            ["integration", "upgrade"],
-        ]
-
-        for command in commands:
-            result = self._invoke(command, project)
-            failure_context = (
-                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
-            )
-            assert result.exit_code == 1, failure_context
-            assert "Not a Spec Kit project" in result.output, failure_context
-
-    def test_integration_commands_require_specify_directory(self, tmp_path):
-        project = tmp_path / "bad"
-        project.mkdir()
-        (project / ".specify").write_text("not a directory")
-
-        commands = [
-            ["integration", "list"],
-            ["integration", "use", "codex"],
-        ]
-
-        for command in commands:
-            result = self._invoke(command, project)
-            assert result.exit_code == 1, result.output
-            assert "Not a Spec Kit project" in result.output
+class TestProjectScopedCliContracts(IntegrationCatalogCliTestBase):
+    """Cross-domain project guard and catalog path contracts."""
 
     def test_project_scoped_commands_require_specify_directory(self, tmp_path):
         project = tmp_path / "bad-feature-commands"
@@ -1772,629 +1747,6 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert extension_list.exit_code == 0, extension_list.output
         assert "Config: .specify/extension-catalogs.yml" in extension_list.output
 
-    def test_extension_catalog_add_rejects_non_mapping_config_root(self, tmp_path):
-        project = self._make_project(tmp_path)
-        cfg_path = project / ".specify" / "extension-catalogs.yml"
-        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
-
-        result = self._invoke([
-            "extension", "catalog", "add",
-            "https://example.com/extension-catalog.yml",
-            "--name", "demo-extensions",
-        ], project)
-
-        assert result.exit_code == 1, result.output
-        output = _normalize_cli_output(result.output)
-        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
-        assert "expected a YAML mapping at the root" in output
-        assert "AttributeError" not in output
-
-    def test_extension_catalog_remove_rejects_non_mapping_config_root(self, tmp_path):
-        project = self._make_project(tmp_path)
-        cfg_path = project / ".specify" / "extension-catalogs.yml"
-        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
-
-        result = self._invoke(["extension", "catalog", "remove", "demo"], project)
-
-        assert result.exit_code == 1, result.output
-        output = _normalize_cli_output(result.output)
-        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
-        assert "expected a YAML mapping at the root" in output
-        assert "AttributeError" not in output
-
-    def test_extension_catalog_add_escapes_catalog_name_markup(self, tmp_path):
-        project = self._make_project(tmp_path)
-        catalog_name = "[red]demo[/red]"
-
-        result = self._invoke([
-            "extension", "catalog", "add",
-            "https://example.com/extension-catalog.yml",
-            "--name", catalog_name,
-        ], project)
-
-        assert result.exit_code == 0, result.output
-        output = _normalize_cli_output(result.output)
-        assert f"Added catalog '{catalog_name}'" in output
-
-    def test_extension_catalog_remove_escapes_catalog_name_markup(self, tmp_path):
-        project = self._make_project(tmp_path)
-        catalog_name = "[red]demo[/red]"
-        cfg_path = project / ".specify" / "extension-catalogs.yml"
-        cfg_path.write_text(
-            yaml.safe_dump(
-                {
-                    "catalogs": [
-                        {
-                            "name": catalog_name,
-                            "url": "https://example.com/extension-catalog.yml",
-                            "priority": 10,
-                            "install_allowed": False,
-                            "description": "",
-                        }
-                    ]
-                },
-                sort_keys=False,
-            ),
-            encoding="utf-8",
-        )
-
-        result = self._invoke(["extension", "catalog", "remove", catalog_name], project)
-
-        assert result.exit_code == 0, result.output
-        output = _normalize_cli_output(result.output)
-        assert f"Removed catalog '{catalog_name}'" in output
-
-    # -- search ------------------------------------------------------------
-
-    def test_search_lists_all(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "Found 2 integration(s)" in result.output
-        assert "acme-coder" in result.output
-        assert "stellar-agent" in result.output
-        assert "specify integration install stellar-agent" not in normalized_output
-        assert "Only built-in integration IDs can be installed" in normalized_output
-
-    def test_search_validates_integration_json_before_catalog_lookup(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        (project / ".specify" / "integration.json").write_text(
-            "{bad json\n", encoding="utf-8"
-        )
-
-        from specify_cli.integrations.catalog import IntegrationCatalog
-
-        def fail_search(self, **kwargs):
-            raise AssertionError("catalog search should not be called")
-
-        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
-
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1
-        assert "contains invalid JSON" in normalized_output
-        assert "integration.json" in normalized_output
-
-    def test_search_rejects_non_utf8_integration_json_before_catalog_lookup(
-        self, tmp_path, monkeypatch
-    ):
-        """A non-UTF8 ``integration.json`` must surface a clear error and
-        avoid falling through to the catalog lookup, mirroring the malformed-JSON
-        case but for the ``UnicodeDecodeError`` branch in ``_read_integration_json``."""
-        project = self._make_project(tmp_path)
-        # 0xFF is invalid as the leading byte of any UTF-8 sequence, so
-        # ``Path.read_text(encoding="utf-8")`` raises ``UnicodeDecodeError``.
-        (project / ".specify" / "integration.json").write_bytes(b"\xff\xfe\x00\x00")
-
-        from specify_cli.integrations.catalog import IntegrationCatalog
-
-        def fail_search(self, **kwargs):
-            raise AssertionError("catalog search should not be called")
-
-        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
-
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1
-        assert "not valid UTF-8" in normalized_output
-        assert "integration.json" in normalized_output
-
-    def test_search_filters_by_tag(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "search", "--tag", "acme"], project)
-        assert result.exit_code == 0, result.output
-        assert "Found 1 integration(s)" in result.output
-        assert "acme-coder" in result.output
-        assert "stellar-agent" not in result.output
-
-    def test_search_filters_by_author(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(
-            ["integration", "search", "--author", "stellar-labs"], project
-        )
-        assert result.exit_code == 0, result.output
-        assert "Found 1 integration(s)" in result.output
-        assert "stellar-agent" in result.output
-
-    def test_search_no_match_hint(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(
-            ["integration", "search", "--tag", "nope"], project
-        )
-        assert result.exit_code == 0, result.output
-        assert "No integrations found" in result.output
-        assert "specify integration search" in result.output
-
-    def test_search_marks_discovery_only_entry(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "search", "acme"], project)
-        assert result.exit_code == 0, result.output
-        # acme-coder is flagged _install_allowed=False, so we should warn
-        assert "Not directly installable" in result.output
-
-    def test_search_escapes_catalog_markup(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
-
-        result = self._invoke(["integration", "search"], project)
-
-        assert result.exit_code == 0, result.output
-        output = _normalize_cli_output(result.output)
-        for value in (
-            self.MARKUP_INTEGRATION["id"],
-            self.MARKUP_INTEGRATION["name"],
-            self.MARKUP_INTEGRATION["version"],
-            self.MARKUP_INTEGRATION["description"],
-            self.MARKUP_INTEGRATION["author"],
-            self.MARKUP_INTEGRATION["tags"][0],
-            self.MARKUP_INTEGRATION["_catalog_name"],
-        ):
-            assert value in output
-
-    # -- info --------------------------------------------------------------
-
-    def test_info_found(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(
-            ["integration", "info", "stellar-agent"], project
-        )
-        assert result.exit_code == 0, result.output
-        assert "Stellar Agent" in result.output
-        assert "stellar-agent" in result.output
-        assert "v1.3.0" in result.output
-
-    def test_info_not_found(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        result = self._invoke(
-            ["integration", "info", "does-not-exist"], project
-        )
-        assert result.exit_code == 1
-        assert "not found" in result.output
-
-    def test_info_not_found_escapes_query_markup(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch)
-        integration_id = "[red]does-not-exist[/red]"
-
-        result = self._invoke(
-            ["integration", "info", integration_id],
-            project,
-        )
-
-        assert result.exit_code == 1
-        assert integration_id in _normalize_cli_output(result.output)
-
-    def test_info_builtin_not_in_catalog(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        # Empty catalog, but copilot is a registered built-in.
-        self._patch_catalog(monkeypatch, integrations=[])
-        result = self._invoke(["integration", "info", "copilot"], project)
-        assert result.exit_code == 0, result.output
-        assert "Built-in integration" in result.output
-
-    def test_info_escapes_catalog_markup(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        self._patch_catalog(monkeypatch, integrations=[self.MARKUP_INTEGRATION])
-
-        result = self._invoke(
-            ["integration", "info", self.MARKUP_INTEGRATION["id"]],
-            project,
-        )
-
-        assert result.exit_code == 0, result.output
-        output = _normalize_cli_output(result.output)
-        for value in (
-            self.MARKUP_INTEGRATION["id"],
-            self.MARKUP_INTEGRATION["name"],
-            self.MARKUP_INTEGRATION["version"],
-            self.MARKUP_INTEGRATION["description"],
-            self.MARKUP_INTEGRATION["author"],
-            self.MARKUP_INTEGRATION["license"],
-            self.MARKUP_INTEGRATION["repository"],
-            self.MARKUP_INTEGRATION["tags"][0],
-            self.MARKUP_INTEGRATION["_catalog_name"],
-        ):
-            assert value in output
-
-    # -- validation vs network guidance ------------------------------------
-
-    def test_search_local_config_error_shows_local_config_tip(
-        self, tmp_path, monkeypatch
-    ):
-        """`integration search` must point at .specify/integration-catalogs.yml
-        for local-config errors (not the generic 'temporarily unavailable')."""
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-        # Corrupt YAML to drive _load_catalog_config -> IntegrationValidationError.
-        cfg = project / ".specify" / "integration-catalogs.yml"
-        invalid_yaml = "catalogs:\n  - [bad\n"
-        cfg.write_text(invalid_yaml, encoding="utf-8")
-
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1, result.output
-        assert "configuration file path shown above" in normalized_output
-        assert ".specify/integration-catalogs.yml" in normalized_output
-        assert "~/.specify/integration-catalogs.yml" in normalized_output
-        assert "temporarily unavailable" not in normalized_output
-
-    def test_search_invalid_env_catalog_url_shows_env_tip(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv(
-            "SPECKIT_INTEGRATION_CATALOG_URL",
-            "http://insecure.example.com/catalog.json",
-        )
-
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1, result.output
-        assert "SPECKIT_INTEGRATION_CATALOG_URL environment variable" in normalized_output
-        assert "unset it to use the configured catalog files" in normalized_output
-        assert ".specify/integration-catalogs.yml" in normalized_output
-        assert "~/.specify/integration-catalogs.yml" in normalized_output
-        assert "temporarily unavailable" not in normalized_output
-
-    def test_search_whitespace_env_catalog_url_uses_generic_catalog_tip(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", "   ")
-
-        from specify_cli.integrations.catalog import (
-            IntegrationCatalog,
-            IntegrationCatalogError,
-        )
-
-        def fail_search(self, **kwargs):
-            raise IntegrationCatalogError("catalog offline")
-
-        monkeypatch.setattr(IntegrationCatalog, "search", fail_search)
-
-        result = self._invoke(["integration", "search"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1, result.output
-        assert "temporarily unavailable" in normalized_output
-        assert (
-            "SPECKIT_INTEGRATION_CATALOG_URL environment variable"
-            not in normalized_output
-        )
-
-    def test_info_unknown_with_local_config_error_shows_local_config_tip(
-        self, tmp_path, monkeypatch
-    ):
-        """`integration info <unknown>` falls back to the catalog-error branch
-        and must show local-config guidance, not 'Try again when online'."""
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-        cfg = project / ".specify" / "integration-catalogs.yml"
-        invalid_yaml = "catalogs:\n  - [bad\n"
-        cfg.write_text(invalid_yaml, encoding="utf-8")
-
-        result = self._invoke(
-            ["integration", "info", "definitely-not-real"], project
-        )
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1, result.output
-        assert "configuration file path shown above" in normalized_output
-        assert ".specify/integration-catalogs.yml" in normalized_output
-        assert "~/.specify/integration-catalogs.yml" in normalized_output
-        assert "Try again when online" not in normalized_output
-
-    def test_info_unknown_with_invalid_env_catalog_url_shows_env_tip(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv(
-            "SPECKIT_INTEGRATION_CATALOG_URL",
-            "http://insecure.example.com/catalog.json",
-        )
-
-        result = self._invoke(
-            ["integration", "info", "definitely-not-real"], project
-        )
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 1, result.output
-        assert "SPECKIT_INTEGRATION_CATALOG_URL" in normalized_output
-        assert "unset it to use the configured catalog files" in normalized_output
-        assert "Try again when online" not in normalized_output
-
-    # -- catalog list / add / remove ---------------------------------------
-
-    def test_catalog_list_shows_builtin_defaults(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-        result = self._invoke(["integration", "catalog", "list"], project)
-        assert result.exit_code == 0, result.output
-        assert "Integration Catalog Sources" in result.output
-        assert "No project-level catalog sources configured" in result.output
-        assert "Active catalog sources" in result.output
-        assert "non-removable" in result.output
-        assert "default" in result.output
-        assert "community" in result.output
-        # Built-in defaults are active, but not removable project entries.
-        assert "[0]" not in result.output
-        assert "[1]" not in result.output
-
-    def test_catalog_add_then_remove_roundtrip(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-
-        add_result = self._invoke(
-            [
-                "integration",
-                "catalog",
-                "add",
-                "https://new.example.com/catalog.json",
-                "--name",
-                "mine",
-            ],
-            project,
-        )
-        assert add_result.exit_code == 0, add_result.output
-        assert "Catalog source added" in add_result.output
-
-        cfg_path = project / ".specify" / "integration-catalogs.yml"
-        assert cfg_path.exists()
-
-        list_result = self._invoke(["integration", "catalog", "list"], project)
-        assert list_result.exit_code == 0, list_result.output
-        assert "Project catalog sources" in list_result.output
-        assert "[0]" in list_result.output
-        assert "mine" in list_result.output
-        assert "default" not in list_result.output
-        assert "community" not in list_result.output
-
-        remove_result = self._invoke(
-            ["integration", "catalog", "remove", "0"], project
-        )
-        assert remove_result.exit_code == 0, remove_result.output
-        assert "'mine' removed" in remove_result.output
-
-    def test_catalog_list_normalizes_blank_project_catalog_names(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-        cfg_path = project / ".specify" / "integration-catalogs.yml"
-        cfg_path.write_text(
-            yaml.dump(
-                {
-                    "catalogs": [
-                        {
-                            "url": "https://null-name.example.com/catalog.json",
-                            "name": None,
-                        },
-                        {
-                            "url": "https://blank-name.example.com/catalog.json",
-                            "name": "   ",
-                        },
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        result = self._invoke(["integration", "catalog", "list"], project)
-        normalized_output = _normalize_cli_output(result.output)
-
-        assert result.exit_code == 0, result.output
-        assert "[0] catalog-1" in normalized_output
-        assert "[1] catalog-2" in normalized_output
-        assert "None" not in normalized_output
-
-    def test_catalog_list_env_override_supersedes_project_config(
-        self, tmp_path, monkeypatch
-    ):
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.setenv(
-            "SPECKIT_INTEGRATION_CATALOG_URL",
-            "https://env.example.com/catalog.json",
-        )
-        cfg_path = project / ".specify" / "integration-catalogs.yml"
-        cfg_path.write_text(
-            yaml.dump(
-                {
-                    "catalogs": [
-                        {
-                            "url": "https://project.example.com/catalog.json",
-                            "name": "project",
-                            "priority": 1,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        result = self._invoke(["integration", "catalog", "list"], project)
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "SPECKIT_INTEGRATION_CATALOG_URL is set" in normalized_output
-        assert "supersedes configured catalog files" in normalized_output
-        assert "non-removable" in normalized_output
-        assert "https://env.example.com/catalog.json" in normalized_output
-        assert "https://project.example.com/catalog.json" not in normalized_output
-        assert "[0]" not in normalized_output
-
-    def test_catalog_add_strips_whitespace_in_success_output_and_storage(
-        self, tmp_path, monkeypatch
-    ):
-        """Surrounding whitespace in the URL must not appear in the success
-        message or be persisted to the YAML config."""
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-
-        padded_url = "  https://padded.example.com/catalog.json  "
-        clean_url = "https://padded.example.com/catalog.json"
-
-        add_result = self._invoke(
-            [
-                "integration",
-                "catalog",
-                "add",
-                padded_url,
-                "--name",
-                "padded",
-            ],
-            project,
-        )
-        assert add_result.exit_code == 0, add_result.output
-        assert clean_url in add_result.output
-        assert padded_url not in add_result.output
-
-        cfg_path = project / ".specify" / "integration-catalogs.yml"
-        import yaml as _yaml
-        data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        urls = [c["url"] for c in data["catalogs"]]
-        assert clean_url in urls
-        assert padded_url not in urls
-
-    def test_catalog_add_rejects_invalid_url(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        result = self._invoke(
-            [
-                "integration",
-                "catalog",
-                "add",
-                "http://insecure.example.com/catalog.json",
-            ],
-            project,
-        )
-        assert result.exit_code == 1
-        assert "HTTPS" in result.output
-
-    def test_catalog_add_rejects_duplicate(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        url = "https://dup.example.com/catalog.json"
-        first = self._invoke(
-            ["integration", "catalog", "add", url], project
-        )
-        assert first.exit_code == 0, first.output
-        second = self._invoke(
-            ["integration", "catalog", "add", url], project
-        )
-        assert second.exit_code == 1
-        assert "already configured" in second.output
-
-    def test_catalog_remove_out_of_range(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        # Need a config file for remove to attempt an index lookup
-        self._invoke(
-            [
-                "integration",
-                "catalog",
-                "add",
-                "https://only.example.com/catalog.json",
-            ],
-            project,
-        )
-        result = self._invoke(
-            ["integration", "catalog", "remove", "9"], project
-        )
-        assert result.exit_code == 1
-        assert "out of range" in result.output
-
-    def test_catalog_remove_without_config(self, tmp_path, monkeypatch):
-        project = self._make_project(tmp_path)
-        result = self._invoke(
-            ["integration", "catalog", "remove", "0"], project
-        )
-        assert result.exit_code == 1
-        assert "No catalog config" in result.output
-
-    def test_catalog_remove_final_entry_restores_defaults(
-        self, tmp_path, monkeypatch
-    ):
-        """End-to-end: add → remove-last-entry → list should not error.
-
-        Regression for the flow where a user adds a catalog, removes it, then
-        runs any follow-up integration command. Without the fix the config
-        file would be left as `catalogs: []` and every subsequent
-        `integration` call would fail with "contains no 'catalogs' entries".
-        """
-        project = self._make_project(tmp_path)
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-
-        add = self._invoke(
-            [
-                "integration",
-                "catalog",
-                "add",
-                "https://only.example.com/catalog.json",
-                "--name",
-                "only",
-            ],
-            project,
-        )
-        assert add.exit_code == 0, add.output
-
-        remove = self._invoke(
-            ["integration", "catalog", "remove", "0"], project
-        )
-        assert remove.exit_code == 0, remove.output
-        assert "'only' removed" in remove.output
-
-        cfg_path = project / ".specify" / "integration-catalogs.yml"
-        assert not cfg_path.exists(), (
-            "config file should be deleted when the final catalog is removed"
-        )
-
-        # Follow-up command must succeed and show the built-in defaults,
-        # not error out on "contains no 'catalogs' entries".
-        listing = self._invoke(["integration", "catalog", "list"], project)
-        assert listing.exit_code == 0, listing.output
-        assert "default" in listing.output
-        assert "community" in listing.output
-
-
 def test_refresh_shared_templates_preserves_recovered_user_file(tmp_path):
     """refresh_shared_templates must not overwrite a recovered (pre-existing
     user) template without --force, matching install_shared_infra's gate (#2918).
@@ -2453,7 +1805,7 @@ class TestExtensionFlag:
             # Patch get_speckit_version to return a stable (non-dev) version so that
             # the extension compatibility check (SpecifierSet(">=0.2.0")) passes.
             with patch(
-                "specify_cli.commands.init.get_speckit_version",
+                "specify_cli.command_init.get_speckit_version",
                 return_value="0.8.2",
             ):
                 result = runner.invoke(app, [
@@ -2479,6 +1831,82 @@ class TestExtensionFlag:
         # Tracker should show extension step as done
         normalized = _normalize_cli_output(result.output)
         assert "Install extension: git" in normalized
+
+    def test_catalog_extension_init_forwards_catalog_name(self, tmp_path, monkeypatch):
+        """The init catalog branch keeps the catalog provenance at install time."""
+        from types import SimpleNamespace
+
+        import specify_cli._assets as assets
+        import specify_cli.command_init as init_module
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
+
+        project = tmp_path / "project"
+        project.mkdir()
+        archive = tmp_path / "extension.zip"
+        archive.write_bytes(b"archive")
+        captured = {}
+
+        monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+        monkeypatch.setattr(
+            ExtensionCatalog,
+            "get_extension_info",
+            lambda _self, _id: {
+                "id": "catalog-extension",
+                "_install_allowed": True,
+                "_catalog_name": "init-catalog",
+            },
+        )
+        monkeypatch.setattr(
+            ExtensionCatalog,
+            "download_extension",
+            lambda _self, _id: archive,
+        )
+
+        def fake_install_from_zip(self, _archive, _version, *, catalog_name=None):
+            captured["catalog_name"] = catalog_name
+            return SimpleNamespace(name="Catalog Extension", version="1.0.0")
+
+        monkeypatch.setattr(ExtensionManager, "install_from_zip", fake_install_from_zip)
+
+        result = init_module._install_extension_during_init(
+            project, "catalog-extension", "1.0.0"
+        )
+
+        assert result == "Catalog Extension v1.0.0 installed"
+        assert captured == {"catalog_name": "init-catalog"}
+
+    def test_catalog_preset_init_forwards_catalog_name(self, tmp_path, monkeypatch):
+        """The init preset catalog branch keeps resolved provenance."""
+        import specify_cli._assets as assets
+        from specify_cli.presets import PresetCatalog, PresetManager
+
+        captured = {}
+
+        monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+        monkeypatch.setattr(
+            PresetCatalog,
+            "get_pack_info",
+            lambda _self, _id: {
+                "_install_allowed": True,
+                "_catalog_name": "init-preset-catalog",
+            },
+        )
+        archive = tmp_path / "preset.zip"
+        archive.write_bytes(b"archive")
+        monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+
+        def fake_install_from_zip(self, _archive, _version, *, catalog_name=None):
+            captured["catalog_name"] = catalog_name
+
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+        _project, result = self._run_init(
+            tmp_path,
+            ["--preset", "catalog-preset"],
+            project_name="preset-catalog",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured == {"catalog_name": "init-preset-catalog"}
 
     def test_multiple_extensions_installed(self, tmp_path):
         """--extension can be specified multiple times."""
@@ -2572,7 +2000,7 @@ class TestExtensionFlag:
         from unittest.mock import patch
 
         with patch(
-            "specify_cli.commands.init._stdin_is_interactive", return_value=False
+            "specify_cli.command_init._stdin_is_interactive", return_value=False
         ), patch("specify_cli.authentication.http.open_url") as mock_open:
             project, result = self._run_init(
                 tmp_path,
@@ -2586,6 +2014,130 @@ class TestExtensionFlag:
         normalized = _normalize_cli_output(result.output)
         assert "untrusted url" in normalized.lower()
         assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_skips_url_trust_prompt_when_stdin_is_a_tty(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive`` must not call ``typer.confirm`` for an HTTPS
+        ``--extension`` even when stdin is a TTY. Without
+        ``--trust-extension-urls`` the URL is denied (default-deny). Guards the
+        ``allow_prompt`` wiring added for #4152.
+        """
+        from unittest.mock import patch
+
+        import specify_cli.command_init as init_mod
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url"
+        ) as mock_open:
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                ],
+                project_name="ext-url-noninteractive-tty",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        mock_open.assert_not_called()
+        normalized = _normalize_cli_output(result.output)
+        assert "untrusted url" in normalized.lower()
+        assert "--trust-extension-urls" in result.output
+        assert not (project / ".specify" / "extensions" / "git").exists()
+
+    def test_noninteractive_flag_trust_urls_installs_without_confirm(
+        self, tmp_path, monkeypatch
+    ):
+        """``--non-interactive --trust-extension-urls`` installs an HTTPS
+        extension without calling ``typer.confirm``, even when stdin is a TTY.
+        """
+        import io
+
+        from unittest.mock import patch
+
+        from specify_cli import _locate_bundled_extension
+        import specify_cli.command_init as init_mod
+
+        bundled_git = _locate_bundled_extension("git")
+        assert bundled_git is not None, "bundled git extension not found"
+        zip_bytes = self._zip_bytes_from_dir(bundled_git)
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def _cache_dir_stand_in(project_root):
+            d = project_root / ".specify" / "extensions" / ".cache" / "downloads"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+        def _open_download_zip(project_root, download_dir, zip_filename):
+            target = download_dir / zip_filename
+            o_temporary = getattr(os, "O_TEMPORARY", 0)
+            if o_temporary:
+                return os.open(
+                    target, os.O_RDWR | os.O_CREAT | os.O_EXCL | o_temporary, 0o600
+                )
+            fd = os.open(target, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                os.unlink(target)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        def fail_select(*_args, **_kwargs):
+            raise AssertionError("--non-interactive must not open select_with_arrows")
+
+        def fail_confirm(*_args, **_kwargs):
+            raise AssertionError(
+                "--non-interactive must not prompt for URL extension trust"
+            )
+
+        monkeypatch.setattr(init_mod, "select_with_arrows", fail_select)
+
+        with patch("typer.confirm", side_effect=fail_confirm), patch(
+            "specify_cli.authentication.http.open_url",
+            return_value=FakeResponse(zip_bytes),
+        ), patch(
+            "specify_cli.extensions._commands._validate_safe_cache_dir",
+            side_effect=_cache_dir_stand_in,
+        ), patch(
+            "specify_cli.extensions._commands._safe_open_download_zip",
+            side_effect=_open_download_zip,
+        ):
+            project, result = self._run_init(
+                tmp_path,
+                [
+                    "--non-interactive",
+                    "--extension",
+                    "https://example.com/git.zip",
+                    "--trust-extension-urls",
+                ],
+                project_name="ext-url-noninteractive-trust",
+            )
+
+        assert result.exit_code == 0, f"init failed:\n{result.output}"
+        assert (project / ".specify" / "extensions" / "git").exists()
 
     def test_url_extension_interactive_confirm_installs(self, tmp_path):
         """An interactive 'yes' to the trust prompt allows the URL install."""
@@ -2627,7 +2179,7 @@ class TestExtensionFlag:
             return fd
 
         with patch(
-            "specify_cli.commands.init._stdin_is_interactive", return_value=True
+            "specify_cli.command_init._stdin_is_interactive", return_value=True
         ), patch("typer.confirm", return_value=True), patch(
             "specify_cli.authentication.http.open_url",
             return_value=FakeResponse(zip_bytes),

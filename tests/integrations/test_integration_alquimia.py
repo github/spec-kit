@@ -37,6 +37,112 @@ class TestAlquimiaAIIntegration:
         assert integration.config["requires_cli"] is True
         assert integration.multi_install_safe is True
 
+    def test_is_slash_skills_agent(self):
+        """Alquimia installs `.alquimia/skills/speckit-<name>/SKILL.md`, so the
+        invocation helper must report the hyphenated form when skills are on.
+
+        It was the only `SkillsIntegration` subclass absent from every set in
+        `_invocation_style`, so `is_slash_skills_agent` returned False and the
+        two callers that consult it — `HookExecutor._render_hook_invocation`
+        and `specify init`'s Next Steps panel — emitted the dotted
+        `/speckit.<name>` form Alquimia never registers.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert is_slash_skills_agent("alquimia", True) is True
+        # Conditional, not always -- matching the other *conditionally
+        # classified* skills-only agents. Being skills-only does not by itself
+        # imply always-slash: Droid, Grok, Trae and Zed are skills-only too and
+        # sit in `ALWAYS_SLASH_AGENTS`.
+        #
+        # This is NOT a claim that the dotted form is ever right for Alquimia:
+        # it never is. It records what the function returns. The `False`
+        # argument does not arise in practice because `ai_skills` is persisted
+        # straight from `is_skills_mode()`, which `SkillsIntegration` returns
+        # unconditionally -- see
+        # `test_ai_skills_is_always_persisted_for_alquimia`.
+        assert is_slash_skills_agent("alquimia", False) is False
+
+    def test_ai_skills_is_always_persisted_for_alquimia(self):
+        """The conditional resolves to True for every real Alquimia project.
+
+        Both writers of `ai_skills` key off `integration.is_skills_mode(...)`
+        (`commands/init.py` on init, `integrations/_helpers.py` on
+        install/use/upgrade), and `SkillsIntegration.is_skills_mode` returns
+        True unconditionally. So `is_ai_skills_enabled(opts)` is True for any
+        Alquimia project written by any supported path, and the conditional
+        classification behaves exactly like an always-slash one *for Alquimia*.
+
+        This is deliberately not offered as a discriminator between the two
+        sets: every `SkillsIntegration` subclass records `ai_skills` the same
+        way, including the always-slash ones, so persistence does not tell the
+        sets apart. It says only that the conditional is satisfied here.
+        """
+        integration = get_integration("alquimia")
+        assert integration.is_skills_mode() is True
+        assert integration.is_skills_mode({}, project_root=None) is True
+
+    def test_classified_as_a_conditional_slash_agent(self):
+        """Alquimia is classified in `CONDITIONAL_SLASH_AGENTS`, not the always set.
+
+        This asserts Alquimia's own classification only. Being a
+        `SkillsIntegration` does not by itself imply always-slash --
+        `ALWAYS_SLASH_AGENTS` and `CONDITIONAL_SLASH_AGENTS` both contain
+        `SkillsIntegration` subclasses, and the split is a conventional grouping
+        rather than a rule the code enforces. For a skills-only integration the
+        two are behaviourally equivalent anyway, since `ai_skills` is always
+        recorded.
+
+        Other integrations' classification is deliberately NOT asserted here:
+        that would make this suite fail whenever one of them is legitimately
+        reclassified, and any fixed peer list is liable to drift out of date.
+        """
+        from specify_cli._invocation_style import (
+            ALWAYS_SLASH_AGENTS,
+            CONDITIONAL_SLASH_AGENTS,
+        )
+
+        assert "alquimia" in CONDITIONAL_SLASH_AGENTS
+        assert "alquimia" not in ALWAYS_SLASH_AGENTS
+
+    def test_hook_invocation_renders_the_hyphenated_form(
+        self, tmp_path, monkeypatch
+    ):
+        """The real hook renderer must emit `/speckit-git-commit`.
+
+        This drives `HookExecutor._render_hook_invocation` -- one of the two
+        production consumers of `is_slash_skills_agent` -- rather than
+        re-deciding the branch in the test. Its non-slash path ends at
+        `return f"/{command_id}"`, so before this change the renderer emitted
+        the dotted `/speckit.git.commit`, a command Alquimia never registers.
+        """
+        import specify_cli
+        from specify_cli.extensions import HookExecutor
+
+        monkeypatch.setattr(
+            specify_cli,
+            "load_init_options",
+            lambda _root: {"ai": "alquimia", "ai_skills": True},
+        )
+
+        rendered = HookExecutor(tmp_path)._render_hook_invocation("speckit.git.commit")
+
+        assert rendered == "/speckit-git-commit"
+        assert "/speckit." not in rendered
+
+    def test_build_command_invocation_matches_the_invocation_helper(self):
+        """The integration's own renderer and the helper must agree.
+
+        `SkillsIntegration.build_command_invocation` already returned
+        `/speckit-plan`; only the helper disagreed, which is why the two
+        outputs diverged for the same on-disk layout.
+        """
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        integration = get_integration("alquimia")
+        assert integration.build_command_invocation("plan") == "/speckit-plan"
+        assert is_slash_skills_agent("alquimia", True) is True
+
     def test_build_exec_args_uses_headless_prompt_flag(self):
         """Workflow dispatch relies on the inherited
         ``SkillsIntegration.build_exec_args()`` — pin its argv shape so a
@@ -203,10 +309,10 @@ class TestAlquimiaAIIntegration:
             runner = CliRunner()
             with (
                 patch(
-                    "specify_cli.commands.init._stdin_is_interactive", return_value=True
+                    "specify_cli.command_init._stdin_is_interactive", return_value=True
                 ),
                 patch(
-                    "specify_cli.commands.init.select_with_arrows",
+                    "specify_cli.command_init.select_with_arrows",
                     return_value="alquimia",
                 ),
             ):
@@ -471,6 +577,101 @@ class TestAlquimiaArgumentHints:
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
 
+    def test_inject_argument_hint_survives_folded_description(self):
+        """A long description folded across lines must not corrupt the YAML (#4044).
+
+        A description long enough for the YAML dumper to fold it into a
+        multi-line plain scalar previously had ``argument-hint:`` spliced
+        into the *middle* of that scalar, producing invalid YAML.
+        """
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts an issue URL "
+                "resolved via gh CLI (demo customization)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_quoted_folded_description(self):
+        """A folded description forced into quotes must not absorb the hint (#4044)."""
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts a GitHub "
+                "issue/PR URL or #N reference resolved via gh CLI (demo)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, (
+            "fixture must produce a blank continuation line"
+        )
+
+        result = AlquimiaAIIntegration.inject_argument_hint(
+            content, "Describe the feature"
+        )
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
 
 class TestAlquimiaDisableModelInvocation:
     """Verify disable-model-invocation is false for Alquimia skills."""
@@ -524,6 +725,56 @@ class TestAlquimiaDisableModelInvocation:
             return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
         assert agy.post_process_skill_content(content) == content
+
+
+class TestAlquimiaInjectFrontmatterFlagNoTrailingNewline:
+    """`_inject_frontmatter_flag` must not corrupt content whose closing
+    frontmatter delimiter is the file's last line with no trailing newline.
+
+    `post_process_skill_content` calls this helper on content from
+    "external skill generators (presets, extensions)" (per the base
+    class's docstring) -- not guaranteed to end with a trailing newline.
+    Without a newline after the injected line, the injected text glues
+    onto the closing `---`, destroying the delimiter.
+    """
+
+    def test_single_call_keeps_delimiter_on_its_own_line(self):
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        content = "---\nname: x\n---"
+        result = AlquimiaAIIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\nname: x\nuser-invocable: true\n---"
+
+    def test_chained_calls_both_apply(self):
+        """The exact sequence `post_process_skill_content` runs: a second
+        injected key must still land, not be silently dropped because the
+        first call already destroyed the closing `---` line."""
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        content = "---\nname: x\n---"
+        result = AlquimiaAIIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        result = AlquimiaAIIntegration._inject_frontmatter_flag(
+            result, "disable-model-invocation", "false"
+        )
+        assert result == (
+            "---\nname: x\nuser-invocable: true\n"
+            "disable-model-invocation: false\n---"
+        )
+
+    def test_preserves_crlf_line_endings(self):
+        """When the closing delimiter *does* end with \\r\\n, the injected
+        line must reuse that EOL rather than switching the file to LF."""
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+
+        content = "---\r\nname: x\r\n---\r\n"
+        result = AlquimiaAIIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"
 
 
 class TestAlquimiaHookCommandNote:

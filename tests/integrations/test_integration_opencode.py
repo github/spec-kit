@@ -15,6 +15,9 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".opencode/commands"
 
+    def test_multi_install_safe(self):
+        assert get_integration(self.KEY).multi_install_safe is True
+
     def test_build_exec_args_uses_run_command_dispatch(self):
         integration = get_integration(self.KEY)
 

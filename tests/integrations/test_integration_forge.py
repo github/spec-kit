@@ -281,6 +281,119 @@ class TestForgeIntegration:
                 f"{cmd_file.name} name field should start with 'speckit-': {name_value}"
             )
 
+    def test_build_exec_args_uses_prompt_flag(self):
+        """Forge dispatches through ``-p``, with no extra flags appended.
+
+        Forge accepts ``-p/--prompt``, but the inherited ``--model`` and
+        ``--output-format`` do not exist in its CLI; sending them aborts the
+        run at argument parsing with ``unexpected argument`` (#4666).
+        """
+        integration = get_integration("forge")
+
+        args = integration.build_exec_args(
+            "/speckit-specify build a login page",
+            model="gpt-4o",
+            output_json=True,
+        )
+
+        assert args == [
+            "forge",
+            "-p",
+            "/speckit-specify build a login page",
+        ]
+
+    def test_build_exec_args_omits_output_format(self):
+        """Forge has no ``--output-format``; requesting JSON must not add one."""
+        integration = get_integration("forge")
+
+        args = integration.build_exec_args("/speckit-plan add OAuth", output_json=True)
+
+        assert args == ["forge", "-p", "/speckit-plan add OAuth"]
+        assert "--output-format" not in args
+        assert "json" not in args
+
+    def test_build_exec_args_omits_model_flag(self):
+        """Forge exposes no model-selection flag, so ``model`` is not forwarded.
+
+        Model choice is a persisted setting (``forge config set model``).
+        ``--agent`` takes an agent ID, not a model identifier, so remapping the
+        caller's model onto it would select the wrong thing.
+        """
+        integration = get_integration("forge")
+
+        args = integration.build_exec_args(
+            "explain this repository",
+            model="gpt-4o",
+            output_json=False,
+        )
+
+        assert args == ["forge", "-p", "explain this repository"]
+        assert "--model" not in args
+        assert "gpt-4o" not in args
+
+    def test_build_exec_args_applies_extra_args_before_prompt(self, monkeypatch):
+        """Operator-injected flags precede ``-p`` so they stay global.
+
+        Forge parses its global flags ahead of ``-p`` (``forge --verbose -p x``
+        is accepted), matching the opencode / goose / codex ordering.
+        """
+        monkeypatch.setenv("SPECKIT_INTEGRATION_FORGE_EXTRA_ARGS", "--verbose")
+        integration = get_integration("forge")
+
+        args = integration.build_exec_args("check the build", output_json=True)
+
+        assert args == [
+            "forge",
+            "--verbose",
+            "-p",
+            "check the build",
+        ]
+
+
+class TestForgeExecArgs:
+    """Forge only accepts `-p/--prompt`; `--model` and `--output-format` do
+    not exist in the Forge CLI and abort dispatch with exit code 2 (#4666)."""
+
+    def test_build_exec_args_uses_prompt_flag_only(self):
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("/speckit-plan add OAuth", output_json=False)
+
+        assert args == ["forge", "-p", "/speckit-plan add OAuth"]
+
+    def test_build_exec_args_omits_output_format_flag(self):
+        """`--output-format` is not a Forge flag; requesting JSON output must
+        not append it."""
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("hello", output_json=True)
+
+        assert args == ["forge", "-p", "hello"]
+        assert "--output-format" not in args
+
+    def test_build_exec_args_omits_model_flag(self):
+        """Forge has no model-selection flag; `model` is set out of band via
+        `forge config set model`, so it must not be forwarded onto `--model`
+        or `--agent` (the latter selects an agent ID, not a model)."""
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("hello", model="gpt-4o", output_json=True)
+
+        assert args == ["forge", "-p", "hello"]
+        assert "--model" not in args
+        assert "--agent" not in args
+        assert "gpt-4o" not in args
+
+    def test_build_exec_args_applies_extra_args_before_prompt(self, monkeypatch):
+        """Forge's global flags parse before -p, so operator-injected extra
+        args go first (matches opencode / goose / codex / cursor-agent)."""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_FORGE_EXTRA_ARGS", "--verbose")
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("check the build", output_json=False)
+
+        assert args == ["forge", "--verbose", "-p", "check the build"]
+
 
 class TestForgeCommandRegistrar:
     """Test CommandRegistrar's Forge-specific name formatting."""

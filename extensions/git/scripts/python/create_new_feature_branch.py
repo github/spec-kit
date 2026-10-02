@@ -297,8 +297,15 @@ def generate_branch_name(description: str) -> str:
         if len(word) >= 3:
             meaningful_words.append(word)
         # Keep short words only when they appear uppercased in the original
-        # description (acronyms like "API" or "DB").
-        elif re.search(rf"\b{re.escape(word.upper())}\b", description):
+        # description (acronyms like "API" or "DB"). The boundaries are spelled
+        # out as ASCII rather than using \b: \b is Unicode-aware on str, so
+        # "\u00e9DB\u00e9 cache" would hide the acronym behind a non-ASCII word
+        # character, while the bash twin's `grep -qw` runs under LC_ALL=C and
+        # sees a boundary there.
+        elif re.search(
+            rf"(?<![0-9A-Za-z_]){re.escape(word.upper())}(?![0-9A-Za-z_])",
+            description,
+        ):
             meaningful_words.append(word)
 
     if meaningful_words:

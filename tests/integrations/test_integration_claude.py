@@ -174,8 +174,8 @@ class TestClaudeIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
-                patch("specify_cli.commands.init.select_with_arrows", return_value="claude"),
+                patch("specify_cli.command_init._stdin_is_interactive", return_value=True),
+                patch("specify_cli.command_init.select_with_arrows", return_value="claude"),
             ):
                 result = runner.invoke(
                     app,
@@ -451,6 +451,93 @@ class TestClaudeArgumentHints:
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
 
+    def test_inject_argument_hint_survives_folded_description(self):
+        """A long description folded across lines must not corrupt the YAML (#4044).
+
+        A description long enough for the YAML dumper to fold it into a
+        multi-line plain scalar previously had ``argument-hint:`` spliced
+        into the *middle* of that scalar, producing invalid YAML.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts an issue URL "
+                "resolved via gh CLI (demo customization)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_quoted_folded_description(self):
+        """A folded description forced into quotes must not absorb the hint (#4044)."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts a GitHub "
+                "issue/PR URL or #N reference resolved via gh CLI (demo)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, "fixture must produce a blank continuation line"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
 
 class TestClaudeDisableModelInvocation:
     """Verify disable-model-invocation is false for Claude skills."""
@@ -502,6 +589,56 @@ class TestClaudeDisableModelInvocation:
             return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
         assert agy.post_process_skill_content(content) == content
+
+
+class TestClaudeInjectFrontmatterFlagNoTrailingNewline:
+    """`_inject_frontmatter_flag` must not corrupt content whose closing
+    frontmatter delimiter is the file's last line with no trailing newline.
+
+    `post_process_skill_content` calls this helper on content from
+    "external skill generators (presets, extensions)" (per its own
+    docstring) -- not guaranteed to end with a trailing newline. Without a
+    newline after the injected line, the injected text glues onto the
+    closing `---`, destroying the delimiter.
+    """
+
+    def test_single_call_keeps_delimiter_on_its_own_line(self):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\nname: x\n---"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\nname: x\nuser-invocable: true\n---"
+
+    def test_chained_calls_both_apply(self):
+        """The exact sequence `post_process_skill_content` runs: a second
+        injected key must still land, not be silently dropped because the
+        first call already destroyed the closing `---` line."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\nname: x\n---"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            result, "disable-model-invocation", "false"
+        )
+        assert result == (
+            "---\nname: x\nuser-invocable: true\n"
+            "disable-model-invocation: false\n---"
+        )
+
+    def test_preserves_crlf_line_endings(self):
+        """When the closing delimiter *does* end with \\r\\n, the injected
+        line must reuse that EOL rather than switching the file to LF."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\r\nname: x\r\n---\r\n"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"
 
 
 class TestClaudeForkContext:

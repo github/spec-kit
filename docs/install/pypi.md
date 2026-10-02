@@ -35,6 +35,27 @@ pipx install specify-cli==0.12.11
 pip install specify-cli==0.12.11
 ```
 
+## Install from a custom or private package index
+
+Some environments (corporate networks, mirrors, proxies, or artifact feeds) require installing `specify-cli` from a package index other than the default public PyPI. Each Python tool exposes a way to point at a different index — configure it before running the install commands above. Substitute your own index URL for the placeholder shown here.
+
+```bash
+# uv — via environment variable (applies to the whole command)
+UV_DEFAULT_INDEX=https://your-index.example.com/pypi/simple/ uv tool install specify-cli
+
+# uv — via flag
+uv tool install --default-index https://your-index.example.com/pypi/simple/ specify-cli
+
+# pipx — pass a pip argument through
+pipx install specify-cli --index-url https://your-index.example.com/pypi/simple/
+
+# pip
+pip install specify-cli --index-url https://your-index.example.com/pypi/simple/
+```
+
+> [!NOTE]
+> The same index configuration applies to pinned installs, upgrades (`--force`/`--upgrade`), and one-time usage — set the environment variable or flag on those commands too. If your index requires authentication, follow your tool's documentation and prefer credential environment variables, keyring, or netrc; do not embed secrets in command-line URLs because they can leak through shell history, process listings, or logs. Avoid committing secrets. For fully offline installs, see the [air-gapped installation guide](air-gapped.md).
+
 ## Verify
 
 ```bash
