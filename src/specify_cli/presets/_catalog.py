@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from .._download_security import (
     is_https_or_localhost_http,
 )
 from ._manifest import PresetError, PresetValidationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -302,18 +305,15 @@ class PresetCatalog:
         Raises:
             PresetValidationError: If a catalog URL is invalid
         """
-        import sys
-
         # 1. SPECKIT_PRESET_CATALOG_URL env var replaces all defaults
         if env_value := os.environ.get("SPECKIT_PRESET_CATALOG_URL"):
             catalog_url = env_value.strip()
             self._validate_catalog_url(catalog_url)
             if catalog_url != self.DEFAULT_CATALOG_URL:
                 if not getattr(self, "_non_default_catalog_warning_shown", False):
-                    print(
-                        "Warning: Using non-default preset catalog. "
-                        "Only use catalogs from sources you trust.",
-                        file=sys.stderr,
+                    logger.warning(
+                        "Using non-default preset catalog. "
+                        "Only use catalogs from sources you trust."
                     )
                     self._non_default_catalog_warning_shown = True
             return [PresetCatalogEntry(url=catalog_url, name="custom", priority=1, install_allowed=True, description="Custom catalog via SPECKIT_PRESET_CATALOG_URL")]
