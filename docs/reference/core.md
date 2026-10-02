@@ -131,3 +131,14 @@ A quick version check is also available via:
 specify --version
 specify -V
 ```
+
+## Experimental MCP Server
+
+```bash
+specify mcp
+```
+
+Starts the experimental stdio-only MCP server. The initial server exposes only
+the stable `version` JSON command through generic list, describe, and run tools.
+See the [MCP Server reference](mcp.md) for the tool names, result contract, and
+current limitations.

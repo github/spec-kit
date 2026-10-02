@@ -1,0 +1,57 @@
+"""Real stdio MCP handshake and protocol-purity integration test."""
+
+import asyncio
+import sys
+import tempfile
+from pathlib import Path
+
+from mcp import ClientSession, StdioServerParameters, stdio_client
+
+
+def test_real_stdio_server_initializes_discovers_and_runs_version():
+    async def exercise() -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-c", "from specify_cli import main; main()", "mcp"],
+            cwd=repo_root,
+        )
+
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errlog:
+            async with (
+                stdio_client(parameters, errlog=errlog) as (read, write),
+                ClientSession(read, write) as session,
+            ):
+                initialized = await session.initialize()
+                tools = await session.list_tools()
+                listed = await session.call_tool("specify_list_commands", {})
+                ran = await session.call_tool(
+                    "specify_run_command",
+                    {"command": "version"},
+                )
+                unavailable = await session.call_tool(
+                    "specify_describe_command",
+                    {"command": "artifact.list"},
+                )
+            errlog.seek(0)
+            stderr = errlog.read()
+
+        assert initialized.server_info.name == "specify"
+        assert [tool.name for tool in tools.tools] == [
+            "specify_list_commands",
+            "specify_describe_command",
+            "specify_run_command",
+        ]
+        assert listed.structured_content["commands"][0]["command"] == "version"
+        assert set(ran.structured_content) == {
+            "cli_version",
+            "runtime",
+            "system",
+            "features",
+        }
+        assert ran.is_error is False
+        assert unavailable.is_error is True
+        assert "unavailable_command" in unavailable.content[0].text
+        assert stderr == ""
+
+    asyncio.run(exercise())
