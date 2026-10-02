@@ -1,10 +1,8 @@
 """In-memory tests for MCP tool registration and dispatch."""
 
 import asyncio
-import json
 
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
 
 from specify_cli.mcp_server.catalog import CommandAdapterError, VersionResult
 from specify_cli.mcp_server.server import create_server
@@ -23,11 +21,6 @@ VERSION_PAYLOAD = {
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def _error_payload(exc: ToolError) -> dict[str, object]:
-    text = str(exc)
-    return json.loads(text[text.index("{") :])
 
 
 def test_tool_discovery_exposes_only_generic_surface_with_typed_inputs():
@@ -71,13 +64,24 @@ def test_run_tool_returns_direct_version_payload():
 
 
 @pytest.mark.parametrize(
-    ("tool", "command"),
+    ("tool", "command", "message"),
     [
-        ("specify_describe_command", "artifact.list"),
-        ("specify_run_command", "check"),
+        (
+            "specify_describe_command",
+            "artifact.list",
+            (
+                "Command 'artifact.list' is not available through the "
+                "experimental Spec Kit MCP server."
+            ),
+        ),
+        ("specify_run_command", "check", "Unavailable."),
     ],
 )
-def test_tools_reject_unavailable_commands_with_structured_error(tool, command):
+def test_tools_reject_unavailable_commands_with_structured_error(
+    tool,
+    command,
+    message,
+):
     def unavailable(_: str) -> VersionResult:
         raise CommandAdapterError(
             "unavailable_command",
@@ -86,9 +90,17 @@ def test_tools_reject_unavailable_commands_with_structured_error(tool, command):
         )
 
     server = create_server(command_runner=unavailable)
-    with pytest.raises(ToolError) as captured:
-        _run(server.call_tool(tool, {"command": command}))
+    result = _run(server.call_tool(tool, {"command": command}))
 
-    payload = _error_payload(captured.value)
-    assert payload["error"]["code"] == "unavailable_command"
-    assert payload["error"]["details"]["command"] == command
+    assert result.is_error is True
+    assert result.structured_content == {
+        "error": {
+            "code": "unavailable_command",
+            "message": message,
+            "details": {
+                "command": command,
+                "available_commands": ["version"],
+            },
+        }
+    }
+    assert result.content[0].text == f"unavailable_command: {message}"

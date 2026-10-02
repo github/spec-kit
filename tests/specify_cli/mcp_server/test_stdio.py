@@ -51,7 +51,20 @@ def test_real_stdio_server_initializes_discovers_and_runs_version():
         }
         assert ran.is_error is False
         assert unavailable.is_error is True
-        assert "unavailable_command" in unavailable.content[0].text
+        assert unavailable.structured_content == {
+            "error": {
+                "code": "unavailable_command",
+                "message": (
+                    "Command 'artifact.list' is not available through the "
+                    "experimental Spec Kit MCP server."
+                ),
+                "details": {
+                    "command": "artifact.list",
+                    "available_commands": ["version"],
+                },
+            }
+        }
+        assert unavailable.content[0].text.startswith("unavailable_command:")
         assert stderr == ""
 
     asyncio.run(exercise())

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 
 from mcp.server import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent
 
 from .catalog import (
     CommandAdapterError,
@@ -21,8 +20,17 @@ from .executor import run_command
 CommandRunner = Callable[[str], VersionResult]
 
 
-def _tool_error(exc: CommandAdapterError) -> ToolError:
-    return ToolError(json.dumps(exc.payload(), separators=(",", ":"), sort_keys=True))
+def _tool_error(exc: CommandAdapterError) -> CallToolResult:
+    return CallToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=f"{exc.code}: {exc.message}",
+            )
+        ],
+        structuredContent=exc.payload(),
+        isError=True,
+    )
 
 
 def create_server(
@@ -56,7 +64,7 @@ def create_server(
         try:
             return describe_command(command)
         except CommandAdapterError as exc:
-            raise _tool_error(exc) from None
+            return _tool_error(exc)
 
     @server.tool(
         name="specify_run_command",
@@ -68,7 +76,7 @@ def create_server(
         try:
             return command_runner(command)
         except CommandAdapterError as exc:
-            raise _tool_error(exc) from None
+            return _tool_error(exc)
 
     return server
 
