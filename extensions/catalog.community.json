@@ -1485,6 +1485,55 @@
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
     },
+    "conformidad": {
+      "name": "Conformidad Software Humano",
+      "id": "conformidad",
+      "description": "Checks that the project's artifacts contain what the Software Humano manifesto requires, and that every absence is declared as an approved exception with its reason and its approver.",
+      "author": "Damián Acuña",
+      "version": "2.2.3",
+      "download_url": "https://github.com/dacunao/software-humano-speckit/releases/download/extension-conformidad-v2.2.3/Software_Humano_Conformidad_v2.2.3.zip",
+      "sha256": "9a1209e43bc3b4a6765c0150d419d91c4fbca79244c377bb34990cd90c4e7a62",
+      "repository": "https://github.com/dacunao/software-humano-speckit",
+      "homepage": "https://manifiesto.softwarehumano.com",
+      "documentation": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/README.md",
+      "changelog": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "conformance",
+        "governance",
+        "human-centered",
+        "quality",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
+    },
     "contextforge-mcp": {
       "name": "ContextForge MCP",
       "id": "contextforge-mcp",
