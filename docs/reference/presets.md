@@ -212,6 +212,10 @@ SHA-256 digest; optional `requires` and `provides` apply to that release
 instead of inheriting the current release's fields. Other shared metadata,
 such as the name and description, is inherited. Version keys must be distinct,
 including PEP 440-equivalent spellings, and cannot repeat the current version.
+Duplicate JSON keys are rejected before parsing can discard a release record.
+Historical `requires.extensions` entries follow the preset manifest format:
+extension IDs or mappings with an `id`, optional version constraint, and
+optional boolean `required` flag.
 
 ```json
 {

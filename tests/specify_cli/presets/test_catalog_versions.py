@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -80,6 +82,62 @@ def _response(data: bytes, url: str) -> MagicMock:
     response.getheader.return_value = "application/zip"
     response.__enter__.return_value = response
     return response
+
+
+def _duplicate_release_json() -> bytes:
+    entry = _entry()
+    payload = json.dumps({"schema_version": "1.0", "presets": {"sample": entry}})
+    record = f'"1.0.0": {json.dumps(entry["releases"]["1.0.0"])}'
+    conflicting = {**entry["releases"]["1.0.0"], "download_url": CURRENT_URL}
+    assert record in payload
+    return payload.replace(
+        record, f'{record}, "1.0.0": {json.dumps(conflicting)}', 1
+    ).encode()
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["stack", "single-catalog"])
+def test_duplicate_release_key_rejected_from_network(project_dir, legacy):
+    catalog = PresetCatalog(project_dir)
+    url = catalog.DEFAULT_CATALOG_URL
+    entry = PresetCatalogEntry(url, "default", 1, True)
+    with (
+        patch.object(catalog, "get_catalog_url", return_value=url),
+        patch.object(
+            catalog, "_open_url", return_value=_response(_duplicate_release_json(), url)
+        ),
+        pytest.raises(PresetError, match="duplicate.*1.0.0"),
+    ):
+        if legacy:
+            catalog.fetch_catalog(force_refresh=True)
+        else:
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+    assert not catalog.cache_file.exists()
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["stack", "single-catalog"])
+def test_duplicate_release_key_in_cache_refetches(project_dir, legacy):
+    catalog = PresetCatalog(project_dir)
+    url = catalog.DEFAULT_CATALOG_URL
+    entry = PresetCatalogEntry(url, "default", 1, True)
+    catalog.cache_dir.mkdir(parents=True)
+    catalog.cache_file.write_bytes(_duplicate_release_json())
+    catalog.cache_metadata_file.write_text(
+        json.dumps({
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "catalog_url": url,
+        })
+    )
+    valid = {"schema_version": "1.0", "presets": {"sample": _entry()}}
+    with (
+        patch.object(catalog, "get_catalog_url", return_value=url),
+        patch.object(
+            catalog, "_open_url", return_value=_response(json.dumps(valid).encode(), url)
+        ) as opened,
+    ):
+        result = catalog.fetch_catalog() if legacy else catalog._fetch_single_catalog(entry)
+    assert result == valid
+    opened.assert_called_once()
+    assert json.loads(catalog.cache_file.read_text()) == valid
 
 
 def test_current_and_exact_selection_keep_current_fields(project_dir):
@@ -202,6 +260,42 @@ def test_malformed_history_rejected_even_for_current(project_dir, change, error)
         pytest.raises(PresetError, match=error),
     ):
         catalog.get_pack_info("sample")
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        [123],
+        [{}],
+        [{"id": "dep", "version": 2}],
+        [{"id": "dep", "required": 0}],
+        ["bad id"],
+    ],
+)
+def test_historical_release_rejects_malformed_extension_dependencies(
+    project_dir, dependencies
+):
+    entry = _entry()
+    entry["releases"]["1.0.0"]["requires"]["extensions"] = dependencies
+    catalog = PresetCatalog(project_dir)
+    with (
+        patch.object(catalog, "_get_merged_packs", return_value={"sample": entry}),
+        pytest.raises(PresetError, match="requires.extensions"),
+    ):
+        catalog.get_pack_info("sample")
+
+
+def test_historical_release_accepts_manifest_extension_dependencies(project_dir):
+    dependencies = [
+        "plain-ext",
+        {"id": "other-ext", "version": ">=1.2", "required": False},
+    ]
+    entry = _entry()
+    entry["releases"]["1.0.0"]["requires"]["extensions"] = dependencies
+    catalog = PresetCatalog(project_dir)
+    with patch.object(catalog, "_get_merged_packs", return_value={"sample": entry}):
+        selected = catalog.get_pack_info("sample", "1.0.0")
+    assert selected["requires"]["extensions"] == dependencies
 
 
 def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
@@ -398,6 +492,21 @@ def test_cli_installs_exact_archive_and_lists_versions(project_dir):
     assert installed.exit_code == 0, installed.output
     assert urls == [OLD_URL]
     assert PresetManager(project_dir).get_pack("sample").version == "1.0.0"
+
+
+def test_cli_versions_use_winning_entry_snapshot(project_dir):
+    first = {**_entry(), "_install_allowed": False}
+    second = {"id": "sample", "version": "3.0.0"}
+    with (
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch.object(PresetCatalog, "get_pack_info", side_effect=[first, second]) as lookup,
+    ):
+        result = CliRunner().invoke(app, ["preset", "info", "sample", "--versions"])
+    assert result.exit_code == 0, result.output
+    assert "2.0.0 (current)" in result.output and "1.0.0" in result.output
+    assert "3.0.0" not in result.output
+    assert "Discovery only" in result.output
+    lookup.assert_called_once_with("sample")
 
 
 def test_cli_rejects_missing_release_and_discovery_without_download(project_dir):

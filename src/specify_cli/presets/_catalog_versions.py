@@ -9,7 +9,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from .._download_security import is_https_or_localhost_http
-from ._manifest import PresetError
+from ._manifest import PresetError, PresetManifest, PresetValidationError
 
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 _CURRENT_FIELDS = frozenset(
@@ -101,10 +101,13 @@ def _validated_releases(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 raise PresetError(
                     f"Preset '{pack_id}' release '{release_version}' has invalid requires.speckit_version."
                 ) from None
-        if "extensions" in requires and not isinstance(requires["extensions"], list):
-            raise PresetError(
-                f"Preset '{pack_id}' release '{release_version}' has invalid requires.extensions."
-            )
+        if "extensions" in requires:
+            try:
+                PresetManifest._validate_requires_extensions(requires["extensions"])
+            except PresetValidationError as exc:
+                raise PresetError(
+                    f"Preset '{pack_id}' release '{release_version}' has {exc}"
+                ) from exc
         if "bundled" in record and not isinstance(record["bundled"], bool):
             raise PresetError(
                 f"Preset '{pack_id}' release '{release_version}' has invalid bundled."

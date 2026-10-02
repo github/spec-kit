@@ -23,6 +23,22 @@ from ._catalog_versions import available_versions, select_release
 from ._manifest import PresetError, PresetValidationError
 
 
+def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
+    """Reject duplicate keys before JSON parsing discards conflicting records."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise PresetError(
+                    f"Invalid preset catalog format from {url}: duplicate JSON key '{key}'."
+                )
+            result[key] = value
+        return result
+
+    return json.loads(raw, object_pairs_hook=unique_object)
+
+
 @dataclass
 class PresetCatalogEntry:
     """Represents a single entry in the preset catalog stack."""
@@ -426,7 +442,9 @@ class PresetCatalog:
         # refreshed.
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+                cached_data = _decode_catalog_json(
+                    cache_file.read_text(encoding="utf-8"), entry.url
+                )
                 self._validate_catalog_payload(cached_data, entry.url)
                 return cached_data
             except (json.JSONDecodeError, OSError, UnicodeError, PresetError):
@@ -453,13 +471,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(
+                catalog_data = _decode_catalog_json(
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
                         error_type=PresetError,
                         label=f"preset catalog {entry.url}",
-                    )
+                    ),
+                    entry.url,
                 )
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -601,8 +620,8 @@ class PresetCatalog:
                     self.cache_metadata_file.read_text(encoding="utf-8")
                 )
                 if metadata.get("catalog_url") == catalog_url:
-                    cached_data = json.loads(
-                        self.cache_file.read_text(encoding="utf-8")
+                    cached_data = _decode_catalog_json(
+                        self.cache_file.read_text(encoding="utf-8"), catalog_url
                     )
                     self._validate_catalog_payload(cached_data, catalog_url)
                     return cached_data
@@ -624,13 +643,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(
+                catalog_data = _decode_catalog_json(
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
                         error_type=PresetError,
                         label=f"preset catalog {catalog_url}",
-                    )
+                    ),
+                    catalog_url,
                 )
 
             # Validate catalog structure. Reuses the same helper as
