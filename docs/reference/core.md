@@ -111,9 +111,9 @@ use:
 specify version --json
 ```
 
-`specify version --features --json` remains a compatibility alias and emits
-the same complete payload. In JSON mode, `--features` does not filter the
-result. If OpenSSL information is unavailable, `runtime.openssl` is `null`.
+Combining `--features` and `--json` emits the same complete JSON output;
+`--features` does not filter the result in JSON mode. If OpenSSL information
+is unavailable, `runtime.openssl` is `null`.
 Successful JSON output is written only to stdout. Failures leave stdout empty
 and write one sanitized JSON error object to stderr.
 
