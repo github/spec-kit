@@ -89,11 +89,29 @@ def test_run_propagates_structured_cli_failure():
         (_completed(0), "invalid_success_output"),
         (_completed(0, stdout="not-json"), "invalid_success_output"),
         (
+            _completed(0, stdout=json.dumps({"cli_version": "1.2.3"})),
+            "invalid_success_payload",
+        ),
+        (
             _completed(0, stdout=json.dumps(VERSION_PAYLOAD), stderr="warning"),
             "mixed_success_output",
         ),
         (_completed(1), "invalid_failure_output"),
         (_completed(1, stderr="not-json"), "invalid_failure_output"),
+        (
+            _completed(
+                1,
+                stderr=json.dumps(
+                    {
+                        "error": {
+                            "code": "internal_error",
+                            "message": "failed",
+                        }
+                    }
+                ),
+            ),
+            "invalid_failure_payload",
+        ),
         (
             _completed(
                 1,
