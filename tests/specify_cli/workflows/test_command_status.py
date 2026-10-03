@@ -95,6 +95,87 @@ steps:
         )
         assert any(r["run_id"] == rid for r in listing["runs"])
 
+    def test_composed_gate_status_and_resume(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        child_dir = project_dir / ".specify" / "workflows" / "child"
+        child_dir.mkdir(parents=True)
+        (child_dir / "workflow.yml").write_text(
+            "workflow: {id: child, name: Child}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n  - {id: review, type: gate, message: Review, verdict_input: verdict}\n",
+            encoding="utf-8",
+        )
+        WorkflowRegistry(project_dir).add("child", {"enabled": True})
+        root = self._write_wf(
+            project_dir,
+            "workflow: {id: parent, name: Parent}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n  - id: call\n    type: workflow\n    workflow: child\n"
+            "    input: {verdict: '{{ inputs.verdict }}'}\n",
+            "parent",
+        )
+        run = json.loads(self._invoke(project_dir, ["workflow", "run", str(root), "--json"]).stdout)
+        assert run["status"] == "paused", run
+        status = json.loads(self._invoke(project_dir, ["workflow", "status", run["run_id"], "--json"]).stdout)
+        assert status["gate"] == run["gate"]
+        assert status["gate"]["scope_path"] == ["call"]
+        assert status["workflow_scopes"] == [{"scope_path": ["call"], "workflow_id": "child", "status": "paused"}]
+        human = self._invoke(project_dir, ["workflow", "status", run["run_id"]])
+        assert "child: paused" in human.stdout
+        resumed = self._invoke(project_dir, ["workflow", "resume", run["run_id"], "--input", "verdict=approve", "--json"])
+        assert resumed.exit_code == 0
+        assert json.loads(resumed.stdout)["status"] == "completed"
+
+    @pytest.mark.parametrize("failure, expected", [
+        (KeyboardInterrupt, "paused"),
+        (RuntimeError, "failed"),
+    ])
+    def test_status_reports_interrupted_call_in_json_and_text(
+        self, project_dir, monkeypatch, failure, expected
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        class Explode(StepBase):
+            type_key = "explode"
+
+            def execute(self, config, context):
+                raise failure("boom")
+
+        monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+        child_dir = project_dir / ".specify" / "workflows" / "child"
+        child_dir.mkdir(parents=True)
+        (child_dir / "workflow.yml").write_text(
+            "workflow: {id: child, name: Child}\n"
+            "steps:\n  - {id: work, type: explode}\n",
+            encoding="utf-8",
+        )
+        WorkflowRegistry(project_dir).add("child", {"enabled": True})
+        engine = WorkflowEngine(project_dir)
+        root = WorkflowDefinition({
+            "workflow": {"id": "parent", "name": "Parent"},
+            "steps": [{"id": "call", "type": "workflow", "workflow": "child"}],
+        })
+        if failure is RuntimeError:
+            with pytest.raises(RuntimeError, match="boom"):
+                engine.execute(root, run_id="interrupted-call")
+        else:
+            engine.execute(root, run_id="interrupted-call")
+
+        status = self._invoke(project_dir, [
+            "workflow", "status", "interrupted-call", "--json",
+        ])
+        assert status.exit_code == 0, status.output
+        assert json.loads(status.stdout)["workflow_scopes"] == [
+            {"scope_path": ["call"], "workflow_id": "child", "status": expected}
+        ]
+        human = self._invoke(project_dir, ["workflow", "status", "interrupted-call"])
+        assert human.exit_code == 0, human.output
+        assert f"child: {expected}" in human.stdout
+
 
 
 class TestWorkflowCliAlignment:
