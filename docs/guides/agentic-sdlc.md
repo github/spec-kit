@@ -224,6 +224,15 @@ and [bundles](https://github.com/github/spec-kit/blob/main/.github/workflows/add
 validate submission metadata and propose catalog changes in draft PRs for
 maintainer review.
 
+Submission labels start these workflows. The agent uses the title and
+type-specific issue-form fields together, rather than requiring exact title
+punctuation. Wrong-type or unclear submissions receive an explanatory issue
+comment; maintainers decide how to relabel or clarify them. Every processing
+path reports an outcome and workflow run link. A separate reporting job adds
+a fallback status if the run ends without an outcome comment, distinguishing
+a published draft PR from incomplete processing. Agent or safe-output failures
+still receive a status comment if an earlier agent comment was already posted.
+
 Catalog discovery does not audit or endorse community code; users must
 review third-party components before use.
 
