@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import time
 import zipfile
 
 import pytest
@@ -49,8 +50,22 @@ def _archive(version: str, workflow_id: str = "history-wf", requires=None) -> by
         document["requires"] = requires
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
-        archive.writestr("workflow.yml", yaml.safe_dump(document))
+        archive.writestr(
+            zipfile.ZipInfo("workflow.yml", date_time=(2020, 1, 1, 0, 0, 0)),
+            yaml.safe_dump(document),
+        )
     return output.getvalue()
+
+
+def test_archive_is_independent_of_wall_clock(monkeypatch):
+    archives = []
+    for second in (2, 4):
+        wall_clock = time.struct_time((2026, 9, 30, 14, 39, second, 2, 273, -1))
+        monkeypatch.setattr(
+            zipfile.time, "localtime", lambda timestamp=None, value=wall_clock: value
+        )
+        archives.append(_archive("1.0.0", requires={"integrations": ["copilot"]}))
+    assert archives[0] == archives[1]
 
 
 def _entry() -> dict:
