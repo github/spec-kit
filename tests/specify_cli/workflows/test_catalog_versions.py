@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import time
 import zipfile
 
 import pytest
@@ -49,7 +50,8 @@ def _archive(version: str, workflow_id: str = "history-wf", requires=None) -> by
         document["requires"] = requires
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
-        archive.writestr("workflow.yml", yaml.safe_dump(document))
+        info = zipfile.ZipInfo("workflow.yml", date_time=(1980, 1, 1, 0, 0, 0))
+        archive.writestr(info, yaml.safe_dump(document))
     return output.getvalue()
 
 
@@ -101,6 +103,25 @@ class _Response(io.BytesIO):
 
     def geturl(self):
         return self.url
+
+
+def test_archive_is_deterministic_across_clock_changes(monkeypatch):
+    monkeypatch.setattr(
+        zipfile.time,
+        "localtime",
+        lambda *args: time.struct_time((2026, 10, 3, 2, 43, 0, 5, 276, 0)),
+    )
+    first = _archive("1.0.0", requires={"integrations": ["copilot"]})
+    monkeypatch.setattr(
+        zipfile.time,
+        "localtime",
+        lambda *args: time.struct_time((2026, 10, 3, 2, 43, 2, 5, 276, 0)),
+    )
+    second = _archive("1.0.0", requires={"integrations": ["copilot"]})
+
+    assert first == second
+    assert first != _archive("2.0.0", requires={"integrations": ["copilot"]})
+    assert first != _archive("1.0.0", requires={"integrations": ["claude"]})
 
 
 def test_current_and_historical_metadata(monkeypatch, project_dir):
