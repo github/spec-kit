@@ -445,7 +445,9 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, f"extension disable failed: {result.output}"
 
         disabled_extension_files = sorted(legacy.glob("speckit.git.*.md"))
-        assert disabled_extension_files, "disabled extension artifact should remain pre-upgrade"
+        assert not disabled_extension_files, (
+            "disabling an extension removes its active artifacts before upgrade"
+        )
 
         user_file = legacy / "speckit.user-owned.md"
         user_file.write_text("# user-owned legacy command", encoding="utf-8")
@@ -459,11 +461,9 @@ class TestIntegrationUpgradeDetailed:
 
         assert canonical.is_dir(), ".kilo/commands/ should exist after upgrade"
         assert user_file.read_text(encoding="utf-8") == "# user-owned legacy command"
-        for disabled_file in disabled_extension_files:
-            assert disabled_file.exists(), (
-                "disabled extension artifacts should be preserved during "
-                "legacy command-root reconciliation"
-            )
+        assert not sorted(legacy.glob("speckit.git.*.md")), (
+            "disabled extension artifacts should already be absent before migration"
+        )
         assert not sorted(canonical.glob("speckit.git.*.md")), (
             "disabled extensions must not be re-registered in the canonical dir"
         )
@@ -846,7 +846,7 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, f"preset disable failed: {result.output}"
 
         cmd_file = commands / "speckit.plan.md"
-        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+        assert "Overridden plan content" not in cmd_file.read_text(encoding="utf-8")
 
         result = _run_in_project(project, [
             "integration", "upgrade", "bob",
@@ -858,8 +858,8 @@ class TestIntegrationUpgradeDetailed:
         )
         assert "cmd-preset" in result.output
         assert not skills.exists(), "no skills layout must be scaffolded on rejection"
-        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
-            "the disabled preset's command file must be left untouched"
+        assert "Overridden plan content" not in cmd_file.read_text(encoding="utf-8"), (
+            "disable reconciliation should remove the disabled override"
         )
 
         # Enabled presets are also rejected: rescaffolding can still fail.

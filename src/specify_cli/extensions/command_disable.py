@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -31,7 +32,7 @@ def extension_disable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None or not isinstance(metadata, dict):
+    if not extension_id or metadata is None or not isinstance(metadata, dict):
         console.print(
             f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
             "not found in registry (corrupted state)"
@@ -39,12 +40,15 @@ def extension_disable(
         raise typer.Exit(1)
 
     if not metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]"
+        )
         raise typer.Exit(0)
 
     from .. import load_init_options
 
-    if load_init_options(project_root).get("ai") == "generic":
+    agent = load_init_options(project_root).get("ai")
+    if agent == "generic":
         from . import ExtensionError
 
         try:
@@ -53,6 +57,10 @@ def extension_disable(
             console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1) from exc
     else:
+        # Remove this agent's tracked artifacts before flipping enabled. If
+        # cleanup fails, ownership metadata and enabled state remain retryable.
+        if agent:
+            manager.unregister_agent_artifacts(agent, extension_ids={extension_id})
         manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
@@ -64,10 +72,17 @@ def extension_disable(
                     hook["enabled"] = False
         hook_executor.save_project_config(config)
 
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled"
+    )
     console.print("\nCommands will no longer be available. Hooks will not execute.")
-    console.print(f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}")
+    console.print(
+        f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}"
+    )
 
     # #1: regenerate native event config so the disabled extension's events
     # are stripped from installed integrations.
+    # Extension mutations may change the expansion set for preset regex
+    # selectors; re-register enabled presets after refreshing native events.
     _commands._refresh_events_and_warn(project_root)
+    _commands._refresh_presets_and_warn(project_root)

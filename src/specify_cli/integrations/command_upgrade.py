@@ -1,4 +1,5 @@
 """The ``specify integration upgrade`` command and its layout guards."""
+
 from __future__ import annotations
 
 import os
@@ -12,7 +13,10 @@ from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     with_integration_setting as _with_integration_setting,
 )
-from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
+from ..integration_state import (
+    default_integration_key as _default_integration_key,
+    installed_integration_keys as _installed_integration_keys,
+)
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
     _installed_command_presets_affecting_agent,
@@ -22,15 +26,41 @@ from ._command_upgrade_layout import (
     _manifest_tracks_skill_layout,
 )
 from ._commands import integration_app
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
+from ._helpers import (
+    _MANIFEST_READ_ERRORS,
+    _SharedTemplateRefreshError,
+    _cli_error_detail,
+    _cli_phase_label,
+    _get_speckit_version,
+    _read_integration_json,
+    _refresh_init_options_speckit_version,
+    _register_extensions_for_agent,
+    _register_presets_for_agent,
+    _resolve_integration_options,
+    _resolve_integration_script_type,
+    _resync_manifest_after_registration,
+    _unregister_enabled_extension_commands_for_agent,
+    _update_init_options_for_integration,
+    _write_integration_json,
+)
 
 
 @integration_app.command("upgrade")
 def integration_upgrade(
-    key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
-    force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
-    integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
+    key: str | None = typer.Argument(
+        None, help="Integration key to upgrade (default: current integration)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Force upgrade even if files are modified"
+    ),
+    script: str | None = typer.Option(
+        None,
+        "--script",
+        help="Script type: sh, ps, or py (default: from init-options.json or platform default)",
+    ),
+    integration_options: str | None = typer.Option(
+        None, "--integration-options", help="Options for the integration"
+    ),
 ):
     """Upgrade an integration by reinstalling with diff-aware file handling.
 
@@ -39,7 +69,11 @@ def integration_upgrade(
     """
     from . import get_integration
     from .manifest import IntegrationManifest
-    from .. import _require_specify_project, _install_shared_infra_or_exit, _install_shared_infra
+    from .. import (
+        _require_specify_project,
+        _install_shared_infra_or_exit,
+        _install_shared_infra,
+    )
 
     project_root = _require_specify_project()
     current = _read_integration_json(project_root)
@@ -63,26 +97,38 @@ def integration_upgrade(
 
     manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
     if not manifest_path.exists():
-        console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to upgrade.[/yellow]")
-        console.print(f"Run [cyan]specify integration install {key}[/cyan] to perform a fresh install.")
+        console.print(
+            f"[yellow]No manifest found for integration '{key}'. Nothing to upgrade.[/yellow]"
+        )
+        console.print(
+            f"Run [cyan]specify integration install {key}[/cyan] to perform a fresh install."
+        )
         raise typer.Exit(0)
 
     try:
         old_manifest = IntegrationManifest.load(key, project_root)
     except _MANIFEST_READ_ERRORS as exc:
-        console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable: {exc}")
+        console.print(
+            f"[red]Error:[/red] Integration manifest for '{key}' is unreadable: {exc}"
+        )
         raise typer.Exit(1)
 
     # Detect modified files via manifest hashes
     modified = old_manifest.check_modified()
     if modified and not force:
-        console.print(f"[yellow]⚠[/yellow]  {len(modified)} file(s) have been modified since installation:")
+        console.print(
+            f"[yellow]⚠[/yellow]  {len(modified)} file(s) have been modified since installation:"
+        )
         for rel in modified:
             console.print(f"    {rel}")
-        console.print("\nUse [cyan]--force[/cyan] to overwrite modified files, or resolve manually.")
+        console.print(
+            "\nUse [cyan]--force[/cyan] to overwrite modified files, or resolve manually."
+        )
         raise typer.Exit(1)
 
-    selected_script = _resolve_integration_script_type(project_root, current, key, script)
+    selected_script = _resolve_integration_script_type(
+        project_root, current, key, script
+    )
 
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
@@ -154,7 +200,9 @@ def integration_upgrade(
         parsed_options, project_root
     ):
         try:
-            affected_presets = _installed_presets_affecting_agent(project_root, key)
+            affected_presets = _installed_presets_affecting_agent(
+                project_root, key, include_disabled=True
+            )
         except _PresetRegistryUnreadableError as exc:
             console.print(
                 f"[red]Error:[/red] Cannot change '{key}' command layout: the "
@@ -183,7 +231,7 @@ def integration_upgrade(
                 "Remove the preset(s), run the upgrade, then reinstall them:\n"
                 f"  [cyan]specify preset remove <id>[/cyan]\n"
                 f"  [cyan]specify integration upgrade {key} "
-                f"--integration-options \"...\"[/cyan]\n"
+                f'--integration-options "..."[/cyan]\n'
                 f"  [cyan]specify preset add <id>[/cyan]"
             )
             raise typer.Exit(1)
@@ -205,7 +253,10 @@ def integration_upgrade(
         selected_script,
         force=force,
         invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed,
+            infra_integration,
+            current,
+            infra_key,
+            infra_parsed,
             project_root=project_root,
         ),
         invoke_prefix=_invoke_prefix_for_integration(
@@ -214,13 +265,17 @@ def integration_upgrade(
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts
+
         ensure_executable_scripts(project_root)
 
     # Phase 1: Install new files (overwrites existing; old-only files remain)
     console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
-    new_manifest = IntegrationManifest(key, project_root, version=_get_speckit_version())
+    new_manifest = IntegrationManifest(
+        key, project_root, version=_get_speckit_version()
+    )
 
     from ..events import resolve_events
+
     events_map = resolve_events(
         key,
         integration.config,
@@ -251,7 +306,10 @@ def integration_upgrade(
                     project_root,
                     selected_script,
                     invoke_separator=_invoke_separator_for_integration(
-                        integration, {"integration_settings": settings}, key, parsed_options,
+                        integration,
+                        {"integration_settings": settings},
+                        key,
+                        parsed_options,
                         project_root=project_root,
                     ),
                     invoke_prefix=_invoke_prefix_for_integration(
@@ -266,6 +324,7 @@ def integration_upgrade(
                 ) from exc
             if os.name != "nt":
                 from .. import ensure_executable_scripts
+
                 ensure_executable_scripts(project_root)
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
@@ -281,9 +340,13 @@ def integration_upgrade(
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.
-        console.print(f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}.")
+        console.print(
+            f"[red]Error:[/red] Failed to {_cli_phase_label('upgrade', 'integration', key)}."
+        )
         console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
-        console.print("[yellow]The previous integration files may still be in place.[/yellow]")
+        console.print(
+            "[yellow]The previous integration files may still be in place.[/yellow]"
+        )
         raise typer.Exit(1)
 
     # Phase 2: Remove stale files from old manifest that are not in the new one
@@ -294,7 +357,9 @@ def integration_upgrade(
     # as "stale" while still being actively managed.  Manifest keys are stored
     # in POSIX form, so normalize the exclusions the same way before subtracting
     # (an integration may build paths with os.path.join / backslashes).
-    exclusions = {PurePath(p).as_posix() for p in integration.stale_cleanup_exclusions()}
+    exclusions = {
+        PurePath(p).as_posix() for p in integration.stale_cleanup_exclusions()
+    }
     stale_keys = (set(old_files) - set(new_files)) - exclusions
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
@@ -309,7 +374,9 @@ def integration_upgrade(
             project_root, force=True, remove_manifest=False
         )
         if stale_removed:
-            console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+            console.print(
+                f"  Removed {len(stale_removed)} stale file(s) from previous install"
+            )
 
     legacy_command_root_changed = _legacy_command_root_changed(
         integration,

@@ -56,11 +56,35 @@ def preset_set_priority(
 
     old_priority = normalize_priority(raw_priority)
 
-    # Update priority
+    from ._resolver import PresetResolver
+
+    resolver = PresetResolver(project_root)
+    affected_commands = manager._collect_selector_command_names(resolver)
     manager.registry.update(preset_id, {"priority": priority})
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+    affected_commands.update(
+        manager._collect_selector_command_names(PresetResolver(project_root))
     )
+    names = sorted(affected_commands)
+    try:
+        if names:
+            manager._reconcile_composed_commands(names)
+            manager._reconcile_skills(names)
+        manager.reconcile_constitution(
+            f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+        )
+    except Exception:
+        # Restore both registry priority and artifacts against the previous winner.
+        manager.registry.update(preset_id, {"priority": old_priority})
+        try:
+            if names:
+                manager._reconcile_composed_commands(names)
+                manager._reconcile_skills(names)
+            manager.reconcile_constitution(
+                f"Failed to restore constitution after reverting priority for preset {preset_id}"
+            )
+        except Exception:
+            pass
+        raise
 
     console.print(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"

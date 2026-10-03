@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -15,7 +16,9 @@ from . import _commands
 @_commands.extension_app.command("remove")
 def extension_remove(
     extension: str = typer.Argument(help="Extension ID or name to remove"),
-    keep_config: bool = typer.Option(False, "--keep-config", help="Don't remove config files"),
+    keep_config: bool = typer.Option(
+        False, "--keep-config", help="Don't remove config files"
+    ),
     force: bool = typer.Option(False, "--force", help="Skip confirmation"),
 ):
     """Uninstall an extension."""
@@ -40,7 +43,9 @@ def extension_remove(
     # think in logical commands, not per-agent file counts.
     # Use get() without a default so we can distinguish "key missing" (fall back
     # to manifest) from "key present but empty dict" (zero commands registered).
-    registered_commands = reg_meta.get("registered_commands") if isinstance(reg_meta, dict) else None
+    registered_commands = (
+        reg_meta.get("registered_commands") if isinstance(reg_meta, dict) else None
+    )
     if isinstance(registered_commands, dict):
         cmd_count = max(
             (len(v) for v in registered_commands.values() if isinstance(v, list)),
@@ -54,10 +59,14 @@ def extension_remove(
     # Confirm removal
     if not force:
         console.print("\n[yellow]⚠  This will remove:[/yellow]")
-        console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} per agent")
+        console.print(
+            f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} per agent"
+        )
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
-        console.print(f"   • Extension directory: .specify/extensions/{safe_extension_id}/")
+        console.print(
+            f"   • Extension directory: .specify/extensions/{safe_extension_id}/"
+        )
         if not keep_config:
             console.print("   • Config files (will be backed up)")
         console.print()
@@ -71,15 +80,22 @@ def extension_remove(
     success = manager.remove(extension_id, keep_config=keep_config)
 
     if success:
-        console.print(f"\n[green]✓[/green] Extension '{_escape_markup(str(display_name))}' removed successfully")
+        console.print(
+            f"\n[green]✓[/green] Extension '{_escape_markup(str(display_name))}' removed successfully"
+        )
         if keep_config:
-            console.print(f"\nConfig files preserved in .specify/extensions/{safe_extension_id}/")
+            console.print(
+                f"\nConfig files preserved in .specify/extensions/{safe_extension_id}/"
+            )
         else:
-            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{safe_extension_id}/")
+            console.print(
+                f"\nConfig files backed up to .specify/extensions/.backup/{safe_extension_id}/"
+            )
 
         # #1: regenerate native event config so the removed extension's events
         # are stripped from installed integrations.
         _commands._refresh_events_and_warn(project_root)
+        _commands._refresh_presets_and_warn(project_root)
         console.print(f"\nTo reinstall: specify extension add {safe_extension_id}")
     else:
         console.print("[red]Error:[/red] Failed to remove extension")

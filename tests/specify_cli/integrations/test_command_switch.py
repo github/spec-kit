@@ -460,7 +460,13 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
 
         opencode_git_feature = project / ".opencode" / "commands" / "speckit.git.feature.md"
-        assert opencode_git_feature.exists(), "Disabled extension command remains until integration switch"
+        assert not opencode_git_feature.exists(), "Disabling an extension removes its active artifacts"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        git_meta = registry["extensions"]["git"]
+        assert git_meta["enabled"] is False
+        assert "opencode" not in git_meta["registered_commands"]
 
         result = _run_in_project(project, [
             "integration", "switch", "claude",

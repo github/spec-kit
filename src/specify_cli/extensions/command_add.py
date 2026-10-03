@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,13 +22,28 @@ from . import _commands
 def extension_add(
     extension: str = typer.Argument(help="Extension name or path"),
     dev: bool = typer.Option(False, "--dev", help="Install from local directory"),
-    from_url: Optional[str] = typer.Option(None, "--from", help="Install from custom URL"),
+    from_url: Optional[str] = typer.Option(
+        None, "--from", help="Install from custom URL"
+    ),
     force: bool = typer.Option(False, "--force", help="Overwrite if already installed"),
-    priority: int = typer.Option(10, "--priority", help="Resolution priority (lower = higher precedence, default 10)"),
-    version: Optional[str] = typer.Option(None, "--version", help="Install an exact version from a catalog"),
+    priority: int = typer.Option(
+        10,
+        "--priority",
+        help="Resolution priority (lower = higher precedence, default 10)",
+    ),
+    version: Optional[str] = typer.Option(
+        None, "--version", help="Install an exact version from a catalog"
+    ),
 ):
     """Install an extension."""
-    from . import ExtensionManager, ExtensionCatalog, ExtensionError, ValidationError, CompatibilityError, REINSTALL_COMMAND
+    from . import (
+        ExtensionManager,
+        ExtensionCatalog,
+        ExtensionError,
+        ValidationError,
+        CompatibilityError,
+        REINSTALL_COMMAND,
+    )
 
     # Compatibility callers invoke this function directly, in which case
     # Typer supplies its OptionInfo object instead of a parsed option value.
@@ -37,10 +53,14 @@ def extension_add(
     project_root = _commands._require_specify_project()
     # Validate priority
     if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        console.print(
+            "[red]Error:[/red] Priority must be a positive integer (1 or higher)"
+        )
         raise typer.Exit(1)
     if version is not None and (not version.strip() or dev or from_url):
-        console.print("[red]Error:[/red] --version requires a catalog install (without --dev or --from).")
+        console.print(
+            "[red]Error:[/red] --version requires a catalog install (without --dev or --from)."
+        )
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -84,15 +104,17 @@ def extension_add(
 
         # Warn about untrusted sources — default-deny confirmation
         console.print()
-        console.print(Panel(
-            f"[bold]You are installing an extension directly from an external URL,\n"
-            f"bypassing your trusted (install-allowed) extension catalogs.[/bold]\n\n"
-            f"URL: {safe_url}\n\n"
-            f"Only install extensions from sources you trust.",
-            title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
-            border_style="yellow",
-            padding=(1, 2),
-        ))
+        console.print(
+            Panel(
+                f"[bold]You are installing an extension directly from an external URL,\n"
+                f"bypassing your trusted (install-allowed) extension catalogs.[/bold]\n\n"
+                f"URL: {safe_url}\n\n"
+                f"Only install extensions from sources you trust.",
+                title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
         console.print()
         confirm = typer.confirm("Continue with installation?", default=False)
         if not confirm:
@@ -108,22 +130,28 @@ def extension_add(
                 source_path = Path(extension).expanduser().resolve()
                 safe_source_path = _escape_markup(str(source_path))
                 if not source_path.exists():
-                    console.print(f"[red]Error:[/red] Directory not found: {safe_source_path}")
+                    console.print(
+                        f"[red]Error:[/red] Directory not found: {safe_source_path}"
+                    )
                     raise typer.Exit(1)
 
                 if not (source_path / "extension.yml").exists():
-                    console.print(f"[red]Error:[/red] No extension.yml found in {safe_source_path}")
+                    console.print(
+                        f"[red]Error:[/red] No extension.yml found in {safe_source_path}"
+                    )
                     raise typer.Exit(1)
 
                 if force:
-                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed)...")
+                    console.print(
+                        f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed)..."
+                    )
 
                 manifest = manager.install_from_directory(
                     source_path,
                     speckit_version,
                     priority=priority,
                     link_commands=True,
-                    force=force
+                    force=force,
                 )
 
             elif from_url:
@@ -145,7 +173,8 @@ def extension_add(
                 # Try bundled extensions first (shipped with spec-kit)
                 bundled_path = (
                     _commands._locate_bundled_extension(extension)
-                    if version is None else None
+                    if version is None
+                    else None
                 )
                 if bundled_path is not None:
                     manifest = manager.install_from_directory(
@@ -160,10 +189,14 @@ def extension_add(
                         extension, catalog, "add"
                     )
                     if catalog_error:
-                        console.print(f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}")
+                        console.print(
+                            f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}"
+                        )
                         raise typer.Exit(1)
                     if not ext_info:
-                        console.print(f"[red]Error:[/red] Extension '{safe_extension}' not found in catalog")
+                        console.print(
+                            f"[red]Error:[/red] Extension '{safe_extension}' not found in catalog"
+                        )
                         console.print("\nSearch available extensions:")
                         console.print("  specify extension search")
                         raise typer.Exit(1)
@@ -190,24 +223,32 @@ def extension_add(
                             )
                             raise typer.Exit(1)
 
-                    # If catalog resolved a display name to an ID, check bundled again
-                    resolved_id = ext_info['id']
-                    if version is not None and ext_info.get("bundled") and not ext_info.get("download_url"):
+                    resolved_id = ext_info["id"]
+                    if (
+                        version is not None
+                        and ext_info.get("bundled")
+                        and not ext_info.get("download_url")
+                    ):
                         from . import ExtensionManifest
 
                         candidate = _commands._locate_bundled_extension(resolved_id)
                         if candidate is not None:
-                            bundled_manifest = ExtensionManifest(candidate / "extension.yml")
+                            bundled_manifest = ExtensionManifest(
+                                candidate / "extension.yml"
+                            )
                             try:
-                                packaged_matches = Version(bundled_manifest.version) == Version(
-                                    version
-                                )
+                                packaged_matches = Version(
+                                    bundled_manifest.version
+                                ) == Version(version)
                             except InvalidVersion:
                                 packaged_matches = False
                             if packaged_matches:
                                 bundled_path = candidate
                                 manifest = manager.install_from_directory(
-                                    bundled_path, speckit_version, priority=priority, force=force
+                                    bundled_path,
+                                    speckit_version,
+                                    priority=priority,
+                                    force=force,
                                 )
                         if bundled_path is None:
                             console.print(
@@ -220,7 +261,10 @@ def extension_add(
                         bundled_path = _commands._locate_bundled_extension(resolved_id)
                         if bundled_path is not None:
                             manifest = manager.install_from_directory(
-                                bundled_path, speckit_version, priority=priority, force=force
+                                bundled_path,
+                                speckit_version,
+                                priority=priority,
+                                force=force,
                             )
 
                     if bundled_path is None:
@@ -239,7 +283,9 @@ def extension_add(
 
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
-                            catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
+                            catalog_name = _escape_markup(
+                                str(ext_info.get("_catalog_name", "community"))
+                            )
                             resolved_id = _commands._command_safe_id(ext_info["id"])
                             console.print(
                                 f"[red]Error:[/red] '{safe_extension}' was found in the "
@@ -263,8 +309,10 @@ def extension_add(
                             raise typer.Exit(1)
 
                         # Download extension archive (use the resolved catalog ID).
-                        extension_id = ext_info['id']
-                        console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
+                        extension_id = ext_info["id"]
+                        console.print(
+                            f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}..."
+                        )
                         archive_path = (
                             catalog.download_extension_info(ext_info)
                             if version is not None
@@ -279,23 +327,32 @@ def extension_add(
                                 force=force,
                                 catalog_name=ext_info.get("_catalog_name"),
                                 **(
-                                    {"expected_id": extension_id, "expected_version": version}
-                                    if version is not None else {}
+                                    {
+                                        "expected_id": extension_id,
+                                        "expected_version": version,
+                                    }
+                                    if version is not None
+                                    else {}
                                 ),
                             )
                         finally:
                             archive_path.unlink(missing_ok=True)
 
         console.print("\n[green]✓[/green] Extension installed successfully!")
-        console.print(f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})")
+        console.print(
+            f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})"
+        )
         console.print(f"  {_escape_markup(str(manifest.description))}")
 
         # #1: regenerate native event config for installed event-capable
         # integrations so the new extension's events take effect immediately.
         _commands._refresh_events_and_warn(project_root)
+        _commands._refresh_presets_and_warn(project_root)
 
         for warning in manifest.warnings:
-            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
+            console.print(
+                f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}"
+            )
 
         selected_ai = _commands.load_init_options(project_root).get("ai")
         is_cline = selected_ai == "cline"
@@ -308,12 +365,14 @@ def extension_add(
 
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
-            cmd_name = cmd['name']
+            cmd_name = cmd["name"]
             if is_cline:
                 cmd_name = format_cline_command_name(cmd_name)
             elif is_forge:
                 cmd_name = format_forge_command_name(cmd_name)
-            console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
+            console.print(
+                f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}"
+            )
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)
@@ -322,7 +381,9 @@ def extension_add(
         if not isinstance(reg_skills, list):
             reg_skills = []
         if reg_skills:
-            console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
+            console.print(
+                f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered"
+            )
 
         # Scaffold config templates automatically
         deployed, skipped, failed = manager.scaffold_config(manifest.id)
@@ -332,7 +393,9 @@ def extension_add(
             for cfg in deployed:
                 console.print(f"  • {config_home}/{_escape_markup(str(cfg))}")
         if skipped:
-            console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
+            console.print(
+                f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]"
+            )
         if failed:
             console.print(
                 f"\n[yellow]Warning:[/yellow] Config templates not scaffolded: "
