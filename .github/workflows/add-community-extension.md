@@ -8,9 +8,6 @@ on:
     names: [extension-submission]
   skip-bots: [github-actions, copilot, dependabot]
 
-imports:
-  - shared/catalog-submission.md
-
 engine:
   id: copilot
   args:
@@ -92,9 +89,8 @@ not turn environment blockers into submission failures.
 This workflow is triggered by any `issues: labeled` event, but a job-level
 condition gates the agent run so it only proceeds when the label that was just
 added is `extension-submission`. By the time you run, that condition has already
-passed. Use the shared submission intake and outcome reporting instructions to
-determine whether the issue is an extension submission. Do not require an exact
-title prefix or stop without an issue outcome comment.
+passed. Before processing, verify that the issue title starts with `[Extension]:`.
+If it does not, stop without commenting.
 
 ## Step 1 — Read and Parse the Issue
 
