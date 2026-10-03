@@ -465,55 +465,113 @@ class _StepKindManager:
             )
 
     def refresh(self, component: ComponentRef) -> None:
-        # Preserve an existing step until we've validated we can perform refresh.
-        # For already-installed steps, keep a backup and restore it if the
-        # remove+reinstall path fails.
+        # Offline and not-yet-installed steps have nothing to roll back.
+        # Delegate to install and skip the backup path entirely.
         if not (self._allow_network and self.is_installed(component)):
             self.install(component)
             return
 
+        import copy
+        import json
         import shutil
         import tempfile
 
-        step_dir = self._registry.steps_dir / component.id
-        metadata = self._registry.get(component.id)
-        backup_dir = Path(tempfile.mkdtemp(prefix="speckit-step-refresh-")) / component.id
+        from ..workflows.catalog import StepRegistry
+        from ..workflows.step import command_remove
+        from ..workflows.step import installer as step_installer
+
+        # Snapshot and removal share the lock ``step add`` / ``step remove``
+        # already use. ``self.remove()`` and ``workflow_step_remove`` acquire
+        # that same lock, and ``_exclusive_project_lock`` blocks in
+        # ``fcntl.flock(LOCK_EX)`` on a new fd, so a nested acquire in this
+        # process deadlocks. Remove through ``_remove_step_locked`` instead.
+        # The catalog reinstall stays outside the lock.
+        backup_root: Path | None = None
+        keep_backup = False
+        metadata = None
         try:
-            if step_dir.exists():
-                shutil.copytree(step_dir, backup_dir)
-            self.remove(component)
+            try:
+                with step_installer._step_install_transaction(self._root):
+                    registry = StepRegistry(self._root)
+                    entry = registry.get(component.id)
+                    metadata = copy.deepcopy(entry) if entry is not None else None
+                    backup_root = Path(
+                        tempfile.mkdtemp(prefix="speckit-step-refresh-")
+                    )
+                    backup_dir = backup_root / component.id
+                    step_dir = registry.steps_dir / component.id
+                    if step_dir.exists():
+                        shutil.copytree(step_dir, backup_dir)
+                    with _chdir(self._root):
+                        _delegate_command(
+                            "remove",
+                            f"step '{component.id}'",
+                            lambda: command_remove._remove_step_locked(
+                                self._root, component.id
+                            ),
+                        )
+            except step_installer.StepInstallError as exc:
+                # Lock acquisition failed before any package or registry snapshot.
+                raise BundlerError(
+                    f"Failed to refresh step '{component.id}': {exc}"
+                ) from exc
+
             try:
                 self.install(component)
-            except BundlerError:
-                if backup_dir.exists():
-                    shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
-                # Re-read the registry: ``StepRegistry`` snapshots the file once
-                # in ``__init__`` (``self.data = self._load()``) and
-                # ``is_installed`` only consults that snapshot. ``self.remove()``
-                # above has already deleted the entry from disk, but
-                # ``self._registry``'s snapshot still contains it -- so the
-                # guard was always False here and the restore never ran, in
-                # exactly the failure case it was written for. The step package
-                # came back but stayed unregistered: ``workflow step list``
-                # stopped showing it and ``workflow step add`` then refused with
-                # "Step directory already exists".
-                from ..workflows.catalog import StepRegistry
-
-                current = StepRegistry(self._root)
-                if metadata is not None and not current.is_installed(component.id):
-                    # Restore the saved entry verbatim rather than via ``add()``,
-                    # which would rewrite the metadata it is meant to roll back:
-                    # this registry is freshly constructed *after*
-                    # ``self.remove()`` deleted the entry, so ``add()`` sees no
-                    # existing record and stamps ``installed_at`` with
-                    # ``datetime.now()`` (it also overwrites ``updated_at``
-                    # unconditionally). ``workflow_step_remove`` bypasses
-                    # ``add()`` for exactly this reason.
-                    current.data["steps"][component.id] = metadata
-                    current.save()
+            except BundlerError as original:
+                try:
+                    with step_installer._step_install_transaction(self._root):
+                        assert backup_root is not None
+                        backup_dir = backup_root / component.id
+                        current = StepRegistry(self._root)
+                        # ``save()`` replaces the whole file. The document it
+                        # writes is the on-disk ``steps`` object read after this
+                        # load, plus this step's snapshotted entry when that
+                        # object does not already contain the id. A later step
+                        # operation's package and registry keys are left alone.
+                        registry_path = current.registry_path
+                        if registry_path.is_file():
+                            loaded = json.loads(
+                                registry_path.read_text(encoding="utf-8")
+                            )
+                        else:
+                            loaded = None
+                        if not isinstance(loaded, dict):
+                            document = {
+                                "schema_version": StepRegistry.SCHEMA_VERSION,
+                                "steps": {},
+                            }
+                        else:
+                            document = loaded
+                            if not isinstance(document.get("steps"), dict):
+                                document["steps"] = {}
+                        steps = document["steps"]
+                        if component.id not in steps:
+                            step_dir = current.steps_dir / component.id
+                            if step_dir.exists():
+                                shutil.rmtree(step_dir)
+                            if backup_dir.exists():
+                                shutil.copytree(backup_dir, step_dir)
+                            if metadata is not None:
+                                # Insert the snapshot verbatim. ``StepRegistry.add``
+                                # would rewrite ``installed_at`` and ``updated_at``.
+                                steps[component.id] = metadata
+                                current.data = document
+                                current.save()
+                except Exception as restore_exc:  # noqa: BLE001
+                    # The install error is what the caller handles. A failed
+                    # copy-back or registry write is recorded on it, and the
+                    # temp backup stays on disk for recovery.
+                    keep_backup = True
+                    original.add_note(
+                        f"Could not restore step '{component.id}' from backup "
+                        f"'{backup_root}': {restore_exc}"
+                    )
+                    raise original from None
                 raise
         finally:
-            shutil.rmtree(backup_dir.parent, ignore_errors=True)
+            if backup_root is not None and not keep_backup:
+                shutil.rmtree(backup_root, ignore_errors=True)
 
     def remove(self, component: ComponentRef) -> None:
         from .. import workflow_step_remove
