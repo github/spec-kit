@@ -15,11 +15,13 @@ from ..integration_runtime import (
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
+    _command_file_names_changed,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
     _legacy_command_root_upgrade_pending,
     _manifest_tracks_skill_layout,
+    _planned_command_files,
 )
 from ._commands import integration_app
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
@@ -184,6 +186,52 @@ def integration_upgrade(
                 f"  [cyan]specify preset remove <id>[/cyan]\n"
                 f"  [cyan]specify integration upgrade {key} "
                 f"--integration-options \"...\"[/cyan]\n"
+                f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+
+    # Reject in-place command file renames (Kiro CLI's speckit.<cmd>.md ->
+    # speckit-<cmd>.md, #4797) while preset command artifacts are tracked for
+    # the integration. A preset override shares its path with the core or
+    # extension command it overrides, and its rescaffold is best-effort: if
+    # the preset can't be re-registered, stale cleanup or the other layer's
+    # new file would replace the override. Refuse before any mutation, as for
+    # the layout changes above.
+    if _command_file_names_changed(
+        integration, old_manifest.files, _planned_command_files(integration)
+    ):
+        try:
+            affected_presets = _installed_command_presets_affecting_agent(
+                project_root,
+                key,
+            )
+        except _PresetRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files: the "
+                "preset registry could not be read to verify installed presets."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "A command file rename cannot reconcile preset command "
+                "artifacts while the preset registry state is unknown. Fix or "
+                "restore [cyan].specify/presets/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "Preset command artifacts cannot yet be reconciled across a "
+                "command file rename, so the upgrade is refused before "
+                "changing files."
+            )
+            console.print(
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                f"  [cyan]specify preset remove <id>[/cyan]\n"
+                f"  [cyan]specify integration upgrade {key}[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
             )
             raise typer.Exit(1)

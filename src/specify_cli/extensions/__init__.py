@@ -3813,7 +3813,15 @@ class ExtensionManager:
         agent_name: str,
         command_names: List[str],
     ) -> List[Path]:
-        """Remove old flat commands whose replacement skills were written."""
+        """Remove old flat commands whose replacements were written.
+
+        Qoder's ``.qoder/commands`` files became skills, and Kiro CLI's dotted
+        ``.kiro/prompts/speckit.<cmd>.md`` files became hyphenated prompts in
+        the same directory (#4797). This runs on every registration pass, so
+        a command whose old file outlived an upgrade (the integration was
+        inactive, or the extension disabled) is cleaned up when it is next
+        registered (#2948).
+        """
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
 
@@ -3832,7 +3840,7 @@ class ExtensionManager:
 
         registrar = CommandRegistrar(self.project_root)
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
-        if not agent_config or agent_config.get("extension") != "/SKILL.md":
+        if not agent_config:
             return []
 
         def safe_project_dir(relative: str) -> Optional[Path]:
@@ -3851,8 +3859,8 @@ class ExtensionManager:
             return current
 
         legacy_root = safe_project_dir(legacy_dir)
-        skills_root = safe_project_dir(str(agent_config.get("dir", "")))
-        if legacy_root is None or skills_root is None or not legacy_root.is_dir():
+        output_root = safe_project_dir(str(agent_config.get("dir", "")))
+        if legacy_root is None or output_root is None or not legacy_root.is_dir():
             return []
 
         removed: List[Path] = []
@@ -3864,14 +3872,18 @@ class ExtensionManager:
             ):
                 continue
 
-            skill_name = registrar._compute_output_name(
+            output_name = registrar._compute_output_name(
                 agent_name, command_name, agent_config
             )
-            replacement = skills_root / skill_name / "SKILL.md"
+            replacement = output_root / f"{output_name}{agent_config['extension']}"
             if replacement.is_symlink() or not replacement.is_file():
                 continue
 
             legacy_file = legacy_root / f"{command_name}{legacy_extension}"
+            # Kiro's old and new prompts share a directory: a name without
+            # dots (e.g. an alias ``speckit-git-c``) is its own replacement.
+            if registrar._same_lexical_path(legacy_file, replacement):
+                continue
             if legacy_file.is_symlink() or legacy_file.is_file():
                 legacy_file.unlink()
                 removed.append(legacy_file)
@@ -3968,13 +3980,46 @@ class ExtensionManager:
                     if not isinstance(registered_commands, dict):
                         registered_commands = {}
                     new_registered = copy.deepcopy(registered_commands)
-                    if registered:
-                        new_registered[agent_name] = registered
+                    # register_commands skips a missing source and returns
+                    # only the names it wrote; it does not raise. Replacing
+                    # the agent's list with that return value (or dropping
+                    # the entry when nothing was written) untracks a prompt
+                    # that is still on disk, and extension removal then
+                    # cannot delete it. Keep a previously registered name
+                    # when this pass did not write it and the manifest
+                    # still declares it. A name that was never registered
+                    # is not added. A name the manifest no longer declares
+                    # is not kept: removal deletes the formatted path, and
+                    # another extension may now own that file. Retirement
+                    # below still runs only for names written this pass,
+                    # and only once that pass's replacement file exists
+                    # (#4797, #2948).
+                    declared_names: Set[str] = set()
+                    for command in manifest.commands:
+                        if not isinstance(command, dict):
+                            continue
+                        primary_name = command.get("name")
+                        if isinstance(primary_name, str):
+                            declared_names.add(primary_name)
+                        aliases = command.get("aliases") or []
+                        if isinstance(aliases, list):
+                            declared_names.update(
+                                alias for alias in aliases
+                                if isinstance(alias, str)
+                            )
+                    previous = self._valid_name_list(
+                        new_registered.get(agent_name)
+                    )
+                    kept = [
+                        name for name in previous
+                        if name in registered or name in declared_names
+                    ]
+                    merged = kept + [
+                        name for name in registered if name not in kept
+                    ]
+                    if merged:
+                        new_registered[agent_name] = merged
                     else:
-                        # Registration returned empty list (e.g., corrupted
-                        # manifest pointing at missing command files).  Clear
-                        # stale entry so later cleanup doesn't try to remove
-                        # files that were never written.
                         new_registered.pop(agent_name, None)
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
