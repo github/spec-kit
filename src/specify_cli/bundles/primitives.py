@@ -165,7 +165,7 @@ class _PresetKindManager:
 
     def is_installed(self, component: ComponentRef) -> bool:
         try:
-            return self._manager.get_pack(component.id) is not None
+            return self._manager.registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
 
@@ -238,11 +238,16 @@ class _PresetKindManager:
 
     def remove(self, component: ComponentRef) -> None:
         try:
-            self._manager.remove(component.id)
+            removed = self._manager.remove(component.id)
         except Exception as exc:  # noqa: BLE001
             raise BundlerError(
                 f"Failed to remove preset '{component.id}': {exc}"
             ) from exc
+        if not removed:
+            raise BundlerError(
+                f"Failed to remove preset '{component.id}': removal was "
+                "refused (unsafe registry id or unexpected on-disk target)."
+            )
 
 
 class _ExtensionKindManager:
@@ -332,11 +337,16 @@ class _ExtensionKindManager:
 
     def remove(self, component: ComponentRef) -> None:
         try:
-            self._manager.remove(component.id)
+            removed = self._manager.remove(component.id)
         except Exception as exc:  # noqa: BLE001
             raise BundlerError(
                 f"Failed to remove extension '{component.id}': {exc}"
             ) from exc
+        if not removed:
+            raise BundlerError(
+                f"Failed to remove extension '{component.id}': removal was "
+                "refused (unsafe registry id or unexpected on-disk target)."
+            )
 
 
 class _WorkflowKindManager:

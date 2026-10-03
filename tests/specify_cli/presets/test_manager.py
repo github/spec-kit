@@ -1,6 +1,7 @@
 """Tests for preset installation and removal in specify_cli.presets._manager."""
 
 import json
+import shutil
 import tarfile
 import zipfile
 from pathlib import Path
@@ -290,6 +291,107 @@ class TestPresetManager:
         manager = PresetManager(project_dir)
         result = manager.remove("nonexistent")
         assert result is False
+
+    def test_remove_rejects_unsafe_registry_id(self, project_dir):
+        """A tampered registry entry must not reach path construction.
+
+        The registry file is user-editable JSON; an id like ``../outside``
+        would otherwise let ``remove()`` build a deletion target outside
+        ``.specify/presets``.
+        """
+        manager = PresetManager(project_dir)
+        unsafe_id = "../outside-target"
+        manager.registry.add(unsafe_id, {"version": "1.0.0"})
+        assert manager.registry.is_installed(unsafe_id)
+
+        outside_target = project_dir / ".specify" / "outside-target"
+        outside_target.mkdir()
+        (outside_target / "keep.txt").write_text("do not delete")
+
+        result = manager.remove(unsafe_id)
+
+        assert result is False
+        assert outside_target.exists()
+        assert (outside_target / "keep.txt").exists()
+        # Refused before the registry entry was mutated.
+        assert manager.registry.is_installed(unsafe_id)
+
+    def test_remove_refuses_symlinked_preset_dir(self, project_dir):
+        """A symlinked preset directory must fail explicitly, not be deleted."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        real_target = project_dir.parent / "real-target"
+        real_target.mkdir()
+        (real_target / "important.txt").write_text("do not delete")
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.symlink_to(real_target, target_is_directory=True)
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert real_target.exists()
+        assert (real_target / "important.txt").exists()
+        assert pack_dir.is_symlink()
+        assert manager.registry.is_installed("test-pack")
+
+    def test_force_reinstall_aborts_when_removal_refused(self, project_dir, pack_dir):
+        """install_from_directory(force=True) must abort if remove() refuses."""
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        installed = project_dir / ".specify" / "presets" / "test-pack"
+        real_target = project_dir.parent / "real-target"
+        shutil.move(str(installed), str(real_target))
+        installed.symlink_to(real_target, target_is_directory=True)
+
+        with pytest.raises(PresetError, match="could not be safely removed"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+        assert (real_target / "preset.yml").exists()
+
+    def test_remove_registered_preset_with_missing_dir(self, project_dir):
+        """A valid registered preset whose directory is already gone is removed."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        assert manager.remove("test-pack") is True
+        assert not manager.registry.is_installed("test-pack")
+
+    def test_remove_refuses_dangling_symlinked_preset_dir(self, project_dir):
+        """A dangling symlink must fail explicitly rather than be silently skipped.
+
+        ``Path.exists()`` follows the link and returns False for a broken
+        symlink, so a guard gated on ``exists()`` would let this through.
+        """
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.parent.mkdir(parents=True, exist_ok=True)
+        missing_target = project_dir.parent / "does-not-exist"
+        pack_dir.symlink_to(missing_target, target_is_directory=True)
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert pack_dir.is_symlink()
+        assert manager.registry.is_installed("test-pack")
+
+    def test_remove_refuses_regular_file_preset_dir(self, project_dir):
+        """A regular file at the preset path must fail explicitly, not crash
+        ``shutil.rmtree`` or leave the registry mutated."""
+        manager = PresetManager(project_dir)
+        manager.registry.add("test-pack", {"version": "1.0.0"})
+
+        pack_dir = project_dir / ".specify" / "presets" / "test-pack"
+        pack_dir.parent.mkdir(parents=True, exist_ok=True)
+        pack_dir.write_text("not a directory")
+
+        result = manager.remove("test-pack")
+
+        assert result is False
+        assert pack_dir.is_file()
+        assert manager.registry.is_installed("test-pack")
 
     def test_list_installed(self, project_dir, pack_dir):
         """Test listing installed packs."""

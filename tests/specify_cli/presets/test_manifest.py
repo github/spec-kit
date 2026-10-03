@@ -199,9 +199,10 @@ class TestPresetManifest:
         with pytest.raises(PresetValidationError, match="Missing preset.id"):
             PresetManifest(manifest_path)
 
-    def test_invalid_pack_id_format(self, temp_dir, valid_pack_data):
-        """Test invalid pack ID format."""
-        valid_pack_data["preset"]["id"] = "Invalid_ID"
+    @pytest.mark.parametrize("bad_id", ["Invalid_ID", "test-pack\n"])
+    def test_invalid_pack_id_format(self, temp_dir, valid_pack_data, bad_id):
+        """Test invalid pack ID format (incl. trailing newline)."""
+        valid_pack_data["preset"]["id"] = bad_id
         manifest_path = temp_dir / "preset.yml"
         with open(manifest_path, 'w') as f:
             yaml.dump(valid_pack_data, f)

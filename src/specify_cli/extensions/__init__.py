@@ -323,7 +323,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -2563,6 +2563,11 @@ class ExtensionManager:
             # Clear any stale backup from a previous remove so that only the
             # backup produced by the current remove() call is restored later.
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
+            if backup_config_dir.parent.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to reinstall '{manifest.id}': "
+                    f"'.backup' is a symlink"
+                )
             # Check is_symlink first: is_dir() follows symlinks so a
             # symlink-to-directory would pass, but rmtree() raises on them.
             if backup_config_dir.is_symlink():
@@ -2572,6 +2577,11 @@ class ExtensionManager:
             elif backup_config_dir.exists():
                 backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
+            if not did_remove:
+                raise ExtensionError(
+                    f"Refusing to reinstall '{manifest.id}': existing "
+                    f"installation could not be safely removed"
+                )
 
         # Load and validate .extensionignore BEFORE reading/creating the rescue
         # staging directory (and thus before deleting dest_dir). The loader can
@@ -3498,6 +3508,35 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
+        # A registered extension_id is trusted only as far as the registry
+        # file itself is trustworthy; validate it as a single, well-formed
+        # path component before it is used to construct removal/backup
+        # targets, and refuse a target that is not a real directory (e.g. a
+        # symlink planted to redirect the deletion elsewhere).
+        if not VALID_EXTENSION_ARTIFACT_NAME_PATTERN.fullmatch(extension_id):
+            return False
+        extension_dir = self.extensions_dir / extension_id
+        if extension_dir.is_symlink() or (
+            extension_dir.exists() and not extension_dir.is_dir()
+        ):
+            return False
+        backup_root = self.extensions_dir / ".backup"
+        backup_dir = backup_root / extension_id
+        if not keep_config and extension_dir.exists():
+            if (
+                backup_root.is_symlink()
+                or backup_dir.is_symlink()
+                or (backup_root.exists() and not backup_root.is_dir())
+                or (backup_dir.exists() and not backup_dir.is_dir())
+                or any(
+                    (backup_dir / f.name).is_symlink()
+                    or (backup_dir / f.name).is_dir()
+                    for f in list(extension_dir.glob("*-config.yml"))
+                    + list(extension_dir.glob("*-config.local.yml"))
+                )
+            ):
+                return False
+
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
         registered_commands = (
@@ -3509,8 +3548,6 @@ class ExtensionManager:
             registered_skills = [s for s in raw_skills if isinstance(s, str)]
         else:
             registered_skills = []
-
-        extension_dir = self.extensions_dir / extension_id
 
         # Unregister commands from all AI agents
         if registered_commands:
@@ -3556,7 +3593,6 @@ class ExtensionManager:
             if extension_dir.exists():
                 # Use subdirectory per extension to avoid name accumulation
                 # (e.g., jira-jira-config.yml on repeated remove/install cycles)
-                backup_dir = self.extensions_dir / ".backup" / extension_id
                 backup_dir.mkdir(parents=True, exist_ok=True)
 
                 # Backup both primary and local override config files
