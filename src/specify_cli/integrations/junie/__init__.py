@@ -132,6 +132,66 @@ class JunieIntegration(MarkdownIntegration):
             lambda m: f"{m.group(1)}{format_junie_command_name(m.group(2))}",
             content,
         )
+
+    @staticmethod
+    def _inject_allow_prompt_argument(content: str, allow_prompt: bool = True) -> str:
+        """Inject allowPromptArgument: true/false into the YAML frontmatter.
+
+        If frontmatter exists, it ensures the key is set to the desired value (overwriting if needed).
+        If not, it creates a minimal frontmatter.
+        """
+        value = "true" if allow_prompt else "false"
+        if not content.startswith("---"):
+            # No frontmatter at all? Create one.
+            return f"---\nallowPromptArgument: {value}\n---\n\n" + content
+
+        parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
+        if len(parts) < 3:
+            # Malformed frontmatter (e.g. missing closing dashes)?
+            return content
+
+        frontmatter = parts[1]
+        body = parts[2]
+
+        if "allowPromptArgument:" in frontmatter:
+            # Overwrite existing key
+            frontmatter = re.sub(
+                r"(?m)^(allowPromptArgument:\s*).*",
+                fr"\1{value}",
+                frontmatter
+            )
+        else:
+            # Append to frontmatter. Ensure it ends with newline.
+            # Check if the last line of frontmatter is a key-value pair.
+            lines = frontmatter.splitlines()
+            if lines and not lines[-1].strip():
+                # Remove trailing empty lines in frontmatter
+                while lines and not lines[-1].strip():
+                    lines.pop()
+                frontmatter = "\n".join(lines) + "\n"
+            elif not frontmatter.endswith("\n"):
+                frontmatter += "\n"
+
+            frontmatter += f"allowPromptArgument: {value}\n"
+
+        return f"---{frontmatter}---{body}"
+
+    @staticmethod
+    def _transform_body_variables(content: str) -> str:
+        """Transform $ARGUMENTS to $prompt and escape other $word by doubling $."""
+        # 1. $ARGUMENTS -> $prompt
+        # We do this before regex so we can exclude $prompt from doubling.
+        content = content.replace("$ARGUMENTS", "$prompt")
+
+        # 2. Double $ for other variables: $[A-Za-z_][A-Za-z0-9_-]*
+        def double_dollar(match: re.Match[str]) -> str:
+            word = match.group(1)
+            if word == "prompt":
+                return "$prompt"
+            return "$$" + word
+
+        return re.sub(r"\$([A-Za-z_][A-Za-z0-9_-]*)", double_dollar, content)
+
     def post_process_command_content(self, content: str) -> str:
         """Apply Junie-specific transformations to command content.
 
@@ -140,8 +200,14 @@ class JunieIntegration(MarkdownIntegration):
         ``post_process_command_content``) applies these transforms to
         extension/preset command files too, not just core commands.
         """
+        # FR-001: Detect $ARGUMENTS before transformation
+        has_arguments = "$ARGUMENTS" in content
+
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
+        # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence
+        updated = self._inject_allow_prompt_argument(updated, allow_prompt=has_arguments)
+        updated = self._transform_body_variables(updated)
         return updated
 
     def setup(
