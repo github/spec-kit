@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from typing import Any
 
 from ..base import SkillsIntegration
+from ... import _utils
 from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -64,6 +67,25 @@ class ClaudeIntegration(SkillsIntegration):
     }
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
+
+    def _resolve_executable(self) -> str:
+        """Resolve the Claude CLI, including installs that are not on PATH.
+
+        ``claude migrate-installer`` and the npm-local installer place the
+        binary under ``~/.claude/local`` without adding it to PATH. Returning
+        that absolute path keeps availability checks and dispatch in agreement
+        (issues #123 and #550). An operator override or a PATH install still
+        wins where present. A candidate that exists but is not executable is
+        skipped, so a stale file left by one installer cannot mask a working
+        install found later in the list.
+        """
+        resolved = super()._resolve_executable()
+        if self._executable_override() is not None or shutil.which(resolved):
+            return resolved
+        for candidate in (_utils.CLAUDE_LOCAL_PATH, _utils.CLAUDE_NPM_LOCAL_PATH):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return resolved
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:

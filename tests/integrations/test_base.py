@@ -2,11 +2,16 @@
 
 import inspect
 import shlex
+import shutil
 import sys
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from specify_cli._utils import check_tool
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import (
     IntegrationBase,
     IntegrationOption,
@@ -766,3 +771,154 @@ class TestInstallScriptsPython:
         assert sh_file.stat().st_mode & 0o111
         # Negative: a non-script file is not made executable.
         assert not (txt_file.stat().st_mode & 0o111)
+
+class TestCliAvailabilityMatchesDispatch:
+    """A tool reported as available must be launchable under the same name.
+
+    ``check_tool`` used to special-case a handful of CLIs while dispatch
+    resolved the executable separately. A Claude install that is not on PATH,
+    or a machine carrying only the legacy ``kiro`` binary, therefore passed
+    preflight and then failed with FileNotFoundError when the command ran.
+    """
+
+    def test_claude_local_install_resolves_to_the_path_preflight_accepted(self, tmp_path):
+        local_claude = tmp_path / "claude"
+        local_claude.write_text("#!/bin/sh\n")
+        # An installed CLI is executable; availability now requires it.
+        local_claude.chmod(0o755)
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("specify_cli._utils.CLAUDE_LOCAL_PATH", local_claude),
+        ):
+            integration = get_integration("claude")
+            resolved = integration._resolve_executable()
+            exec_args = integration.build_exec_args("hello")
+
+            assert check_tool("claude") is True
+            assert resolved == str(local_claude)
+            # Dispatch runs this value; it has to exist, not just be a name.
+            assert Path(resolved).is_file()
+            # argv[0] is what actually reaches subprocess.run.
+            assert exec_args[0] == str(local_claude)
+
+    def test_kiro_legacy_binary_resolves_to_the_name_preflight_accepted(self):
+        def fake_which(name):
+            return "/usr/bin/kiro" if name == "kiro" else None
+
+        with patch("shutil.which", side_effect=fake_which):
+            integration = get_integration("kiro-cli")
+            resolved = integration._resolve_executable()
+            exec_args = integration.build_exec_args("hello")
+
+            assert check_tool("kiro-cli") is True
+            assert resolved == "kiro"
+            assert shutil.which(resolved) is not None
+            # argv[0] is what actually reaches subprocess.run.
+            assert exec_args[0] == "kiro"
+
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows has no POSIX execute bit; os.access(X_OK) is always true",
+    )
+    def test_explicit_path_without_execute_bit_is_not_available(
+        self, monkeypatch, tmp_path
+    ):
+        # An explicit path that exists but cannot be executed passed preflight
+        # and then failed when dispatch launched it. Existence alone is not
+        # the question the caller is asking.
+        stub = tmp_path / "claude"
+        stub.write_text("#!/bin/sh\n")
+        stub.chmod(0o644)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", str(stub))
+        integration = get_integration("claude")
+
+        # Dispatch would run this exact path, so preflight must judge it.
+        assert integration._resolve_executable() == str(stub)
+        assert integration.is_cli_available() is False
+        assert check_tool("claude") is False
+
+        # Same path, now launchable: the only thing that changed is the bit.
+        stub.chmod(0o755)
+        assert integration.is_cli_available() is True
+        assert check_tool("claude") is True
+
+    def test_claude_override_equal_to_key_is_not_replaced_by_local_install(
+        self, monkeypatch, tmp_path
+    ):
+        # An operator who pins the plain name is still an operator. The
+        # fallback inferred "no override was set" from the resolved value
+        # matching the key, so this pin was silently swapped for a local
+        # install the operator did not ask for.
+        local_claude = tmp_path / "claude"
+        local_claude.write_text("#!/bin/sh\n")
+        local_claude.chmod(0o755)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "claude")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("specify_cli._utils.CLAUDE_LOCAL_PATH", local_claude),
+        ):
+            integration = get_integration("claude")
+
+            assert integration._resolve_executable() == "claude"
+            assert integration.build_exec_args("hello")[0] == "claude"
+            # Nothing named claude is on PATH, so the pin is unavailable and
+            # preflight has to say so rather than report the local install.
+            assert integration.is_cli_available() is False
+            assert check_tool("claude") is False
+
+    def test_kiro_override_equal_to_key_is_not_replaced_by_legacy_binary(
+        self, monkeypatch
+    ):
+        # Same lossy inference on the Kiro side: pinning "kiro-cli" fell
+        # through to the legacy "kiro" binary.
+        def fake_which(name):
+            return "/usr/bin/kiro" if name == "kiro" else None
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE", "kiro-cli")
+        with patch("shutil.which", side_effect=fake_which):
+            integration = get_integration("kiro-cli")
+
+            assert integration._resolve_executable() == "kiro-cli"
+            assert integration.build_exec_args("hello")[0] == "kiro-cli"
+            assert integration.is_cli_available() is False
+            assert check_tool("kiro-cli") is False
+
+    def test_claude_non_default_override_still_wins_over_local_install(
+        self, monkeypatch, tmp_path
+    ):
+        local_claude = tmp_path / "claude"
+        local_claude.write_text("#!/bin/sh\n")
+        local_claude.chmod(0o755)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("specify_cli._utils.CLAUDE_LOCAL_PATH", local_claude),
+        ):
+            assert get_integration("claude")._resolve_executable() == "/opt/claude"
+
+    def test_claude_whitespace_override_still_falls_back_to_local_install(
+        self, monkeypatch, tmp_path
+    ):
+        # Whitespace-only reads as unset everywhere else, so the fallback
+        # must still run.
+        local_claude = tmp_path / "claude"
+        local_claude.write_text("#!/bin/sh\n")
+        local_claude.chmod(0o755)
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "   ")
+
+        with (
+            patch("shutil.which", return_value=None),
+            patch("specify_cli._utils.CLAUDE_LOCAL_PATH", local_claude),
+        ):
+            assert get_integration("claude")._resolve_executable() == str(local_claude)
+
+    def test_kiro_whitespace_override_still_accepts_legacy_binary(self, monkeypatch):
+        def fake_which(name):
+            return "/usr/bin/kiro" if name == "kiro" else None
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE", "   ")
+        with patch("shutil.which", side_effect=fake_which):
+            assert get_integration("kiro-cli")._resolve_executable() == "kiro"

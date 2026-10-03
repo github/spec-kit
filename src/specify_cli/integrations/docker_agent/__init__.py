@@ -54,16 +54,37 @@ class DockerAgentIntegration(SkillsIntegration):
         """Return the available Docker Agent command form."""
 
         # The shared executable override supports both a standalone
-        # ``docker-agent`` binary and the Docker CLI plugin form.
+        # ``docker-agent`` binary and the Docker CLI plugin form. Whether an
+        # override is in effect decides which of those applies; its value does
+        # not, because an operator may legitimately pin the default name.
         executable = self._resolve_executable()
         command = docker_agent_command(
-            None if executable == self.key else executable
+            executable if self._executable_override() is not None else None
         )
         if command is None:
             # Preserve the normal executable-shaped argv for dispatch callers;
             # preflight and the subprocess runner report the unavailable CLI.
             return [executable, "run"]
         return command
+
+    def is_cli_available(self) -> bool:
+        """Detect the standalone binary or the ``docker agent`` CLI plugin.
+
+        Docker Agent is not a single executable on PATH, so the inherited
+        PATH lookup cannot answer this on its own; the shared probe decides
+        which command form is available.
+
+        An explicit executable override is different. The probe deliberately
+        does not launch a custom binary, so it shapes argv for one without
+        establishing that it exists. The inherited check runs first in that
+        case, keeping preflight and dispatch in agreement.
+        """
+        executable = self._resolve_executable()
+        if self._executable_override() is None:
+            return docker_agent_command(None) is not None
+        if not super().is_cli_available():
+            return False
+        return docker_agent_command(executable) is not None
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

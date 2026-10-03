@@ -290,6 +290,20 @@ class IntegrationBase(ABC):
                 f"'integration_options' ({option_names})."
             )
 
+    def _executable_override(self) -> str | None:
+        """Return the operator's explicit executable override, if any.
+
+        ``None`` means no override is in effect; a whitespace-only value is
+        treated as unset, matching :meth:`_resolve_executable`. Subclasses
+        that add their own fallbacks need to tell "an operator pinned a
+        binary" apart from "we fell back to the key", which the resolved
+        string alone cannot express when the override equals the key.
+        """
+        env_name = (
+            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
+        )
+        return os.environ.get(env_name, "").strip() or None
+
     def _resolve_executable(self) -> str:
         """Return the executable for this integration's CLI tool.
 
@@ -306,11 +320,28 @@ class IntegrationBase(ABC):
 
         See issue #2596.
         """
-        env_name = (
-            f"SPECKIT_INTEGRATION_{self.key.upper().replace('-', '_')}_EXECUTABLE"
-        )
-        override = os.environ.get(env_name, "").strip()
-        return override if override else self.key
+        return self._executable_override() or self.key
+
+    def is_cli_available(self) -> bool:
+        """Report whether this integration's CLI can actually be launched.
+
+        Resolves the same executable :meth:`dispatch_command` will run, so a
+        preflight check cannot report a tool as present under a name that
+        dispatch then fails to find. A resolved value containing a path
+        separator names an explicit location and is checked directly; a bare
+        name is looked up on PATH.
+
+        An explicit path must also carry the execute bit. Dispatch launches it
+        through :mod:`subprocess`, so a present-but-non-executable file would
+        pass preflight and then fail at launch — the same mismatch this method
+        exists to prevent. ``shutil.which`` already applies that test on the
+        PATH branch.
+        """
+        executable = self._resolve_executable()
+        separators = [os.sep, os.altsep] if os.altsep else [os.sep]
+        if any(sep in executable for sep in separators):
+            return Path(executable).is_file() and os.access(executable, os.X_OK)
+        return shutil.which(executable) is not None
 
     def _apply_extra_args_env_var(self, args: list[str]) -> None:
         """Append `SPECKIT_INTEGRATION_<KEY>_EXTRA_ARGS` env-var value to *args*.
