@@ -19,15 +19,29 @@ Searches all active catalogs for presets matching the query. Without a query, li
 
 ```bash
 specify preset add [<preset_id>]
+specify preset add <preset_id> --version <version>
 ```
 
-| Option           | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| `--dev <path>`   | Install from a local directory (for development)         |
-| `--from <url>`   | Install from a custom URL instead of the catalog         |
-| `--priority <N>` | Resolution priority (default: 10; lower = higher precedence) |
+| Option                | Description                                                          |
+| --------------------- | -------------------------------------------------------------------- |
+| `--dev <path>`        | Install from a local directory (for development)                     |
+| `--from <url>`        | Install from a custom URL instead of the catalog                     |
+| `--version <version>` | Select an exact release from the winning catalog (ID installs only) |
+| `--priority <N>`      | Resolution priority (default: 10; lower = higher precedence)        |
 
-Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with supported active AI coding agent integrations. The generic integration currently delivers extension invocations but does not register preset command or skill overrides.
+Installs a preset from the catalog, a URL, or a local directory. Preset commands
+are automatically registered with supported active AI coding agent integrations.
+The generic integration currently delivers extension invocations but does not
+register preset command or skill overrides.
+`--version` cannot be combined with `--from` or `--dev`. Direct URL installs
+remain independent of catalog lookup. Without `--version`, installation still
+selects the advertised current release (or the locally bundled preset). A
+requested release absent from the winning catalog is an error; lower-priority
+catalogs cannot supply it. Discovery-only catalogs cannot install any release.
+Version-specific catalog installs verify the selected archive's `preset.yml` ID
+and version before modifying installed presets. Historical releases require a
+SHA-256 digest, which is also verified on download; a legacy current release
+may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
@@ -105,9 +119,14 @@ Presets are printed in **resolution/precedence order**: the highest-precedence p
 
 ```bash
 specify preset info <preset_id>
+specify preset info <preset_id> --versions
 ```
 
 Shows detailed information about an installed or available preset, including its templates, metadata, and tags.
+`--versions` lists the advertised current version followed by historical
+catalog versions, even for discovery-only entries; listing does not make
+them installable. This view consults the catalog rather than the installed
+preset.
 
 ## Resolve a File
 
@@ -181,6 +200,51 @@ Catalogs are resolved in this order (first match wins):
 2. **Project config** — `.specify/preset-catalogs.yml`
 3. **User config** — `~/.specify/preset-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
+
+### Versioned catalog entries
+
+Existing single-version entries remain valid: the top-level `version`,
+`download_url`, optional `sha256`, and `requires` describe the advertised
+current release. To retain older installable releases, add a `releases`
+mapping keyed by version. Each historical record needs its own archive
+`download_url` (HTTPS, or loopback HTTP for local development) and 64-digit
+SHA-256 digest (optionally `sha256:`-prefixed, with surrounding whitespace);
+other algorithm prefixes are rejected. Optional `requires` and `provides`
+apply to that release instead of inheriting the current release's fields.
+Other shared metadata, such as the name and description, is inherited.
+Version keys must be distinct, including PEP 440-equivalent spellings, and
+cannot repeat the current version.
+Duplicate JSON keys are rejected before parsing can discard a release record.
+Historical `requires.extensions` entries follow the preset manifest format:
+extension IDs or mappings with an `id`, optional version constraint, and
+optional boolean `required` flag.
+An invalid catalog payload fails resolution rather than allowing an entry
+from a lower-priority catalog to bypass its installation policy. Unreachable
+catalogs can still be skipped so other configured sources remain available.
+
+```json
+{
+  "presets": {
+    "my-preset": {
+      "name": "My Preset",
+      "version": "2.0.0",
+      "download_url": "https://example.com/my-preset-2.0.0.zip",
+      "sha256": "<64 hex digits for the current archive>",
+      "releases": {
+        "1.5.0": {
+          "download_url": "https://example.com/my-preset-1.5.0.zip",
+          "sha256": "<64 hex digits for the older archive>",
+          "requires": {"speckit_version": ">=0.8.0"}
+        }
+      }
+    }
+  }
+}
+```
+
+The bundled community catalog stays discovery-only and need not publish
+release histories. Bundle pin resolution is a separate capability; adding
+these preset records alone does not make bundle pins installable.
 
 Example `.specify/preset-catalogs.yml`:
 
