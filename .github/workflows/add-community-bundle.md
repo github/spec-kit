@@ -8,6 +8,9 @@ on:
     names: [bundle-submission]
   skip-bots: [github-actions, copilot, dependabot]
 
+imports:
+  - shared/catalog-submission.md
+
 engine:
   id: copilot
   args:
@@ -108,8 +111,9 @@ not turn environment blockers into submission failures.
 ## Triggering Conditions
 
 This workflow is triggered by an `issues: labeled` event and is gated to the
-`bundle-submission` label. Before processing, verify that the issue title starts
-with `[Bundle]:`. If it does not, stop without commenting.
+`bundle-submission` label. Use the shared submission intake and outcome
+reporting instructions to determine whether the issue is a bundle submission.
+Do not require an exact title prefix or stop without an issue outcome comment.
 
 ## Step 1 - Read and Parse the Issue
 
