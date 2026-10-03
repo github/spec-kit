@@ -436,6 +436,206 @@ class TestIntegrationUpgradeDetailed:
         )
         assert "kiro-cli" in registry["extensions"]["git"]["registered_commands"]
 
+    def _kiro_git_commands(self, project):
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(
+                encoding="utf-8"
+            )
+        )
+        return list(
+            registry["extensions"]["git"]["registered_commands"]["kiro-cli"]
+        )
+
+    def test_upgrade_keeps_tracking_when_one_kiro_command_source_is_missing(
+        self, tmp_path, monkeypatch
+    ):
+        """A valid manifest whose command source is missing must not drop
+        that command's dotted prompt from the registry.
+
+        ``register_commands`` returns only the commands it wrote, so a
+        partial list used to replace ``registered_commands["kiro-cli"]``
+        before retirement. The missing command's dotted prompt stayed on
+        disk and ``extension remove`` left it there (#4797).
+        """
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        prompts = project / ".kiro" / "prompts"
+        before = self._kiro_git_commands(project)
+        assert "speckit.git.commit" in before
+        assert (prompts / "speckit.git.commit.md").is_file()
+        (
+            project / ".specify" / "extensions" / "git" / "commands"
+            / "speckit.git.commit.md"
+        ).unlink()
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+
+        assert (prompts / "speckit.git.commit.md").is_file()
+        assert not (prompts / "speckit-git-commit.md").exists()
+        assert (prompts / "speckit-git-feature.md").is_file()
+        assert not (prompts / "speckit.git.feature.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+        assert set(self._kiro_git_commands(project)) == set(before)
+        assert "speckit.git.commit" in self._kiro_git_commands(project)
+
+        result = _run_in_project(
+            project, ["extension", "remove", "git", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+        assert not (prompts / "speckit.git.commit.md").exists()
+        assert not (prompts / "speckit-git-feature.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+
+    def test_upgrade_keeps_tracking_when_every_kiro_command_source_is_missing(
+        self, tmp_path, monkeypatch
+    ):
+        """An empty command registration must not drop dotted prompts that
+        were already registered.
+
+        With every extension command source gone, registration returns
+        nothing and used to pop ``registered_commands["kiro-cli"]``. The
+        dotted prompts remained, untracked, so removing the extension left
+        them behind (#4797).
+        """
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        prompts = project / ".kiro" / "prompts"
+        before = self._kiro_git_commands(project)
+        assert before
+        sources = list(
+            (project / ".specify" / "extensions" / "git" / "commands").glob(
+                "*.md"
+            )
+        )
+        assert sources
+        for source in sources:
+            source.unlink()
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+
+        assert (prompts / "speckit-plan.md").is_file()
+        assert not (prompts / "speckit.plan.md").exists()
+        for name in before:
+            assert (prompts / f"{name}.md").is_file(), name
+            assert not (prompts / f"{name.replace('.', '-')}.md").exists(), name
+        assert set(self._kiro_git_commands(project)) == set(before)
+
+        result = _run_in_project(
+            project, ["extension", "remove", "git", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+        for name in before:
+            assert not (prompts / f"{name}.md").exists(), name
+        assert (prompts / "speckit-plan.md").is_file()
+
+    def test_upgrade_keeps_tracking_when_a_rewritten_kiro_source_disappears(
+        self, tmp_path, monkeypatch
+    ):
+        """A hyphenated prompt already written stays tracked when a later
+        pass cannot write it, and so does an alias from the same source.
+
+        The dotted file is already gone. The live files are
+        ``speckit-git-commit.md`` and the alias prompt. Dropping either
+        name would leave that file behind after extension removal (#4797).
+        """
+        import yaml
+
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        manifest_path = (
+            project / ".specify" / "extensions" / "git" / "extension.yml"
+        )
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for command in manifest["provides"]["commands"]:
+            if command["name"] == "speckit.git.commit":
+                command["aliases"] = ["speckit-git-c"]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit-git-commit.md").is_file()
+        assert (prompts / "speckit-git-c.md").is_file()
+        assert not (prompts / "speckit.git.commit.md").exists()
+        before = self._kiro_git_commands(project)
+        assert {"speckit.git.commit", "speckit-git-c"} <= set(before)
+
+        (
+            project / ".specify" / "extensions" / "git" / "commands"
+            / "speckit.git.commit.md"
+        ).unlink()
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+
+        assert (prompts / "speckit-git-commit.md").is_file()
+        assert (prompts / "speckit-git-c.md").is_file()
+        assert not (prompts / "speckit.git.commit.md").exists()
+        assert set(self._kiro_git_commands(project)) == set(before)
+
+        result = _run_in_project(
+            project, ["extension", "remove", "git", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+        assert not (prompts / "speckit-git-commit.md").exists()
+        assert not (prompts / "speckit-git-c.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+
+    def test_upgrade_drops_a_kiro_command_the_manifest_no_longer_declares(
+        self, tmp_path, monkeypatch
+    ):
+        """A command the manifest no longer provides is dropped from the
+        registry.
+
+        ``extension remove`` deletes the formatted prompt for every name
+        still tracked. Keeping ``speckit.git.commit`` after the extension
+        stops providing it would unlink ``speckit-git-commit.md`` even
+        when another extension now owns that path.
+        """
+        import yaml
+
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        manifest_path = (
+            project / ".specify" / "extensions" / "git" / "extension.yml"
+        )
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for command in manifest["provides"]["commands"]:
+            if command["name"] == "speckit.git.commit":
+                command["aliases"] = ["speckit-git-c"]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        before = self._kiro_git_commands(project)
+        assert {"speckit.git.commit", "speckit-git-c"} <= set(before)
+
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"] = [
+            command for command in manifest["provides"]["commands"]
+            if command.get("name") != "speckit.git.commit"
+        ]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (
+            project / ".specify" / "extensions" / "git" / "commands"
+            / "speckit.git.commit.md"
+        ).unlink()
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        after = set(self._kiro_git_commands(project))
+        assert "speckit.git.commit" not in after
+        assert "speckit-git-c" not in after
+        assert "speckit.git.feature" in after
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit-git-feature.md").is_file()
+        assert (prompts / "speckit-plan.md").is_file()
+
     @pytest.mark.parametrize("activate", ["use", "switch"])
     def test_activating_kiro_after_secondary_upgrade_retires_dotted_prompts(
         self, tmp_path, monkeypatch, activate
