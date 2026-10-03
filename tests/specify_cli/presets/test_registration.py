@@ -13,6 +13,7 @@ def test_preset_commands_registered_once_in_stable_order():
         "remove",
         "update",
         "search",
+        "script-chain",
         "resolve",
         "info",
         "set-priority",

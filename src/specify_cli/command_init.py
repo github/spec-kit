@@ -821,6 +821,26 @@ def register(app: typer.Typer) -> None:
 
                 ensure_executable_scripts(project_path, tracker=tracker)
 
+                # install_shared_infra above may have just overwritten
+                # .specify/scripts/bash/<name>.sh with the bundled core,
+                # clobbering any generated continuation dispatcher for a
+                # script an already-enabled preset provides (e.g. on
+                # `specify init --force` against an existing project).
+                # Restore those dispatchers before any *new* --preset
+                # install below runs its own reconciliation.
+                try:
+                    from .presets import PresetManager as _ExistingPresetManager
+
+                    _ExistingPresetManager(project_path).reconcile_all_script_chains()
+                except Exception as exc:
+                    _print_cli_warning(
+                        "reconcile script presets after",
+                        "init",
+                        str(project_path),
+                        exc,
+                        continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                    )
+
                 if preset:
                     try:
                         from .presets import PresetCatalog, PresetError, PresetManager
