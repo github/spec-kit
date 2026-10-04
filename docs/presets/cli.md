@@ -188,11 +188,16 @@ Usage errors preserve their usage exit code as with `list --json`.
 ```bash
 specify preset resolve spec-template
 specify preset resolve speckit.specify
+specify preset resolve <name> --kind script
+specify preset resolve <name> --kind script --output <path>
 ```
 
 Accepts an extensionless template name or a dot-separated command name.
 Names use lowercase letters, digits, and hyphens; command segments must be
-non-empty. This command does not offer a script-type selector.
+non-empty. By default, dotted names resolve as commands and other names as
+templates. Use `--kind script` to inspect a script artifact, including a
+manifest-declared file such as an `.mjs` module. Use `--kind command` to resolve
+a command whose name is not dotted.
 
 Shows the highest-priority layer's path and source. If output is composed,
 it also shows the contributing composition chain, starting at its effective
@@ -200,6 +205,13 @@ base. The displayed path is not a file containing the final composed output.
 Invalid composition produces a warning; a missing name is reported as not
 found. For all artifact kinds and hidden layers, use the separate
 [artifact reference](../overview/artifacts.md).
+
+For a script that uses a composition strategy, the reported layer path is not
+the composed output. Pass `--output <path>` to write the effective script to
+that location. The command creates missing parent directories and overwrites
+an existing destination file. Relative module imports in the written output
+resolve from the output file's directory; referenced files are not copied.
+`--output` is only valid with `--kind script`.
 
 ## Enable or disable a preset
 
