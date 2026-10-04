@@ -90,6 +90,7 @@ including for help, the existing human-readable behavior is unchanged.
 ```bash
 specify extension info <name>
 specify extension info <name> --versions
+specify extension info <name> --json
 ```
 
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
@@ -130,6 +131,25 @@ not be repeated in `releases`; malformed or duplicate release records are
 rejected. Bundle pins still use the current catalog resolution path until the
 separate bundle work described in [#4719](https://github.com/github/spec-kit/issues/4719)
 adds exact-version component lookup.
+
+`--json` describes one installed extension and writes a single JSON object to
+stdout. `<name>` is matched as without `--json`: the extension ID first, then a
+unique display name, ignoring case. The object has the same `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, and `source` keys as
+the matching `specify extension list --json` item. In place of the `provides`
+counts it has `commands`, `templates`, `scripts`, and `hooks` arrays. Command,
+template, and script entries have `name`, `description` (`""` when absent),
+`source` (the extension's `source`), and `sourcePath` (the manifest `file`,
+relative to the extension directory); script entries also have `runtimes` when
+the manifest declares them. Extension entries carry no `strategy`, because
+extension-provided files always replace. Each hook entry has `trigger` (the
+hook event, such as `after_tasks`), `targetCommand`, `optional` (default
+`true`), and `priority` (default `10`). When an event declares the same command
+more than once, the last declaration wins, as it does when hooks are
+registered. `--json` cannot be combined with `--versions` (usage error, exit 2).
+An extension that is not installed, an ambiguous name, or a missing project
+writes one `{"error":"..."}` object to stderr and exits 1; usage errors keep
+their exit code (normally 2), as with `list --json`.
 
 ## Update Extensions
 
