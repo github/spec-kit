@@ -223,7 +223,9 @@ winning entry. Invalid or oversized payloads encountered before that entry
 fail resolution rather than allowing a lower-priority entry to bypass its
 installation policy. A malformed lower-priority source cannot block a valid
 higher-priority match; searches across all sources still fail on malformed
-catalogs. Unreachable catalogs can still be skipped.
+catalogs. A non-object entry fails exact lookup for its own ID but is skipped
+during all-catalog searches, which retain other valid entries. Unreachable
+catalogs can still be skipped.
 
 ```json
 {

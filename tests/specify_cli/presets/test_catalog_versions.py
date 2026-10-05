@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -94,6 +95,16 @@ def _duplicate_release_json() -> bytes:
     return payload.replace(
         record, f'{record}, "1.0.0": {json.dumps(conflicting)}', 1
     ).encode()
+
+
+def _oversized_integer_json() -> bytes:
+    digit_limit = sys.get_int_max_str_digits()
+    if digit_limit == 0:
+        pytest.skip("Python's JSON integer digit limit is disabled")
+    return (
+        b'{"schema_version":"1.0","presets":{"sample":'
+        + b"9" * (digit_limit + 1) + b"}}"
+    )
 
 
 @pytest.mark.parametrize("legacy", [False, True], ids=["stack", "single-catalog"])
@@ -363,6 +374,7 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         (lambda: b'{"schema_version": "1.0", "presets": []}', "Invalid preset catalog format"),
         (lambda: b'{"schema_version":', "invalid JSON"),
         (lambda: b'{"schema_version":"1.0","presets":' + b"\xff" + b"}", "invalid encoding"),
+        (_oversized_integer_json, "invalid JSON value"),
         (
             lambda: b'{"schema_version":"1.0","presets":{"sample":'
             + b"[" * 20000 + b"0" + b"]" * 20000 + b"}}",
@@ -412,6 +424,50 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
     assert error in result.output
     assert info.exit_code == 1 and error in info.output
     assert search.exit_code == 1 and error in search.output
+    assert OLD_URL not in opened
+    assert PresetManager(project_dir).get_pack("sample") is None
+
+
+def test_malformed_matching_discovery_entry_prevents_lower_install(project_dir):
+    high_url = "https://example.com/discovery.json"
+    low_url = "https://example.com/trusted.json"
+    sources = [
+        PresetCatalogEntry(high_url, "discovery", 1, False),
+        PresetCatalogEntry(low_url, "trusted", 2, True),
+    ]
+    old_bytes = _archive()
+    upper = b'{"schema_version":"1.0","presets":{"sample":[]}}'
+    lower = json.dumps({
+        "schema_version": "1.0",
+        "presets": {"sample": _entry(old_bytes)},
+    }).encode()
+    opened: list[str] = []
+
+    def open_url(_self, url, **_kwargs):
+        opened.append(url)
+        return _response({
+            high_url: upper,
+            low_url: lower,
+            OLD_URL: old_bytes,
+        }[url], url)
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_open_url", open_url),
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch("specify_cli.get_speckit_version", return_value="1.0.0"),
+    ):
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetCatalogValidationError, match="expected a JSON object"):
+            catalog.get_pack_info("sample", "1.0.0")
+        refused = CliRunner().invoke(
+            app, ["preset", "add", "sample", "--version", "1.0.0"]
+        )
+        info = CliRunner().invoke(app, ["preset", "info", "sample"])
+        results = catalog.search("sample")
+    assert refused.exit_code == 1 and "expected a JSON object" in refused.output
+    assert info.exit_code == 1 and "expected a JSON object" in info.output
+    assert results[0]["_catalog_name"] == "trusted"
     assert OLD_URL not in opened
     assert PresetManager(project_dir).get_pack("sample") is None
 

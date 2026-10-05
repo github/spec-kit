@@ -54,6 +54,10 @@ def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
         raise PresetCatalogValidationError(
             f"Invalid preset catalog format from {url}: excessive nesting ({exc})"
         ) from exc
+    except ValueError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid JSON value ({exc})"
+        ) from exc
 
 
 @dataclass
@@ -556,16 +560,15 @@ class PresetCatalog:
                 for found_id, pack_data in data.get("presets", {}).items():
                     if pack_id is not None and found_id != pack_id:
                         continue
-                    # Per-entry guard: ``_fetch_single_catalog`` already
-                    # validates that ``data["presets"]`` is a mapping, but it
-                    # does not (and should not) validate every entry shape
-                    # there — one malformed entry shouldn't poison an
-                    # otherwise valid catalog. Skip non-mapping entries here
-                    # so a payload like ``{"presets": {"foo": [], "bar":
-                    # {...}}}`` still merges the valid entries without
-                    # crashing on ``**pack_data``. Mirrors
-                    # ``integrations/catalog.py:245``.
+                    # Untargeted searches skip malformed entries; an exact
+                    # matching ID must fail instead of falling through to a
+                    # lower-priority installable source.
                     if not isinstance(pack_data, dict):
+                        if pack_id is not None:
+                            raise PresetCatalogValidationError(
+                                f"Invalid preset catalog entry for '{pack_id}' "
+                                f"from {entry.url}: expected a JSON object"
+                            )
                         continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[found_id] = pack_data_with_catalog
