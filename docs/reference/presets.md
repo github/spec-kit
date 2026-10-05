@@ -225,7 +225,9 @@ installation policy. A malformed lower-priority source cannot block a valid
 higher-priority match; searches across all sources still fail on malformed
 catalogs. A non-object entry fails exact lookup for its own ID but is skipped
 during all-catalog searches, which retain other valid entries. Unreachable
-catalogs can still be skipped.
+catalogs can still be skipped. Search validates historical releases on each
+winning entry; invalid release history from a shadowed source does not block
+its valid higher-priority replacement.
 
 ```json
 {

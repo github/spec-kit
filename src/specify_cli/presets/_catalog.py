@@ -60,6 +60,19 @@ def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
         ) from exc
 
 
+def _select_catalog_release(
+    pack_id: str, pack: dict[str, Any], version: str | None
+) -> dict[str, Any] | None:
+    if "releases" in pack and pack.get("id", pack_id) != pack_id:
+        raise PresetCatalogValidationError(
+            f"Preset '{pack_id}' has an inconsistent catalog ID."
+        )
+    try:
+        return select_release({**pack, "id": pack_id}, version)
+    except PresetError as exc:
+        raise PresetCatalogValidationError(str(exc)) from exc
+
+
 @dataclass
 class PresetCatalogEntry:
     """Represents a single entry in the preset catalog stack."""
@@ -752,6 +765,7 @@ class PresetCatalog:
         results = []
 
         for pack_id, pack_data in packs.items():
+            _select_catalog_release(pack_id, pack_data, None)
             if author:
                 author_val = pack_data.get("author", "")
                 if not isinstance(author_val, str):
@@ -810,15 +824,7 @@ class PresetCatalog:
             return None
 
         if pack_id in packs:
-            pack = packs[pack_id]
-            if "releases" in pack and pack.get("id", pack_id) != pack_id:
-                raise PresetCatalogValidationError(
-                    f"Preset '{pack_id}' has an inconsistent catalog ID."
-                )
-            try:
-                return select_release({**pack, "id": pack_id}, version)
-            except PresetError as exc:
-                raise PresetCatalogValidationError(str(exc)) from exc
+            return _select_catalog_release(pack_id, packs[pack_id], version)
         return None
 
     def get_pack_versions(self, pack_id: str) -> list[str]:

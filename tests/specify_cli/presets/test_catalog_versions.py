@@ -23,7 +23,7 @@ from specify_cli.presets import (
     PresetManager,
     PresetValidationError,
 )
-from specify_cli.presets._catalog import PresetCatalogValidationError
+from specify_cli.presets._catalog import PresetCatalogValidationError, _decode_catalog_json
 
 CURRENT_URL = "https://example.com/preset-current.zip"
 OLD_URL = "https://example.com/preset-old.zip"
@@ -378,7 +378,7 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         (
             lambda: b'{"schema_version":"1.0","presets":{"sample":'
             + b"[" * 20000 + b"0" + b"]" * 20000 + b"}}",
-            "excessive nesting",
+            "excessive nesting|expected a JSON object",
         ),
     ],
 )
@@ -421,11 +421,26 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
         info = CliRunner().invoke(app, ["preset", "info", "sample"])
         search = CliRunner().invoke(app, ["preset", "search", "sample"])
     assert result.exit_code == 1, result.output
-    assert error in result.output
-    assert info.exit_code == 1 and error in info.output
-    assert search.exit_code == 1 and error in search.output
+    assert any(text in result.output for text in error.split("|"))
+    assert info.exit_code == 1 and any(
+        text in info.output for text in error.split("|")
+    )
+    assert search.exit_code == 1 and any(
+        text in search.output for text in error.split("|")
+    )
     assert OLD_URL not in opened
     assert PresetManager(project_dir).get_pack("sample") is None
+
+
+def test_recursion_error_is_invalid_catalog_content():
+    with (
+        patch(
+            "specify_cli.presets._catalog.json.loads",
+            side_effect=RecursionError("too deep"),
+        ),
+        pytest.raises(PresetCatalogValidationError, match="excessive nesting"),
+    ):
+        _decode_catalog_json(b"{}", "https://example.com/catalog.json")
 
 
 def test_malformed_matching_discovery_entry_prevents_lower_install(project_dir):
@@ -470,6 +485,39 @@ def test_malformed_matching_discovery_entry_prevents_lower_install(project_dir):
     assert results[0]["_catalog_name"] == "trusted"
     assert OLD_URL not in opened
     assert PresetManager(project_dir).get_pack("sample") is None
+
+
+@pytest.mark.parametrize("malformed_winner", [True, False], ids=["winner", "shadowed"])
+def test_search_validates_only_winning_release_history(project_dir, malformed_winner):
+    catalog = PresetCatalog(project_dir)
+    sources = [
+        PresetCatalogEntry("https://example.com/official.json", "official", 1, True),
+        PresetCatalogEntry("https://example.com/community.json", "community", 2, False),
+    ]
+    invalid = {**_entry(), "releases": []}
+    valid = _entry()
+
+    def fetch(source, _refresh):
+        entry = (
+            invalid if (source.name == "official") == malformed_winner else valid
+        )
+        return {"presets": {"sample": entry}}
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_fetch_single_catalog", side_effect=fetch),
+        patch.object(Path, "cwd", return_value=project_dir),
+    ):
+        if malformed_winner:
+            with pytest.raises(PresetCatalogValidationError, match="releases mapping"):
+                catalog.search("sample")
+            cli_result = CliRunner().invoke(app, ["preset", "search", "sample"])
+            assert cli_result.exit_code == 1
+            assert "releases mapping" in cli_result.output
+        else:
+            matches = catalog.search("sample")
+            assert len(matches) == 1
+            assert matches[0]["_catalog_name"] == "official"
 
 
 def test_valid_higher_priority_id_ignores_invalid_lower_catalog(project_dir):
