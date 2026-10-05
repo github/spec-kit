@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .._project import _resolve_init_dir_override
+from ..integration_state import clean_integration_key, dedupe_integration_keys
 from . import BundlerError
 from .yamlio import ensure_within, load_json
 
@@ -82,8 +83,8 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        # ``default_integration`` first, matching the canonical reader in
-        # ``integration_state`` (line 199):
+        # ``default_integration`` first, matching the canonical reader
+        # (``integration_state.default_integration_key``):
         # ``state.get("default_integration") or state.get("integration")``.
         # ``write_integration_json`` writes both keys, so a marker produced by
         # the current CLI already resolved through the ``integration`` alias --
@@ -91,12 +92,36 @@ def active_integration(project_root: Path) -> str | None:
         # about resolving a marker that carries only ``default_integration``
         # (hand-edited, or written by anything that follows the canonical
         # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
-        value = (
-            data.get("default_integration")
-            or data.get("integration")
-            or data.get("id")
-            or data.get("active")
-        )
-        if isinstance(value, str) and value:
-            return value
+        # Clean EACH candidate before selecting it, rather than picking the
+        # first truthy raw value and normalizing only that one. A raw ``or``
+        # chain selects a whitespace-only ``default_integration`` (truthy) and
+        # then normalizes it to ``None``, losing the valid legacy key behind
+        # it -- whereas ``normalize_integration_state`` does
+        # ``clean_integration_key(data.get("default_integration")) or
+        # legacy_key`` and falls through:
+        #     {"default_integration": "   ", "integration": "copilot"}
+        #         raw-then-clean -> None      canonical -> 'copilot'
+        #
+        # Normalizing through the shared helper also fixes the original
+        # divergence: ``isinstance(value, str) and value`` accepted a
+        # whitespace-only key as real -- truthy, so it suppressed the "not
+        # determinable" fallback -- and returned a padded key verbatim, which
+        # matches no registered integration.
+        for field in ("default_integration", "integration", "id", "active"):
+            cleaned = clean_integration_key(data.get(field))
+            if cleaned:
+                return cleaned
+        # Installed-only state -- ``installed_integrations`` populated but no
+        # default recorded -- still has an active integration: the canonical
+        # ``normalize_integration_state`` promotes ``installed_integrations[0]``
+        # to the default. Returning None here instead told callers the
+        # integration "cannot be determined", which lets an explicit
+        # ``--integration`` bypass the FR-019 integration-clash guard in
+        # ``bundle install`` / ``bundle update``. Checked last, so a marker
+        # that already resolved through the fields above is unaffected.
+        installed = data.get("installed_integrations")
+        if isinstance(installed, list):
+            installed_keys = dedupe_integration_keys(installed)
+            if installed_keys:
+                return installed_keys[0]
     return None
