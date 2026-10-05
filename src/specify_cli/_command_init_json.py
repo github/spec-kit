@@ -942,6 +942,31 @@ def _initialize_project(plan: _InitPlan) -> dict[str, Any]:
         ) from exc
 
     try:
+        init_options: dict[str, Any] = {
+            "ai": plan.integration.key,
+            "integration": plan.integration.key,
+            "here": plan.here,
+            "script": plan.script_type,
+            "feature_numbering": "sequential",
+            "speckit_version": get_speckit_version(),
+        }
+        if plan.integration.is_skills_mode(
+            parsed_options,
+            project_root=plan.project_path,
+        ):
+            init_options["ai_skills"] = True
+        save_init_options(plan.project_path, init_options)
+    except (OSError, ValueError) as exc:
+        raise InitJsonFailure(
+            "initialization_failed",
+            "Failed to save initialization state.",
+            {
+                "component": "init_options",
+                "reason": _single_line(exc),
+            },
+        ) from exc
+
+    try:
         _re_register_existing_artifacts(plan, warnings)
 
         settings = with_integration_setting(
@@ -972,31 +997,6 @@ def _initialize_project(plan: _InitPlan) -> dict[str, Any]:
             },
         ) from exc
     workflow = _install_bundled_workflow(plan.project_path, warnings)
-
-    try:
-        init_options: dict[str, Any] = {
-            "ai": plan.integration.key,
-            "integration": plan.integration.key,
-            "here": plan.here,
-            "script": plan.script_type,
-            "feature_numbering": "sequential",
-            "speckit_version": get_speckit_version(),
-        }
-        if plan.integration.is_skills_mode(
-            parsed_options,
-            project_root=plan.project_path,
-        ):
-            init_options["ai_skills"] = True
-        save_init_options(plan.project_path, init_options)
-    except (OSError, ValueError) as exc:
-        raise InitJsonFailure(
-            "initialization_failed",
-            "Failed to save initialization state.",
-            {
-                "component": "init_options",
-                "reason": _single_line(exc),
-            },
-        ) from exc
 
     permissions = _ensure_script_permissions(plan.project_path, warnings)
     preset = _install_optional_preset(plan.project_path, plan.preset, warnings)

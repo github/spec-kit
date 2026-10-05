@@ -405,7 +405,7 @@ def register(app: typer.Typer) -> None:
             _write_integration_json,
         )
 
-        if json_output:
+        if json_output is True:
             from ._command_init_json import run_init_json
 
             run_init_json(

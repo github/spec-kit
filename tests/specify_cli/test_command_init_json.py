@@ -200,6 +200,87 @@ def test_json_init_reports_reinitialization(tmp_path: Path):
     assert payload["project"]["operation"] == "reinitialized"
 
 
+def test_json_force_reinitialization_persists_new_mode_before_reregistration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "copilot",
+                "--integration-options=--commands",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    observed: list[tuple[str, str, dict[str, Any]]] = []
+
+    def record_extension_mode(
+        manager: ExtensionManager,
+        agent_name: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        options = json.loads(
+            (manager.project_root / ".specify" / "init-options.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        observed.append(("extension", agent_name, options))
+
+    def record_preset_mode(manager: PresetManager, agent_name: str) -> None:
+        options = json.loads(
+            (manager.project_root / ".specify" / "init-options.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        observed.append(("preset", agent_name, options))
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "register_enabled_extensions_for_agent",
+        record_extension_mode,
+    )
+    monkeypatch.setattr(
+        PresetManager,
+        "register_enabled_presets_for_agent",
+        record_preset_mode,
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "copilot",
+                "--integration-options=--skills",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["project"]["operation"] == "reinitialized"
+    assert [(kind, agent) for kind, agent, _options in observed] == [
+        ("extension", "copilot"),
+        ("preset", "copilot"),
+    ]
+    for _kind, _agent, options in observed:
+        assert options["ai"] == "copilot"
+        assert options["ai_skills"] is True
+
+
 @pytest.mark.parametrize(
     ("args", "code"),
     [

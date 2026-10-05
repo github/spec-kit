@@ -38,3 +38,17 @@ def test_override_symlinked_specify_errors_bundle_init_no_fallback(
     assert result.exit_code != 0
     assert "symlinked .specify" in result.output
     assert not (elsewhere / ".specify").exists()
+
+
+def test_bundle_init_direct_callback_keeps_human_output(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["bundle", "init", "--integration", "copilot", "--offline"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Initializing a Spec Kit project" in result.output
+    assert "Spec Kit project ready" in result.output
+    assert '"project":{' not in result.output
