@@ -15,8 +15,12 @@ specify init [<project_name>]
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
+| `--non-interactive`      | Never prompt; use safe documented defaults where available               |
+| `--json`                 | Emit the preview machine-readable init contract; implies non-interactive behavior |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |
 | `--preset <id>`          | Install a preset during initialization                                   |
+| `--extension <spec>`     | Install an optional bundled, local, catalog, or HTTPS extension; repeatable |
+| `--trust-extension-urls` | Explicitly authorize HTTPS extension installs without a trust prompt     |
 
 Creates a new Spec Kit project with the necessary directory structure, templates, scripts, and AI coding agent integration files.
 
@@ -44,7 +48,157 @@ specify init my-project --integration copilot --script ps
 
 # Install a preset during initialization
 specify init my-project --integration copilot --preset compliance
+
+# Initialize non-interactively with machine-readable output
+specify init my-project --json
 ```
+
+### Preview JSON contract
+
+`specify init --json` is the preview machine-readable contract for project
+initialization. It always behaves non-interactively, even when stdin is a TTY:
+it never renders the banner, Rich panels, progress/Live output, pickers, or
+confirmation prompts, and it never waits for terminal input.
+
+JSON mode does **not** imply authorization. In particular, it does not imply
+`--force`, `--trust-extension-urls`, `--ignore-agent-tools`, overwrite consent,
+or any other destructive or trust decision. Supply those flags explicitly when
+their documented behavior is intended. The only automatic choices are safe
+defaults:
+
+- the default integration (`copilot`, or a valid
+  `SPECKIT_INTEGRATION_DEFAULT` value);
+- `sh` scripts on POSIX systems or `ps` scripts on Windows.
+
+The success object reports `integration.defaulted` and `script.defaulted` so
+callers can distinguish defaults from explicit selections.
+
+On success, stdout contains exactly one UTF-8 JSON object followed by a newline,
+and stderr is empty. The object is command-specific; it does not use the
+obsolete universal `schema_version` / `ok` / `result` wrapper.
+
+```json
+{
+  "project": {
+    "name": "my-project",
+    "path": "/work/my-project",
+    "operation": "created"
+  },
+  "integration": {
+    "key": "copilot",
+    "defaulted": true,
+    "status": "installed"
+  },
+  "script": {
+    "type": "sh",
+    "defaulted": true
+  },
+  "components": {
+    "shared_infrastructure": {
+      "status": "installed",
+      "script_type": "sh"
+    },
+    "workflow": {
+      "id": "speckit",
+      "status": "installed",
+      "version": "1.0.1"
+    },
+    "constitution": {
+      "status": "created",
+      "path": "/work/my-project/.specify/memory/constitution.md",
+      "source": "copied"
+    },
+    "script_permissions": {
+      "status": "completed",
+      "detail": "6 updated"
+    },
+    "preset": null,
+    "extensions": []
+  },
+  "warnings": [],
+  "next_steps": [
+    {
+      "action": "change_directory",
+      "path": "/work/my-project"
+    },
+    {
+      "action": "start_agent",
+      "integration": "copilot",
+      "working_directory": "/work/my-project"
+    },
+    {
+      "action": "run_spec_kit",
+      "commands": [
+        "constitution",
+        "specify",
+        "plan",
+        "tasks",
+        "implement",
+        "converge"
+      ],
+      "working_directory": "/work/my-project"
+    }
+  ]
+}
+```
+
+`project.operation` has precise target-state semantics:
+
+- `created`: the target directory did not exist before initialization;
+- `merged`: initialization used a pre-existing directory that was not already a
+  Spec Kit project;
+- `reinitialized`: the target already contained a `.specify/` directory.
+
+Optional preset, extension, workflow, constitution, permission, or
+re-registration failures that do not prevent initialization are represented in
+their component outcome and in the structured `warnings` array. They are never
+printed as terminal warnings or silently discarded. `next_steps` uses
+machine-usable actions and paths rather than shell-formatted prose.
+
+On failure, stdout is empty and stderr contains exactly one UTF-8 JSON error
+object followed by a newline:
+
+```json
+{"error":{"code":"target_not_empty","message":"The current directory is not empty; pass --force to merge into it.","details":{"item_count":3,"path":"/work/existing"}}}
+```
+
+Stable init error codes are:
+
+| Code | Meaning |
+| ---- | ------- |
+| `target_required` | Neither a project name, `.` nor `--here` was supplied |
+| `conflicting_target_options` | A project name and `--here` were supplied together |
+| `target_exists` | A named target directory already exists without `--force` |
+| `target_not_empty` | The `--here` target is non-empty without `--force` |
+| `target_not_directory` | The target exists but is not a directory |
+| `target_unavailable` | The target directory cannot be inspected |
+| `invalid_arguments` | Command-line syntax or option parsing failed before initialization |
+| `invalid_integration` | The requested integration is not registered |
+| `invalid_integration_options` | Integration options are unknown, malformed, conflicting, or incomplete |
+| `invalid_script_type` | `--script` is not one of `sh`, `ps`, or `py` |
+| `missing_agent_tool` | A required agent tool is unavailable and `--ignore-agent-tools` was not supplied |
+| `extension_url_trust_required` | An HTTPS extension was requested without `--trust-extension-urls` |
+| `initialization_failed` | A known fatal initialization boundary failed |
+| `internal_error` | An unexpected exception was sanitized |
+| `rollback_failed` | Initialization failed and cleanup of a newly created target also failed |
+
+All target, option, required-tool, and URL-trust checks run before filesystem
+mutation. URL extension trust is default-deny. If a later fatal error occurs
+after a new target was created, init removes that target; a pre-existing target
+is never deleted. A cleanup failure is returned as `rollback_failed` with the
+original error nested in `details`.
+
+JSON mode has the same successful side effects as human mode: it installs the
+selected integration, shared templates and scripts, bundled workflow,
+constitution, optional preset, and requested extensions, and it writes the
+normal `.specify/` state. `--force` retains its existing merge/overwrite
+behavior.
+
+**Preview compatibility:** field names, operation values, error envelope, and
+error codes above are the supported preview contract. New optional fields,
+component statuses, warning codes, or next-step actions may be added during the
+preview; consumers should ignore unknown fields. A future stabilization will be
+documented before any incompatible contract change.
 
 ### Environment Variables
 

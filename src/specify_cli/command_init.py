@@ -257,7 +257,9 @@ def ensure_constitution_from_template(
 
 
 def register(app: typer.Typer) -> None:
-    @app.command()
+    from ._command_init_json import InitJsonCommand
+
+    @app.command(cls=InitJsonCommand)
     def init(
         project_name: str = typer.Argument(
             None,
@@ -289,6 +291,14 @@ def register(app: typer.Typer) -> None:
                 "selections and fail instead of hanging when a choice has no "
                 "safe default. Required for agent harnesses that allocate a "
                 "PTY but cannot send arrow-key input."
+            ),
+        ),
+        json_output: bool = typer.Option(
+            False,
+            "--json",
+            help=(
+                "Emit one machine-readable JSON result. Implies non-interactive "
+                "behavior but does not imply force or trust/permission flags."
             ),
         ),
         skip_tls: bool = typer.Option(
@@ -394,6 +404,23 @@ def register(app: typer.Typer) -> None:
             _parse_integration_options,
             _write_integration_json,
         )
+
+        if json_output:
+            from ._command_init_json import run_init_json
+
+            run_init_json(
+                project_name=project_name,
+                script_type=script_type,
+                ignore_agent_tools=ignore_agent_tools,
+                here=here,
+                force=force,
+                preset=preset,
+                integration=integration,
+                integration_options=integration_options,
+                extensions=extensions,
+                trust_extension_urls=trust_extension_urls,
+            )
+            return
 
         show_banner()
 
