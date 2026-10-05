@@ -634,6 +634,53 @@ def test_unreachable_high_priority_catalog_still_uses_lower_source(project_dir):
     assert selected["_install_allowed"] is True
 
 
+def test_versions_report_all_source_outage_instead_of_missing_preset(project_dir):
+    sources = [
+        PresetCatalogEntry("https://example.com/high.json", "high", 1, True),
+        PresetCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+
+    def fetch(source, _refresh):
+        raise PresetError(f"Failed to fetch preset catalog from {source.url}: offline")
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_fetch_single_catalog", side_effect=fetch),
+        patch.object(Path, "cwd", return_value=project_dir),
+    ):
+        with pytest.raises(PresetError, match="high.json: offline"):
+            PresetCatalog(project_dir).get_pack_info("sample")
+        result = CliRunner().invoke(app, ["preset", "info", "sample", "--versions"])
+
+    assert result.exit_code == 1, result.output
+    assert "high.json:" in result.output and "offline" in result.output
+    assert "No catalog versions found" not in result.output
+
+
+def test_versions_report_missing_preset_when_catalog_is_readable(project_dir):
+    sources = [
+        PresetCatalogEntry("https://example.com/high.json", "high", 1, True),
+        PresetCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+
+    def fetch(source, _refresh):
+        if source.name == "high":
+            raise PresetError(f"Failed to fetch preset catalog from {source.url}: offline")
+        return {"presets": {"another-preset": _entry()}}
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_fetch_single_catalog", side_effect=fetch),
+        patch.object(Path, "cwd", return_value=project_dir),
+    ):
+        assert PresetCatalog(project_dir).get_pack_info("sample") is None
+        result = CliRunner().invoke(app, ["preset", "info", "sample", "--versions"])
+
+    assert result.exit_code == 1, result.output
+    assert "No catalog versions found for sample" in result.output
+    assert "offline" not in result.output
+
+
 def test_discovery_only_winner_does_not_delegate_exact_release(project_dir):
     catalog = PresetCatalog(project_dir)
     sources = [

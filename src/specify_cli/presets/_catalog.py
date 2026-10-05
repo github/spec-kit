@@ -565,11 +565,14 @@ class PresetCatalog:
         """
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
+        first_fetch_error: PresetError | None = None
+        readable_source = False
 
         sources = active_catalogs if pack_id is not None else reversed(active_catalogs)
         for entry in sources:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
+                readable_source = True
                 for found_id, pack_data in data.get("presets", {}).items():
                     if pack_id is not None and found_id != pack_id:
                         continue
@@ -589,9 +592,13 @@ class PresetCatalog:
                         return merged
             except PresetCatalogValidationError:
                 raise
-            except PresetError:
+            except PresetError as exc:
+                if first_fetch_error is None:
+                    first_fetch_error = exc
                 continue
 
+        if not readable_source and first_fetch_error is not None:
+            raise first_fetch_error
         return merged
 
     def is_cache_valid(self) -> bool:
@@ -816,12 +823,7 @@ class PresetCatalog:
         Returns:
             Pack metadata or None if not found
         """
-        try:
-            packs = self._get_merged_packs(pack_id=pack_id)
-        except PresetCatalogValidationError:
-            raise
-        except PresetError:
-            return None
+        packs = self._get_merged_packs(pack_id=pack_id)
 
         if pack_id in packs:
             return _select_catalog_release(pack_id, packs[pack_id], version)
