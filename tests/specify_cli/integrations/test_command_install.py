@@ -31,7 +31,7 @@ class TestIntegrationInstall:
             app, ["integration", "install", "copilot", "--version", "1.0.0"]
         )
         assert result.exit_code == 2
-        assert "No such option: --version" in result.output
+        assert "No such option: --version" in strip_ansi(result.output)
 
     def test_install_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
