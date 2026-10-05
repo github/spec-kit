@@ -216,7 +216,7 @@ def _validate_integration_mode_options(
     *,
     integration_key: str,
     project_root: Path,
-) -> None:
+) -> bool:
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
     try:
@@ -226,9 +226,11 @@ def _validate_integration_mode_options(
             redirect_stdout(stdout_capture),
             redirect_stderr(stderr_capture),
         ):
-            integration.is_skills_mode(
-                parsed_options or None,
-                project_root=project_root,
+            return bool(
+                integration.is_skills_mode(
+                    parsed_options or None,
+                    project_root=project_root,
+                )
             )
     except (ValueError, typer.Exit) as exc:
         captured = (
@@ -242,6 +244,59 @@ def _validate_integration_mode_options(
             integration=integration_key,
             reason=_single_line(captured or exc),
         ) from exc
+
+
+def _validate_existing_integration_layout(
+    *,
+    integration_key: str,
+    project_root: Path,
+    requested_skills_mode: bool,
+    raw_integration_options: str | None,
+) -> None:
+    if integration_key not in {"bob", "copilot", "generic"}:
+        return
+
+    from .integrations._command_upgrade_layout import (
+        _manifest_tracks_skill_layout,
+    )
+    from .integrations.manifest import IntegrationManifest
+
+    manifest_path = (
+        project_root
+        / ".specify"
+        / "integrations"
+        / f"{integration_key}.manifest.json"
+    )
+    if not manifest_path.is_file():
+        return
+    try:
+        old_manifest = IntegrationManifest.load(integration_key, project_root)
+    except (OSError, ValueError) as exc:
+        raise InitJsonFailure(
+            "initialization_failed",
+            "The installed integration manifest could not be read.",
+            {
+                "component": "integration_manifest",
+                "integration": integration_key,
+                "reason": _single_line(exc),
+            },
+        ) from exc
+
+    current_skills_mode = _manifest_tracks_skill_layout(old_manifest)
+    if current_skills_mode == requested_skills_mode:
+        return
+    raise _invalid_integration_options(
+        "Changing an installed integration layout through init is not supported.",
+        integration=integration_key,
+        current_layout="skills" if current_skills_mode else "commands",
+        requested_layout="skills" if requested_skills_mode else "commands",
+        recommended_action={
+            "command": "integration_upgrade",
+            "integration": integration_key,
+            "force": True,
+            "integration_options": raw_integration_options,
+        },
+    )
 
 
 def _resolve_default_integration(
@@ -376,7 +431,7 @@ def _build_plan(
         )
 
     parsed_options = _parse_integration_options(integration, integration_options)
-    _validate_integration_mode_options(
+    selected_skills_mode = _validate_integration_mode_options(
         integration,
         parsed_options,
         integration_key=selected_integration,
@@ -395,6 +450,12 @@ def _build_plan(
                 integration=selected_integration,
                 reason=_single_line(exc),
             ) from exc
+    _validate_existing_integration_layout(
+        integration_key=selected_integration,
+        project_root=project_path,
+        requested_skills_mode=selected_skills_mode,
+        raw_integration_options=integration_options,
+    )
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG[selected_integration]

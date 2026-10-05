@@ -171,7 +171,7 @@ Stable init error codes are:
 | `target_exists` | A named target directory already exists without `--force` |
 | `target_not_empty` | The `--here` target is non-empty without `--force` |
 | `target_not_directory` | The target exists but is not a directory |
-| `target_unavailable` | The target directory cannot be inspected |
+| `target_unavailable` | The target directory cannot be inspected or created |
 | `invalid_arguments` | Command-line syntax or option parsing failed before initialization |
 | `invalid_integration` | The requested integration is not registered |
 | `invalid_integration_options` | Integration options are unknown, malformed, conflicting, or incomplete |
@@ -192,7 +192,10 @@ JSON mode has the same successful side effects as human mode: it installs the
 selected integration, shared templates and scripts, bundled workflow,
 constitution, optional preset, and requested extensions, and it writes the
 normal `.specify/` state. `--force` retains its existing merge/overwrite
-behavior.
+behavior. Reinitialization does not perform command-to-skills or
+skills-to-command layout migrations for an already installed dual-mode
+integration; JSON mode rejects that change before mutation and reports a
+machine-usable `integration_upgrade` recommendation.
 
 **Preview compatibility:** field names, operation values, error envelope, and
 error codes above are the supported preview contract. New optional fields,

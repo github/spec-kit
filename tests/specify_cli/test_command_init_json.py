@@ -200,7 +200,7 @@ def test_json_init_reports_reinitialization(tmp_path: Path):
     assert payload["project"]["operation"] == "reinitialized"
 
 
-def test_json_force_reinitialization_persists_new_mode_before_reregistration(
+def test_json_force_reinitialization_persists_new_integration_before_reregistration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -215,7 +215,6 @@ def test_json_force_reinitialization_persists_new_mode_before_reregistration(
                 "--json",
                 "--integration",
                 "copilot",
-                "--integration-options=--commands",
                 "--ignore-agent-tools",
             ],
             cwd=tmp_path,
@@ -263,8 +262,7 @@ def test_json_force_reinitialization_persists_new_mode_before_reregistration(
                 "--json",
                 "--force",
                 "--integration",
-                "copilot",
-                "--integration-options=--skills",
+                "claude",
                 "--ignore-agent-tools",
             ],
             cwd=tmp_path,
@@ -273,12 +271,77 @@ def test_json_force_reinitialization_persists_new_mode_before_reregistration(
 
     assert payload["project"]["operation"] == "reinitialized"
     assert [(kind, agent) for kind, agent, _options in observed] == [
-        ("extension", "copilot"),
-        ("preset", "copilot"),
+        ("extension", "claude"),
+        ("preset", "claude"),
     ]
     for _kind, _agent, options in observed:
-        assert options["ai"] == "copilot"
+        assert options["ai"] == "claude"
         assert options["ai_skills"] is True
+
+
+def test_json_force_reinitialization_rejects_layout_change_before_mutation(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "copilot",
+                "--integration-options=--commands",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    manifest_path = (
+        project / ".specify" / "integrations" / "copilot.manifest.json"
+    )
+    init_options_path = project / ".specify" / "init-options.json"
+    old_manifest = manifest_path.read_bytes()
+    old_init_options = init_options_path.read_bytes()
+    old_command_files = sorted(
+        path.relative_to(project)
+        for root in (project / ".github" / "agents", project / ".github" / "prompts")
+        for path in root.glob("speckit.*")
+    )
+    assert old_command_files
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "copilot",
+                "--integration-options=--skills",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert error["details"]["current_layout"] == "commands"
+    assert error["details"]["requested_layout"] == "skills"
+    assert error["details"]["recommended_action"] == {
+        "command": "integration_upgrade",
+        "integration": "copilot",
+        "force": True,
+        "integration_options": "--skills",
+    }
+    assert manifest_path.read_bytes() == old_manifest
+    assert init_options_path.read_bytes() == old_init_options
+    assert sorted(
+        path.relative_to(project)
+        for root in (project / ".github" / "agents", project / ".github" / "prompts")
+        for path in root.glob("speckit.*")
+    ) == old_command_files
+    assert not (project / ".github" / "skills").exists()
 
 
 @pytest.mark.parametrize(
