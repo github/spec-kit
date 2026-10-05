@@ -136,14 +136,6 @@ def _preflight(
 
     project_path = Path.cwd() if here else Path(project_name or "").resolve()
     existed_before = project_path.exists()
-    already_initialized = (project_path / ".specify").is_dir()
-    operation = (
-        "reinitialized"
-        if already_initialized
-        else "merged"
-        if existed_before
-        else "created"
-    )
     if existed_before:
         if not project_path.is_dir():
             raise InitJsonFailure(
@@ -305,7 +297,6 @@ def _preflight(
 
     return {
         "project_path": project_path,
-        "operation": operation,
         "integration_defaulted": integration_defaulted,
         "script_defaulted": script_defaulted,
         "warnings": warnings,
@@ -331,6 +322,7 @@ def run_init_json(
         _InitTargetClaimError,
         _init_failure_context,
         _init_json_mode,
+        _init_rollback_context,
     )
 
     result: dict[str, Any] | None = None
@@ -339,6 +331,7 @@ def run_init_json(
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
     failure_token = _init_failure_context.set(None)
+    rollback_token = _init_rollback_context.set(None)
     json_mode_token = _init_json_mode.set(True)
     try:
         with (
@@ -361,8 +354,9 @@ def run_init_json(
             result = execute()
     except InitJsonFailure as exc:
         failure = exc
-    except typer.Exit as exc:
+    except (typer.Exit, SystemExit) as exc:
         internal_failure = _init_failure_context.get()
+        rollback = _init_rollback_context.get()
         project_path = context["project_path"] if context else None
         if isinstance(internal_failure, _InitTargetClaimError):
             failure = InitJsonFailure(
@@ -395,17 +389,21 @@ def run_init_json(
             )
         else:
             details: dict[str, Any] = {}
-            if context and context["operation"] == "created":
-                details["rollback"] = {
-                    "status": "completed",
-                    "path": str(context["project_path"]),
-                }
+            if rollback is not None and rollback.get("status") == "completed":
+                details["rollback"] = rollback
             failure = InitJsonFailure(
                 "initialization_failed",
                 "Project initialization failed.",
                 details,
             )
-        if exc.exit_code == 0:
+        exit_code = (
+            exc.exit_code
+            if isinstance(exc, typer.Exit)
+            else exc.code
+            if isinstance(exc.code, int)
+            else 1
+        )
+        if exit_code == 0:
             failure = InitJsonFailure(
                 "initialization_failed",
                 "Project initialization did not complete.",
@@ -418,6 +416,7 @@ def run_init_json(
         )
     finally:
         _init_failure_context.reset(failure_token)
+        _init_rollback_context.reset(rollback_token)
         _init_json_mode.reset(json_mode_token)
 
     if failure is not None:

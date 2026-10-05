@@ -375,7 +375,7 @@ def test_json_init_exposes_optional_failures(
     )
     monkeypatch.setattr(
         init_command,
-        "_install_extension_during_init",
+        "_install_extension_during_init_result",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ValueError("extension install failed")
         ),
@@ -428,6 +428,34 @@ def test_json_init_rolls_back_new_target_after_fatal_failure(
     )
 
     assert error["details"]["rollback"]["status"] == "completed"
+    assert not project.exists()
+
+
+def test_json_init_structures_system_exit_and_reports_actual_rollback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli
+
+    monkeypatch.setattr(
+        specify_cli,
+        "_install_shared_infra_or_exit",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(SystemExit(7)),
+    )
+    project = tmp_path / "project"
+
+    error = _failure(
+        _invoke(
+            ["project", "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "initialization_failed",
+    )
+
+    assert error["details"]["rollback"] == {
+        "status": "completed",
+        "path": str(project),
+    }
     assert not project.exists()
 
 
@@ -552,6 +580,36 @@ def test_json_init_preserves_target_created_during_claim_race(
     )
 
     assert error["details"]["concurrent_creation"] is True
+    assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_json_init_does_not_infer_rollback_from_stale_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli._command_init_json as init_json
+
+    project = tmp_path / "project"
+    marker = project / "keep.txt"
+    original_preflight = init_json._preflight
+
+    def racing_preflight(**kwargs: Any) -> dict[str, Any]:
+        context = original_preflight(**kwargs)
+        project.mkdir()
+        marker.write_text("keep", encoding="utf-8")
+        return context
+
+    monkeypatch.setattr(init_json, "_preflight", racing_preflight)
+
+    error = _failure(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "target_exists",
+    )
+
+    assert "rollback" not in error["details"]
     assert marker.read_text(encoding="utf-8") == "keep"
 
 
@@ -1135,6 +1193,94 @@ def test_json_reports_already_installed_extension(tmp_path: Path):
     assert payload["components"]["extensions"][0]["status"] == "already_installed"
 
 
+def test_json_extension_status_does_not_depend_on_display_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli.command_init as init_command
+    import specify_cli.events as events
+
+    monkeypatch.setattr(
+        init_command,
+        "_install_extension_during_init_result",
+        lambda *_args, **_kwargs: init_command._InitExtensionInstallResult(
+            status="already_installed",
+            message="present from an earlier installation",
+        ),
+    )
+    monkeypatch.setattr(
+        events,
+        "refresh_integration_events",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("already-installed extension must not refresh events")
+        ),
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                "project",
+                "--json",
+                "--extension",
+                "git",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["components"]["extensions"][0] == {
+        "requested": "git",
+        "status": "already_installed",
+        "message": "present from an earlier installation",
+    }
+
+
+def test_json_exposes_force_reregistration_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from specify_cli.integrations import _helpers
+
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        )
+    )
+    monkeypatch.setattr(
+        _helpers,
+        "_register_extensions_for_agent",
+        lambda *_args, **_kwargs: "extension registration failed",
+    )
+    monkeypatch.setattr(
+        _helpers,
+        "_register_presets_for_agent",
+        lambda *_args, **_kwargs: "preset registration failed",
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    warnings = {warning["code"]: warning for warning in payload["warnings"]}
+    assert warnings["extension_reregistration_failed"]["details"]["reason"] == (
+        "extension registration failed"
+    )
+    assert warnings["preset_reregistration_failed"]["details"]["reason"] == (
+        "preset registration failed"
+    )
+
+
 def test_json_preserves_existing_constitution(tmp_path: Path):
     project = tmp_path / "project"
     args = [str(project), "--json", "--ignore-agent-tools"]
@@ -1163,7 +1309,7 @@ def test_json_explicit_url_trust_never_prompts(
     )
     monkeypatch.setattr(
         init_command,
-        "_install_extension_during_init",
+        "_install_extension_during_init_result",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ValueError("download unavailable")
         ),

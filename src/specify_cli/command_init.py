@@ -11,6 +11,7 @@ import sys
 import tempfile
 from contextlib import nullcontext
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,10 @@ from ._utils import check_tool
 
 _init_failure_context: ContextVar[BaseException | None] = ContextVar(
     "init_failure",
+    default=None,
+)
+_init_rollback_context: ContextVar[dict[str, Any] | None] = ContextVar(
+    "init_rollback",
     default=None,
 )
 _init_json_mode: ContextVar[bool] = ContextVar("init_json_mode", default=False)
@@ -526,15 +531,21 @@ def _confirm_extension_url_trust(
     return approvals
 
 
-def _install_extension_during_init(
+@dataclass(frozen=True)
+class _InitExtensionInstallResult:
+    status: str
+    message: str
+
+
+def _install_extension_during_init_result(
     project_path: Path,
     ext_spec: str,
     speckit_version: str,
-) -> str:
+) -> _InitExtensionInstallResult:
     """Install a single extension during ``specify init``.
 
     Handles bundled extension names, local directory paths, and HTTPS URLs.
-    Returns a short status message on success.
+    Returns machine status separately from the human-facing message.
     Raises ``ValueError`` on failure so the caller can convert it to a
     tracker error without aborting the entire init.
     """
@@ -558,7 +569,10 @@ def _install_extension_during_init(
             )
         except ExtensionError as exc:
             raise ValueError(str(exc)) from exc
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionInstallResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # --- Local path ---
     if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
@@ -568,15 +582,24 @@ def _install_extension_during_init(
         if not (source_path / "extension.yml").exists():
             raise ValueError(f"No extension.yml found in {source_path}")
         manifest = manager.install_from_directory(source_path, speckit_version)
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionInstallResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # --- Bundled extension name or catalog ID ---
     bundled_path = _locate_bundled_extension(ext_spec)
     if bundled_path is not None:
         if manager.registry.is_installed(ext_spec):
-            return "already installed"
+            return _InitExtensionInstallResult(
+                "already_installed",
+                "already installed",
+            )
         manifest = manager.install_from_directory(bundled_path, speckit_version)
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionInstallResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # Fall back to catalog
     catalog = ExtensionCatalog(project_path)
@@ -591,9 +614,15 @@ def _install_extension_during_init(
         bundled_path = _locate_bundled_extension(resolved_id)
         if bundled_path is not None:
             if manager.registry.is_installed(resolved_id):
-                return "already installed"
+                return _InitExtensionInstallResult(
+                    "already_installed",
+                    "already installed",
+                )
             manifest = manager.install_from_directory(bundled_path, speckit_version)
-            return f"{manifest.name} v{manifest.version} installed"
+            return _InitExtensionInstallResult(
+                "installed",
+                f"{manifest.name} v{manifest.version} installed",
+            )
 
     if ext_info.get("bundled") and not ext_info.get("download_url"):
         from .extensions import REINSTALL_COMMAND
@@ -618,7 +647,23 @@ def _install_extension_during_init(
         )
     finally:
         zip_path.unlink(missing_ok=True)
-    return f"{manifest.name} v{manifest.version} installed"
+    return _InitExtensionInstallResult(
+        "installed",
+        f"{manifest.name} v{manifest.version} installed",
+    )
+
+
+def _install_extension_during_init(
+    project_path: Path,
+    ext_spec: str,
+    speckit_version: str,
+) -> str:
+    """Compatibility wrapper returning the existing human status message."""
+    return _install_extension_during_init_result(
+        project_path,
+        ext_spec,
+        speckit_version,
+    ).message
 
 
 def _shell_quote_arg(value: str) -> str:
@@ -967,6 +1012,17 @@ def register(app: typer.Typer) -> None:
             if project_path.exists():
                 safe_name = _escape_markup(str(project_name))
                 if not project_path.is_dir():
+                    if _init_json_mode.get():
+                        _init_failure_context.set(
+                            _InitTargetClaimError(
+                                "target_not_directory",
+                                "The target path exists but is not a directory.",
+                                {
+                                    "path": str(project_path),
+                                    "concurrent_creation": True,
+                                },
+                            )
+                        )
                     console.print(
                         f"[red]Error:[/red] '{safe_name}' exists but is not a directory."
                     )
@@ -984,6 +1040,17 @@ def register(app: typer.Typer) -> None:
                         f"[cyan]--force supplied: merging into existing directory '[cyan]{safe_name}[/cyan]'[/cyan]"
                     )
                 else:
+                    if _init_json_mode.get():
+                        _init_failure_context.set(
+                            _InitTargetClaimError(
+                                "target_exists",
+                                "The target directory already exists.",
+                                {
+                                    "path": str(project_path),
+                                    "concurrent_creation": True,
+                                },
+                            )
+                        )
                     error_panel = Panel(
                         f"Directory already exists: '[cyan]{safe_name}[/cyan]'\n"
                         "Please choose a different project name or remove the existing directory.\n"
@@ -1199,6 +1266,13 @@ def register(app: typer.Typer) -> None:
                 project_path,
                 should_claim=not here and not dir_existed_before,
             )
+            if target_identity is not None:
+                _init_rollback_context.set(
+                    {
+                        "status": "claimed",
+                        "path": str(project_path),
+                    }
+                )
         except (_InitRollbackError, _InitTargetClaimError) as exc:
             _init_failure_context.set(exc)
             console.print(f"[red]Error:[/red] Could not create target: {exc}")
@@ -1284,7 +1358,7 @@ def register(app: typer.Typer) -> None:
                         _register_presets_for_agent,
                     )
 
-                    _register_extensions_for_agent(
+                    extension_registration_error = _register_extensions_for_agent(
                         project_path,
                         resolved_integration.key,
                         force=True,
@@ -1293,7 +1367,18 @@ def register(app: typer.Typer) -> None:
                             " may need re-registration."
                         ),
                     )
-                    _register_presets_for_agent(
+                    if extension_registration_error is not None:
+                        init_warnings.append(
+                            _warning(
+                                "extension_reregistration_failed",
+                                "The project was re-initialized, but installed extensions may need re-registration.",
+                                integration=resolved_integration.key,
+                                reason=extension_registration_error.replace(
+                                    "\n", " "
+                                ).strip(),
+                            )
+                        )
+                    preset_registration_error = _register_presets_for_agent(
                         project_path,
                         resolved_integration.key,
                         continuing=(
@@ -1301,6 +1386,17 @@ def register(app: typer.Typer) -> None:
                             " may need re-registration."
                         ),
                     )
+                    if preset_registration_error is not None:
+                        init_warnings.append(
+                            _warning(
+                                "preset_reregistration_failed",
+                                "The project was re-initialized, but installed presets may need re-registration.",
+                                integration=resolved_integration.key,
+                                reason=preset_registration_error.replace(
+                                    "\n", " "
+                                ).strip(),
+                            )
+                        )
 
                 tracker.complete(
                     "integration",
@@ -1578,26 +1674,21 @@ def register(app: typer.Typer) -> None:
                             )
                             continue
                         try:
-                            status_message = _install_extension_during_init(
+                            install_result = _install_extension_during_init_result(
                                 project_path, ext_spec, speckit_ver
                             )
                             tracker.complete(
                                 f"extension-{i}",
-                                status_message,
-                            )
-                            extension_status = (
-                                "already_installed"
-                                if status_message == "already installed"
-                                else "installed"
+                                install_result.message,
                             )
                             extension_outcomes.append(
                                 {
                                     "requested": ext_spec,
-                                    "status": extension_status,
-                                    "message": status_message,
+                                    "status": install_result.status,
+                                    "message": install_result.message,
                                 }
                             )
-                            if extension_status == "installed":
+                            if install_result.status == "installed":
                                 any_extension_installed = True
                         except Exception as ext_err:
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
@@ -1707,7 +1798,20 @@ def register(app: typer.Typer) -> None:
             except (typer.Exit, SystemExit):
                 try:
                     _rollback_new_target(project_path, target_identity)
+                    if target_identity is not None:
+                        _init_rollback_context.set(
+                            {
+                                "status": "completed",
+                                "path": str(project_path),
+                            }
+                        )
                 except _InitRollbackError as cleanup_err:
+                    _init_rollback_context.set(
+                        {
+                            "status": "failed",
+                            "path": str(project_path),
+                        }
+                    )
                     _init_failure_context.set(cleanup_err)
                     console.print(
                         "[red]Error:[/red] Initialization failed and the new "
@@ -1744,7 +1848,20 @@ def register(app: typer.Typer) -> None:
                     )
                 try:
                     _rollback_new_target(project_path, target_identity)
+                    if target_identity is not None:
+                        _init_rollback_context.set(
+                            {
+                                "status": "completed",
+                                "path": str(project_path),
+                            }
+                        )
                 except _InitRollbackError as cleanup_err:
+                    _init_rollback_context.set(
+                        {
+                            "status": "failed",
+                            "path": str(project_path),
+                        }
+                    )
                     _init_failure_context.set(cleanup_err)
                     console.print(
                         "[red]Error:[/red] Initialization failed and the new "

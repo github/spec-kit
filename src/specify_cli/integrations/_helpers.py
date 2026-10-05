@@ -370,13 +370,14 @@ def _best_effort_extension_op(
     *,
     phase: str,
     continuing: str,
-) -> None:
+) -> str | None:
     """Run a best-effort ``ExtensionManager`` operation for ``agent_key``.
 
     ``op`` receives the ``ExtensionManager`` and ``agent_key``. Any failure is
     surfaced as a warning via ``_print_cli_warning`` and never aborts the
     surrounding integration operation. ``continuing`` describes what already
-    succeeded so the warning makes the partial outcome clear.
+    succeeded so the warning makes the partial outcome clear. Returns the
+    failure reason for callers that also expose structured outcomes.
     """
     try:
         from ..extensions import ExtensionManager
@@ -387,6 +388,8 @@ def _best_effort_extension_op(
         from .. import _print_cli_warning
 
         _print_cli_warning(phase, "integration", agent_key, ext_err, continuing=continuing)
+        return str(ext_err)
+    return None
 
 
 def _register_extensions_for_agent(
@@ -395,7 +398,7 @@ def _register_extensions_for_agent(
     *,
     continuing: str,
     force: bool = False,
-) -> None:
+) -> str | None:
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
     ``use`` / ``switch`` re-register enabled extensions for the agent they
@@ -413,11 +416,12 @@ def _register_extensions_for_agent(
     extension content is layered on top of the core-template files that
     ``setup()`` just regenerated (fixes the skip-guard bug for skills mode).
 
-    Best-effort: never aborts the surrounding integration operation. Callers
-    invoke it *after* the use/upgrade/switch transaction has committed so a
-    failure here cannot trigger a rollback.
+    Best-effort: never aborts the surrounding integration operation and returns
+    the failure reason when registration fails. Callers invoke it *after* the
+    use/upgrade/switch transaction has committed so a failure here cannot
+    trigger a rollback.
     """
-    _best_effort_extension_op(
+    return _best_effort_extension_op(
         project_root,
         agent_key,
         lambda mgr, key: mgr.register_enabled_extensions_for_agent(key, force=force),
@@ -452,7 +456,7 @@ def _register_presets_for_agent(
     agent_key: str,
     *,
     continuing: str,
-) -> None:
+) -> str | None:
     """Register all enabled presets' command overrides/skills for ``agent_key``.
 
     Presets follow the same single-active rule as extensions (#2948):
@@ -460,7 +464,8 @@ def _register_presets_for_agent(
     activate (rescaffold), so a preset installed while a different
     integration was active is not left targeting that inactive integration.
 
-    Best-effort: never aborts the surrounding integration operation.
+    Best-effort: never aborts the surrounding integration operation and returns
+    the failure reason when registration fails.
     """
     try:
         from ..presets import PresetManager
@@ -477,6 +482,8 @@ def _register_presets_for_agent(
             preset_err,
             continuing=continuing,
         )
+        return str(preset_err)
+    return None
 
 
 def _resync_manifest_after_registration(
