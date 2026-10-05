@@ -186,8 +186,10 @@ Stable init error codes are:
 All target, option, required-tool, and URL-trust checks run before filesystem
 mutation. URL extension trust is default-deny. If a later fatal error occurs
 after a new target was created, init removes that target; a pre-existing target
-is never deleted. A cleanup failure is returned as `rollback_failed` with the
-original error nested in `details`.
+is never deleted. Rollback verifies that the target still identifies the
+directory created by the current invocation before removing it; a concurrently
+replaced target is preserved. A cleanup or identity-verification failure is
+returned as `rollback_failed` with the original error nested in `details`.
 
 JSON mode has the same successful side effects as human mode: it installs the
 selected integration, shared templates and scripts, bundled workflow,

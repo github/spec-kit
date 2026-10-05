@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +163,75 @@ def test_json_init_never_prompts_even_when_stdin_is_a_tty(
 
     assert payload["integration"]["defaulted"] is True
     assert payload["script"]["defaulted"] is True
+
+
+def test_json_init_emits_utf8_bytes_with_non_utf_text_encoding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import specify_cli._command_init_json as init_json
+
+    project_name = "prøject"
+    raw_stdout = io.BytesIO()
+    encoded_stdout = io.TextIOWrapper(raw_stdout, encoding="utf-16")
+    monkeypatch.setattr(sys, "stdout", encoded_stdout)
+    previous = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        init_json.run_init_json(
+            project_name=project_name,
+            script_type=None,
+            ignore_agent_tools=True,
+            here=False,
+            force=False,
+            preset=None,
+            integration=None,
+            integration_options=None,
+            extensions=None,
+            trust_extension_urls=False,
+        )
+    finally:
+        os.chdir(previous)
+
+    output = raw_stdout.getvalue()
+    assert output.endswith(b"\n")
+    payload = json.loads(output.decode("utf-8"))
+    assert payload["project"]["name"] == project_name
+    assert (tmp_path / project_name / ".specify").is_dir()
+
+
+def test_json_init_error_emits_utf8_bytes_with_non_utf_text_encoding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import specify_cli._command_init_json as init_json
+
+    raw_stderr = io.BytesIO()
+    encoded_stderr = io.TextIOWrapper(raw_stderr, encoding="utf-16")
+    monkeypatch.setattr(sys, "stderr", encoded_stderr)
+    previous = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        with pytest.raises(typer.Exit):
+            init_json.run_init_json(
+                project_name="project",
+                script_type=None,
+                ignore_agent_tools=True,
+                here=False,
+                force=False,
+                preset=None,
+                integration="intégration",
+                integration_options=None,
+                extensions=None,
+                trust_extension_urls=False,
+            )
+    finally:
+        os.chdir(previous)
+
+    output = raw_stderr.getvalue()
+    assert output.endswith(b"\n")
+    payload = json.loads(output.decode("utf-8"))
+    assert payload["error"]["code"] == "invalid_integration"
+    assert payload["error"]["details"]["integration"] == "intégration"
+    assert not (tmp_path / "project").exists()
 
 
 def test_json_init_rejects_nonempty_here_without_force_and_preserves_files(
@@ -953,6 +1024,42 @@ def test_json_init_never_deletes_target_created_during_claim_race(
     assert project.is_dir()
 
 
+def test_json_init_never_deletes_replacement_after_target_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import specify_cli._command_init_json as init_json
+
+    project = tmp_path / "project"
+    moved_claim = tmp_path / "moved-claim"
+    marker = project / "keep.txt"
+
+    def replace_target_and_fail(plan: Any) -> dict[str, Any]:
+        plan.project_path.rename(moved_claim)
+        plan.project_path.mkdir()
+        marker.write_text("keep", encoding="utf-8")
+        raise RuntimeError("initialization failed after target replacement")
+
+    monkeypatch.setattr(
+        init_json,
+        "_initialize_project",
+        replace_target_and_fail,
+    )
+
+    error = _failure(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "rollback_failed",
+    )
+
+    assert error["details"]["original_error"]["code"] == "internal_error"
+    assert error["details"]["cleanup_error"]["code"] == "target_identity_changed"
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert project.is_dir()
+    assert moved_claim.is_dir()
+
+
 def test_json_init_rolls_back_when_integration_setup_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -1065,6 +1172,7 @@ def test_json_init_reports_cleanup_failure(
     )
 
     assert error["details"]["original_error"]["code"] == "internal_error"
+    assert error["details"]["cleanup_error"]["code"] == "target_cleanup_failed"
     assert error["details"]["cleanup_error"]["exception_type"] == "OSError"
     assert project.is_dir()
 

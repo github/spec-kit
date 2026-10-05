@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import shutil
+import stat
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
@@ -74,7 +75,7 @@ class _InitPlan:
     project_name: str
     project_path: Path
     operation: str
-    target_owned: bool
+    target_identity: tuple[int, int] | None
     here: bool
     force: bool
     integration: Any
@@ -102,7 +103,7 @@ def _single_line(value: object, *, limit: int = 500) -> str:
 
 def _emit(value: dict[str, Any], *, error: bool = False) -> None:
     stream = sys.stderr if error else sys.stdout
-    stream.write(
+    payload = (
         json.dumps(
             value,
             ensure_ascii=False,
@@ -110,6 +111,40 @@ def _emit(value: dict[str, Any], *, error: bool = False) -> None:
             separators=(",", ":"),
         )
         + "\n"
+    ).encode("utf-8")
+    binary_stream = getattr(stream, "buffer", None)
+    if binary_stream is None:
+        stream.write(payload.decode("utf-8"))
+        stream.flush()
+        return
+    binary_stream.write(payload)
+    binary_stream.flush()
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    state = path.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(state.st_mode):
+        raise OSError(f"Target is no longer a directory: {path}")
+    return state.st_dev, state.st_ino
+
+
+def _rollback_failure(
+    plan: _InitPlan,
+    failure: InitJsonFailure,
+    cleanup_error: dict[str, Any],
+) -> InitJsonFailure:
+    return InitJsonFailure(
+        "rollback_failed",
+        "Initialization failed and the newly created target could not be removed.",
+        {
+            "path": str(plan.project_path),
+            "original_error": {
+                "code": failure.code,
+                "message": failure.message,
+                "details": failure.details,
+            },
+            "cleanup_error": cleanup_error,
+        },
     )
 
 
@@ -528,7 +563,7 @@ def _build_plan(
         project_name=resolved_name,
         project_path=project_path,
         operation=operation,
-        target_owned=False,
+        target_identity=None,
         here=here,
         force=force,
         integration=integration,
@@ -573,7 +608,14 @@ def _claim_new_target(plan: _InitPlan) -> None:
             "The target directory could not be created.",
             {"path": str(plan.project_path), "reason": _single_line(exc)},
         ) from exc
-    plan.target_owned = True
+    try:
+        plan.target_identity = _directory_identity(plan.project_path)
+    except OSError as exc:
+        raise InitJsonFailure(
+            "target_unavailable",
+            "The newly created target directory could not be verified.",
+            {"path": str(plan.project_path), "reason": _single_line(exc)},
+        ) from exc
 
 
 def _extension_spec_is_url(value: str) -> bool:
@@ -1203,25 +1245,42 @@ def _rollback_new_target(
     plan: _InitPlan,
     failure: InitJsonFailure,
 ) -> InitJsonFailure:
-    if not plan.target_owned or not plan.project_path.exists():
+    if plan.target_identity is None:
         return failure
+    try:
+        current_identity = _directory_identity(plan.project_path)
+    except OSError as cleanup_error:
+        return _rollback_failure(
+            plan,
+            failure,
+            {
+                "code": "target_identity_unavailable",
+                "exception_type": cleanup_error.__class__.__name__,
+                "reason": _single_line(cleanup_error),
+            },
+        )
+    if current_identity != plan.target_identity:
+        return _rollback_failure(
+            plan,
+            failure,
+            {
+                "code": "target_identity_changed",
+                "reason": (
+                    "The target path no longer identifies the directory created "
+                    "by this invocation."
+                ),
+            },
+        )
     try:
         shutil.rmtree(plan.project_path)
     except OSError as cleanup_error:
-        return InitJsonFailure(
-            "rollback_failed",
-            "Initialization failed and the newly created target could not be removed.",
+        return _rollback_failure(
+            plan,
+            failure,
             {
-                "path": str(plan.project_path),
-                "original_error": {
-                    "code": failure.code,
-                    "message": failure.message,
-                    "details": failure.details,
-                },
-                "cleanup_error": {
-                    "exception_type": cleanup_error.__class__.__name__,
-                    "reason": _single_line(cleanup_error),
-                },
+                "code": "target_cleanup_failed",
+                "exception_type": cleanup_error.__class__.__name__,
+                "reason": _single_line(cleanup_error),
             },
         )
     failure.details = {
@@ -1248,39 +1307,45 @@ def run_init_json(
     trust_extension_urls: bool,
 ) -> None:
     """Execute ``specify init --json`` and emit exactly one JSON object."""
-    try:
-        plan = _build_plan(
-            project_name=project_name,
-            script_type=script_type,
-            ignore_agent_tools=ignore_agent_tools,
-            here=here,
-            force=force,
-            preset=preset,
-            integration_key=integration,
-            integration_options=integration_options,
-            extensions=extensions,
-            trust_extension_urls=trust_extension_urls,
-        )
-        _claim_new_target(plan)
-    except Exception as exc:  # noqa: BLE001 - JSON boundary sanitizes all failures
-        _emit_failure(_as_failure(exc))
-
+    plan: _InitPlan | None = None
+    result: dict[str, Any] | None = None
+    failure: InitJsonFailure | None = None
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
     try:
         with (
-            console.capture() as console_capture,
-            err_console.capture() as err_console_capture,
             redirect_stdout(stdout_capture),
             redirect_stderr(stderr_capture),
+            console.capture() as console_capture,
+            err_console.capture() as err_console_capture,
         ):
+            plan = _build_plan(
+                project_name=project_name,
+                script_type=script_type,
+                ignore_agent_tools=ignore_agent_tools,
+                here=here,
+                force=force,
+                preset=preset,
+                integration_key=integration,
+                integration_options=integration_options,
+                extensions=extensions,
+                trust_extension_urls=trust_extension_urls,
+            )
+            _claim_new_target(plan)
             result = _initialize_project(plan)
-        _record_suppressed_output(
-            result["warnings"],
-            stdout=stdout_capture.getvalue() + console_capture.get(),
-            stderr=stderr_capture.getvalue() + err_console_capture.get(),
-        )
     except Exception as exc:  # noqa: BLE001 - JSON boundary sanitizes all failures
-        _emit_failure(_rollback_new_target(plan, _as_failure(exc)))
+        failure = _as_failure(exc)
+        if plan is not None:
+            failure = _rollback_new_target(plan, failure)
 
+    if failure is not None:
+        _emit_failure(failure)
+
+    assert plan is not None
+    assert result is not None
+    _record_suppressed_output(
+        result["warnings"],
+        stdout=stdout_capture.getvalue() + console_capture.get(),
+        stderr=stderr_capture.getvalue() + err_console_capture.get(),
+    )
     _emit(result)
