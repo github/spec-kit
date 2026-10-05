@@ -247,9 +247,37 @@ class GateStep(StepBase):
         while True:
             try:
                 raw = input(f"  Choose [1-{len(options)}]: ").strip()
-            except (EOFError, KeyboardInterrupt):
+            except KeyboardInterrupt:
+                # Ctrl+C is not a gate verdict at all. ``WorkflowEngine`` turns a
+                # propagated KeyboardInterrupt into ``RunStatus.PAUSED`` plus a
+                # ``workflow_interrupted`` log event (engine.py:1059-1063 and
+                # :1144-1148), so the operator can pick the run back up with
+                # ``specify workflow resume``. Swallowing it here produced a
+                # *decision* instead -- ``on_reject`` then fired, usually
+                # aborting the whole run -- which is the one outcome an
+                # interrupted reviewer did not choose. Re-raise so the gate
+                # behaves like every other step under Ctrl+C.
                 print()
-                return options[-1]  # default to last (usually reject)
+                raise
+            except EOFError:
+                # EOF is different: stdin is closed, so there is no operator to
+                # resume and pausing would strand the run. Fall back to a
+                # rejection, which is the safe verdict for an unanswered review.
+                #
+                # ``options[-1]`` assumed the reject option is last, but
+                # ``validate`` only requires that *some* option is
+                # 'reject'/'abort' -- never that it is last. So
+                # ``options: [approve, reject, request-changes]`` validated
+                # clean and EOF resolved to 'request-changes', which
+                # ``execute`` does not classify as a rejection: the gate
+                # reported COMPLETED and the run walked past the human review.
+                # Prefer the declared reject/abort option; for the documented
+                # default ``[approve, reject]`` this is the previous behaviour.
+                print()
+                return next(
+                    (o for o in options if o.lower() in ("reject", "abort")),
+                    options[-1],
+                )
             # isdecimal() (not isdigit()): int() accepts exactly the decimal-digit
             # set, whereas isdigit() also returns True for superscripts/subscripts
             # (e.g. "²") that int() then rejects with ValueError — crashing
