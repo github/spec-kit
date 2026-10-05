@@ -619,10 +619,19 @@ def _claim_new_target(plan: _InitPlan) -> None:
     try:
         plan.target_identity = _directory_identity(plan.project_path)
     except OSError as exc:
-        raise InitJsonFailure(
+        target_error = InitJsonFailure(
             "target_unavailable",
             "The newly created target directory could not be verified.",
             {"path": str(plan.project_path), "reason": _single_line(exc)},
+        )
+        raise _rollback_failure(
+            plan,
+            target_error,
+            {
+                "code": "target_identity_unavailable",
+                "exception_type": exc.__class__.__name__,
+                "reason": _single_line(exc),
+            },
         ) from exc
 
 

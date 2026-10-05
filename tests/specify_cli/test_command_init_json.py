@@ -1149,6 +1149,39 @@ def test_json_init_never_deletes_target_created_during_claim_race(
     assert project.is_dir()
 
 
+def test_json_init_reports_rollback_failure_when_claim_identity_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli._command_init_json as init_json
+
+    project = tmp_path / "project"
+
+    def fail_identity(_path: Path) -> tuple[int, int]:
+        raise OSError("identity lookup failed")
+
+    def fail_unsafe_cleanup(_path: Path) -> None:
+        raise AssertionError("cleanup must not run without verified target identity")
+
+    monkeypatch.setattr(init_json, "_directory_identity", fail_identity)
+    monkeypatch.setattr(init_json.shutil, "rmtree", fail_unsafe_cleanup)
+
+    error = _failure(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "rollback_failed",
+    )
+
+    assert error["details"]["original_error"]["code"] == "target_unavailable"
+    assert error["details"]["cleanup_error"]["code"] == (
+        "target_identity_unavailable"
+    )
+    assert error["details"]["cleanup_error"]["exception_type"] == "OSError"
+    assert project.is_dir()
+
+
 def test_json_init_never_deletes_replacement_after_target_claim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
