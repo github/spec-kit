@@ -27,7 +27,9 @@ def preset_info(
     from ..extensions import normalize_priority
     from . import PresetCatalog, PresetError, PresetManager
 
-    if json_output:
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables JSON output.
+    if json_output is True:
         try:
             manager = PresetManager(resolve_specify_project_root())
             emit_json(preset_info_item(manager.list_installed(), manager, preset_id))

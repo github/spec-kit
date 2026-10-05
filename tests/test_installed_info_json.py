@@ -151,6 +151,21 @@ def test_preset_info_json_expands_the_list_item(tmp_path, monkeypatch):
     ]
 
 
+
+def test_a_direct_call_to_preset_info_keeps_the_human_readable_view(tmp_path, monkeypatch, capsys):
+    from specify_cli.presets.command_info import preset_info
+
+    project = _project(tmp_path)
+    _preset(project)
+    monkeypatch.chdir(project)
+
+    preset_info("info-preset")
+
+    out = capsys.readouterr().out
+    assert "Preset: Info Preset" in out
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(out)
+
 def test_extension_info_json_expands_the_list_item(tmp_path, monkeypatch):
     project = _project(tmp_path)
     _extension(project)
