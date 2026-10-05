@@ -14,6 +14,15 @@ from specify_cli.bundles.versioning import is_semver, satisfies
     ("1.2.3-alpha1", True),
     ("1.2.3-beta2", True),
     ("v1.2.3", True),
+    ("1.20.30-12alpha.1+build.01", True),
+    ("V10.20.30", True),
+    # SemVer identifiers use ASCII digits, not Python's broader Unicode \d.
+    ("1٢.2.3", False),
+    ("1.2٣.3", False),
+    ("1.2.3٤", False),
+    ("1.2.3-1٢", False),
+    ("1.2.3-٢alpha", False),
+    ("1.2.3-１beta", False),
     ("not-a-version", False),
     ("", False),
     # packaging.version.Version accepts these partial versions; SemVer must not.
