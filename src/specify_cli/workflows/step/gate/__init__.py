@@ -35,6 +35,10 @@ class GateStep(StepBase):
     #: Maximum number of ``show_file`` lines rendered at the prompt, so a
     #: large file cannot flood the terminal before the choice.
     MAX_SHOW_FILE_LINES = 200
+    # A line cap alone does not bound the output: a file with no newlines --
+    # minified JSON, a lockfile, a base64 blob -- is a single line of arbitrary
+    # length and floods the prompt exactly as the line cap exists to prevent.
+    MAX_SHOW_FILE_LINE_CHARS = 500
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         message = config.get("message", "Review required.")
@@ -283,7 +287,14 @@ class GateStep(StepBase):
                     if len(lines) >= GateStep.MAX_SHOW_FILE_LINES:
                         truncated = True
                         break
-                    lines.append(_CONTROL_CHARS.sub("", line.rstrip("\n")))
+                    clean = _CONTROL_CHARS.sub("", line.rstrip("\n"))
+                    if len(clean) > GateStep.MAX_SHOW_FILE_LINE_CHARS:
+                        clean = (
+                            clean[: GateStep.MAX_SHOW_FILE_LINE_CHARS]
+                            + f"… (line truncated at "
+                            f"{GateStep.MAX_SHOW_FILE_LINE_CHARS} characters)"
+                        )
+                    lines.append(clean)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             # ``exc`` echoes the (possibly hostile) path, so strip it too.
             return [_CONTROL_CHARS.sub("", f"(could not read file: {exc})")]
