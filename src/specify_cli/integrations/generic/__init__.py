@@ -154,25 +154,6 @@ class GenericIntegration(MarkdownIntegration):
             "--commands-dir is required for the generic integration"
         )
 
-    @classmethod
-    def _resolve_commands_destination(
-        cls,
-        project_root: Path,
-        parsed_options: dict[str, Any] | None,
-        opts: dict[str, Any],
-    ) -> Path:
-        commands_dir = cls._resolve_commands_dir(parsed_options, opts)
-        project_root_resolved = project_root.resolve()
-        destination = (project_root / commands_dir).resolve()
-        try:
-            destination.relative_to(project_root_resolved)
-        except ValueError as exc:
-            raise ValueError(
-                f"Integration destination {destination} escapes "
-                f"project root {project_root_resolved}"
-            ) from exc
-        return destination
-
     def _build_skill_content(
         self, src_file: Path, script_type: str, project_root: Path
     ) -> tuple[str, str]:
@@ -254,6 +235,8 @@ class GenericIntegration(MarkdownIntegration):
         **opts: Any,
     ) -> list[Path]:
         """Install commands to the user-provided commands directory."""
+        commands_dir = self._resolve_commands_dir(parsed_options, opts)
+
         templates = self.list_command_templates()
         if not templates:
             return []
@@ -265,11 +248,14 @@ class GenericIntegration(MarkdownIntegration):
                 f"project_root ({project_root_resolved})"
             )
 
-        dest = self._resolve_commands_destination(
-            project_root,
-            parsed_options,
-            opts,
-        )
+        dest = (project_root / commands_dir).resolve()
+        try:
+            dest.relative_to(project_root_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Integration destination {dest} escapes "
+                f"project root {project_root_resolved}"
+            ) from exc
         dest.mkdir(parents=True, exist_ok=True)
 
         script_type = opts.get("script_type", "sh")

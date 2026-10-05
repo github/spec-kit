@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
+from contextlib import nullcontext
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any
 
 import typer
 from rich.live import Live
@@ -29,9 +32,216 @@ from ._console import StepTracker, console, select_with_arrows, show_banner
 from ._utils import check_tool
 
 
-class _InitExtensionResult(NamedTuple):
-    status: Literal["installed", "already_installed"]
-    message: str
+_init_failure_context: ContextVar[BaseException | None] = ContextVar(
+    "init_failure",
+    default=None,
+)
+_init_json_mode: ContextVar[bool] = ContextVar("init_json_mode", default=False)
+
+
+class _InitRollbackError(Exception):
+    def __init__(self, details: dict[str, Any]):
+        super().__init__(details["code"])
+        self.details = details
+
+
+class _InitTargetClaimError(Exception):
+    def __init__(self, code: str, message: str, details: dict[str, Any]):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    state = path.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(state.st_mode):
+        raise OSError(f"Target is no longer a directory: {path}")
+    return state.st_dev, state.st_ino
+
+
+def _claim_new_target(
+    project_path: Path,
+    *,
+    should_claim: bool,
+) -> tuple[int, int] | None:
+    if not should_claim:
+        return None
+    try:
+        project_path.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        is_directory = project_path.is_dir()
+        raise _InitTargetClaimError(
+            "target_exists" if is_directory else "target_not_directory",
+            (
+                "The target directory was created concurrently."
+                if is_directory
+                else "The target was replaced by a non-directory."
+            ),
+            {"path": str(project_path), "concurrent_creation": True},
+        ) from exc
+    except OSError as exc:
+        raise _InitTargetClaimError(
+            "target_unavailable",
+            "The target directory could not be created.",
+            {"path": str(project_path), "reason": str(exc)},
+        ) from exc
+    try:
+        return _directory_identity(project_path)
+    except OSError as exc:
+        raise _InitRollbackError(
+            {
+                "code": "target_identity_unavailable",
+                "exception_type": exc.__class__.__name__,
+                "reason": str(exc),
+            }
+        ) from exc
+
+
+def _rollback_new_target(
+    project_path: Path,
+    target_identity: tuple[int, int] | None,
+) -> None:
+    if target_identity is None:
+        return
+    try:
+        current_identity = _directory_identity(project_path)
+    except OSError as exc:
+        raise _InitRollbackError(
+            {
+                "code": "target_identity_unavailable",
+                "exception_type": exc.__class__.__name__,
+                "reason": str(exc),
+            }
+        ) from exc
+    if current_identity != target_identity:
+        raise _InitRollbackError(
+            {
+                "code": "target_identity_changed",
+                "reason": (
+                    "The target path no longer identifies the directory created "
+                    "by this invocation."
+                ),
+            }
+        )
+    try:
+        shutil.rmtree(project_path)
+    except OSError as exc:
+        raise _InitRollbackError(
+            {
+                "code": "target_cleanup_failed",
+                "exception_type": exc.__class__.__name__,
+                "reason": str(exc),
+            }
+        ) from exc
+
+
+def _warning(
+    code: str,
+    message: str,
+    **details: Any,
+) -> dict[str, Any]:
+    return {"code": code, "message": message, "details": details}
+
+
+def _build_init_result(
+    *,
+    project_path: Path,
+    operation: str,
+    integration_key: str,
+    integration_defaulted: bool,
+    script_type: str,
+    script_defaulted: bool,
+    here: bool,
+    workflow: dict[str, Any],
+    constitution: dict[str, Any],
+    preset: dict[str, Any] | None,
+    extensions: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    tracker: StepTracker,
+) -> dict[str, Any]:
+    permission_step = next(
+        (step for step in tracker.steps if step["key"] == "chmod"),
+        None,
+    )
+    if permission_step is None or permission_step["status"] == "pending":
+        permissions = {"status": "not_applicable"}
+    elif permission_step["status"] == "error":
+        permissions = {
+            "status": "partial",
+            "detail": permission_step["detail"],
+        }
+        warnings.append(
+            _warning(
+                "script_permission_update_failed",
+                "Some executable script permissions could not be updated.",
+                detail=permission_step["detail"],
+            )
+        )
+    else:
+        permissions = {
+            "status": "completed",
+            "detail": permission_step["detail"],
+        }
+
+    next_steps: list[dict[str, Any]] = []
+    if not here:
+        next_steps.append(
+            {
+                "action": "change_directory",
+                "path": str(project_path),
+            }
+        )
+    next_steps.extend(
+        [
+            {
+                "action": "start_agent",
+                "integration": integration_key,
+                "working_directory": str(project_path),
+            },
+            {
+                "action": "run_spec_kit",
+                "commands": [
+                    "constitution",
+                    "specify",
+                    "plan",
+                    "tasks",
+                    "implement",
+                    "converge",
+                ],
+                "working_directory": str(project_path),
+            },
+        ]
+    )
+    return {
+        "project": {
+            "name": project_path.name,
+            "path": str(project_path),
+            "operation": operation,
+        },
+        "integration": {
+            "key": integration_key,
+            "defaulted": integration_defaulted,
+            "status": "installed",
+        },
+        "script": {
+            "type": script_type,
+            "defaulted": script_defaulted,
+        },
+        "components": {
+            "shared_infrastructure": {
+                "status": "installed",
+                "script_type": script_type,
+            },
+            "workflow": workflow,
+            "constitution": constitution,
+            "script_permissions": permissions,
+            "preset": preset,
+            "extensions": extensions,
+        },
+        "warnings": warnings,
+        "next_steps": next_steps,
+    }
 
 
 def _stdin_is_interactive() -> bool:
@@ -107,11 +317,11 @@ def _install_extension_during_init(
     project_path: Path,
     ext_spec: str,
     speckit_version: str,
-) -> _InitExtensionResult:
+) -> str:
     """Install a single extension during ``specify init``.
 
     Handles bundled extension names, local directory paths, and HTTPS URLs.
-    Returns a structured status and short human-readable message on success.
+    Returns a short status message on success.
     Raises ``ValueError`` on failure so the caller can convert it to a
     tracker error without aborting the entire init.
     """
@@ -135,10 +345,7 @@ def _install_extension_during_init(
             )
         except ExtensionError as exc:
             raise ValueError(str(exc)) from exc
-        return _InitExtensionResult(
-            "installed",
-            f"{manifest.name} v{manifest.version} installed",
-        )
+        return f"{manifest.name} v{manifest.version} installed"
 
     # --- Local path ---
     if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
@@ -148,21 +355,15 @@ def _install_extension_during_init(
         if not (source_path / "extension.yml").exists():
             raise ValueError(f"No extension.yml found in {source_path}")
         manifest = manager.install_from_directory(source_path, speckit_version)
-        return _InitExtensionResult(
-            "installed",
-            f"{manifest.name} v{manifest.version} installed",
-        )
+        return f"{manifest.name} v{manifest.version} installed"
 
     # --- Bundled extension name or catalog ID ---
     bundled_path = _locate_bundled_extension(ext_spec)
     if bundled_path is not None:
         if manager.registry.is_installed(ext_spec):
-            return _InitExtensionResult("already_installed", "already installed")
+            return "already installed"
         manifest = manager.install_from_directory(bundled_path, speckit_version)
-        return _InitExtensionResult(
-            "installed",
-            f"{manifest.name} v{manifest.version} installed",
-        )
+        return f"{manifest.name} v{manifest.version} installed"
 
     # Fall back to catalog
     catalog = ExtensionCatalog(project_path)
@@ -177,12 +378,9 @@ def _install_extension_during_init(
         bundled_path = _locate_bundled_extension(resolved_id)
         if bundled_path is not None:
             if manager.registry.is_installed(resolved_id):
-                return _InitExtensionResult("already_installed", "already installed")
+                return "already installed"
             manifest = manager.install_from_directory(bundled_path, speckit_version)
-            return _InitExtensionResult(
-                "installed",
-                f"{manifest.name} v{manifest.version} installed",
-            )
+            return f"{manifest.name} v{manifest.version} installed"
 
     if ext_info.get("bundled") and not ext_info.get("download_url"):
         from .extensions import REINSTALL_COMMAND
@@ -207,10 +405,7 @@ def _install_extension_during_init(
         )
     finally:
         zip_path.unlink(missing_ok=True)
-    return _InitExtensionResult(
-        "installed",
-        f"{manifest.name} v{manifest.version} installed",
-    )
+    return f"{manifest.name} v{manifest.version} installed"
 
 
 def _shell_quote_arg(value: str) -> str:
@@ -413,6 +608,39 @@ def register(app: typer.Typer) -> None:
             specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
             specify init my-project --extension https://example.com/extensions/my-ext.zip --trust-extension-urls  # URL extension (non-interactive)
         """
+        if json_output is True:
+            from ._command_init_json import run_init_json
+
+            return run_init_json(
+                execute=lambda: init(
+                    project_name=project_name,
+                    script_type=script_type,
+                    ignore_agent_tools=ignore_agent_tools,
+                    here=here,
+                    force=force,
+                    non_interactive=True,
+                    json_output=False,
+                    skip_tls=skip_tls,
+                    debug=debug,
+                    github_token=github_token,
+                    offline=offline,
+                    preset=preset,
+                    integration=integration,
+                    integration_options=integration_options,
+                    extensions=extensions,
+                    trust_extension_urls=trust_extension_urls,
+                ),
+                project_name=project_name,
+                script_type=script_type,
+                ignore_agent_tools=ignore_agent_tools,
+                here=here,
+                force=force,
+                integration=integration,
+                integration_options=integration_options,
+                extensions=extensions,
+                trust_extension_urls=trust_extension_urls,
+            )
+
         # Lazy imports to avoid circular dependency — __init__.py imports this module
         from . import (
             _install_shared_infra_or_exit,
@@ -429,24 +657,8 @@ def register(app: typer.Typer) -> None:
             _write_integration_json,
         )
 
-        if json_output is True:
-            from ._command_init_json import run_init_json
-
-            run_init_json(
-                project_name=project_name,
-                script_type=script_type,
-                ignore_agent_tools=ignore_agent_tools,
-                here=here,
-                force=force,
-                preset=preset,
-                integration=integration,
-                integration_options=integration_options,
-                extensions=extensions,
-                trust_extension_urls=trust_extension_urls,
-            )
-            return
-
-        show_banner()
+        if not _init_json_mode.get():
+            show_banner()
 
         from .integrations import INTEGRATION_REGISTRY, get_integration
 
@@ -571,6 +783,25 @@ def register(app: typer.Typer) -> None:
                     console.print(error_panel)
                     raise typer.Exit(1)
 
+        operation = (
+            "reinitialized"
+            if (project_path / ".specify").is_dir()
+            else "merged"
+            if dir_existed_before
+            else "created"
+        )
+        init_warnings: list[dict[str, Any]] = []
+        workflow_outcome: dict[str, Any] = {
+            "id": "speckit",
+            "status": "skipped",
+            "reason": "not_processed",
+        }
+        preset_outcome: dict[str, Any] | None = None
+        extension_outcomes: list[dict[str, Any]] = []
+        constitution_existed = (
+            project_path / ".specify" / "memory" / "constitution.md"
+        ).exists()
+
         if integration:
             if integration not in AGENT_CONFIG:
                 console.print(
@@ -623,9 +854,10 @@ def register(app: typer.Typer) -> None:
                 f"{'Target Path':<15} [dim]{_escape_markup(str(project_path))}[/dim]"
             )
 
-        console.print(
-            Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2))
-        )
+        if not _init_json_mode.get():
+            console.print(
+                Panel("\n".join(setup_lines), border_style="cyan", padding=(1, 2))
+            )
 
         if not ignore_agent_tools:
             agent_config = AGENT_CONFIG.get(selected_ai)
@@ -665,8 +897,11 @@ def register(app: typer.Typer) -> None:
             else:
                 selected_script = default_script
 
-        console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
-        console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+        if not _init_json_mode.get():
+            console.print(
+                f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}"
+            )
+            console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
         tracker = StepTracker("Initialize Specify Project")
 
@@ -695,6 +930,19 @@ def register(app: typer.Typer) -> None:
 
         tracker.add("final", "Finalize")
 
+        integration_parsed_options: dict[str, Any] = {}
+        if integration_options:
+            extra = _parse_integration_options(
+                resolved_integration,
+                integration_options,
+            )
+            if extra:
+                integration_parsed_options.update(extra)
+        resolved_integration.is_skills_mode(
+            integration_parsed_options or None,
+            project_root=project_path,
+        )
+
         # Resolve trust for URL-based extensions BEFORE entering the Live
         # display: the confirmation prompt cannot be shown/answered underneath
         # the Rich Live spinner. URL installs are default-deny unless the user
@@ -709,14 +957,33 @@ def register(app: typer.Typer) -> None:
                     allow_prompt=_prompts_allowed(non_interactive),
                 )
 
+        try:
+            target_identity = _claim_new_target(
+                project_path,
+                should_claim=not here and not dir_existed_before,
+            )
+        except (_InitRollbackError, _InitTargetClaimError) as exc:
+            _init_failure_context.set(exc)
+            console.print(f"[red]Error:[/red] Could not create target: {exc}")
+            raise typer.Exit(1) from exc
+
         # Disable transient mode on Windows: PowerShell 5.1's legacy console
         # hangs when Rich tries to restore cursor state via VT escape sequences.
         _transient = sys.platform != "win32"
 
-        with Live(
-            tracker.render(), console=console, refresh_per_second=8, transient=_transient
-        ) as live:
-            tracker.attach_refresh(lambda: live.update(tracker.render()))
+        live_context = (
+            nullcontext()
+            if _init_json_mode.get()
+            else Live(
+                tracker.render(),
+                console=console,
+                refresh_per_second=8,
+                transient=_transient,
+            )
+        )
+        with live_context as live:
+            if live is not None:
+                tracker.attach_refresh(lambda: live.update(tracker.render()))
             try:
                 from .integrations.manifest import IntegrationManifest
 
@@ -726,14 +993,6 @@ def register(app: typer.Typer) -> None:
                     project_path,
                     version=get_speckit_version(),
                 )
-
-                integration_parsed_options: dict[str, Any] = {}
-                if integration_options:
-                    extra = _parse_integration_options(
-                        resolved_integration, integration_options
-                    )
-                    if extra:
-                        integration_parsed_options.update(extra)
 
                 from .events import resolve_events
                 events_map = resolve_events(
@@ -826,6 +1085,10 @@ def register(app: typer.Typer) -> None:
                         wf_registry = WorkflowRegistry(project_path)
                         if wf_registry.is_installed("speckit"):
                             tracker.complete("workflow", "already installed")
+                            workflow_outcome = {
+                                "id": "speckit",
+                                "status": "already_installed",
+                            }
                         else:
                             import shutil as _shutil
 
@@ -850,11 +1113,41 @@ def register(app: typer.Typer) -> None:
                                 },
                             )
                             tracker.complete("workflow", "speckit installed")
+                            workflow_outcome = {
+                                "id": "speckit",
+                                "status": "installed",
+                                "version": definition.version,
+                            }
                     else:
                         tracker.skip("workflow", "bundled workflow not found")
+                        workflow_outcome = {
+                            "id": "speckit",
+                            "status": "skipped",
+                            "reason": "bundled_workflow_not_found",
+                        }
+                        init_warnings.append(
+                            _warning(
+                                "bundled_workflow_not_found",
+                                "The bundled speckit workflow was not available.",
+                                workflow="speckit",
+                            )
+                        )
                 except Exception as wf_err:
                     sanitized_wf = str(wf_err).replace("\n", " ").strip()
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
+                    workflow_outcome = {
+                        "id": "speckit",
+                        "status": "failed",
+                        "reason": sanitized_wf,
+                    }
+                    init_warnings.append(
+                        _warning(
+                            "workflow_install_failed",
+                            "The project was initialized without the optional bundled workflow.",
+                            workflow="speckit",
+                            reason=sanitized_wf,
+                        )
+                    )
 
                 init_opts = {
                     "ai": selected_ai,
@@ -881,21 +1174,45 @@ def register(app: typer.Typer) -> None:
 
                         local_path = Path(preset).resolve()
                         if local_path.is_dir() and (local_path / "preset.yml").exists():
-                            preset_manager.install_from_directory(
+                            preset_manifest = preset_manager.install_from_directory(
                                 local_path, speckit_ver
                             )
+                            preset_outcome = {
+                                "requested": preset,
+                                "id": preset_manifest.id,
+                                "status": "installed",
+                                "source": "local",
+                            }
                         else:
                             bundled_path = _locate_bundled_preset(preset)
                             if bundled_path:
-                                preset_manager.install_from_directory(
+                                preset_manifest = preset_manager.install_from_directory(
                                     bundled_path, speckit_ver
                                 )
+                                preset_outcome = {
+                                    "requested": preset,
+                                    "id": preset_manifest.id,
+                                    "status": "installed",
+                                    "source": "bundled",
+                                }
                             else:
                                 preset_catalog = PresetCatalog(project_path)
                                 pack_info = preset_catalog.get_pack_info(preset)
                                 if not pack_info:
                                     console.print(
                                         f"[yellow]Warning:[/yellow] Preset '{preset}' not found in catalog. Skipping."
+                                    )
+                                    preset_outcome = {
+                                        "requested": preset,
+                                        "status": "skipped",
+                                        "reason": "not_found",
+                                    }
+                                    init_warnings.append(
+                                        _warning(
+                                            "preset_not_found",
+                                            "The requested optional preset was not found and was skipped.",
+                                            preset=preset,
+                                        )
                                     )
                                 elif pack_info.get("bundled") and not pack_info.get(
                                     "download_url"
@@ -912,15 +1229,33 @@ def register(app: typer.Typer) -> None:
                                     console.print(
                                         f"Try reinstalling: {REINSTALL_COMMAND}"
                                     )
+                                    preset_outcome = {
+                                        "requested": preset,
+                                        "status": "failed",
+                                        "reason": "bundled_preset_not_found",
+                                    }
+                                    init_warnings.append(
+                                        _warning(
+                                            "bundled_preset_not_found",
+                                            "The requested bundled preset was missing from the installed package.",
+                                            preset=preset,
+                                        )
+                                    )
                                 else:
                                     zip_path = None
                                     try:
                                         zip_path = preset_catalog.download_pack(preset)
-                                        preset_manager.install_from_zip(
+                                        preset_manifest = preset_manager.install_from_zip(
                                             zip_path,
                                             speckit_ver,
                                             catalog_name=pack_info.get("_catalog_name"),
                                         )
+                                        preset_outcome = {
+                                            "requested": preset,
+                                            "id": preset_manifest.id,
+                                            "status": "installed",
+                                            "source": "catalog",
+                                        }
                                     except PresetError as preset_err:
                                         _print_cli_warning(
                                             "install",
@@ -929,12 +1264,33 @@ def register(app: typer.Typer) -> None:
                                             preset_err,
                                             continuing="Continuing without the optional preset.",
                                         )
+                                        reason = str(preset_err).replace("\n", " ").strip()
+                                        preset_outcome = {
+                                            "requested": preset,
+                                            "status": "failed",
+                                            "reason": reason,
+                                        }
+                                        init_warnings.append(
+                                            _warning(
+                                                "preset_install_failed",
+                                                "The project was initialized without the optional preset.",
+                                                preset=preset,
+                                                reason=reason,
+                                            )
+                                        )
                                     finally:
                                         if zip_path is not None:
                                             try:
                                                 zip_path.unlink(missing_ok=True)
-                                            except OSError:
-                                                pass
+                                            except OSError as cleanup_err:
+                                                init_warnings.append(
+                                                    _warning(
+                                                        "preset_download_cleanup_failed",
+                                                        "The preset was processed, but its temporary download could not be removed.",
+                                                        preset=preset,
+                                                        reason=str(cleanup_err),
+                                                    )
+                                                )
                     except Exception as preset_err:
                         _print_cli_warning(
                             "install",
@@ -943,10 +1299,24 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+                        reason = str(preset_err).replace("\n", " ").strip()
+                        preset_outcome = {
+                            "requested": preset,
+                            "status": "failed",
+                            "reason": reason,
+                        }
+                        init_warnings.append(
+                            _warning(
+                                "preset_install_failed",
+                                "The project was initialized without the optional preset.",
+                                preset=preset,
+                                reason=reason,
+                            )
+                        )
 
                 # Install extensions specified via --extension
                 if extensions:
-                    from .extensions._commands import _refresh_events_and_warn
+                    from .events import EventRefreshError, refresh_integration_events
 
                     speckit_ver = get_speckit_version()
                     any_extension_installed = False
@@ -962,38 +1332,153 @@ def register(app: typer.Typer) -> None:
                                 "skipped: untrusted URL not confirmed "
                                 "(use --trust-extension-urls)",
                             )
+                            extension_outcomes.append(
+                                {
+                                    "requested": ext_spec,
+                                    "status": "skipped",
+                                    "reason": "extension_url_trust_required",
+                                }
+                            )
                             continue
                         try:
-                            extension_result = _install_extension_during_init(
+                            status_message = _install_extension_during_init(
                                 project_path, ext_spec, speckit_ver
                             )
                             tracker.complete(
                                 f"extension-{i}",
-                                extension_result.message,
+                                status_message,
                             )
-                            any_extension_installed = True
+                            extension_status = (
+                                "already_installed"
+                                if status_message == "already installed"
+                                else "installed"
+                            )
+                            extension_outcomes.append(
+                                {
+                                    "requested": ext_spec,
+                                    "status": extension_status,
+                                    "message": status_message,
+                                }
+                            )
+                            if extension_status == "installed":
+                                any_extension_installed = True
                         except Exception as ext_err:
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
                             tracker.error(
                                 f"extension-{i}",
                                 f"failed: {_escape_markup(sanitized_ext[:120])}",
                             )
+                            extension_outcomes.append(
+                                {
+                                    "requested": ext_spec,
+                                    "status": "failed",
+                                    "reason": sanitized_ext,
+                                }
+                            )
+                            init_warnings.append(
+                                _warning(
+                                    "extension_install_failed",
+                                    "The project was initialized without a requested optional extension.",
+                                    extension=ext_spec,
+                                    reason=sanitized_ext,
+                                )
+                            )
 
                     # Refresh native event configuration once after the batch so
                     # that an extension declaring ``events:`` has its hooks
                     # activated, mirroring the ``extension add`` path.
                     if any_extension_installed:
-                        _refresh_events_and_warn(project_path)
+                        try:
+                            refresh_integration_events(project_path)
+                        except EventRefreshError as refresh_err:
+                            console.print(
+                                "[yellow]Warning:[/yellow] Extensions were installed, "
+                                "but integration event configuration refresh failed."
+                            )
+                            init_warnings.append(
+                                _warning(
+                                    "extension_event_refresh_failed",
+                                    "Extensions were installed, but one or more integration event configurations could not be refreshed.",
+                                    failures=[
+                                        {
+                                            "integration": key,
+                                            "reason": detail,
+                                        }
+                                        for key, detail in refresh_err.failures
+                                    ],
+                                )
+                            )
 
                 # Seed the constitution AFTER preset installation so that a
                 # preset-provided constitution-template (resolved via the
                 # priority stack) wins over the core template.
                 ensure_constitution_from_template(project_path, tracker=tracker)
+                constitution_path = (
+                    project_path / ".specify" / "memory" / "constitution.md"
+                )
+                constitution_step = next(
+                    step
+                    for step in tracker.steps
+                    if step["key"] == "constitution"
+                )
+                if constitution_existed:
+                    constitution_outcome = {
+                        "status": "preserved",
+                        "path": str(constitution_path),
+                    }
+                elif constitution_path.exists():
+                    constitution_outcome = {
+                        "status": "created",
+                        "path": str(constitution_path),
+                        "source": (
+                            "composed"
+                            if "composed" in constitution_step["detail"]
+                            else "copied"
+                        ),
+                    }
+                else:
+                    constitution_outcome = {
+                        "status": "failed",
+                        "path": str(constitution_path),
+                        "reason": constitution_step["detail"] or "template_not_found",
+                    }
+                    init_warnings.append(
+                        _warning(
+                            "constitution_initialization_failed",
+                            "The project was initialized, but its constitution could not be created.",
+                            path=str(constitution_path),
+                            reason=constitution_outcome["reason"],
+                        )
+                    )
 
                 tracker.complete("final", "project ready")
+                init_result = _build_init_result(
+                    project_path=project_path,
+                    operation=operation,
+                    integration_key=resolved_integration.key,
+                    integration_defaulted=not bool(integration),
+                    script_type=selected_script,
+                    script_defaulted=not bool(script_type),
+                    here=here,
+                    workflow=workflow_outcome,
+                    constitution=constitution_outcome,
+                    preset=preset_outcome,
+                    extensions=extension_outcomes,
+                    warnings=init_warnings,
+                    tracker=tracker,
+                )
             except (typer.Exit, SystemExit):
+                try:
+                    _rollback_new_target(project_path, target_identity)
+                except _InitRollbackError as cleanup_err:
+                    _init_failure_context.set(cleanup_err)
+                    console.print(
+                        "[red]Error:[/red] Initialization failed and the new "
+                        f"target could not be removed: {cleanup_err.details['code']}"
+                    )
                 raise
             except Exception as e:
+                _init_failure_context.set(e)
                 tracker.error("final", str(e))
                 console.print(
                     Panel(
@@ -1020,13 +1505,22 @@ def register(app: typer.Typer) -> None:
                             border_style="magenta",
                         )
                     )
-                if not here and project_path.exists() and not dir_existed_before:
-                    shutil.rmtree(project_path)
+                try:
+                    _rollback_new_target(project_path, target_identity)
+                except _InitRollbackError as cleanup_err:
+                    _init_failure_context.set(cleanup_err)
+                    console.print(
+                        "[red]Error:[/red] Initialization failed and the new "
+                        f"target could not be removed: {cleanup_err.details['code']}"
+                    )
                 raise typer.Exit(1)
             finally:
                 pass
 
-        if _transient:
+        if _init_json_mode.get():
+            return init_result
+
+        if _transient and not _init_json_mode.get():
             console.print(tracker.render())
         console.print("\n[bold green]Project ready.[/bold green]")
 
@@ -1232,3 +1726,5 @@ def register(app: typer.Typer) -> None:
         )
         console.print()
         console.print(enhancements_panel)
+
+        return init_result
