@@ -504,6 +504,43 @@ def test_json_reinitialization_reports_reregistration_failures_as_warnings(
     assert "preset_reregistration_failed" in warning_codes
 
 
+def test_json_switch_to_generic_persists_settings_before_extension_reregistration(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    initial = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            cwd=tmp_path,
+        )
+    )
+    assert initial["components"]["extensions"][0]["status"] == "installed"
+
+    payload = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .agent/commands",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    warning_codes = {warning["code"] for warning in payload["warnings"]}
+    assert "extension_reregistration_failed" not in warning_codes
+    assert list((project / ".agent" / "commands").glob("speckit.git.*.md"))
+
+
 @pytest.mark.parametrize(
     ("args", "code"),
     [
@@ -622,6 +659,19 @@ def test_json_init_parser_failures_use_structured_error(
 ):
     _failure(_invoke(args, cwd=tmp_path), "invalid_arguments")
     assert not (tmp_path / "project").exists()
+
+
+def test_end_of_options_json_project_name_keeps_human_parser_errors(
+    tmp_path: Path,
+):
+    result = _invoke(["--", "--json", "extra"], cwd=tmp_path)
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+    assert "unexpected extra argument" in result.stderr.lower()
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result.stderr)
 
 
 def test_json_init_rejects_existing_named_target_without_force(tmp_path: Path):

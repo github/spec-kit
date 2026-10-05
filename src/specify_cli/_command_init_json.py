@@ -54,7 +54,8 @@ class InitJsonCommand(TyperCommand):
     """Keep JSON-mode parse failures on the init error contract."""
 
     def make_context(self, info_name, args, parent=None, **extra):
-        json_output = "--json" in args
+        end_of_options = args.index("--") if "--" in args else len(args)
+        json_output = "--json" in args[:end_of_options]
         try:
             return super().make_context(info_name, args, parent=parent, **extra)
         except _UsageError as error:
@@ -1114,8 +1115,6 @@ def _initialize_project(plan: _InitPlan) -> dict[str, Any]:
         ) from exc
 
     try:
-        _re_register_existing_artifacts(plan, warnings)
-
         settings = with_integration_setting(
             {},
             plan.integration.key,
@@ -1132,6 +1131,8 @@ def _initialize_project(plan: _InitPlan) -> dict[str, Any]:
             installed_integrations=[plan.integration.key],
             settings=settings,
         )
+
+        _re_register_existing_artifacts(plan, warnings)
 
         shared_infrastructure = _install_shared_infrastructure(plan, warnings)
     except (OSError, ValueError) as exc:
