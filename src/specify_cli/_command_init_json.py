@@ -382,6 +382,19 @@ def _build_plan(
         integration_key=selected_integration,
         project_root=project_path,
     )
+    if selected_integration == "generic":
+        try:
+            integration._resolve_commands_destination(
+                project_path,
+                parsed_options,
+                {"raw_options": integration_options},
+            )
+        except ValueError as exc:
+            raise _invalid_integration_options(
+                "Integration options are invalid.",
+                integration=selected_integration,
+                reason=_single_line(exc),
+            ) from exc
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG[selected_integration]

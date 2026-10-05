@@ -354,6 +354,38 @@ def test_json_init_validation_failures_do_not_create_target(
     assert not (tmp_path / "project").exists()
 
 
+def test_json_init_rejects_escaping_generic_directory_before_target_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli._command_init_json as init_json
+
+    project = tmp_path / "project"
+
+    def fail_claim(_plan: Any) -> None:
+        raise AssertionError("invalid integration options must fail before mutation")
+
+    monkeypatch.setattr(init_json, "_claim_new_target", fail_claim)
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir ../outside",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert "escapes project root" in error["details"]["reason"]
+    assert not project.exists()
+    assert not (tmp_path / "outside").exists()
+
+
 @pytest.mark.parametrize(
     "args",
     [
