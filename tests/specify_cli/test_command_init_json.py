@@ -344,6 +344,88 @@ def test_json_force_reinitialization_rejects_layout_change_before_mutation(
     assert not (project / ".github" / "skills").exists()
 
 
+def test_json_force_reinitialization_rejects_generic_destination_change(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .old/commands",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    manifest_path = (
+        project / ".specify" / "integrations" / "generic.manifest.json"
+    )
+    init_options_path = project / ".specify" / "init-options.json"
+    old_manifest = manifest_path.read_bytes()
+    old_init_options = init_options_path.read_bytes()
+    old_commands = {
+        path.relative_to(project): path.read_bytes()
+        for path in (project / ".old" / "commands").glob("speckit.*")
+    }
+    assert old_commands
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .new/commands",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert error["details"]["current_commands_dir"] == ".old/commands"
+    assert error["details"]["requested_commands_dir"] == ".new/commands"
+    assert error["details"]["recommended_action"] == {
+        "command": "integration_upgrade",
+        "integration": "generic",
+        "force": True,
+        "integration_options": "--commands-dir .new/commands",
+    }
+    assert manifest_path.read_bytes() == old_manifest
+    assert init_options_path.read_bytes() == old_init_options
+    assert {
+        path.relative_to(project): path.read_bytes()
+        for path in (project / ".old" / "commands").glob("speckit.*")
+    } == old_commands
+    assert not (project / ".new").exists()
+
+
+def test_json_force_reinitialization_allows_same_generic_destination(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    args = [
+        str(project),
+        "--json",
+        "--integration",
+        "generic",
+        "--integration-options=--commands-dir .agent/commands",
+    ]
+    _success(_invoke(args, cwd=tmp_path))
+
+    payload = _success(
+        _invoke([*args, "--force"], cwd=tmp_path)
+    )
+
+    assert payload["project"]["operation"] == "reinitialized"
+    assert list((project / ".agent" / "commands").glob("speckit.*"))
+
+
 @pytest.mark.parametrize(
     ("args", "code"),
     [

@@ -251,6 +251,7 @@ def _validate_existing_integration_layout(
     integration_key: str,
     project_root: Path,
     requested_skills_mode: bool,
+    requested_commands_destination: Path | None,
     raw_integration_options: str | None,
 ) -> None:
     if integration_key not in {"bob", "copilot", "generic"}:
@@ -284,12 +285,50 @@ def _validate_existing_integration_layout(
 
     current_skills_mode = _manifest_tracks_skill_layout(old_manifest)
     if current_skills_mode == requested_skills_mode:
+        if integration_key != "generic":
+            return
+    else:
+        raise _invalid_integration_options(
+            "Changing an installed integration layout through init is not supported.",
+            integration=integration_key,
+            current_layout="skills" if current_skills_mode else "commands",
+            requested_layout="skills" if requested_skills_mode else "commands",
+            recommended_action={
+                "command": "integration_upgrade",
+                "integration": integration_key,
+                "force": True,
+                "integration_options": raw_integration_options,
+            },
+        )
+
+    assert requested_commands_destination is not None
+    from .integrations.generic import registration_directory
+
+    try:
+        current_commands_destination = registration_directory(project_root)
+    except (OSError, ValueError) as exc:
+        raise InitJsonFailure(
+            "initialization_failed",
+            "The installed generic integration settings could not be read.",
+            {
+                "component": "integration_state",
+                "integration": integration_key,
+                "reason": _single_line(exc),
+            },
+        ) from exc
+    if current_commands_destination == requested_commands_destination:
         return
+
+    project_root_resolved = project_root.resolve()
     raise _invalid_integration_options(
-        "Changing an installed integration layout through init is not supported.",
+        "Changing the generic command destination through init is not supported.",
         integration=integration_key,
-        current_layout="skills" if current_skills_mode else "commands",
-        requested_layout="skills" if requested_skills_mode else "commands",
+        current_commands_dir=current_commands_destination.relative_to(
+            project_root_resolved
+        ).as_posix(),
+        requested_commands_dir=requested_commands_destination.relative_to(
+            project_root_resolved
+        ).as_posix(),
         recommended_action={
             "command": "integration_upgrade",
             "integration": integration_key,
@@ -437,9 +476,10 @@ def _build_plan(
         integration_key=selected_integration,
         project_root=project_path,
     )
+    requested_commands_destination: Path | None = None
     if selected_integration == "generic":
         try:
-            integration._resolve_commands_destination(
+            requested_commands_destination = integration._resolve_commands_destination(
                 project_path,
                 parsed_options,
                 {"raw_options": integration_options},
@@ -454,6 +494,7 @@ def _build_plan(
         integration_key=selected_integration,
         project_root=project_path,
         requested_skills_mode=selected_skills_mode,
+        requested_commands_destination=requested_commands_destination,
         raw_integration_options=integration_options,
     )
 

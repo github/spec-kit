@@ -194,7 +194,8 @@ constitution, optional preset, and requested extensions, and it writes the
 normal `.specify/` state. `--force` retains its existing merge/overwrite
 behavior. Reinitialization does not perform command-to-skills or
 skills-to-command layout migrations for an already installed dual-mode
-integration; JSON mode rejects that change before mutation and reports a
+integration, or move an installed generic integration to a different command
+directory. JSON mode rejects those changes before mutation and reports a
 machine-usable `integration_upgrade` recommendation.
 
 **Preview compatibility:** field names, operation values, error envelope, and
