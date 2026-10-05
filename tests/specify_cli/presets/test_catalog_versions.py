@@ -411,6 +411,46 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
     assert PresetManager(project_dir).get_pack("sample") is None
 
 
+def test_oversized_discovery_catalog_cannot_delegate_install(project_dir):
+    high_url = "https://example.com/discovery.json"
+    low_url = "https://example.com/trusted.json"
+    sources = [
+        PresetCatalogEntry(high_url, "discovery", 1, False),
+        PresetCatalogEntry(low_url, "trusted", 2, True),
+    ]
+    lower = json.dumps({
+        "schema_version": "1.0", "presets": {"sample": _entry()}
+    }).encode()
+    oversized = json.dumps({
+        "schema_version": "1.0",
+        "presets": {"sample": _entry()},
+        "padding": "x" * len(lower),
+    }).encode()
+    assert len(oversized) > len(lower)
+    opened: list[str] = []
+
+    def open_url(_self, url, **_kwargs):
+        opened.append(url)
+        return _response({high_url: oversized, low_url: lower}[url], url)
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_open_url", open_url),
+        patch("specify_cli.presets.MAX_JSON_CATALOG_BYTES", len(lower)),
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch("specify_cli.get_speckit_version", return_value="1.0.0"),
+    ):
+        with pytest.raises(PresetError, match="exceeds maximum size"):
+            PresetCatalog(project_dir).get_pack_info("sample", "1.0.0")
+        result = CliRunner().invoke(
+            app, ["preset", "add", "sample", "--version", "1.0.0"]
+        )
+    assert result.exit_code == 1, result.output
+    assert "exceeds maximum size" in result.output
+    assert OLD_URL not in opened
+    assert PresetManager(project_dir).get_pack("sample") is None
+
+
 def test_unreachable_high_priority_catalog_still_uses_lower_source(project_dir):
     catalog = PresetCatalog(project_dir)
     sources = [
@@ -535,6 +575,48 @@ def test_selected_download_rejects_unsafe_intermediate_redirect(project_dir):
     ):
         catalog.download_pack_info(selected, project_dir)
     assert not list(project_dir.glob("sample-*.zip"))
+
+
+@pytest.mark.parametrize("historical", [False, True], ids=["current", "historical"])
+def test_direct_localhost_https_download_needs_no_redirect(project_dir, historical):
+    archive = _archive()
+    url = "https://dev.localhost/preset.zip"
+    selected = {
+        "id": "sample",
+        "version": "1.0.0",
+        "download_url": url,
+        "sha256": hashlib.sha256(archive).hexdigest(),
+        "_install_allowed": True,
+    }
+    catalog = PresetCatalog(project_dir)
+    with (
+        patch.object(catalog, "get_pack_info", return_value=selected),
+        patch.object(catalog, "_open_url", return_value=_response(archive, url)),
+    ):
+        saved = (
+            catalog.download_pack_info(selected, project_dir)
+            if historical
+            else catalog.download_pack("sample", project_dir)
+        )
+    assert saved.read_bytes() == archive
+
+
+def test_download_rejects_actual_redirect_to_localhost_https(project_dir):
+    selected = {
+        "id": "sample",
+        "version": "1.0.0",
+        "download_url": OLD_URL,
+        "_install_allowed": True,
+    }
+    catalog = PresetCatalog(project_dir)
+    with (
+        patch.object(
+            catalog, "_open_url",
+            return_value=_response(_archive(), "https://dev.localhost/preset.zip"),
+        ),
+        pytest.raises(PresetError, match="disallowed URL"),
+    ):
+        catalog.download_pack_info(selected, project_dir)
 
 
 @pytest.mark.parametrize(

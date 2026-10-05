@@ -488,7 +488,7 @@ class PresetCatalog:
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=PresetError,
+                        error_type=PresetCatalogValidationError,
                         label=f"preset catalog {entry.url}",
                     ),
                     entry.url,
@@ -662,7 +662,7 @@ class PresetCatalog:
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=PresetError,
+                        error_type=PresetCatalogValidationError,
                         label=f"preset catalog {catalog_url}",
                     ),
                     catalog_url,
@@ -939,8 +939,9 @@ class PresetCatalog:
                     else download_url
                 )
                 final_url = response_url if isinstance(response_url, str) else download_url
-                if not is_https_or_localhost_http(final_url) or not is_safe_download_redirect(
-                    download_url, final_url
+                if not is_https_or_localhost_http(final_url) or (
+                    final_url != download_url
+                    and not is_safe_download_redirect(download_url, final_url)
                 ):
                     raise PresetError(
                         f"Preset download redirected to a disallowed URL: {final_url}"
