@@ -1579,15 +1579,23 @@ def _run_get_python3_command(tmp_path: Path, shims: dict[str, dict[str, str]]) -
         if os.name == "nt":
             (shim_dir / f"{name}.cmd").write_text(spec["cmd"], encoding="ascii")
 
-    common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
+    # Both paths land inside single-quoted PowerShell literals, where a ``'``
+    # (e.g. a ``C:\Users\O'Brien`` profile) must be doubled to ``''``.
+    shim_dir_ps = str(shim_dir).replace("'", "''")
+    common_ps = str(PROJECT_ROOT / "scripts" / "powershell" / "common.ps1").replace(
+        "'", "''"
+    )
     driver = tmp_path / "probe.ps1"
     driver.write_text(
         "$ErrorActionPreference = 'Stop'\r\n"
-        f"$env:PATH = '{shim_dir}'\r\n"
+        f"$env:PATH = '{shim_dir_ps}'\r\n"
         f". '{common_ps}'\r\n"
         "try { $r = Get-Python3Command; 'RESULT=[' + ($r -join ' ') + ']' }\r\n"
         "catch { 'RESULT=[THREW: ' + $_.CategoryInfo.Reason + ']' }\r\n",
-        encoding="ascii",
+        # UTF-8 *with* a BOM: the embedded paths can be non-ASCII (a username,
+        # temp dir or checkout path containing e.g. ``é``), and Windows
+        # PowerShell 5.1 reads a BOM-less script in the ANSI code page.
+        encoding="utf-8-sig",
     )
 
     # The SPECKIT_PYTHON_EXECUTABLE / SPECKIT_PYTHON override is consulted
