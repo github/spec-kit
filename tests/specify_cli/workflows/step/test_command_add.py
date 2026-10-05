@@ -130,6 +130,7 @@ class TestWorkflowStepAddCLI:
         self, project_dir, monkeypatch
     ):
         import tempfile
+
         from typer.testing import CliRunner
 
         from specify_cli import app
@@ -291,12 +292,13 @@ class TestWorkflowStepAddCLI:
         self, project_dir, monkeypatch
     ):
         import tempfile
+
         from typer.testing import CliRunner
 
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows.step.catalog import StepCatalog
         from specify_cli.workflows.step import installer
+        from specify_cli.workflows.step.catalog import StepCatalog
 
         monkeypatch.chdir(project_dir)
         monkeypatch.setattr(
