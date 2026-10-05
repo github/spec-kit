@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import hashlib
+import os
 
 import pytest
 
@@ -1736,6 +1736,7 @@ class TestVersionedStepAdd:
 
     def test_install_exact_selected_files(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepRegistry
 
@@ -1766,6 +1767,7 @@ class TestVersionedStepAdd:
         self, project_dir, monkeypatch, corrupt, error
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepRegistry
 
@@ -1789,6 +1791,7 @@ class TestVersionedStepAdd:
         self, project_dir, monkeypatch, discovery, version, error
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         requested = self._setup(project_dir, monkeypatch, discovery=discovery)
@@ -1803,6 +1806,7 @@ class TestVersionedStepAdd:
         self, project_dir, monkeypatch
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
 
         requested = self._setup(project_dir, monkeypatch)
@@ -1817,6 +1821,7 @@ class TestVersionedStepAdd:
         self, project_dir, monkeypatch
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.authentication import http as auth_http
 

@@ -106,10 +106,13 @@ class TestWorkflowStepRichMarkup:
 
         assert result.exit_code == 0, result.output
         assert "catalog (default)" in result.output
+
+
 def test_info_versions_shows_current_and_history_from_discovery_catalog(
     project_dir, monkeypatch
 ):
     from typer.testing import CliRunner
+
     from specify_cli import app
     from specify_cli.workflows.step.catalog import StepCatalog
 
