@@ -614,6 +614,40 @@ def test_json_init_never_deletes_preexisting_target_after_fatal_failure(
     assert project.is_dir()
 
 
+def test_json_init_never_deletes_target_created_during_claim_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import specify_cli._command_init_json as init_json
+
+    project = tmp_path / "project"
+    marker = project / "keep.txt"
+    original_mkdir = Path.mkdir
+
+    def racing_mkdir(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path == project and kwargs.get("exist_ok") is False:
+            original_mkdir(path, parents=True)
+            marker.write_text("keep", encoding="utf-8")
+        original_mkdir(path, *args, **kwargs)
+
+    def fail_initialize(_plan: Any) -> dict[str, Any]:
+        raise AssertionError("initialization must not start without target ownership")
+
+    monkeypatch.setattr(Path, "mkdir", racing_mkdir)
+    monkeypatch.setattr(init_json, "_initialize_project", fail_initialize)
+
+    error = _failure(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "target_exists",
+    )
+
+    assert error["details"]["concurrent_creation"] is True
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert project.is_dir()
+
+
 def test_json_init_rolls_back_when_integration_setup_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -683,7 +717,6 @@ def test_json_init_sanitizes_unexpected_exception_and_rolls_back(
     project = tmp_path / "project"
 
     def fail_unexpected(plan: Any) -> dict[str, Any]:
-        plan.project_path.mkdir()
         raise RuntimeError("sensitive internal detail")
 
     monkeypatch.setattr(init_json, "_initialize_project", fail_unexpected)
@@ -710,7 +743,6 @@ def test_json_init_reports_cleanup_failure(
     project = tmp_path / "project"
 
     def fail_unexpected(plan: Any) -> dict[str, Any]:
-        plan.project_path.mkdir()
         raise RuntimeError("initial failure")
 
     def fail_cleanup(_path: Path) -> None:

@@ -73,7 +73,7 @@ class _InitPlan:
     project_name: str
     project_path: Path
     operation: str
-    dir_existed_before: bool
+    target_owned: bool
     here: bool
     force: bool
     integration: Any
@@ -412,7 +412,7 @@ def _build_plan(
         project_name=resolved_name,
         project_path=project_path,
         operation=operation,
-        dir_existed_before=dir_existed_before,
+        target_owned=False,
         here=here,
         force=force,
         integration=integration,
@@ -426,6 +426,38 @@ def _build_plan(
         extensions=requested_extensions,
         warnings=warnings,
     )
+
+
+def _claim_new_target(plan: _InitPlan) -> None:
+    if plan.operation != "created":
+        return
+    try:
+        plan.project_path.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        if plan.project_path.is_dir():
+            raise InitJsonFailure(
+                "target_exists",
+                "The target directory already exists; pass --force to merge into it.",
+                {
+                    "path": str(plan.project_path),
+                    "concurrent_creation": True,
+                },
+            ) from exc
+        raise InitJsonFailure(
+            "target_not_directory",
+            "The target exists but is not a directory.",
+            {
+                "path": str(plan.project_path),
+                "concurrent_creation": True,
+            },
+        ) from exc
+    except OSError as exc:
+        raise InitJsonFailure(
+            "target_unavailable",
+            "The target directory could not be created.",
+            {"path": str(plan.project_path), "reason": _single_line(exc)},
+        ) from exc
+    plan.target_owned = True
 
 
 def _extension_spec_is_url(value: str) -> bool:
@@ -1055,7 +1087,7 @@ def _rollback_new_target(
     plan: _InitPlan,
     failure: InitJsonFailure,
 ) -> InitJsonFailure:
-    if plan.dir_existed_before or not plan.project_path.exists():
+    if not plan.target_owned or not plan.project_path.exists():
         return failure
     try:
         shutil.rmtree(plan.project_path)
@@ -1113,6 +1145,7 @@ def run_init_json(
             extensions=extensions,
             trust_extension_urls=trust_extension_urls,
         )
+        _claim_new_target(plan)
     except Exception as exc:  # noqa: BLE001 - JSON boundary sanitizes all failures
         _emit_failure(_as_failure(exc))
 
