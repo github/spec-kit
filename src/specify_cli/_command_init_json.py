@@ -111,6 +111,11 @@ def _preflight(
     extensions: list[str] | None,
     trust_extension_urls: bool,
 ) -> dict[str, Any]:
+    from ._download_security import is_https_or_localhost_http
+    from .command_init import (
+        _InitIntegrationOptionsError,
+        _validate_init_integration_options,
+    )
     from .integrations import get_integration
     from .integrations._commands import _parse_integration_options
 
@@ -169,6 +174,18 @@ def _preflight(
                 )
 
     requested_extensions = list(extensions or [])
+    unsupported_urls = [
+        extension
+        for extension in requested_extensions
+        if _extension_url(extension)
+        and not is_https_or_localhost_http(extension)
+    ]
+    if unsupported_urls:
+        raise InitJsonFailure(
+            "invalid_extension_url",
+            "Extension URLs must use HTTPS; HTTP is allowed only for localhost.",
+            {"extensions": unsupported_urls},
+        )
     untrusted_urls = [
         extension
         for extension in requested_extensions
@@ -236,6 +253,21 @@ def _preflight(
             parsed_options or None,
             project_root=project_path,
         )
+        _validate_init_integration_options(
+            project_path,
+            integration,
+            parsed_options or None,
+            integration_options,
+        )
+    except _InitIntegrationOptionsError as exc:
+        raise InitJsonFailure(
+            "invalid_integration_options",
+            exc.message,
+            {
+                "integration": selected_integration,
+                **exc.details,
+            },
+        ) from exc
     except (ValueError, typer.Exit) as exc:
         raise InitJsonFailure(
             "invalid_integration_options",
@@ -338,20 +370,7 @@ def run_init_json(
                 internal_failure.message,
                 internal_failure.details,
             )
-        elif isinstance(internal_failure, _InitRollbackError) or (
-            context
-            and context["operation"] == "created"
-            and project_path is not None
-            and project_path.exists()
-        ):
-            cleanup_error = (
-                internal_failure.details
-                if isinstance(internal_failure, _InitRollbackError)
-                else {
-                    "code": "target_cleanup_failed",
-                    "reason": "The newly created target still exists.",
-                }
-            )
+        elif isinstance(internal_failure, _InitRollbackError):
             failure = InitJsonFailure(
                 "rollback_failed",
                 "Initialization failed and the newly created target could not be removed.",
@@ -362,7 +381,7 @@ def run_init_json(
                         "message": "Project initialization failed.",
                         "details": {},
                     },
-                    "cleanup_error": cleanup_error,
+                    "cleanup_error": internal_failure.details,
                 },
             )
         elif internal_failure is not None and not isinstance(

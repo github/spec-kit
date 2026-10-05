@@ -1982,18 +1982,17 @@ class TestExtensionFlag:
         return buf.getvalue()
 
     def test_url_extension_rejects_non_https(self, tmp_path):
-        """A non-HTTPS URL is rejected before any download; init is not aborted."""
+        """A non-HTTPS URL is rejected before target creation or download."""
         project, result = self._run_init(
             tmp_path,
             ["--extension", "http://example.com/ext.zip", "--trust-extension-urls"],
             project_name="ext-http",
         )
 
-        assert result.exit_code == 0, "init should not abort on a rejected URL"
+        assert result.exit_code == 1
         normalized = _normalize_cli_output(result.output)
-        assert "failed" in normalized.lower()
-        # No extension directory should have been created for the bad URL.
-        assert not (project / ".specify" / "extensions" / "ext").exists()
+        assert "must use https" in normalized.lower()
+        assert not (project / ".specify").exists()
 
     def test_url_extension_skipped_without_trust(self, tmp_path):
         """Non-interactive URL install without --trust-extension-urls is denied."""

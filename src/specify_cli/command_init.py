@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from contextlib import nullcontext
 from contextvars import ContextVar
 from pathlib import Path
@@ -51,6 +52,148 @@ class _InitTargetClaimError(Exception):
         self.code = code
         self.message = message
         self.details = details
+
+
+class _InitIntegrationOptionsError(Exception):
+    def __init__(self, message: str, details: dict[str, Any]):
+        super().__init__(message)
+        self.message = message
+        self.details = details
+
+
+def _validate_init_integration_options(
+    project_path: Path,
+    integration: Any,
+    parsed_options: dict[str, Any] | None,
+    raw_options: str | None,
+) -> None:
+    """Reject unsafe integration destinations and in-place layout changes."""
+    from .integration_state import (
+        default_integration_key,
+        installed_integration_keys,
+        integration_setting,
+        try_read_integration_json,
+    )
+
+    project_root = project_path.resolve()
+    requested_destination = None
+    if integration.key == "generic":
+        try:
+            commands_dir = integration._resolve_commands_dir(
+                parsed_options,
+                {"raw_options": raw_options},
+            )
+        except ValueError as exc:
+            raise _InitIntegrationOptionsError(
+                "The generic integration options are invalid.",
+                {"reason": str(exc)},
+            ) from exc
+        requested_destination = (project_path / commands_dir).resolve()
+        if not requested_destination.is_relative_to(project_root):
+            raise _InitIntegrationOptionsError(
+                "The generic integration command directory must be inside the project.",
+                {
+                    "destination": str(requested_destination),
+                    "project_path": str(project_root),
+                },
+            )
+
+    state, state_error = try_read_integration_json(project_path)
+    if state_error is not None:
+        raise _InitIntegrationOptionsError(
+            "The existing integration state could not be validated.",
+            {
+                "reason": state_error.detail or state_error.kind,
+                "recommendation": "Repair .specify/integration.json before reinitializing.",
+            },
+        )
+    if state is None:
+        return
+
+    installed = installed_integration_keys(state)
+    current_key = default_integration_key(state)
+    if current_key and current_key != integration.key:
+        raise _InitIntegrationOptionsError(
+            "Reinitialization cannot replace the active integration.",
+            {
+                "current_integration": current_key,
+                "requested_integration": integration.key,
+                "recommendation": (
+                    f"Run 'specify integration switch {integration.key}' instead."
+                ),
+            },
+        )
+    incompatible_installed = [key for key in installed if key != integration.key]
+    if incompatible_installed:
+        raise _InitIntegrationOptionsError(
+            "Reinitialization cannot replace the installed integration set.",
+            {
+                "installed_integrations": installed,
+                "requested_integration": integration.key,
+                "recommendation": (
+                    "Use 'specify integration switch' or the integration "
+                    "install/uninstall commands instead."
+                ),
+            },
+        )
+
+    stored = integration_setting(state, integration.key)
+    if not stored:
+        return
+    stored_parsed = stored.get("parsed_options")
+    if not isinstance(stored_parsed, dict):
+        stored_parsed = None
+    stored_mode = integration.is_skills_mode(
+        stored_parsed,
+        project_root=project_path,
+    )
+    requested_mode = integration.is_skills_mode(
+        parsed_options,
+        project_root=project_path,
+    )
+    if stored_mode != requested_mode:
+        raise _InitIntegrationOptionsError(
+            "Reinitialization cannot change the integration command layout.",
+            {
+                "integration": integration.key,
+                "current_layout": "skills" if stored_mode else "commands",
+                "requested_layout": "skills" if requested_mode else "commands",
+                "recommendation": (
+                    f"Run 'specify integration upgrade {integration.key} "
+                    "--integration-options \"...\"' instead."
+                ),
+            },
+        )
+
+    if requested_destination is not None:
+        try:
+            stored_commands_dir = integration._resolve_commands_dir(
+                stored_parsed,
+                {"raw_options": stored.get("raw_options")},
+            )
+        except ValueError as exc:
+            raise _InitIntegrationOptionsError(
+                "The existing generic integration destination is invalid.",
+                {
+                    "reason": str(exc),
+                    "recommendation": (
+                        "Repair .specify/integration.json before reinitializing."
+                    ),
+                },
+            ) from exc
+        stored_destination = (project_path / stored_commands_dir).resolve()
+        if stored_destination != requested_destination:
+            raise _InitIntegrationOptionsError(
+                "Reinitialization cannot change the generic integration destination.",
+                {
+                    "current_destination": str(stored_destination),
+                    "requested_destination": str(requested_destination),
+                    "recommendation": (
+                        "Run 'specify integration upgrade generic "
+                        "--integration-options \"--commands-dir ...\"' instead."
+                    ),
+                },
+            )
 
 
 def _directory_identity(path: Path) -> tuple[int, int]:
@@ -105,33 +248,103 @@ def _rollback_new_target(
     if target_identity is None:
         return
     try:
-        current_identity = _directory_identity(project_path)
+        staging_root = Path(
+            tempfile.mkdtemp(
+                prefix=".specify-rollback-",
+                dir=project_path.parent,
+            )
+        )
     except OSError as exc:
+        raise _InitRollbackError(
+            {
+                "code": "target_staging_failed",
+                "exception_type": exc.__class__.__name__,
+                "reason": str(exc),
+            }
+        ) from exc
+
+    staged_target = staging_root / "target"
+    try:
+        project_path.rename(staged_target)
+    except OSError as exc:
+        cleanup_error = None
+        try:
+            staging_root.rmdir()
+        except OSError as cleanup_exc:
+            cleanup_error = str(cleanup_exc)
+        details = {
+            "code": "target_staging_failed",
+            "exception_type": exc.__class__.__name__,
+            "reason": str(exc),
+        }
+        if cleanup_error is not None:
+            details["staging_cleanup_error"] = cleanup_error
+        raise _InitRollbackError(
+            details
+        ) from exc
+
+    def preserve_staged_target() -> dict[str, Any]:
+        details: dict[str, Any] = {"preserved_path": str(staged_target)}
+        if project_path.exists():
+            details["restore_error"] = "The target path is occupied."
+            return details
+        try:
+            staged_target.rename(project_path)
+        except OSError as exc:
+            details["restore_error"] = str(exc)
+            return details
+        details["preserved_path"] = str(project_path)
+        try:
+            staging_root.rmdir()
+        except OSError as exc:
+            details["staging_cleanup_error"] = str(exc)
+        return details
+
+    try:
+        staged_identity = _directory_identity(staged_target)
+    except OSError as exc:
+        details = preserve_staged_target()
         raise _InitRollbackError(
             {
                 "code": "target_identity_unavailable",
                 "exception_type": exc.__class__.__name__,
                 "reason": str(exc),
+                **details,
             }
         ) from exc
-    if current_identity != target_identity:
+    if staged_identity != target_identity:
+        details = preserve_staged_target()
         raise _InitRollbackError(
             {
                 "code": "target_identity_changed",
                 "reason": (
-                    "The target path no longer identifies the directory created "
-                    "by this invocation."
+                    "The target path no longer identified the directory created "
+                    "by this invocation when rollback began."
                 ),
+                **details,
             }
         )
     try:
-        shutil.rmtree(project_path)
+        shutil.rmtree(staged_target)
+    except OSError as exc:
+        details = preserve_staged_target()
+        raise _InitRollbackError(
+            {
+                "code": "target_cleanup_failed",
+                "exception_type": exc.__class__.__name__,
+                "reason": str(exc),
+                **details,
+            }
+        ) from exc
+    try:
+        staging_root.rmdir()
     except OSError as exc:
         raise _InitRollbackError(
             {
                 "code": "target_cleanup_failed",
                 "exception_type": exc.__class__.__name__,
                 "reason": str(exc),
+                "preserved_path": str(staging_root),
             }
         ) from exc
 
@@ -938,6 +1151,19 @@ def register(app: typer.Typer) -> None:
             )
             if extra:
                 integration_parsed_options.update(extra)
+        try:
+            _validate_init_integration_options(
+                project_path,
+                resolved_integration,
+                integration_parsed_options or None,
+                integration_options,
+            )
+        except _InitIntegrationOptionsError as exc:
+            console.print(f"[red]Error:[/red] {exc.message}")
+            recommendation = exc.details.get("recommendation")
+            if recommendation:
+                console.print(f"[dim]{recommendation}[/dim]")
+            raise typer.Exit(1) from exc
         resolved_integration.is_skills_mode(
             integration_parsed_options or None,
             project_root=project_path,
@@ -951,6 +1177,17 @@ def register(app: typer.Typer) -> None:
         if extensions:
             url_specs = [e for e in extensions if _ext_spec_is_url(e)]
             if url_specs:
+                from ._download_security import is_https_or_localhost_http
+
+                unsupported_urls = [
+                    spec for spec in url_specs if not is_https_or_localhost_http(spec)
+                ]
+                if unsupported_urls:
+                    console.print(
+                        "[red]Error:[/red] Extension URLs must use HTTPS; "
+                        "HTTP is allowed only for localhost."
+                    )
+                    raise typer.Exit(1)
                 extension_url_approvals = _confirm_extension_url_trust(
                     url_specs,
                     trust_override=trust_extension_urls,
@@ -1011,6 +1248,36 @@ def register(app: typer.Typer) -> None:
                 )
                 manifest.save()
 
+                init_opts = {
+                    "ai": selected_ai,
+                    "integration": resolved_integration.key,
+                    "here": here,
+                    "script": selected_script,
+                    "feature_numbering": "sequential",
+                    "speckit_version": get_speckit_version(),
+                }
+                if resolved_integration.is_skills_mode(
+                    integration_parsed_options or None, project_root=project_path
+                ):
+                    init_opts["ai_skills"] = True
+                save_init_options(project_path, init_opts)
+
+                integration_settings = _with_integration_setting(
+                    {},
+                    resolved_integration.key,
+                    resolved_integration,
+                    script_type=selected_script,
+                    raw_options=integration_options,
+                    parsed_options=integration_parsed_options or None,
+                    project_root=project_path,
+                )
+                _write_integration_json(
+                    project_path,
+                    resolved_integration.key,
+                    [resolved_integration.key],
+                    integration_settings,
+                )
+
                 if force:
                     from .integrations._helpers import (
                         _register_extensions_for_agent,
@@ -1034,22 +1301,6 @@ def register(app: typer.Typer) -> None:
                             " may need re-registration."
                         ),
                     )
-
-                integration_settings = _with_integration_setting(
-                    {},
-                    resolved_integration.key,
-                    resolved_integration,
-                    script_type=selected_script,
-                    raw_options=integration_options,
-                    parsed_options=integration_parsed_options or None,
-                    project_root=project_path,
-                )
-                _write_integration_json(
-                    project_path,
-                    resolved_integration.key,
-                    [resolved_integration.key],
-                    integration_settings,
-                )
 
                 tracker.complete(
                     "integration",
@@ -1148,20 +1399,6 @@ def register(app: typer.Typer) -> None:
                             reason=sanitized_wf,
                         )
                     )
-
-                init_opts = {
-                    "ai": selected_ai,
-                    "integration": resolved_integration.key,
-                    "here": here,
-                    "script": selected_script,
-                    "feature_numbering": "sequential",
-                    "speckit_version": get_speckit_version(),
-                }
-                if resolved_integration.is_skills_mode(
-                    integration_parsed_options or None, project_root=project_path
-                ):
-                    init_opts["ai_skills"] = True
-                save_init_options(project_path, init_opts)
 
                 ensure_executable_scripts(project_path, tracker=tracker)
 

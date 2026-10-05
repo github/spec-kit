@@ -284,10 +284,30 @@ def test_json_init_force_merges_nonempty_target(tmp_path: Path):
                 "project",
                 "--json",
                 "--integration",
+                "generic",
+                "--integration-options=--commands-dir ../outside",
+            ],
+            "invalid_integration_options",
+        ),
+        (
+            [
+                "project",
+                "--json",
+                "--integration",
                 "bob",
                 "--integration-options=--skills --legacy-commands",
             ],
             "invalid_integration_options",
+        ),
+        (
+            [
+                "project",
+                "--json",
+                "--extension",
+                "http://example.com/extension.zip",
+                "--trust-extension-urls",
+            ],
+            "invalid_extension_url",
         ),
         (["project", "--json", "--script", "fish"], "invalid_script_type"),
     ],
@@ -602,6 +622,50 @@ def test_json_init_preserves_replacement_target(
     assert claimed.is_dir()
 
 
+def test_json_rollback_does_not_delete_public_path_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli.command_init as init_command
+    from specify_cli.integrations import get_integration
+
+    project = tmp_path / "project"
+    marker = project / "keep.txt"
+    integration = get_integration("copilot")
+    assert integration is not None
+    original_directory_identity = init_command._directory_identity
+
+    def replace_public_path_after_staging(path: Path) -> tuple[int, int]:
+        identity = original_directory_identity(path)
+        if path.name == "target" and ".specify-rollback-" in path.parent.name:
+            project.mkdir()
+            marker.write_text("replacement", encoding="utf-8")
+        return identity
+
+    monkeypatch.setattr(
+        init_command,
+        "_directory_identity",
+        replace_public_path_after_staging,
+    )
+    monkeypatch.setattr(
+        integration,
+        "setup",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("initialization failed")
+        ),
+    )
+
+    _failure(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        ),
+        "internal_error",
+    )
+
+    assert marker.read_text(encoding="utf-8") == "replacement"
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -701,8 +765,7 @@ def test_json_and_human_reinitialization_create_identical_projects(
     switch_args = [
         "--force",
         "--integration",
-        "generic",
-        "--integration-options=--commands-dir .agent/commands",
+        "copilot",
         "--ignore-agent-tools",
     ]
 
@@ -718,6 +781,189 @@ def test_json_and_human_reinitialization_create_identical_projects(
     _success(_invoke([str(machine), "--json", *switch_args], cwd=tmp_path))
 
     assert _project_snapshot(human) == _project_snapshot(machine)
+
+
+@pytest.mark.parametrize(
+    "switch_args",
+    [
+        [
+            "--integration",
+            "generic",
+            "--integration-options=--commands-dir .agent/commands",
+        ],
+        [
+            "--integration",
+            "copilot",
+            "--integration-options=--commands",
+        ],
+    ],
+)
+def test_json_rejects_incompatible_reinitialization_before_mutation(
+    tmp_path: Path,
+    switch_args: list[str],
+):
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "copilot",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+    before = _project_snapshot(project)
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                *switch_args,
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert "integration" in error["details"]
+    assert _project_snapshot(project) == before
+
+
+def test_json_rejects_generic_destination_change_before_mutation(tmp_path: Path):
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .agent/commands",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+    before = _project_snapshot(project)
+
+    _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .other/commands",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert _project_snapshot(project) == before
+
+
+def test_human_rejects_incompatible_reinitialization_before_mutation(
+    tmp_path: Path,
+):
+    project = tmp_path / "project"
+    first = _invoke(
+        [
+            str(project),
+            "--non-interactive",
+            "--integration",
+            "copilot",
+            "--ignore-agent-tools",
+        ],
+        cwd=tmp_path,
+    )
+    assert first.exit_code == 0, first.output
+    before = _project_snapshot(project)
+
+    result = _invoke(
+        [
+            str(project),
+            "--non-interactive",
+            "--force",
+            "--integration",
+            "generic",
+            "--integration-options=--commands-dir .agent/commands",
+            "--ignore-agent-tools",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.exit_code == 1
+    assert "integration switch generic" in result.output
+    assert _project_snapshot(project) == before
+
+
+def test_force_reinitialization_persists_state_before_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli
+    from specify_cli.integrations import _helpers
+
+    project = tmp_path / "project"
+    assert (
+        _invoke(
+            [
+                str(project),
+                "--non-interactive",
+                "--integration",
+                "copilot",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        ).exit_code
+        == 0
+    )
+    stale_options = specify_cli.load_init_options(project)
+    stale_options.update(
+        {
+            "ai": "generic",
+            "integration": "generic",
+        }
+    )
+    stale_options.pop("ai_skills", None)
+    specify_cli.save_init_options(project, stale_options)
+
+    observed: list[tuple[str, dict[str, Any]]] = []
+
+    def capture_state(project_root: Path, agent_key: str, **_kwargs: Any) -> None:
+        observed.append((agent_key, specify_cli.load_init_options(project_root)))
+
+    monkeypatch.setattr(_helpers, "_register_extensions_for_agent", capture_state)
+    monkeypatch.setattr(_helpers, "_register_presets_for_agent", capture_state)
+
+    result = _invoke(
+        [
+            str(project),
+            "--non-interactive",
+            "--force",
+            "--integration",
+            "copilot",
+            "--ignore-agent-tools",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(observed) == 2
+    for agent_key, options in observed:
+        assert agent_key == "copilot"
+        assert options["ai"] == "copilot"
+        assert options["integration"] == "copilot"
+        assert options["ai_skills"] is True
 
 
 def test_json_empty_selections_use_and_report_defaults(tmp_path: Path):
@@ -938,25 +1184,6 @@ def test_json_explicit_url_trust_never_prompts(
     )
 
     assert payload["components"]["extensions"][0]["status"] == "failed"
-
-
-def test_json_http_url_uses_regular_extension_behavior(tmp_path: Path):
-    payload = _success(
-        _invoke(
-            [
-                "project",
-                "--json",
-                "--extension",
-                "http://example.com/extension.zip",
-                "--trust-extension-urls",
-                "--ignore-agent-tools",
-            ],
-            cwd=tmp_path,
-        )
-    )
-
-    assert payload["components"]["extensions"][0]["status"] == "failed"
-    assert payload["warnings"][0]["code"] == "extension_install_failed"
 
 
 def test_json_and_human_here_mode_create_identical_projects(tmp_path: Path):
