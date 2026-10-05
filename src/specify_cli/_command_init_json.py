@@ -210,6 +210,40 @@ def _parse_integration_options(
     return parsed
 
 
+def _validate_integration_mode_options(
+    integration: Any,
+    parsed_options: dict[str, Any],
+    *,
+    integration_key: str,
+    project_root: Path,
+) -> None:
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+    try:
+        with (
+            console.capture() as console_capture,
+            err_console.capture() as err_console_capture,
+            redirect_stdout(stdout_capture),
+            redirect_stderr(stderr_capture),
+        ):
+            integration.is_skills_mode(
+                parsed_options or None,
+                project_root=project_root,
+            )
+    except (ValueError, typer.Exit) as exc:
+        captured = (
+            stdout_capture.getvalue()
+            + console_capture.get()
+            + stderr_capture.getvalue()
+            + err_console_capture.get()
+        )
+        raise _invalid_integration_options(
+            "Integration options are invalid.",
+            integration=integration_key,
+            reason=_single_line(captured or exc),
+        ) from exc
+
+
 def _resolve_default_integration(
     warnings: list[dict[str, Any]],
 ) -> str:
@@ -342,14 +376,12 @@ def _build_plan(
         )
 
     parsed_options = _parse_integration_options(integration, integration_options)
-    try:
-        integration.is_skills_mode(parsed_options or None, project_root=project_path)
-    except ValueError as exc:
-        raise _invalid_integration_options(
-            "Integration options are invalid.",
-            integration=selected_integration,
-            reason=_single_line(exc),
-        ) from exc
+    _validate_integration_mode_options(
+        integration,
+        parsed_options,
+        integration_key=selected_integration,
+        project_root=project_path,
+    )
 
     if not ignore_agent_tools:
         agent_config = AGENT_CONFIG[selected_integration]

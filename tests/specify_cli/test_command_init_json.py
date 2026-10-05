@@ -237,6 +237,26 @@ def test_json_init_reports_reinitialization(tmp_path: Path):
             [
                 "project",
                 "--json",
+                "--integration",
+                "copilot",
+                "--integration-options=--skills --commands",
+            ],
+            "invalid_integration_options",
+        ),
+        (
+            [
+                "project",
+                "--json",
+                "--integration",
+                "bob",
+                "--integration-options=--skills --legacy-commands",
+            ],
+            "invalid_integration_options",
+        ),
+        (
+            [
+                "project",
+                "--json",
                 "--script",
                 "fish",
             ],
