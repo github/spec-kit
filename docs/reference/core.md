@@ -149,11 +149,12 @@ obsolete universal `schema_version` / `ok` / `result` wrapper.
   Spec Kit project;
 - `reinitialized`: the target already contained a `.specify/` directory.
 
-Optional preset, extension, workflow, constitution, permission, or
-re-registration failures that do not prevent initialization are represented in
-their component outcome and in the structured `warnings` array. They are never
-printed as terminal warnings or silently discarded. `next_steps` uses
-machine-usable actions and paths rather than shell-formatted prose.
+Optional preset, extension, workflow, constitution, or permission failures that
+do not prevent initialization are represented in their component outcome and in
+the structured `warnings` array. Best-effort extension and preset
+re-registration failures are warning-only. No caught failure is printed as a
+terminal warning or silently discarded. `next_steps` uses machine-usable
+actions and paths rather than shell-formatted prose.
 
 On failure, stdout is empty and stderr contains exactly one UTF-8 JSON error
 object followed by a newline:

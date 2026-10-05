@@ -456,7 +456,7 @@ def _build_plan(
             },
         )
 
-    integration_defaulted = integration_key is None
+    integration_defaulted = not integration_key
     selected_integration = integration_key or _resolve_default_integration(warnings)
     integration = get_integration(selected_integration)
     if integration is None or selected_integration not in AGENT_CONFIG:
@@ -511,7 +511,7 @@ def _build_plan(
                 },
             )
 
-    script_defaulted = script_type is None
+    script_defaulted = not script_type
     selected_script = script_type or ("ps" if os.name == "nt" else "sh")
     if selected_script not in SCRIPT_TYPE_CHOICES:
         raise InitJsonFailure(

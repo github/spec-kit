@@ -108,6 +108,35 @@ def test_json_init_here_honors_explicit_integration_and_script(tmp_path: Path):
     assert all(step["action"] != "change_directory" for step in payload["next_steps"])
 
 
+def test_json_init_empty_selections_use_and_report_safe_defaults(tmp_path: Path):
+    project = tmp_path / "empty-selections"
+
+    payload = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "",
+                "--script",
+                "",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["integration"] == {
+        "key": "copilot",
+        "defaulted": True,
+        "status": "installed",
+    }
+    assert payload["script"] == {
+        "type": "ps" if os.name == "nt" else "sh",
+        "defaulted": True,
+    }
+
+
 def test_json_init_never_prompts_even_when_stdin_is_a_tty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -424,6 +453,55 @@ def test_json_force_reinitialization_allows_same_generic_destination(
 
     assert payload["project"]["operation"] == "reinitialized"
     assert list((project / ".agent" / "commands").glob("speckit.*"))
+
+
+def test_json_reinitialization_reports_reregistration_failures_as_warnings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [str(project), "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        )
+    )
+
+    def fail_extensions(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("extension re-registration failed")
+
+    def fail_presets(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("preset re-registration failed")
+
+    monkeypatch.setattr(
+        ExtensionManager,
+        "register_enabled_extensions_for_agent",
+        fail_extensions,
+    )
+    monkeypatch.setattr(
+        PresetManager,
+        "register_enabled_presets_for_agent",
+        fail_presets,
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    warning_codes = {warning["code"] for warning in payload["warnings"]}
+    assert "extension_reregistration_failed" in warning_codes
+    assert "preset_reregistration_failed" in warning_codes
 
 
 @pytest.mark.parametrize(
