@@ -3213,6 +3213,107 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
+    def _write_named_extension(self, root, ext_id, commands):
+        """Write an extension dir. ``commands`` is (name, aliases) pairs."""
+        ext_dir = root / ext_id
+        (ext_dir / "commands").mkdir(parents=True)
+        manifest_commands = []
+        for name, aliases in commands:
+            filename = f"{name}.md"
+            (ext_dir / "commands" / filename).write_text(
+                "---\ndescription: Test\n---\n\nBody\n", encoding="utf-8"
+            )
+            entry = {"name": name, "file": f"commands/{filename}"}
+            if aliases:
+                entry["aliases"] = list(aliases)
+            manifest_commands.append(entry)
+        (ext_dir / "extension.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": ext_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": manifest_commands},
+        }))
+        return ext_dir
+
+    def test_install_rejects_hyphenated_cross_extension_collision(
+        self, temp_dir, project_dir
+    ):
+        """``speckit.foo.bar-baz`` and ``speckit.foo-bar.baz`` are one file."""
+        first = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        with pytest.raises(ValidationError, match="speckit-foo-bar-baz"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
+    def test_install_rejects_alias_that_hyphenates_to_another_command(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir,
+            "foo",
+            [
+                ("speckit.foo.alpha", ["speckit-foo-bar-baz"]),
+                ("speckit.foo.bar-baz", []),
+            ],
+        )
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="all write 'speckit-foo-bar-baz'"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    def test_install_allows_alias_that_hyphenates_to_its_own_command(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.commit", ["speckit-foo-commit"])]
+        )
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+        assert manifest.id == "foo"
+
+    def test_install_allows_distinct_commands_and_core_suffix(
+        self, temp_dir, project_dir
+    ):
+        """``speckit.foo.plan`` is not the core ``plan`` command."""
+        ext_dir = self._write_named_extension(
+            temp_dir,
+            "foo",
+            [("speckit.foo.bar-baz", []), ("speckit.foo.qux", []), ("speckit.foo.plan", [])],
+        )
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+        assert {cmd["name"] for cmd in manifest.commands} == {
+            "speckit.foo.bar-baz",
+            "speckit.foo.qux",
+            "speckit.foo.plan",
+        }
+
+    def test_force_reinstall_of_same_extension_is_not_a_self_collision(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.commit", ["speckit-foo-commit"])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False, force=True
+        )
+        assert manifest.id == "foo"
+
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""
         manager = ExtensionManager(project_dir)

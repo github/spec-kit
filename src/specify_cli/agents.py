@@ -1352,7 +1352,10 @@ class CommandRegistrar:
         return results
 
     def unregister_commands(
-        self, registered_commands: Dict[str, List[str]], project_root: Path
+        self,
+        registered_commands: Dict[str, List[str]],
+        project_root: Path,
+        preserved_output_names: Dict[str, set[str]] | None = None,
     ) -> None:
         """Remove previously registered command files from agent directories.
 
@@ -1361,9 +1364,16 @@ class CommandRegistrar:
         commands left behind after an ``integration upgrade`` are
         cleaned up as well.
 
+        ``preserved_output_names`` maps an agent to formatted stems that
+        must stay. Extension removal passes stems still owned by a core
+        command or by another extension, so a shared hyphenated prompt is
+        not deleted with the first of its owners. The raw command name is
+        still removed when it differs from that stem.
+
         Args:
             registered_commands: Dict mapping agent names to command name lists
             project_root: Path to project root
+            preserved_output_names: Agent -> formatted stems to leave in place
         """
         self._ensure_configs()
         for agent_name, cmd_names in registered_commands.items():
@@ -1384,12 +1394,19 @@ class CommandRegistrar:
                 if legacy_dir.exists() and legacy_dir != commands_dir:
                     dirs_to_clean.append(legacy_dir)
 
+            preserved = {
+                os.path.normcase(name)
+                for name in (preserved_output_names or {}).get(agent_name, ())
+                if isinstance(name, str)
+            }
             for cmd_name in cmd_names:
                 output_name = self._compute_output_name(
                     agent_name, cmd_name, agent_config
                 )
 
-                names_to_clean = [output_name]
+                names_to_clean = []
+                if os.path.normcase(output_name) not in preserved:
+                    names_to_clean.append(output_name)
                 if output_name != cmd_name and self._is_safe_command_name(cmd_name):
                     names_to_clean.append(cmd_name)
 

@@ -635,6 +635,315 @@ class TestIntegrationUpgradeDetailed:
         prompts = project / ".kiro" / "prompts"
         assert (prompts / "speckit-git-feature.md").is_file()
         assert (prompts / "speckit-plan.md").is_file()
+        # Sole owner: dropping the command deletes the prompt. Leaving it
+        # would orphan a file extension remove can no longer see.
+        assert not (prompts / "speckit-git-commit.md").exists()
+        assert not (prompts / "speckit-git-c.md").exists()
+
+    def _plant_extension(self, project, ext_id, commands, *, enabled=True, registered=None):
+        """Write an extension that is already installed, skipping install checks."""
+        import yaml
+
+        from specify_cli.extensions import ExtensionManager
+
+        ext_dir = project / ".specify" / "extensions" / ext_id
+        (ext_dir / "commands").mkdir(parents=True, exist_ok=True)
+        manifest_commands = []
+        registered_names = []
+        for command in commands:
+            filename = f"{command['name']}.md"
+            (ext_dir / "commands" / filename).write_text(
+                command["body"], encoding="utf-8"
+            )
+            entry = {"name": command["name"], "file": f"commands/{filename}"}
+            if command.get("aliases"):
+                entry["aliases"] = list(command["aliases"])
+            manifest_commands.append(entry)
+            registered_names.append(command["name"])
+            registered_names.extend(command.get("aliases") or [])
+        (ext_dir / "extension.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": ext_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": manifest_commands},
+        }), encoding="utf-8")
+        ExtensionManager(project).registry.add(ext_id, {
+            "version": "1.0.0",
+            "source": "local",
+            "enabled": enabled,
+            "priority": 10,
+            "registered_commands": {
+                "kiro-cli": list(registered) if registered is not None else registered_names
+            },
+            "registered_skills": [],
+        })
+
+    def test_upgrade_preserves_already_installed_hyphen_collision(
+        self, tmp_path, monkeypatch
+    ):
+        """Two installed commands that hyphenate to one prompt stay put.
+
+        Install rejects this pair. A project that already has both must
+        not overwrite one body and must not delete either dotted file.
+        """
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        prompts = project / ".kiro" / "prompts"
+        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
+        bar_body = "---\ndescription: Bar\n---\n\nBAR-BODY\n"
+        other_body = "---\ndescription: Other\n---\n\nOTHER-BODY\n"
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": foo_body},
+            {"name": "speckit.foo.other", "body": other_body},
+        ])
+        self._plant_extension(project, "foo-bar", [
+            {"name": "speckit.foo-bar.baz", "body": bar_body},
+        ])
+        (prompts / "speckit.foo.bar-baz.md").write_text(foo_body, encoding="utf-8")
+        (prompts / "speckit.foo-bar.baz.md").write_text(bar_body, encoding="utf-8")
+        (prompts / "speckit.foo.other.md").write_text(other_body, encoding="utf-8")
+        sentinel = prompts / "speckit-foo-bar-baz.md"
+        sentinel.write_text("SENTINEL\n", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert "hyphenate to one file" in result.output
+        assert (prompts / "speckit.foo.bar-baz.md").read_text(encoding="utf-8") == foo_body
+        assert (prompts / "speckit.foo-bar.baz.md").read_text(encoding="utf-8") == bar_body
+        assert sentinel.read_text(encoding="utf-8") == "SENTINEL\n"
+        assert (prompts / "speckit-foo-other.md").is_file()
+        assert "OTHER-BODY" in (prompts / "speckit-foo-other.md").read_text(encoding="utf-8")
+        assert not (prompts / "speckit.foo.other.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+        assert not (prompts / "speckit.plan.md").exists()
+
+        result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
+        assert result.exit_code == 0, result.output
+        assert not (prompts / "speckit.foo.bar-baz.md").exists()
+        assert (prompts / "speckit.foo-bar.baz.md").read_text(encoding="utf-8") == bar_body
+        shared = sentinel.read_text(encoding="utf-8")
+        assert "BAR-BODY" in shared
+        assert "FOO-BODY" not in shared
+        assert "SENTINEL" not in shared
+        assert not (prompts / "speckit-foo-other.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+
+        result = _run_in_project(project, ["extension", "remove", "foo-bar", "--force"])
+        assert result.exit_code == 0, result.output
+        assert not sentinel.exists()
+        assert not (prompts / "speckit.foo-bar.baz.md").exists()
+        assert (prompts / "speckit-plan.md").is_file()
+
+    def test_disabled_extension_without_kiro_files_does_not_block_migration(
+        self, tmp_path, monkeypatch
+    ):
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        prompts = project / ".kiro" / "prompts"
+        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": foo_body},
+        ])
+        self._plant_extension(
+            project,
+            "foo-bar",
+            [{"name": "speckit.foo-bar.baz", "body": "---\ndescription: Bar\n---\n\nBAR-BODY\n"}],
+            enabled=False,
+            registered=[],
+        )
+        (prompts / "speckit.foo.bar-baz.md").write_text(foo_body, encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert "hyphenate to one file" not in result.output
+        assert not (prompts / "speckit.foo.bar-baz.md").exists()
+        written = (prompts / "speckit-foo-bar-baz.md").read_text(encoding="utf-8")
+        assert "FOO-BODY" in written
+
+    def test_enable_refuses_extension_that_hyphenates_to_an_owned_prompt(
+        self, tmp_path, monkeypatch
+    ):
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": "---\ndescription: Foo\n---\n\nFOO-BODY\n"},
+        ])
+        self._plant_extension(
+            project,
+            "foo-bar",
+            [{"name": "speckit.foo-bar.baz", "body": "---\ndescription: Bar\n---\n\nBAR-BODY\n"}],
+            enabled=False,
+        )
+        result = _run_in_project(project, ["extension", "enable", "foo-bar"])
+        assert result.exit_code != 0
+        assert "hyphenate to a prompt" in result.output
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        assert registry["extensions"]["foo-bar"]["enabled"] is False
+
+    def test_upgrade_migrates_alias_that_hyphenates_to_its_own_command(
+        self, tmp_path, monkeypatch
+    ):
+        import yaml
+
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        manifest_path = project / ".specify" / "extensions" / "git" / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for command in manifest["provides"]["commands"]:
+            if command["name"] == "speckit.git.commit":
+                command["aliases"] = ["speckit-git-commit"]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit-git-commit.md").is_file()
+        assert not (prompts / "speckit.git.commit.md").exists()
+
+    def test_force_reinstall_retires_dotted_prompts_written_before_hyphenation(
+        self, tmp_path, monkeypatch
+    ):
+        """``extension add --force`` writes the hyphenated prompt and retires
+        the dotted file left by an install that ran before the rename."""
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit.git.commit.md").is_file()
+
+        result = _run_in_project(project, ["extension", "add", "git", "--force"])
+        assert result.exit_code == 0, result.output
+        assert (prompts / "speckit-git-commit.md").is_file()
+        assert not (prompts / "speckit.git.commit.md").exists()
+        # Reinstall retires the extension's own dotted file. It does not
+        # run integration setup, so the core prompt stays dotted until upgrade.
+        assert (prompts / "speckit.plan.md").is_file()
+        assert not (prompts / "speckit-plan.md").exists()
+
+    def test_dropping_a_shared_command_rewrites_the_remaining_owners_body(
+        self, tmp_path, monkeypatch
+    ):
+        """A name the manifest drops must not leave its body in a shared file.
+
+        The dropped command is already gone from the claim set, so removal
+        has to match the formatted path rather than the old manifest entry.
+        The other command stays disabled, so this pass does not register it.
+        Its source is still written back. A file only the dropped command
+        owned is deleted.
+        """
+        import yaml
+
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "git"]
+        )
+        manifest_path = project / ".specify" / "extensions" / "git" / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for command in manifest["provides"]["commands"]:
+            if command["name"] == "speckit.git.commit":
+                command["aliases"] = ["speckit-git-c"]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        prompts = project / ".kiro" / "prompts"
+        shared = prompts / "speckit-git-commit.md"
+        assert shared.is_file()
+        assert (prompts / "speckit-git-c.md").is_file()
+        previous = shared.read_text(encoding="utf-8")
+
+        other_body = "---\ndescription: Other\n---\n\nOTHER-BODY\n"
+        self._plant_extension(
+            project,
+            "other",
+            [{
+                "name": "speckit.other.keep",
+                "body": other_body,
+                "aliases": ["speckit-git-commit"],
+            }],
+            enabled=False,
+            registered=["speckit-git-commit"],
+        )
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"] = [
+            command for command in manifest["provides"]["commands"]
+            if command.get("name") != "speckit.git.commit"
+        ]
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (
+            project / ".specify" / "extensions" / "git" / "commands"
+            / "speckit.git.commit.md"
+        ).unlink()
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        rewritten = shared.read_text(encoding="utf-8")
+        assert "OTHER-BODY" in rewritten
+        assert rewritten != previous
+        assert not (prompts / "speckit-other-keep.md").exists()
+        assert not (prompts / "speckit-git-c.md").exists()
+        assert not (prompts / "speckit.git.commit.md").exists()
+        assert "speckit.git.commit" not in self._kiro_git_commands(project)
+        assert (prompts / "speckit-plan.md").is_file()
+
+    def test_preset_hyphen_collision_does_not_overwrite_extension_prompt(
+        self, tmp_path
+    ):
+        import yaml
+
+        project = _init_project(tmp_path, "kiro-cli")
+        prompts = project / ".kiro" / "prompts"
+        self._plant_extension(project, "foo", [
+            {
+                "name": "speckit.foo.bar-baz",
+                "body": "---\ndescription: Foo\n---\n\nFOO-BODY\n",
+            },
+        ])
+        shared = prompts / "speckit-foo-bar-baz.md"
+        shared.write_text("SENTINEL\n", encoding="utf-8")
+        preset_src = tmp_path / "collide-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.foo-bar.baz.md").write_text(
+            "---\ndescription: Preset\n---\n\nPRESET-BODY\n",
+            encoding="utf-8",
+        )
+        (preset_src / "preset.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {
+                "id": "collide-preset",
+                "name": "Collide",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{
+                "type": "command",
+                "name": "speckit.foo-bar.baz",
+                "file": "commands/speckit.foo-bar.baz.md",
+            }]},
+        }), encoding="utf-8")
+
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(preset_src)]
+        )
+        assert result.exit_code == 0, result.output
+        assert "hyphenate to one prompt" in result.output
+        assert shared.read_text(encoding="utf-8") == "SENTINEL\n"
+
+    def test_preset_core_override_still_writes_kiro_prompt(self, tmp_path):
+        preset_src = _write_command_preset(tmp_path, "cmd-preset")
+        project = _init_project(tmp_path, "kiro-cli")
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(preset_src)]
+        )
+        assert result.exit_code == 0, result.output
+        plan = (project / ".kiro" / "prompts" / "speckit-plan.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Overridden plan content" in plan
 
     @pytest.mark.parametrize("activate", ["use", "switch"])
     def test_activating_kiro_after_secondary_upgrade_retires_dotted_prompts(
