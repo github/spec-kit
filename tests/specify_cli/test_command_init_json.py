@@ -668,6 +668,12 @@ def test_json_extension_status_does_not_depend_on_human_message(
     monkeypatch: pytest.MonkeyPatch,
 ):
     import specify_cli.command_init as init_command
+    import specify_cli.events as events
+
+    def fail_refresh(_project_path: Path) -> None:
+        raise AssertionError(
+            "events must not refresh when no extension was newly installed"
+        )
 
     monkeypatch.setattr(
         init_command,
@@ -677,6 +683,7 @@ def test_json_extension_status_does_not_depend_on_human_message(
             "present from an earlier installation",
         ),
     )
+    monkeypatch.setattr(events, "refresh_integration_events", fail_refresh)
 
     payload = _success(
         _invoke(
@@ -888,6 +895,32 @@ def test_json_init_rejects_untrusted_url_extension_before_mutation(tmp_path: Pat
     )
 
     assert error["details"]["required_flag"] == "--trust-extension-urls"
+    assert not project.exists()
+
+
+def test_json_init_rejects_http_extension_before_mutation(tmp_path: Path):
+    project = tmp_path / "project"
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--ignore-agent-tools",
+                "--extension",
+                "http://example.com/extension.zip",
+                "--trust-extension-urls",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_arguments",
+    )
+
+    assert error["message"] == "Extension URLs must use HTTPS in JSON mode."
+    assert error["details"] == {
+        "extensions": ["http://example.com/extension.zip"],
+        "supported_scheme": "https",
+    }
     assert not project.exists()
 
 

@@ -70,6 +70,9 @@ defaults:
   `SPECKIT_INTEGRATION_DEFAULT` value);
 - `sh` scripts on POSIX systems or `ps` scripts on Windows.
 
+JSON mode accepts only HTTPS extension URLs. An HTTP extension URL is rejected
+before target creation even when `--trust-extension-urls` is supplied.
+
 The success object reports `integration.defaulted` and `script.defaulted` so
 callers can distinguish defaults from explicit selections.
 

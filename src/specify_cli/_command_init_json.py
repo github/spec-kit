@@ -17,13 +17,7 @@ from typing import Any, NoReturn
 import typer
 from rich.console import Console
 from typer.core import TyperCommand
-
-try:
-    from typer._click.exceptions import UsageError as _UsageError
-except ModuleNotFoundError as error:
-    if error.name != "typer._click":
-        raise
-    from click import UsageError as _UsageError
+from typer.exceptions import TyperException
 
 from ._agent_config import (
     AGENT_CONFIG,
@@ -59,7 +53,7 @@ class InitJsonCommand(TyperCommand):
         json_output = "--json" in args[:end_of_options]
         try:
             return super().make_context(info_name, args, parent=parent, **extra)
-        except _UsageError as error:
+        except TyperException as error:
             if json_output:
                 _emit_failure(
                     InitJsonFailure(
@@ -67,7 +61,8 @@ class InitJsonCommand(TyperCommand):
                         _single_line(error),
                     )
                 )
-            raise
+            else:
+                raise
 
 
 @dataclass
@@ -485,10 +480,25 @@ def _build_plan(
                 )
 
     requested_extensions = list(extensions or [])
+    extension_url_schemes = {
+        spec: _extension_url_scheme(spec) for spec in requested_extensions
+    }
+    insecure_urls = [
+        spec for spec, scheme in extension_url_schemes.items() if scheme == "http"
+    ]
+    if insecure_urls:
+        raise InitJsonFailure(
+            "invalid_arguments",
+            "Extension URLs must use HTTPS in JSON mode.",
+            {
+                "extensions": insecure_urls,
+                "supported_scheme": "https",
+            },
+        )
     untrusted_urls = [
         spec
         for spec in requested_extensions
-        if _extension_spec_is_url(spec) and not trust_extension_urls
+        if extension_url_schemes[spec] == "https" and not trust_extension_urls
     ]
     if untrusted_urls:
         raise InitJsonFailure(
@@ -635,13 +645,14 @@ def _claim_new_target(plan: _InitPlan) -> None:
         ) from exc
 
 
-def _extension_spec_is_url(value: str) -> bool:
+def _extension_url_scheme(value: str) -> str | None:
     from urllib.parse import urlparse
 
     try:
-        return urlparse(value).scheme in {"http", "https"}
+        scheme = urlparse(value).scheme
     except ValueError:
-        return False
+        return None
+    return scheme if scheme in {"http", "https"} else None
 
 
 def _record_suppressed_output(
@@ -964,7 +975,8 @@ def _install_requested_extensions(
                     "message": extension_result.message,
                 }
             )
-            installed_any = True
+            if extension_result.status == "installed":
+                installed_any = True
         except Exception as exc:  # noqa: BLE001 - optional extension failures continue
             reason = _single_line(exc)
             warnings.append(
