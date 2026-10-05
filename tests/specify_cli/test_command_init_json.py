@@ -505,6 +505,57 @@ def test_json_force_reinitialization_rejects_generic_destination_change(
     assert not (project / ".new").exists()
 
 
+def test_json_force_reinitialization_rejects_missing_generic_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from specify_cli.integrations import get_integration
+
+    project = tmp_path / "project"
+    _success(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .agent/commands",
+            ],
+            cwd=tmp_path,
+        )
+    )
+    init_options_path = project / ".specify" / "init-options.json"
+    old_init_options = init_options_path.read_bytes()
+    integration = get_integration("generic")
+    assert integration is not None
+    monkeypatch.setattr(
+        integration,
+        "_resolve_commands_destination",
+        lambda *_args, **_kwargs: None,
+    )
+
+    error = _failure(
+        _invoke(
+            [
+                str(project),
+                "--json",
+                "--force",
+                "--integration",
+                "generic",
+                "--integration-options=--commands-dir .agent/commands",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert error["message"] == (
+        "The generic integration command destination could not be resolved."
+    )
+    assert error["details"]["integration"] == "generic"
+    assert init_options_path.read_bytes() == old_init_options
+
+
 def test_json_force_reinitialization_allows_same_generic_destination(
     tmp_path: Path,
 ):
@@ -610,6 +661,43 @@ def test_json_switch_to_generic_persists_settings_before_extension_reregistratio
     warning_codes = {warning["code"] for warning in payload["warnings"]}
     assert "extension_reregistration_failed" not in warning_codes
     assert list((project / ".agent" / "commands").glob("speckit.git.*.md"))
+
+
+def test_json_extension_status_does_not_depend_on_human_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli.command_init as init_command
+
+    monkeypatch.setattr(
+        init_command,
+        "_install_extension_during_init",
+        lambda *_args, **_kwargs: init_command._InitExtensionResult(
+            "already_installed",
+            "present from an earlier installation",
+        ),
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                "project",
+                "--json",
+                "--ignore-agent-tools",
+                "--extension",
+                "git",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["components"]["extensions"] == [
+        {
+            "requested": "git",
+            "status": "already_installed",
+            "message": "present from an earlier installation",
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -857,6 +945,43 @@ def test_json_init_invalid_default_integration_becomes_structured_warning(
     assert payload["integration"]["key"] == "copilot"
     assert payload["integration"]["defaulted"] is True
     assert payload["warnings"][0]["code"] == "invalid_default_integration"
+
+
+def test_json_init_redacts_suppressed_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli._command_init_json as init_json
+
+    stdout_secret = "stdout-secret-token"
+    stderr_secret = "stderr-secret-token"
+
+    def noisy_initialize(plan: Any) -> dict[str, Any]:
+        print(stdout_secret)
+        print(stderr_secret, file=sys.stderr)
+        return {
+            "project": {"path": str(plan.project_path)},
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(init_json, "_initialize_project", noisy_initialize)
+
+    result = _invoke(
+        ["project", "--json", "--ignore-agent-tools"],
+        cwd=tmp_path,
+    )
+    payload = _success(result)
+
+    serialized = result.stdout
+    assert stdout_secret not in serialized
+    assert stderr_secret not in serialized
+    warnings = {warning["code"]: warning for warning in payload["warnings"]}
+    assert warnings["suppressed_stdout"]["details"] == {
+        "byte_count": len(f"{stdout_secret}\n".encode())
+    }
+    assert warnings["suppressed_stderr"]["details"] == {
+        "byte_count": len(f"{stderr_secret}\n".encode())
+    }
 
 
 def test_json_init_exposes_optional_preset_and_extension_failures(

@@ -1872,7 +1872,8 @@ class TestExtensionFlag:
             project, "catalog-extension", "1.0.0"
         )
 
-        assert result == "Catalog Extension v1.0.0 installed"
+        assert result.status == "installed"
+        assert result.message == "Catalog Extension v1.0.0 installed"
         assert captured == {"catalog_name": "init-catalog"}
 
     def test_catalog_preset_init_forwards_catalog_name(self, tmp_path, monkeypatch):

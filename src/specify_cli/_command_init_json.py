@@ -337,7 +337,11 @@ def _validate_existing_integration_layout(
             },
         )
 
-    assert requested_commands_destination is not None
+    if requested_commands_destination is None:
+        raise _invalid_integration_options(
+            "The generic integration command destination could not be resolved.",
+            integration=integration_key,
+        )
     from .integrations.generic import registration_directory
 
     try:
@@ -433,7 +437,11 @@ def _build_plan(
         resolved_name = project_path.name
         dir_existed_before = True
     else:
-        assert project_name is not None
+        if project_name is None:
+            raise InitJsonFailure(
+                "target_required",
+                "Specify a project name, use '.', or pass --here.",
+            )
         project_path = Path(project_name).resolve()
         resolved_name = project_path.name
         dir_existed_before = project_path.exists()
@@ -638,7 +646,7 @@ def _record_suppressed_output(
             _warning(
                 "suppressed_stdout",
                 "Initialization produced human-readable output that was suppressed in JSON mode.",
-                {"output": _single_line(stdout, limit=1000)},
+                {"byte_count": len(stdout.encode("utf-8"))},
             )
         )
     if stderr.strip():
@@ -646,7 +654,7 @@ def _record_suppressed_output(
             _warning(
                 "suppressed_stderr",
                 "Initialization produced diagnostic output that was suppressed in JSON mode.",
-                {"output": _single_line(stderr, limit=1000)},
+                {"byte_count": len(stderr.encode("utf-8"))},
             )
         )
 
@@ -935,17 +943,16 @@ def _install_requested_extensions(
     version = get_speckit_version()
     for extension in extensions:
         try:
-            message = _install_extension_during_init(
+            extension_result = _install_extension_during_init(
                 project_path,
                 extension,
                 version,
             )
-            status = "already_installed" if message == "already installed" else "installed"
             outcomes.append(
                 {
                     "requested": extension,
-                    "status": status,
-                    "message": message,
+                    "status": extension_result.status,
+                    "message": extension_result.message,
                 }
             )
             installed_any = True
@@ -1341,8 +1348,13 @@ def run_init_json(
     if failure is not None:
         _emit_failure(failure)
 
-    assert plan is not None
-    assert result is not None
+    if plan is None or result is None:
+        _emit_failure(
+            InitJsonFailure(
+                "internal_error",
+                "Project initialization did not produce a result.",
+            )
+        )
     _record_suppressed_output(
         result["warnings"],
         stdout=stdout_capture.getvalue() + console_capture.get(),

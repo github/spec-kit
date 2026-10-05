@@ -154,7 +154,9 @@ do not prevent initialization are represented in their component outcome and in
 the structured `warnings` array. Best-effort extension and preset
 re-registration failures are warning-only. No caught failure is printed as a
 terminal warning or silently discarded. `next_steps` uses machine-usable
-actions and paths rather than shell-formatted prose.
+actions and paths rather than shell-formatted prose. When human-readable output
+from an internal component is suppressed, the warning reports only its UTF-8
+byte count; the captured text is never included in the JSON payload.
 
 On failure, stdout is empty and stderr contains exactly one UTF-8 JSON error
 object followed by a newline:

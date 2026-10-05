@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NamedTuple
 
 import typer
 from rich.live import Live
@@ -27,6 +27,11 @@ from ._assets import (
 )
 from ._console import StepTracker, console, select_with_arrows, show_banner
 from ._utils import check_tool
+
+
+class _InitExtensionResult(NamedTuple):
+    status: Literal["installed", "already_installed"]
+    message: str
 
 
 def _stdin_is_interactive() -> bool:
@@ -98,11 +103,15 @@ def _confirm_extension_url_trust(
     return approvals
 
 
-def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_version: str) -> str:
+def _install_extension_during_init(
+    project_path: Path,
+    ext_spec: str,
+    speckit_version: str,
+) -> _InitExtensionResult:
     """Install a single extension during ``specify init``.
 
     Handles bundled extension names, local directory paths, and HTTPS URLs.
-    Returns a short status message on success.
+    Returns a structured status and short human-readable message on success.
     Raises ``ValueError`` on failure so the caller can convert it to a
     tracker error without aborting the entire init.
     """
@@ -126,7 +135,10 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
             )
         except ExtensionError as exc:
             raise ValueError(str(exc)) from exc
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # --- Local path ---
     if ext_spec.startswith(("./", "../", "/", "~/", ".\\", "..\\")) or Path(ext_spec).is_absolute():
@@ -136,15 +148,21 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         if not (source_path / "extension.yml").exists():
             raise ValueError(f"No extension.yml found in {source_path}")
         manifest = manager.install_from_directory(source_path, speckit_version)
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # --- Bundled extension name or catalog ID ---
     bundled_path = _locate_bundled_extension(ext_spec)
     if bundled_path is not None:
         if manager.registry.is_installed(ext_spec):
-            return "already installed"
+            return _InitExtensionResult("already_installed", "already installed")
         manifest = manager.install_from_directory(bundled_path, speckit_version)
-        return f"{manifest.name} v{manifest.version} installed"
+        return _InitExtensionResult(
+            "installed",
+            f"{manifest.name} v{manifest.version} installed",
+        )
 
     # Fall back to catalog
     catalog = ExtensionCatalog(project_path)
@@ -159,9 +177,12 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         bundled_path = _locate_bundled_extension(resolved_id)
         if bundled_path is not None:
             if manager.registry.is_installed(resolved_id):
-                return "already installed"
+                return _InitExtensionResult("already_installed", "already installed")
             manifest = manager.install_from_directory(bundled_path, speckit_version)
-            return f"{manifest.name} v{manifest.version} installed"
+            return _InitExtensionResult(
+                "installed",
+                f"{manifest.name} v{manifest.version} installed",
+            )
 
     if ext_info.get("bundled") and not ext_info.get("download_url"):
         from .extensions import REINSTALL_COMMAND
@@ -186,7 +207,10 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
         )
     finally:
         zip_path.unlink(missing_ok=True)
-    return f"{manifest.name} v{manifest.version} installed"
+    return _InitExtensionResult(
+        "installed",
+        f"{manifest.name} v{manifest.version} installed",
+    )
 
 
 def _shell_quote_arg(value: str) -> str:
@@ -940,10 +964,13 @@ def register(app: typer.Typer) -> None:
                             )
                             continue
                         try:
-                            status_msg = _install_extension_during_init(
+                            extension_result = _install_extension_during_init(
                                 project_path, ext_spec, speckit_ver
                             )
-                            tracker.complete(f"extension-{i}", status_msg)
+                            tracker.complete(
+                                f"extension-{i}",
+                                extension_result.message,
+                            )
                             any_extension_installed = True
                         except Exception as ext_err:
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
