@@ -378,7 +378,7 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         (
             lambda: b'{"schema_version":"1.0","presets":{"sample":'
             + b"[" * 20000 + b"0" + b"]" * 20000 + b"}}",
-            "excessive nesting|expected a JSON object",
+            "excessive nesting",
         ),
     ],
 )
@@ -396,20 +396,30 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
         "schema_version": "1.0",
         "presets": {"sample": _entry(old_bytes)},
     }).encode()
+    invalid = bad_payload()
     opened: list[str] = []
 
     def open_url(_self, url, **_kwargs):
         opened.append(url)
         data = {
-            high_url: bad_payload(),
+            high_url: invalid,
             low_url: lower,
             OLD_URL: old_bytes,
         }
         return _response(data[url], url)
 
+    original_loads = json.loads
+
+    def parse_json(raw, **kwargs):
+        # Decoder nesting limits vary across supported Python versions.
+        if error == "excessive nesting" and raw == invalid:
+            raise RecursionError("too deep")
+        return original_loads(raw, **kwargs)
+
     with (
         patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
         patch.object(PresetCatalog, "_open_url", open_url),
+        patch("specify_cli.presets._catalog.json.loads", side_effect=parse_json),
         patch.object(Path, "cwd", return_value=project_dir),
         patch("specify_cli.get_speckit_version", return_value="1.0.0"),
     ):
@@ -421,13 +431,9 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
         info = CliRunner().invoke(app, ["preset", "info", "sample"])
         search = CliRunner().invoke(app, ["preset", "search", "sample"])
     assert result.exit_code == 1, result.output
-    assert any(text in result.output for text in error.split("|"))
-    assert info.exit_code == 1 and any(
-        text in info.output for text in error.split("|")
-    )
-    assert search.exit_code == 1 and any(
-        text in search.output for text in error.split("|")
-    )
+    assert error in result.output
+    assert info.exit_code == 1 and error in info.output
+    assert search.exit_code == 1 and error in search.output
     assert OLD_URL not in opened
     assert PresetManager(project_dir).get_pack("sample") is None
 
