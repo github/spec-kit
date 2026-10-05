@@ -218,10 +218,12 @@ Duplicate JSON keys are rejected before parsing can discard a release record.
 Historical `requires.extensions` entries follow the preset manifest format:
 extension IDs or mappings with an `id`, optional version constraint, and
 optional boolean `required` flag.
-An invalid or oversized catalog payload fails resolution rather than allowing
-an entry from a lower-priority catalog to bypass its installation policy.
-Unreachable catalogs can still be skipped so other configured sources remain
-available.
+For an ID lookup, catalogs are checked in priority order and stop at the
+winning entry. Invalid or oversized payloads encountered before that entry
+fail resolution rather than allowing a lower-priority entry to bypass its
+installation policy. A malformed lower-priority source cannot block a valid
+higher-priority match; searches across all sources still fail on malformed
+catalogs. Unreachable catalogs can still be skipped.
 
 ```json
 {

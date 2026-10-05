@@ -50,6 +50,10 @@ def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
         raise PresetCatalogValidationError(
             f"Invalid preset catalog format from {url}: invalid encoding ({exc})"
         ) from exc
+    except RecursionError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: excessive nesting ({exc})"
+        ) from exc
 
 
 @dataclass
@@ -530,10 +534,14 @@ class PresetCatalog:
                 f"Failed to fetch preset catalog from {entry.url}: {e}"
             )
 
-    def _get_merged_packs(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+    def _get_merged_packs(
+        self, force_refresh: bool = False, *, pack_id: str | None = None
+    ) -> Dict[str, Dict[str, Any]]:
         """Fetch and merge presets from all active catalogs.
 
         Higher-priority catalogs (lower priority number) win on ID conflicts.
+        For a requested ID, stop at the first matching catalog so malformed
+        lower-priority sources cannot block its winning entry.
 
         Returns:
             Merged dictionary of pack_id -> pack_data
@@ -541,10 +549,13 @@ class PresetCatalog:
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
 
-        for entry in reversed(active_catalogs):
+        sources = active_catalogs if pack_id is not None else reversed(active_catalogs)
+        for entry in sources:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
-                for pack_id, pack_data in data.get("presets", {}).items():
+                for found_id, pack_data in data.get("presets", {}).items():
+                    if pack_id is not None and found_id != pack_id:
+                        continue
                     # Per-entry guard: ``_fetch_single_catalog`` already
                     # validates that ``data["presets"]`` is a mapping, but it
                     # does not (and should not) validate every entry shape
@@ -557,7 +568,9 @@ class PresetCatalog:
                     if not isinstance(pack_data, dict):
                         continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
-                    merged[pack_id] = pack_data_with_catalog
+                    merged[found_id] = pack_data_with_catalog
+                    if pack_id is not None:
+                        return merged
             except PresetCatalogValidationError:
                 raise
             except PresetError:
@@ -778,7 +791,7 @@ class PresetCatalog:
     ) -> dict[str, Any] | None:
         """Get detailed information about a specific preset.
 
-        Searches across all active catalogs (merged by priority).
+        Searches active catalogs in priority order, stopping at the winning ID.
 
         Args:
             pack_id: ID of the preset
@@ -787,7 +800,7 @@ class PresetCatalog:
             Pack metadata or None if not found
         """
         try:
-            packs = self._get_merged_packs()
+            packs = self._get_merged_packs(pack_id=pack_id)
         except PresetCatalogValidationError:
             raise
         except PresetError:

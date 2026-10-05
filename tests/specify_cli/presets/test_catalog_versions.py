@@ -363,6 +363,11 @@ def test_winning_source_does_not_fall_back_to_lower_release(project_dir):
         (lambda: b'{"schema_version": "1.0", "presets": []}', "Invalid preset catalog format"),
         (lambda: b'{"schema_version":', "invalid JSON"),
         (lambda: b'{"schema_version":"1.0","presets":' + b"\xff" + b"}", "invalid encoding"),
+        (
+            lambda: b'{"schema_version":"1.0","presets":{"sample":'
+            + b"[" * 20000 + b"0" + b"]" * 20000 + b"}}",
+            "excessive nesting",
+        ),
     ],
 )
 def test_invalid_discovery_catalog_cannot_delegate_install(
@@ -409,6 +414,53 @@ def test_invalid_discovery_catalog_cannot_delegate_install(
     assert search.exit_code == 1 and error in search.output
     assert OLD_URL not in opened
     assert PresetManager(project_dir).get_pack("sample") is None
+
+
+def test_valid_higher_priority_id_ignores_invalid_lower_catalog(project_dir):
+    high_url = "https://example.com/official.json"
+    low_url = "https://example.com/community.json"
+    sources = [
+        PresetCatalogEntry(high_url, "official", 1, True),
+        PresetCatalogEntry(low_url, "community", 2, False),
+    ]
+    archive = _archive()
+    higher = json.dumps({
+        "schema_version": "1.0",
+        "presets": {"sample": _entry(archive)},
+    }).encode()
+    opened: list[str] = []
+
+    def open_url(_self, url, **_kwargs):
+        opened.append(url)
+        return _response({
+            high_url: higher,
+            low_url: b'{"schema_version":',
+            OLD_URL: archive,
+        }[url], url)
+
+    with (
+        patch.object(PresetCatalog, "get_active_catalogs", return_value=sources),
+        patch.object(PresetCatalog, "_open_url", open_url),
+        patch.object(Path, "cwd", return_value=project_dir),
+        patch("specify_cli.get_speckit_version", return_value="1.0.0"),
+    ):
+        catalog = PresetCatalog(project_dir)
+        selected = catalog.get_pack_info("sample", "1.0.0")
+        listed = CliRunner().invoke(app, ["preset", "info", "sample", "--versions"])
+        installed = CliRunner().invoke(
+            app, ["preset", "add", "sample", "--version", "1.0.0"]
+        )
+        assert low_url not in opened
+        with pytest.raises(PresetCatalogValidationError, match="invalid JSON"):
+            catalog.search("sample")
+    assert selected["version"] == "1.0.0"
+    assert selected["_catalog_name"] == "official"
+    assert listed.exit_code == 0, listed.output
+    assert "1.0.0" in listed.output
+    assert installed.exit_code == 0, installed.output
+    assert low_url in opened
+    assert opened.count(OLD_URL) == 1
+    assert PresetManager(project_dir).get_pack("sample").version == "1.0.0"
 
 
 def test_oversized_discovery_catalog_cannot_delegate_install(project_dir):
