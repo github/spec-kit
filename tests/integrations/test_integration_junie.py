@@ -138,12 +138,30 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         """Verify generic variable escaping using regex. (US2)"""
         junie = get_integration("junie")
         content = "Hook: $speckit-git-branch, User: $user_name, Prompt: $prompt"
-        # Note: $prompt should stay $prompt
+        # Note: $prompt should also be escaped to $$prompt to isolate Junie's reserved token
         updated = junie.post_process_command_content(content)
         assert "$$speckit-git-branch" in updated
         assert "$$user_name" in updated
+        assert "$$prompt" in updated
+        assert "$prompt" in updated  # Still matches because $$prompt contains $prompt
+        # More specific check:
+        assert "Prompt: $$prompt" in updated
+
+    def test_junie_token_isolation(self):
+        """Verify $ARGUMENTS is isolated from substrings like $ARGUMENTS_SUFFIX."""
+        junie = get_integration("junie")
+        content = "Use $ARGUMENTS but not $ARGUMENTS_SUFFIX"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: true" in updated
         assert "$prompt" in updated
-        assert "$$prompt" not in updated
+        assert "$$ARGUMENTS_SUFFIX" in updated
+        assert "$prompt_SUFFIX" not in updated
+
+        content = "Only $ARGUMENTS_SUFFIX"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: false" in updated
+        assert "$$ARGUMENTS_SUFFIX" in updated
+        assert "$prompt" not in updated
 
     def test_junie_missing_frontmatter(self):
         """Verify frontmatter is created if missing."""

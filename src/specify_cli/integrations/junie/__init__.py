@@ -179,18 +179,13 @@ class JunieIntegration(MarkdownIntegration):
     @staticmethod
     def _transform_body_variables(content: str) -> str:
         """Transform $ARGUMENTS to $prompt and escape other $word by doubling $."""
-        # 1. $ARGUMENTS -> $prompt
-        # We do this before regex so we can exclude $prompt from doubling.
-        content = content.replace("$ARGUMENTS", "$prompt")
-
-        # 2. Double $ for other variables: $[A-Za-z_][A-Za-z0-9_-]*
-        def double_dollar(match: re.Match[str]) -> str:
+        def replacer(match: re.Match[str]) -> str:
             word = match.group(1)
-            if word == "prompt":
+            if word == "ARGUMENTS":
                 return "$prompt"
             return "$$" + word
 
-        return re.sub(r"\$([A-Za-z_][A-Za-z0-9_-]*)", double_dollar, content)
+        return re.sub(r"\$([A-Za-z_][A-Za-z0-9_-]*)", replacer, content)
 
     def post_process_command_content(self, content: str) -> str:
         """Apply Junie-specific transformations to command content.
@@ -201,7 +196,8 @@ class JunieIntegration(MarkdownIntegration):
         extension/preset command files too, not just core commands.
         """
         # FR-001: Detect $ARGUMENTS before transformation
-        has_arguments = "$ARGUMENTS" in content
+        # Use a token-aware search to avoid false positives with substrings like $ARGUMENTS_SUFFIX.
+        has_arguments = bool(re.search(r"\$ARGUMENTS(?![A-Za-z0-9_-])", content))
 
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
