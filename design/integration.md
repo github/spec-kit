@@ -4,7 +4,8 @@ Integrations adapt the shared Spec Kit workflows to an AI coding agent. Their
 **availability** (built-in, generic, or catalog-only) is separate from their
 **output format** (commands, recipes, skills, or a custom layout). The Python
 integration registry owns installation behavior; catalogs provide discovery,
-not executable integration implementations.
+not executable integration implementations. Trusted external adapter packages
+are installed separately and loaded into that registry for their project.
 
 ## Availability
 
@@ -12,13 +13,15 @@ not executable integration implementations.
 |---|---|---|
 | Built-in | A registered class under `src/specify_cli/integrations/` and, for discovery, an entry in `integrations/catalog.json` | `specify init my-project --integration copilot` or, in an initialized project, `specify integration install copilot` |
 | Generic | The registered `generic` integration, with a user-supplied `--commands-dir` and optional `--skills` | `specify init my-project --integration generic --integration-options="--commands-dir .agent/commands"` |
-| Community | Metadata in `integrations/catalog.community.json` pointing to an external project | Discover with `specify integration list --catalog` or `search`; obtain and vet it from its source |
+| External | A catalog entry pointing to an adapter archive | Register a trusted catalog, review the adapter, then `specify integration install sample-agent` |
+| Community discovery | Metadata in the default `integrations/catalog.community.json` | Discover with `specify integration list --catalog` or `search`; review its source before configuring an install-enabled catalog |
 
-The default community catalog is discovery-only. A catalog entry (including
-one in a custom catalog) does **not** register a Python integration or make
-`specify integration install <key>` work: installation resolves keys through
-`INTEGRATION_REGISTRY`. See [catalog contribution guidance](../integrations/CONTRIBUTING.md)
-for descriptor and submission details.
+The default community catalog is discovery-only. Listing, searching, or
+fetching catalog metadata never imports catalog code. An install-enabled
+catalog permits download, not execution without consent: installation prompts
+before downloading/importing an adapter, or accepts explicit
+`--trust-integration` authorization. Users must review external code; a catalog
+listing is not a code audit or security endorsement.
 
 ## Built-in contract
 
@@ -74,6 +77,133 @@ Bundled extension commands do not yet use this core-template script routing.
 adding per-agent wrapper scripts. For `generic`, extension registration
 resolves the persisted `--commands-dir` rather than the static registry
 placeholder; `--skills` emits skills into that same directory.
+
+## External adapter package contract
+
+A standalone ZIP, tar.gz, or tgz archive needs only these root files (a single
+enclosing archive directory is also accepted):
+
+```text
+integration.yml
+__init__.py
+```
+
+The descriptor is adapter metadata, not an inventory of Spec Kit commands:
+
+```yaml
+schema_version: "1.0"
+integration:
+  id: sample-agent
+  name: Sample Agent
+  version: "1.0.0"
+  description: Adapter for Sample Agent
+requires:
+  speckit_version: ">=1.1.1.dev0"
+```
+
+`integration.author`, `repository`, and `license` are optional metadata.
+`requires.tools` is an optional list of mappings with a non-empty `name`,
+optional boolean `required` (default `true`), and optional PEP 440 `version`
+constraint. Installation checks required tools on PATH; tool version detection
+is adapter-specific, not a generic invocation of arbitrary `--version`
+commands. The Spec Kit constraint is parsed and enforced on install and load,
+including development versions. Legacy `provides.commands` and
+`provides.scripts` remain accepted and validated as optional metadata, but
+are neither required nor used to install core commands.
+
+The root module exports exactly one concrete `IntegrationBase` subclass with
+`key == integration.id`. It can inherit a host format base and use relative
+imports from helper modules in its own package:
+
+```python
+from specify_cli.integrations.base import SkillsIntegration
+
+
+class SampleIntegration(SkillsIntegration):
+    key = "sample-agent"
+    config = {
+        "name": "Sample Agent",
+        "folder": ".sample-agent",
+        "commands_subdir": "skills",
+        "install_url": "https://example.com/sample-agent",
+        "requires_cli": False,
+    }
+    registrar_config = {
+        "dir": ".sample-agent/skills",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": "/SKILL.md",
+    }
+    multi_install_safe = True
+```
+
+`config.name` must match the descriptor. An optional class `version` must match
+its version. `config` and `registrar_config` must provide the fields above;
+the registration directory must match `folder/commands_subdir`. Output paths
+must be canonical, project-local, and outside `.git` and `.specify`.
+Registration extensions must be plain dotted filename suffixes (such as
+`.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
+Multi-install-safe adapters cannot declare overlapping agent roots. Custom
+setup must keep generated agent files under its declared root, track writes
+with `IntegrationManifest`, and leave shared infrastructure ownership to the
+host. Use the host's format bases rather than copied core templates.
+
+CLI adapters override `build_exec_args(prompt, *, model=None,
+output_json=True, integration_args=None, integration_options=None,
+project_root=None)` as appropriate. An adapter using only the host API and
+standard library needs no pip installation or source-registry edit.
+Import-side-effect registration is rejected.
+
+Catalog entries require matching identity, name, version, and description,
+plus `download_url`. Optional descriptor metadata and `requires`, when present
+in the catalog, must match too. `sha256` is an optional 64-character hexadecimal
+digest of the archive bytes; publishing a pinned URL and digest is recommended.
+Downloads use the host authentication configuration, including authenticated
+GitHub release assets. HTTPS is mandatory except for loopback HTTP development
+servers. Redirects, archive format declarations, traversal, symlinks, and
+bounded download/extraction limits are enforced.
+
+### Storage, loading, and lifecycle
+
+Trusted executable packages live in
+`.specify/integrations/packages/<id>/`; their provenance, descriptor metadata,
+trust decision, and per-file hashes live in
+`.specify/integrations/packages.json`. They are **not** generated agent files
+and do not appear in `<id>.manifest.json`. Only recorded, trusted packages are
+loaded, and hash/descriptor validation precedes import. Missing, modified,
+incompatible, or unimportable implementations produce explicit errors.
+Python source is verified again when imported, including relative helper
+modules; cached bytecode is never used to execute package code.
+
+Project selection loads installed adapters before setup, agent configuration,
+extension/preset registration, status, and workflow dispatch. Fresh CLI
+processes use the persisted package, not the catalog. Changing projects unloads
+external registry entries, synthetic Python packages and their submodules, and
+refreshes agent configuration/registrar caches in place. Built-in keys cannot
+be replaced by packages.
+
+`init --integration`, `integration install`, and `integration switch` can
+resolve an uninstalled adapter from an install-enabled catalog. `use` selects
+an already installed adapter. `upgrade` downloads the catalog's current
+version and requires a new trust decision; it still refuses modified generated
+files unless `--force` is supplied. `uninstall` removes executable code and its
+registration while retaining modified generated files unless forced.
+Adapter lifecycle mutations are project-locked and roll back package code,
+metadata, shared infrastructure, and declared agent output roots when
+download/import/setup or durable package commit fails. Extensions and presets
+remain independently installed and follow the active integration as before.
+Cancelling initialization discards the prepared adapter without installing code
+or reporting success.
+Metadata changed by another operation during preparation is not overwritten;
+the operation exits with an explicit retry error.
+External uninstall unregisters the adapter's owned extension/preset artifacts
+before unloading its code, preserves user-modified contributions, and
+re-registers contributions for a remaining default integration.
+If filesystem recovery itself fails, the error reports retained snapshot
+paths for manual recovery rather than deleting the only backup.
+
+See the [catalog contract](../integrations/README.md) and
+[user reference](../docs/reference/integrations.md) for public commands.
 
 ## Ownership and lifecycle
 

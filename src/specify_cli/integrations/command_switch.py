@@ -14,16 +14,19 @@ from ..integration_state import (
     integration_settings as _integration_settings,
 )
 from ._commands import integration_app
+from ._lifecycle import external_lifecycle, lifecycle_success
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
 @integration_app.command("switch")
+@external_lifecycle("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
     refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
+    trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
 ):
     """Switch from the current integration to a different one."""
     from . import INTEGRATION_REGISTRY, get_integration
@@ -115,7 +118,7 @@ def integration_switch(
                 "need re-registration."
             ),
         )
-        console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
+        lifecycle_success(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
     selected_script = _resolve_script_type(project_root, script)
@@ -366,4 +369,4 @@ def integration_switch(
     )
 
     name = (target_integration.config or {}).get("name", target)
-    console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
+    lifecycle_success(f"\n[green]✓[/green] Switched to integration '{name}'")

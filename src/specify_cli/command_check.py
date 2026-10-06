@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
+from rich.markup import escape
 
 from ._agent_config import AGENT_CONFIG
 from ._console import StepTracker, console, show_banner
@@ -11,6 +14,14 @@ from ._console import StepTracker, console, show_banner
 def check() -> None:
     """Check that all required tools are installed."""
     from . import check_tool
+    from ._project import _resolve_init_dir_override
+    from .integrations.installer import IntegrationInstallError, load_installed_integrations
+
+    try:
+        load_installed_integrations(_resolve_init_dir_override() or Path.cwd())
+    except (IntegrationInstallError, OSError) as exc:
+        console.print(f"[red]Error:[/red] {escape(str(exc))}")
+        raise typer.Exit(1) from exc
 
     show_banner()
     console.print("[bold]Checking for installed tools...[/bold]\n")

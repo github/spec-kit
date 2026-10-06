@@ -77,11 +77,12 @@ specify integration list
 
 | Option      | Description                                                                                                             |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `--catalog` | Also browse the catalog (built-in **and** community). Community integrations that are not built in are only shown here.  |
+| `--catalog` | Also browse the catalog, including external integrations not installed in this project. |
 
-Shows the built-in integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
+Shows built-in and trusted installed external integrations, which one is
+currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
-The list also shows whether each built-in integration is declared multi-install safe.
+The list also shows whether each integration is declared multi-install safe.
 
 ## Search Available Integrations
 
@@ -119,6 +120,7 @@ specify integration install <key>
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--force`                | Opt in to installing alongside integrations that are not declared multi-install safe |
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
+| `--trust-integration` | After reviewing the code, pre-authorize an external adapter's Python execution without the interactive trust prompt |
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
 
@@ -133,6 +135,54 @@ Installing an additional integration does not change the default integration. Us
 Installed extensions and presets are not registered for a non-default integration at install time — they follow the currently active (default) integration only. `specify integration use <key>` (or `switch <key>`) is what rescaffolds them for the newly active integration.
 
 > **Note:** All integration management commands require a project already initialized with `specify init`. To start a new project with a specific agent, use `specify init <project> --integration <key>` instead.
+
+### Catalog-installed external adapters
+
+Register a reviewed catalog in the initialized project, then install its adapter:
+
+```bash
+specify integration catalog add https://example.com/catalog.json --name samples
+specify integration install sample-agent
+specify integration use sample-agent
+```
+
+Installation prompts for trust **before** downloading/importing Python. For
+automation, explicitly authorize code you have reviewed:
+
+```bash
+specify integration install sample-agent --trust-integration
+specify integration upgrade sample-agent --trust-integration
+```
+
+The source must have `install_allowed: true`. The default community catalog is
+discovery-only; neither `--force` nor the trust flag bypasses that policy.
+Catalog listing/search/info do not import catalog code. Required external entry
+fields are a map key matching the descriptor ID, name, version, description,
+and an archive `download_url`; an optional explicit `id` must match the map key;
+an archive `sha256` digest is recommended. Downloads support ZIP, tar.gz, and tgz,
+HTTPS or loopback HTTP, and the existing authenticated GitHub asset flow.
+See the [catalog schema](../../integrations/README.md#catalog-schema).
+
+A package contains root `integration.yml` and `__init__.py`, not a copied
+inventory of Spec Kit's commands. The host renders shared templates through the
+adapter and registers installed extension/preset contributions for the default
+integration. Code persists under `.specify/integrations/packages/<id>/`,
+separately from generated agent files and their manifests. New CLI processes
+load the trusted package without consulting the catalog. Missing, modified, or
+incompatible code is an error, not a silent fallback. Upgrade installs the
+catalog's current adapter version; uninstall removes its persisted code while
+preserving modified generated files by default.
+
+For initialization, a project/user catalog or `SPECKIT_INTEGRATION_CATALOG_URL`
+can supply an external adapter:
+
+```bash
+specify init my-project --integration sample-agent --trust-integration
+```
+
+Review the [external adapter API](../../design/integration.md#external-adapter-package-contract)
+before publishing a package. No pip installation or source-registry edit is
+needed for adapters using the host API and standard library.
 
 **Version note:** Controlled multi-install support was introduced in Spec Kit 0.8.5. If `specify integration install <key>` says another integration is already installed and only suggests `switch` or `uninstall`, check your local CLI with `specify version` and upgrade it. Running a one-shot command such as `uvx --from git+https://github.com/github/spec-kit.git specify ...` uses a temporary copy for that command only; it does not update the persistent `specify` executable on your `PATH`.
 

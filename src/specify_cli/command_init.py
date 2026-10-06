@@ -257,7 +257,10 @@ def ensure_constitution_from_template(
 
 
 def register(app: typer.Typer) -> None:
+    from .integrations._lifecycle import external_lifecycle, initial_directory_state, lifecycle_success
+
     @app.command()
+    @external_lifecycle("init")
     def init(
         project_name: str = typer.Argument(
             None,
@@ -339,6 +342,10 @@ def register(app: typer.Typer) -> None:
             False,
             "--trust-extension-urls",
             help="Pre-authorize installing extensions from external URLs without the interactive trust prompt (required for non-interactive URL installs).",
+        ),
+        trust_integration: bool = typer.Option(
+            False, "--trust-integration",
+            help="Authorize executing a reviewed external integration package without prompting.",
         ),
     ):
         """
@@ -432,7 +439,8 @@ def register(app: typer.Typer) -> None:
             project_path = Path.cwd()
             dir_existed_before = True
 
-            existing_items = list(project_path.iterdir())
+            original_directory = initial_directory_state(project_path)
+            existing_items = original_directory[1] if original_directory else list(project_path.iterdir())
             if existing_items:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
@@ -487,15 +495,16 @@ def register(app: typer.Typer) -> None:
                         raise typer.Exit(0)
         else:
             project_path = Path(project_name).resolve()
-            dir_existed_before = project_path.exists()
-            if project_path.exists():
+            original_directory = initial_directory_state(project_path)
+            dir_existed_before = original_directory[0] if original_directory else project_path.exists()
+            if dir_existed_before:
                 safe_name = _escape_markup(str(project_name))
                 if not project_path.is_dir():
                     console.print(
                         f"[red]Error:[/red] '{safe_name}' exists but is not a directory."
                     )
                     raise typer.Exit(1)
-                existing_items = list(project_path.iterdir())
+                existing_items = original_directory[1] if original_directory else list(project_path.iterdir())
                 if force:
                     if existing_items:
                         console.print(
@@ -974,7 +983,7 @@ def register(app: typer.Typer) -> None:
 
         if _transient:
             console.print(tracker.render())
-        console.print("\n[bold green]Project ready.[/bold green]")
+        lifecycle_success("\n[bold green]Project ready.[/bold green]")
 
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config:

@@ -1928,6 +1928,9 @@ class ExtensionManager:
                 # Recorded paths and static roots still allow safe cleanup.
                 pass
 
+        from ..integrations import load_installed_integrations
+
+        load_installed_integrations(self.project_root)
         registrar = CommandRegistrar()
         for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
             if agent_config.get("extension") != "/SKILL.md":
@@ -3518,6 +3521,9 @@ class ExtensionManager:
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
             if safe_commands:
+                from ..integrations import load_installed_integrations
+
+                load_installed_integrations(self.project_root)
                 CommandRegistrar().unregister_commands(
                     safe_commands, self.project_root
                 )

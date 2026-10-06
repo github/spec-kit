@@ -159,6 +159,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         Args:
             project_root: Path to project root directory
         """
+        from ..integrations import load_installed_integrations
+
+        load_installed_integrations(project_root)
         self.project_root = project_root
         self.presets_dir = project_root / ".specify" / "presets"
         self.registry = PresetRegistry(self.presets_dir)

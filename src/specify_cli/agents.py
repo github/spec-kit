@@ -60,6 +60,10 @@ class CommandRegistrar:
     _configs_loaded: bool = False
 
     def __init__(self, project_root: Path | None = None) -> None:
+        if project_root is not None:
+            from .integrations import load_installed_integrations
+
+            load_installed_integrations(project_root)
         self._ensure_configs()
         self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
         if project_root is not None:
@@ -85,7 +89,8 @@ class CommandRegistrar:
     def _ensure_configs(cls) -> None:
         if not cls._configs_loaded:
             try:
-                cls.AGENT_CONFIGS = _build_agent_configs()
+                cls.AGENT_CONFIGS.clear()
+                cls.AGENT_CONFIGS.update(_build_agent_configs())
                 cls._configs_loaded = True
             except ImportError:
                 pass  # Circular import during module init; retry on next access

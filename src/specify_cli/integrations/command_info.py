@@ -20,6 +20,7 @@ def integration_info(
 ):
     """Show catalog details for a single integration."""
     from . import (
+        BUILTIN_INTEGRATION_KEYS,
         INTEGRATION_REGISTRY,
         IntegrationCatalog,
         IntegrationCatalogError,
@@ -106,10 +107,16 @@ def integration_info(
                 f"  [dim]Repository:[/dim] {_rich_escape(str(info['repository']))}"
             )
 
+        if integration_id in INTEGRATION_REGISTRY and integration_id not in BUILTIN_INTEGRATION_KEYS:
+            from .installer import read_records
+
+            console.print(f"  [dim]Installed package version:[/dim] {read_records(project_root)[integration_id]['version']}")
         if integration_id == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
-        elif integration_id in INTEGRATION_REGISTRY:
+        elif integration_id in BUILTIN_INTEGRATION_KEYS:
             console.print("\n  [dim]Built-in integration (not currently active)[/dim]")
+        elif integration_id in INTEGRATION_REGISTRY:
+            console.print("\n  [dim]Installed external integration (not currently active)[/dim]")
         return
 
     if integration_id in INTEGRATION_REGISTRY:
@@ -117,7 +124,12 @@ def integration_info(
         cfg = integration.config or {}
         name = cfg.get("name", integration_id)
         console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id})")
-        console.print("  [dim]Built-in integration (not listed in catalog)[/dim]")
+        label = "Built-in integration" if integration_id in BUILTIN_INTEGRATION_KEYS else "Installed external integration"
+        console.print(f"  [dim]{label} (not listed in catalog)[/dim]")
+        if integration_id not in BUILTIN_INTEGRATION_KEYS:
+            from .installer import read_records
+
+            console.print(f"  [dim]Package version:[/dim] {read_records(project_root)[integration_id]['version']}")
         if integration_id == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
         if catalog_error:

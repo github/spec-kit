@@ -135,6 +135,19 @@ fix to a broken entry is still an update and needs the same validation. Always p
 `download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
 `.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
 
+### External agent adapters
+
+External integrations adapt the host's commands and extension/preset
+contributions; they do not redistribute a core command inventory. Publish a
+standalone package with root `integration.yml` and `__init__.py`, then advertise
+its pinned archive URL and preferably its SHA-256 in a catalog. Registering a
+catalog only enables discovery/download; importing executable adapter code
+requires the user's trust decision and an install-enabled source. Follow the
+[integration API and lifecycle design](design/integration.md#external-adapter-package-contract)
+and [integration catalog contribution guide](integrations/CONTRIBUTING.md).
+Add public-path positive and negative tests rather than injecting test classes
+directly into the registry; include fresh-process loading and rollback evidence.
+
 ### Branch naming
 
 When an issue exists, name the branch `<type>/<issue-number>-<short-slug>`.

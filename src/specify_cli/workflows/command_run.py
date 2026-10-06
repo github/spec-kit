@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from . import _commands as cli
 from . import _command_run_ownership as run_ownership
+from . import _commands as cli
 
 
 @cli.workflow_app.command("run")
@@ -19,6 +19,7 @@ def workflow_run(
     ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
+    from ..integrations.installer import IntegrationInstallError
     from . import load_custom_steps
     from .engine import WorkflowEngine
 
@@ -35,10 +36,14 @@ def workflow_run(
         project_root = override if override is not None else cli.Path.cwd()
         cli._reject_unsafe_workflow_storage(project_root)
     else:
-        project_root = cli._require_specify_project()
+        project_root = cli._require_specify_project(load_integrations=False)
 
-    load_custom_steps(project_root)
-    engine = WorkflowEngine(project_root)
+    try:
+        with cli._stdout_to_stderr_when(json_output):
+            load_custom_steps(project_root)
+            engine = WorkflowEngine(project_root)
+    except (IntegrationInstallError, OSError) as exc:
+        cli._fail_integration_load(exc, json_output=json_output)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
         # of parsing it as a style tag named after the step id -- which it
@@ -135,6 +140,8 @@ def workflow_run(
                     else None
                 ),
             )
+    except IntegrationInstallError as exc:
+        cli._fail_integration_load(exc, json_output=json_output)
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)

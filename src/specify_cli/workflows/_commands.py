@@ -46,6 +46,22 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | None = None):
+    """Surface adapter failures before a workflow run state can be created."""
+    if json_output:
+        _emit_workflow_json({
+            "run_id": run_id,
+            "workflow_id": None,
+            "status": "failed",
+            "current_step_id": None,
+            "current_step_index": None,
+            "error": str(exc),
+        })
+    else:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+    raise typer.Exit(1) from exc
+
+
 def _open_workflow_registry(project_root: Path, out=None):
     """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
 

@@ -18,15 +18,18 @@ from ..integration_state import (
     integration_settings as _integration_settings,
 )
 from ._commands import integration_app
+from ._lifecycle import external_lifecycle, lifecycle_success
 from ._helpers import _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("install")
+@external_lifecycle("install")
 def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Allow multi-install when integrations are not declared safe"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
+    trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
 ):
     """Install an integration into an existing project."""
     from . import INTEGRATION_REGISTRY, get_integration
@@ -194,6 +197,6 @@ def integration_install(
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
-    console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{name}' installed successfully")
     if default_key:
         console.print(f"[dim]Default integration remains:[/dim] [cyan]{default_key}[/cyan]")
