@@ -321,6 +321,60 @@ def test_json_validation_failures_do_not_create_target(
     assert not (tmp_path / "project").exists()
 
 
+@pytest.mark.parametrize(
+    ("integration", "options", "diagnostic"),
+    [
+        (
+            "copilot",
+            '--skills "',
+            "Could not parse integration options: No closing quotation.",
+        ),
+        (
+            "copilot",
+            "--missing",
+            "Unknown integration option '--missing'.",
+        ),
+        (
+            "copilot",
+            "--skills=true",
+            "Option '--skills' is a flag and does not accept a value.",
+        ),
+        (
+            "generic",
+            "--commands-dir",
+            "Option '--commands-dir' requires a value.",
+        ),
+        (
+            "copilot",
+            "--skills stray",
+            "Unexpected integration option value 'stray'.",
+        ),
+    ],
+)
+def test_json_integration_option_failures_preserve_parser_diagnostic(
+    tmp_path: Path,
+    integration: str,
+    options: str,
+    diagnostic: str,
+):
+    error = _failure(
+        _invoke(
+            [
+                "project",
+                "--json",
+                "--integration",
+                integration,
+                f"--integration-options={options}",
+            ],
+            cwd=tmp_path,
+        ),
+        "invalid_integration_options",
+    )
+
+    assert diagnostic in error["details"]["reason"]
+    assert not (tmp_path / "project").exists()
+
+
 def test_json_init_reports_missing_required_agent_tool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

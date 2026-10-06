@@ -12,6 +12,7 @@ from .catalog import catalog_app as integration_catalog_app  # noqa: F401 — co
 
 # Re-export helpers used by command_init.py and tests
 from ._helpers import (  # noqa: F401
+    _IntegrationOptionsError,
     _cli_error_detail,
     _cli_phase_label,
     _parse_integration_options,

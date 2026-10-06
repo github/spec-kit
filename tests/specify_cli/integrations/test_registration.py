@@ -106,6 +106,9 @@ class TestParseIntegrationOptionsEqualsForm:
         with pytest.raises(typer.Exit) as excinfo:
             _parse_integration_options(integration, '--commands-dir "foo')
         assert excinfo.value.exit_code == 1
+        assert excinfo.value.diagnostic == (
+            "Could not parse integration options: No closing quotation."
+        )
         assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
 
     def test_bad_option_token_with_rich_markup_exits_cleanly(self):

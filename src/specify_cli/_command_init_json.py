@@ -117,7 +117,10 @@ def _preflight(
         _validate_init_integration_options,
     )
     from .integrations import get_integration
-    from .integrations._commands import _parse_integration_options
+    from .integrations._commands import (
+        _IntegrationOptionsError,
+        _parse_integration_options,
+    )
 
     if project_name == ".":
         here = True
@@ -251,6 +254,15 @@ def _preflight(
             parsed_options or None,
             integration_options,
         )
+    except _IntegrationOptionsError as exc:
+        raise InitJsonFailure(
+            "invalid_integration_options",
+            "Integration options are invalid.",
+            {
+                "integration": selected_integration,
+                "reason": exc.diagnostic,
+            },
+        ) from exc
     except _InitIntegrationOptionsError as exc:
         raise InitJsonFailure(
             "invalid_integration_options",

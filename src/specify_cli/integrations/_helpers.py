@@ -184,6 +184,14 @@ def _resolve_integration_script_type(
 # Integration options
 # ---------------------------------------------------------------------------
 
+class _IntegrationOptionsError(typer.Exit):
+    """Exit carrying the parser diagnostic for machine-readable callers."""
+
+    def __init__(self, diagnostic: str):
+        super().__init__(1)
+        self.diagnostic = diagnostic
+
+
 def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
     """Parse --integration-options string into a dict matching the integration's declared options.
 
@@ -198,8 +206,9 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
         # makes shlex raise "No closing quotation". Translate it into the same
         # clean exit-1 UX as every other bad-input path below rather than
         # letting a raw traceback escape.
-        console.print(f"[red]Error:[/red] Could not parse integration options: {exc}.")
-        raise typer.Exit(1)
+        diagnostic = f"Could not parse integration options: {exc}."
+        console.print(f"[red]Error:[/red] {diagnostic}")
+        raise _IntegrationOptionsError(diagnostic)
     declared_options = list(integration.options())
     declared = {opt.name.lstrip("-"): opt for opt in declared_options}
     allowed = ", ".join(sorted(opt.name for opt in declared_options))
@@ -208,9 +217,11 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
         token = tokens[i]
         if not token.startswith("-"):
             console.print(f"[red]Error:[/red] Unexpected integration option value '{escape(token)}'.")
+            diagnostic = f"Unexpected integration option value '{token}'."
             if allowed:
                 console.print(f"Allowed options: {allowed}")
-            raise typer.Exit(1)
+                diagnostic += f" Allowed options: {allowed}."
+            raise _IntegrationOptionsError(diagnostic)
         name = token.lstrip("-")
         value: str | None = None
         # Handle --name=value syntax
@@ -219,14 +230,19 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
         opt = declared.get(name)
         if not opt:
             console.print(f"[red]Error:[/red] Unknown integration option '{escape(token)}'.")
+            diagnostic = f"Unknown integration option '{token}'."
             if allowed:
                 console.print(f"Allowed options: {allowed}")
-            raise typer.Exit(1)
+                diagnostic += f" Allowed options: {allowed}."
+            raise _IntegrationOptionsError(diagnostic)
         key = name.replace("-", "_")
         if opt.is_flag:
             if value is not None:
-                console.print(f"[red]Error:[/red] Option '{opt.name}' is a flag and does not accept a value.")
-                raise typer.Exit(1)
+                diagnostic = (
+                    f"Option '{opt.name}' is a flag and does not accept a value."
+                )
+                console.print(f"[red]Error:[/red] {diagnostic}")
+                raise _IntegrationOptionsError(diagnostic)
             parsed[key] = True
             i += 1
         elif value is not None:
@@ -236,8 +252,9 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
             parsed[key] = tokens[i + 1]
             i += 2
         else:
-            console.print(f"[red]Error:[/red] Option '{opt.name}' requires a value.")
-            raise typer.Exit(1)
+            diagnostic = f"Option '{opt.name}' requires a value."
+            console.print(f"[red]Error:[/red] {diagnostic}")
+            raise _IntegrationOptionsError(diagnostic)
     return parsed or None
 
 
