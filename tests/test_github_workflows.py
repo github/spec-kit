@@ -525,14 +525,125 @@ def test_bundle_submission_form_applies_only_automatic_intake_verdict():
     assert "bundle-submission" not in bundle_form["labels"]
 
 
+def test_workflow_step_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert workflow_step_form["labels"] == ["triage-must-have"]
+    assert not {
+        "enhancement",
+        "needs-triage",
+        "workflow-step-submission",
+        "validation-passed",
+        "validation-failed",
+    } & set(workflow_step_form["labels"])
+
+
+def test_workflow_step_submission_form_has_valid_complete_field_contract():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    fields = [item for item in workflow_step_form["body"] if "id" in item]
+    field_ids = [field["id"] for field in fields]
+
+    assert len(field_ids) == len(set(field_ids))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", field_id) for field_id in field_ids)
+    assert set(field_ids) == {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "release-artifact-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "changelog",
+        "testing-details",
+        "attestations",
+        "additional-context",
+    }
+    required_ids = {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "release-artifact-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "testing-details",
+    }
+    assert {
+        field["id"]
+        for field in fields
+        if field.get("validations", {}).get("required") is True
+    } == required_ids
+    field_by_id = {field["id"]: field for field in fields}
+    assert field_by_id["step-type-count"][
+        "attributes"
+    ]["options"] == ["1"]
+    assert all(
+        option["required"] is True
+        for option in field_by_id["attestations"]["attributes"]["options"]
+    )
+
+
+def test_workflow_step_submission_form_documents_intake_only_phase():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    introduction = workflow_step_form["body"][0]["attributes"]["value"]
+
+    assert "This phase is intake-only" in introduction
+    assert "no validation workflow or draft pull request is triggered" in introduction
+    assert "update the community catalog through the normal reviewed pull request" in (
+        introduction
+    )
+
+
 def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
     forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
-    for form_name in (
+    automatic_intake_forms = {
+        "bundle_submission.yml",
+        "extension_submission.yml",
+        "preset_submission.yml",
+        "workflow_step_submission.yml",
+    }
+    other_forms = sorted(
+        path
+        for path in forms_dir.glob("*.yml")
+        if path.name != "config.yml" and path.name not in automatic_intake_forms
+    )
+
+    assert [path.name for path in other_forms] == [
         "agent_request.yml",
         "bug_report.yml",
         "feature_request.yml",
-    ):
-        form = yaml.safe_load((forms_dir / form_name).read_text(encoding="utf-8"))
+    ]
+    for form_path in other_forms:
+        form = yaml.safe_load(form_path.read_text(encoding="utf-8"))
         assert "triage-must-have" not in form["labels"]
 
 

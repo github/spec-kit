@@ -587,6 +587,9 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 Custom step types are installed with `specify workflow step`. A step is a
 directory package containing metadata and executable Python:
 
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
+
 ```text
 my-step/
 ├── step.yml        # required, at the package root

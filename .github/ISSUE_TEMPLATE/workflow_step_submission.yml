@@ -1,0 +1,237 @@
+name: Workflow Step Type Submission
+description: Submit a custom workflow step package for community catalog intake
+title: "[Workflow Step]: Add "
+labels: ["triage-must-have"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing a workflow step type! This form captures the package, release, and catalog metadata needed for manual community catalog review.
+
+        **Before submitting:**
+        - Review the [Community Workflow Step Types guide](https://github.com/github/spec-kit/blob/main/docs/community/workflow-steps.md)
+        - Publish a package containing root-level `step.yml` and `__init__.py` files
+        - Ensure `step.type_key`, the catalog ID, and the matching `StepBase.type_key` are identical
+        - Create an immutable, versioned release artifact and tag-pinned URLs for every catalog-downloaded file
+        - Test the release artifact with `specify workflow step add <step-id> --from <artifact-url>`
+
+        **After submitting:** GitHub automatically applies only the `triage-must-have` intake verdict. This phase is intake-only: no validation workflow or draft pull request is triggered. Maintainers currently review the metadata manually and, when accepted, update the community catalog through the normal reviewed pull request process.
+
+  - type: input
+    id: step-id
+    attributes:
+      label: Step Type ID
+      description: Exact catalog key and `step.type_key`; it must be one safe path component and must not collide with a built-in step type
+      placeholder: "e.g., deploy"
+    validations:
+      required: true
+
+  - type: input
+    id: step-name
+    attributes:
+      label: Step Type Name
+      description: Human-readable name declared in `step.yml`
+      placeholder: "e.g., Deploy"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: PEP 440-compatible release version; it must match `step.version` in the submitted `step.yml`
+      placeholder: "e.g., 1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Concise description of the workflow behavior this step type implements
+      placeholder: Deploys the current project to a configured environment and returns the deployment URL
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Name or organization declared for the package
+      placeholder: "e.g., Jane Doe or Acme Corp"
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      description: Public source repository containing the submitted package
+      placeholder: "https://github.com/your-org/spec-kit-step-deploy"
+    validations:
+      required: true
+
+  - type: input
+    id: release-artifact-url
+    attributes:
+      label: Release Artifact URL
+      description: Exact immutable `.zip`, `.tar.gz`, or `.tgz` download URL for this version; do not use a latest-release or branch URL
+      placeholder: "https://github.com/your-org/spec-kit-step-deploy/releases/download/v1.0.0/deploy-1.0.0.zip"
+    validations:
+      required: true
+
+  - type: input
+    id: step-yml-url
+    attributes:
+      label: step.yml URL
+      description: Exact tag-pinned HTTPS URL used as the catalog `step_yml_url` (or `url`)
+      placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/step.yml"
+    validations:
+      required: true
+
+  - type: input
+    id: init-url
+    attributes:
+      label: __init__.py URL
+      description: Exact tag-pinned HTTPS URL used as the catalog `init_url`
+      placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/__init__.py"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra-files
+    attributes:
+      label: Extra File URLs
+      description: JSON mapping of every additional package-relative file path to its exact tag-pinned HTTPS URL; enter `{}` when there are no extra files
+      render: json
+      placeholder: |
+        {
+          "helpers.py": "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/helpers.py"
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: file-sha256
+    attributes:
+      label: Per-file SHA-256 Digests
+      description: JSON mapping containing exactly `step.yml`, `__init__.py`, and every Extra File URL path, each with a 64-character hexadecimal SHA-256 digest
+      render: json
+      placeholder: |
+        {
+          "step.yml": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "__init__.py": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "helpers.py": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: SPDX license identifier for the package; the repository must include the corresponding license text
+      placeholder: "e.g., MIT or Apache-2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: speckit-compatibility
+    attributes:
+      label: Spec Kit Compatibility
+      description: Spec Kit version constraint tested with this release; the current step catalog does not yet enforce this constraint
+      placeholder: "e.g., >=0.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: runtime-dependencies
+    attributes:
+      label: Runtime and Tool Dependencies
+      description: List required Python packages, executables, services, environment variables, or platform constraints; enter `None` when the package has no external dependencies
+      placeholder: |
+        - Python package: requests>=2.32
+        - Executable: kubectl>=1.30
+        - Environment variable: KUBECONFIG
+    validations:
+      required: true
+
+  - type: dropdown
+    id: step-type-count
+    attributes:
+      label: Number of Provided Step Types
+      description: One installed package currently registers exactly one `step.type_key`
+      options:
+        - "1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: step-types-provided
+    attributes:
+      label: Step Type Provided
+      description: Name the single `StepBase` subclass and its exact `type_key`
+      placeholder: "DeployStep — deploy"
+    validations:
+      required: true
+
+  - type: input
+    id: documentation
+    attributes:
+      label: Documentation URL
+      description: Tag-pinned documentation covering configuration, outputs, failure behavior, side effects, and an example workflow
+      placeholder: "https://github.com/your-org/spec-kit-step-deploy/blob/v1.0.0/README.md"
+    validations:
+      required: true
+
+  - type: input
+    id: changelog
+    attributes:
+      label: Changelog URL
+      description: Tag-pinned changelog for this release; leave empty only for an initial release with no prior versions
+      placeholder: "https://github.com/your-org/spec-kit-step-deploy/blob/v1.0.0/CHANGELOG.md"
+
+  - type: textarea
+    id: testing-details
+    attributes:
+      label: Testing Details
+      description: Describe positive and negative configuration tests, execution/status/output tests, and any resume, nested, or concurrent behavior that applies
+      placeholder: |
+        **Tested with:** Spec Kit 0.11.0 on macOS and Ubuntu
+
+        **Evidence:**
+        - Valid configuration completes with the documented outputs
+        - Invalid configuration returns a failed result with an actionable error
+        - Release artifact installs with `specify workflow step add deploy --from ...`
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: attestations
+    attributes:
+      label: Required Attestations
+      description: Confirm the submitted release satisfies the current external step-package contract
+      options:
+        - label: The release artifact contains regular, non-symlink `step.yml` and `__init__.py` files at the package root or under exactly one top-level directory
+          required: true
+        - label: The catalog ID, `step.type_key`, and the matching `StepBase.type_key` are identical and do not collide with a built-in step type
+          required: true
+        - label: The submitted version matches `step.version`, and every release and file URL is pinned to this immutable version
+          required: true
+        - label: The SHA-256 mapping covers exactly every file the catalog installer downloads
+          required: true
+        - label: The release artifact installs successfully with `specify workflow step add <step-id> --from <artifact-url>`
+          required: true
+        - label: Runtime and tool dependencies, side effects, configuration, outputs, and failure behavior are documented
+          required: true
+        - label: The repository includes the submitted license and complete source for the released package
+          required: true
+        - label: I understand that custom workflow steps execute Python with the user's privileges and that a community catalog listing is not a code audit, endorsement, or support commitment
+          required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Optional links or notes that help maintainers verify the submitted metadata
+      placeholder: Release notes, compatibility notes, or related issue links
