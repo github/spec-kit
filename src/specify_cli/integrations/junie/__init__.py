@@ -195,6 +195,13 @@ class JunieIntegration(MarkdownIntegration):
         ``post_process_command_content``) applies these transforms to
         extension/preset command files too, not just core commands.
         """
+        # If it looks like frontmatter but is malformed (missing closing dashes),
+        # short-circuit to avoid partial transformations on an invalid file.
+        if content.startswith("---"):
+            parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
+            if len(parts) < 3:
+                return content
+
         # FR-001: Detect $ARGUMENTS before transformation
         # Use a token-aware search to avoid false positives with substrings like $ARGUMENTS_SUFFIX.
         has_arguments = bool(re.search(r"\$ARGUMENTS(?![A-Za-z0-9_-])", content))

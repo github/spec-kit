@@ -1,6 +1,4 @@
 """Reproduction tests for Junie token mangling bug."""
-
-import pytest
 from specify_cli.integrations import get_integration
 
 def test_junie_token_mangling_reproduction():
@@ -44,3 +42,19 @@ def test_transform_body_variables_direct():
     assert junie._transform_body_variables("$ARGUMENTS_SUFFIX") == "$$ARGUMENTS_SUFFIX"
     assert junie._transform_body_variables("$prompt") == "$$prompt"
     assert junie._transform_body_variables("$foo") == "$$foo"
+
+def test_malformed_frontmatter_short_circuit():
+    """Verify that malformed frontmatter short-circuits the pipeline."""
+    junie = get_integration("junie")
+    
+    # Input starts with --- but has no closing ---
+    content = "---\n$ARGUMENTS"
+    updated = junie.post_process_command_content(content)
+    
+    # It should be returned unchanged
+    assert updated == content
+
+    # Case with spaces after dashes
+    content = "--- \n$ARGUMENTS"
+    updated = junie.post_process_command_content(content)
+    assert updated == content
