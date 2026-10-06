@@ -12,7 +12,7 @@ from .versioning import same_version
 class ConflictReport:
     integration_clash: str | None = None  # message when a hard clash exists
     version_clashes: list[str] = field(default_factory=list)
-    overlaps: list[str] = field(default_factory=list)  # components already provided
+    overlaps: list[str] = field(default_factory=list)  # components already required
 
     @property
     def has_blocking_conflict(self) -> bool:
@@ -58,7 +58,7 @@ def detect_conflicts(
                 )
             else:
                 report.overlaps.append(
-                    f"{component.kind[:-1]} '{component.id}' is already provided by "
+                    f"{component.kind[:-1]} '{component.id}' is already required by "
                     f"bundle '{owner}'."
                 )
 

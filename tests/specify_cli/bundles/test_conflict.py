@@ -40,8 +40,30 @@ def test_overlap_with_other_bundle_is_reported():
         components=[ComponentRef(kind="presets", id="preset-a", version="2.0.0")],
     )
     report = detect_conflicts(manifest, active_integration="copilot", installed=[other])
-    assert any("preset-a" in o and "other" in o for o in report.overlaps)
+    assert report.overlaps == [
+        "preset 'preset-a' is already required by bundle 'other'."
+    ]
     assert report.has_blocking_conflict is False
+
+
+def test_required_only_overlap_does_not_attribute_component_ownership(tmp_path):
+    manifest = _manifest()
+    other = InstalledBundleRecord.create(
+        bundle_id="other",
+        version="1.0.0",
+        components=[],
+        required_components=[
+            ComponentRef(kind="presets", id="preset-a", version="2.0.0")
+        ],
+    )
+    report = detect_conflicts(manifest, active_integration="copilot", installed=[other])
+
+    assert report.overlaps == [
+        "preset 'preset-a' is already required by bundle 'other'."
+    ]
+    assert report.has_blocking_conflict is False
+    save_records(tmp_path, [other])
+    assert _bundle_overlaps(tmp_path, manifest, offline=True) == report.overlaps
 
 
 def test_same_bundle_reinstall_is_not_overlap():
