@@ -468,6 +468,7 @@ class PresetCatalog:
             PresetError: If catalog cannot be fetched
         """
         # Honor the established package-level patch points during extraction.
+        from ..authentication.http import RedirectPolicyError
         from . import MAX_JSON_CATALOG_BYTES, read_response_limited
 
         cache_file, metadata_file = self._get_cache_paths(entry.url)
@@ -549,6 +550,10 @@ class PresetCatalog:
             return catalog_data
 
         except (ImportError, Exception) as e:
+            if isinstance(e, RedirectPolicyError):
+                raise PresetCatalogValidationError(
+                    f"Invalid preset catalog redirect from {entry.url}: {e}"
+                ) from e
             if isinstance(e, PresetError):
                 raise
             raise PresetCatalogFetchError(
@@ -594,7 +599,7 @@ class PresetCatalog:
                     merged[found_id] = pack_data_with_catalog
                     if pack_id is not None:
                         return merged
-            except PresetCatalogValidationError:
+            except (PresetCatalogValidationError, PresetValidationError):
                 raise
             except PresetError as exc:
                 if first_fetch_error is None:
@@ -659,6 +664,7 @@ class PresetCatalog:
         Raises:
             PresetError: If catalog cannot be fetched
         """
+        from ..authentication.http import RedirectPolicyError
         from . import MAX_JSON_CATALOG_BYTES, read_response_limited
 
         catalog_url = self.get_catalog_url()
@@ -741,6 +747,10 @@ class PresetCatalog:
             return catalog_data
 
         except (ImportError, Exception) as e:
+            if isinstance(e, RedirectPolicyError):
+                raise PresetCatalogValidationError(
+                    f"Invalid preset catalog redirect from {catalog_url}: {e}"
+                ) from e
             if isinstance(e, PresetError):
                 raise
             raise PresetCatalogFetchError(

@@ -4739,6 +4739,8 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
+            from specify_cli.authentication.http import RedirectPolicyError
+
             # Validate EVERY redirect hop, not just the terminal URL. _open_url
             # follows redirects; _StripAuthOnRedirect drops auth on an HTTPS->HTTP
             # downgrade AND whenever the redirect leaves the configured trusted
@@ -4798,6 +4800,14 @@ class ExtensionCatalog(CatalogStackBase):
 
             return catalog_data
 
+        except ValidationError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid catalog URL from {entry.url}: {e}"
+            ) from e
+        except RedirectPolicyError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid catalog redirect from {entry.url}: {e}"
+            ) from e
         except urllib.error.URLError as e:
             raise ExtensionCatalogFetchError(
                 f"Failed to fetch catalog from {entry.url}: {e}"
@@ -4805,6 +4815,10 @@ class ExtensionCatalog(CatalogStackBase):
         except json.JSONDecodeError as e:
             raise ExtensionCatalogValidationError(
                 f"Invalid JSON in catalog from {entry.url}: {e}"
+            ) from e
+        except UnicodeError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid encoding in catalog from {entry.url}: {e}"
             ) from e
 
     def _get_merged_extensions(
@@ -4967,6 +4981,8 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             import urllib.error
 
+            from specify_cli.authentication.http import RedirectPolicyError
+
             # Same redirect hardening as _fetch_single_catalog: validate every
             # redirect hop AND the final URL so this legacy single-catalog path
             # is not vulnerable to an HTTPS->HTTP redirected payload either.
@@ -5020,10 +5036,22 @@ class ExtensionCatalog(CatalogStackBase):
 
             return catalog_data
 
+        except ValidationError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid catalog URL from {catalog_url}: {e}"
+            ) from e
+        except RedirectPolicyError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid catalog redirect from {catalog_url}: {e}"
+            ) from e
         except urllib.error.URLError as e:
-            raise ExtensionError(f"Failed to fetch catalog from {catalog_url}: {e}")
+            raise ExtensionError(f"Failed to fetch catalog from {catalog_url}: {e}") from e
         except json.JSONDecodeError as e:
-            raise ExtensionError(f"Invalid JSON in catalog: {e}")
+            raise ExtensionError(f"Invalid JSON in catalog: {e}") from e
+        except UnicodeError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid encoding in catalog from {catalog_url}: {e}"
+            ) from e
 
     def search(
         self,

@@ -426,6 +426,175 @@ def test_online_validation_rejects_unsafe_catalog_redirect(
     assert warnings == []
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+@pytest.mark.parametrize("redirect", ["validator", "policy"])
+def test_online_validation_does_not_skip_unsafe_higher_priority_catalog(
+    tmp_path, monkeypatch, kind, redirect,
+):
+    import io
+    import json
+
+    from specify_cli.authentication.http import RedirectPolicyError
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+    from specify_cli.presets import PresetCatalog, PresetCatalogEntry
+
+    catalog, entry = (
+        (ExtensionCatalog, CatalogEntry)
+        if kind == "extensions"
+        else (PresetCatalog, PresetCatalogEntry)
+    )
+    sources = [
+        entry("https://example.com/high.json", "high", 1, True),
+        entry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+
+    class Response(io.BytesIO):
+        def __init__(self, url, payload):
+            super().__init__(payload)
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+    def open_url(self, url, **kwargs):
+        if url.endswith("high.json"):
+            if redirect == "validator":
+                kwargs["redirect_validator"](url, "http://evil.test/catalog.json")
+                pytest.fail("unsafe redirect was accepted")
+            raise RedirectPolicyError("unsafe catalog redirect")
+        return Response(
+            url,
+            json.dumps({
+                "schema_version": "1.0",
+                kind: {
+                    "requested": {
+                        "version": "1.0.0",
+                        "download_url": "https://example.com/archive.zip",
+                        "sha256": "a" * 64,
+                    }
+                },
+            }).encode(),
+        )
+
+    monkeypatch.setattr(catalog, "_open_url", open_url)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(kind, "requested"))
+    assert problem is not None and (
+        "HTTPS" in problem or "unsafe catalog redirect" in problem
+    )
+    assert warnings == []
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_extension_catalog_invalid_utf8_is_validation_error(
+    tmp_path, monkeypatch, legacy,
+):
+    import io
+
+    from specify_cli.extensions import (
+        CatalogEntry,
+        ExtensionCatalog,
+        ExtensionCatalogValidationError,
+    )
+
+    class Response(io.BytesIO):
+        def geturl(self):
+            return "https://example.com/catalog.json"
+
+    catalog = ExtensionCatalog(tmp_path)
+    entry = CatalogEntry("https://example.com/catalog.json", "bad", 1, True)
+    monkeypatch.setattr(catalog, "get_catalog_url", lambda: entry.url)
+    monkeypatch.setattr(catalog, "_open_url", lambda url, **kwargs: Response(b"\xff"))
+
+    with pytest.raises(ExtensionCatalogValidationError, match="encoding"):
+        if legacy:
+            catalog.fetch_catalog(force_refresh=True)
+        else:
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+
+def test_online_validation_does_not_skip_invalid_utf8_extension_catalog(
+    tmp_path, monkeypatch,
+):
+    import io
+    import json
+
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+
+    sources = [
+        CatalogEntry("https://example.com/high.json", "high", 1, True),
+        CatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(ExtensionCatalog, "get_active_catalogs", lambda self: sources)
+
+    class Response(io.BytesIO):
+        def __init__(self, url, payload):
+            super().__init__(payload)
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+    def open_url(self, url, **kwargs):
+        payload = (
+            b"\xff" if url.endswith("high.json")
+            else json.dumps({
+                "schema_version": "1.0",
+                "extensions": {"requested": {"version": "1.0.0"}},
+            }).encode()
+        )
+        return Response(url, payload)
+
+    monkeypatch.setattr(ExtensionCatalog, "_open_url", open_url)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert "Invalid encoding" in check(_ref("extensions", "requested"))
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_catalog_redirect_policy_is_validation_error(
+    tmp_path, monkeypatch, kind, legacy,
+):
+    from specify_cli.authentication.http import RedirectPolicyError
+    from specify_cli.extensions import (
+        CatalogEntry,
+        ExtensionCatalog,
+        ExtensionCatalogValidationError,
+    )
+    from specify_cli.presets import (
+        PresetCatalog,
+        PresetCatalogEntry,
+    )
+    from specify_cli.presets._catalog import PresetCatalogValidationError
+
+    catalog_type, entry_type, error_type = (
+        (ExtensionCatalog, CatalogEntry, ExtensionCatalogValidationError)
+        if kind == "extensions"
+        else (PresetCatalog, PresetCatalogEntry, PresetCatalogValidationError)
+    )
+    catalog = catalog_type(tmp_path)
+    url = "https://example.com/catalog.json"
+    monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
+
+    def unsafe_redirect(*args, **kwargs):
+        raise RedirectPolicyError("unsafe catalog redirect")
+
+    monkeypatch.setattr(catalog, "_open_url", unsafe_redirect)
+    with pytest.raises(error_type, match="unsafe catalog redirect"):
+        if legacy:
+            catalog.fetch_catalog(force_refresh=True)
+        else:
+            catalog._fetch_single_catalog(
+                entry_type(url, "trusted", 1, True), force_refresh=True
+            )
+
+
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
 def test_online_validation_does_not_skip_malformed_higher_priority_catalog(
     tmp_path, monkeypatch, kind,
