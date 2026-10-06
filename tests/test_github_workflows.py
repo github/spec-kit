@@ -495,6 +495,38 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+def test_extension_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    extension_form = yaml.safe_load(
+        (forms_dir / "extension_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert extension_form["labels"] == ["triage-must-have"]
+    assert "extension-submission" not in extension_form["labels"]
+
+
+def test_preset_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    preset_form = yaml.safe_load(
+        (forms_dir / "preset_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert preset_form["labels"] == ["triage-must-have"]
+    assert "preset-submission" not in preset_form["labels"]
+
+
+def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    for form_name in (
+        "agent_request.yml",
+        "bug_report.yml",
+        "bundle_submission.yml",
+        "feature_request.yml",
+    ):
+        form = yaml.safe_load((forms_dir / form_name).read_text(encoding="utf-8"))
+        assert "triage-must-have" not in form["labels"]
+
+
 @pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
 def test_community_upgrade_uses_established_runtime_defaults(kind):
     _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")

@@ -97,6 +97,8 @@ specify bundle update [<bundle_id>]
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
+**Pinned catalog releases.** An extension or preset pinned to a version other than the one its catalog currently advertises installs that exact release when the winning catalog entry lists it under `releases`, using that release's own download URL and SHA-256 digest. The downloaded archive must declare the pinned ID and version. If the winning catalog entry has no release for the pinned version, install stops with an error rather than substituting the advertised release or falling through to a lower-priority catalog. Workflows and components bundled with Spec Kit still require the pin to match the version they resolve to.
+
 > **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component owned by a bundle that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update <bundle_id>` for catalog bundles or `specify bundle install <path> --refresh` for local sources to re-apply owned components at their pinned versions.
 
 ## Remove a Bundle

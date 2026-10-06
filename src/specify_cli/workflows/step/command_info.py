@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from .. import _commands as cli
 from . import step_app
 
@@ -26,6 +28,10 @@ def _format_source(installed_meta: dict) -> str:
 @step_app.command("info")
 def workflow_step_info(
     step_id: str = cli.typer.Argument(..., help="Step type ID"),
+    versions: Annotated[
+        bool,
+        cli.typer.Option("--versions", help="List releases in the winning catalog"),
+    ] = False,
 ):
     """Show details for a step type."""
     from .. import STEP_REGISTRY
@@ -42,11 +48,43 @@ def workflow_step_info(
     is_builtin = builtin_step is not None and not installed_meta
 
     if is_builtin:
+        if versions:
+            cli.console.print(
+                f"[red]Error:[/red] Built-in step type '{safe_step_id}' "
+                "has no catalog releases"
+            )
+            raise cli.typer.Exit(1)
         cli.console.print(
             f"\n[bold cyan]{safe_step_id}[/bold cyan] [dim](built-in)[/dim]"
         )
         cli.console.print(f"  Type key: {safe_step_id}")
         cli.console.print("  [green]Built-in step type[/green]")
+        return
+
+    if versions:
+        from .catalog._versions import available_versions
+
+        catalog = StepCatalog(project_root)
+        try:
+            info = catalog.get_step_info(step_id)
+            if info is None:
+                cli.console.print(
+                    f"[red]Error:[/red] Step type '{safe_step_id}' not found"
+                )
+                raise cli.typer.Exit(1)
+            releases = available_versions(info, step_id)
+        except StepCatalogError as exc:
+            cli.console.print(f"[red]Error:[/red] {exc}")
+            raise cli.typer.Exit(1)
+        name = cli._escape_markup(str(info.get("name", step_id)))
+        policy = (
+            "" if info.get("_install_allowed", True)
+            else " [dim](discovery only; not installable)[/dim]"
+        )
+        cli.console.print(f"\n[bold cyan]{name}[/bold cyan] ({safe_step_id}){policy}")
+        for index, release in enumerate(releases):
+            label = " (current)" if index == 0 else ""
+            cli.console.print(f"  {cli._escape_markup(release)}{label}")
         return
 
     if installed_meta:
@@ -73,8 +111,9 @@ def workflow_step_info(
     catalog = StepCatalog(project_root)
     try:
         info = catalog.get_step_info(step_id)
-    except StepCatalogError:
-        info = None
+    except StepCatalogError as exc:
+        cli.console.print(f"[red]Error:[/red] {exc}")
+        raise cli.typer.Exit(1)
 
     if info:
         name = cli._escape_markup(str(info.get("name", step_id)))

@@ -664,6 +664,54 @@ Catalog installs resolve individual file URLs from the active step catalogs and
 then go through the same validation and commit path as `--dev` and `--from`.
 Discovery-only catalogs cannot be installed from.
 
+##### Catalog release history
+
+`specify workflow step info <id> --versions` lists the current and historical
+releases in the winning catalog. `specify workflow step add <id> --version <v>`
+selects the exact catalog release; without `--version`, `add` installs the
+advertised current release. The requested version never falls back to a
+lower-priority catalog, and discovery-only sources remain non-installable.
+`--version` cannot be combined with direct `--dev` or `--from` installs.
+
+Existing single-version catalog entries continue to work. Keep the current
+release's `version`, `step_yml_url` (or `url`), `init_url`, and optional files
+at the top level. An optional `releases` mapping adds historical versions:
+
+```json
+{
+  "steps": {
+    "my-step": {
+      "version": "2.0",
+      "step_yml_url": "https://example.com/my-step/2.0/step.yml",
+      "releases": {
+        "1.0": {
+          "step_yml_url": "https://example.com/my-step/1.0/step.yml",
+          "init_url": "https://example.com/my-step/1.0/__init__.py",
+          "extra_files": {"helper.py": "https://example.com/my-step/1.0/helper.py"},
+          "sha256": {
+            "step.yml": "<64 hex digits>",
+            "__init__.py": "<64 hex digits>",
+            "helper.py": "<64 hex digits>"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Each historical release must supply its own step URL and SHA-256 digest for
+every downloaded file. `init_url` can be omitted when derived from a
+`step_yml_url` ending in `step.yml`. To select the current version explicitly,
+its top-level entry must likewise supply the per-file `sha256` mapping.
+Release-specific files and requirements are not inherited from the current
+release. Repeated or malformed versions are rejected; equivalent PEP 440
+spellings such as `v1.0` and `1.0` select the same advertised release. The
+downloaded `step.yml` must declare the selected step ID and version. An
+unqualified legacy catalog install does not require digests or a step version.
+Only one version of each step ID can be installed at a time; use `--force` to
+replace a previous installation after reviewing the selected package.
+
 #### Replacement and force
 
 ```bash
@@ -780,7 +828,34 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `context.run_id`               | Current workflow run ID              |
 | `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
-Available filters: `default`, `join`, `contains`, `map`, `from_json`.
+Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+| Filter   | Example                                    | Behavior                                                                                        |
+| -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `default`| `{{ val \| default('fb') }}`               | Fallback for `None` or an empty string                                                                  |
+| `join`   | `{{ list \| join(', ') }}`                 | Join list elements into a string                                                                   |
+| `contains`| `{{ text \| contains('sub') }}`           | Substring or membership check                                                                      |
+| `map`    | `{{ list \| map('attr') }}`                | Extract an attribute from each item                                                                |
+| `from_json`| `{{ out \| from_json }}`                 | Parse a JSON string into a typed value                                                             |
+| `to_json`| `{{ obj \| to_json }}`                     | Serialize a value to a JSON string — the inverse of `from_json`; mapping keys must be strings |
+| `upper`  | `{{ text \| upper }}`                      | Uppercase a string                                                                                 |
+| `lower`  | `{{ text \| lower }}`                      | Lowercase a string                                                                                 |
+| `split`  | `{{ csv \| split(',') }}`                  | Split a string on a separator into a list of strings                                               |
+| `length` | `{{ items \| length }}`                    | Number of elements in a list, or characters in a string                                            |
+
+`default` falls back only for `None` and the empty string. Other falsy values — `0`, `false`, `[]`, `{}` — are passed through unchanged, so `{{ count | default(10) }}` still yields `0` for a zero count. Falsy is not the same as empty here.
+
+Notes on the newer filters:
+
+- **Types are validated, not coerced.** `upper` and `lower` accept strings only, `split` requires both a string value and a non-empty string separator, and `length` accepts lists and strings but rejects mappings. Anything else raises a `ValueError` naming the problem. Coercion is deliberately not performed: a type mismatch nearly always means the workflow is wired to the wrong variable, and a coerced result would hide that. A filter given the wrong number of arguments (`| upper('x')`, `| split` with no separator, `| split(',', 1)`) is reported as a known filter misused, which is distinct from an entirely unknown filter name: a call carrying more than one argument falls through to that same unsupported-form error rather than being evaluated as a single expression. The older filters (`join`, `map`, `contains`) are more permissive and unchanged: `join` stringifies unsupported values and `map`/`contains` return fallbacks rather than raising.
+- **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
+- **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
+- **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
+- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+
+  ```yaml
+  condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
+  ```
 
 Example:
 
@@ -788,6 +863,8 @@ Example:
 condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
+tag_count: "{{ inputs.tags | split(',') | length }}"
+shell_flag: "{{ inputs.branch | upper }}"
 ```
 
 ### Interpolation and shell safety

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-02T00:00:00Z",
+  "updated_at": "2026-10-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2294,9 +2294,9 @@
       "id": "gates",
       "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.5",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.5/gates-0.3.5.zip",
-      "sha256": "c80e935ca0da2a09a8745e35fd1daa81e52419d0d6d8ee73a818b3da6fcb6a7e",
+      "version": "0.3.6",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.6/gates-0.3.6.zip",
+      "sha256": "74390f742a1a24dadb0bde15d2a555a2c6db51ee85f2a7a0557511bacec2444f",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2340,7 +2340,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-02T00:00:00Z"
+      "updated_at": "2026-10-05T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
@@ -5226,9 +5226,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.5.2",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
-      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
+      "version": "0.5.6",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.6/specassay-check-0.5.6.zip",
+      "sha256": "1f7112e2e550aacc7dd466cc83b315c0d846f318a611fb93c394bde46cea355b",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5241,6 +5241,7 @@
         "tools": [
           {
             "name": "bash",
+            "version": ">=3.2",
             "required": true
           },
           {
@@ -5265,7 +5266,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-09-24T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
