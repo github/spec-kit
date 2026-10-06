@@ -515,12 +515,21 @@ def test_preset_submission_form_applies_only_automatic_intake_verdict():
     assert "preset-submission" not in preset_form["labels"]
 
 
+def test_bundle_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert bundle_form["labels"] == ["triage-must-have"]
+    assert "bundle-submission" not in bundle_form["labels"]
+
+
 def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
     forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
     for form_name in (
         "agent_request.yml",
         "bug_report.yml",
-        "bundle_submission.yml",
         "feature_request.yml",
     ):
         form = yaml.safe_load((forms_dir / form_name).read_text(encoding="utf-8"))
