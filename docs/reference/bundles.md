@@ -81,6 +81,8 @@ The source may also be a bundle directory or `.zip` artifact. Refresh uses the s
 
 A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
 
+> **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
+
 ## Update Bundles
 
 ```bash
@@ -94,6 +96,8 @@ specify bundle update [<bundle_id>]
 | `--offline`      | Do not access the network                                                                                             |
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
+
+**Pinned catalog releases.** An extension or preset pinned to a version other than the one its catalog currently advertises installs that exact release when the winning catalog entry lists it under `releases`, using that release's own download URL and SHA-256 digest. The downloaded archive must declare the pinned ID and version. If the winning catalog entry has no release for the pinned version, install stops with an error rather than substituting the advertised release or falling through to a lower-priority catalog. Workflows and components bundled with Spec Kit still require the pin to match the version they resolve to.
 
 > **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component owned by a bundle that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update <bundle_id>` for catalog bundles or `specify bundle install <path> --refresh` for local sources to re-apply owned components at their pinned versions.
 

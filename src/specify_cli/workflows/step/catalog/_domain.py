@@ -5,16 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ...._download_security import (
-    MAX_JSON_CATALOG_BYTES as MAX_JSON_CATALOG_BYTES,
     read_response_limited,
 )
 
@@ -37,6 +38,19 @@ class StepCatalogError(Exception):
 
 class StepValidationError(StepCatalogError):
     """Validation error for step catalog config or step data."""
+
+
+class _DuplicateCatalogField(StepCatalogError):
+    """An ambiguous JSON object in a step catalog."""
+
+
+def _unique_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateCatalogField(f"Duplicate field '{key}' in step catalog.")
+        result[key] = value
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -86,58 +100,39 @@ class StepRegistry:
         return False
 
     def _load(self) -> dict[str, Any]:
-        """Load registry from disk or create default.
-
-        Raises ``OSError`` when the registry exists but cannot be read or is
-        not a valid registry document, instead of silently handing back an
-        empty registry and hiding the corruption from the caller.
-        """
+        """Load registry from disk or create default."""
         default_registry: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
         # Defense-in-depth: refuse to read the registry if any parent directory
         # under .specify/workflows/steps is a symlink, which could redirect the
-        # read outside the project root, or if the registry file itself is one.
-        if self._has_symlinked_parent() or self.registry_path.is_symlink():
-            raise OSError(
-                f"Refusing to read step registry at {self.registry_path}: "
-                "a parent directory or the registry file itself is a symlink"
-            )
+        # read outside the project root.
+        if self._has_symlinked_parent():
+            return default_registry
+        # Defense-in-depth: also refuse to read a symlinked registry file,
+        # which could redirect the read outside the project root.
+        if self.registry_path.is_symlink():
+            return default_registry
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
-            except OSError as exc:
-                raise OSError(
-                    f"Failed to read step registry at {self.registry_path}: {exc}"
-                ) from exc
-            except (json.JSONDecodeError, ValueError, UnicodeError) as exc:
-                raise OSError(
-                    f"Step registry at {self.registry_path} is corrupted: {exc}"
-                ) from exc
-            # Validate shape: must be a dict with a dict "steps" field
-            if not isinstance(data, dict):
-                raise OSError(
-                    f"Step registry at {self.registry_path} is corrupted: "
-                    "top-level value must be an object"
-                )
-            if not isinstance(data.get("steps"), dict):
-                raise OSError(
-                    f"Step registry at {self.registry_path} is corrupted: "
-                    "'steps' must be an object"
-                )
-            return data
+                # Validate shape: must be a dict with a dict "steps" field
+                if not isinstance(data, dict):
+                    return default_registry
+                if not isinstance(data.get("steps"), dict):
+                    data["steps"] = {}
+                return data
+            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
+                return default_registry
         return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk atomically.
-
-        Raises ``StepValidationError`` with a clear message on filesystem
-        errors (read-only fs, permission denied, ...) so callers can surface
-        a clean error to the user rather than an unhandled ``OSError``.
-        """
+        """Persist registry atomically without truncating an existing file."""
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
             raise StepValidationError(
                 "Refusing to write step registry through a symlinked path."
             )
+        fd = -1
+        tmp: str | None = None
         try:
             self.steps_dir.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(
@@ -145,44 +140,90 @@ class StepRegistry:
                 prefix=f".{self.registry_path.name}.",
                 suffix=".tmp",
             )
+            # Keep the exclusive descriptor open while writing and checking the
+            # path so a replaced temporary file can never be committed.
+            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(self.data, f, indent=2)
-                os.replace(tmp, self.registry_path)
-            except BaseException:
+                if self.registry_path.exists():
+                    existing = self.registry_path.stat(follow_symlinks=False)
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchmod"):
+                        os.fchmod(fd, stat.S_IMODE(existing.st_mode))
+                    if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fd, existing.st_uid, existing.st_gid)
+                        except PermissionError:
+                            pass
+            except OSError:
+                # Persisting valid data is more important than preserving mode
+                # or ownership metadata when that best-effort operation fails.
+                pass
+            staged = os.stat(tmp, follow_symlinks=False)
+            opened = os.fstat(fd)
+            if (
+                not stat.S_ISREG(staged.st_mode)
+                or staged.st_dev != opened.st_dev
+                or staged.st_ino != opened.st_ino
+            ):
+                raise OSError("Staged step registry changed before commit")
+            os.close(fd)
+            fd = -1
+            os.replace(tmp, self.registry_path)
+            tmp = None
+        except (OSError, TypeError, ValueError) as exc:
+            raise StepValidationError(
+                f"Failed to write step registry at {self.registry_path}: {exc}"
+            ) from exc
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if tmp is not None:
                 try:
                     os.unlink(tmp)
                 except OSError:
                     pass
-                raise
-        except OSError as exc:
-            raise StepValidationError(
-                f"Failed to write step registry at {self.registry_path}: {exc}"
-            ) from exc
 
     def add(self, step_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed step entry."""
         import copy
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         raw_existing = self.data["steps"].get(step_id)
+        had_entry = step_id in self.data["steps"]
         # Corrupted-but-parseable registries may hold non-dict entries; treat
         # them as absent rather than crashing on existing.get() (mirrors
         # WorkflowRegistry.add).
         existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata_to_store = copy.deepcopy(metadata)
         metadata_to_store["installed_at"] = existing.get(
-            "installed_at", datetime.now(timezone.utc).isoformat()
+            "installed_at", datetime.now(UTC).isoformat()
         )
-        metadata_to_store["updated_at"] = datetime.now(timezone.utc).isoformat()
+        metadata_to_store["updated_at"] = datetime.now(UTC).isoformat()
         self.data["steps"][step_id] = metadata_to_store
-        self.save()
+        try:
+            self.save()
+        except (StepValidationError, TypeError, ValueError):
+            if had_entry:
+                self.data["steps"][step_id] = raw_existing
+            else:
+                del self.data["steps"][step_id]
+            raise
 
     def remove(self, step_id: str) -> bool:
         """Remove an installed step entry. Returns True if found."""
         if step_id in self.data["steps"]:
+            removed_entry = self.data["steps"][step_id]
             del self.data["steps"][step_id]
-            self.save()
+            try:
+                self.save()
+            except (StepValidationError, TypeError, ValueError):
+                self.data["steps"][step_id] = removed_entry
+                raise
             return True
         return False
 
@@ -442,14 +483,17 @@ class StepCatalog:
         if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f)
+                    cached = json.load(f, object_pairs_hook=_unique_json_fields)
                 if isinstance(cached, dict):
                     return cached
+            except _DuplicateCatalogField:
+                raise
             except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
         from urllib.parse import urlparse
+
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
@@ -501,15 +545,20 @@ class StepCatalog:
                         max_bytes=_max_json_catalog_bytes(),
                         error_type=StepCatalogError,
                         label="step catalog",
-                    ).decode("utf-8")
+                    ).decode("utf-8"),
+                    object_pairs_hook=_unique_json_fields,
                 )
+        except _DuplicateCatalogField:
+            raise
         except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f)
+                        cached = json.load(f, object_pairs_hook=_unique_json_fields)
                     if isinstance(cached, dict):
                         return cached
+                except _DuplicateCatalogField:
+                    raise
                 except (json.JSONDecodeError, ValueError, OSError):
                     # Stale-cache read failed; let the original fetch error propagate.
                     pass
@@ -545,6 +594,8 @@ class StepCatalog:
         for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
+            except _DuplicateCatalogField:
+                raise
             except StepCatalogError:
                 fetch_errors += 1
                 continue
@@ -557,6 +608,7 @@ class StepCatalog:
                     step_data["_install_allowed"] = entry.install_allowed
                     merged[step_id] = step_data
             elif isinstance(steps, list):
+                seen_in_source: set[str] = set()
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
@@ -565,6 +617,11 @@ class StepCatalog:
                         continue
                     step_id = str(raw_step_id).strip()
                     if step_id:
+                        if step_id in seen_in_source:
+                            raise StepCatalogError(
+                                f"Duplicate step ID '{step_id}' in catalog '{entry.name}'."
+                            )
+                        seen_in_source.add(step_id)
                         step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
                         step_data["_install_allowed"] = entry.install_allowed
@@ -580,10 +637,13 @@ class StepCatalog:
         query: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search step types across all configured catalogs."""
+        from ._versions import available_versions
+
         merged = self._get_merged_steps()
         results: list[dict[str, Any]] = []
 
         for step_id, step_data in merged.items():
+            available_versions(step_data, step_id)
             step_data.setdefault("id", step_id)
             if query:
                 q = query.lower()
@@ -599,13 +659,18 @@ class StepCatalog:
             results.append(step_data)
         return results
 
-    def get_step_info(self, step_id: str) -> dict[str, Any] | None:
-        """Get details for a specific step from the catalog."""
+    def get_step_info(
+        self, step_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get the current or an exact release from the winning catalog."""
+        from ._versions import select_release
+
         merged = self._get_merged_steps()
         step = merged.get(step_id)
         if step:
             step.setdefault("id", step_id)
-        return step
+            return select_release(step, step_id, version)
+        return None
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""

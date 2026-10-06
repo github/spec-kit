@@ -8,6 +8,8 @@
 #     "json5",
 #     "pyyaml",
 #     "packaging",
+#     "mcp>=2.2.0,<3.0.0",
+#     "pydantic>=2.13.0,<3.0.0",
 # ]
 # ///
 """
@@ -386,11 +388,13 @@ SKILL_DESCRIPTIONS = {
 
 from . import command_check as _command_check  # noqa: E402
 from . import command_init as _command_init  # noqa: E402
+from . import command_mcp as _command_mcp  # noqa: E402
 from . import command_version as _command_version  # noqa: E402
 
 _command_init.register(app)
 _command_check.register(app)
 _command_version.register(app)
+_command_mcp.register(app)
 
 # Preserve root imports for handlers that were previously defined here.
 check = _command_check.check
