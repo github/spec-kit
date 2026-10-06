@@ -646,6 +646,108 @@ def test_online_validation_does_not_skip_malformed_higher_priority_catalog(
     assert warnings == []
 
 
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+@pytest.mark.parametrize("source", ["network", "fresh-cache", "stale-cache"])
+def test_deeply_nested_catalog_is_handled_as_malformed_data(
+    tmp_path, monkeypatch, kind, source,
+):
+    import io
+    import json
+    from urllib.error import URLError
+
+    from specify_cli.authentication import http
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        StepCatalogFetchError,
+        StepCatalogValidationError,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+        WorkflowCatalogFetchError,
+        WorkflowCatalogValidationError,
+    )
+
+    catalog_type, entry_type, validation_error, fetch_error = {
+        "workflows": (
+            WorkflowCatalog, WorkflowCatalogEntry,
+            WorkflowCatalogValidationError, WorkflowCatalogFetchError,
+        ),
+        "steps": (
+            StepCatalog, StepCatalogEntry,
+            StepCatalogValidationError, StepCatalogFetchError,
+        ),
+    }[kind]
+    catalog = catalog_type(tmp_path)
+    entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
+    nested = b'{"nested":' + b"[" * 10000 + b"0" + b"]" * 10000 + b"}"
+    valid = {"schema_version": "1.0", kind: {"requested": {"version": "1.0.0"}}}
+
+    class Response(io.BytesIO):
+        def geturl(self):
+            return entry.url
+
+    if source != "network":
+        cache_file, _ = catalog._get_cache_paths(entry.url)
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(nested)
+        monkeypatch.setattr(
+            catalog, "_is_url_cache_valid", lambda _url: source == "fresh-cache"
+        )
+
+    def open_url(*args, **kwargs):
+        if source == "stale-cache":
+            raise URLError("connection failed")
+        payload = nested if source == "network" else json.dumps(valid).encode()
+        return Response(payload)
+
+    monkeypatch.setattr(http, "open_url", open_url)
+    if source == "network":
+        with pytest.raises(validation_error, match="Invalid.*catalog"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+    elif source == "stale-cache":
+        with pytest.raises(fetch_error, match="Failed to fetch catalog"):
+            catalog._fetch_single_catalog(entry)
+    else:
+        assert catalog._fetch_single_catalog(entry) == valid
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+def test_deep_catalog_does_not_escape_during_cache_write(
+    tmp_path, monkeypatch, kind,
+):
+    import io
+
+    from specify_cli.authentication import http
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        StepCatalogValidationError,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+        WorkflowCatalogValidationError,
+    )
+
+    catalog_type, entry_type, error_type = {
+        "workflows": (
+            WorkflowCatalog, WorkflowCatalogEntry, WorkflowCatalogValidationError,
+        ),
+        "steps": (StepCatalog, StepCatalogEntry, StepCatalogValidationError),
+    }[kind]
+    catalog = catalog_type(tmp_path)
+    entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
+    payload = b'{"nested":' + b"[" * 1200 + b"0" + b"]" * 1200 + b"}"
+
+    class Response(io.BytesIO):
+        def geturl(self):
+            return entry.url
+
+    monkeypatch.setattr(
+        http, "open_url", lambda *args, **kwargs: Response(payload)
+    )
+    with pytest.raises(error_type, match="Invalid.*catalog"):
+        catalog._fetch_single_catalog(entry, force_refresh=True)
+
+
 @pytest.mark.parametrize("kind", ["extensions", "workflows", "steps"])
 def test_targeted_lookup_stops_before_lower_priority_catalog(
     tmp_path, monkeypatch, kind,

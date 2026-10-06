@@ -509,6 +509,7 @@ class StepCatalog:
             except (
                 UnicodeDecodeError,
                 json.JSONDecodeError,
+                RecursionError,
                 OSError,
                 StepCatalogValidationError,
             ):
@@ -580,6 +581,7 @@ class StepCatalog:
             RedirectPolicyError,
             UnicodeError,
             json.JSONDecodeError,
+            RecursionError,
         ) as exc:
             raise StepCatalogValidationError(
                 f"Invalid step catalog from {entry.url}: {exc}"
@@ -595,6 +597,7 @@ class StepCatalog:
                 except (
                     json.JSONDecodeError,
                     ValueError,
+                    RecursionError,
                     OSError,
                     StepCatalogValidationError,
                 ):
@@ -615,6 +618,10 @@ class StepCatalog:
                     json.dump({"url": entry.url, "fetched_at": time.time()}, f)
             except OSError:
                 pass  # Proceed without caching if disk write fails
+            except RecursionError as exc:
+                raise StepCatalogValidationError(
+                    f"Invalid step catalog from {entry.url}: excessive nesting ({exc})"
+                ) from exc
 
         return data
 
@@ -635,8 +642,8 @@ class StepCatalog:
             except _DuplicateCatalogField:
                 raise
             except StepCatalogError as exc:
-                if target_id is not None and isinstance(
-                    exc, StepCatalogValidationError
+                if target_id is not None and not isinstance(
+                    exc, StepCatalogFetchError
                 ):
                     raise
                 if (

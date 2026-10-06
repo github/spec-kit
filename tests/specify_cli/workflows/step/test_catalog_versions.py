@@ -114,6 +114,34 @@ def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch):
         catalog.get_step_info("deploy")
 
 
+@pytest.mark.parametrize("raised_during_fetch", [False, True])
+def test_targeted_lookup_rejects_duplicate_ids_before_lower_catalog(
+    project_dir, monkeypatch, raised_during_fetch,
+):
+    catalog = StepCatalog(project_dir)
+    sources = [
+        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
+        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+
+    def fetch(source, force_refresh=False):
+        if source.name == "high":
+            if raised_during_fetch:
+                raise StepCatalogError("Duplicate step ID 'deploy' in catalog 'high'.")
+            return {"steps": [
+                {"id": "deploy", "version": "1.0"},
+                {"id": "deploy", "version": "2.0"},
+            ]}
+        return {"steps": {"deploy": {"version": "3.0"}}}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    with pytest.raises(StepCatalogError, match="Duplicate step ID 'deploy'"):
+        catalog.get_step_info("deploy")
+    if raised_during_fetch:
+        assert catalog.search(query="deploy")[0]["version"] == "3.0"
+
+
 @pytest.mark.parametrize("cached", [True, False])
 def test_duplicate_json_release_key_is_not_silently_overwritten(
     project_dir, monkeypatch, cached

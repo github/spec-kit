@@ -544,6 +544,7 @@ class WorkflowCatalog:
             except (
                 UnicodeDecodeError,
                 json.JSONDecodeError,
+                RecursionError,
                 OSError,
                 WorkflowCatalogValidationError,
             ):
@@ -613,6 +614,7 @@ class WorkflowCatalog:
             RedirectPolicyError,
             UnicodeError,
             json.JSONDecodeError,
+            RecursionError,
         ) as exc:
             raise WorkflowCatalogValidationError(
                 f"Invalid workflow catalog from {entry.url}: {exc}"
@@ -627,6 +629,7 @@ class WorkflowCatalog:
                 except (
                     json.JSONDecodeError,
                     ValueError,
+                    RecursionError,
                     OSError,
                     WorkflowCatalogValidationError,
                 ):
@@ -647,6 +650,10 @@ class WorkflowCatalog:
                 json.dump({"url": entry.url, "fetched_at": time.time()}, f)
         except OSError:
             pass  # Proceed without caching if disk write fails
+        except RecursionError as exc:
+            raise WorkflowCatalogValidationError(
+                f"Invalid workflow catalog from {entry.url}: excessive nesting ({exc})"
+            ) from exc
 
         return data
 
