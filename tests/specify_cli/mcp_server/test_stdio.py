@@ -33,6 +33,7 @@ def test_real_stdio_server_initializes_discovers_and_runs_version():
                     initialized = await session.initialize()
                     tools = await session.list_tools()
                     listed = await session.call_tool("specify_list_commands", {})
+                    version = await session.call_tool("specify_version", {})
                     ran = await session.call_tool(
                         "specify_run_command",
                         {"command": "version"},
@@ -49,8 +50,16 @@ def test_real_stdio_server_initializes_discovers_and_runs_version():
             "specify_list_commands",
             "specify_describe_command",
             "specify_run_command",
+            "specify_version",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
+        assert set(version.structured_content) == {
+            "cli_version",
+            "runtime",
+            "system",
+            "features",
+        }
+        assert version.is_error is False
         assert set(ran.structured_content) == {
             "cli_version",
             "runtime",

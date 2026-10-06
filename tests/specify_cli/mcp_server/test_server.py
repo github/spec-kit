@@ -23,16 +23,19 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def test_tool_discovery_exposes_only_generic_surface_with_typed_inputs():
+def test_tool_discovery_exposes_first_class_and_transitional_tools():
     tools = _run(create_server().list_tools())
 
     assert [tool.name for tool in tools] == [
         "specify_list_commands",
         "specify_describe_command",
         "specify_run_command",
+        "specify_version",
     ]
     schemas = {tool.name: tool.input_schema for tool in tools}
     assert schemas["specify_list_commands"]["properties"] == {}
+    assert schemas["specify_version"]["properties"] == {}
+    assert schemas["specify_version"]["additionalProperties"] is False
     for name in ("specify_describe_command", "specify_run_command"):
         assert schemas[name]["required"] == ["command"]
         assert schemas[name]["properties"]["command"]["type"] == "string"
