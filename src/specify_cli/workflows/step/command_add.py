@@ -16,7 +16,6 @@ def workflow_step_add(
     from .catalog import (
         StepCatalog,
         StepCatalogError,
-        StepRegistry,
         StepValidationError,
     )
 
@@ -51,8 +50,10 @@ def workflow_step_add(
         )
         raise cli.typer.Exit(1)
 
-    # Reject if already installed
-    registry = StepRegistry(project_root)
+    # Directory-level symlink refusal runs first so it keeps its specific
+    # message; registry construction then surfaces read errors cleanly.
+    step_helpers._resolve_steps_base_dir_or_exit(project_root)
+    registry = step_helpers._load_step_registry_or_exit(project_root)
     if registry.is_installed(step_id):
         cli.console.print(
             f"[red]Error:[/red] Step type '{step_id}' is already installed. "
@@ -346,7 +347,7 @@ def workflow_step_add(
     step_version = info.get("version") or step_meta.get("version") or "0.0.0"
 
     # Register in step registry
-    registry = StepRegistry(project_root)
+    registry = step_helpers._load_step_registry_or_exit(project_root)
     try:
         registry.add(
             step_id,

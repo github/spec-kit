@@ -12,12 +12,13 @@ def workflow_step_info(
 ):
     """Show details for a step type."""
     from .. import STEP_REGISTRY
-    from .catalog import StepCatalog, StepCatalogError, StepRegistry
+    from . import _helpers as step_helpers
+    from .catalog import StepCatalog, StepCatalogError
 
     project_root = cli._require_specify_project()
     safe_step_id = cli._escape_markup(str(step_id))
 
-    registry = StepRegistry(project_root)
+    registry = step_helpers._load_step_registry_or_exit(project_root)
     installed_meta = registry.get(step_id)
 
     # Check if it's a built-in
