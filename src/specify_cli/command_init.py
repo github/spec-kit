@@ -230,9 +230,14 @@ def ensure_constitution_from_template(
         return
 
     try:
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(memory_constitution)
         materialization = _materialize_constitution_template(
             project_path, memory_constitution
         )
+        if memory_constitution.is_file():
+            after_file_change(memory_constitution)
         if materialization is None:
             if tracker:
                 tracker.add("constitution", "Constitution setup")
@@ -791,10 +796,14 @@ def register(app: typer.Typer) -> None:
                                 project_path / ".specify" / "workflows" / "speckit"
                             )
                             dest_wf.mkdir(parents=True, exist_ok=True)
+                            from .integrations._file_changes import after_file_change, before_file_change
+
+                            before_file_change(dest_wf / "workflow.yml")
                             _shutil.copy2(
                                 bundled_wf / "workflow.yml",
                                 dest_wf / "workflow.yml",
                             )
+                            after_file_change(dest_wf / "workflow.yml")
                             definition = WorkflowDefinition.from_yaml(
                                 dest_wf / "workflow.yml"
                             )

@@ -165,3 +165,11 @@ with a harmless process double. Include failures for invalid metadata/classes,
 trust denial, unsafe archives, setup errors, and upgrades/uninstall. Keep
 package code separate from generated-file manifests and verify rollback and
 modified-file preservation.
+
+Use manifest/base-class write helpers so failed lifecycle operations can restore
+only the files your adapter changed. Legacy `record_existing()` writes are
+covered within the adapter's declared output root; writes elsewhere must use
+`record_file()` or host write helpers. Do not claim unrelated user files. Test
+metadata-only commands without import side effects, forced recovery of damaged
+installed packages, and rollback that preserves independent workflow progress
+and concurrent user edits.

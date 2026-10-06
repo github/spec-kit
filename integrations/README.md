@@ -152,6 +152,9 @@ hash-tracked `<id>.manifest.json`; new CLI processes load the trusted package
 without fetching the catalog. An upgrade fetches the catalog's current version
 and checks its descriptor again. Do not edit installed package code in place:
 publish a new archive/version and upgrade instead.
+Catalog management/discovery and `integration info` remain metadata-only and do
+not import adapters. Forced upgrade/uninstall can recover damaged installed code
+using validated ownership metadata, without bypassing source policy or trust.
 
 ## Contributing
 

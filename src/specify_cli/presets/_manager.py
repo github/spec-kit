@@ -159,12 +159,16 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         Args:
             project_root: Path to project root directory
         """
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(project_root)
         self.project_root = project_root
         self.presets_dir = project_root / ".specify" / "presets"
         self.registry = PresetRegistry(self.presets_dir)
+
+    def _command_registrar(self):
+        from ..agents import CommandRegistrar
+        from ..integrations import load_installed_integrations
+
+        load_installed_integrations(self.project_root)
+        return CommandRegistrar()
 
     def check_compatibility(
         self,
@@ -711,7 +715,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         # winner for the current agent, leaving the inactive integration
         # with a missing/stale file (#2948).
         try:
-            from ..agents import CommandRegistrar as _CommandRegistrarForScope
+            _CommandRegistrarForScope = self._command_registrar()
         except ImportError:
             _CommandRegistrarForScope = None
         affected_command_agents = {
@@ -838,7 +842,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 restore_from_bundled_core=True,
             )
             try:
-                from ..agents import CommandRegistrar
+                CommandRegistrar = self._command_registrar()
             except ImportError:
                 CommandRegistrar = None
             if CommandRegistrar is not None:

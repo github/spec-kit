@@ -498,7 +498,11 @@ def test_new_project_init_from_catalog_environment(tmp_path, server, monkeypatch
     assert KEY in read_records(project)
 
 
-def test_extension_and_preset_contributions_follow_active_external_adapter(tmp_path, server):
+@pytest.mark.parametrize("damaged_uninstall", [False, True])
+@pytest.mark.parametrize("failed_commit", [False, True])
+def test_extension_and_preset_contributions_follow_active_external_adapter(
+    tmp_path, server, monkeypatch, damaged_uninstall, failed_commit,
+):
     publish(server)
     project = catalog_project(tmp_path, server)
     assert run(project, ["integration", "install", "claude"]).exit_code == 0
@@ -525,11 +529,37 @@ def test_extension_and_preset_contributions_follow_active_external_adapter(tmp_p
     assert activated.exit_code == 0, activated.output
     assert (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").is_file()
     assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
+    fresh_removal = subprocess.run(
+        [str(executable), "preset", "remove", "sample-preset"],
+        cwd=project, capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert fresh_removal.returncode == 0, fresh_removal.stdout + fresh_removal.stderr
+    assert "Sample preset guidance" not in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    restored = run(project, ["preset", "add", "--dev", str(preset)])
+    assert restored.exit_code == 0, restored.output
+    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
     assert "sample-agent" in json.loads((project / ".specify/init-options.json").read_text())["ai"]
     upgraded = run(project, ["integration", "upgrade", KEY, "--trust-integration", "--force"])
     assert upgraded.exit_code == 0, upgraded.output
     assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
-    removed = run(project, ["integration", "uninstall", KEY])
+    arguments = ["integration", "uninstall", KEY]
+    if damaged_uninstall:
+        (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+        arguments.append("--force")
+    if failed_commit:
+        from specify_cli.integrations import installer
+
+        def fail_commit(*args, **kwargs):
+            raise OSError("sample commit failure")
+
+        before = snapshot(project)
+        monkeypatch.setattr(installer, "write_records", fail_commit)
+        failed = run(project, arguments)
+        assert failed.exit_code == 1, failed.output
+        assert snapshot(project) == before
+        return
+    removed = run(project, arguments)
     assert removed.exit_code == 0, removed.output
     assert not (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").exists()
     assert not (project / ".sample-agent/skills/speckit-specify/SKILL.md").exists()
@@ -837,7 +867,7 @@ def test_failed_filesystem_recovery_retains_and_reports_snapshots(tmp_path, serv
     assert result.exit_code == 1
     assert "rollback failed" in result.output and "Recovery snapshots retained" in result.output
     assert len(backups) == 1 and backups[0].is_dir()
-    assert any((backups[0] / "1").rglob("packages.json")) or any((backups[0] / "0").rglob("packages.json"))
+    assert any(backups[0].rglob("packages.json"))
     shutil.rmtree(backups[0])
 
 
@@ -1058,3 +1088,222 @@ def test_incomplete_package_metadata_is_an_explicit_cli_failure(tmp_path, server
     assert result.exit_code == 1
     assert "invalid package metadata" in result.output and field in result.output
     assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("arguments", [
+    ["integration", "catalog", "list"],
+    ["workflow", "step", "catalog", "list"],
+    ["preset", "catalog", "list"],
+    ["integration", "list", "--catalog"],
+    ["integration", "info", KEY],
+])
+def test_metadata_commands_never_import_an_installed_adapter(tmp_path, server, arguments):
+    marker = tmp_path / "imported"
+    code = implementation() + f"\nfrom pathlib import Path\nPath({str(marker)!r}).write_text('imported')\n"
+    publish(server, code=code)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    marker.unlink()
+    executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
+    result = subprocess.run(
+        [str(executable), *arguments], cwd=project,
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("operation", ["upgrade", "uninstall"])
+@pytest.mark.parametrize("damage", ["modified", "missing", "incompatible", "import-failure"])
+def test_force_recovery_does_not_require_a_loadable_old_adapter(tmp_path, server, operation, damage):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = project / f".specify/integrations/packages/{KEY}/__init__.py"
+    if damage == "missing":
+        path.unlink()
+    elif damage == "modified":
+        path.write_text("raise RuntimeError('modified code must not execute')")
+    else:
+        registry = project / ".specify/integrations/packages.json"
+        records = json.loads(registry.read_text())
+        if damage == "import-failure":
+            path.write_text(implementation() + "\nraise RuntimeError('sample import failure')\n")
+            records["packages"][KEY]["files"]["__init__.py"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            descriptor_path = path.parent / "integration.yml"
+            data = yaml.safe_load(descriptor_path.read_text())
+            data["requires"]["speckit_version"] = ">=999"
+            descriptor_path.write_text(yaml.safe_dump(data))
+            records["packages"][KEY]["requires"] = data["requires"]
+            records["packages"][KEY]["files"]["integration.yml"] = hashlib.sha256(descriptor_path.read_bytes()).hexdigest()
+        registry.write_text(json.dumps(records))
+    result = run(project, ["integration", "catalog", "list"])
+    assert result.exit_code == 0, result.output
+    strict = run(project, ["integration", operation, KEY])
+    assert strict.exit_code == 1
+    arguments = ["integration", operation, KEY, "--force"]
+    if operation == "upgrade":
+        publish(server, version="2.0.0")
+        arguments.append("--trust-integration")
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    assert "without loading its failed implementation" in " ".join(result.output.split())
+    if operation == "upgrade":
+        assert read_records(project)[KEY]["version"] == "2.0.0"
+        assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").is_file()
+    else:
+        assert KEY not in read_records(project)
+        assert not path.parent.exists()
+
+
+def test_failed_operation_preserves_independent_workflow_and_unowned_output_edits(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+    from specify_cli.workflows.engine import RunState
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    user_file = project / ".sample-agent/skills/user-notes.md"
+    user_file.write_text("before")
+    workflow = RunState(run_id="sample-run", workflow_id="sample-workflow", project_root=project)
+    workflow.save()
+    publish(server, version="2.0.0")
+
+    def fail_commit(*args, **kwargs):
+        def independent_writer():
+            user_file.write_text("independent user edit")
+            workflow.current_step_index = 1
+            workflow.save()
+        thread = threading.Thread(target=independent_writer)
+        thread.start()
+        thread.join()
+        raise OSError("sample commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "upgrade", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert user_file.read_text() == "independent user edit"
+    assert RunState.load("sample-run", project).current_step_index == 1
+    assert read_records(project)[KEY]["version"] == "1.0.0"
+
+
+def test_failed_operation_preserves_concurrent_edits_to_a_managed_file(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import _lifecycle, installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = project / ".sample-agent/skills/speckit-plan/SKILL.md"
+    publish(server, version="2.0.0")
+    original_mkdtemp = _lifecycle.tempfile.mkdtemp
+    backups = []
+
+    def record_backup(*args, **kwargs):
+        directory = original_mkdtemp(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(directory))
+        return directory
+
+    def fail_commit(*args, **kwargs):
+        path.write_text("concurrent managed-file edit")
+        raise OSError("sample commit failure")
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "upgrade", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert path.read_text() == "concurrent managed-file edit"
+    assert "Preserved concurrent edits" in result.output
+    assert len(backups) == 1
+    shutil.rmtree(backups[0])
+
+
+@pytest.mark.parametrize("script", ["sh", "ps", "py"])
+def test_catalog_init_checks_required_tools_and_scaffolds_host_skills(tmp_path, server, monkeypatch, script):
+    metadata = descriptor()
+    metadata["requires"]["tools"] = [{"name": KEY, "required": True}]
+    publish(server, metadata=metadata)
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    monkeypatch.setenv("PATH", str(tmp_path / "absent-tools"))
+    arguments = [
+        "init", "--here", "--force", "--ignore-agent-tools",
+        "--integration", KEY, "--trust-integration", "--script", script,
+    ]
+    denied = run(project, arguments)
+    assert denied.exit_code == 1 and "requires missing tool" in " ".join(denied.output.split())
+    assert snapshot(project) == before
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    executable = tools / (KEY + ".exe" if os.name == "nt" else KEY)
+    executable.write_text("scaffolding-only executable presence double")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools))
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
+    content = skill.read_text()
+    assert "{SCRIPT}" not in content and "__SPECKIT_COMMAND_" not in content
+    assert yaml.safe_load(content.split("---", 2)[1])["name"] == "speckit-plan"
+    assert (project / f".specify/scripts/{'python' if script == 'py' else 'bash' if script == 'sh' else 'powershell'}").is_dir()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("dir", "../outside"), ("dir", ".specify/templates"),
+    ("format", "unsupported"), ("args", None), ("extension", "/../outside"),
+    ("invoke_separator", None), ("dev_no_symlink", "false"),
+])
+def test_force_recovery_validates_persisted_registration_metadata(tmp_path, server, field, value):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    registry = project / ".specify/integrations/packages.json"
+    data = json.loads(registry.read_text())
+    data["packages"][KEY]["registrar_config"][field] = value
+    registry.write_text(json.dumps(data))
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").write_text(
+        "raise RuntimeError('modified code must not execute')"
+    )
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert snapshot(project) == before
+
+
+def test_adapter_cannot_overwrite_a_concurrent_managed_edit_with_a_second_write(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import _lifecycle
+
+    body = '''
+    def setup(self, project_root, manifest, **kwargs):
+        from threading import Thread
+        created = super().setup(project_root, manifest, **kwargs)
+        path = manifest.project_root / ".sample-agent/skills/speckit-plan/SKILL.md"
+        thread = Thread(target=lambda: path.write_text("concurrent managed edit"))
+        thread.start()
+        thread.join()
+        manifest.record_file(path.relative_to(manifest.project_root).as_posix(), "second adapter write")
+        return created
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    original = _lifecycle.tempfile.mkdtemp
+    backups = []
+
+    def record_backup(*args, **kwargs):
+        directory = original(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(directory))
+        return directory
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    try:
+        result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+        assert result.exit_code == 1, result.output
+        assert "refusing to overwrite" in " ".join(result.output.split())
+        assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").read_text() == "concurrent managed edit"
+        assert KEY not in read_records(project)
+    finally:
+        for backup in backups:
+            if backup.exists():
+                shutil.rmtree(backup)

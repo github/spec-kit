@@ -15,6 +15,7 @@ import stat
 import sys
 import tempfile
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -35,6 +36,7 @@ from . import (
     IntegrationDescriptor,
     IntegrationDescriptorError,
 )
+from ._file_changes import after_file_change, before_file_change
 from .base import IntegrationBase
 
 _MODULE_PREFIX = "_speckit_installed_integration_"
@@ -44,6 +46,9 @@ _pending_root: Path | None = None
 _RECORD = ".specify/integrations/packages.json"
 _PACKAGES = ".specify/integrations/packages"
 _source_packages: dict[str, tuple[Path, dict[str, str]]] = {}
+recovery_exclusion: ContextVar[tuple[Path, str] | None] = ContextVar(
+    "integration_recovery_exclusion", default=None
+)
 
 
 class IntegrationInstallError(ValueError):
@@ -198,9 +203,11 @@ def read_records(root: Path) -> dict[str, dict[str, Any]]:
 
 def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
     path = safe_project_path(root, _RECORD)
+    before_file_change(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not records:
         path.unlink(missing_ok=True)
+        after_file_change(path)
         return
     with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
         temporary = Path(stream.name)
@@ -208,6 +215,7 @@ def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
         stream.write("\n")
     try:
         os.replace(temporary, path)
+        after_file_change(path)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -277,23 +285,9 @@ def _validate_output_paths(integration: IntegrationBase, project_root: Path) -> 
             raise IntegrationInstallError(f"Integration '{integration.key}' output uses reserved directory")
 
 
-def _validate_implementation(
-    integration: IntegrationBase, descriptor: IntegrationDescriptor, project_root: Path,
-) -> None:
-    key = descriptor.id
-    config = integration.config
-    registrar = integration.registrar_config
-    if not isinstance(config, dict) or not isinstance(registrar, dict):
-        raise IntegrationInstallError(f"Integration '{key}' requires config and registrar_config mappings")
-    if config.get("name") != descriptor.name:
-        raise IntegrationInstallError(f"Integration '{key}' class/descriptor name mismatch")
-    if getattr(integration, "version", descriptor.version) != descriptor.version:
-        raise IntegrationInstallError(f"Integration '{key}' class/descriptor version mismatch")
-    for field in ("folder", "commands_subdir", "install_url"):
-        if not isinstance(config.get(field), str) or not config[field].strip():
-            raise IntegrationInstallError(f"Integration '{key}' config.{field} must be a non-empty string")
-    if not isinstance(config.get("requires_cli"), bool):
-        raise IntegrationInstallError(f"Integration '{key}' config.requires_cli must be a boolean")
+def _validate_registrar_config(key: str, registrar: Any) -> None:
+    if not isinstance(registrar, dict):
+        raise IntegrationInstallError(f"Integration '{key}' requires a registrar_config mapping")
     for field in ("dir", "format", "args", "extension"):
         if not isinstance(registrar.get(field), str) or not registrar[field].strip():
             raise IntegrationInstallError(f"Integration '{key}' registrar_config.{field} must be a non-empty string")
@@ -303,6 +297,32 @@ def _validate_implementation(
         registrar["format"] == "markdown" and registrar["extension"] == "/SKILL.md"
     ):
         raise IntegrationInstallError(f"Integration '{key}' has unsafe registration extension")
+    if "invoke_separator" in registrar and (
+        not isinstance(registrar["invoke_separator"], str) or not registrar["invoke_separator"]
+    ):
+        raise IntegrationInstallError(f"Integration '{key}' registrar_config.invoke_separator must be a non-empty string")
+    if "dev_no_symlink" in registrar and not isinstance(registrar["dev_no_symlink"], bool):
+        raise IntegrationInstallError(f"Integration '{key}' registrar_config.dev_no_symlink must be a boolean")
+
+
+def _validate_implementation(
+    integration: IntegrationBase, descriptor: IntegrationDescriptor, project_root: Path,
+) -> None:
+    key = descriptor.id
+    config = integration.config
+    registrar = integration.registrar_config
+    if not isinstance(config, dict):
+        raise IntegrationInstallError(f"Integration '{key}' requires a config mapping")
+    _validate_registrar_config(key, registrar)
+    if config.get("name") != descriptor.name:
+        raise IntegrationInstallError(f"Integration '{key}' class/descriptor name mismatch")
+    if getattr(integration, "version", descriptor.version) != descriptor.version:
+        raise IntegrationInstallError(f"Integration '{key}' class/descriptor version mismatch")
+    for field in ("folder", "commands_subdir", "install_url"):
+        if not isinstance(config.get(field), str) or not config[field].strip():
+            raise IntegrationInstallError(f"Integration '{key}' config.{field} must be a non-empty string")
+    if not isinstance(config.get("requires_cli"), bool):
+        raise IntegrationInstallError(f"Integration '{key}' config.requires_cli must be a boolean")
     folder = config["folder"].rstrip("/")
     destination = f"{folder}/{config['commands_subdir']}"
     _validate_output_paths(integration, project_root)
@@ -399,6 +419,9 @@ def load_installed_integrations(project_root: Path) -> list[str]:
     _loading = True
     try:
         records = read_records(root)
+        recovery = recovery_exclusion.get()
+        excluded = recovery[1] if recovery is not None and recovery[0] == root else None
+        selected = {key: info for key, info in records.items() if key != excluded}
         base = safe_project_path(root, _PACKAGES)
         if base.is_dir():
             for child in base.iterdir():
@@ -406,9 +429,9 @@ def load_installed_integrations(project_root: Path) -> list[str]:
                     continue
                 if child.name not in records:
                     raise IntegrationInstallError(f"Unregistered integration package: {child.name}")
-        identity: list[Any] = [str(root)]
+        identity: list[Any] = [str(root), excluded]
         descriptors = {}
-        for key, info in sorted(records.items()):
+        for key, info in sorted(selected.items()):
             package = safe_project_path(root, f"{_PACKAGES}/{key}")
             hashes = package_hashes(package)
             if hashes != info["files"]:
@@ -416,20 +439,34 @@ def load_installed_integrations(project_root: Path) -> list[str]:
             descriptors[key] = _descriptor(package, key, info)
             identity.append((key, tuple(sorted(hashes.items()))))
         if tuple(identity) == _loaded_identity and all(
-            key in INTEGRATION_REGISTRY for key in records
+            key in INTEGRATION_REGISTRY for key in selected
         ):
-            for key in records:
+            for key in selected:
                 _validate_output_paths(INTEGRATION_REGISTRY[key], root)
-            return list(records)
+            return list(selected)
         unload_installed_integrations()
-        for key in sorted(records):
+        for key in sorted(selected):
             INTEGRATION_REGISTRY[key] = _import_package(
                 safe_project_path(root, f"{_PACKAGES}/{key}"), descriptors[key], records[key]["files"], root
             )
             safe_project_path(root, INTEGRATION_REGISTRY[key].config["folder"].rstrip("/"))
         _loaded_identity = tuple(identity)
         _refresh_configs()
-        return list(records)
+        if excluded is not None and excluded in records:
+            config = records[excluded].get("registrar_config")
+            if config is not None:
+                _validate_registrar_config(excluded, config)
+                directory = config.get("dir")
+                if not isinstance(directory, str):
+                    raise IntegrationInstallError("Invalid persisted adapter registration directory")
+                safe_project_path(root, directory)
+                if Path(directory).parts[0].casefold() in {".git", ".specify"}:
+                    raise IntegrationInstallError("Reserved persisted adapter registration directory")
+                agents = sys.modules.get("specify_cli.agents")
+                if agents is not None:
+                    for registrar in (agents.CommandRegistrar, *agents.CommandRegistrar.__subclasses__()):
+                        registrar.AGENT_CONFIGS[excluded] = dict(config)
+        return list(selected)
     except BaseException:
         unload_installed_integrations()
         raise
@@ -546,9 +583,11 @@ def persist_package(root: Path, key: str, package: Path, record: dict[str, Any])
         shutil.copytree(package, staged, ignore=shutil.ignore_patterns("__pycache__"))
         if package_hashes(staged) != record["files"]:
             raise IntegrationInstallError("Integration package changed while staging")
+        before_file_change(destination)
         if destination.exists():
             shutil.rmtree(destination)
         os.replace(staged, destination)
+        after_file_change(destination)
         records = read_records(root)
         records[key] = record
         write_records(root, records)
@@ -560,7 +599,9 @@ def remove_package(root: Path, key: str) -> None:
     if key not in records:
         return
     directory = safe_project_path(root, f"{_PACKAGES}/{key}")
+    before_file_change(directory)
     shutil.rmtree(directory)
+    after_file_change(directory)
     del records[key]
     write_records(root, records)
     load_installed_integrations(root)
@@ -576,6 +617,11 @@ def prepared_adapter(root: Path, key: str, package: Path, record: dict[str, Any]
     integration = _import_package(package, descriptor, record["files"], root)
     safe_project_path(root, integration.config["folder"].rstrip("/"))
     INTEGRATION_REGISTRY[key] = integration
+    record["registrar_config"] = {
+        **integration.registrar_config,
+        "invoke_separator": integration.invoke_separator,
+        "dev_no_symlink": integration.dev_no_symlink,
+    }
     _pending_root = root.resolve()
     _refresh_configs()
     try:

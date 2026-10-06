@@ -121,7 +121,11 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
 def _remove_integration_json(project_root: Path) -> None:
     """Remove ``.specify/integration.json`` if it exists."""
     path = project_root / INTEGRATION_JSON
+    from ._file_changes import after_file_change, before_file_change
+
+    before_file_change(path)
     path.unlink(missing_ok=True)
+    after_file_change(path)
 
 
 # ---------------------------------------------------------------------------

@@ -605,7 +605,11 @@ class IntegrationBase(ABC):
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         dst = dest_dir / filename
+        from ._file_changes import after_file_change, before_file_change
+
+        before_file_change(dst)
         shutil.copy2(src, dst)
+        after_file_change(dst)
         return dst
 
     @staticmethod
@@ -637,7 +641,11 @@ class IntegrationBase(ABC):
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         normalized = content.replace("\r\n", "\n")
+        from ._file_changes import after_file_change, before_file_change
+
+        before_file_change(dest)
         dest.write_bytes(normalized.encode("utf-8"))
+        after_file_change(dest)
         rel = dest.resolve().relative_to(project_root.resolve())
         manifest.record_existing(rel)
         return dest

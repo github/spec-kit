@@ -148,6 +148,9 @@ class WorkflowRegistry:
 
     def save(self) -> None:
         """Persist registry to disk atomically."""
+        from ...integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(self.registry_path)
         # Refuse to write through symlinked parents (mirrors StepRegistry.save
         # and the CLI-level _reject_unsafe_dir guard).
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
@@ -209,6 +212,7 @@ class WorkflowRegistry:
             os.close(fd)
             fd = -1
             os.replace(tmp, self.registry_path)
+            after_file_change(self.registry_path)
         except BaseException:
             if fd >= 0:
                 try:

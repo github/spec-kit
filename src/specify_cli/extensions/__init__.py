@@ -825,9 +825,13 @@ class ExtensionRegistry:
 
     def _save(self):
         """Save registry to disk."""
+        from ..integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(self.registry_path)
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
         with open(self.registry_path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
+        after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):
         """Add extension to registry.

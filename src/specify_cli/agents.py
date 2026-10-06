@@ -1030,10 +1030,14 @@ class CommandRegistrar:
         agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(dest_file)
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
             if dest_file.is_symlink():
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
+            after_file_change(dest_file)
             return
 
         rel_output = Path(f"{output_name}{extension}")
@@ -1055,6 +1059,7 @@ class CommandRegistrar:
             if dest_file.is_symlink():
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
+        after_file_change(dest_file)
 
     @staticmethod
     def write_copilot_prompt(project_root: Path, cmd_name: str) -> None:
@@ -1074,7 +1079,11 @@ class CommandRegistrar:
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(prompt_file)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
+        after_file_change(prompt_file)
 
     @staticmethod
     def _resolve_agent_dir(
@@ -1408,7 +1417,11 @@ class CommandRegistrar:
                         except ValueError:
                             continue
                         if cmd_file.exists() or cmd_file.is_symlink():
+                            from .integrations._file_changes import after_file_change, before_file_change
+
+                            before_file_change(cmd_file)
                             cmd_file.unlink()
+                            after_file_change(cmd_file)
                             # For SKILL.md agents each command lives in its own
                             # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
                             # SKILL.md).  Remove the parent dir when it becomes
@@ -1425,7 +1438,11 @@ class CommandRegistrar:
                         project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
                     )
                     if prompt_file.exists():
+                        from .integrations._file_changes import after_file_change, before_file_change
+
+                        before_file_change(prompt_file)
                         prompt_file.unlink()
+                        after_file_change(prompt_file)
 
 
 # Populate AGENT_CONFIGS after class definition.

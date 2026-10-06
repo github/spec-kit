@@ -1,13 +1,14 @@
 """The ``specify integration list`` command."""
 from __future__ import annotations
 
-
 import typer
 from rich.table import Table
 
 from .._console import console
 from ..integration_state import (
     default_integration_key as _default_integration_key,
+)
+from ..integration_state import (
     installed_integration_keys as _installed_integration_keys,
 )
 from ._commands import integration_app
@@ -19,10 +20,10 @@ def integration_list(
     catalog: bool = typer.Option(False, "--catalog", help="Browse full catalog (built-in + community)"),
 ):
     """List available integrations and installed status."""
-    from . import INTEGRATION_REGISTRY
     from .. import _require_specify_project
+    from . import BUILTIN_INTEGRATION_KEYS, INTEGRATION_REGISTRY
 
-    project_root = _require_specify_project()
+    project_root = _require_specify_project(load_integrations=not catalog)
     current = _read_integration_json(project_root)
     default_key = _default_integration_key(current)
     installed_keys = set(_installed_integration_keys(current))
@@ -57,14 +58,14 @@ def integration_list(
                 status = "[green]installed (default)[/green]"
             elif eid in installed_keys:
                 status = "[green]installed[/green]"
-            elif eid in INTEGRATION_REGISTRY:
+            elif eid in BUILTIN_INTEGRATION_KEYS:
                 status = "built-in"
             elif install_allowed is False:
                 status = "discovery-only"
             else:
                 status = ""
             safe = ""
-            if eid in INTEGRATION_REGISTRY:
+            if eid in BUILTIN_INTEGRATION_KEYS:
                 reg_integ = INTEGRATION_REGISTRY[eid]
                 safe = "yes" if getattr(reg_integ, "multi_install_safe", False) else "no"
             table.add_row(

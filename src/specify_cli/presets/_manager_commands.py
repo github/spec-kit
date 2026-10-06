@@ -183,11 +183,9 @@ class _PresetCommandMethods:
                 commands_to_register.append(cmd)
 
         try:
-            from ..agents import CommandRegistrar
+            registrar = self._command_registrar()
         except ImportError:
             return {}
-
-        registrar = CommandRegistrar()
 
         # Single-active rule (#2948): preset command overrides register for
         # the active integration only. A project without a recorded active
@@ -263,9 +261,7 @@ class _PresetCommandMethods:
         # for them by design, so this restriction only applies to
         # command-backed integrations.
         try:
-            from ..agents import CommandRegistrar
-
-            agent_config = CommandRegistrar().AGENT_CONFIGS.get(agent_name)
+            agent_config = self._command_registrar().AGENT_CONFIGS.get(agent_name)
         except ImportError:
             agent_config = None
         is_command_backed = bool(agent_config) and agent_config.get("extension") != "/SKILL.md"
@@ -694,9 +690,7 @@ class _PresetCommandMethods:
             return
 
         try:
-            from ..agents import CommandRegistrar
-
-            registrar = CommandRegistrar()
+            registrar = self._command_registrar()
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         except ImportError:
             registrar = None
@@ -823,11 +817,9 @@ class _PresetCommandMethods:
             registered_commands: Dict mapping agent names to command name lists
         """
         try:
-            from ..agents import CommandRegistrar
+            registrar = self._command_registrar()
         except ImportError:
             return
-
-        registrar = CommandRegistrar()
         registrar.unregister_commands(registered_commands, self.project_root)
 
     def _merge_pack_registered_commands(
@@ -947,12 +939,11 @@ class _PresetCommandMethods:
         # uncomposable stale file gets unregistered. The loop already skips
         # names that resolve to no layers at all (``if not layers: continue``).
         try:
-            from ..agents import CommandRegistrar
+            registrar = self._command_registrar()
         except ImportError:
             return set()
 
         resolver = PresetResolver(self.project_root)
-        registrar = CommandRegistrar()
         reconciled_commands: set[str] = set()
 
         def record_written(written: Dict[str, List[str]]) -> None:

@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ._file_changes import after_file_change, before_file_change
+
 
 def _sha256(path: Path) -> str:
     """Return the hex SHA-256 digest of *path*."""
@@ -152,6 +154,7 @@ class IntegrationManifest:
         """
         rel = Path(rel_path)
         abs_path = _validate_rel_path(rel, self.project_root)
+        before_file_change(abs_path)
         abs_path.parent.mkdir(parents=True, exist_ok=True)
 
         if isinstance(content, str):
@@ -163,6 +166,7 @@ class IntegrationManifest:
         # ``record_file`` writes *produced* content, so any prior
         # recovered marker for this path is no longer accurate.
         self._recovered_files.discard(normalized)
+        after_file_change(abs_path)
         return abs_path
 
     def record_existing(self, rel_path: str | Path, *, recovered: bool = False) -> None:
@@ -231,6 +235,8 @@ class IntegrationManifest:
             # recovered marker so future is_recovered() queries reflect the
             # transition. ``discard`` is a no-op when the key is absent.
             self._recovered_files.discard(normalized)
+        if not recovered:
+            after_file_change(abs_path)
 
     def remove(self, rel_path: str | Path) -> bool:
         """Drop *rel_path* from the tracked file set and any recovered marker.
@@ -383,11 +389,13 @@ class IntegrationManifest:
                         skipped.append(path)
                         continue
             try:
+                before_file_change(path)
                 path.unlink()
             except OSError:
                 skipped.append(path)
                 continue
             removed.append(path)
+            after_file_change(path)
             # Clean up empty parent directories up to project root
             parent = path.parent
             while parent != root:
@@ -401,7 +409,9 @@ class IntegrationManifest:
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
         if remove_manifest and manifest.exists():
             try:
+                before_file_change(manifest)
                 manifest.unlink()
+                after_file_change(manifest)
             except OSError:
                 # An undeletable manifest (read-only file, a directory left at
                 # the path, a Windows lock) must not abort the uninstall after
@@ -441,6 +451,7 @@ class IntegrationManifest:
         }
         path = self.manifest_path
         content = json.dumps(data, indent=2) + "\n"
+        before_file_change(path)
         _ensure_safe_manifest_destination(self.project_root, path)
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         temp_path = Path(temp_name)
@@ -450,6 +461,7 @@ class IntegrationManifest:
             temp_path.chmod(0o644)
             _ensure_safe_manifest_destination(self.project_root, path)
             os.replace(temp_path, path)
+            after_file_change(path)
         finally:
             temp_path.unlink(missing_ok=True)
         return path

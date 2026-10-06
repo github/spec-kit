@@ -430,7 +430,7 @@ from .integrations._helpers import (  # noqa: E402
 from ._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: E402
 
 
-def _require_specify_project(*, load_integrations: bool = True) -> Path:
+def _require_specify_project(*, load_integrations: bool = False) -> Path:
     """Return the project root if it is a spec-kit project, else exit.
 
     Honors the ``SPECIFY_INIT_DIR`` override (same validation rules as the shell

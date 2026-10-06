@@ -242,12 +242,21 @@ specify integration upgrade [<key>]
 | `--force`                | Overwrite files even if they have been modified                          |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--integration-options`  | Options for the integration                                              |
+| `--trust-integration`    | Authorize downloading/importing the reviewed replacement external adapter |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
 
 Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration. A non-default upgrade still refreshes that integration's core commands, but does not re-register its extension or preset layers — `use`/`switch` that integration afterward to rescaffold them.
 
 If an upgrade would change an integration between command and skills layouts while preset artifacts are registered for it, the upgrade is rejected before changing files. Remove the affected presets, run the layout-changing upgrade, then reinstall them.
+
+For external adapters, `upgrade --force` and `uninstall --force` can also recover
+missing, modified, incompatible, or import-failing installed code using validated
+ownership metadata. This is reported explicitly and does not bypass source policy
+or the replacement package's trust decision. Failed lifecycle operations restore
+only operation-owned changes. Independent workflow progress and unowned user
+files are preserved; conflicting concurrent managed-file edits are reported with
+retained recovery snapshots.
 
 ## Report Integration Status
 
@@ -273,6 +282,10 @@ list, or records no installed integrations.
 ## Catalog Management
 
 Integration catalogs control where the discovery commands (`search` and `info`) look for integrations. Catalogs are checked in priority order.
+
+Catalog management, `integration list --catalog`, and `integration info` do not
+execute adapter code. Ordinary integration listing, setup, selection, status,
+registration, and workflow dispatch load trusted installed implementations.
 
 ### List Catalogs
 

@@ -324,6 +324,9 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
+    from .integrations._file_changes import after_file_change, before_file_change
+
+    before_file_change(dest)
     fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
     temp_path = Path(temp_name)
     try:
@@ -332,6 +335,7 @@ def _write_shared_bytes(
         temp_path.chmod(mode)
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
+        after_file_change(dest)
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -801,7 +805,11 @@ def install_shared_infra(
             if not _safe_dest_or_bucket(dst, rel):
                 continue
             try:
+                from .integrations._file_changes import after_file_change, before_file_change
+
+                before_file_change(dst)
                 dst.unlink()
+                after_file_change(dst)
             except OSError as exc:
                 console.print(f"[yellow]⚠[/yellow]  could not remove stale {rel}: {exc}")
                 continue

@@ -175,12 +175,16 @@ incompatible, or unimportable implementations produce explicit errors.
 Python source is verified again when imported, including relative helper
 modules; cached bytecode is never used to execute package code.
 
-Project selection loads installed adapters before setup, agent configuration,
+Execution entry points load installed adapters before setup, agent configuration,
 extension/preset registration, status, and workflow dispatch. Fresh CLI
 processes use the persisted package, not the catalog. Changing projects unloads
 external registry entries, synthetic Python packages and their submodules, and
 refreshes agent configuration/registrar caches in place. Built-in keys cannot
 be replaced by packages.
+Catalog listing, catalog discovery, and `integration info` read metadata without
+importing installed adapters. Merely checking that a directory is a Spec Kit
+project does not load adapter code; registration managers load it when they
+actually need the adapter's rendering configuration.
 
 `init --integration`, `integration install`, and `integration switch` can
 resolve an uninstalled adapter from an install-enabled catalog. `use` selects
@@ -188,9 +192,13 @@ an already installed adapter. `upgrade` downloads the catalog's current
 version and requires a new trust decision; it still refuses modified generated
 files unless `--force` is supplied. `uninstall` removes executable code and its
 registration while retaining modified generated files unless forced.
-Adapter lifecycle mutations are project-locked and roll back package code,
-metadata, shared infrastructure, and declared agent output roots when
-download/import/setup or durable package commit fails. Extensions and presets
+Adapter lifecycle mutations are project-locked and journal operation-owned
+file changes, including package code, metadata, shared infrastructure, and
+generated artifacts. Failed setup or durable package commit restores those
+changes, not entire agent directories or all of `.specify`. Independent workflow
+progress and unowned user files are left untouched. Concurrent edits to a managed
+file are preserved and reported with retained recovery snapshots; a later host
+write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
 Cancelling initialization discards the prepared adapter without installing code
 or reporting success.
@@ -201,6 +209,13 @@ before unloading its code, preserves user-modified contributions, and
 re-registers contributions for a remaining default integration.
 If filesystem recovery itself fails, the error reports retained snapshot
 paths for manual recovery rather than deleting the only backup.
+`upgrade --force` and `uninstall --force` can recover a recorded adapter whose
+implementation is missing, modified, incompatible, or fails to import. Recovery
+excludes only that adapter, validates the others, and uses validated manifest
+ownership and persisted registrar configuration for cleanup. It reports this
+recovery explicitly and never bypasses catalog source policy or the replacement
+package's trust decision. Ordinary selection and lifecycle operations still fail
+explicitly for damaged installed implementations.
 
 See the [catalog contract](../integrations/README.md) and
 [user reference](../docs/reference/integrations.md) for public commands.
