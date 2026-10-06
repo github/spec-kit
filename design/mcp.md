@@ -372,8 +372,9 @@ not a lossless capability contract:
 
 - `readOnlyHint` is true only when the operation has no `project-write`,
   `execution`, or `self-modifying` capability.
-- `destructiveHint` is true when the operation may overwrite, delete, replace,
-  or reconfigure existing state. It is false only for additive updates.
+- `destructiveHint` is omitted when `readOnlyHint` is true. Otherwise it is
+  true when the operation may overwrite, delete, replace, or reconfigure
+  existing state, and false only for additive updates.
 - `idempotentHint` is true only when the operation contract guarantees that
   repeated calls with the same arguments have no additional effect.
 - `openWorldHint` is true when network access is `optional` or `required`, or
