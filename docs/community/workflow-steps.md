@@ -82,9 +82,9 @@ requires a valid release version and a 64-character hexadecimal SHA-256 digest
 for `step.yml`, `__init__.py`, and every `extra_files` path.
 
 The direct `--from` archive installer does not currently accept or verify an
-archive digest. The submitted Download URL is versioned release and test
-evidence, not an immutable content guarantee; the per-file digests protect the
-separate catalog-installation path.
+archive digest. The submitted Download URL and Testing Details fields provide
+versioned-release and installation-test evidence, not an immutable content
+guarantee; the per-file digests protect the separate catalog-installation path.
 
 ## Prepare a Submission
 

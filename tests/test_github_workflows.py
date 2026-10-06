@@ -573,6 +573,7 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
         "testing-details",
         "attestations",
         "additional-context",
+        "ai-disclosure",
     }
     required_ids = {
         "step-id",
@@ -593,6 +594,7 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
         "step-types-provided",
         "documentation",
         "testing-details",
+        "ai-disclosure",
     }
     assert {
         field["id"]
@@ -620,6 +622,13 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
     assert "versioned" in download_description
     assert "immutable" not in download_description
     assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
+    feature_form = yaml.safe_load(
+        (forms_dir / "feature_request.yml").read_text(encoding="utf-8")
+    )
+    feature_fields = {
+        item["id"]: item for item in feature_form["body"] if "id" in item
+    }
+    assert field_by_id["ai-disclosure"] == feature_fields["ai-disclosure"]
 
 
 def test_workflow_step_submission_form_documents_intake_only_phase():
