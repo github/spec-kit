@@ -250,8 +250,8 @@ Runtime policy state is separate from static inventory disposition. An
 available tool has a request-specific `effective_state` of:
 
 - `enabled`: the active policy authorizes the complete validated request,
-  including required capabilities, network access, filesystem scope and roots,
-  external-source trust policy, and unrestricted host execution.
+  including required capabilities, network access, and external-source trust
+  policy.
 - `policy-disabled`: the tool remains discoverable, but invocation returns a
   structured `policy_denied` error identifying every denied policy dimension.
 
@@ -302,8 +302,8 @@ The MCP adapter projects that contract onto MCP:
 
 - Its input schema is command-specific and maps into the shared typed request.
 - It performs protocol/schema validation but no state-dependent semantic work.
-- It invokes the shared validation and authorization lifecycle before
-  application behavior.
+- It applies MCP policy to the shared operation's declared requirements before
+  invoking application behavior.
 - It maps the shared result and warnings into command-specific structured
   content.
 - It maps expected shared errors into MCP tool errors without adding
@@ -316,50 +316,34 @@ The command/domain hierarchy continues to own the semantic result shape.
 Unexpected exceptions become sanitized `internal_error` tool failures and are
 logged only through the MCP diagnostic channel.
 
-## Invocation context and project resolution
-
-The MCP adapter constructs the immutable
-[shared invocation context](shared.md#invocation-context) from the requested
-directory, server launch state, active policy, and call lifecycle. Local stdio
-uses `HostUser` filesystem access by default, like the direct CLI. A host may
-explicitly configure `RootBound(allowed_roots)`; the adapter never derives that
-boundary from cwd. Context construction performs no project discovery or
-filesystem resolution.
-
-MCP server composition also binds `application_resources` to distribution
-metadata and validated first-party assets through standard package-resource
-APIs, with a validated source/editable-layout fallback. Tool schemas never
-accept an application-resource root or raw package path. The same interface is
-available under stdio and future Streamable HTTP transports.
+## Project directory and execution environment
 
 Project-scoped MCP tools accept an optional project directory when their use
 case needs one. If omitted, project discovery starts from the server launch
-working directory, matching normal CLI behavior. The adapter carries that
-requested context into the shared request; after capability authorization, the
-shared operation resolves the project through the same domain helper used by
-CLI and produces the same semantic errors.
+working directory, matching normal CLI behavior. The adapter maps that explicit
+path into the shared request. The shared operation resolves it through the same
+domain helper used by CLI and produces the same semantic errors.
 
-The invocation follows these rules:
+The adapter and shared operation follow these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Pass the unresolved requested directory and explicitly selected filesystem
-  scope.
-- Pass trusted application resources separately from the project filesystem;
-  use them only after `local-read` authorization.
-- Perform preliminary policy checks without filesystem access, then resolve
-  the canonical project root under authorized `local-read`.
-- Pass the resolved project root and selected filesystem interface through
-  operation phases.
-- Under `RootBound`, re-check canonical containment after resolution and
-  enforce it at every descendant access with descriptor-/handle-based no-follow
-  traversal or an equivalent fail-closed platform mechanism.
+- Authorize the operation's declared capabilities and network requirements
+  before invoking behavior that uses them.
+- Pass the resolved project or target path explicitly through operation phases.
+- Use the same shared Python/domain helpers as CLI for distribution metadata,
+  bundled assets, project files, and other application behavior.
 - Do not infer the project from an unrelated server process state after the
   invocation begins.
 
 `init` is a special project-creation operation: its request identifies the
-target directory, while the context identifies the launch directory and
-filesystem scope.
+target directory rather than an existing project root.
+
+Local stdio runs with the operating-system permissions of the server process,
+just as the CLI runs with its process user's permissions. The command
+architecture does not claim to provide a per-operation filesystem sandbox. A
+host that needs confinement runs the MCP server inside an OS sandbox, container,
+restricted account, or equivalent transport-host boundary.
 
 ## Non-interactive behavior
 
@@ -373,20 +357,18 @@ MCP operations are always non-interactive:
 - If no safe default exists, return a structured `input_required` or
   `confirmation_required` error explaining which field must be supplied.
 
-Machine mode is not consent. An MCP call, `--json`, `--non-interactive`, a
-host confirmation dialog, or authorization of `local-read`, `project-write`,
-or `execution` does not imply:
+Machine mode is not consent. Starting MCP, using `--json` or
+`--non-interactive`, or receiving a host confirmation does not imply:
 
 - `force=true`.
 - Trust of an external URL or downloaded executable content.
 - Permission to overwrite user-modified files.
-- Under `RootBound`, permission to leave the declared project root.
-- Permission to execute a workflow, hook, installer, or arbitrary command.
-- Permission for a child process to use unrestricted host access.
+- Permission to execute behavior that the caller did not explicitly request.
 
-Consent must be explicit in the command request and valid under the active
-access policy. MCP annotations and host UI are advisory; the server still
-enforces operation requirements.
+The caller must explicitly invoke an execution operation, supply any
+command-specific consent fields, and satisfy the active access policy. MCP
+annotations and host UI are advisory; the server still enforces operation
+requirements.
 
 ## Capability requirements and access policy
 
@@ -397,17 +379,10 @@ is not sufficient. Examples:
 
 ```text
 version       -> {local-read}
-check         -> {local-read, execution, unrestricted-host-execution}
-workflow.run  -> {local-read, project-write, execution,
-                  unrestricted-host-execution}
-self.upgrade  -> {local-read, execution, unrestricted-host-execution,
-                  self-modifying}
+check         -> {local-read, execution}
+workflow.run  -> {local-read, project-write, execution}
+self.upgrade  -> {local-read, execution, self-modifying}
 ```
-
-These examples conservatively classify their child processes as using ambient
-host privileges. An implementation may omit `unrestricted-host-execution` only
-when an enforceable sandbox contains the child within its authorized
-filesystem, network, environment, and subprocess boundaries.
 
 `read-only` is a derived description, not an authorizable capability. A
 request is read-only only when it requires no `project-write`, `execution`, or
@@ -424,15 +399,7 @@ default policy is conservative:
 - `local-read` is authorized.
 - `project-write`, `execution`, and `self-modifying` require explicit
   authorization.
-- `unrestricted-host-execution` requires a separate explicit authorization and
-  remains default-deny.
-- Local stdio uses `HostUser` filesystem access, matching direct CLI behavior.
-- A host-configured `RootBound` scope is enforced at every access. A future
-  remote transport must select its filesystem scope explicitly and must not
-  inherit stdio's host-user default accidentally.
-- Server-managed and sandboxed network access is denied unless explicitly
-  enabled. An authorized unrestricted host child is a disclosed broad
-  exception, not a network-confined execution mode.
+- Network access is denied unless explicitly enabled.
 - External-source trust is separately controlled and remains default-deny.
 
 Tool annotations should conservatively reflect the full declared capability
@@ -448,12 +415,10 @@ optional, expected to be idempotent, or combined with a more powerful
 capability. MCP enforces the shared operation's static and request-specific
 declarations; it does not infer or reduce them independently.
 
-An MCP execution request must use a host sandbox that enforces its authorized
-filesystem, network, environment, and subprocess boundaries. If the
-implementation launches a child with ambient server-user access instead, the
-operation descriptor and request-specific capability calculation must require
-`unrestricted-host-execution`. The server must deny the request when that
-separate grant is absent; setting cwd inside the project is not confinement.
+`execution` authorizes an operation to launch a child process. That child runs
+with the MCP server process user's privileges unless the host externally
+sandboxes the server. Setting cwd inside a project is not a security boundary,
+and this command architecture does not claim otherwise.
 
 ## Trust, confirmation, and network responsibilities
 
@@ -470,19 +435,20 @@ confirmation. The adapters own how explicit consent enters the request.
   behavior, shared by both adapters.
 - Transport authentication does not replace operation authorization.
 
-Network calls use bounded connect/read timeouts and honor the invocation
-deadline. Operations do not silently switch from offline to online behavior.
-When a request supports offline behavior, the input states it explicitly or
-uses the same documented default as the CLI.
+Network calls use bounded connect/read timeouts. Operations do not silently
+switch from offline to online behavior. When a request supports offline
+behavior, the input states it explicitly or uses the same documented default
+as the CLI.
 
 ## Timeouts, cancellation, stdin, and bounded output
 
-The transport adapter creates the invocation deadline and cancellation signal;
-the operation and its phases honor them.
+The transport adapter owns protocol deadlines, cancellation, and response-size
+enforcement. Operations expose focused support only when their behavior can
+cooperate with it.
 
-- Subprocesses and network calls receive a timeout derived from the remaining
-  deadline.
-- Complex operations check cancellation between cohesive phases.
+- Subprocesses and network calls receive explicit timeouts.
+- A complex operation may accept a cancellation token or deadline as a focused
+  parameter; there is no universal invocation context.
 - Transactional mutations roll back or report partial state according to
   their domain contract.
 - Cancellation returns a structured cancellation error, never a successful
@@ -492,8 +458,8 @@ the operation and its phases honor them.
 - Potentially large lists use command-owned limits or pagination.
 - Truncation is explicit and includes a continuation cursor or a clear
   `truncated` marker; it is never silent.
-- Output-budget enforcement belongs to shared invocation infrastructure, while
-  pagination semantics belong to the command hierarchy.
+- MCP response-size enforcement belongs to the adapter; pagination semantics
+  belong to the command hierarchy.
 
 ## Transport separation
 
@@ -521,8 +487,6 @@ src/specify_cli/mcp_server/
 ├── server.py
 ├── registry.py
 ├── policy.py
-├── context.py
-├── resources.py
 └── transports/
     ├── stdio.py
     └── streamable_http.py
@@ -530,10 +494,6 @@ src/specify_cli/mcp_server/
 
 Create only the modules justified by implemented behavior. The layout defines
 an architectural boundary, not a requirement to add empty files.
-
-`resources.py` binds the shared read-only application-resource interface to the
-running Specify distribution. It does not own command-specific asset selection
-or expose package paths as project roots.
 
 ## Testing structure
 
@@ -548,12 +508,9 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify structured warnings and tool errors.
 - Verify access-policy, trust, timeout, cancellation, and output-budget
   failures.
-- Verify descendant filesystem escapes are rejected at the point of access.
-- Verify installed metadata and bundled assets remain readable through the
-  read-only application-resource interface when package paths are outside
-  project roots, and cannot be written or selected by caller path.
-- Verify unsandboxed child execution requires
-  `unrestricted-host-execution` and never occurs as a fallback.
+- Verify project-directory mapping and operation dispatch without `os.chdir()`.
+- Verify execution and network operations are denied when their declared
+  requirements are not authorized.
 
 ### Inventory tests
 
@@ -609,11 +566,10 @@ network_access: none
 project_scope: process
 ```
 
-`_operation_version.py` reads distribution metadata through
-`ReadOnlyApplicationResources` and owns typed version collection and
-`VersionResult`. `command_version.py` renders the panel, feature text, or
-established JSON object. `mcp_version.py` returns the same result fields as
-structured content. No adapter starts a child process.
+`_operation_version.py` owns typed version collection and `VersionResult`,
+using the normal shared version/domain helper. `command_version.py` renders the
+panel, feature text, or established JSON object. `mcp_version.py` returns the
+same result fields as structured content. No adapter starts a child process.
 
 ### `artifact list`: project-scoped read
 
@@ -643,14 +599,12 @@ network_access: none
 project_scope: required
 ```
 
-The request contains an optional project directory. After authorization,
-project resolution produces a canonical root in the authorized operation
-context, re-checks allowed-root containment, and uses the root-bound filesystem
-interface for every descendant access. `_operation_list.py` uses
-`ArtifactCatalog` and returns typed artifact rows. The CLI adapter preserves
-its JSON stream contract; the MCP adapter exposes the rows through its output
-schema and never captures CLI stdout. Invocation output budgets must produce
-explicit bounded-output behavior rather than silent truncation.
+The request contains an optional project directory. After authorization, the
+shared operation resolves and validates that path, uses `ArtifactCatalog`, and
+returns typed artifact rows. The CLI adapter preserves its JSON stream
+contract; the MCP adapter exposes the rows through its output schema and never
+captures CLI stdout. Large results use explicit operation limits or pagination
+rather than silent truncation.
 
 ### `init`: complex project mutation
 
@@ -683,8 +637,7 @@ Contract:
 operation_id: init
 cli_path: specify init
 mcp_tool_name: specify_init
-capabilities: [local-read, project-write, execution,
-               unrestricted-host-execution]
+capabilities: [local-read, project-write, execution]
 network_access: optional
 project_scope: creates-target
 ```
@@ -695,14 +648,7 @@ never prompts and never turns its machine context into force or trust. The
 shared operation validates inputs, builds a plan, applies transactional
 changes, and returns created/updated paths plus structured warnings. The CLI
 adapter may gather interactive choices before constructing the same request.
-Bundled templates and scripts are read through
-`ReadOnlyApplicationResources`; created project files use the authorized
-project filesystem interface.
-
-`init` tool checks launch host binaries, so this example conservatively
-requires `unrestricted-host-execution`. A sandboxed implementation may omit
-that capability, but it must not infer the grant from `execution` or silently
-fall back when a sandbox is unavailable.
+Bundled templates and scripts use the same shared asset helpers as CLI.
 
 If the target is non-empty and `force` is false, both adapters receive the same
 semantic confirmation-required failure. The CLI may respond by prompting and
@@ -732,8 +678,6 @@ Avoid:
   hierarchy.
 - Adding operation phases or `_mcp.py` files solely for symmetry.
 - Silently omitting CLI leaves from the MCP inventory.
-- Adding installed package or source-checkout resource paths to
-  request-writable roots.
 - Returning partial, truncated, or fallback data as a successful complete
   result.
 - Letting transport concerns leak into command contracts.
@@ -754,8 +698,6 @@ For a new or migrated MCP operation:
       not capabilities alone.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
-- [ ] Distribution metadata and bundled first-party assets use the trusted
-      read-only application-resource interface, not project roots.
 - [ ] Timeouts, cancellation, stdin, and output bounds are handled.
 - [ ] Existing CLI human and JSON behavior remains compatible.
 - [ ] Operation, CLI adapter, MCP adapter, parity, and protocol tests cover

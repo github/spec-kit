@@ -221,41 +221,26 @@ Registration imports should be explicit and ordered consistently. Do not rely
 on filesystem discovery to import arbitrary modules, because command exposure
 should remain reviewable in one place.
 
-## Shared invocation context and direct CLI policy
+## Shared operation invocation
 
-The direct local CLI constructs the
-[shared invocation context](shared.md#invocation-context) explicitly:
+The CLI adapter maps parsed arguments and options into the shared typed request,
+invokes the operation, and renders its outcome.
 
-- `launch_working_directory` is captured once when the CLI invocation begins.
-- `requested_directory` comes from the command's typed input, or remains absent
-  when project discovery should begin from the launch directory.
-- `filesystem_scope` is `HostUser`, preserving established CLI behavior for
-  explicit paths such as an `init` target outside the launch directory.
-- `filesystem` is the host-user filesystem interface.
-- `application_resources` is the trusted read-only interface for the running
-  Specify distribution and validated source-checkout resources.
-- `access_policy` is `DirectCliPolicy`.
-- Deadline, cancellation, and output-budget values come from CLI invocation
-  infrastructure rather than mutable command globals.
+For project-scoped commands, the adapter supplies the explicit project or
+target directory. When the user omits it, the CLI uses the cwd captured when
+the invocation begins. The shared operation validates and resolves that path;
+neither layer changes process-wide cwd.
 
-`DirectCliPolicy` represents a user intentionally running a local command under
-that user's operating-system permissions. It authorizes the capabilities
-declared for the selected operation, including ambient host execution when the
-descriptor requires `unrestricted-host-execution`. The shared operation does
-not infer this policy or substitute another adapter's policy.
-
-This policy preserves host access, not semantic consent:
+The CLI runs with the invoking user's ordinary operating-system permissions.
+It does not construct a shared policy or filesystem runtime. Prompting remains
+CLI-specific:
 
 - `--json`, `--non-interactive`, and local invocation do not imply `force`.
 - External-source trust and overwrite consent remain explicit request values.
-- Command-specific prompts may collect consent before constructing a new
-  request, but the adapter does not add consent silently.
-- Network defaults and self-modifying behavior remain those explicitly defined
-  by the selected operation and its CLI contract.
-
-An embedded CLI host may supply a `RootBound` scope and a stricter access policy
-instead. Adapter parity compares equivalent requests under equivalent policy
-contexts; a policy denial is not an application-behavior divergence.
+- A prompt may collect consent before constructing or retrying the request, but
+  the adapter does not add consent silently.
+- Network and self-modifying behavior remain those defined by the operation and
+  CLI contract.
 
 ## Test structure
 
@@ -283,11 +268,8 @@ The primary `test_command_<name>.py` suite verifies the public command surface.
 Phase-specific suites verify detailed invariants without obscuring the primary
 command behavior.
 
-CLI adapter tests also verify `DirectCliPolicy` construction, including
-explicit targets outside the launch directory and the rule that machine modes
-do not add force, trust, or destructive consent. They verify that distribution
-metadata and bundled assets are supplied through the read-only application
-resource interface rather than inferred from project filesystem scope.
+CLI adapter tests verify explicit targets outside the launch directory and the
+rule that machine modes do not add force, trust, or destructive consent.
 
 Shared operation and phase tests use `test_operation_<name>.py` and
 `test_operation_<name>_<phase>.py` as defined in
@@ -433,10 +415,7 @@ For a new or refactored command:
 - [ ] The adapter maps into the shared operation defined by `design/shared.md`.
 - [ ] Semantic validation, orchestration, and side effects are below the CLI
       adapter.
-- [ ] Direct CLI invocation constructs `HostUser` filesystem scope and
-      `DirectCliPolicy`; embedded confinement is explicit.
-- [ ] The CLI supplies the trusted read-only application-resource interface
-      independently from project filesystem scope.
+- [ ] Project and target directories map explicitly into the shared request.
 - [ ] CLI-private phase modules use `_command_<name>_<phase>.py`; shared phases
       use `_operation_<name>_<phase>.py`.
 - [ ] `_commands.py` contains only group infrastructure and genuinely shared
