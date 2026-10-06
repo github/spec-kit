@@ -69,6 +69,54 @@ def test_second_bundle_cannot_claim_different_pin_before_mutation(tmp_path: Path
     assert installer.install_calls == [("extensions", "ext-a")]
 
 
+def test_independent_requirement_blocks_conflicting_bundle_after_removal(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("extensions", "ext-a")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+
+    record = load_records(tmp_path)[0]
+    assert record.contributed_components == ()
+    assert record.required_components == tuple(first.components)
+
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+    second = _bundle("second", ["ext-a"], version="2.0.0")
+    with pytest.raises(BundlerError, match="bundle 'first' already requires version 1.0.0"):
+        install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert installer.install_calls == []
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["first"]
+
+
+def test_removal_preserves_component_required_but_not_owned_by_other_bundle(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("extensions", "ext-a")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    first = _bundle("first", ["ext-a"])
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+    second = _bundle("second", ["ext-a"])
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert load_records(tmp_path)[1].contributed_components == tuple(second.components)
+    result = remove_bundle(tmp_path, "second", installer)
+    assert key in {(c.kind, c.id) for c in result.skipped}
+    assert key in installer.installed
+    assert installer.remove_calls == []
+
+
 def test_owned_component_drift_is_rejected_without_refresh(tmp_path: Path):
     make_project(tmp_path)
     installer = FakeInstaller()

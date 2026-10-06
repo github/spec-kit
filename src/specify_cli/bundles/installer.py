@@ -198,6 +198,7 @@ def install_bundle(
         bundle_id=plan.bundle_id,
         version=plan.version,
         components=contributed,
+        required_components=plan.components,
         # Preserve the original install time across refresh/update so
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,

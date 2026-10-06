@@ -1,8 +1,9 @@
-"""Installed-bundle records — provenance for precise list/remove/update.
+"""Installed-bundle records — requirements and ownership for list/remove/update.
 
 Records are stored as JSON at ``.specify/bundle-records.json``. Each record
-captures exactly which components a bundle contributed so removal touches only
-that bundle's components and never collateral (FR-022, SC-004).
+stores every required component for conflict detection and separately records
+which components the bundle contributed, so removal never touches independently
+installed components (FR-022, SC-004).
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ class InstalledBundleRecord:
     bundle_id: str
     version: str
     contributed_components: tuple[ComponentRef, ...]
+    required_components: tuple[ComponentRef, ...]
     installed_at: str
 
     @classmethod
@@ -33,11 +35,15 @@ class InstalledBundleRecord:
         version: str,
         components: list[ComponentRef],
         installed_at: str | None = None,
+        required_components: list[ComponentRef] | None = None,
     ) -> "InstalledBundleRecord":
         return cls(
             bundle_id=bundle_id,
             version=version,
             contributed_components=tuple(components),
+            required_components=tuple(
+                components if required_components is None else required_components
+            ),
             installed_at=installed_at or _utc_now(),
         )
 
@@ -48,6 +54,9 @@ class InstalledBundleRecord:
             "installed_at": self.installed_at,
             "contributed_components": [
                 _component_to_dict(c) for c in self.contributed_components
+            ],
+            "required_components": [
+                _component_to_dict(c) for c in self.required_components
             ],
         }
 
@@ -64,6 +73,13 @@ class InstalledBundleRecord:
             # absent/None value means "no components".
             raise BundlerError(
                 "Corrupt record: 'contributed_components' must be a list."
+            )
+        # Older records contain only contributed components. Retain those
+        # known pins until a successful reinstall writes the full requirements.
+        required_raw = data.get("required_components", components_raw)
+        if not isinstance(required_raw, list):
+            raise BundlerError(
+                "Corrupt record: 'required_components' must be a list."
             )
         # ``.get(key, "")`` defaults only a *missing* key. A key that is
         # present but null -- how a hand-edited or corrupt record spells an
@@ -83,13 +99,21 @@ class InstalledBundleRecord:
                 f"Corrupt records file: record for bundle '{bundle_id}' is "
                 "missing its 'version'."
             )
+        contributed = tuple(_component_from_dict(c) for c in components_raw)
+        required = tuple(
+            _component_from_dict(c, label="required") for c in required_raw
+        )
+        if not set(contributed).issubset(required):
+            raise BundlerError(
+                "Corrupt record: 'required_components' must include all "
+                "'contributed_components'."
+            )
         return cls(
             bundle_id=bundle_id,
             version=version,
             installed_at=_text(data.get("installed_at")),
-            contributed_components=tuple(
-                _component_from_dict(c) for c in components_raw
-            ),
+            contributed_components=contributed,
+            required_components=required,
         )
 
 
@@ -186,7 +210,7 @@ def components_still_needed(
     for record in records:
         if record.bundle_id == exclude_bundle_id:
             continue
-        for component in record.contributed_components:
+        for component in record.required_components:
             needed.add((component.kind, component.id))
     return needed
 
@@ -204,9 +228,9 @@ def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
     return data
 
 
-def _component_from_dict(data: Any) -> ComponentRef:
+def _component_from_dict(data: Any, *, label: str = "contributed") -> ComponentRef:
     if not isinstance(data, dict):
-        raise BundlerError("Each contributed component must be a mapping.")
+        raise BundlerError(f"Each {label} component must be a mapping.")
     kind = _text(data.get("kind"))
     cid = _text(data.get("id"))
     if kind not in COMPONENT_KINDS:
@@ -216,7 +240,7 @@ def _component_from_dict(data: Any) -> ComponentRef:
         )
     if not cid:
         raise BundlerError(
-            "Corrupt records file: a contributed component is missing its 'id'."
+            f"Corrupt records file: a {label} component is missing its 'id'."
         )
     return ComponentRef(
         kind=kind,

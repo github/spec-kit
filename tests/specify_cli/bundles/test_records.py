@@ -38,6 +38,90 @@ def test_save_and_load_roundtrip(tmp_path: Path):
         ("presets", "p1"),
         ("steps", "s1"),
     }
+    assert loaded[0].required_components == loaded[0].contributed_components
+
+
+def test_roundtrip_retains_unowned_required_pin(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    required = ComponentRef(
+        kind="extensions", id="independent", version="1.0.0", source="trusted"
+    )
+    record = InstalledBundleRecord.create(
+        bundle_id="a", version="1.0.0", components=[], required_components=[required]
+    )
+
+    save_records(tmp_path, [record])
+    restored = load_records(tmp_path)[0]
+
+    assert restored.required_components == (required,)
+    assert restored.contributed_components == ()
+    serialized = json.loads(records_path(tmp_path).read_text())
+    assert serialized["bundles"][0]["required_components"] == [{
+        "kind": "extensions",
+        "id": "independent",
+        "version": "1.0.0",
+        "source": "trusted",
+    }]
+
+
+def test_legacy_record_uses_contributions_as_known_requirements():
+    record = InstalledBundleRecord.create(
+        bundle_id="legacy",
+        version="1.0.0",
+        components=[ComponentRef(kind="extensions", id="ext-a", version="1.0.0")],
+    )
+    data = record.to_dict()
+    data.pop("required_components", None)
+
+    restored = InstalledBundleRecord.from_dict(data)
+
+    assert restored.required_components == record.contributed_components
+
+
+@pytest.mark.parametrize("bad", [None, 0, False, "", {}])
+def test_from_dict_rejects_invalid_required_components(bad):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "required_components": bad,
+    }
+    with pytest.raises(BundlerError, match="'required_components' must be a list"):
+        InstalledBundleRecord.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("component", "error"),
+    [
+        ({"kind": "bogus", "id": "ext-a"}, "kind' must be one of"),
+        ({"kind": "extensions", "id": ""}, "required component is missing its 'id'"),
+    ],
+)
+def test_from_dict_rejects_corrupt_required_component(component, error):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [],
+        "required_components": [component],
+    }
+    with pytest.raises(BundlerError, match=error):
+        InstalledBundleRecord.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    "required", [[], [{"kind": "extensions", "id": "ext-a", "version": "2.0.0"}]]
+)
+def test_from_dict_rejects_requirements_missing_contributed_pin(required):
+    data = {
+        "bundle_id": "a",
+        "version": "1.0.0",
+        "contributed_components": [
+            {"kind": "extensions", "id": "ext-a", "version": "1.0.0"}
+        ],
+        "required_components": required,
+    }
+    with pytest.raises(BundlerError, match="must include all"):
+        InstalledBundleRecord.from_dict(data)
 
 
 def test_load_missing_file_returns_empty(tmp_path: Path):

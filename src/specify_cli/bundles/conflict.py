@@ -38,7 +38,7 @@ def detect_conflicts(
 
     already: dict[tuple[str, str], list[tuple[str, str | None]]] = {}
     for record in installed:
-        for component in record.contributed_components:
+        for component in record.required_components:
             already.setdefault((component.kind, component.id), []).append(
                 (record.bundle_id, component.version)
             )
