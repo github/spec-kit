@@ -173,6 +173,22 @@ incompatible code is an error, not a silent fallback. Upgrade installs the
 catalog's current adapter version; uninstall removes its persisted code while
 preserving modified generated files by default.
 
+Execution consent is stored in `~/.specify/integration-trust.json`, bound to
+the canonical project root, integration ID, and complete verified package
+digest. It is checked before loading, even when adapter configuration is
+cached. A project's `packages.json` is provenance, not permission; copying
+it cannot transfer consent. The managed `.specify/.gitignore` excludes
+`integrations/packages/` and `integrations/packages.json`.
+After copying a project or changing users, review the adapter and reauthorize
+from an install-enabled catalog:
+
+```bash
+specify integration upgrade sample-agent --force --trust-integration
+```
+
+Forced uninstall also works when package code is untrusted or its entire
+directory is missing; it does not import that code.
+
 For initialization, a project/user catalog or `SPECKIT_INTEGRATION_CATALOG_URL`
 can supply an external adapter:
 

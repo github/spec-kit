@@ -984,7 +984,10 @@ def register(app: typer.Typer) -> None:
                             border_style="magenta",
                         )
                     )
-                if not here and project_path.exists() and not dir_existed_before:
+                if (
+                    not here and project_path.exists() and not dir_existed_before
+                    and initial_directory_state(project_path) is None
+                ):
                     shutil.rmtree(project_path)
                 raise typer.Exit(1)
             finally:

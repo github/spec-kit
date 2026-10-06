@@ -146,8 +146,16 @@ discovery only. This policy cannot be overridden with `--trust-integration` or
 Python unless explicitly pre-authorized with `--trust-integration`.
 Authenticated GitHub assets use the existing Spec Kit authentication providers.
 
-Installed code is stored in `.specify/integrations/packages/<id>/` with trust,
-provenance, and hashes in `packages.json`. Generated files have a separate
+Installed code is stored in `.specify/integrations/packages/<id>/` with
+provenance and hashes in `packages.json`; both are excluded by the managed
+`.specify/.gitignore`. Execution consent is stored separately in
+`~/.specify/integration-trust.json`, bound to the canonical project root,
+integration ID, and verified package digest. Project metadata cannot grant
+consent. Copying a project or changing users requires a new local decision:
+review the package and run
+`specify integration upgrade sample-agent --force --trust-integration`
+from an install-enabled catalog.
+Generated files have a separate
 hash-tracked `<id>.manifest.json`; new CLI processes load the trusted package
 without fetching the catalog. An upgrade fetches the catalog's current version
 and checks its descriptor again. Do not edit installed package code in place:

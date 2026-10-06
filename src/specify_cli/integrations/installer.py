@@ -26,6 +26,7 @@ from .._download_security import (
     archive_format_from_name,
     is_https_or_localhost_http,
     is_safe_download_redirect,
+    normalize_archive_member_name,
     read_response_limited,
     safe_extract_archive,
 )
@@ -123,6 +124,7 @@ def safe_project_path(root: Path, relative: str) -> Path:
         or any(part in {"", ".", ".."} for part in relative.split("/"))
     ):
         raise IntegrationInstallError(f"Unsafe integration path: {relative!r}")
+    normalize_archive_member_name(relative, error_type=IntegrationInstallError)
     current = root
     for part in path.parts:
         current /= part
@@ -146,6 +148,8 @@ def package_hashes(package: Path) -> dict[str, str]:
             raise IntegrationInstallError("Integration package exceeds depth limit (32)")
         with os.scandir(directory) as entries:
             for entry in entries:
+                relative = Path(entry.path).relative_to(package).as_posix()
+                safe_project_path(package, relative)
                 mode = entry.stat(follow_symlinks=False).st_mode
                 if stat.S_ISLNK(mode):
                     raise IntegrationInstallError(f"Integration package contains symlink: {entry.path}")
@@ -163,7 +167,7 @@ def package_hashes(package: Path) -> dict[str, str]:
                         raise IntegrationInstallError("Integration package exceeds size limit")
                     with open(entry.path, "rb") as stream:
                         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                    hashes[Path(entry.path).relative_to(package).as_posix()] = digest
+                    hashes[relative] = digest
                 else:
                     raise IntegrationInstallError(f"Unsupported integration file: {entry.path}")
     if not {"integration.yml", "__init__.py"} <= hashes.keys():
@@ -187,8 +191,8 @@ def read_records(root: Path) -> dict[str, dict[str, Any]]:
         validate_key(key)
         if key in BUILTIN_INTEGRATION_KEYS:
             raise IntegrationInstallError(f"External package collides with built-in integration '{key}'")
-        if not isinstance(record, dict) or record.get("trusted") is not True:
-            raise IntegrationInstallError(f"Integration '{key}' has no persisted trust decision")
+        if not isinstance(record, dict):
+            raise IntegrationInstallError(f"Integration '{key}' has invalid package metadata")
         for field in ("id", "name", "version", "description", "catalog", "download_url"):
             if not isinstance(record.get(field), str) or not record[field].strip():
                 raise IntegrationInstallError(
@@ -198,6 +202,10 @@ def read_records(root: Path) -> dict[str, dict[str, Any]]:
             raise IntegrationInstallError(f"Integration '{key}' has invalid package metadata: requires")
         if not isinstance(record.get("files"), dict):
             raise IntegrationInstallError(f"Integration '{key}' has invalid package hashes")
+        for relative, digest in record["files"].items():
+            if not isinstance(relative, str) or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+                raise IntegrationInstallError(f"Integration '{key}' has invalid package hashes")
+            normalize_archive_member_name(relative, error_type=IntegrationInstallError)
     return records
 
 
@@ -218,6 +226,64 @@ def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
         after_file_change(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _trust_store(root: Path) -> Path:
+    home = Path.home().absolute()
+    if any(path.is_symlink() for path in (home, *home.parents)):
+        raise IntegrationInstallError("Refusing symlinked integration trust directory")
+    home = home.resolve()
+    project = root.resolve()
+    if home == project or project in home.parents:
+        raise IntegrationInstallError("Integration local trust state must be outside the project")
+    return safe_project_path(home, ".specify/integration-trust.json")
+
+
+def _trust_identity(root: Path, key: str, hashes: dict[str, str]) -> str:
+    payload = json.dumps(
+        [os.path.normcase(str(root.resolve())), key, hashes],
+        sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _read_trust(path: Path) -> set[str]:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            content = stream.read(1024 * 1024 + 1)
+        if len(content) > 1024 * 1024:
+            raise ValueError("trust registry exceeds size limit")
+        data = json.loads(content)
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise IntegrationInstallError(f"Cannot read integration local trust state: {exc}") from exc
+    if (
+        not isinstance(data, dict) or data.get("schema_version") != "1.0"
+        or not isinstance(data.get("grants"), list)
+        or any(not isinstance(item, str) or not re.fullmatch(r"[a-f0-9]{64}", item) for item in data["grants"])
+    ):
+        raise IntegrationInstallError("Invalid integration local trust state")
+    return set(data["grants"])
+
+
+def _grant_trust(root: Path, key: str, hashes: dict[str, str]) -> None:
+    """Persist this user's explicit consent, bound to the project and package."""
+    from ..shared_infra import _exclusive_project_lock
+
+    path = _trust_store(root)
+    with _exclusive_project_lock(path.parent.parent, ".integration-trust.lock", context="integration trust"):
+        path = _trust_store(root)
+        grants = _read_trust(path)
+        grants.add(_trust_identity(root, key, hashes))
+        with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump({"schema_version": "1.0", "grants": sorted(grants)}, stream, indent=2)
+            stream.write("\n")
+        try:
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _refresh_configs() -> None:
@@ -431,11 +497,18 @@ def load_installed_integrations(project_root: Path) -> list[str]:
                     raise IntegrationInstallError(f"Unregistered integration package: {child.name}")
         identity: list[Any] = [str(root), excluded]
         descriptors = {}
+        grants = _read_trust(_trust_store(root)) if selected else set()
         for key, info in sorted(selected.items()):
             package = safe_project_path(root, f"{_PACKAGES}/{key}")
             hashes = package_hashes(package)
             if hashes != info["files"]:
                 raise IntegrationInstallError(f"Integration '{key}' installed package has been modified")
+            if _trust_identity(root, key, hashes) not in grants:
+                raise IntegrationInstallError(
+                    f"Integration '{key}' has no local trust decision for this project and package. "
+                    f"Review its source and run integration upgrade {key} --force --trust-integration "
+                    "from an install-enabled catalog to authorize it."
+                )
             descriptors[key] = _descriptor(package, key, info)
             identity.append((key, tuple(sorted(hashes.items()))))
         if tuple(identity) == _loaded_identity and all(
@@ -568,7 +641,6 @@ def catalog_package(root: Path, key: str, *, trusted: bool = False):
             "catalog": info["_catalog_name"],
             "download_url": url,
             "sha256": digest,
-            "trusted": True,
             "files": hashes,
         }
 
@@ -591,6 +663,7 @@ def persist_package(root: Path, key: str, package: Path, record: dict[str, Any])
         records = read_records(root)
         records[key] = record
         write_records(root, records)
+        _grant_trust(root, key, record["files"])
     load_installed_integrations(root)
 
 
@@ -600,7 +673,11 @@ def remove_package(root: Path, key: str) -> None:
         return
     directory = safe_project_path(root, f"{_PACKAGES}/{key}")
     before_file_change(directory)
-    shutil.rmtree(directory)
+    try:
+        shutil.rmtree(directory)
+    except FileNotFoundError:
+        if directory.exists():
+            raise
     after_file_change(directory)
     del records[key]
     write_records(root, records)

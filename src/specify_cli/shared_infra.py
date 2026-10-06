@@ -31,6 +31,11 @@ feature.json
 
 # Per-machine extension config overrides.
 extensions/*/local-config.yml
+
+# Executable adapter packages and their per-checkout provenance registry.
+# Execution consent is stored separately in the user's local trust registry.
+integrations/packages/
+integrations/packages.json
 """
 
 # Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal

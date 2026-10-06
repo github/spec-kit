@@ -77,7 +77,11 @@ class SampleIntegration({base}):
 
 
 @pytest.fixture(autouse=True)
-def isolated_registry(monkeypatch):
+def isolated_registry(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
     monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
     unload_installed_integrations()
@@ -226,7 +230,7 @@ def test_catalog_install_renders_host_templates_and_fresh_process(tmp_path, serv
     assert not (package / "templates").exists()
     skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
     assert skill.is_file()
-    rendered = skill.read_text()
+    rendered = skill.read_text(encoding="utf-8")
     assert ".specify/scripts/python/setup_plan.py" in rendered
     assert "{SCRIPT}" not in rendered and "__AGENT__" not in rendered
     assert "speckit-plan" in rendered
@@ -234,7 +238,7 @@ def test_catalog_install_renders_host_templates_and_fresh_process(tmp_path, serv
     assert not any("packages/" in name for name in manifest["files"])
     process = subprocess.run(
         [str(Path(sys.executable).parent / "specify"), "integration", "list"],
-        cwd=project, capture_output=True, text=True, check=False,
+        cwd=project, capture_output=True, text=True, encoding="utf-8", check=False,
     )
     assert process.returncode == 0, process.stderr
     assert "Sample Agent" in process.stdout and KEY in process.stdout
@@ -251,7 +255,7 @@ def test_markdown_adapter_renders_host_commands(tmp_path, server):
     install(project)
     command = project / ".sample-agent/commands/speckit.plan.md"
     assert command.is_file()
-    assert "{SCRIPT}" not in command.read_text()
+    assert "{SCRIPT}" not in command.read_text(encoding="utf-8")
     assert not (project / ".sample-agent/skills").exists()
 
 
@@ -381,7 +385,7 @@ def test_upgrade_and_uninstall_preserve_edits_and_remove_package(tmp_path, serve
     project = catalog_project(tmp_path, server)
     install(project)
     skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
-    skill.write_text(skill.read_text() + "\nUser customization\n")
+    skill.write_text(skill.read_text(encoding="utf-8") + "\nUser customization\n", encoding="utf-8")
     before = snapshot(project)
     publish(server, version="2.0.0")
     blocked = run(project, ["integration", "upgrade", KEY, "--trust-integration"])
@@ -524,25 +528,25 @@ def test_extension_and_preset_contributions_follow_active_external_adapter(
     }))
     added = run(project, ["preset", "add", "--dev", str(preset)])
     assert added.exit_code == 0, added.output
-    assert "Sample preset guidance" not in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" not in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     activated = run(project, ["integration", "use", KEY])
     assert activated.exit_code == 0, activated.output
     assert (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").is_file()
-    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
     fresh_removal = subprocess.run(
         [str(executable), "preset", "remove", "sample-preset"],
-        cwd=project, capture_output=True, text=True, timeout=30, check=False,
+        cwd=project, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )
     assert fresh_removal.returncode == 0, fresh_removal.stdout + fresh_removal.stderr
-    assert "Sample preset guidance" not in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" not in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     restored = run(project, ["preset", "add", "--dev", str(preset)])
     assert restored.exit_code == 0, restored.output
-    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     assert "sample-agent" in json.loads((project / ".specify/init-options.json").read_text())["ai"]
     upgraded = run(project, ["integration", "upgrade", KEY, "--trust-integration", "--force"])
     assert upgraded.exit_code == 0, upgraded.output
-    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     arguments = ["integration", "uninstall", KEY]
     if damaged_uninstall:
         (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
@@ -564,7 +568,7 @@ def test_extension_and_preset_contributions_follow_active_external_adapter(
     assert not (project / ".sample-agent/skills/speckit-git-commit/SKILL.md").exists()
     assert not (project / ".sample-agent/skills/speckit-specify/SKILL.md").exists()
     assert (project / ".claude/skills/speckit-git-commit/SKILL.md").is_file()
-    assert "Sample preset guidance" in (project / ".claude/skills/speckit-specify/SKILL.md").read_text()
+    assert "Sample preset guidance" in (project / ".claude/skills/speckit-specify/SKILL.md").read_text(encoding="utf-8")
     assert KEY not in read_records(project)
     assert json.loads((project / ".specify/integration.json").read_text())["integration"] == "claude"
 
@@ -991,7 +995,7 @@ def test_concurrent_package_registry_changes_are_not_overwritten(tmp_path, serve
     @contextmanager
     def concurrent_update(root, *args, **kwargs):
         with original_lock(root, *args, **kwargs):
-            path = root / ".specify/integrations/packages.json"
+            path = project / ".specify/integrations/packages.json"
             records = json.loads(path.read_text())
             records["packages"][KEY]["catalog"] = "updated-source"
             path.write_text(json.dumps(records))
@@ -1107,20 +1111,22 @@ def test_metadata_commands_never_import_an_installed_adapter(tmp_path, server, a
     executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
     result = subprocess.run(
         [str(executable), *arguments], cwd=project,
-        capture_output=True, text=True, timeout=30, check=False,
+        capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert not marker.exists()
 
 
 @pytest.mark.parametrize("operation", ["upgrade", "uninstall"])
-@pytest.mark.parametrize("damage", ["modified", "missing", "incompatible", "import-failure"])
+@pytest.mark.parametrize("damage", ["modified", "missing", "missing-directory", "incompatible", "import-failure"])
 def test_force_recovery_does_not_require_a_loadable_old_adapter(tmp_path, server, operation, damage):
     publish(server)
     project = catalog_project(tmp_path, server)
     install(project)
     path = project / f".specify/integrations/packages/{KEY}/__init__.py"
-    if damage == "missing":
+    if damage == "missing-directory":
+        shutil.rmtree(path.parent)
+    elif damage == "missing":
         path.unlink()
     elif damage == "modified":
         path.write_text("raise RuntimeError('modified code must not execute')")
@@ -1155,6 +1161,257 @@ def test_force_recovery_does_not_require_a_loadable_old_adapter(tmp_path, server
     else:
         assert KEY not in read_records(project)
         assert not path.parent.exists()
+
+
+@pytest.mark.parametrize("relative", [
+    ".git.", ".specify ", ".. ", "con", "NUL.txt", "folder/LPT1.log",
+    " leading", "trailing.", "bad*name", "bad?name", "bad|name",
+    'bad"name', "bad<name", "bad>name", "bad\x1fname", "a" * 256,
+])
+def test_review_portable_paths_rejected_before_filesystem_access(tmp_path, relative):
+    from specify_cli.integrations.installer import safe_project_path
+
+    with pytest.raises(IntegrationInstallError):
+        safe_project_path(tmp_path, relative)
+
+
+@pytest.mark.parametrize("folder", [".git.", ".. ", "con", ".sample-agent/NUL.txt"])
+def test_review_portable_output_paths_rejected_without_project_changes(tmp_path, server, folder):
+    publish(server, code=implementation(folder=folder))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert snapshot(project) == before
+    assert not (project / folder).exists()
+
+
+def test_review_cloned_project_cannot_transfer_execution_consent(tmp_path, server):
+    marker = tmp_path / "imported"
+    publish(server, code=implementation() + f"\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n")
+    project = catalog_project(tmp_path, server)
+    install(project)
+    marker.unlink()
+    clone = tmp_path / "clone"
+    shutil.copytree(project, clone)
+    registry = clone / ".specify/integrations/packages.json"
+    data = json.loads(registry.read_text())
+    data["packages"][KEY]["trusted"] = True
+    registry.write_text(json.dumps(data))
+    result = run(clone, ["integration", "list"])
+    assert result.exit_code == 1, result.output
+    assert "local trust" in result.output.lower()
+    assert not marker.exists()
+    assert KEY not in INTEGRATION_REGISTRY
+    recovered = run(clone, ["integration", "upgrade", KEY, "--force", "--trust-integration"])
+    assert recovered.exit_code == 0, recovered.output
+    assert marker.exists()
+
+
+def test_review_local_consent_checked_before_cached_registration(tmp_path, server, monkeypatch):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    assert load_installed_integrations(project) == [KEY]
+    other_home = tmp_path / "other-home"
+    other_home.mkdir()
+    monkeypatch.setenv("HOME", str(other_home))
+    monkeypatch.setenv("USERPROFILE", str(other_home))
+    result = run(project, ["integration", "list"])
+    assert result.exit_code == 1, result.output
+    assert "local trust" in result.output.lower()
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+def test_review_consent_is_bound_to_verified_package_digest(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    marker = tmp_path / "changed-import"
+    code = project / f".specify/integrations/packages/{KEY}/__init__.py"
+    code.write_text(implementation() + f"\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n")
+    registry = project / ".specify/integrations/packages.json"
+    data = json.loads(registry.read_text())
+    data["packages"][KEY]["files"]["__init__.py"] = hashlib.sha256(code.read_bytes()).hexdigest()
+    registry.write_text(json.dumps(data))
+    result = run(project, ["integration", "list"])
+    assert result.exit_code == 1, result.output
+    assert "local trust" in result.output.lower()
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("command", ["list", "info", "lookup"])
+@pytest.mark.parametrize("contribution", ["extension", "preset"])
+def test_review_artifact_fresh_process_loads_adapter_and_preserves_json_errors(
+    tmp_path, server, command, contribution,
+):
+    from specify_cli.artifacts import ArtifactCatalog
+
+    marker = tmp_path / "artifact-import"
+    publish(server, code=implementation() + f"\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n")
+    project = catalog_project(tmp_path, server)
+    install(project)
+    if contribution == "extension":
+        added = run(project, ["extension", "add", "--dev", str(Path.cwd() / "extensions/git")])
+        source = ".sample-agent/skills/speckit-git-commit/SKILL.md"
+    else:
+        preset = tmp_path / "sample-preset"
+        (preset / "commands").mkdir(parents=True)
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Sample preset command\n---\nSample preset guidance\n"
+        )
+        (preset / "preset.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {
+                "id": "sample-preset", "name": "Sample Preset",
+                "version": "1.0.0", "description": "Sample guidance",
+            },
+            "requires": {"speckit_version": ">=0.1"},
+            "provides": {"templates": [{
+                "type": "command", "name": "speckit.specify", "file": "commands/speckit.specify.md",
+            }]},
+        }))
+        added = run(project, ["preset", "add", "--dev", str(preset)])
+        source = ".sample-agent/skills/speckit-specify/SKILL.md"
+    assert added.exit_code == 0, added.output
+    rows = ArtifactCatalog(project).list_artifacts_with_stack()
+    row = next(row for row in rows if any(layer["sourcePath"] == source for layer in row["stack"]))
+    layer = next(layer for layer in row["stack"] if layer["sourcePath"] == source)
+    arguments = ["artifact", command]
+    if command != "list":
+        arguments.append(row["id"] if command == "info" else layer["lookupId"])
+    arguments.append("--json")
+    marker.unlink()
+    executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
+    result = subprocess.run(
+        [str(executable), *arguments], cwd=project,
+        capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert marker.exists()
+    if command in {"list", "info"}:
+        payload_rows = payload if command == "list" else [payload]
+        assert any(layer["sourcePath"] == source for row in payload_rows for layer in row["stack"])
+    marker.unlink()
+    package = project / f".specify/integrations/packages/{KEY}/__init__.py"
+    package.write_text("raise RuntimeError('damaged adapter must not execute')")
+    failed = subprocess.run(
+        [str(executable), *arguments], cwd=project,
+        capture_output=True, text=True, encoding="utf-8", timeout=30, check=False,
+    )
+    assert failed.returncode == 1
+    assert failed.stdout == ""
+    assert "modified" in json.loads(failed.stderr)["error"]
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("original", ["absent", "empty", "nonempty"])
+def test_review_failed_init_removes_only_new_scaffolding(tmp_path, server, monkeypatch, original):
+    publish(server, code=implementation(body="    def setup(self, *args, **kwargs):\n        raise RuntimeError('sample setup failure')\n"))
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", f"{server.url}/catalog.json")
+    project = tmp_path / "target"
+    if original != "absent":
+        project.mkdir()
+    if original == "nonempty":
+        (project / "notes.txt").write_text("preserve")
+    before = snapshot(project)
+    result = run(tmp_path, [
+        "init", str(project), "--force", "--ignore-agent-tools",
+        "--integration", KEY, "--trust-integration", "--script", "py",
+    ])
+    assert result.exit_code == 1, result.output
+    assert snapshot(project) == before
+    assert project.exists() == (original != "absent")
+    assert not (project / ".specify").exists()
+
+
+def test_review_cancelled_init_leaves_existing_uninitialized_directory_unchanged(tmp_path, server, monkeypatch):
+    publish(server)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", f"{server.url}/catalog.json")
+    project = tmp_path / "target"
+    project.mkdir()
+    notes = project / "notes.txt"
+    notes.write_text("preserve")
+    result = run(project, [
+        "init", "--here", "--ignore-agent-tools", "--integration", KEY,
+        "--trust-integration", "--script", "py",
+    ], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert list(project.iterdir()) == [notes]
+    assert notes.read_text() == "preserve"
+
+
+@pytest.mark.parametrize("change", ["revoked", "invalid", "inside-project", "symlink"])
+def test_review_local_trust_store_cannot_be_bypassed(tmp_path, server, monkeypatch, change):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    trust = Path.home() / ".specify/integration-trust.json"
+    if os.name != "nt":
+        assert stat.S_IMODE(trust.stat().st_mode) == 0o600
+    if change == "revoked":
+        trust.unlink()
+    elif change == "invalid":
+        trust.write_text('{"schema_version":"1.0","grants":[true]}')
+    elif change == "inside-project":
+        monkeypatch.setenv("HOME", str(project))
+        monkeypatch.setenv("USERPROFILE", str(project))
+    else:
+        target = tmp_path / "copied-trust.json"
+        shutil.copyfile(trust, target)
+        trust.unlink()
+        try:
+            trust.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"Symlinks unavailable: {exc}")
+    result = run(project, ["integration", "list"])
+    assert result.exit_code == 1, result.output
+    assert "trust" in result.output.lower()
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+def test_review_package_removal_does_not_suppress_permission_errors(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    package = project / f".specify/integrations/packages/{KEY}"
+    before = snapshot(project)
+    original = installer.shutil.rmtree
+
+    def deny_package_removal(path, *args, **kwargs):
+        if Path(path) == package:
+            raise PermissionError("sample package removal denied")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(installer.shutil, "rmtree", deny_package_removal)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "sample package removal denied" in result.output
+    assert snapshot(project) == before
+
+
+def test_review_failed_init_preserves_new_unowned_scaffolding_content(tmp_path, server, monkeypatch):
+    project = tmp_path / "target"
+    notes = project / ".specify/user-notes.txt"
+    body = f"""    def setup(self, *args, **kwargs):
+        from pathlib import Path
+        notes = Path({str(notes)!r})
+        notes.parent.mkdir(parents=True, exist_ok=True)
+        notes.write_text("independent progress")
+        raise RuntimeError("sample setup failure")
+"""
+    publish(server, code=implementation(body=body))
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", f"{server.url}/catalog.json")
+    result = run(tmp_path, [
+        "init", str(project), "--ignore-agent-tools", "--integration", KEY,
+        "--trust-integration", "--script", "py",
+    ])
+    assert result.exit_code == 1, result.output
+    assert notes.read_text() == "independent progress"
+    assert read_records(project) == {}
 
 
 def test_failed_operation_preserves_independent_workflow_and_unowned_output_edits(tmp_path, server, monkeypatch):
@@ -1243,7 +1500,7 @@ def test_catalog_init_checks_required_tools_and_scaffolds_host_skills(tmp_path, 
     result = run(project, arguments)
     assert result.exit_code == 0, result.output
     skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
-    content = skill.read_text()
+    content = skill.read_text(encoding="utf-8")
     assert "{SCRIPT}" not in content and "__SPECKIT_COMMAND_" not in content
     assert yaml.safe_load(content.split("---", 2)[1])["name"] == "speckit-plan"
     assert (project / f".specify/scripts/{'python' if script == 'py' else 'bash' if script == 'sh' else 'powershell'}").is_dir()

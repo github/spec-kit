@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import inspect
 import os
@@ -135,7 +136,10 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     conflicts = []
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
         journal.safe_path(path)
-        if path not in journal.pending and _file_identity(path) != written_identity:
+        current_identity = _file_identity(path)
+        if path in journal.pending and saved is not None and current_identity == _file_identity(saved):
+            continue
+        if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
             continue
         if path.is_dir() and not path.is_symlink():
@@ -197,11 +201,15 @@ def _transaction(
         folders.add(target_folder.rstrip("/"))
     paths = [installer.safe_project_path(root, folder) for folder in sorted(folders)]
     paths = [path for path in paths if not any(other != path and other in path.parents for other in paths)]
+    root_existed = root.exists()
+    lock_root = installer._trust_store(root).parent.parent
+    lock_id = hashlib.sha256(os.path.normcase(str(root.resolve())).encode()).hexdigest()
     backup = Path(tempfile.mkdtemp(prefix="speckit-integration-rollback-"))
     preserve_backup = False
     try:
-        root.mkdir(parents=True, exist_ok=True)
-        with _exclusive_project_lock(root, ".integration-install.lock", context="integration"):
+        # Keep the stable project-keyed lock outside an uninitialized target.
+        with _exclusive_project_lock(lock_root, f".integration-install-{lock_id}.lock", context="integration"):
+            root.mkdir(parents=True, exist_ok=True)
             current_state, state_error = try_read_integration_json(root)
             if state_error or current_state != expected_state or installer.read_records(root) != expected_records:
                 raise installer.IntegrationInstallError(
@@ -245,6 +253,14 @@ def _transaction(
     finally:
         if not preserve_backup:
             shutil.rmtree(backup)
+            if not root_existed:
+                try:
+                    root.rmdir()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                        raise
 
 
 def external_lifecycle(operation: str):

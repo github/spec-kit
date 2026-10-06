@@ -101,6 +101,11 @@ Never rely on importing a catalog to register your class: discovery does not
 execute code. Installation from an install-enabled source requires an explicit
 trust decision before import. Catalog maintainers review listing metadata, not
 adapter implementations; users must vet the code.
+Consent is user-local in `~/.specify/integration-trust.json`, bound to the
+canonical project root, adapter ID, and verified package digest. Do not ship a
+trust registry or rely on project metadata to authorize execution. A copied
+project must reauthorize through a reviewed, install-enabled catalog using
+`specify integration upgrade sample-agent --force --trust-integration`.
 
 ### Submitting to the Community Catalog
 

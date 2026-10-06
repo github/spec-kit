@@ -167,16 +167,24 @@ bounded download/extraction limits are enforced.
 
 Trusted executable packages live in
 `.specify/integrations/packages/<id>/`; their provenance, descriptor metadata,
-trust decision, and per-file hashes live in
+and per-file hashes live in
 `.specify/integrations/packages.json`. They are **not** generated agent files
-and do not appear in `<id>.manifest.json`. Only recorded, trusted packages are
-loaded, and hash/descriptor validation precedes import. Missing, modified,
+and do not appear in `<id>.manifest.json`. The managed `.specify/.gitignore`
+excludes both executable packages and their registry.
+Authoritative execution consent lives in `~/.specify/integration-trust.json`,
+never in project metadata. Each grant binds the canonical project root,
+integration ID, and the complete verified package file-hash mapping. Copying
+a project, changing users, changing package bytes, or deleting a grant requires
+a new local decision; a legacy project `trusted` field grants no authority.
+Consent is checked before every load, including configuration-cache reuse.
+Only recorded, locally trusted packages are loaded, and hash/descriptor
+validation precedes import. Missing, modified,
 incompatible, or unimportable implementations produce explicit errors.
 Python source is verified again when imported, including relative helper
 modules; cached bytecode is never used to execute package code.
 
 Execution entry points load installed adapters before setup, agent configuration,
-extension/preset registration, status, and workflow dispatch. Fresh CLI
+extension/preset registration, artifact resolution, status, and workflow dispatch. Fresh CLI
 processes use the persisted package, not the catalog. Changing projects unloads
 external registry entries, synthetic Python packages and their submodules, and
 refreshes agent configuration/registrar caches in place. Built-in keys cannot
@@ -201,7 +209,12 @@ file are preserved and reported with retained recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
 Cancelling initialization discards the prepared adapter without installing code
-or reporting success.
+or reporting success. Stable lifecycle locks are user-local and keyed by
+canonical project root, so cancellation does not create target lock scaffolding;
+rollback removes a newly created target root only when it remains empty.
+Local consent is atomic and user-local; a grant for an explicitly authorized
+package may remain after failed setup, but cannot authorize different bytes or
+a different project.
 Metadata changed by another operation during preparation is not overwritten;
 the operation exits with an explicit retry error.
 External uninstall unregisters the adapter's owned extension/preset artifacts
@@ -216,6 +229,10 @@ ownership and persisted registrar configuration for cleanup. It reports this
 recovery explicitly and never bypasses catalog source policy or the replacement
 package's trust decision. Ordinary selection and lifecycle operations still fail
 explicitly for damaged installed implementations.
+After copying a project or changing users, review the adapter and run
+`specify integration upgrade <id> --force --trust-integration` using an
+install-enabled catalog to establish local consent. Forced uninstall can remove
+an untrusted or missing package without importing it.
 
 See the [catalog contract](../integrations/README.md) and
 [user reference](../docs/reference/integrations.md) for public commands.
