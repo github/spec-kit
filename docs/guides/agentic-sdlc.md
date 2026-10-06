@@ -105,7 +105,6 @@ Larger changes need prior discussion and agreement with maintainers, as the
 [contribution guide](https://github.com/github/spec-kit/blob/main/CONTRIBUTING.md#submitting-a-pull-request)
 explains. When decisions should remain useful across changes, the repository
 keeps [CLI](https://github.com/github/spec-kit/blob/main/design/cli.md),
-[MCP](https://github.com/github/spec-kit/blob/main/design/mcp.md),
 [integration](https://github.com/github/spec-kit/blob/main/design/integration.md),
 and [workflow-step](https://github.com/github/spec-kit/blob/main/design/workflow-step.md)
 design documents.
