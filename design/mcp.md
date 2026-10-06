@@ -244,11 +244,11 @@ module:
 ```text
 command_version.py
 mcp_version.py
-_version.py
+_operation_version.py
 ```
 
-Both adapters map to the typed operation in `_version.py`. No extra phase
-module is required.
+Both adapters map to the typed operation in `_operation_version.py`. No extra
+phase module is required.
 
 ### Complex operation
 
@@ -299,7 +299,7 @@ For a group such as `artifact`:
 1. `artifacts/_mcp.py` lists every `artifact.*` CLI leaf.
 2. Each leaf has exactly one inventory record.
 3. Available records import and register their `mcp_<name>.py` adapter.
-4. Deferred, policy-disabled, and excluded records state a reason.
+4. Unavailable and excluded records state a reason.
 5. The root MCP composition module calls `artifacts._mcp.register(...)`.
 
 The root MCP server may aggregate hierarchy registration functions, but it
@@ -315,8 +315,8 @@ operation_id
 cli_path
 mcp_tool_name
 contract_version
-availability
-availability_reason
+disposition
+disposition_reason
 capabilities
 network_access
 project_scope
@@ -330,11 +330,17 @@ The static disposition values are:
   current distribution or platform; the record states the concrete reason.
 - `excluded`: the command is intentionally not an MCP operation.
 
-An available tool may have an effective runtime state of `policy-disabled`.
-It remains discoverable with its typed schema and annotations, but invocation
-returns a structured `policy_denied` error. This keeps discovery stable across
-policy profiles and prevents a host configuration change from changing tool
-identity.
+Runtime policy state is separate from static inventory disposition. An
+available tool has an `effective_state` of:
+
+- `enabled`: the active policy authorizes the request's required
+  capabilities.
+- `policy-disabled`: the tool remains discoverable, but invocation returns a
+  structured `policy_denied` error identifying the missing authorization.
+
+`effective_state` is derived from the active policy and request; it is not
+stored as the inventory's static disposition. A metadata or describe surface
+may report both fields but must preserve their distinct types.
 
 Every CLI leaf must appear exactly once. The inventory parity test fails for a
 missing leaf, duplicate logical operation, duplicate tool name, stale CLI
@@ -349,10 +355,10 @@ an application operation.
 Other commands are not excluded merely because they mutate state. They are
 declared and gated by capability. For example:
 
-- `self.upgrade` is self-modifying and should be unavailable under the
-  default local policy. Exposure requires an explicit administrative policy
-  authorizing local reads, execution, and self-modification, plus a command
-  contract that preserves upgrade safeguards.
+- `self.upgrade` has static disposition `available` when its first-class tool
+  is implemented. Its effective state is `policy-disabled` under the default
+  policy because local reads, execution, and self-modification are not all
+  authorized.
 - `event.run`, `workflow.run`, and `workflow.resume` are execution operations
   that may also persist project state; policy must authorize every capability
   required by the operation.
@@ -364,7 +370,7 @@ declared and gated by capability. For example:
 - A command that still depends on prompts, writes directly through its Typer
   handler, or lacks a typed result must not be marked `available`.
 
-Exclusion and deferral are reviewable architecture decisions, not silent
+Unavailability and exclusion are reviewable architecture decisions, not silent
 omissions.
 
 ## Command contracts
@@ -382,12 +388,38 @@ The model:
   `trust_extension_urls` only when the operation supports them.
 
 The CLI adapter maps parsed arguments and options into the request. The MCP
-adapter exposes a command-specific JSON schema and maps validated tool input
-into the same request.
+adapter exposes a command-specific JSON schema and maps schema-validated tool
+input into the same request.
 
-Typer usage errors remain CLI concerns. Semantic errors such as an unknown
-integration, invalid project state, or incompatible options belong to the
-operation so both adapters report the same failure.
+Typer usage errors remain CLI concerns. Pure request errors and state-dependent
+semantic errors belong to the operation so both adapters report the same
+failure.
+
+### Validation and authorization order
+
+Capability authorization occurs before any state-dependent validation. The
+invocation sequence is:
+
+1. The adapter parses and schema-validates transport input without filesystem,
+   network, environment, or process access.
+2. The operation performs capability-free request validation. It may check
+   types, enum values, mutually exclusive fields, required combinations, and
+   other invariants derived solely from request values and static operation
+   metadata.
+3. The operation computes `required_capabilities(request)` and request-specific
+   network requirements. This computation is pure and performs no I/O.
+4. The access-policy layer authorizes every computed capability, network
+   requirement, and requested root. A denial stops the invocation.
+5. Only after authorization may the operation resolve project state and run
+   state-dependent semantic validation, such as checking an integration,
+   reading project files, consulting a catalog, or inspecting an installed
+   tool.
+6. The operation performs its side effects and returns its typed outcome.
+
+The capability computation must conservatively cover every path reachable
+from the validated request. Stateful validation must not discover and then
+exercise an additional unauthorized capability. If an invariant cannot be
+checked without a capability, the check belongs after authorization.
 
 ### Typed results and warnings
 
@@ -416,14 +448,14 @@ code
 message
 details
 retryable
-exit_code
 ```
 
 The operation hierarchy owns the error code and details schema. The CLI
 adapter maps it to human output or the command's JSON failure contract and
-then uses the declared exit code. The MCP adapter maps it to an MCP tool error
-with structured content. Neither adapter exposes a traceback, secret, raw
-subprocess output, or success-shaped fallback.
+maps stable operation error codes to established CLI exit codes. The MCP
+adapter maps it to an MCP tool error with structured content. Neither adapter
+exposes a traceback, secret, raw subprocess output, or success-shaped
+fallback.
 
 Unexpected exceptions are normalized at the adapter boundary to a sanitized
 `internal_error`, logged only through the transport-appropriate diagnostic
@@ -454,8 +486,11 @@ Rules for contract evolution:
 - Removing, renaming, or changing the meaning of an input, output, warning,
   or error requires a new major contract version and an explicit compatibility
   strategy.
-- CLI and MCP adapters for the same operation advertise the same contract
-  version.
+- Both adapters conform to the contract version declared by the
+  hierarchy-owned inventory. MCP exposes that version through tool or
+  inventory metadata; CLI contract tests reference the same declaration and
+  lock its machine result, warning, and error shapes without adding a new CLI
+  output field.
 - An adapter-only presentation change does not change the operation contract
   version.
 - Tests lock established JSON shapes and MCP schemas at the command boundary.
@@ -548,7 +583,9 @@ The inventory declares the conservative set of capabilities any request for
 the operation may require. When options activate materially different paths,
 the command-owned operation may implement
 `required_capabilities(request) -> set[Capability]` to compute the exact
-subset after semantic validation. For example, `init` declares
+subset after capability-free request validation. The computation uses only
+request values and static operation metadata and must perform no filesystem,
+network, environment, or process access. For example, `init` declares
 `{local-read, project-write, execution}` because its normal tool checks launch
 host binaries; a validated request that explicitly skips those checks may not
 require `execution`. The MCP adapter and access-policy layer must not
@@ -578,8 +615,9 @@ Tool annotations should conservatively reflect the full declared capability
 set, but annotations do not replace server-side enforcement. If policy denies
 any capability required by an otherwise implemented tool request, the
 registered tool returns a structured `policy_denied` error identifying the
-missing capabilities. The inventory reports its effective `policy-disabled`
-state and the reason.
+missing capabilities. A runtime describe surface may report
+`effective_state: policy-disabled`; the static inventory disposition remains
+`available`.
 
 An operation must not omit a capability merely because the path is rare,
 optional, expected to be idempotent, or combined with a more powerful
@@ -745,7 +783,7 @@ regression evidence.
 
 ```text
 src/specify_cli/
-├── _version.py
+├── _operation_version.py
 ├── command_version.py
 └── mcp_version.py
 
@@ -766,7 +804,7 @@ network_access: none
 project_scope: process
 ```
 
-`_version.py` owns typed version collection and `VersionResult`.
+`_operation_version.py` owns typed version collection and `VersionResult`.
 `command_version.py` renders the panel, feature text, or established JSON
 object. `mcp_version.py` returns the same result fields as structured content.
 No adapter starts a child process.
