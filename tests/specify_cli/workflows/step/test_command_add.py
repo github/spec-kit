@@ -1700,7 +1700,8 @@ class TestVersionedStepAdd:
         elif corrupt == "url":
             entry["releases"]["1.0"]["init_url"] = "http://evil.example/__init__.py"
         monkeypatch.setattr(
-            StepCatalog, "_get_merged_steps", lambda self: {"deploy": entry}
+            StepCatalog, "_get_merged_steps",
+            lambda self, *, step_id=None: {"deploy": entry}
         )
         requested = []
 

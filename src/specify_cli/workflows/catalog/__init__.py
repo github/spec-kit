@@ -29,6 +29,8 @@ _DOMAIN_EXPORTS = {
     "WorkflowCatalog",
     "WorkflowCatalogEntry",
     "WorkflowCatalogError",
+    "WorkflowCatalogFetchError",
+    "WorkflowCatalogValidationError",
     "WorkflowRegistry",
     "WorkflowValidationError",
 }
@@ -36,6 +38,8 @@ _STEP_COMPATIBILITY_EXPORTS = {
     "StepCatalog",
     "StepCatalogEntry",
     "StepCatalogError",
+    "StepCatalogFetchError",
+    "StepCatalogValidationError",
     "StepRegistry",
     "StepValidationError",
 }

@@ -45,7 +45,7 @@ def _entry() -> dict:
 
 def test_current_and_exact_release_keep_separate_metadata(project_dir, monkeypatch):
     catalog = StepCatalog(project_dir)
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": _entry()})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": _entry()})
 
     current = catalog.get_step_info("deploy")
     old = catalog.get_step_info("deploy", version="v1.0")
@@ -70,7 +70,7 @@ def test_legacy_current_and_exact_spelling(project_dir, monkeypatch):
         "version": "release-1",
         "url": "https://example.com/step.yml",
     }
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": legacy})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": legacy})
     assert catalog.get_step_info("deploy") is legacy
     assert catalog.get_step_info("deploy", version="release-1") is legacy
     assert catalog.get_step_info("deploy", version="release-2") is None
@@ -213,6 +213,6 @@ def test_duplicate_json_release_key_is_not_silently_overwritten(
 def test_bad_history_rejected_not_ignored(project_dir, monkeypatch, change, error):
     catalog = StepCatalog(project_dir)
     entry = {**_entry(), **change}
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": entry})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": entry})
     with pytest.raises(StepCatalogError, match=error):
         catalog.get_step_info("deploy")

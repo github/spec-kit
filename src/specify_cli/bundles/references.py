@@ -123,17 +123,15 @@ def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | str | No
     except Exception as exc:  # noqa: BLE001 - report malformed catalog errors
         from ..extensions import ExtensionCatalogFetchError
         from ..presets._catalog import PresetCatalogFetchError
-        from ..workflows.catalog import StepCatalogError, WorkflowCatalogError
+        from ..workflows.catalog import (
+            StepCatalogFetchError,
+            WorkflowCatalogFetchError,
+        )
 
-        if isinstance(exc, (ExtensionCatalogFetchError, PresetCatalogFetchError)):
-            return None
-        if isinstance(exc, WorkflowCatalogError) and str(exc) == (
-            "All configured catalogs failed to fetch."
-        ):
-            return None
-        if isinstance(exc, StepCatalogError) and str(exc) == (
-            "All configured step catalogs failed to fetch."
-        ):
+        if isinstance(exc, (
+            ExtensionCatalogFetchError, PresetCatalogFetchError,
+            WorkflowCatalogFetchError, StepCatalogFetchError,
+        )):
             return None
         return f"Catalog lookup failed: {exc}"
     return None

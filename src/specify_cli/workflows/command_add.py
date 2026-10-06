@@ -32,19 +32,23 @@ def _workflow_package_has_companions(package_dir: cli.Path) -> bool:
 
 def _prepare_workflow_add(
     project_root: cli.Path, source: str, *, dev: bool, from_url: str | None,
-    version: str | None,
+    version: str | None, selected_catalog: bool = False,
 ) -> cli.Path:
     from . import load_custom_steps
 
     if version is not None and (
-        dev or from_url is not None or source.startswith(("http://", "https://"))
-        or cli.Path(source).exists()
+        dev or from_url is not None or (
+            not selected_catalog and (
+                source.startswith(("http://", "https://"))
+                or cli.Path(source).exists()
+            )
+        )
     ):
         cli.console.print(
             "[red]Error:[/red] --version requires a workflow ID from a catalog."
         )
         raise cli.typer.Exit(1)
-    if version is not None:
+    if version is not None or selected_catalog:
         cli._validate_workflow_id_or_exit(source)
     load_custom_steps(project_root)
     cli._open_workflow_registry(project_root)
@@ -62,10 +66,9 @@ def _install_preselected_workflow(
     """Install a bundle-selected release with the normal workflow preflights."""
     project_root = cli._require_specify_project()
     workflows_dir = _prepare_workflow_add(
-        project_root, workflow_id, dev=False, from_url=None, version=version,
+        project_root, workflow_id, dev=False, from_url=None,
+        version=version, selected_catalog=True,
     )
-    if version is None:
-        cli._validate_workflow_id_or_exit(workflow_id)
     cli._install_workflow_from_catalog(
         project_root, workflows_dir, workflow_id,
         requested_version=version, selected_info=selected_info,

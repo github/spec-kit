@@ -4808,7 +4808,7 @@ class ExtensionCatalog(CatalogStackBase):
             ) from e
 
     def _get_merged_extensions(
-        self, force_refresh: bool = False
+        self, force_refresh: bool = False, *, extension_id: str | None = None
     ) -> List[Dict[str, Any]]:
         """Fetch and merge extensions from all active catalogs.
 
@@ -4817,8 +4817,9 @@ class ExtensionCatalog(CatalogStackBase):
           - _catalog_name: name of the source catalog
           - _install_allowed: whether installation is allowed from this catalog
 
-        Catalogs that fail to fetch are skipped. Raises ExtensionError only if
-        ALL catalogs fail.
+        An ID lookup stops at its first matching source and refuses malformed
+        higher-priority catalogs. Untargeted searches continue past malformed
+        sources so other catalog results remain discoverable.
 
         Args:
             force_refresh: If True, bypass all caches
@@ -4827,7 +4828,8 @@ class ExtensionCatalog(CatalogStackBase):
             List of merged extension dicts
 
         Raises:
-            ExtensionError: If all catalogs fail to fetch
+            ExtensionError: If no catalog is readable, or an ID lookup
+                encounters malformed catalog data.
         """
         import sys
 
@@ -4846,6 +4848,10 @@ class ExtensionCatalog(CatalogStackBase):
                     and validation_error is None
                 ):
                     validation_error = e
+                if extension_id is not None and isinstance(
+                    e, ExtensionCatalogValidationError
+                ):
+                    raise
                 print(
                     f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
                     file=sys.stderr,
@@ -4853,6 +4859,8 @@ class ExtensionCatalog(CatalogStackBase):
                 continue
 
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
+                if extension_id is not None and ext_id != extension_id:
+                    continue
                 # Per-entry guard: ``_fetch_single_catalog`` already validates
                 # that ``catalog_data["extensions"]`` is a mapping, but it
                 # does not (and should not) validate every entry shape there
@@ -4862,6 +4870,11 @@ class ExtensionCatalog(CatalogStackBase):
                 # the valid entries without crashing on ``**ext_data``.
                 # Mirrors ``integrations/catalog.py:245``.
                 if not isinstance(ext_data, dict):
+                    if extension_id is not None:
+                        raise ExtensionCatalogValidationError(
+                            f"Invalid extension catalog entry for '{ext_id}' "
+                            f"from {catalog_entry.url}: expected a JSON object"
+                        )
                     continue
                 if ext_id not in merged:  # Higher-priority catalog wins
                     merged[ext_id] = {
@@ -4870,6 +4883,8 @@ class ExtensionCatalog(CatalogStackBase):
                         "_catalog_name": catalog_entry.name,
                         "_install_allowed": catalog_entry.install_allowed,
                     }
+                    if extension_id is not None:
+                        return list(merged.values())
 
         if not any_success and active_catalogs:
             if validation_error is not None:
@@ -5093,7 +5108,7 @@ class ExtensionCatalog(CatalogStackBase):
             Extension metadata (annotated with ``_catalog_name`` and
             ``_install_allowed``) or None if not found.
         """
-        all_extensions = self._get_merged_extensions()
+        all_extensions = self._get_merged_extensions(extension_id=extension_id)
         for ext_data in all_extensions:
             if ext_data["id"] == extension_id:
                 from ._catalog_versions import select_release
@@ -5105,7 +5120,7 @@ class ExtensionCatalog(CatalogStackBase):
         """List versions advertised by the winning catalog source."""
         from ._catalog_versions import available_versions
 
-        for ext_data in self._get_merged_extensions():
+        for ext_data in self._get_merged_extensions(extension_id=extension_id):
             if ext_data["id"] == extension_id:
                 return available_versions(ext_data)
         return []

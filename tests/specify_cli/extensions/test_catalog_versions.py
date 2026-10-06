@@ -69,7 +69,8 @@ def _catalog(
     monkeypatch: pytest.MonkeyPatch, project: Path, entry: dict
 ) -> ExtensionCatalog:
     monkeypatch.setattr(
-        ExtensionCatalog, "_get_merged_extensions", lambda self: [entry]
+        ExtensionCatalog, "_get_merged_extensions",
+        lambda self, *, extension_id=None: [entry]
     )
     return ExtensionCatalog(project)
 
@@ -161,6 +162,33 @@ def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
     assert catalog.get_extension_versions("demo-history") == ["0.5.1"]
 
 
+def test_targeted_lookup_rejects_malformed_higher_catalog_but_search_continues(
+    tmp_path, monkeypatch,
+):
+    from specify_cli.extensions import ExtensionCatalogValidationError
+
+    catalog = ExtensionCatalog(tmp_path)
+    sources = [
+        CatalogEntry("https://example.com/high.json", "high", 1, True),
+        CatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+
+    def fetch(source, _force=False):
+        if source.name == "high":
+            catalog._validate_catalog_payload({"extensions": []}, source.url)
+        return {
+            "schema_version": "1.0",
+            "extensions": {"demo-history": {"version": "1.0.0"}},
+        }
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+
+    with pytest.raises(ExtensionCatalogValidationError, match="Invalid catalog format"):
+        catalog.get_extension_info("demo-history")
+    assert catalog.search("demo-history")[0]["_catalog_name"] == "low"
+
+
 @pytest.mark.parametrize("second_lookup", ["lower_priority", "unavailable"])
 def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
     tmp_path, monkeypatch, second_lookup
@@ -174,7 +202,7 @@ def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
     fetches = []
     selected = []
 
-    def merged(_self):
+    def merged(_self, *, extension_id=None):
         fetches.append(True)
         if len(fetches) == 1:
             return [high]
@@ -478,7 +506,7 @@ def test_info_versions_uses_first_resolved_catalog_snapshot(tmp_path, monkeypatc
     low["version"] = "0.8.0"
     fetches = []
 
-    def merged(_self):
+    def merged(_self, *, extension_id=None):
         fetches.append(True)
         return [high if len(fetches) == 1 else low]
 
