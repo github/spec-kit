@@ -221,6 +221,39 @@ Registration imports should be explicit and ordered consistently. Do not rely
 on filesystem discovery to import arbitrary modules, because command exposure
 should remain reviewable in one place.
 
+## Shared invocation context and direct CLI policy
+
+The direct local CLI constructs the
+[shared pre-authorization context](shared.md#invocation-context) explicitly:
+
+- `launch_working_directory` is captured once when the CLI invocation begins.
+- `requested_directory` comes from the command's typed input, or remains absent
+  when project discovery should begin from the launch directory.
+- `filesystem_scope` is `HostUser`, preserving established CLI behavior for
+  explicit paths such as an `init` target outside the launch directory.
+- `access_policy` is `DirectCliPolicy`.
+- Deadline, cancellation, and output-budget values come from CLI invocation
+  infrastructure rather than mutable command globals.
+
+`DirectCliPolicy` represents a user intentionally running a local command under
+that user's operating-system permissions. It authorizes the capabilities
+declared for the selected operation, including ambient host execution when the
+descriptor requires `unrestricted-host-execution`. The shared operation does
+not infer this policy and must not substitute MCP's launch-directory boundary.
+
+This policy preserves host access, not semantic consent:
+
+- `--json`, `--non-interactive`, and local invocation do not imply `force`.
+- External-source trust and overwrite consent remain explicit request values.
+- Command-specific prompts may collect consent before constructing a new
+  request, but the adapter does not add consent silently.
+- Network defaults and self-modifying behavior remain those explicitly defined
+  by the selected operation and its CLI contract.
+
+An embedded CLI host may supply a `RootBound` scope and a stricter access policy
+instead. Adapter parity compares equivalent requests under equivalent policy
+contexts; a policy denial is not an application-behavior divergence.
+
 ## Test structure
 
 Command-focused tests mirror the source command surface under
@@ -246,6 +279,10 @@ tests/specify_cli/test_command_init_prompting.py
 The primary `test_command_<name>.py` suite verifies the public command surface.
 Phase-specific suites verify detailed invariants without obscuring the primary
 command behavior.
+
+CLI adapter tests also verify `DirectCliPolicy` construction, including
+explicit targets outside the launch directory and the rule that machine modes
+do not add force, trust, or destructive consent.
 
 Shared operation and phase tests use `test_operation_<name>.py` and
 `test_operation_<name>_<phase>.py` as defined in
@@ -391,6 +428,8 @@ For a new or refactored command:
 - [ ] The adapter maps into the shared operation defined by `design/shared.md`.
 - [ ] Semantic validation, orchestration, and side effects are below the CLI
       adapter.
+- [ ] Direct CLI invocation constructs `HostUser` filesystem scope and
+      `DirectCliPolicy`; embedded confinement is explicit.
 - [ ] CLI-private phase modules use `_command_<name>_<phase>.py`; shared phases
       use `_operation_<name>_<phase>.py`.
 - [ ] `_commands.py` contains only group infrastructure and genuinely shared

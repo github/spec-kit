@@ -317,8 +317,8 @@ logged only through the MCP diagnostic channel.
 The MCP adapter constructs the immutable
 [shared pre-authorization context](shared.md#invocation-context) from the
 requested directory, server launch state, host roots, active policy, and call
-lifecycle. It performs no project discovery or filesystem resolution while
-constructing that context.
+lifecycle. Its filesystem scope is `RootBound(allowed_roots)`. It performs no
+project discovery or filesystem resolution while constructing that context.
 
 Project-scoped MCP tools accept an optional project directory when their use
 case needs one. If omitted, project discovery starts from the server launch
@@ -331,8 +331,8 @@ The invocation follows these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Pass the unresolved requested directory and host-provided allowed roots
-  explicitly.
+- Pass the unresolved requested directory and
+  `RootBound(host_provided_allowed_roots)` explicitly.
 - Perform preliminary policy checks without filesystem access, then resolve
   the canonical project root under authorized `local-read`.
 - Re-check canonical allowed-root containment after resolution as an admission

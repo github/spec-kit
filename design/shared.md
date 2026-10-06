@@ -56,8 +56,9 @@ typed operation outcome ─┬─> CLI text, JSON, warnings, and exit status
 ```
 
 The shared operation is the semantic source of truth. Adapters may expose
-different presentation features, but equivalent requests must produce
-equivalent results, warnings, expected failures, and side effects.
+different presentation features, but equivalent requests under equivalent
+authorized contexts must produce equivalent results, warnings, expected
+failures, and side effects.
 
 An adapter must not:
 
@@ -206,14 +207,14 @@ authorized. Invocation follows this order:
    only request values and static operation metadata.
 3. The shared operation computes request-required capabilities, network
    requirements, and requested roots without I/O.
-4. The applicable policy layer authorizes those requirements and performs a
-   preliminary allowed-root check on the unresolved requested path. A denial
-   stops the invocation.
+4. The applicable policy layer authorizes those requirements. Under a
+   root-bound filesystem scope, it also performs a preliminary allowed-root
+   check on the unresolved requested path. A denial stops the invocation.
 5. Under authorized `local-read`, the shared operation resolves the canonical
-   project or target root, re-checks allowed-root containment, and performs
+   project or target root. A root-bound scope re-checks containment before
    state-dependent validation.
 6. The shared operation performs every filesystem access through the
-   authorized root-bound filesystem boundary.
+   authorized filesystem interface.
 7. The shared operation performs its side effects and returns its typed
    outcome.
 
@@ -299,7 +300,7 @@ Adapters begin with an immutable, I/O-free pre-authorization context:
 PreAuthorizationContext
 ├── launch_working_directory
 ├── requested_directory
-├── allowed_roots
+├── filesystem_scope
 ├── access_policy
 ├── deadline
 ├── cancellation
@@ -311,6 +312,18 @@ should begin from `launch_working_directory`. Constructing this context must
 not read the environment, inspect the filesystem, resolve symlinks, or discover
 a project.
 
+`filesystem_scope` is explicit:
+
+```text
+RootBound(allowed_roots)
+HostUser
+```
+
+`RootBound` confines access to host-provided roots. `HostUser` preserves the
+direct local CLI model: filesystem access is governed by the invoking user's
+operating-system permissions rather than an application root boundary. An
+adapter must choose one; absence of a scope never means unrestricted access.
+
 After policy authorization, shared application infrastructure resolves and
 validates the canonical root and constructs:
 
@@ -318,14 +331,15 @@ validates the canonical root and constructs:
 AuthorizedOperationContext
 ├── invocation: PreAuthorizationContext
 ├── project_root
-└── filesystem: RootedFilesystem
+└── filesystem: FilesystemAccess
 ```
 
 `project_root` is optional for process-scoped operations and represents the
-canonical project or target root for scoped operations. Canonical containment
-against `allowed_roots` is checked again before state-dependent validation or
-side effects. `RootedFilesystem` is the policy-enforcing interface for
-subsequent file access; a raw canonical path is identity, not authorization.
+canonical project or target root for scoped operations. `RootBound` contexts
+re-check canonical containment before state-dependent validation or side
+effects and receive a `RootedFilesystem`. `HostUser` contexts receive a
+`HostFilesystem` governed by operating-system permissions. A raw canonical
+path is identity, not authorization under a root-bound policy.
 
 Shared operations must not call `os.chdir()` to establish request context.
 They pass resolved roots through operation phases and domain calls. Deadlines,
@@ -333,9 +347,9 @@ cancellation, and output budgets are likewise explicit.
 
 ## Filesystem confinement
 
-Root validation alone does not confine later access. A descendant can be a
-symlink or junction to an outside path, and a path component can be replaced
-between validation and use.
+Under `RootBound`, root validation alone does not confine later access. A
+descendant can be a symlink or junction to an outside path, and a path
+component can be replaced between validation and use.
 
 Every filesystem access made under a confined policy must therefore use
 `RootedFilesystem` or an operation-owned equivalent that enforces the same
@@ -356,6 +370,10 @@ Command/domain code must not bypass the boundary with raw `Path`, `open`, or
 unscoped filesystem helpers. Shared infrastructure may provide these
 root-bound primitives, but command-specific path semantics remain owned by the
 relevant hierarchy.
+
+`HostUser` is an explicit adapter policy, not a confinement mechanism. It does
+not imply force, overwrite consent, external-source trust, or permission for a
+different adapter to use host-wide access.
 
 ## Capability declarations
 
@@ -385,10 +403,10 @@ child process must either:
 
 The second capability is an explicit acknowledgement that the child runs with
 the server user's ambient privileges and can access paths outside
-`allowed_roots`. It is never implied by `execution`, project cwd, machine mode,
-or transport authentication. If sandboxing is required but unavailable, the
-operation fails with a structured policy error; it must not silently fall back
-to unrestricted execution.
+a `RootBound` scope. It is never implied by `execution`, project cwd, machine
+mode, or transport authentication. If sandboxing is required but unavailable,
+the operation fails with a structured policy error; it must not silently fall
+back to unrestricted execution.
 
 When `unrestricted-host-execution` is authorized, filesystem, environment,
 network, and subprocess restrictions cannot be claimed as enforced inside the
@@ -426,19 +444,20 @@ Operation tests cover:
 - Warnings and structured errors.
 - Capabilities, trust, consent, network behavior, side effects, rollback,
   cancellation, and output bounds.
-- Preliminary requested-root authorization and canonical post-resolution
-  containment, including symlink-escape rejection.
+- Under `RootBound`, preliminary requested-root authorization and canonical
+  post-resolution containment, including symlink-escape rejection.
 - Root-bound enforcement at each descendant filesystem access, including
   symlink/junction replacement and time-of-check/time-of-use cases.
 - Sandboxed execution and explicit `unrestricted-host-execution` policy
   denial, with no unsafe fallback.
 - Domain behavior without Typer, Rich, MCP, or transport assertions.
 
-Adapter tests cover invocation mapping and adapter-specific reporting.
+Adapter tests cover invocation mapping, explicit filesystem scope and access
+policy construction, and adapter-specific reporting.
 
-Parity tests invoke CLI and MCP adapters against the same operation fixture
-and compare semantic request, result, warning, error, and side-effect behavior.
-Parity does not require byte-identical presentation.
+Parity tests invoke CLI and MCP adapters against the same operation and policy
+fixtures and compare semantic request, result, warning, error, and side-effect
+behavior. Parity does not require byte-identical presentation.
 
 Behavioral changes follow
 [Testing deterministic behavior](../CONTRIBUTING.md#testing-deterministic-behavior):
@@ -456,6 +475,8 @@ Avoid:
 - Adding adapter concepts to request, outcome, warning, or error models.
 - Hiding operations behind a central string dispatcher or service locator.
 - Letting adapters infer force, trust, consent, or extra capabilities.
+- Leaving filesystem scope or default access policy implicit so shared code
+  must guess the adapter's authority.
 - Reading mutable process cwd instead of using invocation context.
 - Splitting simple operations or creating phase modules solely for symmetry.
 
@@ -469,9 +490,11 @@ For an operation with CLI and MCP adapters:
 - [ ] Adapter modules contain only invocation, mapping, presentation, and
       adapter-specific concerns.
 - [ ] Shared request, outcome, warning, and error types are transport-neutral.
+- [ ] Each adapter explicitly constructs its filesystem scope and access
+      policy.
 - [ ] Capability computation is pure and authorization precedes stateful work.
-- [ ] Canonical project resolution and its allowed-root re-check occur only
-      after authorization.
+- [ ] Under `RootBound`, canonical project resolution and its allowed-root
+      re-check occur only after authorization.
 - [ ] Every confined filesystem access remains anchored to authorized roots at
       the point of use.
 - [ ] Child processes are sandboxed or require explicit
