@@ -946,3 +946,221 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
     ):
         offline.refresh(_component("steps", "my-step"))
     assert calls == [("missing-step", tmp_path)]
+
+
+def _backup_root_from_note(note: str) -> Path:
+    return Path(note.split("from backup '", 1)[1].split("'", 1)[0])
+
+
+def test_step_refresh_wraps_initial_lock_failure_without_backup(
+    tmp_path: Path, monkeypatch
+):
+    """Lock failure before the snapshot is wrapped and creates no backup."""
+    import tempfile
+
+    import specify_cli
+    import specify_cli.workflows.step.installer as step_installer
+
+    steps_dir, entry = _seed_refresh_step(tmp_path)
+    package_text = (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8")
+    registry_text = (steps_dir / StepRegistry.REGISTRY_FILE).read_text(
+        encoding="utf-8"
+    )
+
+    def _lock_fails(*_args, **_kwargs):
+        raise step_installer.StepInstallError(
+            "Failed to acquire the step lock: busy"
+        )
+
+    def _add(*_args, **_kwargs):
+        raise AssertionError("install ran after the initial lock failure")
+
+    created: list[str] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def _mkdtemp(*args, **kwargs):
+        prefix = kwargs.get("prefix", args[0] if args else "")
+        created.append(str(prefix))
+        return real_mkdtemp(*args, **kwargs)
+
+    monkeypatch.setattr(step_installer, "_step_install_transaction", _lock_fails)
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as caught:
+        manager.refresh(_component("steps", "my-step"))
+
+    assert str(caught.value) == (
+        "Failed to refresh step 'my-step': Failed to acquire the step lock: busy"
+    )
+    assert isinstance(caught.value.__cause__, step_installer.StepInstallError)
+    assert not any(prefix.startswith("speckit-step-refresh-") for prefix in created)
+    assert (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8") == (
+        package_text
+    )
+    assert (steps_dir / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8") == (
+        registry_text
+    )
+    assert StepRegistry(tmp_path).get("my-step") == entry
+
+
+def test_step_refresh_notes_rollback_lock_failure_and_keeps_backup(
+    tmp_path: Path, monkeypatch
+):
+    """A failed rollback lock keeps the install error, a note, and the backup."""
+    import contextlib
+    import shutil
+
+    import specify_cli
+    import specify_cli.workflows.step.installer as step_installer
+
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    original_step_yml = (steps_dir / "my-step" / "step.yml").read_text(
+        encoding="utf-8"
+    )
+
+    def _boom(step_id, *args, **kwargs):
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    real_txn = step_installer._step_install_transaction
+    calls = {"n": 0}
+
+    @contextlib.contextmanager
+    def _fail_second(project_root):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise step_installer.StepInstallError(
+                "Failed to acquire the step lock: busy"
+            )
+        with real_txn(project_root):
+            yield
+
+    monkeypatch.setattr(step_installer, "_step_install_transaction", _fail_second)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as caught:
+        manager.refresh(_component("steps", "my-step"))
+
+    assert calls["n"] == 2
+    assert str(caught.value) == "Failed to install step 'my-step'."
+    assert caught.value.__cause__ is None
+    note = caught.value.__notes__[0]
+    assert "Failed to acquire the step lock: busy" in note
+    assert "Could not restore step 'my-step'" in note
+    backup_root = _backup_root_from_note(note)
+    try:
+        assert backup_root.is_dir()
+        assert (backup_root / "my-step" / "step.yml").read_text(
+            encoding="utf-8"
+        ) == original_step_yml
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
+    assert not (steps_dir / "my-step").exists()
+    assert not StepRegistry(tmp_path).is_installed("my-step")
+
+
+def _require_directory_symlink(tmp_path: Path) -> None:
+    probe_target = tmp_path / "symlink-probe-target"
+    probe_target.mkdir()
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(probe_target, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create symlink: {exc}")
+
+
+def test_step_refresh_rollback_refuses_swapped_steps_symlink(
+    tmp_path: Path, monkeypatch
+):
+    """Rollback must not read or delete through a steps directory symlink."""
+    import json
+    import shutil
+
+    import specify_cli
+
+    _require_directory_symlink(tmp_path)
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    outside = tmp_path / "outside"
+    external_step = outside / "my-step"
+    external_step.mkdir(parents=True)
+    (external_step / "secret.txt").write_text("do-not-delete", encoding="utf-8")
+    external_registry = {
+        "schema_version": "1.0",
+        "steps": {"other-step": {"name": "Other", "version": "9.9.9"}},
+    }
+    (outside / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps(external_registry), encoding="utf-8"
+    )
+
+    def _boom(step_id, *args, **kwargs):
+        # Reinstall is outside the lock: swap the steps directory for an
+        # external tree before rollback reacquires it.
+        shutil.rmtree(steps_dir)
+        steps_dir.symlink_to(outside, target_is_directory=True)
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as caught:
+        manager.refresh(_component("steps", "my-step"))
+
+    assert str(caught.value) == "Failed to install step 'my-step'."
+    note = caught.value.__notes__[0]
+    assert "Refusing to use symlinked step directory" in note
+    assert (external_step / "secret.txt").read_text(encoding="utf-8") == (
+        "do-not-delete"
+    )
+    assert not (external_step / "step.yml").exists()
+    assert (
+        json.loads((outside / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8"))
+        == external_registry
+    )
+    assert steps_dir.is_symlink()
+    backup_root = _backup_root_from_note(note)
+    try:
+        assert (backup_root / "my-step" / "step.yml").is_file()
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+
+def test_step_refresh_rollback_refuses_symlinked_step_directory(
+    tmp_path: Path, monkeypatch
+):
+    """Rollback must not delete a step directory that is itself a symlink."""
+    import shutil
+
+    import specify_cli
+
+    _require_directory_symlink(tmp_path)
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    external_step = tmp_path / "outside-step"
+    external_step.mkdir()
+    (external_step / "secret.txt").write_text("do-not-delete", encoding="utf-8")
+
+    def _boom(step_id, *args, **kwargs):
+        link = steps_dir / step_id
+        link.symlink_to(external_step, target_is_directory=True)
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError) as caught:
+        manager.refresh(_component("steps", "my-step"))
+
+    assert str(caught.value) == "Failed to install step 'my-step'."
+    note = caught.value.__notes__[0]
+    assert "Refusing to install step through a symlinked path" in note
+    assert (external_step / "secret.txt").read_text(encoding="utf-8") == (
+        "do-not-delete"
+    )
+    assert (steps_dir / "my-step").is_symlink()
+    backup_root = _backup_root_from_note(note)
+    try:
+        assert (backup_root / "my-step" / "step.yml").is_file()
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)

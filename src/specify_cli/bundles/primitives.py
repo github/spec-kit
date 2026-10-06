@@ -472,7 +472,6 @@ class _StepKindManager:
             return
 
         import copy
-        import json
         import shutil
         import tempfile
 
@@ -523,19 +522,17 @@ class _StepKindManager:
                     with step_installer._step_install_transaction(self._root):
                         assert backup_root is not None
                         backup_dir = backup_root / component.id
+                        # Reinstall runs outside the lock, so the steps tree can
+                        # be swapped for a symlink before this section. Reload
+                        # through ``StepRegistry._load``, which refuses a
+                        # symlinked steps path or registry file, and resolve the
+                        # steps base before deleting or copying the package.
+                        # ``save()`` replaces the whole file: the document is
+                        # that guarded read plus this step's snapshot when the
+                        # id is absent. A later operation's package and registry
+                        # keys are left alone.
                         current = StepRegistry(self._root)
-                        # ``save()`` replaces the whole file. The document it
-                        # writes is the on-disk ``steps`` object read after this
-                        # load, plus this step's snapshotted entry when that
-                        # object does not already contain the id. A later step
-                        # operation's package and registry keys are left alone.
-                        registry_path = current.registry_path
-                        if registry_path.is_file():
-                            loaded = json.loads(
-                                registry_path.read_text(encoding="utf-8")
-                            )
-                        else:
-                            loaded = None
+                        loaded = current._load()
                         if not isinstance(loaded, dict):
                             document = {
                                 "schema_version": StepRegistry.SCHEMA_VERSION,
@@ -547,7 +544,13 @@ class _StepKindManager:
                                 document["steps"] = {}
                         steps = document["steps"]
                         if component.id not in steps:
-                            step_dir = current.steps_dir / component.id
+                            steps_base = step_installer.resolve_steps_base_dir(
+                                self._root
+                            )
+                            step_dir = step_installer._resolve_step_dir(
+                                steps_base, component.id
+                            )
+                            step_installer._reject_unsafe_destination(step_dir)
                             if step_dir.exists():
                                 shutil.rmtree(step_dir)
                             if backup_dir.exists():
