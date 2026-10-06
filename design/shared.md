@@ -6,8 +6,8 @@ delivery surface translate their inputs into that operation and translate its
 outcome into their own output and error conventions.
 
 [Specify CLI Command Architecture](cli.md) defines the Typer/terminal adapter.
-[Specify MCP Command Architecture](mcp.md) defines MCP tool exposure, policy,
-and transport. Neither adapter document owns application behavior.
+[Specify MCP Command Architecture](mcp.md) defines MCP tool exposure, protocol
+mapping, and transport. Neither adapter document owns application behavior.
 
 ## Design goals
 
@@ -35,7 +35,7 @@ The shared layer does not:
 - Require byte-identical CLI JSON and MCP protocol envelopes.
 - Turn operations into a universal string-based command dispatcher.
 - Replace focused domain modules with a central execution engine.
-- Define CLI prompting, MCP authorization, transport authentication, or host
+- Define CLI prompting, MCP host approval, transport authentication, or host
   sandboxing.
 - Require a context object or extra module when ordinary typed parameters and
   an existing domain module are sufficient.
@@ -76,7 +76,7 @@ An adapter must not:
 | Project and target path validation | Shared operation or focused domain helper |
 | Bundled assets and distribution metadata | Existing shared/domain resource helpers |
 | CLI syntax, prompting, rendering, JSON, and exit codes | CLI adapter |
-| MCP schemas, policy enforcement, annotations, and tool errors | MCP adapter |
+| MCP schemas, annotations, protocol mapping, and tool errors | MCP adapter |
 | MCP server lifecycle and transport | MCP infrastructure |
 
 Domain behavior that already has a focused Typer-free owner remains there. A
@@ -198,18 +198,15 @@ validation remains in the shared operation.
 Invocation follows a small, explicit sequence:
 
 1. The adapter parses and schema-validates its input.
-2. The shared operation performs pure request validation and computes any
-   request-specific capabilities or network requirements.
-3. An adapter that enforces policy, such as MCP, authorizes those requirements
-   before invoking behavior that uses them.
-4. The shared operation performs state-dependent validation, orchestration, and
+2. The shared operation performs pure request validation.
+3. The shared operation performs state-dependent validation, orchestration, and
    side effects.
-5. The operation returns its typed outcome for adapter-specific reporting.
+4. The operation returns its typed outcome for adapter-specific reporting.
 
 The CLI normally proceeds under the invoking user's operating-system
-permissions. MCP applies its configured policy before dispatch. Policy
-differences may reject an invocation, but they do not create a second
-implementation of the operation.
+permissions. MCP publishes operation metadata so its host or client can decide
+whether to expose, confirm, or invoke a tool. Once invoked, both adapters call
+the same application implementation.
 
 ## Project and working-directory handling
 
@@ -314,8 +311,8 @@ Capabilities are cumulative operation metadata:
 | `self-modifying` | Changes the Specify installation or machine-level state |
 
 The descriptor declares the conservative union an operation may require.
-`required_capabilities(request)` may compute an exact subset only from the
-validated request and static metadata, without performing I/O.
+Adapters and hosts use this metadata for discovery, review, and confirmation;
+it does not add a policy engine to the shared layer.
 
 `execution` means the operation may start a child process with the MCP server
 process user's privileges. It is not a filesystem sandbox. A host that needs
@@ -340,8 +337,8 @@ The CLI may prompt before constructing or retrying a request. MCP never prompts
 and returns a structured input- or confirmation-required error when the
 request lacks required consent.
 
-Machine-readable mode, non-interactive mode, transport authentication, or an
-authorized capability never implies `force`, trust, or destructive consent.
+Machine-readable mode, non-interactive mode, transport authentication, or a
+host confirmation never implies `force`, trust, or destructive consent.
 
 ## Timeouts, cancellation, and bounded output
 
@@ -384,8 +381,8 @@ Operation tests cover:
 - Explicit project/target paths without process-wide cwd changes.
 - Domain behavior without Typer, Rich, MCP, or transport assertions.
 
-Adapter tests cover invocation mapping and adapter-specific reporting and
-policy.
+Adapter tests cover invocation mapping, metadata, and adapter-specific
+reporting.
 
 Parity tests invoke CLI and MCP adapters against the same operation fixture and
 compare semantic request, result, warning, error, and side-effect behavior.
@@ -424,8 +421,8 @@ For an operation with CLI and MCP adapters:
 - [ ] Shared request, outcome, warning, and error types are transport-neutral.
 - [ ] Project and target paths are explicit; shared code does not call
       `os.chdir()`.
-- [ ] MCP policy uses operation metadata without moving policy into shared
-      domain behavior.
+- [ ] MCP annotations and inventory reflect operation metadata without moving
+      host approval behavior into the shared layer.
 - [ ] CLI exit codes and MCP tool errors remain adapter-owned.
 - [ ] Contract-version ownership and compatibility tests are explicit.
 - [ ] Operation tests and adapter parity tests cover positive and negative

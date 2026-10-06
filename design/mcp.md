@@ -6,8 +6,8 @@ the Model Context Protocol (MCP). It is the MCP counterpart to
 
 Both adapters invoke the application layer defined by
 [Shared Command Application Architecture](shared.md). This document owns MCP
-tool identity, exposure, policy, protocol mapping, and transport. It does not
-redefine semantic validation, orchestration, results, warnings, errors, or
+tool identity, exposure, annotations, protocol mapping, and transport. It does
+not redefine semantic validation, orchestration, results, warnings, errors, or
 side effects.
 
 ## Design goals
@@ -27,8 +27,8 @@ The design optimizes for:
   disposition; tools are never exposed through filesystem discovery.
 - **Small working context:** changing one operation should normally require
   only its domain, CLI adapter, MCP adapter, and mirrored tests.
-- **Policy visibility:** project writes, execution, network access, trust
-  decisions, and self-modification are declared and enforced.
+- **Side-effect visibility:** project writes, execution, network access, trust
+  decisions, and self-modification are declared for MCP hosts and clients.
 - **Transport independence:** stdio and future Streamable HTTP hosting do not
   change command behavior.
 
@@ -61,15 +61,14 @@ The MCP adapter owns:
 - Tool name, description, annotations, and protocol schemas.
 - Mapping between MCP content and shared request/outcome types.
 - Per-group MCP registration and static inventory.
-- Access-policy enforcement for MCP invocation.
 - Protocol diagnostics and transport hosting.
 
 It does not own semantic validation, application orchestration, side effects,
 or command-specific domain contracts. It must not invoke Typer handlers, start
 `specify` as application dispatch, scrape Rich output, or parse CLI stderr.
 
-Shared MCP infrastructure may define policy and protocol primitives. It must
-not become a central catalog of command-specific request models, results,
+Shared MCP infrastructure may define protocol and registration primitives. It
+must not become a central catalog of command-specific request models, results,
 validation, or orchestration.
 
 ## Operation identity and MCP tool design
@@ -107,12 +106,12 @@ typed callable. First-class tools therefore preserve:
 - Per-command schemas and descriptions.
 - MCP client discovery and argument validation.
 - Command-specific output schemas and annotations.
-- Reviewable registration and policy metadata.
+- Reviewable registration and side-effect metadata.
 - A direct mapping back to the CLI leaf and owning source files.
 
 A generic facade would instead reduce the protocol-visible input to a command
 string plus an opaque or oversized union of arguments. That weakens schema
-validation, discoverability, policy review, and compatibility analysis.
+validation, discoverability, side-effect review, and compatibility analysis.
 
 At the time this document was written, the CLI had 90 leaf commands.
 `specify mcp` is the transport host and is permanently excluded from recursive
@@ -246,22 +245,6 @@ The static disposition values are:
   current distribution or platform; the record states the concrete reason.
 - `excluded`: the command is intentionally not an MCP operation.
 
-Runtime policy state is separate from static inventory disposition. An
-available tool has a request-specific `effective_state` of:
-
-- `enabled`: the active policy authorizes the complete validated request,
-  including required capabilities, network access, and external-source trust
-  policy.
-- `policy-disabled`: the tool remains discoverable, but invocation returns a
-  structured `policy_denied` error identifying every denied policy dimension.
-
-`effective_state` is derived only after capability-free request validation and
-the full request policy decision; it is not stored as the inventory's static
-disposition. A metadata or describe surface without a concrete request reports
-the static disposition and active policy constraints, not a fabricated
-`effective_state`. A request-evaluation surface may report both fields but must
-preserve their distinct types.
-
 Every CLI leaf must appear exactly once. The inventory parity test fails for a
 missing leaf, duplicate logical operation, duplicate tool name, stale CLI
 path, or unexplained exclusion.
@@ -272,16 +255,14 @@ path, or unexplained exclusion.
 MCP tool that starts another MCP server would be recursive infrastructure, not
 an application operation.
 
-Other commands are not excluded merely because they mutate state. They are
-declared and gated by capability. For example:
+Other commands are not excluded merely because they mutate state. Their
+side effects are declared so MCP hosts and clients can make informed exposure
+and confirmation decisions. For example:
 
 - `self.upgrade` has static disposition `available` when its first-class tool
-  is implemented. Its effective state is `policy-disabled` under the default
-  policy because local reads, execution, and self-modification are not all
-  authorized.
+  is implemented and declares local reads, execution, and self-modification.
 - `event.run`, `workflow.run`, and `workflow.resume` are execution operations
-  that may also persist project state; policy must authorize every capability
-  required by the operation.
+  that may also persist project state.
 - `init`, add/remove/update commands, and configuration changes are
   project-write operations, with execution and other independent
   capabilities declared when their paths require them.
@@ -302,8 +283,8 @@ The MCP adapter projects that contract onto MCP:
 
 - Its input schema is command-specific and maps into the shared typed request.
 - It performs protocol/schema validation but no state-dependent semantic work.
-- It applies MCP policy to the shared operation's declared requirements before
-  invoking application behavior.
+- It exposes the operation's side-effect and network metadata through tool
+  annotations and inventory.
 - It maps the shared result and warnings into command-specific structured
   content.
 - It maps expected shared errors into MCP tool errors without adding
@@ -328,8 +309,6 @@ The adapter and shared operation follow these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Authorize the operation's declared capabilities and network requirements
-  before invoking behavior that uses them.
 - Pass the resolved project or target path explicitly through operation phases.
 - Use the same shared Python/domain helpers as CLI for distribution metadata,
   bundled assets, project files, and other application behavior.
@@ -366,16 +345,15 @@ Machine mode is not consent. Starting MCP, using `--json` or
 - Permission to execute behavior that the caller did not explicitly request.
 
 The caller must explicitly invoke an execution operation, supply any
-command-specific consent fields, and satisfy the active access policy. MCP
-annotations and host UI are advisory; the server still enforces operation
-requirements.
+command-specific consent fields, and satisfy the shared operation's semantic
+validation. MCP annotations and host UI are advisory; they do not substitute
+for required request values.
 
-## Capability requirements and access policy
+## Capability and network metadata
 
-Operations declare and compute capabilities according to
-[the shared capability contract](shared.md#capability-declarations). MCP policy
-must authorize every request-required capability; choosing one "highest" class
-is not sufficient. Examples:
+Operations declare capabilities according to
+[the shared capability contract](shared.md#capability-declarations). These are
+cumulative descriptions, not a highest-risk hierarchy. Examples:
 
 ```text
 version       -> {local-read}
@@ -384,7 +362,7 @@ workflow.run  -> {local-read, project-write, execution}
 self.upgrade  -> {local-read, execution, self-modifying}
 ```
 
-`read-only` is a derived description, not an authorizable capability. A
+`read-only` is a derived description, not a declared capability. A
 request is read-only only when it requires no `project-write`, `execution`, or
 `self-modifying` capability. An operation that launches a binary is therefore
 not read-only even if it does not persist changes.
@@ -393,30 +371,18 @@ Network access is an independent declaration: `none`, `optional`, or
 `required`. A read-only search may use the network, while a project-write
 operation may be fully offline.
 
-The MCP server receives an access policy from its host configuration. The
-default policy is conservative:
+Tool annotations and inventory conservatively reflect the operation's declared
+capabilities and network access. The stdio server does not implement an
+allow/deny policy engine or request-specific availability state. The MCP host
+or client may use metadata to hide a tool, ask for confirmation, or decline
+to invoke it.
 
-- `local-read` is authorized.
-- `project-write`, `execution`, and `self-modifying` require explicit
-  authorization.
-- Network access is denied unless explicitly enabled.
-- External-source trust is separately controlled and remains default-deny.
+The server still enforces semantic request requirements such as `force`,
+external-source trust, and command-specific confirmation fields because those
+belong to the shared operation contract.
 
-Tool annotations should conservatively reflect the full declared capability
-set, but annotations do not replace server-side enforcement. If policy denies
-any capability required by an otherwise implemented tool request, the
-registered tool returns a structured `policy_denied` error identifying the
-denied policy dimensions. A request-evaluation surface may report
-`effective_state: policy-disabled`; the static inventory disposition remains
-`available`.
-
-An operation must not omit a capability merely because the path is rare,
-optional, expected to be idempotent, or combined with a more powerful
-capability. MCP enforces the shared operation's static and request-specific
-declarations; it does not infer or reduce them independently.
-
-`execution` authorizes an operation to launch a child process. That child runs
-with the MCP server process user's privileges unless the host externally
+`execution` declares that an operation may launch a child process. That child
+runs with the MCP server process user's privileges unless the host externally
 sandboxes the server. Setting cwd inside a project is not a security boundary,
 and this command architecture does not claim otherwise.
 
@@ -430,10 +396,10 @@ confirmation. The adapters own how explicit consent enters the request.
 - A non-empty target directory remains protected without explicit overwrite
   consent.
 - Catalog discovery permission does not imply install permission.
-- A network-enabled policy does not imply trust in arbitrary returned content.
+- Network availability does not imply trust in arbitrary returned content.
 - Redirect, digest, source, and compatibility validation remain domain
   behavior, shared by both adapters.
-- Transport authentication does not replace operation authorization.
+- Transport authentication does not replace semantic consent.
 
 Network calls use bounded connect/read timeouts. Operations do not silently
 switch from offline to online behavior. When a request supports offline
@@ -486,7 +452,6 @@ src/specify_cli/mcp_server/
 ├── __init__.py
 ├── server.py
 ├── registry.py
-├── policy.py
 └── transports/
     ├── stdio.py
     └── streamable_http.py
@@ -506,11 +471,10 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify tool name, description, annotations, and exact input/output schemas.
 - Verify mapping to the shared operation request and outcome.
 - Verify structured warnings and tool errors.
-- Verify access-policy, trust, timeout, cancellation, and output-budget
-  failures.
+- Verify trust, timeout, cancellation, and output-budget failures.
 - Verify project-directory mapping and operation dispatch without `os.chdir()`.
-- Verify execution and network operations are denied when their declared
-  requirements are not authorized.
+- Verify tool annotations accurately expose declared capabilities and network
+  access.
 
 ### Inventory tests
 
@@ -519,9 +483,8 @@ Shared operation, CLI adapter, and parity coverage follows
 - Reject duplicate operation IDs and MCP tool names.
 - Require reasons for every unavailable or excluded command.
 - Verify available tools are registered by the owning hierarchy.
-- Verify request-specific `effective_state` uses the complete policy decision,
-  including a network-required request whose capabilities are authorized but
-  whose network access is denied.
+- Verify inventory capability and network metadata match the shared operation
+  descriptors.
 - Preserve total pytest collection when tests move, as required by the CLI
   architecture.
 
@@ -531,8 +494,8 @@ Shared operation, CLI adapter, and parity coverage follows
 - Keep a real stdio initialize/list/call test with protocol-pure stdout.
 - Add equivalent Streamable HTTP protocol, authentication, cancellation, and
   isolation tests when that transport exists.
-- Test malformed input, policy denial, unavailable tools, internal failure
-  sanitization, and output bounds as negative cases.
+- Test malformed input, unavailable tools, internal failure sanitization, and
+  output bounds as negative cases.
 
 Behavioral changes follow
 [Testing deterministic behavior](../CONTRIBUTING.md#testing-deterministic-behavior):
@@ -599,12 +562,12 @@ network_access: none
 project_scope: required
 ```
 
-The request contains an optional project directory. After authorization, the
-shared operation resolves and validates that path, uses `ArtifactCatalog`, and
-returns typed artifact rows. The CLI adapter preserves its JSON stream
-contract; the MCP adapter exposes the rows through its output schema and never
-captures CLI stdout. Large results use explicit operation limits or pagination
-rather than silent truncation.
+The request contains an optional project directory. The shared operation
+resolves and validates that path, uses `ArtifactCatalog`, and returns typed
+artifact rows. The CLI adapter preserves its JSON stream contract; the MCP
+adapter exposes the rows through its output schema and never captures CLI
+stdout. Large results use explicit operation limits or pagination rather than
+silent truncation.
 
 ### `init`: complex project mutation
 
@@ -653,7 +616,7 @@ Bundled templates and scripts use the same shared asset helpers as CLI.
 If the target is non-empty and `force` is false, both adapters receive the same
 semantic confirmation-required failure. The CLI may respond by prompting and
 retrying with explicit consent; the MCP tool returns the structured error and
-requires a new call with `force=true`, subject to policy.
+requires a new call with `force=true`.
 
 ## Anti-patterns
 
@@ -668,7 +631,8 @@ Avoid:
 - Hiding behavior behind a central service locator or string-based dispatcher.
 - Exposing every operation through one generic run tool.
 - Forcing every command into an oversized universal execution engine.
-- Treating MCP tool annotations as authorization.
+- Treating MCP tool annotations or host confirmation as semantic `force`,
+  trust, or destructive consent.
 - Treating machine mode as force, trust, overwrite consent, or execution
   permission.
 - Reading stdin or changing process-wide cwd during a tool call.
@@ -691,11 +655,8 @@ For a new or migrated MCP operation:
 - [ ] The MCP tool is first-class and has a command-specific schema.
 - [ ] The tool name and source layout mirror the CLI path.
 - [ ] The owning command hierarchy declares registration and inventory.
-- [ ] Availability, possible and request-required capabilities, network
-      access, project scope, and
-      contract version are explicit.
-- [ ] Request-specific `effective_state` reflects the complete policy decision,
-      not capabilities alone.
+- [ ] Availability, capabilities, network access, project scope, and contract
+      version are explicit.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
 - [ ] Timeouts, cancellation, stdin, and output bounds are handled.
