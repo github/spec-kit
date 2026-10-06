@@ -331,7 +331,7 @@ mcp_tool_name
 contract_version
 availability
 availability_reason
-side_effect_class
+capabilities
 network_access
 project_scope
 default_timeout
@@ -361,16 +361,20 @@ MCP tool that starts another MCP server would be recursive infrastructure, not
 an application operation.
 
 Other commands are not excluded merely because they mutate state. They are
-classified and gated. For example:
+declared and gated by capability. For example:
 
 - `self.upgrade` is self-modifying and should be unavailable under the
   default local policy. Exposure requires an explicit administrative policy
-  and a command contract that preserves upgrade safeguards.
+  authorizing local reads, execution, and self-modification, plus a command
+  contract that preserves upgrade safeguards.
 - `event.run`, `workflow.run`, and `workflow.resume` are execution operations
-  and require execution policy.
+  that may also persist project state; policy must authorize every capability
+  required by the operation.
 - `init`, add/remove/update commands, and configuration changes are
-  project-write operations, with any stronger capabilities declared
-  separately.
+  project-write operations, with execution and other independent
+  capabilities declared when their paths require them.
+- `check` launches installed host tools to inspect their versions, so it
+  requires execution capability even though it does not persist changes.
 - A command that still prompts, writes directly through its Typer handler, or
   lacks a typed result remains `deferred` until those concerns move into a
   shared operation.
@@ -519,7 +523,7 @@ MCP operations are always non-interactive:
   `confirmation_required` error explaining which field must be supplied.
 
 Machine mode is not consent. An MCP call, `--json`, `--non-interactive`, a
-host confirmation dialog, or an enabled side-effect class does not imply:
+host confirmation dialog, or an authorized capability set does not imply:
 
 - `force=true`.
 - Trust of an external URL or downloaded executable content.
@@ -531,16 +535,43 @@ Consent must be explicit in the command request and valid under the active
 access policy. MCP annotations and host UI are advisory; the server still
 enforces operation requirements.
 
-## Side-effect classes and access policy
+## Capability requirements and access policy
 
-Every operation declares the highest applicable side-effect class:
+Every operation declares a set of independent capabilities. Policy must
+authorize every capability required by the validated request; choosing one
+"highest" class is not sufficient.
 
-| Class | Meaning | Representative commands |
+| Capability | Meaning | Representative commands |
 | --- | --- | --- |
-| `read-only` | Reads local state and returns data without persistent mutation | `version`, `check`, `artifact list` |
+| `local-read` | Reads process, host, or project state within allowed roots without persistent mutation | `version`, `artifact list` |
 | `project-write` | Creates or changes files or configuration within an allowed project/target root | `init`, `extension add`, `preset enable` |
-| `execution` | Starts workflows, hooks, agent/tool processes, or other executable behavior | `workflow run`, `workflow resume`, `event run` |
+| `execution` | Starts host tools, workflows, hooks, agent/tool processes, or other executable behavior | `check`, `workflow run`, `workflow resume`, `event run` |
 | `self-modifying` | Changes the Specify installation, server runtime, or machine-level state | `self upgrade` |
+
+Capabilities are cumulative requirements, not a hierarchy with implied
+permissions. Examples:
+
+```text
+version       -> {local-read}
+check         -> {local-read, execution}
+workflow.run  -> {local-read, project-write, execution}
+self.upgrade  -> {local-read, execution, self-modifying}
+```
+
+The inventory declares the conservative set of capabilities any request for
+the operation may require. When options activate materially different paths,
+the command-owned operation may implement
+`required_capabilities(request) -> set[Capability]` to compute the exact
+subset after semantic validation. For example, `init` declares
+`{local-read, project-write, execution}` because its normal tool checks launch
+host binaries; a validated request that explicitly skips those checks may not
+require `execution`. The MCP adapter and access-policy layer must not
+independently infer or reduce the set.
+
+`read-only` is a derived description, not an authorizable capability. A
+request is read-only only when it requires no `project-write`, `execution`, or
+`self-modifying` capability. An operation that launches a binary is therefore
+not read-only even if it does not persist changes.
 
 Network access is an independent declaration: `none`, `optional`, or
 `required`. A read-only search may use the network, while a project-write
@@ -549,22 +580,26 @@ operation may be fully offline.
 The MCP server receives an access policy from its host configuration. The
 default policy is conservative:
 
-- `read-only` operations are permitted.
-- `project-write`, `execution`, and `self-modifying` operations require
-  explicit enablement.
+- `local-read` is authorized.
+- `project-write`, `execution`, and `self-modifying` require explicit
+  authorization.
 - Filesystem access is limited to host-provided roots or, when none are
   provided, the server launch working directory.
 - Network access is denied unless explicitly enabled.
 - External-source trust is separately controlled and remains default-deny.
 
-Tool annotations should reflect the declared class, but annotations do not
-replace server-side enforcement. If policy denies an otherwise implemented
-tool, the registered tool returns a structured `policy_denied` error. The
-inventory reports its effective `policy-disabled` state and the reason.
+Tool annotations should conservatively reflect the full declared capability
+set, but annotations do not replace server-side enforcement. If policy denies
+any capability required by an otherwise implemented tool request, the
+registered tool returns a structured `policy_denied` error identifying the
+missing capabilities. The inventory reports its effective `policy-disabled`
+state and the reason.
 
-An operation must not relabel itself as read-only merely because writes are
-rare, optional, or expected to be idempotent. Classify the most powerful path
-the request can activate.
+An operation must not omit a capability merely because the path is rare,
+optional, expected to be idempotent, or combined with a more powerful
+capability. The static declaration contains the union of possible
+requirements; request-specific evaluation may only narrow it from validated
+inputs.
 
 ## Trust, confirmation, and network responsibilities
 
@@ -621,7 +656,8 @@ Future Streamable HTTP support should add a transport host around the same
 tool registry and operation adapters. HTTP-specific authentication, sessions,
 origin checks, request sizing, and connection cancellation belong to that
 transport layer. Tool names, schemas, operation contracts, project behavior,
-and access classes must not change merely because the transport changes.
+and capability requirements must not change merely because the transport
+changes.
 
 An illustrative infrastructure layout is:
 
@@ -773,7 +809,7 @@ Contract:
 operation_id: version
 cli_path: specify version
 mcp_tool_name: specify_version
-side_effect_class: read-only
+capabilities: [local-read]
 network_access: none
 project_scope: process
 ```
@@ -806,7 +842,7 @@ Contract:
 operation_id: artifact.list
 cli_path: specify artifact list
 mcp_tool_name: specify_artifact_list
-side_effect_class: read-only
+capabilities: [local-read]
 network_access: none
 project_scope: required
 ```
@@ -849,7 +885,7 @@ Contract:
 operation_id: init
 cli_path: specify init
 mcp_tool_name: specify_init
-side_effect_class: project-write
+capabilities: [local-read, project-write, execution]
 network_access: optional
 project_scope: creates-target
 ```
@@ -902,7 +938,8 @@ For a new or migrated MCP operation:
 - [ ] The MCP tool is first-class and has a command-specific schema.
 - [ ] The tool name and source layout mirror the CLI path.
 - [ ] The owning command hierarchy declares registration and inventory.
-- [ ] Availability, side-effect class, network access, project scope, and
+- [ ] Availability, possible and request-required capabilities, network
+      access, project scope, and
       contract version are explicit.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
