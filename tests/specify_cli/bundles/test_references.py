@@ -9,18 +9,20 @@ from pathlib import Path
 
 from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.references import make_reference_checker
-from tests.specify_cli.bundles.helpers import make_project
+from tests.specify_cli.bundles.helpers import bundled_extension_version, make_project
 
 
-def _ref(kind: str, id_: str) -> ComponentRef:
-    return ComponentRef(kind=kind, id=id_, version="1.0.0")
+def _ref(kind: str, id_: str, version: str | None = "1.0.0") -> ComponentRef:
+    return ComponentRef(kind=kind, id=id_, version=version)
 
 
 def test_bundled_extension_resolves(tmp_path: Path):
     root = make_project(tmp_path)
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)
-    assert check(_ref("extensions", "agent-context")) is None
+    assert check(
+        _ref("extensions", "agent-context", bundled_extension_version("agent-context"))
+    ) is None
     assert warnings == []
 
 
@@ -42,7 +44,7 @@ def test_builtin_step_type_resolves(tmp_path: Path):
 
     for step_id in ("shell", "gate", "command", "if", "slot"):
         assert step_id in BUILTIN_STEP_TYPES, step_id
-        assert check(_ref("steps", step_id)) is None, step_id
+        assert check(_ref("steps", step_id, None)) is None, step_id
     assert warnings == []
 
 
@@ -110,3 +112,95 @@ def test_unknown_reference_warns_offline(tmp_path: Path):
     check = make_reference_checker(root, allow_network=False, warnings=warnings)
     assert check(_ref("presets", "does-not-exist")) is None
     assert any("does-not-exist" in w for w in warnings)
+
+
+def test_wrong_bundled_pin_does_not_resolve_locally(tmp_path):
+    root = make_project(tmp_path)
+    warnings = []
+    check = make_reference_checker(root, allow_network=False, warnings=warnings)
+
+    assert check(_ref("extensions", "agent-context", "999.0.0")) is None
+    assert any("agent-context" in message for message in warnings)
+
+
+def test_online_validation_checks_winning_exact_release_and_source(tmp_path, monkeypatch):
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
+    lookups = []
+
+    def lookup(_self, _id, version=None):
+        lookups.append(version)
+        if version == "1.0.0":
+            return {
+                "version": "1.0.0", "_catalog_name": "winning",
+                "_install_allowed": True,
+            }
+        if version is None:
+            return {
+                "version": "2.0.0", "_catalog_name": "winning",
+                "_install_allowed": True,
+            }
+        return None
+
+    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", lookup)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    requested = ComponentRef(
+        kind="workflows", id="catalog-workflow", version="1.0.0", source="winning"
+    )
+
+    assert check(requested) is None
+    assert lookups == [None, "1.0.0"]
+    assert check(ComponentRef(kind="workflows", id=requested.id, version="3.0.0"))
+    assert check(ComponentRef(
+        kind="workflows", id=requested.id, version="1.0.0", source="lower"
+    ))
+    assert warnings == []
+
+
+def test_online_validation_rejects_discovery_only_exact_release(tmp_path, monkeypatch):
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info",
+        lambda _self, _id, version=None: {
+            "version": version or "2.0.0", "_catalog_name": "winning",
+            "_install_allowed": version is None,
+        },
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref("steps", "catalog-step", "1.0.0"))
+    assert warnings == []
+
+
+def test_online_validation_reports_invalid_release_metadata(tmp_path, monkeypatch):
+    from specify_cli.workflows.catalog import StepCatalog, StepCatalogError
+
+    def invalid_release(_self, _id, version=None):
+        raise StepCatalogError("Step release needs a SHA-256 digest.")
+
+    monkeypatch.setattr(StepCatalog, "get_step_info", invalid_release)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert "SHA-256" in check(_ref("steps", "invalid-release"))
+    assert warnings == []
+
+
+def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeypatch):
+    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogError
+
+    def unavailable(_self, _id, version=None):
+        raise WorkflowCatalogError("All configured catalogs failed to fetch.")
+
+    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", unavailable)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref("workflows", "unreachable")) is None
+    assert len(warnings) == 1
+    assert "unreachable" in warnings[0]

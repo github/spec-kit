@@ -5,14 +5,15 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
-import yaml  # noqa: F401
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.bundles.packager import build_bundle  # noqa: F401
-from tests.conftest import strip_ansi  # noqa: F401
+from tests.conftest import strip_ansi
 from tests.specify_cli.bundles.helpers import (
+    bundled_extension_version,
     valid_manifest_dict,
 )
 
@@ -98,7 +99,9 @@ def test_validate_rejects_broken_reference(project: Path):
 
 def test_validate_accepts_bundled_reference(project: Path):
     data = valid_manifest_dict()
-    data["provides"] = {"extensions": [{"id": "agent-context", "version": "1.0.0"}]}
+    data["provides"] = {"extensions": [{
+        "id": "agent-context", "version": bundled_extension_version("agent-context")
+    }]}
     (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
     result = runner.invoke(app, ["bundle", "validate"])
     assert result.exit_code == 0, result.output

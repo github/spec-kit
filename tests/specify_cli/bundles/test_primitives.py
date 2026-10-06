@@ -83,6 +83,160 @@ def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monke
     assert calls == [("catalog-step", tmp_path)]
 
 
+@pytest.mark.parametrize(
+    "kind,catalog_module,catalog_class,lookup",
+    [
+        ("workflows", "specify_cli.workflows.catalog", "WorkflowCatalog", "get_workflow_info"),
+        ("steps", "specify_cli.workflows.catalog", "StepCatalog", "get_step_info"),
+    ],
+)
+def test_catalog_workflow_and_step_pins_delegate_exact_release(
+    tmp_path, monkeypatch, kind, catalog_module, catalog_class, lookup,
+):
+    import importlib
+
+    import specify_cli
+    import specify_cli._assets as assets
+
+    if kind == "workflows":
+        monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
+    catalog = getattr(importlib.import_module(catalog_module), catalog_class)
+    lookups = []
+
+    def get_info(_self, _id, version=None):
+        lookups.append(version)
+        return {
+            "version": version or "2.0.0",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        }
+
+    monkeypatch.setattr(catalog, lookup, get_info)
+    calls = []
+    command = "workflow_add" if kind == "workflows" else "workflow_step_add"
+    monkeypatch.setattr(
+        specify_cli, command,
+        lambda cid, **options: calls.append((cid, options, Path.cwd())),
+    )
+    component = ComponentRef(kind=kind, id="catalog-id", version="1.0.0", source="trusted")
+
+    primitive_manager(kind, tmp_path).install(component)
+
+    assert lookups == [None, "1.0.0"]
+    assert calls[0][0] == component.id
+    assert calls[0][1]["version"] == "1.0.0"
+    assert calls[0][2] == tmp_path
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+def test_explicit_source_cannot_bypass_winning_catalog(tmp_path, monkeypatch, kind):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    catalogs = {
+        "extensions": (ExtensionCatalog, "get_extension_info", "_locate_bundled_extension"),
+        "presets": (PresetCatalog, "get_pack_info", "_locate_bundled_preset"),
+        "workflows": (WorkflowCatalog, "get_workflow_info", "_locate_bundled_workflow"),
+        "steps": (StepCatalog, "get_step_info", None),
+    }
+    catalog, method, asset = catalogs[kind]
+    if asset:
+        monkeypatch.setattr(assets, asset, lambda _id: None)
+    monkeypatch.setattr(
+        catalog, method,
+        lambda _self, _id, version=None: {
+            "version": version or "2.0.0",
+            "_catalog_name": "winning",
+            "_install_allowed": True,
+        },
+    )
+    component = ComponentRef(kind=kind, id="catalog-id", version="1.0.0", source="lower")
+
+    with pytest.raises(BundlerError, match="winning"):
+        primitive_manager(kind, tmp_path).install(component)
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+def test_missing_exact_release_never_delegates_install(tmp_path, monkeypatch, kind):
+    import specify_cli
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    if kind == "workflows":
+        monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
+    catalog, lookup, command = (
+        (WorkflowCatalog, "get_workflow_info", "workflow_add")
+        if kind == "workflows"
+        else (StepCatalog, "get_step_info", "workflow_step_add")
+    )
+    monkeypatch.setattr(
+        catalog, lookup,
+        lambda _self, _id, version=None: (
+            {"version": "2.0.0", "_catalog_name": "winning"}
+            if version is None else None
+        ),
+    )
+    calls = []
+    monkeypatch.setattr(specify_cli, command, lambda *a, **k: calls.append((a, k)))
+
+    with pytest.raises(BundlerError, match="no catalog release"):
+        primitive_manager(kind, tmp_path).install(
+            ComponentRef(kind=kind, id="catalog-id", version="1.0.0")
+        )
+    assert calls == []
+
+
+def test_bundled_workflow_with_older_pin_uses_catalog_release(tmp_path, monkeypatch):
+    import specify_cli
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    bundled = _write_manifest(tmp_path / "bundled", "workflow", "2.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: bundled)
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_workflow_info",
+        lambda _self, _id, version=None: {
+            "version": version or "2.0.0", "_catalog_name": "winning",
+        },
+    )
+    calls = []
+    monkeypatch.setattr(
+        specify_cli, "workflow_add",
+        lambda source, **options: calls.append((source, options)),
+    )
+
+    primitive_manager("workflows", tmp_path).install(
+        ComponentRef(kind="workflows", id="x", version="1.0.0")
+    )
+
+    assert calls == [("x", {"dev": False, "from_url": None, "version": "1.0.0"})]
+
+
+def test_source_on_bundled_extension_requires_catalog(tmp_path, monkeypatch):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    monkeypatch.setattr(
+        assets, "_locate_bundled_extension",
+        lambda _id: _write_manifest(tmp_path / "bundled", "extension", "1.0.0"),
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info",
+        lambda _self, _id: {
+            "version": "1.0.0", "_catalog_name": "other",
+            "_install_allowed": True,
+        },
+    )
+    with pytest.raises(BundlerError, match="other"):
+        primitive_manager("extensions", tmp_path).install(
+            ComponentRef(
+                kind="extensions", id="x", version="1.0.0", source="expected"
+            )
+        )
+
+
 def test_default_installer_threads_allow_network(tmp_path: Path):
     installer = DefaultPrimitiveInstaller(allow_network=False)
     with pytest.raises(BundlerError, match="network access is disabled"):
@@ -169,11 +323,14 @@ def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
     from specify_cli.workflows.catalog import WorkflowCatalog
 
     monkeypatch.setattr(
-        WorkflowCatalog, "get_workflow_info", lambda self, wid: {"version": "9.9.9"}
+        WorkflowCatalog, "get_workflow_info",
+        lambda self, wid, version=None: (
+            {"version": "9.9.9"} if version is None else None
+        ),
     )
     manager = primitive_manager("workflows", tmp_path, allow_network=True)
     component = ComponentRef(kind="workflows", id="wf-a", version="0.3.0")
-    with pytest.raises(BundlerError, match="pinned to version 0.3.0"):
+    with pytest.raises(BundlerError, match="no catalog release for pinned version 0.3.0"):
         manager.install(component)
 
 

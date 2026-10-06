@@ -10,11 +10,15 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
+from specify_cli.bundles.installer import install_bundle, remove_bundle
 from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles.records import load_records, records_path
-from specify_cli.bundles.installer import install_bundle, remove_bundle
 from specify_cli.bundles.resolver import resolve_install_plan
-from tests.specify_cli.bundles.helpers import FakeInstaller, make_project, valid_manifest_dict
+from tests.specify_cli.bundles.helpers import (
+    FakeInstaller,
+    make_project,
+    valid_manifest_dict,
+)
 
 
 def _plan(manifest):
@@ -49,6 +53,115 @@ def test_install_is_idempotent(tmp_path: Path):
     assert second.installed == []
     assert len(second.skipped) == 4
     assert len(load_records(tmp_path)) == 1
+
+
+def test_second_bundle_cannot_claim_different_pin_before_mutation(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    other = _bundle("other", ["ext-a", "ext-b"], version="2.0.0")
+
+    with pytest.raises(BundlerError, match="Only one version"):
+        install_bundle(tmp_path, _plan(other), installer, manifest=other)
+
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["first"]
+    assert installer.install_calls == [("extensions", "ext-a")]
+
+
+def test_owned_component_drift_is_rejected_without_refresh(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    manifest = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    installer.versions[("extensions", "ext-a")] = "0.9.0"
+
+    with pytest.raises(BundlerError, match="0.9.0"):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    assert installer.refresh_calls == []
+
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
+    )
+    assert result.refreshed == manifest.components
+
+
+def test_shared_component_drift_cannot_be_refreshed(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    second = _bundle("second", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+    installer.versions[("extensions", "ext-a")] = "0.9.0"
+
+    with pytest.raises(BundlerError, match="0.9.0"):
+        install_bundle(tmp_path, _plan(first), installer, manifest=first, refresh=True)
+    assert installer.refresh_calls == []
+
+
+def test_unpinned_shared_step_cannot_refresh_another_bundles_pin(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    pinned_data = valid_manifest_dict()
+    pinned_data["bundle"]["id"] = "pinned"
+    pinned_data["provides"] = {"steps": [{"id": "shared", "version": "1.0.0"}]}
+    pinned = BundleManifest.from_dict(pinned_data)
+    unpinned_data = valid_manifest_dict()
+    unpinned_data["bundle"]["id"] = "unpinned"
+    unpinned_data["provides"] = {"steps": [{"id": "shared"}]}
+    unpinned = BundleManifest.from_dict(unpinned_data)
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    with pytest.raises(BundlerError, match="unpinned shared"):
+        install_bundle(
+            tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+        )
+    assert installer.refresh_calls == []
+
+
+@pytest.mark.parametrize("winning,accepted", [("expected", True), ("other", False)])
+def test_source_is_checked_even_when_component_is_already_installed(
+    tmp_path: Path, monkeypatch, winning: str, accepted: bool,
+):
+    from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
+    from specify_cli.extensions import ExtensionCatalog, ExtensionRegistry
+
+    make_project(tmp_path)
+    ExtensionRegistry(tmp_path / ".specify" / "extensions").add(
+        "ext-a", {"version": "1.0.0"}
+    )
+    lookups = []
+
+    def get_info(_self, _id, version=None):
+        lookups.append(version)
+        return {
+            "version": "1.0.0", "_catalog_name": winning,
+            "_install_allowed": True,
+        }
+
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", get_info)
+    data = valid_manifest_dict()
+    data["provides"] = {
+        "extensions": [
+            {"id": "ext-a", "version": "1.0.0", "source": "expected"}
+        ]
+    }
+    manifest = BundleManifest.from_dict(data)
+
+    if accepted:
+        result = install_bundle(
+            tmp_path, _plan(manifest), DefaultPrimitiveInstaller(), manifest=manifest
+        )
+        assert result.skipped == manifest.components
+        assert lookups == [None, "1.0.0"]
+    else:
+        with pytest.raises(BundlerError, match="expected"):
+            install_bundle(
+                tmp_path, _plan(manifest), DefaultPrimitiveInstaller(), manifest=manifest
+            )
+        assert not records_path(tmp_path).exists()
 
 
 def test_install_rejects_version_change_without_refresh(tmp_path: Path):
