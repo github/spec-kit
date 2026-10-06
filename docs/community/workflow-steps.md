@@ -4,8 +4,10 @@
 > Community workflow step types are independently created and maintained by
 > their authors. Maintainers verify submission metadata and package shape; they
 > do **not review, audit, endorse, or support the executable Python code**.
-> Installing a custom step imports and runs that code with the user's
-> privileges. Review the source before installing it.
+> Installation validates and copies the package without importing its Python
+> code. Later `specify workflow add`, `run`, and `resume` commands load installed
+> step packages, executing import-time code with the user's privileges. Review
+> the source before using an installed step.
 
 Custom workflow step packages add a `type:` that workflows can use beyond the
 built-in step types. The canonical intake path is the
@@ -49,6 +51,9 @@ The package must satisfy the current installer and loader contract:
 - `__init__.py` defines a `StepBase` subclass matching that single type key.
   Additional classes do not make the package provide additional registered
   step types.
+- Extra-file paths use forward slashes, are relative and non-empty, contain no
+  empty, `.` or `..` segments, and do not case-insensitively alias `step.yml`
+  or `__init__.py`.
 - The package stays within the current installer limits: 512 retained entries,
   32 directory levels, and 50 MiB of retained content.
 - `.git`, `__pycache__`, and `.DS_Store` are excluded from installation.
@@ -66,7 +71,7 @@ from provenance and disclosure fields used during manual review.
 | Step type ID | Catalog key, `step.type_key`, and matching `StepBase.type_key` |
 | Name, version, description, author | `step.yml` metadata and catalog/installed registry metadata |
 | Download URL | Versioned release archive used to test the supported direct-URL installation path |
-| `step.yml`, `__init__.py`, and extra-file URLs | Exact HTTPS file URLs consumed when installing from an explicitly install-allowed catalog |
+| `step.yml`, `__init__.py`, and extra-file URLs | Exact HTTPS file URLs consumed when installing from an explicitly install-allowed catalog; extra-file keys follow the package-relative path restrictions above |
 | Per-file SHA-256 mapping | Catalog `sha256`; keys must be exactly the files the installer downloads |
 | Provided type name/count | Loader invariant: one matching type key per installed package |
 | Repository, license, documentation, changelog | Source provenance and manual-review evidence; these are not `step.yml` fields |

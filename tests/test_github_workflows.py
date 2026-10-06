@@ -622,6 +622,13 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
     assert "versioned" in download_description
     assert "immutable" not in download_description
     assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
+    extra_files_description = field_by_id["extra-files"]["attributes"]["description"]
+    assert "forward slashes" in extra_files_description
+    assert "relative and non-empty" in extra_files_description
+    assert "no empty, `.` or `..` segments" in extra_files_description
+    assert "case-insensitively alias `step.yml` or `__init__.py`" in (
+        extra_files_description
+    )
     feature_form = yaml.safe_load(
         (forms_dir / "feature_request.yml").read_text(encoding="utf-8")
     )

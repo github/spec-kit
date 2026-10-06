@@ -103,7 +103,10 @@ body:
     id: extra-files
     attributes:
       label: Extra File URLs
-      description: JSON mapping of every additional package-relative file path to its exact tag-pinned HTTPS URL; enter `{}` when there are no extra files
+      description: >-
+        JSON mapping of every additional package-relative file path to its exact tag-pinned HTTPS URL.
+        Paths must use forward slashes, be relative and non-empty, contain no empty, `.` or `..` segments,
+        and must not case-insensitively alias `step.yml` or `__init__.py`. Enter `{}` when there are no extra files.
       render: json
       placeholder: |
         {
