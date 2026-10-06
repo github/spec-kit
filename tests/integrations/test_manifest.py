@@ -375,6 +375,14 @@ class TestManifestLoadValidation:
         with pytest.raises(ValueError, match="invalid JSON"):
             IntegrationManifest.load("bad", tmp_path)
 
+    def test_load_non_utf8_json_raises_value_error(self, tmp_path):
+        path = tmp_path / ".specify" / "integrations" / "bad.manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\xff\xfe")
+
+        with pytest.raises(ValueError, match="valid UTF-8"):
+            IntegrationManifest.load("bad", tmp_path)
+
     def test_load_filters_recovered_files_not_in_files(self, tmp_path):
         # Finding B (Round-9): a recovered_files entry referencing a path
         # not present in files indicates an internally-inconsistent manifest

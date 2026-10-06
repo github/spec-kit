@@ -1,6 +1,7 @@
 ---
 description: "Apply the remediation from a prior bug assessment to a bug-fix-labeled issue and open a draft PR for human review"
 emoji: "🛠️"
+max-ai-credits: 2000
 
 on:
   issues:
@@ -10,7 +11,7 @@ on:
 
 tools:
   edit:
-  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python3", "jq", "date", "ls", "find", "pytest", "npm", "go", "cargo", "dotnet"]
+  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python", "python3", "jq", "date", "ls", "find", "pytest", "npm", "go", "cargo", "dotnet"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
@@ -41,6 +42,7 @@ safe-outputs:
   add-labels:
     allowed: [needs-assessment, needs-reproduction, fix-proposed, fix-blocked]
     max: 1
+    issue-intent: false
 ---
 
 # Fix Bug from Labeled Issue
@@ -56,6 +58,14 @@ that the `bug-assess` workflow posted as an issue comment — it does **not**
 depend on any Spec Kit-specific files, directories (e.g. `.specify/`), or
 tooling — so it can be lifted into any repository that runs the matching
 `bug-assess` stage.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+Follow the outcome rules below for label selection, limits, and missing labels.
 
 ## Triggering Conditions
 
@@ -187,6 +197,11 @@ changed paths (e.g. `pytest <path>`, `npm test`, `go test ./...` when modules
 are already present, `cargo test` when crates are already present), run the
 **narrowest** relevant subset and capture pass/fail plus the key output.
 
+- Prefer `python3 -m pytest` or `pytest` from PATH. Do not invoke
+  `.venv/bin/python`, `venv/bin/python`, or any project-local interpreter:
+  the harness cannot grant execute permission on those binaries and fails
+  with "Permission denied". `python` is allowed when that is what PATH
+  provides.
 - Run only the project's **own** test/lint commands. Never run destructive,
   network-dependent, or repo-wide expensive suites. Do not fetch or install
   dependencies (for example `go mod download`, `go get`, `cargo fetch`,
@@ -199,6 +214,11 @@ are already present, `cargo test` when crates are already present), run the
   verification you did not perform.
 
 ## Step 6 — Open a Draft Pull Request
+
+This repository-owned gh-aw maintenance workflow does not perform the contributor
+open-PR count check or request confirmation. After completing the assessment-scoped
+remediation and local checks above, emit the configured draft `create_pull_request`
+safe output regardless of the submitter's or filing account's open PR count.
 
 Use the `create-pull-request` safe output to open a **draft** PR with your
 changes. The harness handles branching, committing, and pushing from the working

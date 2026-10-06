@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -15,6 +16,22 @@ from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
+
+# Managed ``.specify/.gitignore``. Keeps machine-local Spec Kit state out of
+# version control while leaving shareable project files (specs, constitution,
+# templates, scripts, extension config) tracked. Patterns are relative to the
+# ``.specify/`` directory the file lives in.
+SPECIFY_GITIGNORE_CONTENT = """\
+# Machine-local Spec Kit state — not meant to be shared.
+# Managed by the Specify CLI; safe to edit (your changes are preserved on refresh).
+
+# Local pointer to the current feature directory. Rewritten every time you
+# switch features, so it is per-checkout state rather than something to share.
+feature.json
+
+# Per-machine extension config overrides.
+extensions/*/local-config.yml
+"""
 
 # Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
 # characters. Callers lowercase the declared value before matching (see
@@ -217,6 +234,60 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
             raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
 
 
+@contextlib.contextmanager
+def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str):
+    """Hold an exclusive inter-process lock on ``.specify/<lock_name>``.
+
+    Callers use one lock file per mutable project resource so that its
+    directory and registry changes are serialized across processes. Every
+    failure to acquire the lock is raised as ``OSError``.
+    """
+    project_root = Path(project_root)
+    lock_dir = project_root / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            project_root, lock_dir, context=f"{context} lock directory"
+        )
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
+    lock_file = lock_dir / lock_name
+    if lock_file.is_symlink():
+        raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_file, flags, 0o600)
+    try:
+        if lock_file.is_symlink():
+            raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+        # Call the lock primitives through their modules so tests can observe
+        # contention by patching ``msvcrt.locking`` / ``fcntl.flock``.
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def _ensure_safe_shared_destination(
     project_path: Path,
     dest: Path,
@@ -262,8 +333,7 @@ def _write_shared_bytes(
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path.unlink(missing_ok=True)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -607,6 +677,36 @@ def install_shared_infra(
                     content, invoke_separator, invoke_prefix
                 )
                 planned_templates.append((dst, rel, content))
+
+    # Managed ``.specify/.gitignore`` — keeps machine-local state (the
+    # ``feature.json`` pointer and per-machine ``local-config.yml`` overrides)
+    # out of git while leaving everything else shareable. Routed through the
+    # same overwrite/skip/preserve policy as templates so ``--force`` refreshes
+    # it and user edits are preserved. Like every other shared-infra file it is
+    # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
+    # is therefore intentionally left in place by ``integration uninstall``.
+    specify_dir = project_path / ".specify"
+    if _ensure_or_bucket_dir(specify_dir):
+        gitignore_dst = specify_dir / ".gitignore"
+        gitignore_rel = gitignore_dst.relative_to(project_path).as_posix()
+        seen_rels.add(gitignore_rel)
+        if _safe_dest_or_bucket(gitignore_dst, gitignore_rel):
+            write, bucket = _decide_overwrite(gitignore_rel, gitignore_dst)
+            if write:
+                planned_templates.append(
+                    (gitignore_dst, gitignore_rel, SPECIFY_GITIGNORE_CONTENT)
+                )
+            elif bucket == "preserved":
+                preserved_user_files.append(gitignore_rel)
+            else:
+                skipped_files.append(gitignore_rel)
+                if gitignore_dst.is_file() and gitignore_rel not in prior_hashes:
+                    try:
+                        manifest.record_existing(gitignore_rel, recovered=True)
+                    except (OSError, ValueError) as exc:
+                        console.print(
+                            f"[yellow]⚠[/yellow]  could not record {gitignore_rel} in manifest: {exc}"
+                        )
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):

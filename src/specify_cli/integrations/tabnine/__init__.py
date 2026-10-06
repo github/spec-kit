@@ -33,6 +33,12 @@ class TabnineIntegration(TomlIntegration):
     }
     events_config_file = ".tabnine/agent/settings.json"
     events_format = "json-nested"
+    # Tabnine is Gemini-hooks-compatible (JSON-only stdout) (C13).
+    events_context_envelope = {
+        "*": "suppress",
+        "session_start": "hookSpecificOutput",
+        "user_prompt_submit": "hookSpecificOutput",
+    }
     # Tabnine mirrors Gemini's hook schema (BeforeTool/AfterTool) and, like
     # Gemini, measures hook timeouts in milliseconds. Declaring the unit makes
     # the shared formatter convert the 60s default to 60000ms instead of

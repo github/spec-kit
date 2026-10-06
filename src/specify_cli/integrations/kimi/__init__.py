@@ -317,20 +317,30 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
 
     try:
         content = skill_file.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeError):
         return False
 
     if not content.startswith("---"):
         return False
 
-    parts = content.split("---", 2)
-    if len(parts) < 3:
+    # Locate the closing ``---`` on its own line rather than with
+    # ``content.split("---", 2)`` — a bare substring split stops at the first
+    # ``---`` *anywhere*, including one inside a value such as
+    # ``description: Separate sections with ---``, which truncates the parsed
+    # frontmatter and can drop the metadata block this check relies on (so a
+    # Speckit-generated skill would not be recognized on teardown).
+    lines = content.splitlines(keepends=True)
+    close_idx = next(
+        (i for i in range(1, len(lines)) if lines[i].rstrip() == "---"),
+        None,
+    )
+    if close_idx is None:
         return False
 
     try:
         import yaml
 
-        frontmatter = yaml.safe_load(parts[1])
+        frontmatter = yaml.safe_load("".join(lines[1:close_idx]))
     except Exception:
         return False
 

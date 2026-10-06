@@ -9,6 +9,12 @@ Root resolution already prefers the **nearest** `.specify/` over the Git
 toplevel, so commands run from inside a member project resolve to that project,
 not the repo root.
 
+Repository layout is separate from interface design. When projects interact,
+use [Contract-Driven Development](contract-driven-development.md) to define
+the agreement between them, with one authoritative owner per contract. Projects
+in the same repository can reference that contract directly; projects in
+separate repositories can consume a versioned artifact or synchronized copy.
+
 ## Layout
 
 ```text
@@ -72,8 +78,14 @@ ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): /hom
 ```
 
 `SPECIFY_INIT_DIR` selects the **project**; `SPECIFY_FEATURE_DIRECTORY` selects
-the **feature** within it. They compose: set both to pick a project and a
-feature non-interactively. See the
+the **feature**. A relative feature path is joined to that project root
+without a containment check, so a value like `../shared-feature` still
+resolves outside it; an absolute path is used as-is and may likewise point
+outside the project root. Either way, the selected feature directory is not
+required to live inside it — the project root identifies the Spec Kit project
+and its command/configuration context, not a containment boundary for feature
+documents. They compose: set both to pick a project and a feature
+non-interactively. See the
 [`SPECIFY_INIT_DIR` reference](../reference/core.md#environment-variables) for
 the full contract and the two-axes model.
 

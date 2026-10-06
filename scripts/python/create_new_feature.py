@@ -5,18 +5,28 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
 import shlex
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from common import get_repo_root, persist_feature_json, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_repo_root,
+        persist_feature_json,
+        resolve_template_content,
+    )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import get_repo_root, persist_feature_json, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_repo_root,
+        persist_feature_json,
+        resolve_template_content,
+    )
 
 
 def _json_line(payload: object) -> str:
@@ -33,6 +43,9 @@ _STOP_WORDS = frozenset(
 
 _MAX_BRANCH_LENGTH = 244
 _MAX_FEATURE_NUMBER = 2**63 - 1
+_ASCII_LOWER = str.maketrans(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+)
 
 
 def _int64_from_digits(value: str) -> int | None:
@@ -157,18 +170,25 @@ def _parse_args(argv: list[str], argv0: str) -> Args:
 
 
 def _clean_branch_name(name: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9]", "-", name.lower())
+    cleaned = _unicode_words(name, "-")
     cleaned = re.sub(r"-+", "-", cleaned)
     return cleaned.strip("-")
 
 
+def _unicode_words(name: str, separator: str) -> str:
+    return "".join(
+        char if char.isalpha() or char.isdecimal() else separator
+        for char in name.translate(_ASCII_LOWER)
+    )
+
+
 def _generate_branch_name(description: str) -> str:
-    clean = re.sub(r"[^a-z0-9]", " ", description.lower())
+    clean = _unicode_words(description, " ")
     meaningful: list[str] = []
     for word in clean.split():
         if word in _STOP_WORDS:
             continue
-        if len(word) >= 3:
+        if len(word) >= 3 or not word.isascii():
             meaningful.append(word)
         # Keep short words that appear as an uppercase acronym in the original,
         # mirroring the bash twin's case-sensitive `grep -qw` check.
@@ -207,11 +227,13 @@ def _get_highest_from_specs(specs_dir: Path) -> int:
 def _fit_branch_name(feature_num: str, branch_suffix: str) -> str:
     """Fit a feature prefix and suffix within GitHub's branch-name limit."""
     branch_name = f"{feature_num}-{branch_suffix}"
-    if len(branch_name) <= _MAX_BRANCH_LENGTH:
+    if len(branch_name.encode("utf-8")) <= _MAX_BRANCH_LENGTH:
         return branch_name
 
     max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
-    truncated_suffix = re.sub(r"-$", "", branch_suffix[:max_suffix_length])
+    truncated_suffix = branch_suffix.encode("utf-8")[:max_suffix_length].decode(
+        "utf-8", errors="ignore"
+    ).rstrip("-")
     return f"{feature_num}-{truncated_suffix}"
 
 
@@ -254,6 +276,13 @@ def main(argv: list[str] | None = None) -> int:
         branch_suffix = _clean_branch_name(args.short_name)
     else:
         branch_suffix = _generate_branch_name(args.description)
+
+    if not branch_suffix:
+        print(
+            "[specify] Warning: Feature name is empty after removing unsupported characters. "
+            "Use --short-name with letters or digits (for example, user-auth).",
+            file=sys.stderr,
+        )
 
     branch_number = args.branch_number
     if args.use_timestamp and branch_number:
@@ -346,11 +375,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             f"[specify] Original: {original_branch_name} "
-            f"({len(original_branch_name)} bytes)",
+            f"({len(original_branch_name.encode('utf-8'))} bytes)",
             file=sys.stderr,
         )
         print(
-            f"[specify] Truncated to: {branch_name} ({len(branch_name)} bytes)",
+            f"[specify] Truncated to: {branch_name} "
+            f"({len(branch_name.encode('utf-8'))} bytes)",
             file=sys.stderr,
         )
 
@@ -374,12 +404,22 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 1
 
+        template_content = None
+        needs_spec = not spec_file.is_file()
+        if needs_spec:
+            try:
+                template_content = resolve_template_content(
+                    "spec-template", repo_root
+                )
+            except TemplateResolutionError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+
         feature_dir.mkdir(parents=True, exist_ok=True)
 
-        if not spec_file.is_file():
-            template = resolve_template("spec-template", repo_root)
-            if template is not None and template.is_file():
-                shutil.copy(template, spec_file)
+        if needs_spec:
+            if template_content is not None:
+                spec_file.write_bytes(template_content.encode("utf-8"))
             else:
                 print(
                     "Warning: Spec template not found; created empty spec file",
@@ -387,8 +427,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 spec_file.touch()
 
-        # Persist to .specify/feature.json so downstream commands can find the feature.
-        persist_feature_json(repo_root, f"specs/{branch_name}")
+        # Persist to .specify/feature.json so downstream commands can find the
+        # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+        if os.environ.get("SPECIFY_FEATURE_NO_PERSIST", "") not in ("1", "true"):
+            persist_feature_json(repo_root, f"specs/{branch_name}")
 
         # Inform the user how to set feature state in their own shell.
         feature_assignment, directory_assignment = _persistence_assignments(
@@ -419,4 +461,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     raise SystemExit(main())

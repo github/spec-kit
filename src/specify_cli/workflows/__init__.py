@@ -44,17 +44,18 @@ def get_step_type(type_key: str) -> StepBase | None:
 
 def _register_builtin_steps() -> None:
     """Register all built-in step types."""
-    from .steps.command import CommandStep
-    from .steps.do_while import DoWhileStep
-    from .steps.fan_in import FanInStep
-    from .steps.fan_out import FanOutStep
-    from .steps.gate import GateStep
-    from .steps.if_then import IfThenStep
-    from .steps.init import InitStep
-    from .steps.prompt import PromptStep
-    from .steps.shell import ShellStep
-    from .steps.switch import SwitchStep
-    from .steps.while_loop import WhileStep
+    from .step.command import CommandStep
+    from .step.do_while import DoWhileStep
+    from .step.fan_in import FanInStep
+    from .step.fan_out import FanOutStep
+    from .step.gate import GateStep
+    from .step.if_then import IfThenStep
+    from .step.init import InitStep
+    from .step.prompt import PromptStep
+    from .step.shell import ShellStep
+    from .step.slot import SlotStep
+    from .step.switch import SwitchStep
+    from .step.while_loop import WhileStep
 
     _register_step(CommandStep())
     _register_step(DoWhileStep())
@@ -65,11 +66,36 @@ def _register_builtin_steps() -> None:
     _register_step(InitStep())
     _register_step(PromptStep())
     _register_step(ShellStep())
+    _register_step(SlotStep())
     _register_step(SwitchStep())
     _register_step(WhileStep())
 
 
 _register_builtin_steps()
+
+# The step types Spec Kit ships, snapshotted before any community step can be
+# loaded. ``load_custom_steps`` adds project-installed ids to the process-global
+# ``STEP_REGISTRY`` and refreshes them for each project, so it cannot answer
+# "is this bundled with Spec Kit?" in a long-lived process: a step loaded for one
+# project would look built-in for the next. Callers that need the immutable set
+# (e.g. the bundler's reference checker) must use this instead.
+BUILTIN_STEP_TYPES: frozenset[str] = frozenset(STEP_REGISTRY)
+_CUSTOM_STEP_MODULES: set[str] = set()
+
+
+def _unload_custom_steps() -> None:
+    """Clear custom registrations and synthetic imports from a prior project."""
+    import sys
+
+    for type_key in tuple(STEP_REGISTRY):
+        if type_key not in BUILTIN_STEP_TYPES:
+            del STEP_REGISTRY[type_key]
+    for module_name in _CUSTOM_STEP_MODULES:
+        sys.modules.pop(module_name, None)
+        prefix = module_name + "."
+        for loaded_name in [name for name in sys.modules if name.startswith(prefix)]:
+            sys.modules.pop(loaded_name, None)
+    _CUSTOM_STEP_MODULES.clear()
 
 
 def load_custom_steps(project_root: Path) -> list[str]:
@@ -87,6 +113,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
     import re as _re
     import sys as _sys
 
+    _unload_custom_steps()
     steps_dir = Path(project_root) / ".specify" / "workflows" / "steps"
 
     # Defense-in-depth: refuse to execute step code from a symlinked
@@ -182,6 +209,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
                 _register_step(step_class())
                 loaded.append(type_key)
                 registered = True
+                _CUSTOM_STEP_MODULES.add(module_name)
             finally:
                 # If the step wasn't successfully registered (failed import,
                 # no matching StepBase subclass, or registration error), remove
@@ -196,7 +224,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
                         k for k in _sys.modules if k.startswith(submodule_prefix)
                     ]:
                         _sys.modules.pop(_mod_key, None)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112
             # Silently skip broken step packages at load time
             continue
 

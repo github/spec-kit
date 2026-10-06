@@ -26,10 +26,20 @@ specify extension add <name>
 | --------------- | -------------------------------------------------------- |
 | `--dev`         | Install from a local directory (for development)         |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
+| `--version <v>` | Install an exact version advertised by a catalog        |
 | `--force`       | Overwrite if the extension is already installed          |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
-Installs an extension from the catalog, a URL, or a local directory. Extension commands are automatically registered with the currently installed AI coding agent integration.
+Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The core `speckit.taskstoissues` command remains available alongside the GitHub extension's namespaced replacement during migration.
+
+If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
+
+An unqualified catalog install still selects the advertised current version.
+`--version` uses only the winning catalog source for that extension ID; it does
+not fall back to a lower-priority source when the requested version is absent.
+Discovery-only catalogs remain non-installable. `--version` cannot be combined
+with `--dev` or the direct-URL `--from` option. The downloaded archive's extension
+ID and version are checked before installation.
 
 > **Note:** All extension commands require a project already initialized with `specify init`.
 
@@ -50,22 +60,76 @@ Removes an installed extension. Configuration files are backed up by default; us
 
 ```bash
 specify extension list
+specify extension list --json
 ```
 
 | Option        | Description                                        |
 | ------------- | -------------------------------------------------- |
 | `--available` | Show available (uninstalled) extensions            |
 | `--all`       | Show both installed and available extensions       |
+| `--json`      | Write installed extensions as JSON                 |
 
 Lists installed extensions with their status, version, and command counts.
+
+`--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, `source`, and
+`provides`. `author` is `null` when absent; `source` is `{"kind":"local"}`
+for local, legacy, or malformed provenance, or
+`{"kind":"catalog","catalog":"<catalog-name>"}` for a valid catalog source.
+Extension `provides` contains `commands`, `templates`, `scripts`, and `hooks`
+counts. `--available` and `--all` do not broaden JSON output beyond installed
+extensions. On success, `--json` writes exactly one array to stdout and exits
+0. A runtime failure after option parsing writes exactly one
+`{"error":"..."}` object to stderr and exits 1. If parsing raises a usage
+error and the raw `--json` token is present, it writes that JSON error object
+to stderr and preserves the usage exit code (normally 2). Without `--json`,
+including for help, the existing human-readable behavior is unchanged.
 
 ## Extension Info
 
 ```bash
 specify extension info <name>
+specify extension info <name> --versions
 ```
 
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
+`--versions` lists the current and historical versions advertised by the
+winning catalog source; it labels discovery-only sources as non-installable.
+Equivalent PEP 440 version spellings (for example, `v1.0` and `1.0`) select
+the same release; the catalog's advertised spelling remains visible.
+
+Catalogs may keep the current release in the existing top-level fields and add
+historical releases in a `releases` mapping. Older single-version catalogs
+continue to work unchanged. Each historical release needs its own download URL
+and SHA-256 digest; release-specific requirements or provided capabilities must
+be placed in that release's record rather than inherited from the current one.
+As with current releases, a digest may use a case-insensitive `sha256:` prefix
+and surrounding whitespace.
+
+```json
+{
+  "extensions": {
+    "my-extension": {
+      "name": "My Extension",
+      "version": "0.5.1",
+      "download_url": "https://example.com/my-extension-0.5.1.zip",
+      "sha256": "<64-character SHA-256 for 0.5.1>",
+      "releases": {
+        "0.4.12": {
+          "download_url": "https://example.com/my-extension-0.4.12.zip",
+          "sha256": "<64-character SHA-256 for 0.4.12>"
+        }
+      }
+    }
+  }
+}
+```
+
+The example omits other catalog metadata for brevity. The current version must
+not be repeated in `releases`; malformed or duplicate release records are
+rejected. Bundle pins still use the current catalog resolution path until the
+separate bundle work described in [#4719](https://github.com/github/spec-kit/issues/4719)
+adds exact-version component lookup.
 
 ## Update Extensions
 
@@ -75,6 +139,10 @@ specify extension update [<name>]
 
 Updates a specific extension, or all installed extensions if no name is given.
 
+Bundled extensions (such as `agent-context` and `git`) have no download URL; their updates install from the copy shipped with the running spec-kit release. When the catalog advertises a newer version than your spec-kit release ships, the update is reported as requiring a spec-kit upgrade first.
+
+For `generic`, a failed update restores hash-owned invocations from previously configured `--commands-dir` locations as well as the current location, even if another integration is now active.
+
 ## Enable / Disable an Extension
 
 ```bash
@@ -82,7 +150,9 @@ specify extension enable <name>
 specify extension disable <name>
 ```
 
-Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Re-enable with `enable`.
+Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
+
+For `generic`, disabling removes hash-owned invocations even after the output directory moves, but preserves unrelated same-named files in the new directory.
 
 ## Set Extension Priority
 
@@ -95,6 +165,27 @@ Changes the resolution priority of an extension. When multiple extensions provid
 ## Catalog Management
 
 Extension catalogs control where `search` and `add` look for extensions. Catalogs are checked in priority order (lower number = higher precedence).
+
+### Trust model: discovery-only vs. install sources
+
+Catalogs come in two kinds, and the distinction is a **security boundary**, not a limitation:
+
+- **Install sources** (`install_allowed: true`) — catalogs you trust as a place to install from. The built-in `default` (official) catalog is one, as is any catalog you author and vet yourself.
+- **Discovery-only** catalogs (`install_allowed: false`) — searchable surfaces for *finding* extensions, but not installable. The built-in `community` catalog is discovery-only and is already active for `search` out of the box; you do not need to add it.
+
+`community` is intentionally discovery-only because it is an open, unvetted list. Making everything in it one-command-installable would mean pulling arbitrary third-party code with no review.
+
+> **Do not flip a discovery-only catalog to `install_allowed`.** That defeats the entire point of separating discovery from installation. There are two correct ways to install something you found via `community`:
+>
+> 1. **Install a single vetted extension directly** with `--from` (no catalog authoring needed). Get the candidate archive URL from `specify extension info <name>` — for a discovery-only entry it prints a "Candidate archive" URL. Review that release archive, then install it:
+>
+>    ```bash
+>    specify extension info <name>          # shows the candidate archive URL
+>    specify extension add <name> --from <archive-url>
+>    ```
+>
+>    Treat the URL as untrusted until you have vetted it — it comes from an unvetted catalog.
+> 2. **Curate your own catalog** you control and vet, and mark *that* catalog `install_allowed: true` — for when you want a governed, reusable install source (e.g. for an org).
 
 ### List Catalogs
 
@@ -114,10 +205,12 @@ specify extension catalog add <url>
 | ------------------------------------ | -------------------------------------------------- |
 | `--name <name>`                      | Required. Unique name for the catalog              |
 | `--priority <N>`                     | Priority (default: 10; lower = higher precedence)  |
-| `--install-allowed / --no-install-allowed` | Whether extensions can be installed from this catalog |
+| `--install-allowed / --no-install-allowed` | Mark the catalog as a trusted install source. Only enable for a catalog you own and vet; leave off (the default) for discovery-only sources. Never enable it for an unvetted public catalog. |
 | `--description <text>`               | Optional description                               |
 
 Adds a catalog to the project's `.specify/extension-catalogs.yml`.
+
+Re-adding the same named catalog with identical settings succeeds without changing the configuration; different settings are rejected.
 
 ### Remove a Catalog
 
@@ -134,9 +227,9 @@ Catalogs are resolved in this order (first match wins):
 1. **Environment variable** — `SPECKIT_CATALOG_URL` overrides all catalogs
 2. **Project config** — `.specify/extension-catalogs.yml`
 3. **User config** — `~/.specify/extension-catalogs.yml`
-4. **Built-in defaults** — official catalog + community catalog
+4. **Built-in defaults** — official `default` catalog (install-allowed) + `community` catalog (discovery-only)
 
-Example `.specify/extension-catalogs.yml`:
+Example `.specify/extension-catalogs.yml` for a catalog you own and vet:
 
 ```yaml
 catalogs:
@@ -171,6 +264,7 @@ To set up configuration for a newly installed extension, copy the template:
 cp .specify/extensions/<ext>/<ext>-config.template.yml \
    .specify/extensions/<ext>/<ext>-config.yml
 ```
+
 ## Project Extension and Hook Configuration
 
 Spec Kit stores project-level extension registration and hook configuration in:
@@ -178,6 +272,7 @@ Spec Kit stores project-level extension registration and hook configuration in:
 ```text
 .specify/extensions.yml
 ```
+
 The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
 
 ```yaml
@@ -225,6 +320,7 @@ Each hook entry supports the following fields:
 | `prompt` | Message shown when asking whether to run an optional hook. |
 | `description` | Human-readable explanation of what the hook does. |
 | `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
+
 Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
 
 Extension manifests reject invalid hook priorities during installation. For existing `.specify/extensions.yml` entries, `HookExecutor.get_hooks_for_event()` sorts with `normalize_priority()`: missing values, booleans, non-numeric values rejected by `int()`, and values less than `1` fall back to `10`; numeric strings and finite floats are coerced with `int()`, while non-finite floats are unsupported and may fail instead of falling back.

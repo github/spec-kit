@@ -9,6 +9,10 @@ See: https://cli.devin.ai/docs/extensibility/skills/overview
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
 
@@ -44,6 +48,13 @@ class DevinIntegration(SkillsIntegration):
     # top-level "hooks" wrapper (U2), unlike the settings.json formats. The
     # json-root-nested writer/remover operate directly on the root event keys.
     events_format = "json-root-nested"
+    # Devin's hooks protocol is JSON-stdout; additionalContext is the
+    # documented injection field for SessionStart/UserPromptSubmit (C13).
+    events_context_envelope = {
+        "*": "suppress",
+        "session_start": "hookSpecificOutput",
+        "user_prompt_submit": "hookSpecificOutput",
+    }
 
     def build_exec_args(
         self,
@@ -51,6 +62,9 @@ class DevinIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build non-interactive CLI args for Devin for Terminal.
 
@@ -61,6 +75,7 @@ class DevinIntegration(SkillsIntegration):
         stdout instead of structured JSON. ``requires_cli=True`` is
         kept on the integration for tool detection.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "-p", prompt]
         self._apply_extra_args_env_var(args)
         if model:

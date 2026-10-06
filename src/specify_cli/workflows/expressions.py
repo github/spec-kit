@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Any
 
 
@@ -22,6 +24,11 @@ _REGISTERED_FILTERS: tuple[str, ...] = (
     "map",
     "contains",
     "from_json",
+    "upper",
+    "lower",
+    "split",
+    "length",
+    "to_json",
 )
 
 
@@ -129,28 +136,194 @@ def _filter_from_json(value: Any) -> Any:
         raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
 
+def _filter_upper(value: Any) -> str:
+    """Return *value* uppercased.
+
+    Raises ``ValueError`` on non-string input. Without the guard a non-string
+    value (an authoring mistake like ``| upper`` on a shell exit code) would
+    reach ``str.upper`` and raise a cryptic ``AttributeError`` that escapes the
+    evaluator and crashes the whole run, since the engine wraps neither
+    expression evaluation nor ``execute`` in a try/except. Silently coercing
+    with ``str(value).upper()`` is rejected for the same reason ``from_json``
+    does not coerce: a type mismatch here means the pipeline is wired to the
+    wrong variable, and rendering ``"0"`` for an int hides that.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"upper: expected a string value, got {type(value).__name__}")
+    return value.upper()
+
+
+def _filter_lower(value: Any) -> str:
+    """Return *value* lowercased.
+
+    Raises ``ValueError`` on non-string input, for the same reason and with the
+    same trade-off as ``upper``: a type mismatch means the pipeline is wired to
+    the wrong variable, and coercing would hide it.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"lower: expected a string value, got {type(value).__name__}")
+    return value.lower()
+
+
+def _filter_split(value: Any, separator: str) -> list[str]:
+    """Split *value* on *separator* into a list of strings.
+
+    The single-argument ``split(sep)`` form is the only one supported; there is
+    no maxsplit, because a partial split has no obvious meaning in a workflow
+    expression and an unused parameter is an authoring mistake worth reporting.
+
+    Raises ``ValueError`` when *value* is not a string, *separator* is not a
+    string, or *separator* is empty. Without those guards a non-string argument
+    reaches ``str.split`` and raises a cryptic ``TypeError``, and an empty
+    separator raises the bare ``ValueError: empty separator`` — neither names
+    the filter, and both escape the evaluator and crash the whole run, mirroring
+    the strict argument handling in ``join`` and ``map``. An empty separator has
+    no meaning anyway: ``str.split("")`` is an error in Python, so it is an
+    authoring mistake rather than a valid edge case.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"split: expected a string value, got {type(value).__name__}")
+    if not isinstance(separator, str):
+        raise ValueError(
+            f"split: expected a string separator, got {type(separator).__name__}"
+        )
+    if separator == "":
+        raise ValueError("split: separator must not be empty")
+    return value.split(separator)
+
+
+def _filter_length(value: Any) -> int:
+    """Return the length of a list or string.
+
+    Follows Jinja2's ``length``, which also counts characters in a string. The
+    two supported input types are exactly ``list`` and ``str``: dicts are
+    excluded even though ``len()`` accepts them, because a mapping's length is
+    rarely what a workflow author means by ``length`` and accepting it would
+    make ``{{ obj | length }}`` silently return a key count for one shape and a
+    value count for another. Other types (notably ``bool`` and ``None``) are
+    authoring mistakes and raise rather than coercing to 0.
+    """
+    if isinstance(value, (list, str)):
+        return len(value)
+    raise ValueError(
+        "length: expected a list or string, got "
+        f"{type(value).__name__} (mappings are not supported)"
+    )
+
+
+def _filter_to_json(value: Any) -> str:
+    """Serialize *value* to a JSON string — the inverse of ``from_json``.
+
+    Serialization is pinned to ``sort_keys=True`` and ``ensure_ascii=False`` so
+    the output is byte-stable across runs, platforms, and dict insertion order.
+    It is why these flags are not left to the default: the default key order
+    varies with insertion order and escapes non-ASCII as ``\\uXXXX``, so the
+    same workflow would emit different bytes on different runs and hand
+    downstream tools mangled text. Determinism buys *reproducibility* — the same
+    value always serializes identically — and nothing more. It does not make the
+    result safe to pass through a shell: expression interpolation adds no
+    quoting or escaping, so JSON quotes and metacharacters are still interpreted
+    by whatever runs the ``run`` field. Interpolate unconstrained JSON into a
+    shell step only when you have constrained what it can contain; see the
+    "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
+
+    Raises ``ValueError`` when *value* is not JSON-serializable, chained from
+    the underlying error so the offending type stays visible. ``allow_nan=False``
+    is what makes that true for non-finite floats: ``json.dumps`` would
+    otherwise emit bare ``NaN``/``Infinity``/``-Infinity``, none of which is
+    valid JSON, and hand downstream parsers a string they must reject.
+
+    Mapping keys must be strings, which is what JSON objects have anyway.
+    ``_check_json_keys`` enforces that before ``json.dumps`` is reached, so a
+    non-string key is reported as the authoring mistake it is rather than
+    surfacing as an ordering ``TypeError`` from ``sort_keys=True`` (mixed key
+    types) or as silent ``1`` → ``"1"`` coercion that collides with an existing
+    ``"1"`` key.
+    """
+    _check_json_keys(value)
+    try:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"to_json: value is not JSON-serializable: {exc}") from exc
+
+
+def _check_json_keys(value: Any) -> None:
+    """Raise ``ValueError`` if any mapping reachable from *value* has a
+    non-string key.
+
+    Walked iteratively with a ``seen`` set: a self-referential structure is
+    skipped rather than recursed into, so the circular reference stays for
+    ``json.dumps`` to report with its own clearer message instead of the walk
+    exhausting the stack first.
+    """
+    seen: set[int] = set()
+    stack: list[Any] = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            for key, sub_value in item.items():
+                if not isinstance(key, str):
+                    raise ValueError(
+                        "to_json: mapping keys must be strings, got "
+                        f"{type(key).__name__}: {key!r}"
+                    )
+                stack.append(sub_value)
+        elif isinstance(item, (list, tuple)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            stack.extend(item)
+
+
+# Filters that take no arguments and tolerate no trailing tokens. Keyed by name
+# so ``_apply_filter`` can recognize a mis-wired form of any of them from the
+# leading filter name alone, instead of each needing its own branch. ``default``
+# is deliberately absent: it is the one filter that is valid both bare and with
+# an argument, so it is dispatched by both of the branches below.
+_ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
+    "from_json": _filter_from_json,
+    "upper": _filter_upper,
+    "lower": _filter_lower,
+    "length": _filter_length,
+    "to_json": _filter_to_json,
+}
+
+
 # -- Expression resolution ------------------------------------------------
 
 _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 
 
+# The one definition of an indexed path segment. _resolve_dot_path matches
+# against it, and the condition gate below reuses it rather than describing the
+# same shape a second time, so widening what indexing accepts cannot leave the
+# evaluator and the gate disagreeing.
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+
+_PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
+
+
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
-    Supports dict key access and list indexing (e.g., ``task_list[0]``).
+    Supports dict key access and list indexing, including the negative form
+    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0]
-        idx_match = re.match(r"^([\w-]+)\[(\d+)\]$", part)
+        # Handle list indexing: name[0], name[-1]
+        idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
             if isinstance(current, dict):
                 current = current.get(key)
             else:
                 return None
-            if isinstance(current, list) and 0 <= idx < len(current):
+            if isinstance(current, list) and -len(current) <= idx < len(current):
                 current = current[idx]
             else:
                 return None
@@ -224,6 +397,59 @@ def _is_single_expression(stripped: str) -> bool:
     return True
 
 
+def _find_block_close(text: str, start: int) -> int:
+    """Index of the ``}}`` closing the block opened by the ``{{`` at *start*, or -1.
+
+    Quote-aware, so a literal ``}}`` inside a string argument
+    (``{{ inputs.text | default('}}') }}``) does not close the block early --
+    the same rule ``_is_single_expression`` applies. Shared with
+    ``condition_is_never_evaluated`` so the validator cannot disagree with the
+    substitution it is predicting.
+    """
+    quote: str | None = None
+    i = start + 2
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "}" and i + 1 < n and text[i + 1] == "}":
+            return i
+        i += 1
+    return -1
+
+
+def _first_unclosable_block(text: str) -> str | None:
+    """How ``_interpolate_expressions`` will fail on the first block it cannot
+    close with the quote-aware scan, or ``None`` when every block closes.
+
+    Returns ``"evaluated"`` when a raw ``}}`` still follows the opener -- the
+    interpolator falls back to it and evaluates the truncated body, which reaches
+    the filter parser and raises ``ValueError``. Returns ``"verbatim"`` when no
+    ``}}`` follows at all -- the tail is emitted unchanged, so it survives into the
+    result as truthy text.
+
+    Walks blocks exactly the way ``_interpolate_expressions`` does, continuing past
+    each block that *does* close. Checking only the first opener let a later
+    unterminated block through both validators: ``{{ true }} and {{ inputs.ready``
+    closes its first block, so the scan stopped and reported no fault, while
+    interpolation leaves ``and {{ inputs.ready`` in the result and ``bool()`` makes
+    the condition always true.
+    """
+    i = 0
+    while True:
+        start = text.find("{{", i)
+        if start == -1:
+            return None
+        close = _find_block_close(text, start)
+        if close == -1:
+            return "evaluated" if text.find("}}", start + 2) != -1 else "verbatim"
+        i = close + 2
+
+
 def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
     """Substitute every top-level ``{{ ... }}`` block in *template*, quote-aware.
 
@@ -249,20 +475,7 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
             break
         out.append(template[i:start])
         # Scan for the block-closing ``}}`` that is outside any string literal.
-        j = start + 2
-        quote: str | None = None
-        close = -1
-        while j < n:
-            ch = template[j]
-            if quote is not None:
-                if ch == quote:
-                    quote = None
-            elif ch in ("'", '"'):
-                quote = ch
-            elif ch == "}" and j + 1 < n and template[j + 1] == "}":
-                close = j
-                break
-            j += 1
+        close = _find_block_close(template, start)
         if close == -1:
             # No quote-aware close. Two sub-cases, both kept identical to the old
             # regex so a malformed template is never silently hidden:
@@ -366,6 +579,41 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
+def _is_single_list_literal(expr: str) -> bool:
+    """Return ``True`` only when *expr* is exactly one bracketed list
+    literal -- the opening ``[`` closes at the FINAL character, not partway
+    through the string.
+
+    ``expr.startswith("[") and expr.endswith("]")`` alone also matches a
+    list literal immediately followed by an index suffix, e.g.
+    ``[1,2,3][1]`` (meant as "index 1 of [1,2,3]", i.e. 2). Naively
+    stripping the outer brackets from that string yields the garbage
+    ``1,2,3][1``, which then silently evaluates to ``[1, 2, None]`` instead
+    of raising or resolving the index -- the same "grabs the wrong span"
+    failure mode the string-literal check above guards against, just never
+    given the same treatment for brackets.
+    """
+    if not (expr.startswith("[") and expr.endswith("]")):
+        return False
+    quote: str | None = None
+    depth = 0
+    n = len(expr)
+    for i, ch in enumerate(expr):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                return i == n - 1
+    return False
+
+
 def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
     """Apply a single pipe filter segment to *value*.
 
@@ -378,19 +626,21 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     silently returning *value* unchanged: a passthrough would turn a mistyped
     or unsupported filter into a wrong result with no signal.
     """
-    # `from_json` is strict: it takes no arguments and tolerates no trailing
-    # tokens. Match on the leading filter name and require the whole filter to
-    # be exactly `from_json`, so every mis-wired form (`from_json()`,
-    # `from_json('x')`, `from_json)`, `from_json extra`) fails loudly instead of
-    # silently falling through to the unknown-filter path.
+    # Zero-argument filters are strict: they take no arguments and tolerate no
+    # trailing tokens. Match on the leading filter name and require the whole
+    # filter to be exactly that name, so every mis-wired form (`from_json()`,
+    # `from_json('x')`, `from_json)`, `from_json extra`, and the same for
+    # `upper`/`lower`/`length`/`to_json`) fails loudly instead of silently
+    # falling through to the unknown-filter path.
     leading = re.match(r"\w+", filter_expr)
-    if leading and leading.group(0) == "from_json":
-        if filter_expr != "from_json":
+    if leading and leading.group(0) in _ZERO_ARG_FILTERS:
+        fname = leading.group(0)
+        if filter_expr != fname:
             raise ValueError(
-                "from_json: expected '| from_json' with no arguments or "
+                f"{fname}: expected '| {fname}' with no arguments or "
                 f"trailing tokens, got '| {filter_expr}'"
             )
-        return _filter_from_json(value)
+        return _ZERO_ARG_FILTERS[fname](value)
 
     # Parse filter name and argument. Use fullmatch (not match) so trailing
     # tokens after the closing paren — e.g. a comparison/boolean operator that
@@ -400,6 +650,28 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # branch above. The greedy ``.+`` still handles literal ``)`` and ``|``
     # inside quoted args.
     filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
+    # A multi-argument call is not a supported form: every filter here takes
+    # exactly one argument, and the whole captured argument text was handed to
+    # ``_evaluate_simple_expression`` as ONE expression. "1, 2" is not a valid
+    # expression, so it evaluated to None -- making ``default(1, 2)`` return
+    # None (silently wrong) and ``join(",", "extra")`` raise a message blaming
+    # the separator rather than the extra argument. Fall through to the
+    # unsupported-form error below instead, which names the filter and lists
+    # the accepted forms.
+    #
+    # Use ``_find_top_level``, the same scanner the operator splitting uses: it
+    # skips commas inside quotes AND inside nested brackets, so a single
+    # argument that happens to contain a comma still works -- ``join(", ")``,
+    # ``default("a, b")``, and the list literals the evaluator supports
+    # (``default([1, 2])``).
+    #
+    # List literals are the only container form ``_evaluate_simple_expression``
+    # implements; a mapping such as ``{"a": 1}`` has no branch there and falls
+    # through to dot-path resolution, which yields ``None``. The scanner does
+    # skip commas inside braces too, so nothing here changes if that ever gains
+    # support -- but do not read this comment as a promise that it exists.
+    if filter_match and _find_top_level(filter_match.group(2), ",") != -1:
+        filter_match = None
     if filter_match:
         fname = filter_match.group(1)
         farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
@@ -411,6 +683,8 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
             return _filter_map(value, farg)
         if fname == "contains":
             return _filter_contains(value, farg)
+        if fname == "split":
+            return _filter_split(value, farg)
     # Filter without args
     if filter_expr == "default":
         return _filter_default(value)
@@ -422,7 +696,8 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     name = leading.group(0) if leading else filter_expr
     expected = (
         "expected one of default or default('x'), join('sep'), "
-        "map('attr'), contains('s'), or from_json"
+        "map('attr'), contains('s'), split('sep'), from_json, upper, "
+        "lower, length, or to_json"
     )
     if name in _REGISTERED_FILTERS:
         raise ValueError(
@@ -434,6 +709,76 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     )
 
 
+# Order matters -- multi-char operators first, so "!=" is not split as "!" + "=".
+# Shared with the remediation check so a validator cannot drift from what the
+# evaluator will actually split on.
+_COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
+
+# Set only while `_collect_leaves` probes an expression; None everywhere else, so
+# a normal evaluation costs one `.get()`. A ContextVar rather than a module global
+# so concurrent probes cannot append into each other's list.
+_leaf_sink: ContextVar[list[str] | None] = ContextVar("_leaf_sink", default=None)
+
+
+def _is_wrapped_in_parens(text: str) -> bool:
+    """True when *text* is one parenthesised group, brackets and all.
+
+    ``(a or b)`` is; ``(a) and (b)`` is not, because the opening paren closes
+    before the end. Quote-aware, so ``('(')`` does not count its own literal.
+    """
+    if not (text.startswith("(") and text.endswith(")")):
+        return False
+    quote: str | None = None
+    depth = 0
+    for index, ch in enumerate(text):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return index == len(text) - 1
+    return False
+
+
+def _collapse_whitespace(text: str) -> str:
+    """Strip *text* and turn each run of whitespace outside a quoted string into
+    one space.
+
+    The operator scans below match word operators by their surrounding spaces
+    (``" or "``, ``" not in "``, ``expr.startswith("not ")``), so an operator
+    next to a newline or tab was never found. A condition wrapped across lines
+    in YAML keeps those newlines -- a ``|`` block scalar keeps every one, and a
+    ``>`` folded scalar keeps the break before a more-indented continuation
+    line -- so ``{{ inputs.a or\\n   inputs.b }}`` was resolved as one dot path,
+    came back ``None``, and read false with no error. Jinja2 treats any
+    whitespace between tokens alike; so does this, while quoted operands keep
+    their text exactly.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    pending_space = False
+    for ch in text.strip():
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch.isspace():
+            pending_space = True
+        else:
+            if pending_space:
+                out.append(" ")
+                pending_space = False
+            if ch in ("'", '"'):
+                quote = ch
+            out.append(ch)
+    return "".join(out)
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -442,10 +787,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
-    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
+    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``, ``| split(',')``, ``| upper``, ``| lower``, ``| length``, ``| to_json``
     - String and numeric literals
     """
-    expr = expr.strip()
+    expr = _collapse_whitespace(expr)
 
     # String literal — only when the WHOLE expression is one quoted string,
     # i.e. the opening quote's matching close is the final character. Checking
@@ -454,6 +799,16 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # strings containing `|` or operator keywords are not mis-parsed downstream.
     if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
+
+    # A parenthesised group. The operator scans below deliberately skip over
+    # bracketed text so an operator inside a quoted or nested operand is not
+    # split on -- which also means nothing ever looked inside a group that
+    # wraps the WHOLE expression. `(a or b) and c` split at the top-level
+    # `and`, then evaluated `(a or b)` as a dot path, found no such key, and
+    # returned None: the `or` was never evaluated and the whole thing read
+    # false. Unwrap here so grouping means what it says.
+    if _is_wrapped_in_parens(expr):
+        return _evaluate_simple_expression(expr[1:-1], namespace)
 
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
@@ -465,9 +820,61 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     pipe_idx = _find_top_level(expr, "|")
     if pipe_idx != -1:
         segments = _split_top_level(expr, "|")
-        value = _evaluate_simple_expression(segments[0].strip(), namespace)
+        # The pipe is detected before the operators below, so a filter written on
+        # the right-hand operand of a comparison was applied to the comparison's
+        # BOOLEAN RESULT instead: `count > limit | default(5)` evaluated
+        # `count > limit` first and then `default` on the bool, which is a no-op,
+        # so the expression silently returned the comparison against the
+        # *unfiltered* operand. This is the mirror of a filter followed by a
+        # comparison (`default('7') > '5'`), which this module already refuses
+        # rather than guessing at the intended precedence. Refuse both the same
+        # way, so an ambiguous expression is reported instead of quietly
+        # producing the answer the author did not ask for.
+        head = segments[0].strip()
+        # Unary ``not`` is a leading prefix, not an infix token, so it has no
+        # surrounding space for the scan below to match -- it has to be checked
+        # the same way the parser itself does (``expr.startswith("not ")``).
+        # Without this, ``not inputs.missing | default(1)`` still evaluated
+        # ``not inputs.missing`` first and applied the filter to that boolean,
+        # which is the exact mis-binding this guard exists to reject.
+        # (A ``not`` that follows ``and``/``or`` is already caught by those
+        # tokens below.)
+        _ambiguous_op = "not" if head.startswith("not ") else None
+        if _ambiguous_op is None:
+            for _op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ",
+                        " or ", " and "):
+                if _find_top_level(head, _op) != -1:
+                    _ambiguous_op = _op.strip()
+                    break
+        if _ambiguous_op is not None:
+            raise ValueError(
+                f"ambiguous filter precedence in '{expr}': "
+                f"'| {segments[1].strip()}' would apply to the result of "
+                f"'{head}', not to an operand of '{_ambiguous_op}'. Filter the "
+                f"operand in its own expression instead."
+            )
+        value = _evaluate_simple_expression(head, namespace)
+        sink = _leaf_sink.get()
         for segment in segments[1:]:
-            value = _apply_filter(value, segment.strip(), namespace)
+            if sink is None:
+                value = _apply_filter(value, segment.strip(), namespace)
+                continue
+            # Probing. A filter handed a placeholder can raise on it -- from_json
+            # on a mapping is the common one -- and letting that end the walk
+            # hides every leaf further along the chain, which is the one thing
+            # this collection exists to report: `inputs.blob | from_json |
+            # contains(bogus)` recorded `inputs.blob` and stopped, so `bogus`
+            # was never offered to _unresolvable_leaf. _apply_filter evaluates a
+            # filter's argument before it can raise on the value, so the leaves
+            # of the failing segment are already recorded when we get here.
+            # Carry a fresh placeholder so the next filter sees the same kind of
+            # unknown the namespace hands out. Real evaluation is untouched: the
+            # sink is armed only by _collect_leaves, and _evaluator_rejects runs
+            # its own probe without it, so a mis-wired filter is still reported.
+            try:
+                value = _apply_filter(value, segment.strip(), namespace)
+            except Exception:  # noqa: BLE001 - probe values, not the author's text
+                value = _ProbeNamespace()
         return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that
@@ -493,7 +900,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Comparison operators (order matters — check multi-char ops first). Split at
     # the first top-level occurrence so an operator inside a quoted operand is
     # ignored.
-    for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in "):
+    for op in _COMPARISON_OPERATORS:
         op_idx = _find_top_level(expr, op)
         if op_idx != -1:
             left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
@@ -534,7 +941,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         return None
 
     # List literal (simple)
-    if expr.startswith("[") and expr.endswith("]"):
+    if _is_single_list_literal(expr):
         inner = expr[1:-1].strip()
         if not inner:
             return []
@@ -548,7 +955,12 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         ]
         return items
 
-    # Variable reference (dot-path)
+    # Variable reference (dot-path). This is the one place a substring stops being
+    # grammar and becomes a name to resolve, so it is where a probe can learn what
+    # the evaluator will actually look up. Literals have all returned above.
+    sink = _leaf_sink.get()
+    if sink is not None:
+        sink.append(expr)
     return _resolve_dot_path(namespace, expr)
 
 
@@ -671,10 +1083,489 @@ def evaluate_condition(condition: str, context: Any) -> bool:
     result = evaluate_expression(condition, context)
     # Treat plain "false"/"true" strings as booleans so that
     # condition: "false" (without {{ }}) behaves as expected.
+    #
+    # Strip before matching: the string a condition resolves to is most often
+    # captured command output, and a ``shell`` step stores ``proc.stdout``
+    # verbatim, so ``run: echo false`` resolves to ``"false\n"``. Without the
+    # strip that trailing newline matches neither branch and falls through to
+    # ``bool("false\n")`` -> True, silently taking an ``if`` step's ``then``
+    # branch (and keeping a ``while``/``do-while`` looping) on a step that
+    # printed "false". A workflow cannot strip it itself -- no registered
+    # filter trims whitespace (there is no ``trim``).
+    # ``InitStep._resolve_bool`` and the catalog readers already strip before
+    # matching boolean text. ``bool(result)`` below still sees the raw string,
+    # so no non-boolean text changes truthiness.
     if isinstance(result, str):
-        lower = result.lower()
+        lower = result.strip().lower()
         if lower == "false":
             return False
         if lower == "true":
             return True
     return bool(result)
+
+
+def condition_is_never_evaluated(condition: Any) -> bool:
+    """True when a string *condition* is silently treated as always-true text.
+
+    ``evaluate_condition`` resolves its argument through
+    ``evaluate_expression``, which only substitutes ``{{ ... }}`` blocks. A
+    string with no such block comes back unchanged, and — unless it reads
+    ``true``/``false`` — is then coerced by ``bool()``. So an expression
+    authored without the braces, e.g. ``condition: inputs.count > 100``, is
+    never evaluated at all: it is a non-empty string, so the ``if`` step always
+    takes ``then`` and a ``while``/``do-while`` step always runs to
+    ``max_iterations``.
+
+    That is the same silent-truthiness authoring mistake the step validators
+    already reject for a list/dict/number condition, and it is easy to write:
+    GitHub Actions accepts a bare expression in ``if:``.
+
+    The empty string is excluded — it coerces to ``False``, which is a definite
+    answer rather than a silent always-true. Non-empty whitespace is *not*
+    excluded: ``bool("   ")`` is true, and ``evaluate_condition`` strips only
+    while testing the ``true``/``false`` keywords before falling through to
+    ``bool()`` on the raw string. That runtime behaviour is pinned deliberately
+    by ``test_condition_whitespace_only_string_stays_truthy``, so the authoring
+    mistake has to be caught here instead: ``condition: "   "`` always takes
+    ``then``.
+    """
+    if not isinstance(condition, str):
+        return False
+    if condition == "":
+        return False
+    stripped = condition.strip()
+    if not stripped:
+        return True
+    if stripped.lower() in ("true", "false"):
+        return False
+    if "{{" not in stripped:
+        return True
+    # An opening ``{{`` the substituter cannot close is no better than a missing
+    # one -- but only when the substituter really does leave it alone.
+    # ``_interpolate_expressions`` has two sub-cases when its quote-aware scan
+    # fails, and they do not behave alike: with no raw ``}}`` in the tail the
+    # block is emitted verbatim (never evaluated, so ``bool()`` makes it true),
+    # while a raw ``}}`` further along is used as the close and the truncated
+    # body *is* evaluated. Only the first is "never evaluated"; see
+    # ``condition_has_malformed_expression_block`` for the second.
+    return _first_unclosable_block(stripped) == "verbatim"
+
+
+def condition_is_interpolated_to_text(condition: Any) -> bool:
+    """True when *condition* holds ``{{ }}`` blocks but is spliced into text, not evaluated.
+
+    ``evaluate_expression`` takes its typed fast path only when the whole string is
+    exactly one ``{{ ... }}`` block (``_is_single_expression``). Anything else — two
+    blocks, or one block with any text around it — goes to ``_interpolate_expressions``,
+    which substitutes each block into the surrounding string and returns a *string*.
+    ``evaluate_condition`` then coerces that with ``bool()``, so the result is true for
+    every rendering except ``""``, ``"true"`` and ``"false"``::
+
+        {{ inputs.ready }} and {{ inputs.count > 100 }}   ->  "False and False"  ->  True
+        not {{ inputs.ready }}                            ->  "not False"        ->  True
+        {{ inputs.count }} > 100                          ->  "0 > 100"          ->  True
+
+    Each of those reads as a real expression and is always true, which is the same
+    silent-truthiness fault ``condition_is_never_evaluated`` reports one layer out: there
+    the braces are missing, here they are present but do not cover the whole condition.
+    The operators belong *inside* one block, and the validators already tell authors the
+    condition must be "a single complete '{{ }}' block" -- this is the check behind that
+    sentence.
+
+    Deliberately derived from ``_is_single_expression`` rather than restated, so this
+    cannot drift from the fast path it is predicting.
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or "{{" not in stripped:
+        return False
+    # Leave both of the faults that already have their own message and advice: a block
+    # the substituter cannot close is not an interpolation problem.
+    if condition_is_never_evaluated(condition) or condition_has_malformed_expression_block(condition):
+        return False
+    return not _is_single_expression(stripped)
+
+
+def condition_has_malformed_expression_block(condition: Any) -> bool:
+    """True when *condition* holds a ``{{`` block the quote-aware scan cannot close,
+    but which ``_interpolate_expressions`` still evaluates through its raw-close
+    fallback.
+
+    This is a different fault from the one
+    ``condition_is_never_evaluated`` reports, and it deserves a different message.
+    The block is not skipped: the interpolator takes the first raw ``}}`` after the
+    opener and evaluates whatever it truncated, so
+
+        {{ inputs.missing | default('oops }}
+
+    reaches ``_apply_filter`` and raises ``ValueError`` at run time. The truncation does
+    not always raise -- ``{{ inputs.x == '}}'`` evaluates to the residual ``"False'"`` --
+    but either way what runs is not what was written, so "never evaluated and always
+    true" is the wrong report.
+
+    Kept separate from the never-evaluated check rather than folded in, because the
+    two need opposite advice: one says "you forgot the braces", this one says "your
+    delimiters or quotes do not balance".
+    """
+    if not isinstance(condition, str):
+        return False
+    stripped = condition.strip()
+    if not stripped or stripped.lower() in ("true", "false"):
+        return False
+    return _first_unclosable_block(stripped) == "evaluated"
+
+
+def _strip_stray_delimiters(text: str) -> str:
+    """Remove every ``{{``/``}}`` that lies outside a quoted operand.
+
+    Quote-aware for the same reason the rest of this module is: ``inputs.x == '}}'``
+    holds a delimiter as *data*, and a blanket ``re.sub`` would eat it and change
+    what the corrected condition compares against. Whitespace orphaned by a removed
+    delimiter collapses to one separator so the suggestion still reads as an
+    expression; whitespace inside a quoted operand is never touched.
+
+    ``_find_top_level`` cannot serve here: it counts ``{`` and ``}`` as bracket
+    depth, so it never reports a ``{{`` as a top-level token at all.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if text.startswith("{{", i) or text.startswith("}}", i):
+            i += 2
+            while i < n and text[i].isspace():
+                i += 1
+            while out and out[-1].isspace():
+                out.pop()
+            out.append(" ")
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+def format_condition_correction(condition: Any) -> str:
+    """Render *condition* wrapped in ``{{ }}`` as a quoted, paste-ready YAML scalar.
+
+    The validators hand this back as the corrected form, so it has to survive a
+    round trip through a YAML parser. A plain ``"{{ ... }}"`` does not: a
+    condition holding a double quote (``inputs.name == "zzz"``) closes the
+    scalar early and the workflow file no longer loads. Quoting is therefore
+    chosen from the content. That enumeration was incomplete: a condition loaded
+    from a YAML literal block can carry a newline, which a double-quoted scalar
+    folds, so the correction did not round-trip.
+
+    ``json.dumps`` decides it instead. Every JSON string is a valid YAML
+    double-quoted scalar, and it escapes the quotes, backslashes, newlines and
+    other control characters that hand-rolled quoting has to enumerate.
+    ``ensure_ascii=False`` keeps non-ASCII operands readable rather than
+    expanding them into numeric escapes.
+
+    A stray delimiter is dropped rather than nested: ``{{ inputs.count > 100``
+    corrects to ``"{{ inputs.count > 100 }}"``, not to a doubled ``{{ {{ ... }} }}``.
+    Every stray delimiter goes, not only the ones sitting at the edges. Trimming
+    just the edges left ``prefix {{ inputs.ready`` reading
+    ``"{{ prefix {{ inputs.ready }}"`` -- an unclosed inner block, and one whose
+    complete *outer* block then carried the correction straight back through
+    ``condition_is_never_evaluated`` as if it were valid.
+    """
+    core = _strip_stray_delimiters(str(condition)).strip()
+    # A blank core has nothing to wrap; render the empty block rather than the
+    # double-spaced "{{  }}" that string concatenation would otherwise produce.
+    body = "{{ " + core + " }}" if core else "{{ }}"
+    return json.dumps(body, ensure_ascii=False)
+
+
+def _has_unbalanced_quote(text: str) -> bool:
+    """True when a quote opened in *text* is never closed.
+
+    Same left-to-right, first-quote-wins scan the rest of this module uses, so the
+    answer agrees with what ``_find_block_close`` and ``_strip_stray_delimiters``
+    consider "inside a string".
+    """
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+    return quote is not None
+
+
+_BRACKET_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+# The operators the evaluator delimits with spaces; derived so the check cannot
+# drift from _COMPARISON_OPERATORS.
+_WORD_OPERATORS = tuple(
+    op for op in (" or ", " and ") + _COMPARISON_OPERATORS if op.startswith(" ")
+)
+
+
+def _has_unbalanced_bracket(text: str) -> bool:
+    """True when brackets outside a quoted operand do not nest and match.
+
+    A depth counter is not enough: it calls ``inputs.f(]`` balanced, because the
+    ``]`` cancels the ``(``. The evaluator then resolves that body to ``None`` and
+    the comparison is false, which is the inversion this module is trying to keep
+    out of the suggested correction. Track the opener types instead.
+    """
+    stack: list[str] = []
+    quote: str | None = None
+    for ch in text:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            stack.append(ch)
+        elif ch in _BRACKET_PAIRS and (not stack or stack.pop() != _BRACKET_PAIRS[ch]):
+            return True
+    return bool(stack)
+
+
+def _has_incomplete_operand(text: str) -> bool:
+    """True when an operator in *text* is missing an operand on either side.
+
+    Splits on **every** top-level occurrence rather than the first. Checking only
+    the first is the same defect this module exists to reject one level up: it let
+    ``inputs.a == inputs.b ==`` through, because the leading ``==`` has operands on
+    both sides and the scan stopped there.
+
+    Reads ``_COMPARISON_OPERATORS`` from the evaluator rather than restating it, so
+    the check cannot drift from what ``_evaluate_simple_expression`` splits on.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return True
+
+    # `not x` is a valid prefix form; `and x` and `or x` are not, and none of the
+    # three is valid alone or trailing. The keyword scans below use bare words
+    # because a leading operator has no space in front of it to match on.
+    if stripped in ("and", "or", "not") or stripped.endswith(" not"):
+        return True
+    # Word operators lose their delimiting space at the ends of a stripped core, so
+    # a trailing "not in" or a leading "and" needs matching without it. Derived from
+    # the evaluator's own table rather than restated.
+    for op in _WORD_OPERATORS:
+        if stripped.endswith(op.rstrip()) or stripped.startswith(op.lstrip()):
+            return True
+
+    for op in (" or ", " and ") + _COMPARISON_OPERATORS:
+        if _find_top_level(stripped, op) == -1:
+            continue
+        if any(not segment.strip() for segment in _split_top_level(stripped, op)):
+            return True
+
+    return _find_top_level(stripped, "|") != -1 and any(
+        not segment.strip() for segment in _split_top_level(stripped, "|")
+    )
+
+
+# The roots _build_namespace supplies. A reference to anything else resolves to
+# None, so a correction built on one turns a truthy condition false.
+_NAMESPACE_ROOTS = ("inputs", "steps", "item", "fan_in", "context")
+
+def _is_path_segment(segment: str) -> bool:
+    """Whether _resolve_dot_path can walk *segment*: a name, or a name it indexes."""
+    return bool(_PLAIN_SEGMENT.match(segment) or _INDEXED_SEGMENT.match(segment))
+
+
+class _ProbeNamespace(dict):
+    """Namespace for the parse probe: every root exists, every leaf is absent.
+
+    Enough for ``_evaluate_simple_expression`` to walk the grammar without needing
+    real inputs. Deliberately *not* resolving leaves to a sentinel value: a probe
+    that answers every lookup also answers ``inputs.count+1``, which is the
+    malformed shape the probe is meant to expose.
+    """
+
+    def __missing__(self, key: str) -> "_ProbeNamespace":  # noqa: UP037  # pragma: no cover
+        return _ProbeNamespace()
+
+
+def _evaluator_rejects(text: str) -> str | None:
+    """The evaluator's own complaint about how *text* is wired, or ``None``.
+
+    Structural checks cannot establish that a core is parseable -- four rounds of
+    review found a new shape each time -- so this asks the evaluator. It reports
+    only the two failures ``_apply_filter`` raises about the expression itself: an
+    unknown filter name, and a registered filter used in an unsupported form.
+
+    Anything else a probe run raises is about the probe's placeholder values, not
+    the author's text. ``steps.emit.output.stdout | from_json`` is valid against a
+    string output and is exercised in ``tests/test_workflows.py``; the probe hands
+    ``from_json`` a dict and it raises, so treating every error as a rejection
+    withheld a correction from a perfectly good condition.
+    """
+    try:
+        _evaluate_simple_expression(
+            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
+        )
+    except ValueError as exc:
+        message = str(exc)
+        # Every error _apply_filter raises about the filter *expression* quotes the
+        # segment back as `got '| ...'`. Its value errors instead name the type they
+        # received, which under a probe is the placeholder, not anything the author
+        # wrote -- treating those as rejections withheld corrections from valid
+        # conditions such as `steps.emit.output.stdout | from_json`.
+        if "got '| " in message:
+            return message.split(":", 1)[0]
+    except Exception:  # noqa: BLE001 - probe values, not the author's text
+        return None
+    return None
+
+
+
+def _collect_leaves(text: str) -> list[str]:
+    """Every substring *text* hands to the evaluator as a name to resolve.
+
+    Runs the same probe ``_evaluator_rejects`` uses, with the leaf sink armed.
+    Literals never reach the dot-path resolution, and operands, filter arguments
+    and list elements all do -- ``_evaluate_simple_expression`` evaluates both
+    sides of ``or``/``and`` eagerly rather than short-circuiting, so a leaf is
+    recorded whatever the other side is worth.
+
+    A probe run can still raise on its own placeholder values, which is what
+    ``_evaluator_rejects`` sorts out. The leaves seen before that point are real
+    -- the evaluator reached them -- so they are kept rather than discarded:
+    ``inputs.tags | join(bogus)`` records ``bogus`` and only then trips over the
+    placeholder handed to ``join``.
+    """
+    leaves: list[str] = []
+    token = _leaf_sink.set(leaves)
+    try:
+        _evaluate_simple_expression(
+            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
+        )
+    except Exception:  # noqa: BLE001 - probe values, reported by _evaluator_rejects
+        pass
+    finally:
+        _leaf_sink.reset(token)
+    return leaves
+
+
+def _unresolvable_leaf(leaf: str) -> str | None:
+    """Why the evaluator cannot resolve the name *leaf*, or ``None``.
+
+    Namespace knowledge only. Everything about where operands live now comes from
+    the evaluator itself, so nothing here restates the grammar.
+    """
+    segments = _split_top_level(leaf, ".")
+    if not _is_path_segment(segments[0].strip()):
+        return f"{leaf!r} is not a name the evaluator can resolve"
+    # `item` is the only root that is not always a mapping: `StepContext.item` is
+    # `Any` and a fan-out assigns the item value itself, so when that value is a
+    # list `_resolve_dot_path` indexes it and `item[0] == 'x'` resolves. Every
+    # other root comes back from `_build_namespace` as a mapping, and the index
+    # branch returns None for those however it is written -- so the index is
+    # stripped for `item` alone rather than for roots in general.
+    root = segments[0].strip()
+    indexed_root = _INDEXED_SEGMENT.match(root)
+    if indexed_root is not None and indexed_root.group(1) == "item":
+        root = indexed_root.group(1)
+    if root not in _NAMESPACE_ROOTS:
+        return (
+            f"{segments[0].strip()!r} is not one of the namespace roots "
+            f"({', '.join(_NAMESPACE_ROOTS)})"
+        )
+    for segment in segments[1:]:
+        if not _is_path_segment(segment.strip()):
+            return f"{segment.strip()!r} is not a valid path segment"
+    return None
+
+
+def _unresolvable_term(text: str) -> str | None:
+    """The first name in *text* the evaluator cannot resolve, or ``None``.
+
+    Asks the evaluator which names it will look up, then applies the namespace
+    rules to those. The previous implementation derived the names itself by
+    re-walking the grammar -- filters, then ``or``/``and``/``not``, then
+    comparisons, then list literals -- and had to be kept in step with
+    ``_evaluate_simple_expression`` by hand.
+
+    That is what made this take several rounds: each round fixed one shape the
+    walk disagreed about (``inputs.a === inputs.b``, ``bogus == 'x'``, list
+    elements, filter arguments, a newline before ``and``) and nothing stopped the
+    next one. Reading the leaves off the evaluator removes the class rather than
+    another instance of it: the two cannot disagree about where the operands are
+    when only one of them decides.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return "an operand is empty"
+
+    for leaf in _collect_leaves(stripped):
+        reason = _unresolvable_leaf(leaf)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _wrapping_would_not_repair(core: str) -> str | None:
+    """Why wrapping *core* in ``{{ }}`` would not yield the expression intended.
+
+    ``None`` when it would. Each branch names something observable about the text
+    itself, deliberately not the interpolator path it will take: two earlier
+    versions of this message asserted an internal route -- the raw-close fallback --
+    and were wrong, because ``_is_single_expression`` accepts the wrapped form and
+    sends it down the typed fast path instead.
+    """
+    if not core:
+        return "there is no expression here to wrap"
+    if _has_unbalanced_quote(core):
+        return "the quote opened in it is never closed"
+    if _has_unbalanced_bracket(core):
+        return "its brackets do not balance"
+    if _has_incomplete_operand(core):
+        return "an operator in it is missing an operand"
+    unresolvable = _unresolvable_term(core)
+    if unresolvable is not None:
+        return unresolvable
+    rejected = _evaluator_rejects(core)
+    if rejected is not None:
+        return f"the evaluator rejects it ({rejected})"
+    return None
+
+
+def format_condition_remediation(condition: Any) -> str:
+    """The advice sentence for a condition that is never evaluated.
+
+    ``format_condition_correction`` wraps whatever it is handed, which is right for a
+    formatter but wrong to advertise as paste-ready when wrapping cannot repair the
+    input. Measured, each of these was being offered as the fix and each **inverts**
+    the condition instead:
+
+        "   "                    -> "{{ }}"                      True  -> False
+        {{ inputs.name == 'abc   -> "{{ inputs.name == 'abc }}"  True  -> False
+        inputs.name ==           -> "{{ inputs.name == }}"       True  -> False
+
+    The author is told the condition is always true, pastes the suggestion, and now
+    has an always-false one. Naming the fault beats handing back something that looks
+    authoritative and is not -- the same call already made for
+    ``condition_has_malformed_expression_block``, which offers no suggestion at all.
+    """
+    core = _strip_stray_delimiters(str(condition)).strip()
+    reason = _wrapping_would_not_repair(core)
+    if reason is None:
+        return "Wrap the expression: " + format_condition_correction(condition) + "."
+    return (
+        f"No correction is offered because {reason}: wrapping it as written would "
+        "produce a different expression from the one intended, and its result can "
+        "silently invert the condition rather than repair it. Complete the "
+        "expression, or use the literal true or false."
+    )

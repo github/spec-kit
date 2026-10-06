@@ -19,17 +19,69 @@ Searches all active catalogs for presets matching the query. Without a query, li
 
 ```bash
 specify preset add [<preset_id>]
+specify preset add <preset_id> --version <version>
 ```
 
-| Option           | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| `--dev <path>`   | Install from a local directory (for development)         |
-| `--from <url>`   | Install from a custom URL instead of the catalog         |
-| `--priority <N>` | Resolution priority (default: 10; lower = higher precedence) |
+| Option                | Description                                                          |
+| --------------------- | -------------------------------------------------------------------- |
+| `--dev <path>`        | Install from a local directory (for development)                     |
+| `--from <url>`        | Install from a custom URL instead of the catalog                     |
+| `--version <version>` | Select an exact release from the winning catalog (ID installs only) |
+| `--priority <N>`      | Resolution priority (default: 10; lower = higher precedence)        |
 
-Installs a preset from the catalog, a URL, or a local directory. Preset commands are automatically registered with the currently installed AI coding agent integration.
+Installs a preset from the catalog, a URL, or a local directory. Preset commands
+are automatically registered with supported active AI coding agent integrations.
+The generic integration currently delivers extension invocations but does not
+register preset command or skill overrides.
+`--version` cannot be combined with `--from` or `--dev`. Direct URL installs
+remain independent of catalog lookup. Without `--version`, installation still
+selects the advertised current release (or the locally bundled preset). A
+requested release absent from the winning catalog is an error; lower-priority
+catalogs cannot supply it. Discovery-only catalogs cannot install any release.
+Version-specific catalog installs verify the selected archive's `preset.yml` ID
+and version before modifying installed presets. Historical releases require a
+SHA-256 digest, which is also verified on download; a legacy current release
+may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
+
+## Update a Preset
+
+```bash
+specify preset update <preset_id> [--from <url>] [--dev <path>] [--priority <N>]
+```
+
+Replaces an already-installed preset by running the normal `preset remove`
+operation first and then the normal `preset add` operation. `--from`, `--dev`,
+and `--priority` are forwarded to `preset add`; `--from` and `--dev` cannot be
+combined. Without an explicit source, add resolves the preset through its usual
+bundled and catalog lookup.
+
+Update is deliberately destructive. Arguments are checked before anything is
+removed: `--from` and `--dev` cannot be combined, `--priority` must be 1 or
+higher, and the preset must already be installed. Beyond those checks the
+replacement source itself is not inspected in advance. If removal succeeds but
+replacement installation fails, the previous preset has already been removed.
+The command reports a copy-pastable `specify preset add` retry command,
+including the replacement source and priority. On Windows, the reported command
+is explicitly formatted for PowerShell. There is no source pre-flight,
+version comparison, manifest diff, staging, rollback, automatic repair, or
+recovery transaction. A missing or invalid replacement source can therefore
+leave the preset removed. With
+`--from` or `--dev`, the replacement manifest's `preset.id` is not checked
+against the requested ID before removal; a source declaring a different ID may
+therefore install a different preset after the requested one has been removed.
+
+A successful update follows normal remove and add behavior: it re-enables the
+preset, recreates `installed_at`, removes local modifications tracked by the
+preset, and treats an explicit `--from` or `--dev` as an intentional source
+change. If constitution synchronization is enabled, both normal reconciliation
+passes run. If add fails after removal, a generated constitution may remain
+reconciled against the stack without the removed preset. The generated-file
+guard still protects a hand-edited `.specify/memory/constitution.md`. No
+update-specific constitution optimization is applied, so the normal remove and
+add passes may rewrite the generated constitution even when the final resolved
+content is unchanged.
 
 ## Remove a Preset
 
@@ -43,17 +95,38 @@ Removes an installed preset and cleans up its registered commands.
 
 ```bash
 specify preset list
+specify preset list --json
 ```
 
 Lists installed presets with their versions, descriptions, template counts, and current status.
+
+`--json` writes a JSON array to stdout. Every item has the keys `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, `source`, and
+`provides`. `author` is `null` when absent; `source` is `{"kind":"local"}`
+for local, legacy, or malformed provenance, or
+`{"kind":"catalog","catalog":"<catalog-name>"}` for a valid catalog source.
+Preset `provides` contains `commands`, `templates`, and `scripts` counts. On
+success, `--json` writes exactly one array to stdout and exits 0. A runtime
+failure after option parsing writes exactly one `{"error":"..."}` object to
+stderr and exits 1. If parsing raises a usage error and the raw `--json` token
+is present, it writes that JSON error object to stderr and preserves the usage
+exit code (normally 2). Without `--json`, including for help, the existing
+human-readable behavior is unchanged.
+
+Presets are printed in **resolution/precedence order**: the highest-precedence preset (lowest priority number) is listed first, and ties on priority are broken alphabetically by preset id. This matches the order used when composing commands and resolving templates, so the top entry is the one that wins for overlapping files.
 
 ## Preset Info
 
 ```bash
 specify preset info <preset_id>
+specify preset info <preset_id> --versions
 ```
 
 Shows detailed information about an installed or available preset, including its templates, metadata, and tags.
+`--versions` lists the advertised current version followed by historical
+catalog versions, even for discovery-only entries; listing does not make
+them installable. This view consults the catalog rather than the installed
+preset.
 
 ## Resolve a File
 
@@ -84,6 +157,8 @@ Changes the resolution priority of an installed preset. Lower numbers take prece
 
 Preset catalogs control where `search` and `add` look for presets. Catalogs are checked in priority order (lower number = higher precedence).
 
+> **A project's `.specify/preset-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before installing a preset in an unfamiliar project, run `specify preset catalog list` and inspect any catalog marked install-allowed — a project supplying that config, or marking a catalog install-allowed, is not evidence its presets were reviewed. Only mark a catalog `install_allowed` for one you authored or have vetted yourself; leave unfamiliar and community catalogs discovery-only.
+
 ### List Catalogs
 
 ```bash
@@ -102,10 +177,12 @@ specify preset catalog add <url>
 | -------------------------------------------- | -------------------------------------------------- |
 | `--name <name>`                              | Required. Unique name for the catalog              |
 | `--priority <N>`                             | Priority (default: 10; lower = higher precedence)  |
-| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only) |
+| `--install-allowed / --no-install-allowed`   | Whether presets can be installed from this catalog (default: discovery only). Only enable for a catalog you own and vet; never enable it for an unvetted public catalog. |
 | `--description <text>`                       | Optional description                               |
 
 Adds a catalog to the project's `.specify/preset-catalogs.yml`.
+
+Re-adding the same named catalog with identical settings succeeds without changing the configuration; different settings are rejected.
 
 ### Remove a Catalog
 
@@ -123,6 +200,60 @@ Catalogs are resolved in this order (first match wins):
 2. **Project config** — `.specify/preset-catalogs.yml`
 3. **User config** — `~/.specify/preset-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
+
+### Versioned catalog entries
+
+Existing single-version entries remain valid: the top-level `version`,
+`download_url`, optional `sha256`, and `requires` describe the advertised
+current release. To retain older installable releases, add a `releases`
+mapping keyed by version. Each historical record needs its own archive
+`download_url` (HTTPS, or loopback HTTP for local development) and 64-digit
+SHA-256 digest (optionally `sha256:`-prefixed, with surrounding whitespace);
+other algorithm prefixes are rejected. Optional `requires` and `provides`
+apply to that release instead of inheriting the current release's fields.
+Other shared metadata, such as the name and description, is inherited.
+Version keys must be distinct, including PEP 440-equivalent spellings, and
+cannot repeat the current version.
+Duplicate JSON keys are rejected before parsing can discard a release record.
+Historical `requires.extensions` entries follow the preset manifest format:
+extension IDs or mappings with an `id`, optional version constraint, and
+optional boolean `required` flag.
+For an ID lookup, catalogs are checked in priority order and stop at the
+winning entry. Invalid or oversized payloads encountered before that entry
+fail resolution rather than allowing a lower-priority entry to bypass its
+installation policy. A malformed lower-priority source cannot block a valid
+higher-priority match; searches across all sources still fail on malformed
+catalogs. A non-object entry fails exact lookup for its own ID but is skipped
+during all-catalog searches, which retain other valid entries. Unreachable
+catalogs can still be skipped when another source is readable.
+If every source fails, ID lookup (including `info --versions`) reports the
+fetch error instead of claiming the preset has no catalog versions. Search
+validates historical releases on each winning entry; invalid release history
+from a shadowed source does not block its valid higher-priority replacement.
+
+```json
+{
+  "presets": {
+    "my-preset": {
+      "name": "My Preset",
+      "version": "2.0.0",
+      "download_url": "https://example.com/my-preset-2.0.0.zip",
+      "sha256": "<64 hex digits for the current archive>",
+      "releases": {
+        "1.5.0": {
+          "download_url": "https://example.com/my-preset-1.5.0.zip",
+          "sha256": "<64 hex digits for the older archive>",
+          "requires": {"speckit_version": ">=0.8.0"}
+        }
+      }
+    }
+  }
+}
+```
+
+The bundled community catalog stays discovery-only and need not publish
+release histories. Bundle pin resolution is a separate capability; adding
+these preset records alone does not make bundle pins installable.
 
 Example `.specify/preset-catalogs.yml`:
 

@@ -151,10 +151,11 @@ To submit your extension to the community catalog, file a new issue using the **
 
 ### What Happens After You Submit
 
-1. Your issue is automatically labeled and assigned to a maintainer for review
-2. A maintainer verifies that the catalog entry is complete and correctly formatted
-3. Once approved, the maintainer adds your extension to `extensions/catalog.community.json` and the Community Extensions table in the README
-4. Your extension becomes discoverable via `specify extension search`
+1. GitHub applies the `triage-must-have` verdict when the issue is opened through the Extension Submission form. This intake automation is specific to extension submissions and does not change the manual triage rubric for other issues.
+2. A maintainer reviews the issue during issue triage and applies the separate `extension-submission` label, which starts the automated catalog validation. On this public repository, contributors cannot apply that label themselves, so there is nothing to label or re-request — the issue simply waits in triage.
+3. The automated workflow validates the submission and, when validation passes, updates `extensions/catalog.community.json` and `docs/community/extensions.md` in a draft pull request
+4. A maintainer reviews the generated pull request and merges it when approved
+5. Your extension becomes discoverable via `specify extension search`
 
 ### What Maintainers Check
 
@@ -274,8 +275,7 @@ When releasing a new version:
 A: The main catalog is for public extensions only. For private extensions:
 
 - Host your own catalog.json file
-- Users add your catalog: `specify extension add-catalog https://your-domain.com/catalog.json`
-- Not yet implemented - coming in Phase 4
+- In a Spec Kit project, users add your catalog: `specify extension catalog add https://your-domain.com/catalog.json --name private-catalog`
 
 ### Q: How long does review take?
 
