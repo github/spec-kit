@@ -83,6 +83,38 @@ def _select_pinned_release(
     return selected, selected["version"]
 
 
+def _pinned_catalog_version(
+    kind: str, component: ComponentRef, lookup, select_release
+) -> str | None:
+    """Exact catalog release a delegated ``add --version`` must install.
+
+    Workflow and step installs delegate to their ``add`` commands, which select
+    and verify the release themselves; this only decides which version to ask
+    for. ``None`` installs the advertised release: no pin, an entry that
+    advertises no version, or a pin naming the advertised release itself (so
+    legacy single-version entries keep their existing install path, which
+    ``--version`` would hold to stricter digest requirements). A pin missing
+    from the winning entry fails here with the bundle-specific error. If the
+    catalog cannot be read, the pin is still forwarded so the command enforces
+    it or reports the failure.
+    """
+    if not component.version:
+        return None
+    try:
+        info = lookup()
+        if not info:
+            return component.version
+        selected, version = _select_pinned_release(
+            kind, component, info, select_release
+        )
+    except BundlerError:
+        raise
+    except Exception:  # noqa: BLE001 - the delegated command reports catalog errors
+        return component.version
+    # ``select_release`` returns the entry itself for the advertised release.
+    return None if selected is info else version
+
+
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     """Best-effort read of a bundled asset's declared version from its manifest.
 
@@ -435,33 +467,29 @@ class _WorkflowKindManager:
                 "access is disabled. Installing or refreshing this component "
                 "requires network access; re-run without --offline."
             )
-        self._assert_pinned_version(component)
+        from ..workflows.catalog import WorkflowCatalog
+        from ..workflows.catalog._versions import select_release
+
+        version = _pinned_catalog_version(
+            "Workflow",
+            component,
+            lambda: WorkflowCatalog(self._root).get_workflow_info(component.id),
+            select_release,
+        )
         from .. import workflow_add
 
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(component.id, dev=False, from_url=None),
+                lambda: workflow_add(
+                    component.id, dev=False, from_url=None, version=version
+                ),
             )
 
     def refresh(self, component: ComponentRef) -> None:
         # workflow_add is idempotent for already-installed workflows; delegate
         # to the standard install path which handles version refresh correctly.
         self.install(component)
-
-    def _assert_pinned_version(self, component: ComponentRef) -> None:
-        if not component.version:
-            return
-        try:
-            from ..workflows.catalog import WorkflowCatalog
-
-            info = WorkflowCatalog(self._root).get_workflow_info(component.id)
-        except Exception:  # noqa: BLE001 - catalog unreachable: cannot enforce
-            return
-        if info:
-            _assert_pinned_version(
-                "Workflow", component.id, component.version, info.get("version")
-            )
 
     def remove(self, component: ComponentRef) -> None:
         from .. import workflow_remove
@@ -497,12 +525,26 @@ class _StepKindManager:
                 "is disabled. Installing or refreshing this component requires "
                 "network access; re-run without --offline."
             )
+        self._install(component, self._pinned_version(component))
+
+    def _pinned_version(self, component: ComponentRef) -> str | None:
+        from ..workflows.catalog import StepCatalog
+        from ..workflows.step.catalog._versions import select_release
+
+        return _pinned_catalog_version(
+            "Step",
+            component,
+            lambda: StepCatalog(self._root).get_step_info(component.id),
+            lambda info, version: select_release(info, component.id, version),
+        )
+
+    def _install(self, component: ComponentRef, version: str | None) -> None:
         from .. import workflow_step_add
 
         with _chdir(self._root):
             _delegate_command(
                 "install", f"step '{component.id}'",
-                lambda: workflow_step_add(component.id),
+                lambda: workflow_step_add(component.id, version=version),
             )
 
     def refresh(self, component: ComponentRef) -> None:
@@ -516,6 +558,9 @@ class _StepKindManager:
         import shutil
         import tempfile
 
+        # Resolve the pin before removing anything: a pinned release missing
+        # from the catalog must leave the installed step untouched.
+        version = self._pinned_version(component)
         step_dir = self._registry.steps_dir / component.id
         metadata = self._registry.get(component.id)
         backup_dir = Path(tempfile.mkdtemp(prefix="speckit-step-refresh-")) / component.id
@@ -524,7 +569,7 @@ class _StepKindManager:
                 shutil.copytree(step_dir, backup_dir)
             self.remove(component)
             try:
-                self.install(component)
+                self._install(component, version)
             except BundlerError:
                 if backup_dir.exists():
                     shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)

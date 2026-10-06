@@ -70,17 +70,17 @@ def test_offline_step_refuses_without_network(tmp_path: Path):
 def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monkeypatch):
     import specify_cli
 
-    calls: list[tuple[str, Path]] = []
+    calls: list[tuple[str, str | None, Path]] = []
 
-    def _add(step_id: str) -> None:
-        calls.append((step_id, Path.cwd()))
+    def _add(step_id: str, version: str | None = None) -> None:
+        calls.append((step_id, version, Path.cwd()))
 
     monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
     manager = _StepKindManager(tmp_path, allow_network=True)
 
     manager.install(_component("steps", "catalog-step"))
 
-    assert calls == [("catalog-step", tmp_path)]
+    assert calls == [("catalog-step", None, tmp_path)]
 
 
 def test_default_installer_threads_allow_network(tmp_path: Path):
@@ -837,3 +837,232 @@ def test_extension_pin_refuses_archive_declaring_another_version(
         manager.install(ComponentRef(kind="extensions", id="my-ext", version="0.4.12"))
     assert not manager.is_installed(ComponentRef(kind="extensions", id="my-ext"))
     assert not zip_path.exists()
+
+
+def _workflow_entry(wid: str) -> dict:
+    """A workflow catalog entry advertising 0.5.1 that keeps 0.4.12."""
+    return {
+        "id": wid,
+        "version": "0.5.1",
+        "url": f"https://example.com/{wid}/v0.5.1/workflow.yml",
+        "sha256": "b" * 64,
+        "releases": {
+            "0.4.12": {
+                "url": f"https://example.com/{wid}/v0.4.12/workflow.yml",
+                "sha256": _HISTORICAL_SHA,
+            }
+        },
+        "_install_allowed": True,
+    }
+
+
+def _step_entry(sid: str) -> dict:
+    """A step catalog entry advertising 0.5.1 that keeps 0.4.12."""
+    digests = {"step.yml": "b" * 64, "__init__.py": "c" * 64}
+    return {
+        "id": sid,
+        "version": "0.5.1",
+        "url": f"https://example.com/{sid}/v0.5.1/step.yml",
+        "init_url": f"https://example.com/{sid}/v0.5.1/__init__.py",
+        "sha256": digests,
+        "releases": {
+            "0.4.12": {
+                "url": f"https://example.com/{sid}/v0.4.12/step.yml",
+                "init_url": f"https://example.com/{sid}/v0.4.12/__init__.py",
+                "sha256": {"step.yml": _HISTORICAL_SHA, "__init__.py": "d" * 64},
+            }
+        },
+        "_install_allowed": True,
+    }
+
+
+def _patch_workflow_add(monkeypatch, entry: dict | None) -> list:
+    import specify_cli
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    lookups: list = []
+
+    def _info(_self, wid, version=None):
+        lookups.append((wid, version))
+        return entry
+
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
+    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", _info)
+    calls: list = []
+
+    def _workflow_add(wid, dev=None, from_url=None, version=None):
+        calls.append((wid, version))
+
+    monkeypatch.setattr(specify_cli, "workflow_add", _workflow_add)
+    return calls
+
+
+def _patch_step_add(monkeypatch, entry: dict | None) -> list:
+    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda _self, _sid, version=None: entry
+    )
+    calls: list = []
+
+    def _step_add(sid, version=None):
+        calls.append((sid, version))
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _step_add)
+    return calls
+
+
+def test_workflow_pin_installs_historical_catalog_release(tmp_path: Path, monkeypatch):
+    """A pin older than the advertised workflow release installs that exact
+    release through ``workflow add --version`` instead of refusing (#4719)."""
+    calls = _patch_workflow_add(monkeypatch, _workflow_entry("wf-a"))
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="workflows", id="wf-a", version="0.4.12"))
+
+    assert calls == [("wf-a", "0.4.12")]
+
+
+def test_workflow_pin_missing_from_catalog_refuses_before_install(
+    tmp_path: Path, monkeypatch
+):
+    calls = _patch_workflow_add(monkeypatch, _workflow_entry("wf-a"))
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    with pytest.raises(BundlerError) as exc:
+        manager.install(ComponentRef(kind="workflows", id="wf-a", version="0.3.0"))
+
+    message = str(exc.value)
+    assert "pinned to version 0.3.0" in message
+    assert "no release for that version" in message
+    assert "advertises 0.5.1" in message
+    assert calls == []
+
+
+def test_unpinned_workflow_installs_advertised_release(tmp_path: Path, monkeypatch):
+    calls = _patch_workflow_add(monkeypatch, _workflow_entry("wf-a"))
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="workflows", id="wf-a"))
+
+    assert calls == [("wf-a", None)]
+
+
+def test_workflow_entry_without_version_cannot_enforce_pin(tmp_path: Path, monkeypatch):
+    entry = {"id": "wf-a", "url": "https://example.com/wf-a/workflow.yml"}
+    calls = _patch_workflow_add(monkeypatch, entry)
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="workflows", id="wf-a", version="0.4.12"))
+
+    assert calls == [("wf-a", None)]
+
+
+def test_workflow_pin_forwarded_when_catalog_lookup_fails(tmp_path: Path, monkeypatch):
+    """An unreadable catalog must not drop the pin: ``workflow add`` still
+    receives it, so it can never install an unpinned release instead."""
+    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogError
+
+    calls = _patch_workflow_add(monkeypatch, None)
+
+    def _boom(_self, _wid, version=None):
+        raise WorkflowCatalogError("catalog unreachable")
+
+    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", _boom)
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="workflows", id="wf-a", version="0.4.12"))
+
+    assert calls == [("wf-a", "0.4.12")]
+
+
+def test_step_pin_installs_historical_catalog_release(tmp_path: Path, monkeypatch):
+    """Step pins were ignored entirely; they now select the exact release."""
+    calls = _patch_step_add(monkeypatch, _step_entry("my-step"))
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="steps", id="my-step", version="0.4.12"))
+
+    assert calls == [("my-step", "0.4.12")]
+
+
+def test_step_pin_missing_from_catalog_refuses_before_install(
+    tmp_path: Path, monkeypatch
+):
+    calls = _patch_step_add(monkeypatch, _step_entry("my-step"))
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    with pytest.raises(BundlerError, match="no release for that version"):
+        manager.install(ComponentRef(kind="steps", id="my-step", version="0.3.0"))
+
+    assert calls == []
+
+
+def test_unpinned_step_installs_advertised_release(tmp_path: Path, monkeypatch):
+    calls = _patch_step_add(monkeypatch, _step_entry("my-step"))
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="steps", id="my-step"))
+
+    assert calls == [("my-step", None)]
+
+
+def test_step_refresh_with_missing_pin_keeps_installed_step(tmp_path: Path, monkeypatch):
+    """The pin is resolved before refresh removes the installed step, so a
+    pinned release missing from the catalog leaves the step untouched."""
+    calls = _patch_step_add(monkeypatch, _step_entry("my-step"))
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    removed: list = []
+    monkeypatch.setattr(manager, "is_installed", lambda _component: True)
+    monkeypatch.setattr(manager, "remove", lambda component: removed.append(component))
+
+    with pytest.raises(BundlerError, match="no release for that version"):
+        manager.refresh(ComponentRef(kind="steps", id="my-step", version="0.3.0"))
+
+    assert removed == []
+    assert calls == []
+
+
+def test_step_refresh_reinstalls_pinned_release(tmp_path: Path, monkeypatch):
+    calls = _patch_step_add(monkeypatch, _step_entry("my-step"))
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    monkeypatch.setattr(manager, "is_installed", lambda _component: True)
+    monkeypatch.setattr(manager, "remove", lambda _component: None)
+
+    manager.refresh(ComponentRef(kind="steps", id="my-step", version="0.4.12"))
+
+    assert calls == [("my-step", "0.4.12")]
+
+
+@pytest.mark.parametrize("pin", ["0.5.1", "0.5.1.0"])
+def test_workflow_pin_on_advertised_release_uses_current_install_path(
+    tmp_path: Path, monkeypatch, pin: str
+):
+    calls = _patch_workflow_add(monkeypatch, _workflow_entry("wf-a"))
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="workflows", id="wf-a", version=pin))
+
+    assert calls == [("wf-a", None)]
+
+
+def test_legacy_step_entry_pinned_to_advertised_version_still_installs(
+    tmp_path: Path, monkeypatch
+):
+    """A single-version step entry without digests must keep installing when
+    the pin names its advertised version: ``step add --version`` would require
+    SHA-256 digests the legacy entry never published."""
+    entry = {
+        "id": "my-step",
+        "version": "1.0.0",
+        "url": "https://example.com/my-step/step.yml",
+        "_install_allowed": True,
+    }
+    calls = _patch_step_add(monkeypatch, entry)
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+
+    manager.install(ComponentRef(kind="steps", id="my-step", version="1.0.0"))
+
+    assert calls == [("my-step", None)]

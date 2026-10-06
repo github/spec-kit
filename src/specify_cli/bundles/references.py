@@ -61,29 +61,73 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
     return False
 
 
-def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | None:
-    """Return True/False if a catalog could be consulted, or None on failure."""
+def _resolved_in_catalog(root: Path, component: ComponentRef) -> dict | bool | None:
+    """Return the winning catalog entry, False if absent, or None on failure."""
     kind = component.kind
     try:
         if kind == "presets":
             from ..presets import PresetCatalog
 
-            return PresetCatalog(root).get_pack_info(component.id) is not None
-        if kind == "extensions":
+            entry = PresetCatalog(root).get_pack_info(component.id)
+        elif kind == "extensions":
             from ..extensions import ExtensionCatalog
 
-            return ExtensionCatalog(root).get_extension_info(component.id) is not None
-        if kind == "workflows":
+            entry = ExtensionCatalog(root).get_extension_info(component.id)
+        elif kind == "workflows":
             from ..workflows.catalog import WorkflowCatalog
 
-            return WorkflowCatalog(root).get_workflow_info(component.id) is not None
-        if kind == "steps":
+            entry = WorkflowCatalog(root).get_workflow_info(component.id)
+        elif kind == "steps":
             from ..workflows.catalog import StepCatalog
 
-            return StepCatalog(root).get_step_info(component.id) is not None
+            entry = StepCatalog(root).get_step_info(component.id)
+        else:
+            return None
     except Exception:  # noqa: BLE001 - catalog may be unreachable/misconfigured
         return None
-    return None
+    return entry if entry is not None else False
+
+
+def _select_release(component: ComponentRef, entry: dict, version: str):
+    kind = component.kind
+    if kind == "presets":
+        from ..presets._catalog_versions import select_release
+
+        return select_release(entry, version)
+    if kind == "extensions":
+        from ..extensions._catalog_versions import select_release
+
+        return select_release(entry, version)
+    if kind == "workflows":
+        from ..workflows.catalog._versions import select_release
+
+        return select_release(entry, version)
+    from ..workflows.step.catalog._versions import select_release
+
+    return select_release(entry, component.id, version)
+
+
+def _missing_pinned_release(component: ComponentRef, entry: dict) -> str | None:
+    """Error when the winning catalog entry lacks the release the pin names.
+
+    Mirrors ``bundle install``: an entry advertising no version cannot enforce
+    a pin, so only entries that advertise one are checked.
+    """
+    pinned = component.version
+    advertised = entry.get("version")
+    if not pinned or advertised is None or not str(advertised).strip():
+        return None
+    label = f"{component.kind[:-1]} '{component.id}'"
+    try:
+        selected = _select_release(component, entry, pinned)
+    except Exception as exc:  # noqa: BLE001 - malformed release records
+        return f"{label} has an invalid catalog entry: {exc}"
+    if selected is not None:
+        return None
+    return (
+        f"{label} is pinned to version {pinned}, but its catalog has no release "
+        f"for that version (it advertises {str(advertised).strip()})."
+    )
 
 
 def make_reference_checker(
@@ -105,8 +149,8 @@ def make_reference_checker(
 
         if allow_network:
             in_catalog = _resolved_in_catalog(project_root, component)
-            if in_catalog is True:
-                return None
+            if isinstance(in_catalog, dict):
+                return _missing_pinned_release(component, in_catalog)
             if in_catalog is False:
                 return (
                     f"{component.kind[:-1]} '{component.id}' is not bundled, "
