@@ -594,6 +594,9 @@ my-step/
 └── helpers.py      # optional nested modules and data files
 ```
 
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
+
 `step.yml` declares the step's identity. `step.type_key` must exactly match the
 `<step_id>` passed on the command line — the ID is never inferred from package
 content:
