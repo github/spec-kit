@@ -135,11 +135,21 @@ def install_bundle(
         if r.bundle_id != plan.bundle_id
         for c in r.contributed_components
     }
+    other_pins: dict[tuple[str, str], set[str]] = {}
+    for record in records:
+        if record.bundle_id == plan.bundle_id:
+            continue
+        for component in record.required_components:
+            if component.version:
+                other_pins.setdefault((component.kind, component.id), set()).add(
+                    component.version
+                )
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
     try:
         _check_installed_pins(
-            project_root, plan, installer, prior_ours, other_tracked, refresh=refresh
+            project_root, plan, installer, prior_ours, other_tracked,
+            other_pins, refresh=refresh,
         )
         for component in plan.components:
             key = (component.kind, component.id)
@@ -264,10 +274,11 @@ def _check_installed_pins(
     installer: PrimitiveInstaller,
     prior_ours: set[tuple[str, str]],
     other_tracked: set[tuple[str, str]],
+    other_pins: dict[tuple[str, str], set[str]],
     *,
     refresh: bool,
 ) -> None:
-    """Check installed pins before any mutation, including shared components."""
+    """Check installed pins and other bundles' requirements before mutation."""
     mismatches = []
     for component in plan.components:
         if component.source:
@@ -280,6 +291,24 @@ def _check_installed_pins(
                 "version. Pin this component before refreshing."
             )
         if not component.version:
+            pins = other_pins.get(key)
+            if pins:
+                installed = installer.is_installed(project_root, component)
+                actual = (
+                    installer.installed_version(project_root, component)
+                    if installed else None
+                )
+                if (
+                    (refresh and key in prior_ours)
+                    or not actual
+                    or any(not same_version(actual, pin) for pin in pins)
+                ):
+                    raise BundlerError(
+                        f"Cannot install or refresh unpinned {component.kind[:-1]} "
+                        f"'{component.id}': another bundle requires version "
+                        f"{', '.join(sorted(pins))}. Pin this component to a "
+                        "compatible version before installing or refreshing."
+                    )
             continue
         if not installer.is_installed(project_root, component):
             continue

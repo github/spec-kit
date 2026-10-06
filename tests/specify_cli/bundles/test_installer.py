@@ -117,6 +117,78 @@ def test_removal_preserves_component_required_but_not_owned_by_other_bundle(
     assert installer.remove_calls == []
 
 
+@pytest.mark.parametrize("actual", [None, "2.0.0"])
+def test_unpinned_install_cannot_bypass_unowned_bundle_pin(
+    tmp_path: Path, actual: str | None,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    assert load_records(tmp_path)[0].contributed_components == ()
+
+    if actual is None:
+        installer.installed.remove(key)
+        installer.versions.pop(key)
+    else:
+        installer.versions[key] = actual
+    unpinned = _step_bundle("unpinned")
+    with pytest.raises(BundlerError, match="unpinned.*shared.*requires"):
+        install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    assert installer.install_calls == []
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["pinned"]
+
+
+def test_unpinned_install_can_share_matching_unowned_requirement(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+
+    unpinned = _step_bundle("unpinned")
+    result = install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    assert result.skipped == unpinned.components
+    assert installer.install_calls == []
+    assert load_records(tmp_path)[1].contributed_components == ()
+    refreshed = install_bundle(
+        tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+    )
+    assert refreshed.skipped == unpinned.components
+    assert installer.refresh_calls == []
+
+
+def test_unpinned_refresh_cannot_change_unowned_bundle_pin(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+
+    owned = _step_bundle("owned", "1.0.0")
+    install_bundle(tmp_path, _plan(owned), installer, manifest=owned)
+    original_record = records_path(tmp_path).read_bytes()
+    unpinned = _step_bundle("owned")
+    with pytest.raises(BundlerError, match="unpinned.*shared.*requires"):
+        install_bundle(
+            tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+        )
+
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
 def test_owned_component_drift_is_rejected_without_refresh(tmp_path: Path):
     make_project(tmp_path)
     installer = FakeInstaller()
@@ -801,6 +873,16 @@ def _bundle(manifest_id, ext_ids, *, version="1.0.0"):
     data["provides"] = {
         "extensions": [{"id": e, "version": version} for e in ext_ids]
     }
+    return BundleManifest.from_dict(data)
+
+
+def _step_bundle(bundle_id: str, version: str | None = None) -> BundleManifest:
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    step = {"id": "shared"}
+    if version is not None:
+        step["version"] = version
+    data["provides"] = {"steps": [step]}
     return BundleManifest.from_dict(data)
 
 
