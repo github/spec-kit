@@ -3255,6 +3255,31 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="speckit-foo-bar-baz"):
             manager.install_from_directory(second, "0.1.0", register_commands=False)
 
+    def test_install_rejects_collision_with_extension_whose_manifest_is_unreadable(
+        self, temp_dir, project_dir
+    ):
+        """An installed extension whose manifest can't be read still has its
+        tracked command files on disk, so its registry names count."""
+        first = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.baz", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        manager.registry.update(
+            "foo-bar",
+            {"registered_commands": {"kiro-cli": ["speckit.foo-bar.baz"]}},
+        )
+        (manager.extensions_dir / "foo-bar" / "extension.yml").write_text(
+            "invalid: [", encoding="utf-8"
+        )
+        assert manager.get_extension("foo-bar") is None
+
+        with pytest.raises(ValidationError, match="extension 'foo-bar'"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
     def test_install_rejects_alias_that_hyphenates_to_another_command(
         self, temp_dir, project_dir
     ):

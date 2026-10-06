@@ -970,7 +970,24 @@ class TestIntegrationUpgradeDetailed:
         assert (commands / "speckit.foo-bar.baz.md").read_bytes() == bar_body.encode(
             "utf-8"
         )
-        assert not (project / ".qoder" / "skills" / "speckit-foo-bar-baz").exists()
+        skill = project / ".qoder" / "skills" / "speckit-foo-bar-baz" / "SKILL.md"
+        assert not skill.parent.exists()
+
+        # Removal deletes the skipped extension's old flat command too, and
+        # the remaining extension then migrates.
+        result = _run_in_project(
+            project, ["extension", "remove", "foo-bar", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+        assert not (commands / "speckit.foo-bar.baz.md").exists()
+        assert (commands / "speckit.foo.bar-baz.md").read_bytes() == foo_body.encode(
+            "utf-8"
+        )
+
+        result = _run_in_project(project, ["integration", "upgrade", "qodercli"])
+        assert result.exit_code == 0, result.output
+        assert "FOO-BODY" in skill.read_text(encoding="utf-8")
+        assert not (commands / "speckit.foo.bar-baz.md").exists()
 
     def test_upgrade_migrates_alias_that_hyphenates_to_its_own_command(
         self, tmp_path, monkeypatch

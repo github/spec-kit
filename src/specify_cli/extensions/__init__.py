@@ -1168,7 +1168,12 @@ class ExtensionManager:
         self,
         exclude_extension_id: Optional[str] = None,
     ) -> Dict[str, str]:
-        """Return registered command and alias names for installed extensions."""
+        """Return registered command and alias names for installed extensions.
+
+        An extension whose manifest can't be read contributes the names the
+        registry tracks for it, because its command files are still on disk
+        (#4797).
+        """
         installed_names: Dict[str, str] = {}
 
         for ext_id in self.registry.keys():
@@ -1177,6 +1182,16 @@ class ExtensionManager:
 
             manifest = self.get_extension(ext_id)
             if manifest is None:
+                metadata = self.registry.get(ext_id)
+                recorded = (
+                    metadata.get("registered_commands")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                if isinstance(recorded, dict):
+                    for names in recorded.values():
+                        for name in self._valid_name_list(names):
+                            installed_names.setdefault(name, ext_id)
                 continue
 
             for cmd in manifest.commands:
@@ -3577,6 +3592,15 @@ class ExtensionManager:
                         for agent_name in safe_commands
                     },
                 )
+                # Registration leaves an extension's old flat files in place
+                # when it skips the extension, and they live outside the
+                # registrar's directory for Qoder (#4797).
+                for agent_name, command_names in safe_commands.items():
+                    self._retire_legacy_flat_extension_commands(
+                        agent_name,
+                        self._valid_name_list(command_names),
+                        require_replacement=False,
+                    )
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
@@ -3868,6 +3892,8 @@ class ExtensionManager:
         self,
         agent_name: str,
         command_names: List[str],
+        *,
+        require_replacement: bool = True,
     ) -> List[Path]:
         """Remove old flat commands whose replacements were written.
 
@@ -3877,6 +3903,11 @@ class ExtensionManager:
         a command whose old file outlived an upgrade (the integration was
         inactive, or the extension disabled) is cleaned up when it is next
         registered (#2948).
+
+        Extension removal passes ``require_replacement=False``: the old files
+        go with the extension, including those registration left in place
+        because a command shares a file (``_shared_command_files``). A core
+        command's own old file is never removed.
         """
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
@@ -3919,11 +3950,13 @@ class ExtensionManager:
         if legacy_root is None or output_root is None or not legacy_root.is_dir():
             return []
 
+        core_names = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
         removed: List[Path] = []
         for command_name in command_names:
             if (
                 not isinstance(command_name, str)
                 or not command_name
+                or command_name in core_names
                 or not registrar._is_safe_command_name(command_name)
             ):
                 continue
@@ -3932,7 +3965,9 @@ class ExtensionManager:
                 agent_name, command_name, agent_config
             )
             replacement = output_root / f"{output_name}{agent_config['extension']}"
-            if replacement.is_symlink() or not replacement.is_file():
+            if require_replacement and (
+                replacement.is_symlink() or not replacement.is_file()
+            ):
                 continue
 
             legacy_file = legacy_root / f"{command_name}{legacy_extension}"
