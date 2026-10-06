@@ -168,7 +168,7 @@ If your bundle references components from non-default catalogs, document those c
 
 ### What Happens After You Submit
 
-1. GitHub applies the `triage-must-have` verdict when the issue is opened through the Bundle Submission form. This intake automation is specific to bundle submissions and does not change the manual triage rubric for other issues.
+1. GitHub applies the `triage-must-have` verdict when the issue is opened through the Bundle Submission form. Bundle submissions join extension and preset submissions in using this intake automation; the manual triage rubric for other issues remains unchanged.
 2. A maintainer reviews the issue during issue triage and applies the separate `bundle-submission` label, which starts the automated catalog validation. On this public repository, contributors cannot apply that label themselves, so there is nothing to label or re-request — the issue simply waits in triage.
 3. The automated workflow validates the submission and, when validation passes, updates `bundles/catalog.community.json` and `docs/community/bundles.md` in a draft pull request
 4. A maintainer reviews the generated pull request and merges it when approved
