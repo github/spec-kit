@@ -90,7 +90,7 @@ _command_init_rendering.py
 ```
 
 The leading underscore marks the module as private implementation. The
-`command_update` portion groups it with the registered handler in searches and
+`command_init` portion groups it with the registered handler in searches and
 file listings. The phase suffix communicates its ownership.
 
 Private phase modules must not register additional CLI commands. The public
@@ -198,8 +198,9 @@ re-exports the command symbols for compatibility.
 
 Do not create a nested directory for an implementation phase that is not a CLI
 subcommand. For example, an `update/` directory would incorrectly suggest an
-`extension update ...` subcommand group. Use `_command_update_<phase>.py`
-instead.
+`extension update ...` subcommand group. Use `_command_update_<phase>.py` for
+a CLI-private phase and `_operation_update_<phase>.py` for semantic validation,
+planning, mutation, rollback, or other behavior shared with another adapter.
 
 ## Registration
 

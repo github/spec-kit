@@ -335,9 +335,14 @@ The invocation follows these rules:
   explicitly.
 - Perform preliminary policy checks without filesystem access, then resolve
   the canonical project root under authorized `local-read`.
-- Re-check canonical allowed-root containment after resolution and reject
-  escapes with a structured policy error.
-- Pass only the authorized resolved project root through operation phases.
+- Re-check canonical allowed-root containment after resolution as an admission
+  check.
+- Pass the authorized root and root-bound filesystem interface through
+  operation phases.
+- Enforce containment at every descendant access with descriptor-/handle-based
+  no-follow traversal or an equivalent fail-closed platform mechanism; do not
+  rely on the one root check to prevent later symlink, junction, or path-swap
+  escapes.
 - Do not infer the project from an unrelated server process state after the
   invocation begins.
 
@@ -358,13 +363,15 @@ MCP operations are always non-interactive:
   `confirmation_required` error explaining which field must be supplied.
 
 Machine mode is not consent. An MCP call, `--json`, `--non-interactive`, a
-host confirmation dialog, or an authorized capability set does not imply:
+host confirmation dialog, or authorization of `local-read`, `project-write`,
+or `execution` does not imply:
 
 - `force=true`.
 - Trust of an external URL or downloaded executable content.
 - Permission to overwrite user-modified files.
 - Permission to leave the declared project root.
 - Permission to execute a workflow, hook, installer, or arbitrary command.
+- Permission for a child process to use unrestricted host access.
 
 Consent must be explicit in the command request and valid under the active
 access policy. MCP annotations and host UI are advisory; the server still
@@ -379,10 +386,17 @@ is not sufficient. Examples:
 
 ```text
 version       -> {local-read}
-check         -> {local-read, execution}
-workflow.run  -> {local-read, project-write, execution}
-self.upgrade  -> {local-read, execution, self-modifying}
+check         -> {local-read, execution, unrestricted-host-execution}
+workflow.run  -> {local-read, project-write, execution,
+                  unrestricted-host-execution}
+self.upgrade  -> {local-read, execution, unrestricted-host-execution,
+                  self-modifying}
 ```
+
+These examples conservatively classify their child processes as using ambient
+host privileges. An implementation may omit `unrestricted-host-execution` only
+when an enforceable sandbox contains the child within its authorized
+filesystem, network, environment, and subprocess boundaries.
 
 `read-only` is a derived description, not an authorizable capability. A
 request is read-only only when it requires no `project-write`, `execution`, or
@@ -399,9 +413,14 @@ default policy is conservative:
 - `local-read` is authorized.
 - `project-write`, `execution`, and `self-modifying` require explicit
   authorization.
-- Filesystem access is limited to host-provided roots or, when none are
-  provided, the server launch working directory.
-- Network access is denied unless explicitly enabled.
+- `unrestricted-host-execution` requires a separate explicit authorization and
+  remains default-deny.
+- In-process filesystem access is limited to host-provided roots or, when none
+  are provided, the server launch working directory, with the boundary enforced
+  at each access.
+- Server-managed and sandboxed network access is denied unless explicitly
+  enabled. An authorized unrestricted host child is a disclosed broad
+  exception, not a network-confined execution mode.
 - External-source trust is separately controlled and remains default-deny.
 
 Tool annotations should conservatively reflect the full declared capability
@@ -416,6 +435,13 @@ An operation must not omit a capability merely because the path is rare,
 optional, expected to be idempotent, or combined with a more powerful
 capability. MCP enforces the shared operation's static and request-specific
 declarations; it does not infer or reduce them independently.
+
+An MCP execution request must use a host sandbox that enforces its authorized
+filesystem, network, environment, and subprocess boundaries. If the
+implementation launches a child with ambient server-user access instead, the
+operation descriptor and request-specific capability calculation must require
+`unrestricted-host-execution`. The server must deny the request when that
+separate grant is absent; setting cwd inside the project is not confinement.
 
 ## Trust, confirmation, and network responsibilities
 
@@ -505,6 +531,9 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify structured warnings and tool errors.
 - Verify access-policy, trust, timeout, cancellation, and output-budget
   failures.
+- Verify descendant filesystem escapes are rejected at the point of access.
+- Verify unsandboxed child execution requires
+  `unrestricted-host-execution` and never occurs as a fallback.
 
 ### Inventory tests
 
@@ -592,7 +621,8 @@ project_scope: required
 
 The request contains an optional project directory. After authorization,
 project resolution produces a canonical root in the authorized operation
-context and re-checks allowed-root containment. `_operation_list.py` uses
+context, re-checks allowed-root containment, and uses the root-bound filesystem
+interface for every descendant access. `_operation_list.py` uses
 `ArtifactCatalog` and returns typed artifact rows. The CLI adapter preserves
 its JSON stream contract; the MCP adapter exposes the rows through its output
 schema and never captures CLI stdout. Invocation output budgets must produce
@@ -629,7 +659,8 @@ Contract:
 operation_id: init
 cli_path: specify init
 mcp_tool_name: specify_init
-capabilities: [local-read, project-write, execution]
+capabilities: [local-read, project-write, execution,
+               unrestricted-host-execution]
 network_access: optional
 project_scope: creates-target
 ```
@@ -640,6 +671,11 @@ never prompts and never turns its machine context into force or trust. The
 shared operation validates inputs, builds a plan, applies transactional
 changes, and returns created/updated paths plus structured warnings. The CLI
 adapter may gather interactive choices before constructing the same request.
+
+`init` tool checks launch host binaries, so this example conservatively
+requires `unrestricted-host-execution`. A sandboxed implementation may omit
+that capability, but it must not infer the grant from `execution` or silently
+fall back when a sandbox is unavailable.
 
 If the target is non-empty and `force` is false, both adapters receive the same
 semantic confirmation-required failure. The CLI may respond by prompting and

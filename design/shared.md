@@ -212,7 +212,10 @@ authorized. Invocation follows this order:
 5. Under authorized `local-read`, the shared operation resolves the canonical
    project or target root, re-checks allowed-root containment, and performs
    state-dependent validation.
-6. The shared operation performs side effects and returns its typed outcome.
+6. The shared operation performs every filesystem access through the
+   authorized root-bound filesystem boundary.
+7. The shared operation performs its side effects and returns its typed
+   outcome.
 
 Capability-free validation covers types, enums, mutually exclusive fields,
 required combinations, and similar pure invariants. State-dependent
@@ -222,9 +225,9 @@ consulting catalogs, inspecting host tools, and other I/O.
 The computed requirements must conservatively cover every path reachable from
 the pure validated request. Canonical resolution can inspect the filesystem
 and follow symlinks, so it must not occur before authorization. The
-post-resolution containment check prevents an unresolved path that appeared
-allowed from escaping through a symlink. Stateful validation must not discover
-and exercise an additional unauthorized capability.
+post-resolution containment check is an admission check, not continuing proof
+of confinement. Stateful validation must not discover and exercise an
+additional unauthorized capability.
 
 ## Typed outcome contract
 
@@ -314,17 +317,45 @@ validates the canonical root and constructs:
 ```text
 AuthorizedOperationContext
 ├── invocation: PreAuthorizationContext
-└── project_root
+├── project_root
+└── filesystem: RootedFilesystem
 ```
 
 `project_root` is optional for process-scoped operations and represents the
 canonical project or target root for scoped operations. Canonical containment
 against `allowed_roots` is checked again before state-dependent validation or
-side effects.
+side effects. `RootedFilesystem` is the policy-enforcing interface for
+subsequent file access; a raw canonical path is identity, not authorization.
 
 Shared operations must not call `os.chdir()` to establish request context.
 They pass resolved roots through operation phases and domain calls. Deadlines,
 cancellation, and output budgets are likewise explicit.
+
+## Filesystem confinement
+
+Root validation alone does not confine later access. A descendant can be a
+symlink or junction to an outside path, and a path component can be replaced
+between validation and use.
+
+Every filesystem access made under a confined policy must therefore use
+`RootedFilesystem` or an operation-owned equivalent that enforces the same
+invariants:
+
+- Anchor traversal at an already-authorized root.
+- Validate each descendant component without following unauthorized symlinks,
+  junctions, mount redirections, or equivalent platform indirections.
+- Couple validation and use through descriptor-relative or handle-relative
+  access where the platform supports it.
+- Re-check containment at the point of access when handle-relative traversal
+  is unavailable, reject indirections before and after creation, and fail
+  closed when the platform cannot enforce the boundary safely.
+- Apply the boundary to reads, writes, creates, deletes, renames, temporary
+  files, archives, caches, and rollback paths.
+
+Command/domain code must not bypass the boundary with raw `Path`, `open`, or
+unscoped filesystem helpers. Shared infrastructure may provide these
+root-bound primitives, but command-specific path semantics remain owned by the
+relevant hierarchy.
 
 ## Capability declarations
 
@@ -335,6 +366,7 @@ Capabilities are independent requirements, not a highest-risk hierarchy:
 | `local-read` | Read process, host, or project state within allowed roots |
 | `project-write` | Create or change project/target files or configuration |
 | `execution` | Start host tools, workflows, hooks, agents, or processes |
+| `unrestricted-host-execution` | Permit an executed child to use the server user's ambient host access outside allowed roots |
 | `self-modifying` | Change the Specify installation or machine-level state |
 
 The descriptor declares the conservative union an operation may require.
@@ -343,6 +375,26 @@ capability-free validated request and static metadata.
 
 Resolving or validating a project or target root requires `local-read`, even
 when the operation's eventual side effect is `project-write`.
+
+`execution` does not waive filesystem confinement. An operation that starts a
+child process must either:
+
+- Run it inside an enforceable sandbox limited to authorized roots, network,
+  environment, and subprocess behavior; or
+- Declare `unrestricted-host-execution` in addition to `execution`.
+
+The second capability is an explicit acknowledgement that the child runs with
+the server user's ambient privileges and can access paths outside
+`allowed_roots`. It is never implied by `execution`, project cwd, machine mode,
+or transport authentication. If sandboxing is required but unavailable, the
+operation fails with a structured policy error; it must not silently fall back
+to unrestricted execution.
+
+When `unrestricted-host-execution` is authorized, filesystem, environment,
+network, and subprocess restrictions cannot be claimed as enforced inside the
+child. Policy must present the grant as that broad exception. Operation
+descriptors still declare their intended managed network behavior, but an
+arbitrary unsandboxed child is not a network-confined execution mode.
 
 Network access is declared separately as `none`, `optional`, or `required`.
 Trust and destructive consent remain explicit request values, not implied
@@ -376,6 +428,10 @@ Operation tests cover:
   cancellation, and output bounds.
 - Preliminary requested-root authorization and canonical post-resolution
   containment, including symlink-escape rejection.
+- Root-bound enforcement at each descendant filesystem access, including
+  symlink/junction replacement and time-of-check/time-of-use cases.
+- Sandboxed execution and explicit `unrestricted-host-execution` policy
+  denial, with no unsafe fallback.
 - Domain behavior without Typer, Rich, MCP, or transport assertions.
 
 Adapter tests cover invocation mapping and adapter-specific reporting.
@@ -416,6 +472,10 @@ For an operation with CLI and MCP adapters:
 - [ ] Capability computation is pure and authorization precedes stateful work.
 - [ ] Canonical project resolution and its allowed-root re-check occur only
       after authorization.
+- [ ] Every confined filesystem access remains anchored to authorized roots at
+      the point of use.
+- [ ] Child processes are sandboxed or require explicit
+      `unrestricted-host-execution`.
 - [ ] CLI exit codes and MCP tool errors remain adapter-owned.
 - [ ] Contract-version ownership and compatibility tests are explicit.
 - [ ] Operation tests and adapter parity tests cover positive and negative
