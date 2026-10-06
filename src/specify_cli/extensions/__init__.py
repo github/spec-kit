@@ -4903,6 +4903,8 @@ class ExtensionCatalog(CatalogStackBase):
                         "_install_allowed": catalog_entry.install_allowed,
                     }
                     if extension_id is not None:
+                        if fetch_error is not None:
+                            raise fetch_error
                         return list(merged.values())
 
         if not any_success and active_catalogs:

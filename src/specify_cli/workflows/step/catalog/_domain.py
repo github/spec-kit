@@ -693,6 +693,8 @@ class StepCatalog:
                         step_data["_install_allowed"] = entry.install_allowed
                         merged[step_id] = step_data
             if target_id is not None and target_id in merged:
+                if fetch_error is not None:
+                    raise fetch_error
                 return merged
         if fetch_errors == len(catalogs) and catalogs:
             if validation_error is not None:

@@ -599,6 +599,8 @@ class PresetCatalog:
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[found_id] = pack_data_with_catalog
                     if pack_id is not None:
+                        if first_fetch_error is not None:
+                            raise first_fetch_error
                         return merged
             except (PresetCatalogValidationError, PresetValidationError):
                 raise

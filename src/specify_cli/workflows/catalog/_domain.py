@@ -721,6 +721,8 @@ class WorkflowCatalog:
                         wf_data["_install_allowed"] = entry.install_allowed
                         merged[wf_id] = wf_data
             if workflow_id is not None and workflow_id in merged:
+                if fetch_error is not None:
+                    raise fetch_error
                 return merged
         if fetch_errors == len(catalogs) and catalogs:
             if validation_error is not None:

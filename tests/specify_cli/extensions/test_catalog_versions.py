@@ -189,6 +189,35 @@ def test_targeted_lookup_rejects_malformed_higher_catalog_but_search_continues(
     assert catalog.search("demo-history")[0]["_catalog_name"] == "low"
 
 
+def test_targeted_lookup_rejects_lower_match_when_higher_catalog_is_unreachable(
+    tmp_path, monkeypatch,
+):
+    from specify_cli.extensions import ExtensionCatalogFetchError
+
+    catalog = ExtensionCatalog(tmp_path)
+    sources = [
+        CatalogEntry("https://example.com/high.json", "high", 1, True),
+        CatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+    high_available = False
+
+    def fetch(source, _force=False):
+        if source.name == "high" and not high_available:
+            raise ExtensionCatalogFetchError("high catalog is offline")
+        return {
+            "schema_version": "1.0",
+            "extensions": {"demo-history": {"version": "1.0.0"}},
+        }
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    with pytest.raises(ExtensionCatalogFetchError, match="offline"):
+        catalog.get_extension_info("demo-history", "1.0.0")
+    assert catalog.search("demo-history")[0]["_catalog_name"] == "low"
+    high_available = True
+    assert catalog.get_extension_info("demo-history")["_catalog_name"] == "high"
+
+
 @pytest.mark.parametrize("second_lookup", ["lower_priority", "unavailable"])
 def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
     tmp_path, monkeypatch, second_lookup

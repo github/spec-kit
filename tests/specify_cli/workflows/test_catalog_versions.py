@@ -15,6 +15,7 @@ from specify_cli import app
 from specify_cli.workflows.catalog import (
     WorkflowCatalog,
     WorkflowCatalogEntry,
+    WorkflowCatalogFetchError,
     WorkflowCatalogValidationError,
     WorkflowRegistry,
     WorkflowValidationError,
@@ -142,6 +143,30 @@ def test_legacy_entry_and_winning_source(monkeypatch, project_dir):
     assert catalog.get_workflow_info("history-wf", "1.0.0") is None
     assert catalog.get_workflow_versions("history-wf") == ["2.0.0"]
     assert catalog.search(query="history-wf")[0]["version"] == "2.0.0"
+
+
+def test_targeted_lookup_rejects_lower_match_after_higher_fetch_failure(
+    monkeypatch, project_dir,
+):
+    catalog = WorkflowCatalog(project_dir)
+    sources = [
+        WorkflowCatalogEntry("https://example.com/high.json", "high", 1, True),
+        WorkflowCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+    high_available = False
+
+    def fetch(source, force_refresh=False):
+        if source.name == "high" and not high_available:
+            raise WorkflowCatalogFetchError("high catalog is offline")
+        return {"workflows": {"history-wf": _entry()}}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    with pytest.raises(WorkflowCatalogFetchError, match="offline"):
+        catalog.get_workflow_info("history-wf", "1.0.0")
+    assert catalog.search(query="history-wf")[0]["_catalog_name"] == "low"
+    high_available = True
+    assert catalog.get_workflow_info("history-wf")["_catalog_name"] == "high"
 
 
 @pytest.mark.parametrize("duplicate_id", ["history-wf", "other"])

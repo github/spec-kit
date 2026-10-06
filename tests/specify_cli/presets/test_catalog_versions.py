@@ -613,25 +613,32 @@ def test_oversized_discovery_catalog_cannot_delegate_install(project_dir):
     assert PresetManager(project_dir).get_pack("sample") is None
 
 
-def test_unreachable_high_priority_catalog_still_uses_lower_source(project_dir):
+def test_unreachable_high_priority_catalog_does_not_select_lower_source(project_dir):
+    from specify_cli.presets._catalog import PresetCatalogFetchError
+
     catalog = PresetCatalog(project_dir)
     sources = [
         PresetCatalogEntry("https://example.com/unavailable.json", "high", 1, False),
         PresetCatalogEntry("https://example.com/trusted.json", "low", 2, True),
     ]
+    high_available = False
 
     def fetch(source, _refresh):
-        if source.name == "high":
-            raise PresetError("Failed to fetch preset catalog: offline")
+        if source.name == "high" and not high_available:
+            raise PresetCatalogFetchError("Failed to fetch preset catalog: offline")
         return {"presets": {"sample": _entry()}}
 
     with (
         patch.object(catalog, "get_active_catalogs", return_value=sources),
         patch.object(catalog, "_fetch_single_catalog", side_effect=fetch),
     ):
+        with pytest.raises(PresetCatalogFetchError, match="offline"):
+            catalog.get_pack_info("sample", "1.0.0")
+        assert catalog.search("sample")[0]["_catalog_name"] == "low"
+        high_available = True
         selected = catalog.get_pack_info("sample", "1.0.0")
-    assert selected["_catalog_name"] == "low"
-    assert selected["_install_allowed"] is True
+        assert selected["_catalog_name"] == "high"
+        assert selected["_install_allowed"] is False
 
 
 def test_versions_report_all_source_outage_instead_of_missing_preset(project_dir):

@@ -398,14 +398,15 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
     problem = check(_ref(kind, "requested"))
-    if has_match:
+    if has_match and unreachable == "high":
+        assert problem is None
+        assert len(warnings) == 1
+        assert "unreachable" in warnings[0]
+        assert visited == ["high", "low"]
+    elif has_match:
         assert problem is None
         assert warnings == []
-        assert visited == (
-            ["high", "high"]
-            if unreachable == "low"
-            else ["high", "low", "high", "low"]
-        )
+        assert visited == ["high", "high"]
     elif unreachable is not None:
         assert problem is None
         assert len(warnings) == 1

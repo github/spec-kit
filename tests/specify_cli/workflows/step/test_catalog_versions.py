@@ -11,6 +11,7 @@ from specify_cli.workflows.step.catalog import (
     StepCatalog,
     StepCatalogEntry,
     StepCatalogError,
+    StepCatalogFetchError,
 )
 from specify_cli.workflows.step.catalog._versions import available_versions
 
@@ -94,6 +95,30 @@ def test_winning_source_never_falls_back_for_missing_release(project_dir, monkey
     )
     assert catalog.get_step_info("deploy")["_install_allowed"] is False
     assert catalog.get_step_info("deploy", version="1.0") is None
+
+
+def test_targeted_lookup_rejects_lower_match_after_higher_fetch_failure(
+    project_dir, monkeypatch,
+):
+    catalog = StepCatalog(project_dir)
+    sources = [
+        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
+        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+    high_available = False
+
+    def fetch(source, force_refresh=False):
+        if source.name == "high" and not high_available:
+            raise StepCatalogFetchError("high catalog is offline")
+        return {"steps": {"deploy": _entry()}}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    with pytest.raises(StepCatalogFetchError, match="offline"):
+        catalog.get_step_info("deploy", version="1.0")
+    assert catalog.search(query="deploy")[0]["_catalog_name"] == "low"
+    high_available = True
+    assert catalog.get_step_info("deploy")["_catalog_name"] == "high"
 
 
 def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch):
