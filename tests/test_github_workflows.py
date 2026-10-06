@@ -28,6 +28,7 @@ PUBLISH_VALIDATION_STEPS = (
     "Verify tag format",
     "Verify tag matches package version",
 )
+LINT_WORKFLOW = WORKFLOWS_DIR / "lint.yml"
 FEATURE_ASSESS_WORKFLOW = WORKFLOWS_DIR / "feature-assess.md"
 FEATURE_ASSESS_COMPILED_WORKFLOW = WORKFLOWS_DIR / "feature-assess.lock.yml"
 FEATURE_ASSESS_LABELS = {
@@ -231,6 +232,7 @@ def test_bundle_success_labels_correct_omitted_agent_updates(labels):
         (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
     )
     assert result["calls"][-1]["api"] == "addLabels"
+    assert result["calls"][-1]["args"]["labels"] == ["validation-passed"]
     for call in result["calls"]:
         assert call["args"]["owner"] == "test-owner"
         assert call["args"]["repo"] == "test-repo"
@@ -257,6 +259,40 @@ def test_bundle_success_labels_surface_api_errors(fail_api):
     assert result["error"] == f"API failure: {fail_api}"
     assert result["calls"][-1]["api"] == fail_api
     assert "validation-passed" not in result["labels"]
+
+
+@pytest.mark.parametrize("name", [
+    "add-community-bundle", "add-community-extension", "add-community-preset",
+    "bug-assess", "bug-fix", "bug-test", "feature-assess",
+])
+def test_agentic_workflow_labels_are_applied_not_suggested(name):
+    source_text, compiled_text, source, compiled = _agentic_workflow(name)
+    assert source["safe-outputs"]["add-labels"]["issue-intent"] is False
+    assert _safe_output_config(compiled)["add_labels"]["issue_intent"] is False
+    agent_config_step = _workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+    )
+    agent_config = json.loads(agent_config_step["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
+    assert agent_config["add_labels"]["issue_intent"] is False
+    responsibilities = " ".join(
+        source_text.split("## Label Responsibilities\n", 1)[1].split("\n## ", 1)[0].split()
+    )
+    assert "Applying the outcome labels is your responsibility" in responsibilities
+    assert (
+        "Use the `add_labels` safe output on source issue "
+        "#${{ github.event.issue.number }}"
+    ) in responsibilities
+    assert "with plain strings in its `labels` array" in responsibilities
+    assert (
+        "Never emit label objects with `suggest: true` or suggestion-only output."
+    ) in responsibilities
+    assert f"{{{{#runtime-import .github/workflows/{name}.md}}}}" in compiled_text
+    if name.startswith("add-community-"):
+        assert 'For a Passed outcome, emit `labels: ["validation-passed"]`' in responsibilities
+        assert 'for a Failed outcome, emit `labels: ["validation-failed"]`' in responsibilities
+        assert (
+            "this requirement does not turn environment blockers into submission failures."
+        ) in responsibilities
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -589,9 +625,13 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
+    expected_labels = {
         "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
         "max": 3,
+    }
+    assert outputs["add_labels"] == {**expected_labels, "issue_intent": False}
+    assert source["safe-outputs"]["add-labels"] == {
+        **expected_labels, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
@@ -816,10 +856,21 @@ def test_community_archive_permission_failures_are_not_submission_failures(kind)
         "If there are no environment blockers and every required check completed "
         "and passed:"
     )
-    assert re.search(
-        r"remove `validation-failed`.*add (?:the )?`validation-passed`",
-        passed, re.IGNORECASE | re.DOTALL,
-    )
+    if kind == "preset":
+        assert "Remove any stale `validation-passed` and `validation-failed`" in passed
+        assert "Do not add `validation-passed` yet" in passed
+        generated = source_text.split("### Verify the generated files", 1)[1].split(
+            "\n## Step 6", 1
+        )[0]
+        assert "validate_community_preset.py generated" in generated
+        assert "add the `validation-passed`" in source_text.split(
+            "\n## Step 6", 1
+        )[1]
+    else:
+        assert re.search(
+            r"remove `validation-failed`.*add (?:the )?`validation-passed`",
+            passed, re.IGNORECASE | re.DOTALL,
+        )
     assert "validation-failed" in source["safe-outputs"]["remove-labels"]["allowed"]
     assert "validation-failed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
     assert "validation-passed" in source["safe-outputs"]["remove-labels"]["allowed"]
@@ -1275,8 +1326,11 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 1}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
-        "allowed": labels, "max": 1
+    assert outputs["add_labels"] == {
+        "allowed": labels, "max": 1, "issue_intent": False
+    }
+    assert source["safe-outputs"]["add-labels"] == {
+        "allowed": labels, "max": 1, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
@@ -1448,3 +1502,42 @@ def test_bug_test_install_preserves_editable_extras_and_failure(compiled_step, e
     )
     assert result.stdout.splitlines() == ["pip", "install", "--system", "-e", ".[test]"]
     assert result.returncode == exit_code, result.stderr
+
+
+def _markdownlint_job() -> dict:
+    workflow = yaml.safe_load(LINT_WORKFLOW.read_text(encoding="utf-8"))
+    return workflow["jobs"]["markdownlint"]
+
+
+def _documentation_globs() -> list[str]:
+    raw = _markdownlint_job()["env"]["DOC_GLOBS"]
+    return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+def test_markdownlint_globs_are_not_quoted():
+    """A quoted glob is taken literally, matches nothing, and still exits 0 (#4526)."""
+    for glob in _documentation_globs():
+        assert glob[0] not in "'\"", f"{glob} is quoted, so it would match literally"
+        assert glob[-1] not in "'\"", f"{glob} is quoted, so it would match literally"
+
+
+def test_every_markdownlint_glob_matches_a_file():
+    """A stale glob leaves that part of the docs silently unlinted (#4526)."""
+    empty = [
+        glob
+        for glob in _documentation_globs()
+        if not any(path.is_file() for path in REPO_ROOT.glob(glob))
+    ]
+    assert empty == [], f"globs matching no files: {empty}"
+
+
+def test_markdownlint_step_lints_the_documentation_globs():
+    steps = _markdownlint_job()["steps"]
+    linters = [
+        step
+        for step in steps
+        if isinstance(step.get("uses"), str)
+        and "markdownlint-cli2-action" in step["uses"]
+    ]
+    assert len(linters) == 1
+    assert linters[0]["with"]["globs"] == "${{ env.DOC_GLOBS }}"

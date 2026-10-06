@@ -128,6 +128,54 @@ class TestVibeIntegration(SkillsIntegrationTests):
                 f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
             )
 
+    def test_build_exec_args_uses_prompt_mode(self):
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args(
+            "/speckit-specify build a login page",
+            output_json=False,
+        )
+
+        assert args == ["vibe", "-p", "/speckit-specify build a login page"]
+
+    def test_build_exec_args_requests_json_output(self):
+        """Vibe's structured output is `--output json`; it has no `--output-format`."""
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args("/speckit-plan add OAuth", output_json=True)
+
+        assert args == ["vibe", "-p", "/speckit-plan add OAuth", "--output", "json"]
+        assert "--output-format" not in args
+
+    def test_build_exec_args_omits_model_flag(self):
+        """Vibe has no model flag; passing `--model` exits 2 at argument parsing."""
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args(
+            "explain this repository",
+            model="mistral-medium-latest",
+            output_json=False,
+        )
+
+        assert args == ["vibe", "-p", "explain this repository"]
+        assert "--model" not in args
+        assert "mistral-medium-latest" not in args
+
+    def test_build_exec_args_applies_extra_args(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_VIBE_EXTRA_ARGS", "--auto-approve")
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args("check the build", output_json=True)
+
+        assert args == [
+            "vibe",
+            "-p",
+            "check the build",
+            "--auto-approve",
+            "--output",
+            "json",
+        ]
+
 
 class TestVibeTomlMerging:
     """Behavioral tests for the toml-vibe hooks.toml generation and cleanup."""

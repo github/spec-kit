@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-23T00:00:00Z",
+  "updated_at": "2026-10-05T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -324,6 +324,51 @@
       "created_at": "2026-08-28T00:00:00Z",
       "updated_at": "2026-08-28T00:00:00Z"
     },
+    "agentstandards": {
+      "name": "Agentstandards Architecture Council",
+      "id": "agentstandards",
+      "description": "Run a bounded, multi-vendor architecture council between Spec Kit planning and task generation.",
+      "author": "bbjwz",
+      "version": "0.1.0",
+      "download_url": "https://github.com/bbjwz/agentstandards/releases/download/v0.1.0/agentstandards-0.1.0.zip",
+      "sha256": "3291003d4d4d1f6ca32a0c1c2aa908a887d3ded2b69ce38deb09abc5daf89e90",
+      "repository": "https://github.com/bbjwz/agentstandards",
+      "homepage": "https://github.com/bbjwz/agentstandards",
+      "documentation": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/README.md",
+      "changelog": "https://github.com/bbjwz/agentstandards/blob/v0.1.0/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.8,<2.0.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          },
+          {
+            "name": "codex",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "architecture",
+        "multi-agent",
+        "multi-vendor",
+        "governance",
+        "codex"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-24T00:00:00Z",
+      "updated_at": "2026-09-24T00:00:00Z"
+    },
     "analytics": {
       "name": "Analytics",
       "id": "analytics",
@@ -559,8 +604,9 @@
       "id": "archive",
       "description": "Archive merged features into main project memory, resolving gaps and conflicts.",
       "author": "Stanislav Deviatov",
-      "version": "1.3.0",
-      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.3.0.zip",
+      "version": "1.4.0",
+      "download_url": "https://github.com/stn1slv/spec-kit-archive/archive/refs/tags/v1.4.0.zip",
+      "sha256": "c4341808d7ab659fd154ad7850a4f37a422fcefec0ee0c079e9def4e0f775200",
       "repository": "https://github.com/stn1slv/spec-kit-archive",
       "homepage": "https://github.com/stn1slv/spec-kit-archive",
       "documentation": "https://github.com/stn1slv/spec-kit-archive/blob/main/README.md",
@@ -585,7 +631,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-24T00:00:00Z"
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "ascii-diagram": {
       "name": "ASCII Diagram Renderer",
@@ -1440,6 +1486,55 @@
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
     },
+    "conformidad": {
+      "name": "Conformidad Software Humano",
+      "id": "conformidad",
+      "description": "Checks that the project's artifacts contain what the Software Humano manifesto requires, and that every absence is declared as an approved exception with its reason and its approver.",
+      "author": "Damián Acuña",
+      "version": "2.2.3",
+      "download_url": "https://github.com/dacunao/software-humano-speckit/releases/download/extension-conformidad-v2.2.3/Software_Humano_Conformidad_v2.2.3.zip",
+      "sha256": "9a1209e43bc3b4a6765c0150d419d91c4fbca79244c377bb34990cd90c4e7a62",
+      "repository": "https://github.com/dacunao/software-humano-speckit",
+      "homepage": "https://manifiesto.softwarehumano.com",
+      "documentation": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/README.md",
+      "changelog": "https://github.com/dacunao/software-humano-speckit/blob/extension-conformidad-v2.2.3/tools/speckit/conformidad-2.2.3/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "conformance",
+        "governance",
+        "human-centered",
+        "quality",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
+    },
     "contextforge-mcp": {
       "name": "ContextForge MCP",
       "id": "contextforge-mcp",
@@ -2197,10 +2292,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit across agent hooks, git checks, and CI pipelines with one policy file and one verify entrypoint for identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.3",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.3/gates-0.3.3.zip",
+      "version": "0.3.6",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.6/gates-0.3.6.zip",
+      "sha256": "74390f742a1a24dadb0bde15d2a555a2c6db51ee85f2a7a0557511bacec2444f",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2244,7 +2340,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-10-05T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
@@ -2908,6 +3004,47 @@
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
       "updated_at": "2026-07-27T00:00:00Z"
+    },
+    "logreduce": {
+      "name": "Log Intake (logreduce)",
+      "id": "logreduce",
+      "description": "Reduce large logs attached to a bug report into .specify/bugs/<slug>/evidence.md before assessment. This is a log-intake step for the bundled bug triage workflow: /speckit.bug.assess, fix and test then work from one saved, reduced log instead of each re-reading a raw log that may run to thousands or millions of lines.",
+      "author": "Alex Punnen",
+      "version": "0.3.1",
+      "download_url": "https://github.com/alexcpn/log_tfidf_reducer/releases/download/v0.3.1/logreduce-speckit.zip",
+      "sha256": "97a495b3ad823a36ad6da9d01127c8121954d464531e61eed21d2f052f04bb47",
+      "repository": "https://github.com/alexcpn/log_tfidf_reducer",
+      "homepage": "https://github.com/alexcpn/log_tfidf_reducer/tree/main/speckit",
+      "documentation": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/README.md",
+      "changelog": "https://github.com/alexcpn/log_tfidf_reducer/blob/main/speckit/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "logreduce",
+            "version": ">=0.3.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "bug",
+        "logs",
+        "triage",
+        "debugging"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
@@ -3650,6 +3787,42 @@
       "stars": 0,
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
+    },
+    "openspec": {
+      "name": "OpenSpec",
+      "id": "openspec",
+      "description": "Adds a spec-driven change-management workflow (propose → implement → verify → archive) to Spec Kit projects, keeping specs, designs, and code in sync",
+      "author": "Aaron Sun",
+      "version": "0.1.0",
+      "download_url": "https://github.com/aaronrsun/spec-kit-openspec/releases/download/openspec-v0.1.0/openspec.zip",
+      "sha256": "9d3b384d5a13c36547352009cc11ce059d45c5f0624b3e3311559e2e5766cdf9",
+      "repository": "https://github.com/aaronrsun/spec-kit-openspec",
+      "homepage": "https://github.com/aaronrsun/spec-kit-openspec",
+      "documentation": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/README.md",
+      "changelog": "https://github.com/aaronrsun/spec-kit-openspec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0"
+      },
+      "provides": {
+        "commands": 12,
+        "hooks": 0
+      },
+      "tags": [
+        "openspec",
+        "spec-driven-development",
+        "planning",
+        "implementation",
+        "workflow",
+        "experimental"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-28T00:00:00Z",
+      "updated_at": "2026-09-28T00:00:00Z"
     },
     "openup": {
       "name": "OpenUP Governed Lifecycle",
@@ -5053,9 +5226,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.5.1",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.1/specassay-check-0.5.1.zip",
-      "sha256": "874728251c850e84d71f7a94dbdc326073703a8b408690d87a62b68d43dc6eff",
+      "version": "0.5.2",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
+      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5092,7 +5265,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-09-24T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
@@ -5172,10 +5345,11 @@
     "speckit-superpowers-bridge": {
       "name": "Superpowers Implementation Bridge",
       "id": "speckit-superpowers-bridge",
-      "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
+      "description": "Thin orchestrator between Spec Kit design artifacts and Superpowers implementation discipline. Cross-agent; verified for Codex and Claude Code.",
       "author": "lihan3238",
-      "version": "1.2.0",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.2.0/speckit-superpowers-bridge-v1.2.0.zip",
+      "version": "1.3.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.3.0/speckit-superpowers-bridge-v1.3.0.zip",
+      "sha256": "2caba4377f003a6229585f1d559de6dedc1d5654e7f2566dcf9b98462c154525",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -5218,7 +5392,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-08-18T00:00:00Z"
+      "updated_at": "2026-09-29T00:00:00Z"
     },
     "speckit-utils": {
       "name": "SDD Utilities",
@@ -5699,6 +5873,48 @@
       "created_at": "2026-05-20T00:00:00Z",
       "updated_at": "2026-05-20T00:00:00Z"
     },
+    "test-by": {
+      "name": "Test Validation",
+      "id": "test-by",
+      "description": "Validate acceptance scenarios and run CSV-driven E2E tests against a live app via Playwright",
+      "author": "Andrei Stsepaniuk",
+      "version": "1.2.0",
+      "download_url": "https://github.com/andstepanuk/speckit-test-validate/archive/refs/tags/v1.2.0.zip",
+      "sha256": "a3c3f5f4d4c37598e9e7aae5f51472cfe31829a42c9e450046f3f7f189d1e777",
+      "repository": "https://github.com/andstepanuk/speckit-test-validate",
+      "homepage": "https://github.com/andstepanuk/speckit-test-validate",
+      "documentation": "https://github.com/andstepanuk/speckit-test-validate/tree/main/docs",
+      "changelog": "https://github.com/andstepanuk/speckit-test-validate/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "playwright",
+            "version": ">0.0.10",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "testing",
+        "playwright",
+        "acceptance",
+        "e2e",
+        "csv"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-09-25T00:00:00Z",
+      "updated_at": "2026-09-25T00:00:00Z"
+    },
     "test-coverage-drift-control": {
       "name": "Test Coverage Drift Control",
       "id": "test-coverage-drift-control",
@@ -5809,10 +6025,10 @@
     "threatmodel": {
       "name": "OWASP LLM Threat Model",
       "id": "threatmodel",
-      "description": "OWASP Top 10 for LLM Applications 2025 threat analysis on agent artifacts",
+      "description": "OWASP Top 10 for LLM Applications 2026 threat analysis on agent artifacts",
       "author": "NaviaSamal",
-      "version": "1.0.0",
-      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v1.0.0.zip",
+      "version": "2.1.2",
+      "download_url": "https://github.com/NaviaSamal/spec-kit-threatmodel/archive/refs/tags/v2.1.2.zip",
       "repository": "https://github.com/NaviaSamal/spec-kit-threatmodel",
       "homepage": "https://github.com/NaviaSamal/spec-kit-threatmodel",
       "documentation": "https://github.com/NaviaSamal/spec-kit-threatmodel/blob/main/README.md",
@@ -5838,7 +6054,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
-      "updated_at": "2026-04-25T00:00:00Z"
+      "updated_at": "2026-09-28T00:00:00Z"
     },
     "threatspec": {
       "name": "ThreatSpec — Threat Modeling & Security Traceability",
@@ -6129,7 +6345,7 @@
       ],
       "verified": false,
       "downloads": 0,
-      "stars": 21,
+      "stars": 0,
       "created_at": "2026-02-20T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
     },

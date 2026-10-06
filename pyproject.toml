@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "1.0.12.dev0"
+version = "1.1.1.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,8 @@ dependencies = [
     "packaging>=23.0",
     "pathspec>=0.12.0",
     "json5>=0.13.0",
+    "mcp>=2.2.0,<3.0.0",
+    "pydantic>=2.13.0,<3.0.0",
 ]
 
 [project.scripts]
@@ -44,6 +46,7 @@ packages = ["src/specify_cli"]
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"
 "extensions/assess" = "specify_cli/core_pack/extensions/assess"
 "extensions/bug" = "specify_cli/core_pack/extensions/bug"
+"extensions/github" = "specify_cli/core_pack/extensions/github"
 # Bundled workflows (`specify init` installs only `speckit`; `bugfix`/`assess` are opt-in via first-party bundles)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 "workflows/bugfix" = "specify_cli/core_pack/workflows/bugfix"

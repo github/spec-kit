@@ -46,13 +46,9 @@ def _assert_pinned_version(
     actual = str(advertised).strip()
     if not actual:
         return
-    from .versioning import parse_version
+    from .versioning import same_version
 
-    try:
-        matches = parse_version(actual) == parse_version(pinned)
-    except BundlerError:
-        matches = actual == str(pinned).strip()
-    if not matches:
+    if not same_version(actual, pinned):
         raise BundlerError(
             f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
             f"manifest, but the resolved version is {actual}. Update the bundle's "
@@ -84,8 +80,25 @@ def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     return None
 
 
+def _registry_version(registry, component_id: str) -> str | None:
+    """Version a primitive registry recorded for an installed component.
+
+    Returns ``None`` when there is no entry, the registry is unreadable, or the
+    entry has no usable version, meaning the installed version is unknown.
+    """
+    try:
+        entry = registry.get(component_id)
+    except Exception:  # noqa: BLE001 - unreadable registry: version unknown
+        return None
+    version = entry.get("version") if isinstance(entry, dict) else None
+    return version if isinstance(version, str) and version.strip() else None
+
+
 class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool:
+        pass
+
+    def installed_version(self, component: ComponentRef) -> str | None:
         pass
 
     def install(self, component: ComponentRef) -> None:
@@ -155,6 +168,9 @@ class _PresetKindManager:
             return self._manager.get_pack(component.id) is not None
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._manager.registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -242,6 +258,9 @@ class _ExtensionKindManager:
             return self._manager.registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._manager.registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -334,6 +353,9 @@ class _WorkflowKindManager:
         except Exception:  # noqa: BLE001
             return False
 
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._registry, component.id)
+
     def install(self, component: ComponentRef) -> None:
         from .._assets import _locate_bundled_workflow
 
@@ -423,6 +445,9 @@ class _StepKindManager:
             return self._registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network:

@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
+from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.primitives import (
     _ExtensionKindManager,
     _PresetKindManager,
@@ -21,6 +21,9 @@ from specify_cli.bundles.primitives import (
     _WorkflowKindManager,
     primitive_manager,
 )
+from specify_cli.extensions import ExtensionRegistry
+from specify_cli.presets import PresetRegistry
+from specify_cli.workflows.catalog import StepRegistry, WorkflowRegistry
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 
@@ -64,6 +67,22 @@ def test_offline_step_refuses_without_network(tmp_path: Path):
         manager.install(_component("steps"))
 
 
+def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monkeypatch):
+    import specify_cli
+
+    calls: list[tuple[str, Path]] = []
+
+    def _add(step_id: str) -> None:
+        calls.append((step_id, Path.cwd()))
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    manager = _StepKindManager(tmp_path, allow_network=True)
+
+    manager.install(_component("steps", "catalog-step"))
+
+    assert calls == [("catalog-step", tmp_path)]
+
+
 def test_default_installer_threads_allow_network(tmp_path: Path):
     installer = DefaultPrimitiveInstaller(allow_network=False)
     with pytest.raises(BundlerError, match="network access is disabled"):
@@ -82,6 +101,23 @@ def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: 
     assert "install it first" not in message
 
 
+_REGISTRIES = {
+    "extensions": lambda root: ExtensionRegistry(root / ".specify" / "extensions"),
+    "presets": lambda root: PresetRegistry(root / ".specify" / "presets"),
+    "workflows": WorkflowRegistry,
+    "steps": StepRegistry,
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_REGISTRIES))
+def test_installed_version_reads_each_primitive_registry(tmp_path: Path, kind: str):
+    _REGISTRIES[kind](tmp_path).add("x", {"version": "0.9.0"})
+    installer = DefaultPrimitiveInstaller()
+
+    assert installer.installed_version(tmp_path, _component(kind)) == "0.9.0"
+    assert installer.installed_version(tmp_path, _component(kind, "missing")) is None
+
+
 def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     # A workflow that ships with Spec Kit must install even with --offline.
     import specify_cli
@@ -96,10 +132,14 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
         assets, "_locate_bundled_workflow", lambda wid: bundled
     )
     calls: list[tuple] = []
+
+    def _workflow_add(wid, dev=None, from_url=None):
+        calls.append((wid, dev, from_url))
+
     monkeypatch.setattr(
         specify_cli,
         "workflow_add",
-        lambda wid, dev=object(), from_url=object(): calls.append((wid, dev, from_url)),
+        _workflow_add,
     )
 
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
@@ -483,9 +523,9 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
 def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     """Regression: bundle update (refresh=True) of an already-installed extension
     must succeed and pass force=True to install_from_directory."""
+    import specify_cli._assets as assets
     from specify_cli.bundles.installer import install_bundle
     from specify_cli.bundles.manifest import BundleManifest
-    import specify_cli._assets as assets
     from specify_cli.extensions import ExtensionManager
 
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")

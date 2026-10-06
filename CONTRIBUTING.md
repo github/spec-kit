@@ -38,7 +38,7 @@ On [GitHub Codespaces](https://github.com/features/codespaces) it's even simpler
 1. Fork and clone the repository
 1. Configure and install the dependencies: `uv sync --extra test`
 1. Make sure the CLI works on your machine: `uv run specify --help`
-1. Create a new branch: `git checkout -b <type>/<number>-<short-slug>` (see [Branch naming](#branch-naming) below)
+1. Create a new branch (see [Branch naming](#branch-naming) below)
 1. Make your change, add tests, and make sure everything still works
 1. Test the CLI functionality with a sample project if relevant
 1. Push to your fork and submit a pull request
@@ -55,7 +55,7 @@ Here are a few things you can do that will increase the likelihood of your pull 
 - Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
 - Test your changes with the Spec-Driven Development workflow to ensure compatibility.
 
-Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents should disclose this possibility and obtain the filer's confirmation before opening another pull request. Repository-owned `gh-aw` maintenance workflows do not require this confirmation.
+Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents must follow the [agent-authored PR rules](#agent-authored-git-and-review-activity) before opening another pull request.
 
 ### Evidence gate
 
@@ -137,7 +137,9 @@ fix to a broken entry is still an update and needs the same validation. Always p
 
 ### Branch naming
 
-We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>` is the issue or PR number (whichever comes first) and `<type>` is one of:
+When an issue exists, name the branch `<type>/<issue-number>-<short-slug>`.
+For PR-only changes without an issue, use `<type>/<short-slug>` instead.
+Choose the prefix from:
 
 | Prefix | When to use | Example |
 |---|---|---|
@@ -147,7 +149,9 @@ We recommend naming branches as `<type>/<number>-<short-slug>`, where `<number>`
 | `community/` | Community catalog additions | `community/2492-add-mde-extension` |
 | `chore/` | Maintenance, tooling, CI | `chore/2366-editorconfig` |
 
-Including the issue or PR number makes branches traceable — especially useful since the project uses squash merges and `git branch --merged` won't detect merged branches. If you start with a PR (no issue), use the PR number once it's assigned.
+Put an existing issue number immediately after the prefix to make the branch
+traceable; do not add a PR number later for PR-only changes. Keep the slug
+short, descriptive, and kebab-case.
 
 ## Development workflow
 
@@ -178,6 +182,22 @@ When working on spec-kit:
 2. Verify templates are working correctly in `templates/` directory
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
+
+### Testing deterministic behavior
+
+Behavioral changes to repository-maintained code or configuration that runs or
+controls execution without an LLM require tests for both intended behavior
+(positive cases) and relevant invalid inputs, failures, or prevented behavior
+(negative cases). This includes Python, shell, and PowerShell code in the CLI,
+core scripts, extensions, presets, and tooling; workflow step types; and
+execution wiring such as script selection, workflow shell steps, and CI `run:`
+steps. Existing tests count when they cover the changed behavior.
+
+Bug fixes also need a regression test that fails before the fix and passes
+afterward. If a baseline or an execution path cannot be tested automatically,
+explain the limitation and provide reproducible evidence for the affected
+success and failure paths. Prompt-only and other non-behavioral edits do not
+require invented tests.
 
 ### Recommended validation flow
 
@@ -278,7 +298,7 @@ Any change that affects a slash command's behavior requires manually testing tha
 
 Paste this into your PR:
 
-~~~markdown
+```markdown
 ## Manual test results
 
 **Agent**: [e.g., GitHub Copilot in VS Code]  |  **OS/Shell**: [e.g., macOS/zsh]
@@ -286,13 +306,13 @@ Paste this into your PR:
 | Command tested | Notes |
 |----------------|-------|
 | `/speckit.command` | |
-~~~
+```
 
 #### Determining which tests to run
 
 Copy this prompt into your agent. Include the agent's response (selected tests plus a brief explanation of the mapping) in your PR.
 
-~~~text
+```text
 Read CONTRIBUTING.md, then run `git diff --name-only main` to get my changed files.
 For each changed file, determine which slash commands it affects by reading
 the command templates in templates/commands/ to understand what each command
@@ -324,7 +344,7 @@ Number each test sequentially (T1, T2, ...). List prerequisite tests first.
 
 - T1: /speckit.command — (reason)
 - T2: /speckit.command — (reason)
-~~~
+```
 
 ## AI contributions in Spec Kit
 
@@ -346,6 +366,8 @@ That being said, if you are using any kind of AI assistance (e.g., agents, ChatG
 If your PR responses or comments are being generated by an AI, disclose that as well, naming the same agent, model(s), settings/mode, and extent.
 
 As an exception, trivial spacing or typo fixes don't need to be disclosed, so long as the changes are limited to small parts of the code or short phrases. The catalog-submission issue forms (extension, preset, and bundle submissions) feed content-neutral validation automation rather than code review, so they carry no disclosure field and are exempt from this requirement. Spec Kit's own bundled agentic workflows (the automated bug-fix and community-catalog prompts under `.github/workflows/`) are likewise exempt: they run as a fixed, known agent and open draft PRs for maintainer review, so their agent identity is inherent to the workflow rather than self-declared per contribution.
+The trivial-fix exception does not waive the disclosures below for agents acting
+on behalf of a contributor; the bundled workflows retain their exception.
 
 An example disclosure:
 
@@ -364,6 +386,39 @@ what extent, which in turn helps us judge whether our [`AGENTS.md`](./AGENTS.md)
 
 In a perfect world, AI assistance would produce equal or higher quality work than any human. That isn't the world we live in today, and in most cases
 where human supervision or expertise is not in the loop, it's generating code that cannot be reasonably maintained or evolved.
+
+### Agent-authored Git and review activity
+
+For an agent acting on behalf of a contributor, disclosure is continuous: the
+PR body, each agent-authored commit, and each AI-generated PR comment or reply
+must independently identify the agent's involvement. A PR-body disclosure does
+not cover later commits or review rounds.
+
+- **Before opening a PR:** Check whether the filing account already has three
+  open PRs in this repository. If so, explain that another submission may
+  receive lower review priority and obtain the filer's explicit permission.
+  Without it, including during autonomous operation, leave the work on a branch
+  and report that confirmation is required. Repository-owned `gh-aw` maintenance
+  workflows are exempt from this count check.
+- **For every agent-authored commit:** Include an `Assisted-by:` trailer naming
+  the actual agent and model and whether it acted `autonomous` or `supervised`,
+  for example, `Assisted-by: GitHub Copilot (model: Claude Opus 4.8, autonomous)`.
+  Use `model: unknown` only if the model genuinely cannot be determined. Use
+  `supervised` only if a human authored or line-by-line reviewed the change
+  before commit. Do not hide agent authorship behind the operator's git
+  identity or remove tool-generated `Co-authored-by:` trailers.
+- **For each AI-generated PR comment:** Identify the contributor on whose
+  behalf it is posted, the agent, model, settings/mode, and extent of AI
+  involvement. Restate this in every review-round summary, not just the PR
+  body. Post one top-level summary per round with the changes and commit SHA;
+  reply inline only for disagreement, deferral, or a non-obvious fix, and keep
+  those replies brief. Do not resolve conversations on a reviewer's behalf.
+  Avoid emoji, celebratory framing, checklist mirroring, and restating the
+  reviewer's comments. Re-request review once, after all feedback is addressed.
+
+Fast responses do not replace disclosure: do not post an unexplained "Done" or
+push an undisclosed fix moments after review. Do not claim personal human review
+or testing for an automated change; describe the automation truthfully.
 
 ### What we're looking for
 
