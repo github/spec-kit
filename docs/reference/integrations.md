@@ -8,19 +8,22 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | ------------------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Alquimia AI](https://docs.alquimia.ai)                                              | `alquimia`       | Skills-based integration; installs skills into `.alquimia/skills` and invokes them as `/speckit-<command>`                                |
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
-| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; skills are installed automatically                                                                               |
+| [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; installs skills into `.agents/skills/` and invokes them as `/speckit-<command>`. In headless non-interactive runs, automatic tool approval via `--dangerously-skip-permissions` can be enabled by setting `SPECKIT_AGY_ALLOW_ALL_TOOLS=1` or `SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS=1`. |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
 | [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation)                      | `codebuddy`      |                                                                                                                                           |
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
+| [Command Code](https://commandcode.ai/docs)                                          | `command-code`   | Skills-based integration; installs skills into `.commandcode/skills/` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)                  | `dsh`            | Skills-based integration; installs skills into `.dsh/skills` and invokes them as `/speckit-<command>` |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
+| [Docker Agent](https://docs.docker.com/ai/docker-agent/)                              | `docker-agent`   | Skills-based integration; installs skills into `.agents/skills/` (the same directory used by Codex and Zed). In the selected agent YAML, enable local skills with `skills: true` and provide filesystem read access. Detects either the standalone `docker-agent` binary or the Docker CLI plugin (`docker agent`). Configure workflow dispatch with `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS=./agent.yaml`; the Spec Kit prompt is appended after these arguments. Not multi-install safe by default because the skills directory is shared. |
 | [Factory Droid](https://docs.factory.ai/cli/getting-started/overview)               | `droid`          | Skills-based integration; installs skills into `.factory/skills/` and invokes them as `/speckit-<command>`                               |
 | [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Defaults to legacy markdown mode: `.agent.md` command files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. Pass `--integration-options="--skills"` to scaffold skills as `speckit-<command>/SKILL.md` under `.github/skills/` instead. Legacy markdown mode is deprecated and will stop being the default in a future release. |
+| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Skills-based by default; installs `speckit-<command>/SKILL.md` under `.github/skills/`. Pass `--integration-options="--commands"` to use the supported commands layout: `.agent.md` files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. |
 | [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Grok Build](https://docs.x.ai/build/overview)                                       | `grok`           | Skills-based integration; installs skills into `.grok/skills` and invokes them as `/speckit-<command>`                                    |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
@@ -30,7 +33,9 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths |
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
+| [MiniMax Code](https://github.com/MiniMax-AI/minimax-code)                          | `mcode`          | Skills-based integration; installs skills into `.minimax/skills` and invokes them as `/speckit-<command>`. Headless workflow dispatch uses `--permission full` so tool actions are not blocked by headless permission gating; set `SPECKIT_INTEGRATION_MCODE_EXTRA_ARGS="--permission smart"` to use MiniMax Code's stricter policy. |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
+| [Muse Code](https://dev.meta.ai/docs/muse-code)                                     | `muse`           | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                   |
 | [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)                  | `omp`            | Installs slash commands into `.omp/commands`                                                                                               |
 | [opencode](https://opencode.ai/)                                                     | `opencode`       |                                                                                                                                           |
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
@@ -42,7 +47,27 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
-| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
+| Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above; add `--skills` for the `speckit-<name>/SKILL.md` layout |
+
+## Command Invocation
+
+Invoke Spec Kit's process steps inside your coding agent, not in the terminal.
+In GitHub Copilot's default mode, these are skills you invoke in the agent's
+chat. CLI installation and setup commands are separate terminal operations.
+The steps are the same across integrations, but their spelling depends on the
+agent and its installed mode:
+
+| Integration or mode | SDD example | Extension example |
+| --- | --- | --- |
+| GitHub Copilot, default skills mode | `/speckit-specify` | `/speckit-bug-assess` |
+| Dotted slash-command notation used in the references | `/speckit.specify` | `/speckit.bug.assess` |
+| Codex, Command Code, ZCode skills | `$speckit-specify` | `$speckit-bug-assess` |
+| Kimi skills | `/skill:speckit-specify` | `/skill:speckit-bug-assess` |
+
+Use the form exposed by your agent. Copilot's default skills are installed under
+`.github/skills/`; its opt-in commands layout is selected with
+`--integration-options="--commands"`. In that layout, Copilot CLI can select an
+agent through `/agents` or address it directly in a prompt.
 
 ## List Available Integrations
 
@@ -209,6 +234,8 @@ specify integration catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
 
+Re-adding the same URL with the same name succeeds without changing the configuration; a different name is rejected.
+
 ### Remove a Catalog
 
 ```bash
@@ -233,14 +260,25 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
+| `generic`   | `--skills`          | Render commands and installed extension invocations as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
-| `copilot`   | `--skills`          | Scaffold commands as agent skills (`speckit-<command>/SKILL.md` under `.github/skills/`, invoked as `/speckit-<command>`) instead of the default legacy markdown mode (`.github/agents/*.agent.md` plus `.github/prompts/*.prompt.md` and a `.vscode/settings.json` merge). Without this flag, install warns that legacy markdown mode is deprecated. |
+| `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
+| `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
 
 Example:
 
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
+specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
+
+Once `generic` is the active integration, `specify extension add` registers
+extension commands in its configured `--commands-dir` (as command files or
+skills according to `--skills`). `specify extension remove` removes unchanged
+extension-owned artifacts while leaving core commands, user files, and edited
+extension files intact. The core `speckit.taskstoissues` command remains
+available; installing the GitHub extension adds the namespaced replacement
+without deprecating or removing the core command.
 
 ## Scaffold a New Integration
 
@@ -278,6 +316,7 @@ The currently declared multi-install safe integrations are:
 | `cline` | `.clinerules/workflows` |
 | `codebuddy` | `.codebuddy/commands` |
 | `codex` | `.agents/skills` |
+| `command-code` | `.commandcode/skills` |
 | `cursor-agent` | `.cursor/skills` |
 | `droid` | `.factory/skills` |
 | `firebender` | `.firebender/commands` |
@@ -287,9 +326,11 @@ The currently declared multi-install safe integrations are:
 | `kilocode` | `.kilo/commands` |
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
+| `mcode` | `.minimax/skills` |
 | `omp` | `.omp/commands` |
+| `opencode` | `.opencode/commands` |
 | `pi` | `.pi/prompts` |
-| `qodercli` | `.qoder/commands` |
+| `qodercli` | `.qoder/skills` |
 | `qwen` | `.qwen/commands` |
 | `shai` | `.shai/commands` |
 | `tabnine` | `.tabnine/agent/commands` |

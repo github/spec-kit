@@ -15,6 +15,16 @@ If no preset is installed, core templates are used — exactly the same behavior
 
 Template resolution happens **at runtime** — although preset files are copied into `.specify/presets/<id>/` during installation, Spec Kit walks the resolution stack on every template lookup rather than merging templates into a single location.
 
+`constitution-template` follows the same runtime model. Project initialization seeds
+`.specify/memory/constitution.md` once so downstream commands always have a constitution to read.
+After that, installing, removing, enabling, disabling, or reprioritizing presets does not rewrite the
+live constitution. Each `/constitution` run resolves the current composed `constitution-template`,
+then applies existing project values and amendments to that scaffold.
+
+Teams that intentionally want preset stack changes to refresh an unchanged generated constitution can
+install the bundled `constitution-sync` preset. It restores guarded install-time materialization in
+addition to its command-time propagation behavior; authored constitutions remain protected.
+
 For detailed resolution and command registration flows, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Command Overrides
@@ -128,7 +138,7 @@ See [scaffold/](scaffold/) for a scaffold you can copy to create your own preset
 | `SPECKIT_PRESET_CATALOG_URL` | Override the full catalog stack with a single URL (replaces all defaults) | Built-in default stack |
 | `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authenticated requests to GitHub-hosted URLs (`raw.githubusercontent.com`, `github.com`, `api.github.com`, `codeload.github.com`). Required when your catalog JSON or preset ZIPs are hosted in a private GitHub repository. | None |
 
-#### Example: Using a private GitHub-hosted catalog
+### Example: Using a private GitHub-hosted catalog
 
 ```bash
 # Authenticate with a token (gh CLI, PAT, or GITHUB_TOKEN in CI)

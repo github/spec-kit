@@ -40,11 +40,24 @@ requires:
       required: boolean    # Optional, default: false
 
 provides:
-  commands:              # Required, at least one command
+  commands:              # At least one of commands/templates/scripts/hooks/events required
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
       aliases: [string]  # Optional, same pattern as name; namespace must match extension.id and must not shadow core or installed extension commands
+
+  templates:             # Optional, array of declared templates. Always resolve
+                          # as "replace" -- 'strategy' is not an authorable field here.
+    - name: string       # Required, pattern: ^[a-z0-9-]+$
+      file: string       # Required, relative path to template file
+      description: string # Optional
+
+  scripts:               # Optional, array of declared scripts. Always resolve
+                          # as "replace" -- 'strategy' is not an authorable field here.
+    - name: string       # Required, pattern: ^[a-z0-9-]+$
+      file: string       # Required, relative path to script file
+      description: string # Optional
+      runtimes: [string] # Optional, subset of: bash, powershell, python
 
   config:                # Optional, array of config files
     - name: string       # Config file name
@@ -111,6 +124,29 @@ defaults:                # Optional, default configuration values
 - **Examples**: `speckit.jira.specstoissues`, `speckit.linear.sync`
 - **Invalid**: `jira.specstoissues`, `speckit.command`, `speckit.jira.CreateIssues`
 
+#### `provides.templates[].name` / `provides.scripts[].name`
+
+- **Type**: string
+- **Pattern**: `^[a-z0-9-]+$`
+- **Description**: Unlike commands, templates and scripts are not invoked by
+  name, so they use the same plain slug pattern as `extension.id` rather than
+  the namespaced command pattern.
+- **Examples**: `myext-template`, `myext-collect`
+
+#### `provides.templates[].strategy` / `provides.scripts[].strategy`
+
+- Not an authorable field. Extension-contributed templates and scripts are
+  always resolved as `replace`; a manifest that includes a `strategy` key on
+  one of these entries is rejected with a `ValidationError`. Composable
+  strategies (`wrap`/`prepend`/`append`) are preset-only.
+
+#### `provides.scripts[].runtimes`
+
+- **Type**: array of strings
+- **Values**: `bash`, `powershell`, `python`
+- **Description**: Declares which runtimes the script supports. Purely
+  informational metadata — it is not used to select or invoke the script.
+
 #### `hooks`
 
 - **Type**: object
@@ -143,6 +179,8 @@ manifest.version                   # str: Version
 manifest.description               # str: Description
 manifest.requires_speckit_version  # str: Required spec-kit version
 manifest.commands                  # List[Dict]: Command definitions
+manifest.templates                 # List[Dict]: Declared template definitions
+manifest.scripts                   # List[Dict]: Declared script definitions
 manifest.hooks                     # Dict: Hook definitions
 ```
 

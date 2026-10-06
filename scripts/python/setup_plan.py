@@ -4,15 +4,22 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
 try:
-    from common import get_feature_paths, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_feature_paths,
+        resolve_template_content,
+    )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import get_feature_paths, resolve_template
+    from common import (
+        TemplateResolutionError,
+        get_feature_paths,
+        resolve_template_content,
+    )
 
 
 def _json_line(payload: object) -> str:
@@ -35,7 +42,9 @@ def main(argv: list[str] | None = None) -> int:
         elif arg in {"--help", "-h"}:
             sys.stdout.write(_help_text(sys.argv[0]))
             return 0
-        # Other arguments are accepted and silently ignored, matching setup-plan.sh.
+        else:
+            print(f"ERROR: Unknown option '{arg}'", file=sys.stderr)
+            return 1
 
     try:
         paths = get_feature_paths(script_file=Path(__file__))
@@ -55,9 +64,13 @@ def main(argv: list[str] | None = None) -> int:
             file=status_stream,
         )
     else:
-        template = resolve_template("plan-template", paths.repo_root)
-        if template is not None and template.is_file():
-            shutil.copy(template, paths.impl_plan)
+        try:
+            template_content = resolve_template_content("plan-template", paths.repo_root)
+        except TemplateResolutionError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if template_content is not None:
+            paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
             print("Warning: Plan template not found", file=status_stream)
@@ -69,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "FEATURE_SPEC": str(paths.feature_spec),
                     "IMPL_PLAN": str(paths.impl_plan),
-                    "SPECS_DIR": str(paths.feature_dir),
+                    "FEATURE_DIR": str(paths.feature_dir),
                     "BRANCH": paths.current_branch,
                 }
             )
@@ -77,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"FEATURE_SPEC: {paths.feature_spec}")
         print(f"IMPL_PLAN: {paths.impl_plan}")
-        print(f"SPECS_DIR: {paths.feature_dir}")
+        print(f"FEATURE_DIR: {paths.feature_dir}")
         print(f"BRANCH: {paths.current_branch}")
     return 0
 

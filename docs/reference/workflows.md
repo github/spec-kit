@@ -18,7 +18,7 @@ Runs a workflow from a catalog ID, URL, or local file path. Inputs declared by t
 Example:
 
 ```bash
-specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management" -i scope=full
+specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
@@ -105,6 +105,7 @@ specify workflow add <source>
 | --------------- | ------------------------------------------------------ |
 | `--dev`         | Install from a local YAML file, package directory, or archive |
 | `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
+| `--version <version>` | Install an exact advertised catalog release (`<source>` must be a workflow ID) |
 
 Installs a workflow from the catalog, an HTTPS URL, a local YAML file, a
 directory containing `workflow.yml`, or a `.zip`, `.tar.gz`, or `.tgz`
@@ -114,6 +115,37 @@ top-level directory.
 Directory and archive installs preserve the complete workflow package,
 including scripts and other companion files. ZIP, `.tar.gz`, and `.tgz`
 archives follow the same validation and installation behavior.
+
+Catalog entries keep the current release's `version`, `url`, optional `sha256`,
+and optional `requires` at the top level. An optional `releases` mapping
+advertises historical versions without changing what unqualified `add`,
+`search`, `info`, or `update` select:
+
+```json
+{
+  "id": "example",
+  "version": "2.0.0",
+  "url": "https://example.com/example-2.0.0.zip",
+  "releases": {
+    "1.0.0": {
+      "url": "https://example.com/example-1.0.0.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requires": {"speckit_version": ">=1.0.0"}
+    }
+  }
+}
+```
+
+Each historical release needs its own URL and SHA-256 digest; `requires` is
+optional and, when present, must match the downloaded workflow definition.
+Advertised versions use the workflow definition's `X.Y.Z` version format;
+`--version` also accepts equivalent spellings such as `v1.0` when selecting an
+advertised `1.0.0` release.
+The requested version must exist in the highest-priority catalog that provides
+the workflow. A missing version does not fall back to another source, and
+discovery-only catalogs cannot be installed from. The downloaded workflow ID,
+version, and declared digest are verified before installation. `--version` does
+not apply to local paths, direct URLs, or `--from` installations.
 
 ## Workflow Overlays
 
@@ -286,6 +318,40 @@ edits:
 
 Lower priority values have higher precedence. Change this overlay to `priority: 5` if it must win a conflict with the `add-lint` overlay above. It replaces the `review-plan` gate with a non-interactive command.
 
+### Workflow slots (upstream extension points)
+
+Workflow authors can declare a named, no-op workflow slot with `type: slot`:
+
+```yaml
+- id: post-implement
+  type: slot
+  name: "Post-implementation checks"
+```
+
+The step `id` is the unique overlay anchor; `name` is a required non-blank,
+human-readable label only. An unfilled slot completes as a `skipped` step with
+`output: {slot: <name>}`, so subsequent steps continue normally.
+
+Fill a slot with a schema-valid overlay `replace` edit anchored on the step
+`id`, not its `name`:
+
+```yaml
+id: fill-post-implement
+extends: my-workflow
+edits:
+  - replace: post-implement
+    step:
+      id: post-implement
+      type: shell
+      run: "echo Run project-specific checks"
+```
+
+Reuse the slot's `id` when later expressions or `fan-in.wait_for` refer to it.
+The replacement must also preserve every output key those later steps consume:
+an unfilled workflow slot supplies only `steps.<id>.output.slot`. Slot steps are
+not supported inside `fan-out.step` templates because runtime-multiplied
+templates cannot be overlay anchors.
+
 ### Interaction with Bundles and Updates
 
 `specify workflow add <local-directory>` installs the complete local workflow
@@ -301,6 +367,7 @@ When an installed workflow is refreshed or reinstalled, project overlays in `.sp
 - An overlay that targets a step id that does not exist in the base workflow will raise a validation error when the workflow is resolved.
 - Overlays cannot target steps added by other overlays.
 - Overlays cannot add new inputs or change the input schema of the base workflow.
+
 ## Update Workflows
 
 ```bash
@@ -343,13 +410,20 @@ Searches all active catalogs for workflows matching the query.
 
 ```bash
 specify workflow info <workflow_id>
+specify workflow info <workflow_id> --versions
 ```
 
 Shows detailed information about a workflow, including its steps, inputs, and requirements.
+`--versions` lists the current catalog version followed by advertised historical
+versions and indicates whether the winning catalog is installable or
+discovery-only (not installable). It also works when a different version is
+installed locally.
 
 ## Catalog Management
 
 Workflow catalogs control where `search` and `add` look for workflows. Catalogs are checked in priority order.
+
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 
@@ -370,6 +444,8 @@ specify workflow catalog add <url>
 | `--name <name>` | Optional name for the catalog    |
 
 Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
+
+Re-adding the same workflow or step catalog URL with the same name succeeds without changing the configuration; a different name is rejected.
 
 ### Remove a Catalog
 
@@ -397,14 +473,19 @@ schema_version: "1.0"
 workflow:
   id: "speckit"
   name: "Full SDD Cycle"
-  version: "1.0.0"
+  version: "1.0.1"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
 
 requires:
-  speckit_version: ">=0.7.2"
+  speckit_version: ">=0.8.5"
   integrations:
-    any: ["copilot", "claude", "gemini"]
+    any:
+      - "alquimia"
+      - "claude"
+      - "copilot"
+      - "gemini"
+      - "opencode"
 
 inputs:
   spec:
@@ -413,12 +494,8 @@ inputs:
     prompt: "Describe what you want to build"
   integration:
     type: string
-    default: "copilot"
-    prompt: "Integration to use (e.g. claude, copilot, gemini)"
-  scope:
-    type: string
-    default: "full"
-    enum: ["full", "backend-only", "frontend-only"]
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
 
 steps:
   - id: specify
@@ -494,6 +571,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
 | `init`       | Bootstrap a project (like `specify init`)        |
+| `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
 | `if`         | Conditional branching (then/else)                |
 | `switch`     | Multi-branch dispatch on an expression           |
@@ -503,6 +581,44 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `fan-in`     | Aggregate results from a fan-out step            |
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
+### Per-Step Integration Configuration
+
+Command steps may pass structured runtime configuration to integrations that
+support it:
+
+```yaml
+- id: implement-with-docker-agent
+  type: command
+  command: speckit.implement
+  integration: docker-agent
+  integration_args:
+    - "{{ inputs.agent_config }}"
+  integration_options:
+    agent: root
+    safety: balanced
+  model: "openai/gpt-5"
+  input:
+    args: "{{ inputs.spec }}"
+```
+
+`integration_args` is an ordered list of strings. `integration_options` is a
+mapping with string keys. Values in both fields are resolved with the workflow
+expression mechanism and validated by the selected integration; unsupported,
+unknown, or malformed values fail with an actionable error. Docker Agent uses
+its single positional argument as the agent configuration reference and accepts
+`agent` and `safety` as named integration options. Configure its model through
+the command step's top-level `model` field.
+
+When Docker Agent `integration_args` supplies an agent reference for a command
+step, it takes precedence over `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS`;
+the entire legacy environment value is ignored for that step. Without a per-step
+agent reference, the legacy environment behavior is unchanged.
+
+Resolved runtime configuration is recorded in workflow run state. When a failed
+or paused command is resumed, the complete dispatch configuration is re-resolved
+from the current inputs, so values supplied with `workflow resume --input` take
+effect consistently. A resume without updated inputs reproduces the same values.
 
 ## Expressions
 

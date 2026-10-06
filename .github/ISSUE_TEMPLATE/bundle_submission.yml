@@ -16,6 +16,8 @@ body:
         - If you host a bundle catalog, test catalog installation with `specify bundle catalog add <catalog-url> --id <catalog-id> --policy install-allowed` and `specify bundle install <bundle-id>`
         - If your bundle depends on components from non-default catalogs, document those catalog URLs and test installation from a clean project
 
+        **After submitting:** a maintainer applies the `bundle-submission` label during issue triage, which starts the automated catalog validation. You don't need to apply any label or ask for one.
+
   - type: input
     id: bundle-id
     attributes:

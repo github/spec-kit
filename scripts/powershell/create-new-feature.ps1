@@ -145,11 +145,13 @@ function Get-BranchName {
         # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "(?<![0-9A-Za-z_])$($word.ToUpper())(?![0-9A-Za-z_])") {
             # Keep short words only if they appear as uppercase in original (likely
             # acronyms). Use -cmatch so the comparison is case-sensitive, matching the
             # bash script's case-sensitive grep; -match would be case-insensitive and
-            # would keep every short word.
+            # would keep every short word. The boundaries are spelled out as ASCII
+            # because .NET's \b is Unicode-aware, so an accented letter next to the
+            # acronym would suppress the match that bash's LC_ALL=C grep still makes.
             $meaningfulWords += $word
         }
     }
@@ -162,7 +164,14 @@ function Get-BranchName {
     } else {
         # Fallback to original logic if no meaningful words found
         $result = ConvertTo-CleanBranchName -Name $Description
-        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        # @() keeps this an array. ConvertTo-CleanBranchName blanks every
+        # non-[a-z0-9] character, so a description written in a non-Latin script
+        # (or made only of punctuation) leaves nothing for the pipeline to
+        # emit -- it yields $null, and [string]::Join on $null throws
+        # ArgumentNullException. With $ErrorActionPreference = 'Stop' that is
+        # terminating, so the script died with a .NET stack trace and exit 1
+        # where the bash and Python twins both return an empty suffix.
+        $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }
 }
@@ -174,6 +183,10 @@ if ($ShortName) {
 } else {
     # Generate from description with smart filtering
     $branchSuffix = Get-BranchName -Description $featureDesc
+}
+
+if (-not $branchSuffix) {
+    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with ASCII letters or digits (for example, user-auth).")
 }
 
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
@@ -262,13 +275,16 @@ if (-not $DryRun) {
         exit 1
     }
 
+    $needsSpec = -not (Test-Path -PathType Leaf $specFile)
+    $content = $null
+    if ($needsSpec) {
+        $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+    }
+
     New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-    if (-not (Test-Path -PathType Leaf $specFile)) {
-        $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
-        if ($template -and (Test-Path $template)) {
-            # Read the template content and write it to the spec file with UTF-8 encoding without BOM
-            $content = [System.IO.File]::ReadAllText($template)
+    if ($needsSpec) {
+        if ($null -ne $content) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {
@@ -280,8 +296,11 @@ if (-not $DryRun) {
         }
     }
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    # Persist to .specify/feature.json so downstream commands can find the
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -ne '1' -and $env:SPECIFY_FEATURE_NO_PERSIST -ne 'true') {
+        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    }
 
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName

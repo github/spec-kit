@@ -79,7 +79,7 @@ def test_template_renders_python_invocation(name: str):
     result = IntegrationBase.process_template(content, "agent", "py")
     assert "{SCRIPT}" not in result
     assert re.search(
-        r"python3 \.specify/scripts/python/\w+\.py(?: --[\w-]+)*", result
+        r"python3 \.specify/scripts/python/\w+\.py(?: [\w-]+)*", result
     ), f"{name} did not render a Python invocation"
 
 

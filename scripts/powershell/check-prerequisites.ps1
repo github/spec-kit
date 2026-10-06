@@ -9,17 +9,21 @@
 #
 # OPTIONS:
 #   -Json               Output in JSON format
+#   -RequireSpec        Require spec.md to exist (for analysis phase)
 #   -RequireTasks       Require tasks.md to exist (for implementation phase)
 #   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
 #   -PathsOnly          Only output path variables (no validation)
+#   -Template NAME      Include composed template content in JSON output
 #   -Help, -h           Show help message
 
 [CmdletBinding()]
 param(
     [switch]$Json,
+    [switch]$RequireSpec,
     [switch]$RequireTasks,
     [switch]$IncludeTasks,
     [switch]$PathsOnly,
+    [string]$Template,
     [switch]$Help
 )
 
@@ -34,9 +38,11 @@ Consolidated prerequisite checking for Spec-Driven Development workflow.
 
 OPTIONS:
   -Json               Output in JSON format
+  -RequireSpec        Require spec.md to exist (for analysis phase)
   -RequireTasks       Require tasks.md to exist (for implementation phase)
   -IncludeTasks       Include tasks.md in AVAILABLE_DOCS list
   -PathsOnly          Only output path variables (no prerequisite validation)
+  -Template NAME      Include composed template content in JSON output
   -Help, -h           Show this help message
 
 EXAMPLES:
@@ -102,6 +108,14 @@ if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
     exit 1
 }
 
+# Check for spec.md if required
+if ($RequireSpec -and -not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
+    [Console]::Error.WriteLine("ERROR: spec.md not found in $($paths.FEATURE_DIR)")
+    $specifyCommand = Format-SpecKitCommand -CommandName 'specify' -RepoRoot $paths.REPO_ROOT
+    [Console]::Error.WriteLine("Run $specifyCommand first to create the feature specification.")
+    exit 1
+}
+
 # Check for tasks.md if required
 if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: tasks.md not found in $($paths.FEATURE_DIR)")
@@ -129,25 +143,43 @@ if ($IncludeTasks -and (Test-Path $paths.TASKS)) {
     $docs += 'tasks.md'
 }
 
+$templateContent = $null
+if ($Template) {
+    $templateContent = Resolve-TemplateContent -TemplateName $Template -RepoRoot $paths.REPO_ROOT
+    if ($null -eq $templateContent) {
+        [Console]::Error.WriteLine("ERROR: Could not resolve required $Template from the template override stack for $($paths.REPO_ROOT)")
+        exit 1
+    }
+}
+
 # Output results
 if ($Json) {
     # JSON output
-    [PSCustomObject]@{
+    $result = [ordered]@{
         FEATURE_DIR = $paths.FEATURE_DIR
         AVAILABLE_DOCS = $docs
-    } | ConvertTo-Json -Compress
+    }
+    if ($Template) {
+        $result.TEMPLATE_CONTENT = $templateContent
+    }
+    [PSCustomObject]$result | ConvertTo-Json -Compress
 } else {
     # Text output
     Write-Output "FEATURE_DIR:$($paths.FEATURE_DIR)"
     Write-Output "AVAILABLE_DOCS:"
 
-    # Show status of each potential document
-    Test-FileExists -Path $paths.RESEARCH -Description 'research.md' | Out-Null
-    Test-FileExists -Path $paths.DATA_MODEL -Description 'data-model.md' | Out-Null
-    Test-DirHasFiles -Path $paths.CONTRACTS_DIR -Description 'contracts/' | Out-Null
-    Test-FileExists -Path $paths.QUICKSTART -Description 'quickstart.md' | Out-Null
+    # Show status of each potential document.
+    # These helpers report their line with Write-Output and ALSO return a
+    # bool, both on the Success stream, so 'Out-Null' discarded the report
+    # line along with the return value and left AVAILABLE_DOCS empty. Drop
+    # only the boolean so the per-document lines reach stdout like the
+    # bash and Python twins.
+    Test-FileExists -Path $paths.RESEARCH -Description 'research.md' | Where-Object { $_ -isnot [bool] }
+    Test-FileExists -Path $paths.DATA_MODEL -Description 'data-model.md' | Where-Object { $_ -isnot [bool] }
+    Test-DirHasFiles -Path $paths.CONTRACTS_DIR -Description 'contracts/' | Where-Object { $_ -isnot [bool] }
+    Test-FileExists -Path $paths.QUICKSTART -Description 'quickstart.md' | Where-Object { $_ -isnot [bool] }
 
     if ($IncludeTasks) {
-        Test-FileExists -Path $paths.TASKS -Description 'tasks.md' | Out-Null
+        Test-FileExists -Path $paths.TASKS -Description 'tasks.md' | Where-Object { $_ -isnot [bool] }
     }
 }

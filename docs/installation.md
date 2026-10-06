@@ -6,7 +6,7 @@
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Pi Coding Agent](https://pi.dev), or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)
 - [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
-- [Git](https://git-scm.com/downloads) _(optional — required only when the git extension is enabled)_
+- [Git](https://git-scm.com/downloads) *(optional — required only when the git extension is enabled)*
 
 ## Installation
 
@@ -50,7 +50,7 @@ pipx install specify-cli
 pip install specify-cli
 ```
 
-To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade.
+To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade and how to [install from a custom or private package index](install/pypi.md#install-from-a-custom-or-private-package-index).
 
 ### One-time Usage
 
@@ -95,6 +95,27 @@ specify init <project_name> --script ps
 specify init <project_name> --script py
 ```
 
+### CI and AI Agent Harnesses
+
+For environments without a keyboard, or a PTY that cannot send arrow keys, pass
+`--non-interactive` so initialization never waits on a picker:
+
+```bash
+specify init my-project --non-interactive --ignore-agent-tools
+```
+
+`--ignore-agent-tools` skips the agent executable check when the agent will run
+elsewhere; omit it when you want that check. Non-interactive initialization
+defaults to Copilot unless you select another integration explicitly.
+
+For a non-empty directory, `--force` acknowledges the merge warning. Review the
+[existing-project guide](guides/existing-projects.md) and commit or back up local
+changes before initializing:
+
+```bash
+specify init --here --force --non-interactive --integration claude
+```
+
 ### Ignore Agent Tools Check
 
 If you prefer to get the templates without checking for the right tools:
@@ -126,13 +147,30 @@ After initialization, you should see the following commands available in your co
 - `/speckit.checklist` - Generate quality checklists
 - `/speckit.constitution` - Create or update project principles
 - `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues
+- `/speckit.taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
+  `/speckit.github.taskstoissues`; install it with `specify extension add github`)
+
+The `generic` integration also registers extension commands in its configured
+`--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`
+available there as a command file, or as `/speckit-github-taskstoissues` when
+`--skills` is enabled. The core `/speckit.taskstoissues` (or
+`/speckit-taskstoissues` with `--skills`) remains available.
+See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 
 - `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
 - `.specify/scripts/powershell/` — contains `.ps1` scripts (default on Windows)
 - `.specify/scripts/python/` — contains `.py` scripts (chosen with `--script py`; also installs the platform shell fallback)
+
+## Choose a Process
+
+After initialization, launch your coding agent in the project directory and
+follow the [SDD quickstart](quickstart.md),
+[bug-fixing quickstart](guides/bugfix.md), or
+[idea assessment quickstart](guides/assessment.md). These are independent entry
+points. SDD is available immediately; the other guides show how to install their
+bundled, opt-in extensions.
 
 ## Troubleshooting
 

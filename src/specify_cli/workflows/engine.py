@@ -61,11 +61,15 @@ class WorkflowDefinition:
         self.schema_version: str = data.get("schema_version", "1.0")
 
         # Defaults
-        self.default_integration: str | None = workflow.get("integration")
-        self.default_model: str | None = workflow.get("model")
-        self.default_options: dict[str, Any] = workflow.get("options") or {}
-        if not isinstance(self.default_options, dict):
-            self.default_options = {}
+        # Keep malformed values intact until ``validate_workflow`` can report
+        # them. ``None`` remains the supported "no defaults" form for options
+        # and retains its existing runtime representation as an empty mapping.
+        self.default_integration: Any = workflow.get("integration")
+        self.default_model: Any = workflow.get("model")
+        raw_default_options = workflow.get("options")
+        self.default_options: Any = (
+            {} if raw_default_options is None else raw_default_options
+        )
 
         # Advisory pre-conditions (spec-kit version / integrations a workflow
         # expects). Validated by ``validate_workflow`` (recognized keys only;
@@ -118,6 +122,14 @@ class WorkflowDefinition:
 
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+_WORKFLOW_VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
+
+
+def _is_valid_workflow_version(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and _WORKFLOW_VERSION_PATTERN.fullmatch(value) is not None
+    )
 
 # Keys accepted under a workflow's ``requires`` block: the advisory
 # pre-conditions documented for workflows (``speckit_version`` and
@@ -135,9 +147,43 @@ def _get_valid_step_types() -> set[str]:
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if", "init",
+        "command", "shell", "prompt", "gate", "if", "init", "slot",
         "switch", "while", "do-while", "fan-out", "fan-in",
     }
+
+
+def _dispatch_default_errors(definition: WorkflowDefinition) -> list[str]:
+    """Return validation errors for workflow defaults inherited by dispatch steps."""
+    errors: list[str] = []
+
+    if (
+        definition.default_integration is not None
+        and not isinstance(definition.default_integration, str)
+    ):
+        errors.append(
+            "'workflow.integration' must be a string or null, got "
+            f"{type(definition.default_integration).__name__} "
+            f"({definition.default_integration!r})."
+        )
+
+    if (
+        definition.default_model is not None
+        and not isinstance(definition.default_model, str)
+    ):
+        errors.append(
+            "'workflow.model' must be a string or null, got "
+            f"{type(definition.default_model).__name__} "
+            f"({definition.default_model!r})."
+        )
+
+    if not isinstance(definition.default_options, dict):
+        errors.append(
+            "'workflow.options' must be a mapping or null, got "
+            f"{type(definition.default_options).__name__} "
+            f"({definition.default_options!r})."
+        )
+
+    return errors
 
 
 def validate_workflow(definition: WorkflowDefinition) -> list[str]:
@@ -191,11 +237,16 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.version).__name__} ({definition.version!r}) — "
             f'quote it in YAML (version: "1.0.0").'
         )
-    elif not re.fullmatch(r"\d+\.\d+\.\d+", definition.version):
+    elif not _is_valid_workflow_version(definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
         )
+
+    # Workflow-level dispatch defaults are inherited by command and prompt
+    # steps. Validate their shapes before an invalid value reaches dispatch, or
+    # (for options) is silently normalized away during construction.
+    errors.extend(_dispatch_default_errors(definition))
 
     # -- Inputs -----------------------------------------------------------
     if not isinstance(definition.inputs, dict):
@@ -366,6 +417,17 @@ def _validate_steps(
 
         # Determine step type
         step_type = step_config.get("type", "command")
+        if not isinstance(step_type, str):
+            # Registry keys are strings. Checking an unhashable YAML value
+            # (for example ``type: [shell]`` or a mapping) against the set
+            # below raises a raw TypeError before validation can report the
+            # authoring mistake. Guard every non-string shape first, matching
+            # the typed validation already applied to workflow and step IDs.
+            errors.append(
+                f"Step {step_id!r}: 'type' must be a string, got "
+                f"{type(step_type).__name__} ({step_type!r})."
+            )
+            continue
         if step_type not in _get_valid_step_types():
             errors.append(
                 f"Step {step_id!r} has invalid type {step_type!r}."
@@ -377,6 +439,13 @@ def _validate_steps(
         if step_impl:
             step_errors = step_impl.validate(step_config)
             errors.extend(step_errors)
+
+        if step_type == "slot" and inside_fan_out:
+            errors.append(
+                f"Slot step {step_id!r} is not supported inside fan-out "
+                "templates because overlays cannot address runtime-multiplied "
+                "templates."
+            )
 
         # Validate optional `continue_on_error` field. The engine honours
         # this on any step that returns StepStatus.FAILED so the pipeline can route
@@ -743,12 +812,13 @@ class RunState:
         cls._validate_run_id(run_id)
         runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
         state_path = runs_dir / "state.json"
-        if not state_path.exists():
+
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state_data = json.load(f)
+        except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
-
-        with open(state_path, encoding="utf-8") as f:
-            state_data = json.load(f)
         if not isinstance(state_data, dict):
             raise ValueError("Invalid run state: expected a JSON object")
         missing_fields = [
@@ -760,6 +830,11 @@ class RunState:
             raise ValueError(
                 "Invalid run state: missing required field(s): "
                 + ", ".join(missing_fields)
+            )
+        if state_data["run_id"] != run_id:
+            raise ValueError(
+                f"Invalid run state: stored run_id {state_data['run_id']!r} "
+                f"does not match requested run_id {run_id!r}"
             )
 
         workflow_id = state_data["workflow_id"]
@@ -782,6 +857,18 @@ class RunState:
         installed_workflow_id = state_data.get("installed_workflow_id")
         installed_registry_root = state_data.get("installed_registry_root")
 
+        step_results = state_data.get("step_results", {})
+        if not isinstance(step_results, dict):
+            raise ValueError(
+                "Invalid run state: 'step_results' must be a JSON object"
+            )
+        for step_id, result in step_results.items():
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "Invalid run state: step_results record "
+                    f"{step_id!r} must be a JSON object"
+                )
+
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=workflow_id,
@@ -791,9 +878,24 @@ class RunState:
             installed_origin_tracked=has_installed_workflow_id,
         )
         state.status = RunStatus(state_data["status"])
-        state.current_step_index = state_data.get("current_step_index", 0)
+
+        # Validate the index shape before restoring it. The upper bound cannot
+        # be checked until resume() loads the workflow definition and is handled
+        # there. Reject bool explicitly because it subclasses int; otherwise a
+        # malformed value could fail during slicing or resume from the wrong step.
+        current_step_index = state_data.get("current_step_index", 0)
+        if (
+            isinstance(current_step_index, bool)
+            or not isinstance(current_step_index, int)
+            or current_step_index < 0
+        ):
+            raise ValueError(
+                "Invalid run state: 'current_step_index' must be a "
+                f"non-negative integer, got {current_step_index!r}"
+            )
+        state.current_step_index = current_step_index
         state.current_step_id = state_data.get("current_step_id")
-        state.step_results = state_data.get("step_results", {})
+        state.step_results = step_results
         state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
@@ -866,7 +968,7 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
-        from .overlays import WorkflowResolver
+        from .overlay import WorkflowResolver
 
         path = Path(source).expanduser()
 
@@ -930,6 +1032,10 @@ class WorkflowEngine:
         -------
         The final ``RunState`` after execution completes (or pauses).
         """
+        dispatch_default_errors = _dispatch_default_errors(definition)
+        if dispatch_default_errors:
+            raise ValueError(" ".join(dispatch_default_errors))
+
         from . import STEP_REGISTRY
 
         effective_run_id = run_id
@@ -1031,6 +1137,25 @@ class WorkflowEngine:
         else:
             definition = self.load_workflow(state.workflow_id)
 
+        # RunState.load() rejects a non-int/negative current_step_index but
+        # can't check the upper bound — the step count isn't known until the
+        # workflow definition is loaded, above. An out-of-range positive
+        # index (e.g. a hand-edited state.json) would otherwise slice
+        # definition.steps[state.current_step_index:] into an empty list
+        # below, silently completing the run without executing any step.
+        if state.current_step_index >= len(definition.steps):
+            msg = (
+                "Invalid run state: 'current_step_index' "
+                f"({state.current_step_index}) is out of range for "
+                f"workflow {state.workflow_id!r} with {len(definition.steps)} "
+                "step(s)."
+            )
+            raise ValueError(msg)
+
+        dispatch_default_errors = _dispatch_default_errors(definition)
+        if dispatch_default_errors:
+            raise ValueError(" ".join(dispatch_default_errors))
+
         # Merge any newly-supplied inputs over the persisted ones and
         # re-validate through the same typing path as the initial run.
         if inputs:
@@ -1046,6 +1171,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            is_resume=True,
             workflow_dir=state.workflow_dir,
         )
 
@@ -1162,6 +1288,11 @@ class WorkflowEngine:
                 "status": result.status.value,
                 "error": result.error,
             }
+            if step_type == "command" and "integration_args" in result.output:
+                step_data["integration_args"] = result.output["integration_args"]
+                step_data["integration_options"] = result.output[
+                    "integration_options"
+                ]
             self._record_result(context, state, step_id, step_data)
 
             state.append_log(
@@ -1705,8 +1836,13 @@ class WorkflowEngine:
                 continue
             state_path = run_dir / "state.json"
             if state_path.exists():
-                with open(state_path, encoding="utf-8") as f:
-                    state_data = json.load(f)
+                try:
+                    with open(state_path, encoding="utf-8") as f:
+                        state_data = json.load(f)
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                    continue
+                if not isinstance(state_data, dict) or "run_id" not in state_data:
+                    continue
                 runs.append(state_data)
         return runs
 
