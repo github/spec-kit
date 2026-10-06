@@ -412,6 +412,8 @@ For a new or refactored command:
 
 - [ ] The CLI path maps predictably to a `command_<name>.py` module.
 - [ ] Only the real command module registers a handler.
+- [ ] The owning hierarchy records exactly one MCP inventory disposition for
+      the CLI leaf, including when it is unavailable or excluded.
 - [ ] If another adapter exposes the operation, the CLI adapter maps into the
       shared operation defined by `design/shared.md`.
 - [ ] For a multi-adapter operation, semantic validation, orchestration, and
