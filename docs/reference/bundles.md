@@ -46,14 +46,18 @@ Searches all active catalogs for bundles matching the query. Without a query, li
 
 ```bash
 specify bundle info <bundle_id>
+specify bundle info <bundle_id> --versions
 ```
 
 | Option       | Description                       |
 | ------------ | --------------------------------- |
 | `--offline`  | Do not access the network         |
 | `--json`     | Emit machine-readable JSON        |
+| `--versions` | List the current and historical catalog releases |
 
 Shows full metadata for a bundle along with the **fully expanded component set** it installs — every extension, preset, step, and workflow with its pinned version, plus preset priority and strategy. The output also includes a trust indicator (`verified` vs `community`) so you can judge trust before installing. This preview is the same plan `install` applies, so you can see exactly what will be added before committing. Foreseeable overlaps with components already provided by installed bundles are surfaced here as well.
+
+Use `specify bundle info <bundle_id> --versions` to inspect the catalog history without downloading a bundle manifest. With `--json`, it emits the bundle ID, available versions, current version, source, and install policy.
 
 ## Install a Bundle
 
@@ -66,6 +70,7 @@ specify bundle install <bundle_id | path>
 | `--integration`  | Override the integration used when initializing/installing         |
 | `--offline`      | Do not access the network                                          |
 | `--refresh`      | Refresh owned components from the supplied bundle source           |
+| `--version`      | Install an exact historical or current catalog release             |
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
 
@@ -82,6 +87,33 @@ The source may also be a bundle directory or `.zip` artifact. Refresh uses the s
 A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
 
 > **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
+
+## Catalog Release History
+
+A catalog entry can advertise a current release and approved historical releases. Older single-version catalogs continue to work unchanged.
+
+```json
+{
+  "id": "team-setup",
+  "version": "1.2.0",
+  "download_url": "https://example.com/team-setup-1.2.0.zip",
+  "sha256": "<sha256 for 1.2.0>",
+  "releases": {
+    "1.1.0": {
+      "download_url": "https://example.com/team-setup-1.1.0.zip",
+      "sha256": "<sha256 for 1.1.0>"
+    }
+  }
+}
+```
+
+Each historical release needs its own `download_url` and a 64-character SHA-256 digest; as with current releases, a digest may use a case-insensitive `sha256:` prefix and surrounding whitespace, and other algorithm prefixes are rejected. A release's `requires`, `provides`, and `verified` fields are not inherited from the current release: put them in that release's record, or the release has no requirements, no provided counts, and is shown as `community`. Other shared metadata, such as the name, description, and author, is inherited, and a release record may override it. A release record cannot contain `id`, `version`, or `releases`.
+
+`specify bundle install team-setup --version 1.1.0` selects the bundle release, downloads that release's artifact, verifies its digest, and checks that its manifest declares the catalog ID and advertised version. It never overrides component pins inside `bundle.yml`. `--version` is catalog-only, so it cannot be blank, used with a local path, or combined with `--refresh`.
+
+Only the highest-precedence catalog that lists a bundle is consulted; a missing version does not fall through to a lower-priority catalog. Discovery-only sources remain non-installable, including exact historical releases. Historical `download_url` values must use HTTPS (or HTTP on localhost), and release keys must be strict SemVer values that are PEP 440-comparable. Version keys must be distinct, including PEP 440-equivalent spellings such as `1.0.0-rc.1` and `1.0.0-rc1`, and cannot repeat the current version. `bundle update` always selects the current release. The first-party and community catalogs currently advertise one release per bundle.
+
+Release history is validated when a bundle is looked up by ID, not when the catalog loads. A malformed `releases` mapping therefore makes `install`, `info`, and `update` fail for that bundle, including its current release, while `search` still lists it.
 
 ## Update Bundles
 

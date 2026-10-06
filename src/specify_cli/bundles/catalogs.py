@@ -6,7 +6,7 @@ sources.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -158,6 +158,9 @@ class CatalogEntry:
     # Resolution provenance (filled in by the catalog stack at lookup time):
     source_id: str | None = None
     source_policy: InstallPolicy | None = None
+    # Preserve unknown additive catalog fields for lazy release-history
+    # validation and selection without changing current-entry parsing.
+    raw: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_dict(cls, data: Any) -> "CatalogEntry":
@@ -202,17 +205,13 @@ class CatalogEntry:
             repository=(str(data["repository"]) if data.get("repository") else None),
             tags=_parse_tags(data.get("tags"), entry_id),
             verified=_parse_verified(data.get("verified", False), entry_id),
+            raw=dict(data),
         )
 
     def with_provenance(self, source: CatalogSource) -> "CatalogEntry":
-        return CatalogEntry(
-            id=self.id, name=self.name, version=self.version, role=self.role,
-            description=self.description, author=self.author, license=self.license,
-            download_url=self.download_url,
-            requires_speckit_version=self.requires_speckit_version,
-            sha256=self.sha256,
-            provides=self.provides, repository=self.repository, tags=self.tags,
-            verified=self.verified, source_id=source.id,
+        return replace(
+            self,
+            source_id=source.id,
             source_policy=source.install_policy,
         )
 

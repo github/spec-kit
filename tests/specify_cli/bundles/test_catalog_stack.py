@@ -68,6 +68,142 @@ def test_resolve_unknown_bundle_errors():
         stack.resolve("missing")
 
 
+def _history_release(version: str) -> dict:
+    return {
+        "download_url": f"https://example.com/history-{version}.zip",
+        "sha256": "a" * 64,
+    }
+
+
+def test_resolve_selects_historical_release_from_winning_source():
+    sources = [
+        _source("high", 1, "install-allowed"),
+        _source("low", 2, "install-allowed"),
+    ]
+    high = catalog_entry_dict(
+        "history", version="2.0.0", releases={"1.0.0": _history_release("1.0.0")}
+    )
+    low = catalog_entry_dict(
+        "history", version="1.0.0", download_url="https://example.com/lower.zip"
+    )
+    stack = _stack(
+        sources,
+        {"high": catalog_payload({"history": high}), "low": catalog_payload({"history": low})},
+    )
+
+    resolved = stack.resolve("history", "1.0.0")
+
+    assert resolved.source.id == "high"
+    assert resolved.entry.download_url == "https://example.com/history-1.0.0.zip"
+    assert resolved.entry.version == "1.0.0"
+    assert resolved.entry.source_id == "high"
+    assert stack.resolve("history").entry.version == "2.0.0"
+
+
+def test_resolve_does_not_fall_through_to_lower_source_with_the_version():
+    sources = [
+        _source("high", 1, "install-allowed"),
+        _source("low", 2, "install-allowed"),
+    ]
+    high = catalog_entry_dict(
+        "history", version="2.0.0", releases={"1.0.0": _history_release("1.0.0")}
+    )
+    low = catalog_entry_dict(
+        "history",
+        version="1.0.0",
+        download_url="https://example.com/lower.zip",
+        releases={"0.9.0": _history_release("0.9.0")},
+    )
+    stack = _stack(
+        sources,
+        {"high": catalog_payload({"history": high}), "low": catalog_payload({"history": low})},
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        stack.resolve("history", "0.9.0")
+
+    message = str(excinfo.value)
+    assert "no release 0.9.0 in catalog source 'high'" in message
+    assert "(advertised: 2.0.0, 1.0.0)" in message
+    assert "highest-precedence source" in message
+
+
+def test_resolve_keeps_discovery_only_winner_with_the_version():
+    sources = [
+        _source("high", 1, "discovery-only"),
+        _source("low", 2, "install-allowed"),
+    ]
+    high = catalog_entry_dict(
+        "history", version="2.0.0", releases={"1.0.0": _history_release("1.0.0")}
+    )
+    low = catalog_entry_dict(
+        "history", version="1.0.0", download_url="https://example.com/lower.zip"
+    )
+    stack = _stack(
+        sources,
+        {"high": catalog_payload({"history": high}), "low": catalog_payload({"history": low})},
+    )
+
+    resolved = stack.resolve("history", "1.0.0")
+
+    assert resolved.source.id == "high"
+    assert resolved.install_allowed is False
+    assert resolved.entry.download_url == "https://example.com/history-1.0.0.zip"
+
+
+@pytest.mark.parametrize(
+    "releases",
+    [[], {"1.1.0": {"download_url": "https://example.com/x.zip"}}, {"1.0": {}}],
+)
+def test_malformed_history_fails_resolve_but_search_still_lists_bundle(releases):
+    entry = catalog_entry_dict("history", releases=releases)
+    stack = _stack(
+        [_source("only", 1, "install-allowed")],
+        {"only": catalog_payload({"history": entry})},
+    )
+
+    with pytest.raises(BundlerError, match="Bundle 'history'"):
+        stack.resolve("history")
+    assert [result.entry.id for result in stack.search()] == ["history"]
+
+
+def test_search_output_is_unchanged_by_release_history():
+    plain = catalog_entry_dict("history")
+    with_history = catalog_entry_dict(
+        "history", releases={"1.0.0": _history_release("1.0.0")}
+    )
+    source = _source("only", 1, "install-allowed")
+
+    plain_result = _stack([source], {"only": catalog_payload({"history": plain})}).search()
+    history_result = _stack(
+        [source], {"only": catalog_payload({"history": with_history})}
+    ).search()
+
+    assert [r.entry for r in history_result] == [r.entry for r in plain_result]
+    assert history_result[0].entry.version == "1.2.0"
+
+
+def test_resolve_preserves_release_history_through_provenance():
+    entry = catalog_entry_dict(
+        "history",
+        releases={
+            "1.0.0": {
+                "download_url": "https://example.com/history-1.0.0.zip",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+    stack = _stack(
+        [_source("only", 1, "discovery-only")],
+        {"only": catalog_payload({"history": entry})},
+    )
+
+    resolved = stack.resolve("history")
+
+    assert resolved.entry.raw == entry
+    assert resolved.source.install_allowed is False
+
+
 def test_search_dedupes_by_precedence_and_filters():
     sources = [_source("a", 1, "install-allowed"), _source("b", 2, "install-allowed")]
     payloads = {
