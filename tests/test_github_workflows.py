@@ -504,12 +504,24 @@ def test_extension_submission_form_applies_only_automatic_intake_verdict():
     assert extension_form["labels"] == ["triage-must-have"]
     assert "extension-submission" not in extension_form["labels"]
 
+
+def test_preset_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    preset_form = yaml.safe_load(
+        (forms_dir / "preset_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert preset_form["labels"] == ["triage-must-have"]
+    assert "preset-submission" not in preset_form["labels"]
+
+
+def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
     for form_name in (
         "agent_request.yml",
         "bug_report.yml",
         "bundle_submission.yml",
         "feature_request.yml",
-        "preset_submission.yml",
     ):
         form = yaml.safe_load((forms_dir / form_name).read_text(encoding="utf-8"))
         assert "triage-must-have" not in form["labels"]
