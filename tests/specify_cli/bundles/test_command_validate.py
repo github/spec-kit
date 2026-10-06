@@ -106,3 +106,29 @@ def test_validate_accepts_bundled_reference(project: Path):
     result = runner.invoke(app, ["bundle", "validate"])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_validate_rejects_mismatched_bundled_preset(
+    project: Path, monkeypatch, offline: bool,
+):
+    from specify_cli.presets import PresetCatalog
+
+    data = valid_manifest_dict(
+        provides={"presets": [{"id": "lean", "version": "9.9.9"}]}
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(
+        PresetCatalog, "get_pack_info",
+        lambda self, _id, version=None: {
+            "version": version or "9.9.9",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+
+    command = ["bundle", "validate", *(["--offline"] if offline else [])]
+    result = runner.invoke(app, command)
+
+    assert result.exit_code == 1, result.output
+    assert "resolved version is 1.0.0" in result.output

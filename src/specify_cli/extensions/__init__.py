@@ -4739,6 +4739,8 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
+            from http.client import HTTPException
+
             from specify_cli.authentication.http import RedirectPolicyError
 
             # Validate EVERY redirect hop, not just the terminal URL. _open_url
@@ -4808,7 +4810,7 @@ class ExtensionCatalog(CatalogStackBase):
             raise ExtensionCatalogValidationError(
                 f"Invalid catalog redirect from {entry.url}: {e}"
             ) from e
-        except urllib.error.URLError as e:
+        except (urllib.error.URLError, OSError, HTTPException) as e:
             raise ExtensionCatalogFetchError(
                 f"Failed to fetch catalog from {entry.url}: {e}"
             ) from e
@@ -4980,6 +4982,7 @@ class ExtensionCatalog(CatalogStackBase):
 
         try:
             import urllib.error
+            from http.client import HTTPException
 
             from specify_cli.authentication.http import RedirectPolicyError
 
@@ -5044,8 +5047,10 @@ class ExtensionCatalog(CatalogStackBase):
             raise ExtensionCatalogValidationError(
                 f"Invalid catalog redirect from {catalog_url}: {e}"
             ) from e
-        except urllib.error.URLError as e:
-            raise ExtensionError(f"Failed to fetch catalog from {catalog_url}: {e}") from e
+        except (urllib.error.URLError, OSError, HTTPException) as e:
+            raise ExtensionCatalogFetchError(
+                f"Failed to fetch catalog from {catalog_url}: {e}"
+            ) from e
         except json.JSONDecodeError as e:
             raise ExtensionError(f"Invalid JSON in catalog: {e}") from e
         except UnicodeError as e:

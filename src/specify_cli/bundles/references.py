@@ -154,6 +154,23 @@ def make_reference_checker(
         if _resolved_locally(project_root, component):
             return None
 
+        if component.kind == "presets" and component.source is None:
+            from .._assets import _locate_bundled_preset
+            from . import BundlerError
+            from .primitives import _assert_pinned_version, _bundled_manifest_version
+
+            bundled = _locate_bundled_preset(component.id)
+            if bundled is not None:
+                try:
+                    _assert_pinned_version(
+                        "Preset",
+                        component.id,
+                        component.version,
+                        _bundled_manifest_version(bundled / "preset.yml", "preset"),
+                    )
+                except BundlerError as exc:
+                    return str(exc)
+
         if allow_network:
             in_catalog = _resolved_in_catalog(project_root, component)
             if in_catalog is True:

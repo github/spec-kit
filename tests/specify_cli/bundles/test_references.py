@@ -125,6 +125,119 @@ def test_wrong_bundled_pin_does_not_resolve_locally(tmp_path):
     assert any("agent-context" in message for message in warnings)
 
 
+@pytest.mark.parametrize("allow_network", [False, True])
+def test_bundled_preset_pin_mismatch_is_definitive(
+    tmp_path, monkeypatch, allow_network,
+):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    bundled = tmp_path / "preset"
+    bundled.mkdir()
+    (bundled / "preset.yml").write_text(
+        "preset:\n  id: requested\n  version: 1.0.0\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: bundled)
+    monkeypatch.setattr(
+        PresetCatalog, "get_pack_info",
+        lambda self, _id, version=None: {
+            "version": version or "2.0.0",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=allow_network, warnings=warnings)
+
+    problem = check(_ref("presets", "requested", "2.0.0"))
+    assert problem is not None and "resolved version is 1.0.0" in problem
+    assert warnings == []
+    if allow_network:
+        assert check(ComponentRef(
+            kind="presets", id="requested", version="2.0.0", source="trusted"
+        )) is None
+        assert warnings == []
+    assert check(_ref("presets", "requested", "1.0.0")) is None
+
+
+def test_bundled_preset_mismatch_allows_matching_installed_version(
+    tmp_path, monkeypatch,
+):
+    from types import SimpleNamespace
+
+    import specify_cli._assets as assets
+    from specify_cli.bundles import primitives
+
+    bundled = tmp_path / "preset"
+    bundled.mkdir()
+    (bundled / "preset.yml").write_text(
+        "preset:\n  id: requested\n  version: 1.0.0\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: bundled)
+    monkeypatch.setattr(
+        primitives, "primitive_manager",
+        lambda *args, **kwargs: SimpleNamespace(
+            is_installed=lambda _component: True,
+            installed_version=lambda _component: "2.0.0",
+        ),
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=False, warnings=warnings)
+
+    assert check(_ref("presets", "requested", "2.0.0")) is None
+    assert warnings == []
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_extension_http_protocol_error_is_unreachable_catalog(
+    tmp_path, monkeypatch, legacy,
+):
+    from http.client import BadStatusLine
+
+    from specify_cli.extensions import (
+        CatalogEntry,
+        ExtensionCatalog,
+        ExtensionCatalogFetchError,
+    )
+
+    catalog = ExtensionCatalog(tmp_path)
+    entry = CatalogEntry("https://example.com/catalog.json", "trusted", 1, True)
+    monkeypatch.setattr(catalog, "get_catalog_url", lambda: entry.url)
+
+    def bad_status(*args, **kwargs):
+        raise BadStatusLine("bad response")
+
+    monkeypatch.setattr(catalog, "_open_url", bad_status)
+    with pytest.raises(ExtensionCatalogFetchError, match="bad response"):
+        if legacy:
+            catalog.fetch_catalog(force_refresh=True)
+        else:
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+
+def test_online_validation_warns_for_extension_http_protocol_error(
+    tmp_path, monkeypatch,
+):
+    from http.client import BadStatusLine
+
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_active_catalogs",
+        lambda self: [CatalogEntry("https://example.com/catalog.json", "trusted", 1, True)],
+    )
+
+    def bad_status(*args, **kwargs):
+        raise BadStatusLine("bad response")
+
+    monkeypatch.setattr(ExtensionCatalog, "_open_url", bad_status)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref("extensions", "requested")) is None
+    assert len(warnings) == 1 and "unreachable" in warnings[0]
+
+
 def test_online_validation_checks_winning_exact_release_and_source(tmp_path, monkeypatch):
     import specify_cli._assets as assets
     from specify_cli.workflows.catalog import WorkflowCatalog
@@ -693,6 +806,20 @@ def test_deeply_nested_catalog_is_handled_as_malformed_data(
         monkeypatch.setattr(
             catalog, "_is_url_cache_valid", lambda _url: source == "fresh-cache"
         )
+
+        def read_nested_cache(*args, **kwargs):
+            raise RecursionError("catalog nesting limit exceeded")
+
+        monkeypatch.setattr(json, "load", read_nested_cache)
+    else:
+        original_loads = json.loads
+
+        def decode_nested_catalog(raw, *args, **kwargs):
+            if raw == nested.decode("utf-8"):
+                raise RecursionError("catalog nesting limit exceeded")
+            return original_loads(raw, *args, **kwargs)
+
+        monkeypatch.setattr(json, "loads", decode_nested_catalog)
 
     def open_url(*args, **kwargs):
         if source == "stale-cache":
