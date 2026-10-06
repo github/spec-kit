@@ -279,12 +279,11 @@ The operation descriptor is the source of truth for `contract_version`. The
 version covers the semantic request, result, warning, and expected-error
 contract, not package or transport versions.
 
-Both adapters conform to that declared version:
-
-- MCP exposes it through tool or inventory metadata.
-- CLI contract tests reference it while preserving established human and JSON
-  output. A version field is not injected into an existing JSON result unless
-  that result contract already defines one.
+Both adapters conform to that declared version. It is hierarchy-owned source
+and inventory metadata used by adapter contract tests; it is not automatically
+injected into CLI JSON or MCP tool metadata. A version field appears in a
+machine result only when that command's established result contract defines
+one.
 
 Contract evolution follows these rules:
 

@@ -412,10 +412,12 @@ For a new or refactored command:
 
 - [ ] The CLI path maps predictably to a `command_<name>.py` module.
 - [ ] Only the real command module registers a handler.
-- [ ] The adapter maps into the shared operation defined by `design/shared.md`.
-- [ ] Semantic validation, orchestration, and side effects are below the CLI
-      adapter.
-- [ ] Project and target directories map explicitly into the shared request.
+- [ ] If another adapter exposes the operation, the CLI adapter maps into the
+      shared operation defined by `design/shared.md`.
+- [ ] For a multi-adapter operation, semantic validation, orchestration, and
+      side effects are below the CLI adapter.
+- [ ] When a shared request exists, project and target directories map into it
+      explicitly.
 - [ ] CLI-private phase modules use `_command_<name>_<phase>.py`; shared phases
       use `_operation_<name>_<phase>.py`.
 - [ ] `_commands.py` contains only group infrastructure and genuinely shared

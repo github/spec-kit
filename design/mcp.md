@@ -283,11 +283,12 @@ The MCP adapter projects that contract onto MCP:
   content.
 - It maps expected shared errors into MCP tool errors without adding
   success-shaped fallbacks.
-- It exposes the operation's declared `contract_version` through tool or
-  inventory metadata.
 
 MCP protocol envelopes do not force a universal application result envelope.
 The command/domain hierarchy continues to own the semantic result shape.
+The hierarchy-owned inventory records `contract_version` for compatibility and
+parity tests, but the local MCP protocol does not add a custom version field to
+tools or results.
 Unexpected exceptions become sanitized `internal_error` tool failures and are
 logged only through the MCP diagnostic channel.
 
@@ -656,8 +657,8 @@ For a new or migrated MCP operation:
 - [ ] The MCP tool is first-class and has a command-specific schema.
 - [ ] The tool name and source layout mirror the CLI path.
 - [ ] The owning command hierarchy declares registration and inventory.
-- [ ] Availability, capabilities, network access, and contract version are
-      explicit.
+- [ ] Availability, capabilities, network access, and inventory contract
+      version are explicit.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
 - [ ] Timeouts, cancellation, stdin, and output bounds are handled.
