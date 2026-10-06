@@ -337,18 +337,13 @@ request lacks required consent.
 Machine-readable mode, non-interactive mode, transport authentication, or a
 host confirmation never implies `force`, trust, or destructive consent.
 
-## Timeouts, cancellation, and bounded output
+## Timeouts and bounded output
 
 Do not force every operation through a universal runtime object.
 
-- The MCP client owns its request deadline and may send a cancellation
-  notification. The stdio adapter handles that signal and enforces response
-  size limits.
-- A command that can cooperatively stop exposes a focused cancellation
-  parameter or operation dependency for that behavior.
+- The stdio adapter enforces response-size limits.
 - Subprocess and network helpers receive explicit timeouts from the operation
   that invokes them.
-- A server-enforced operation timeout is distinct from client cancellation.
 - Potentially large commands own pagination or limit fields in their request
   and result contracts.
 - Truncation is explicit and never returned as a successful complete result.
