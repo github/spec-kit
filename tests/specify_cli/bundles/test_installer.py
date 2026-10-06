@@ -11,8 +11,13 @@ import pytest
 
 from specify_cli.bundler import BundlerError
 from specify_cli.bundles.installer import install_bundle, remove_bundle
-from specify_cli.bundles.manifest import BundleManifest
-from specify_cli.bundles.records import load_records, records_path
+from specify_cli.bundles.manifest import BundleManifest, ComponentRef
+from specify_cli.bundles.records import (
+    InstalledBundleRecord,
+    load_records,
+    records_path,
+    save_records,
+)
 from specify_cli.bundles.resolver import resolve_install_plan
 from tests.specify_cli.bundles.helpers import (
     FakeInstaller,
@@ -218,6 +223,84 @@ def test_shared_component_drift_cannot_be_refreshed(tmp_path: Path):
     with pytest.raises(BundlerError, match="0.9.0"):
         install_bundle(tmp_path, _plan(first), installer, manifest=first, refresh=True)
     assert installer.refresh_calls == []
+
+
+@pytest.mark.parametrize(
+    ("change", "field"),
+    [
+        ({"priority": 20}, "priority"),
+        ({"strategy": "replace"}, "strategy"),
+        ({"source": "trusted"}, "source"),
+    ],
+)
+@pytest.mark.parametrize("required_only", [False, True])
+def test_shared_refresh_preserves_other_bundles_install_requirements(
+    tmp_path: Path, change: dict, field: str, required_only: bool,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    other = _preset_bundle("other")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    if required_only:
+        save_records(
+            tmp_path,
+            [
+                *load_records(tmp_path),
+                InstalledBundleRecord.create(
+                    "other", "1.0.0", [], required_components=other.components
+                ),
+            ],
+        )
+    else:
+        install_bundle(tmp_path, _plan(other), installer, manifest=other)
+    before = records_path(tmp_path).read_bytes()
+
+    changed = _preset_bundle("first", **change)
+    with pytest.raises(BundlerError, match=rf"shared preset.*{field}"):
+        install_bundle(
+            tmp_path, _plan(changed), installer, manifest=changed, refresh=True
+        )
+
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == before
+
+
+def test_shared_install_rejects_conflicting_preset_priority(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    before = records_path(tmp_path).read_bytes()
+    second = _preset_bundle("second", priority=20)
+    second.extensions.append(
+        ComponentRef(kind="extensions", id="ext-new", version="1.0.0")
+    )
+
+    with pytest.raises(BundlerError, match="shared preset.*priority"):
+        install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert installer.install_calls == [("presets", "preset-a")]
+    assert ("extensions", "ext-new") not in installer.installed
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == before
+
+
+def test_shared_refresh_allows_matching_install_requirements(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    second = _preset_bundle("second")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    result = install_bundle(
+        tmp_path, _plan(second), installer, manifest=second, refresh=True
+    )
+
+    assert result.refreshed == second.components
+    assert installer.refresh_calls == [("presets", "preset-a")]
+    assert len(load_records(tmp_path)) == 2
 
 
 def test_unpinned_shared_step_cannot_refresh_another_bundles_pin(tmp_path: Path):
@@ -883,6 +966,22 @@ def _step_bundle(bundle_id: str, version: str | None = None) -> BundleManifest:
     if version is not None:
         step["version"] = version
     data["provides"] = {"steps": [step]}
+    return BundleManifest.from_dict(data)
+
+
+def _preset_bundle(
+    bundle_id: str, *, priority: int = 10, strategy: str = "append",
+    source: str | None = None,
+) -> BundleManifest:
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    preset = {
+        "id": "preset-a", "version": "2.0.0",
+        "priority": priority, "strategy": strategy,
+    }
+    if source is not None:
+        preset["source"] = source
+    data["provides"] = {"presets": [preset]}
     return BundleManifest.from_dict(data)
 
 

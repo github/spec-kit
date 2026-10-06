@@ -88,7 +88,8 @@ def install_bundle(
     skipped. A refresh may repair drift in components owned exclusively by
     this bundle, but cannot change a version required by another bundle or an
     independently installed component. Changes to owned component metadata
-    still require refresh.
+    still require refresh. Other bundles' source and preset settings cannot be
+    changed by sharing or refreshing a component.
     """
     records = load_records(project_root)
 
@@ -136,20 +137,21 @@ def install_bundle(
         for c in r.contributed_components
     }
     other_pins: dict[tuple[str, str], set[str]] = {}
+    other_requirements: dict[tuple[str, str], list[tuple[str, ComponentRef]]] = {}
     for record in records:
         if record.bundle_id == plan.bundle_id:
             continue
         for component in record.required_components:
+            key = component.kind, component.id
+            other_requirements.setdefault(key, []).append((record.bundle_id, component))
             if component.version:
-                other_pins.setdefault((component.kind, component.id), set()).add(
-                    component.version
-                )
+                other_pins.setdefault(key, set()).add(component.version)
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
     try:
         _check_installed_pins(
             project_root, plan, installer, prior_ours, other_tracked,
-            other_pins, refresh=refresh,
+            other_pins, other_requirements, refresh=refresh,
         )
         for component in plan.components:
             key = (component.kind, component.id)
@@ -275,15 +277,32 @@ def _check_installed_pins(
     prior_ours: set[tuple[str, str]],
     other_tracked: set[tuple[str, str]],
     other_pins: dict[tuple[str, str], set[str]],
+    other_requirements: dict[tuple[str, str], list[tuple[str, ComponentRef]]],
     *,
     refresh: bool,
 ) -> None:
     """Check installed pins and other bundles' requirements before mutation."""
     mismatches = []
     for component in plan.components:
+        key = component.kind, component.id
+        for bundle_id, required in other_requirements.get(key, []):
+            different = []
+            if component.source != required.source:
+                different.append("source")
+            if component.kind == "presets":
+                if component.priority != required.priority:
+                    different.append("priority")
+                if component.strategy != required.strategy:
+                    different.append("strategy")
+            if different:
+                raise BundlerError(
+                    f"Cannot install or refresh shared {component.kind[:-1]} "
+                    f"'{component.id}': bundle '{bundle_id}' requires different "
+                    f"{', '.join(different)}. Shared components must agree on "
+                    "install-affecting requirements."
+                )
         if component.source:
             installer.validate_source(project_root, component)
-        key = component.kind, component.id
         if refresh and not component.version and key in other_tracked:
             raise BundlerError(
                 f"Cannot refresh unpinned shared {component.kind[:-1]} "
