@@ -6,6 +6,8 @@ import re
 from typing import Pattern
 
 REGEX_PREFIX = "regex:"
+# String patterns can fail on grammar, repetition limits, or parser nesting.
+REGEX_COMPILE_ERRORS = (re.error, OverflowError, RecursionError)
 
 
 def is_regex_selector(name: str) -> bool:

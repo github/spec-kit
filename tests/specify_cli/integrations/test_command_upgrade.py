@@ -791,18 +791,13 @@ class TestIntegrationUpgradeDetailed:
             "tracked old-layout override must remain untouched"
         )
 
-    def test_upgrade_active_layout_change_rejected_with_disabled_preset(
-        self, tmp_path
-    ):
-        """Regression (review 3623779277).
+    def test_upgrade_layout_change_allows_reconciled_disabled_preset(self, tmp_path):
+        """A disabled preset with cleared ownership cannot block migration.
 
-        The post-upgrade rescaffold iterates *enabled* presets only, and a
-        disabled preset's artifacts are deliberately frozen until removal
-        (``preset disable``). An active-agent layout change must therefore be
-        rejected while a disabled preset still owns artifacts for the agent —
-        proceeding would delete its old-layout files in stale-manifest
-        cleanup, skip recreating them, and leave its registry entries stale.
-        Re-enabling does not make a non-transactional layout migration safe.
+        Real disable reconciles the command and clears registration provenance.
+        Migration is then safe; enabling it in the new layout records ownership
+        again, so a reverse layout change must be rejected before mutation.
+        Disabled presets with retained ownership are covered separately.
         """
         project = _init_project(
             tmp_path, "bob", integration_options="--legacy-commands"
@@ -853,27 +848,26 @@ class TestIntegrationUpgradeDetailed:
             "--integration-options", "--skills",
             "--script", "sh", "--force",
         ])
-        assert result.exit_code != 0, (
-            "layout change with a disabled preset must be rejected"
-        )
-        assert "cmd-preset" in result.output
-        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
-        assert "Overridden plan content" not in cmd_file.read_text(encoding="utf-8"), (
-            "disable reconciliation should remove the disabled override"
-        )
+        assert result.exit_code == 0, result.output
+        assert (skills / "speckit-plan" / "SKILL.md").is_file()
+        assert not cmd_file.exists()
 
-        # Enabled presets are also rejected: rescaffolding can still fail.
+        # Disable reconciled the artifacts and cleared Bob's ownership. Once
+        # enabled in the new layout, the preset owns skills and the reverse
+        # migration must again be refused before mutation.
         result = _run_in_project(project, ["preset", "enable", "cmd-preset"])
         assert result.exit_code == 0, f"preset enable failed: {result.output}"
+        skill_file = skills / "speckit-plan" / "SKILL.md"
+        assert "Overridden plan content" in skill_file.read_text(encoding="utf-8")
         result = _run_in_project(project, [
             "integration", "upgrade", "bob",
-            "--integration-options", "--skills",
+            "--integration-options", "--legacy-commands",
             "--script", "sh", "--force",
         ])
         assert result.exit_code != 0
         assert "cmd-preset" in result.output
-        assert not skills.exists()
-        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+        assert not cmd_file.exists()
+        assert "Overridden plan content" in skill_file.read_text(encoding="utf-8")
 
     def test_upgrade_secondary_layout_change_rejected_with_presets_installed(
         self, tmp_path

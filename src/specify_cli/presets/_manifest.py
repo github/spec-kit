@@ -261,12 +261,16 @@ class PresetManifest:
 
             # Regex selectors are validated here, before installation or resolution.
             # The logical resource name grammar is validated separately below.
-            from ._selectors import compile_name_selector, is_regex_selector
+            from ._selectors import (
+                REGEX_COMPILE_ERRORS,
+                compile_name_selector,
+                is_regex_selector,
+            )
 
             if is_regex_selector(tmpl["name"]):
                 try:
                     compile_name_selector(tmpl["name"])
-                except re.error as exc:
+                except REGEX_COMPILE_ERRORS as exc:
                     raise PresetValidationError(
                         f"Invalid regex selector in template name {tmpl['name']!r}: {exc}"
                     ) from exc

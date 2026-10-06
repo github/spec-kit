@@ -34,6 +34,7 @@ from ._manifest import (
 from ._registry import PresetRegistry
 from ._resolver import PresetResolver
 from ._selectors import is_regex_selector, selector_matches
+from ._transaction import _ArtifactSnapshot, _capture_preset_artifacts
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 _CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
@@ -427,41 +428,41 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             shutil.rmtree(stage_dir, ignore_errors=True)
             raise
 
-        previous_metadata = self.registry.get(manifest.id) if was_installed else None
         previous_registry_data = copy.deepcopy(self.registry.data)
-        backup_dir = self.presets_dir / f".{manifest.id}.backup-{uuid.uuid4().hex}"
-        moved_old_dir = False
+        snapshot = _ArtifactSnapshot()
+        transaction_commands: dict[str, list[str]] = {}
+        transaction_skills: dict[str, list[str]] = {}
+        previous_transaction = getattr(self, "_preset_install_transaction", None)
+        previous_skills_transaction = getattr(self, "_preset_install_skills", None)
+        self._preset_install_transaction = transaction_commands
+        self._preset_install_skills = transaction_skills
+        captured = False
         try:
-            if was_installed and dest_dir.exists():
-                # Keep an independent rollback image while remove() performs
-                # its established artifact cleanup and registry transition.
-                shutil.copytree(dest_dir, backup_dir)
+            extra_commands = {
+                name
+                for declaration in manifest.templates
+                if declaration.get("type") == "command"
+                for name in [declaration.get("name"), *declaration.get("aliases", [])]
+                if isinstance(name, str) and not is_regex_selector(name)
+            }
+            _capture_preset_artifacts(self, snapshot, extra_commands)
+            snapshot.capture(dest_dir)
+            captured = True
+            if was_installed:
                 self.remove(manifest.id)
-                moved_old_dir = True
             if dest_dir.exists():
-                os.replace(dest_dir, backup_dir)
-                moved_old_dir = True
+                shutil.rmtree(dest_dir)
             os.replace(stage_dir, dest_dir)
-        except Exception:
-            shutil.rmtree(stage_dir, ignore_errors=True)
-            if moved_old_dir and backup_dir.exists():
-                os.replace(backup_dir, dest_dir)
-            if previous_metadata is not None:
-                self.registry.data = previous_registry_data
-                self.registry._save()
-            raise
 
-        # Pre-register the preset so that composition resolution can see it
-        # in the priority stack when resolving composed command content.
-        normalized_catalog_name = (
-            catalog_name.strip() if isinstance(catalog_name, str) else ""
-        )
-        source = (
-            {"kind": "catalog", "catalog": normalized_catalog_name}
-            if normalized_catalog_name
-            else "local"
-        )
-        try:
+            # Pre-register so composition can see the new priority layer.
+            normalized_catalog_name = (
+                catalog_name.strip() if isinstance(catalog_name, str) else ""
+            )
+            source = (
+                {"kind": "catalog", "catalog": normalized_catalog_name}
+                if normalized_catalog_name
+                else "local"
+            )
             self.registry.add(
                 manifest.id,
                 {
@@ -474,40 +475,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     "registered_skills": {},
                 },
             )
-        except Exception:
-            if dest_dir.exists():
-                shutil.rmtree(dest_dir, ignore_errors=True)
-            if moved_old_dir and backup_dir.exists():
-                os.replace(backup_dir, dest_dir)
-            self.registry.data = previous_registry_data
-            self.registry._save()
-            # Restore materialized artifacts from the restored preset stack.
-            if previous_metadata is not None:
-                try:
-                    old_manifest = PresetManifest(dest_dir / "preset.yml")
-                    old_commands = sorted(
-                        item["name"]
-                        for item in old_manifest.templates
-                        if item.get("type") == "command"
-                        and isinstance(item.get("name"), str)
-                        and not is_regex_selector(item["name"])
-                    )
-                    if old_commands:
-                        self._reconcile_composed_commands(old_commands)
-                        self._reconcile_skills(old_commands)
-                except Exception:
-                    pass
-            raise
-
-        raw_command_templates = [
-            template
-            for template in manifest.templates
-            if template.get("type") == "command"
-        ]
-        registered_commands: Dict[str, List[str]] = {}
-        registered_skills: Dict[str, List[str]] = {}
-        command_templates: List[Dict[str, Any]] = []
-        try:
+            raw_command_templates = [
+                template
+                for template in manifest.templates
+                if template.get("type") == "command"
+            ]
+            registered_commands: Dict[str, List[str]] = {}
+            registered_skills: Dict[str, List[str]] = {}
+            command_templates: List[Dict[str, Any]] = []
             self._warn_unmatched_resource_selectors(manifest, dest_dir)
             command_templates = self._expand_command_selectors(
                 PresetResolver(self.project_root), dest_dir, raw_command_templates
@@ -517,6 +492,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             registered_commands = self._register_commands(
                 manifest, dest_dir, command_templates=command_templates
             )
+            # Registration callbacks track partial writes during the helper;
+            # merge its complete return value into the same transaction record.
+            for agent, commands in registered_commands.items():
+                tracked = transaction_commands.setdefault(agent, [])
+                for command in commands:
+                    if command not in tracked:
+                        tracked.append(command)
             self.registry.update(
                 manifest.id,
                 {"registered_commands": registered_commands},
@@ -533,94 +515,88 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                     "registered_skills": registered_skills,
                 },
             )
-        except Exception:
-            # Roll back artifacts produced by the failed install. Registration
-            # helpers may persist partial metadata, so restore the full snapshot
-            # rather than removing only the new registry entry.
-            if registered_commands:
-                self._unregister_commands(registered_commands)
-            persisted_metadata = self.registry.get(manifest.id) or {}
-            persisted_skills = persisted_metadata.get(
-                "registered_skills", registered_skills
+            command_templates = [
+                template
+                for template in manifest.templates
+                if template.get("type") == "command"
+            ]
+            expanded_templates = self._expand_command_selectors(
+                PresetResolver(self.project_root), dest_dir, command_templates
             )
-            if persisted_skills:
-                self._unregister_skills(
-                    persisted_skills, dest_dir, restore_from_bundled_core=True
-                )
-            if dest_dir.exists():
-                shutil.rmtree(dest_dir, ignore_errors=True)
-            if moved_old_dir and backup_dir.exists():
-                os.replace(backup_dir, dest_dir)
-            self.registry.data = previous_registry_data
-            self.registry._save()
+            cmd_names = sorted(
+                {
+                    item["name"]
+                    for item in expanded_templates
+                    if isinstance(item.get("name"), str)
+                    and not is_regex_selector(item["name"])
+                }
+            )
 
-            # Re-materialize artifacts using the restored preset stack. Keep
-            # the backup until this succeeds so rollback has the old sources.
-            if previous_metadata is not None:
+            if cmd_names:
                 try:
-                    old_manifest = PresetManifest(dest_dir / "preset.yml")
-                    old_templates = [
-                        item for item in old_manifest.templates
-                        if item.get("type") == "command"
-                    ]
-                    old_commands = self._expand_command_selectors(
-                        PresetResolver(self.project_root), dest_dir, old_templates
+                    self._reconcile_composed_commands(cmd_names)
+                    self._reconcile_skills(cmd_names)
+                except Exception as exc:
+                    import warnings
+
+                    warnings.warn(
+                        f"Post-install reconciliation failed for {manifest.id}: {exc}. "
+                        f"Agent command files may not reflect the current priority stack.",
+                        stacklevel=2,
                     )
-                    old_names = sorted({
-                        item["name"] for item in old_commands
-                        if isinstance(item.get("name"), str)
-                        and not is_regex_selector(item["name"])
-                    })
-                    if old_names:
-                        self._reconcile_composed_commands(old_names)
-                        self._reconcile_skills(old_names)
-                except Exception:
-                    pass
+
+            # TODO: constitution-sync is a named preset with core-owned side effects.
+            # Give synchronization an explicit owner without changing its opt-in
+            # behavior or overwriting authored constitutions.
+            # Materialize constitution-template changes only for projects that opt
+            # into the constitution-sync preset. The core /constitution command
+            # resolves this template on demand; constitution-sync preserves the
+            # previous install-time behavior for teams that want reviewed snapshots.
+            self._seed_constitution_from_preset(manifest, dest_dir)
+
+            return manifest
+        except Exception as exc:
+            # Independent cleanup attempts must never replace the install error.
+            cleanup = [
+                ("commands", lambda: self._unregister_commands(transaction_commands)),
+                ("skills", lambda: self._unregister_skills(
+                    transaction_skills, dest_dir, restore_from_bundled_core=True
+                )),
+            ]
+            for label, action in cleanup:
+                try:
+                    action()
+                except Exception as cleanup_exc:
+                    exc.add_note(f"Preset install {label} cleanup failed: {cleanup_exc}")
+            self.registry.data = previous_registry_data
+            if captured:
+                try:
+                    snapshot.restore()
+                except Exception as rollback_exc:
+                    exc.add_note(f"Preset install snapshot rollback failed: {rollback_exc}")
             raise
+        finally:
+            for attribute, previous in (
+                ("_preset_install_transaction", previous_transaction),
+                ("_preset_install_skills", previous_skills_transaction),
+            ):
+                if previous is None:
+                    delattr(self, attribute)
+                else:
+                    setattr(self, attribute, previous)
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            import sys
 
-        command_templates = [
-            template
-            for template in manifest.templates
-            if template.get("type") == "command"
-        ]
-        expanded_templates = self._expand_command_selectors(
-            PresetResolver(self.project_root), dest_dir, command_templates
-        )
-        cmd_names = sorted(
-            {
-                item["name"]
-                for item in expanded_templates
-                if isinstance(item.get("name"), str)
-                and not is_regex_selector(item["name"])
-            }
-        )
-
-        if cmd_names:
+            operation_exc = sys.exception()
             try:
-                self._reconcile_composed_commands(cmd_names)
-                self._reconcile_skills(cmd_names)
-            except Exception as exc:
-                import warnings
-
-                warnings.warn(
-                    f"Post-install reconciliation failed for {manifest.id}: {exc}. "
-                    f"Agent command files may not reflect the current priority stack.",
-                    stacklevel=2,
-                )
-
-        # TODO: constitution-sync is a named preset with core-owned side effects.
-        # Give synchronization an explicit owner without changing its opt-in
-        # behavior or overwriting authored constitutions.
-        # Materialize constitution-template changes only for projects that opt
-        # into the constitution-sync preset. The core /constitution command
-        # resolves this template on demand; constitution-sync preserves the
-        # previous install-time behavior for teams that want reviewed snapshots.
-        self._seed_constitution_from_preset(manifest, dest_dir)
-
-        if moved_old_dir:
-            shutil.rmtree(backup_dir)
-
-        return manifest
+                snapshot.close()
+            except Exception as cleanup_exc:
+                if operation_exc is not None:
+                    operation_exc.add_note(
+                        f"Preset install snapshot cleanup failed: {cleanup_exc}"
+                    )
+                else:
+                    raise
 
     def _warn_unmatched_resource_selectors(
         self, manifest: PresetManifest, preset_dir: Path
@@ -966,8 +942,19 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                         )
                     if (
                         tmpl.get("type") == "template"
-                        and tmpl.get("name") == "constitution-template"
+                        and isinstance(tmpl.get("name"), str)
+                        and (
+                            tmpl.get("name") == "constitution-template"
+                            or (
+                                is_regex_selector(tmpl["name"])
+                                and selector_matches(
+                                    tmpl["name"], "constitution-template"
+                                )
+                            )
+                        )
                     ):
+                        # Removal must notice regex declarations even when the
+                        # removed preset had no lower layer to expand against.
                         removed_constitution = True
             except PresetValidationError:
                 pass

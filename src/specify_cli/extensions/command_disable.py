@@ -45,6 +45,8 @@ def extension_disable(
         )
         raise typer.Exit(0)
 
+    affected_commands = _commands._capture_preset_command_names(project_root)
+
     from .. import load_init_options
 
     agent = load_init_options(project_root).get("ai")
@@ -59,8 +61,14 @@ def extension_disable(
     else:
         # Remove this agent's tracked artifacts before flipping enabled. If
         # cleanup fails, ownership metadata and enabled state remain retryable.
+        registered = metadata.get("registered_commands", {})
+        historical_agents = set(registered) if isinstance(registered, dict) else set()
         if agent:
-            manager.unregister_agent_artifacts(agent, extension_ids={extension_id})
+            historical_agents.add(agent)
+        for historical_agent in sorted(historical_agents):
+            manager.unregister_agent_artifacts(
+                historical_agent, extension_ids={extension_id}
+            )
         manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
@@ -85,4 +93,4 @@ def extension_disable(
     # Extension mutations may change the expansion set for preset regex
     # selectors; re-register enabled presets after refreshing native events.
     _commands._refresh_events_and_warn(project_root)
-    _commands._refresh_presets_and_warn(project_root)
+    _commands._refresh_presets_and_warn(project_root, affected_commands)

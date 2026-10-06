@@ -9,10 +9,20 @@ from .._console import console
 from ._commands import preset_app
 
 
-def _diagnostic_selector_matches(resolver, preset_dir, selector, resource_type):
-    import os
+def _diagnostic_selector_matches(
+    project_root, resolver, preset_dir, selector, resource_type
+):
     from ._selectors import is_regex_selector, selector_matches
+    from ..artifacts.catalog import ArtifactCatalog
 
+    inventory = ArtifactCatalog(project_root).list_artifacts()
+    candidates = {
+        artifact.name
+        for artifact in inventory
+        if artifact.kind == resource_type
+        and isinstance(artifact.name, str)
+        and not is_regex_selector(artifact.name)
+    }
     ordered_presets = resolver._get_all_presets_by_priority()
     try:
         current_index = next(
@@ -22,84 +32,31 @@ def _diagnostic_selector_matches(resolver, preset_dir, selector, resource_type):
         )
     except StopIteration:
         return []
-    lower_presets = [
-        resolver.presets_dir / preset_id
-        for preset_id, _meta in ordered_presets[current_index + 1 :]
-    ]
-    lower_extensions = [
-        resolver.extensions_dir / ext_id
-        for _priority, ext_id, _meta in resolver._get_all_extensions_by_priority()
-    ]
-    candidates = set()
-    for base in [*lower_presets, *lower_extensions]:
-        if base.parent == resolver.presets_dir:
-            manifest = resolver._get_manifest(base)
-            declarations = manifest.templates if manifest is not None else []
-        else:
-            from ..extensions import ExtensionManifest
-
-            manifest_path = base / "extension.yml"
-            try:
-                manifest = (
-                    ExtensionManifest(manifest_path)
-                    if manifest_path.is_file()
-                    else None
-                )
-            except Exception:
-                manifest = None
-            declarations = []
-            if manifest is not None:
-                provides = manifest.data.get("provides", {})
-                key = {"template": "templates", "script": "scripts"}.get(resource_type)
-                declarations = provides.get(key, []) if key else []
-        candidates.update(
-            item["name"]
-            for item in declarations
-            if isinstance(item, dict)
-            and item.get("type", resource_type) == resource_type
-            and isinstance(item.get("name"), str)
-            and not is_regex_selector(item["name"])
-        )
-        subdir = "templates" if resource_type == "template" else "scripts"
-        suffix = ".sh" if resource_type == "script" else ".md"
-        root = base / subdir
-        for path in root.glob("**/*") if root.is_dir() else []:
-            if path.is_file() and path.name.endswith(suffix):
-                candidates.add(
-                    os.path.relpath(path, root)[: -len(suffix)].replace(os.sep, "-")
-                )
-    suffix = ".sh" if resource_type == "script" else ".md"
-    core_roots = [
-        resolver.templates_dir / ("scripts" if resource_type == "script" else ""),
-    ]
-    for root in core_roots:
-        for path in root.glob("**/*") if root.is_dir() else []:
-            if path.is_file() and path.name.endswith(suffix):
-                candidates.add(
-                    os.path.relpath(path, root)[: -len(suffix)].replace(os.sep, "-")
-                )
+    lower_presets = {
+        preset_id for preset_id, _meta in ordered_presets[current_index + 1 :]
+    }
+    lower_extensions = resolver._get_all_extensions_by_priority()
     matches = []
     for name in candidates:
-        if (
-            not isinstance(name, str)
-            or is_regex_selector(name)
-            or not selector_matches(selector, name)
-        ):
+        if not selector_matches(selector, name):
             continue
-        exists = (
+        # Inventory supplies names, not ownership: a higher/project override or
+        # another regex declaration cannot create this selector's concrete base.
+        if (
             any(
-                resolver._has_concrete_resource(base, name, resource_type)
-                for base in lower_presets
+                resolver._preset_has_concrete_resource(
+                    resolver.presets_dir / preset_id, name, resource_type
+                )
+                for preset_id in lower_presets
             )
             or any(
-                resolver._has_concrete_resource(
-                    base, name, resource_type, is_extension=True
+                resolver._extension_has_concrete_resource(
+                    resolver.extensions_dir / extension_id, name, resource_type
                 )
-                for base in lower_extensions
+                for _priority, extension_id, _meta in lower_extensions
             )
             or resolver._core_has_concrete_resource(name, resource_type)
-        )
-        if exists:
+        ):
             matches.append(name)
     return sorted(matches)
 
@@ -159,7 +116,7 @@ def preset_info(
                 matches = [
                     {"name": name}
                     for name in _diagnostic_selector_matches(
-                        resolver, preset_dir, tmpl["name"], tmpl["type"]
+                        project_root, resolver, preset_dir, tmpl["name"], tmpl["type"]
                     )
                 ]
             else:

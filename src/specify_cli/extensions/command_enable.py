@@ -13,6 +13,16 @@ from .._console import console
 from . import _commands
 
 
+def _enable_hooks(hook_executor, extension_id):
+    config = hook_executor.get_project_config()
+    if "hooks" in config:
+        for hooks in config["hooks"].values():
+            for hook in hooks:
+                if hook.get("extension") == extension_id:
+                    hook["enabled"] = True
+        hook_executor.save_project_config(config)
+
+
 @_commands.extension_app.command("enable")
 def extension_enable(
     extension: str = typer.Argument(help="Extension ID or name to enable"),
@@ -45,12 +55,50 @@ def extension_enable(
         )
         raise typer.Exit(0)
 
-    manager.registry.update(extension_id, {"enabled": True})
-
     from .. import load_init_options
 
     init_options = load_init_options(project_root)
     agent = init_options.get("ai")
+    if agent and agent != "generic":
+        # Enabling makes lower layers visible to selectors. Snapshot before
+        # publishing eligibility, including ownership of every refreshed winner.
+        import copy
+
+        from ..presets import PresetManager
+        from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+
+        preset_manager = PresetManager(project_root)
+        snapshot = _ArtifactSnapshot()
+        old_registry = copy.deepcopy(manager.registry.data)
+        try:
+            manifest = manager.get_extension(extension_id)
+            if manifest is None:
+                raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+            _capture_preset_artifacts(
+                preset_manager,
+                snapshot,
+                extra_commands=manager._collect_manifest_command_names(manifest),
+            )
+            snapshot.capture(project_root / ".specify" / "extensions.yml")
+            affected = _commands._capture_preset_command_names(project_root)
+            manager.registry.update(extension_id, {"enabled": True})
+            manager.register_enabled_extensions_for_agent(agent, strict=True)
+            affected.update(_commands._capture_preset_command_names(project_root))
+            preset_manager.register_enabled_presets_for_agent(
+                agent, affected_commands=affected, strict=True
+            )
+            _enable_hooks(hook_executor, extension_id)
+        except BaseException as exc:
+            manager.registry.data = old_registry
+            try:
+                snapshot.restore()
+            except BaseException as rollback_error:  # noqa: BLE001 - preserve operation error
+                exc.add_note(f"Enable artifact rollback failed: {rollback_error}")
+            raise
+        finally:
+            snapshot.close()
+    else:
+        manager.registry.update(extension_id, {"enabled": True})
     if agent == "generic":
         try:
             manifest = manager.get_extension(extension_id)
@@ -91,24 +139,8 @@ def extension_enable(
                 f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1) from exc
-    elif agent:
-        # Make the enabled bit visible before refreshing extension artifacts;
-        # if registration fails, return to the prior disabled state. Preset
-        # refresh below handles selector-expanded artifacts after this succeeds.
-        try:
-            manager.register_enabled_extensions_for_agent(agent)
-        except Exception:
-            manager.registry.update(extension_id, {"enabled": False})
-            raise
-
-    # Enable hooks in extensions.yml
-    config = hook_executor.get_project_config()
-    if "hooks" in config:
-        for hook_name in config["hooks"]:
-            for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension_id:
-                    hook["enabled"] = True
-        hook_executor.save_project_config(config)
+    if not agent or agent == "generic":
+        _enable_hooks(hook_executor, extension_id)
 
     console.print(
         f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled"
@@ -117,7 +149,8 @@ def extension_enable(
     # #1: regenerate native event config so the enabled extension's events
     # are re-emitted in installed integrations.
     _commands._refresh_events_and_warn(project_root)
-    _commands._refresh_presets_and_warn(project_root)
+    if not agent or agent == "generic":
+        _commands._refresh_presets_and_warn(project_root)
 
     # Scaffold config templates on enable
     try:

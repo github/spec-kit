@@ -347,7 +347,8 @@ def extension_add(
         # #1: regenerate native event config for installed event-capable
         # integrations so the new extension's events take effect immediately.
         _commands._refresh_events_and_warn(project_root)
-        _commands._refresh_presets_and_warn(project_root)
+        # Command/skill winners were materialized atomically by the installer;
+        # a best-effort second pass would publish the same concrete outputs again.
 
         for warning in manifest.warnings:
             console.print(

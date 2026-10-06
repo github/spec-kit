@@ -9,6 +9,7 @@ command files into agent-specific directories in the correct format.
 import hashlib
 import os
 import re
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -675,6 +676,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
         author: object = "github-spec-kit",
+        on_output: Callable[[str], None] | None = None,
     ) -> List[str]:
         """Register commands for a specific agent.
 
@@ -922,11 +924,12 @@ class CommandRegistrar:
                 link_outputs,
                 agent_config,
             )
+            registered.append(cmd_name)
+            if on_output is not None:
+                on_output(cmd_name)
 
             if agent_name == "copilot":
                 self.write_copilot_prompt(project_root, cmd_name)
-
-            registered.append(cmd_name)
 
             for alias in aliases:
                 alias_output_name = self._compute_output_name(
@@ -1007,9 +1010,11 @@ class CommandRegistrar:
                     link_outputs,
                     agent_config,
                 )
+                registered.append(alias)
+                if on_output is not None:
+                    on_output(alias)
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
-                registered.append(alias)
 
         return registered
 
@@ -1130,6 +1135,7 @@ class CommandRegistrar:
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
         author: object = "github-spec-kit",
+        on_output: Callable[[str, str], None] | None = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -1256,6 +1262,11 @@ class CommandRegistrar:
                         link_outputs=link_outputs,
                         extension_id=extension_id,
                         author=author,
+                        on_output=(
+                            (lambda command, agent=agent_name: on_output(agent, command))
+                            if on_output is not None
+                            else None
+                        ),
                     )
                     if registered:
                         results[agent_name] = registered

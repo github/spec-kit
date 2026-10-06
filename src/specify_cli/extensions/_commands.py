@@ -103,7 +103,19 @@ def _archive_extension_directory(*args, **kwargs):
     return _helper(*args, **kwargs)
 
 
-def _refresh_presets_and_warn(project_root: Path) -> None:
+def _capture_preset_command_names(project_root: Path) -> set[str]:
+    """Snapshot concrete selector matches while the old provider still exists."""
+    from ..presets import PresetManager
+    from ..presets._resolver import PresetResolver
+
+    return PresetManager(project_root)._collect_selector_command_names(
+        PresetResolver(project_root)
+    )
+
+
+def _refresh_presets_and_warn(
+    project_root: Path, affected_commands: set[str] | None = None
+) -> None:
     """Re-register enabled preset overrides after extension stack changes.
 
     Preset regex selectors expand against currently available lower layers, so
@@ -118,7 +130,13 @@ def _refresh_presets_and_warn(project_root: Path) -> None:
 
         agent = load_init_options(project_root).get("ai")
         if agent:
-            PresetManager(project_root).register_enabled_presets_for_agent(agent)
+            manager = PresetManager(project_root)
+            if affected_commands:
+                manager.register_enabled_presets_for_agent(
+                    agent, affected_commands=affected_commands
+                )
+            else:
+                manager.register_enabled_presets_for_agent(agent)
     except Exception as exc:
         from .. import _print_cli_warning
 

@@ -147,12 +147,10 @@ def _installed_presets_affecting_agent(
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_commands is malformed"
             )
-        if not meta.get("enabled", True):
-            # Disabled presets are only relevant to callers that explicitly
-            # request installed-but-disabled provenance.
-            if include_disabled:
-                affected.append(preset_id)
+        if not meta.get("enabled", True) and not include_disabled:
             continue
+        # Including disabled presets widens inspection, not ownership. Apply
+        # exactly the same per-agent provenance checks to both states.
         registered_skills = meta.get("registered_skills", [])
         if isinstance(registered_skills, dict):
             # Per-agent provenance ({agent: [skill names]}): only entries for

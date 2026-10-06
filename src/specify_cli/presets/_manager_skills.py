@@ -102,6 +102,8 @@ class _PresetSkillMethods:
         command_names: List[str],
         extra_skills_dirs: Optional[Dict[Path, tuple[Optional[str], List[str]]]] = None,
         target_agent: Optional[str] = None,
+        *,
+        strict: bool = False,
     ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
@@ -117,6 +119,8 @@ class _PresetSkillMethods:
                 is limited to the names actually managed in each directory.
             target_agent: If set, report only command names written for this
                 agent. Other callers receive the union of all written names.
+            strict: Propagate override publication failures to atomic priority
+                callers; existing best-effort callers keep their behavior.
 
         Returns:
             Command names whose skill output was successfully written.
@@ -159,6 +163,7 @@ class _PresetSkillMethods:
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
+                self._retire_unresolved_command(cmd_name)
                 continue
 
             skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
@@ -307,6 +312,10 @@ class _PresetSkillMethods:
                     ):
                         reconciled_skill_commands.add(cmd_name)
                 except Exception:
+                    if strict:
+                        # Atomic priority changes must restore their snapshot on
+                        # a failed override write; legacy callers remain best-effort.
+                        raise
                     pass  # best-effort override skill restoration
 
             # Register skills only for the specific commands being
@@ -674,6 +683,8 @@ class _PresetSkillMethods:
             matching the shape ``registered_commands`` already uses so the
             two can be tracked/restored consistently (#2948).
         """
+        materialized_outputs = getattr(self, "_preset_materialized_skill_outputs", set())
+        self._preset_materialized_skill_outputs = set()
         command_declarations = [
             t for t in manifest.templates if t.get("type") == "command"
         ]
@@ -859,7 +870,13 @@ class _PresetSkillMethods:
                     )
 
                 skill_file = skill_subdir / "SKILL.md"
-                _write_shared_text(skills_dir, skill_file, skill_content)
+                if skill_file not in materialized_outputs:
+                    _write_shared_text(skills_dir, skill_file, skill_content)
+                transaction = getattr(self, "_preset_install_skills", None)
+                if isinstance(transaction, dict):
+                    names = transaction.setdefault(selected_ai, [])
+                    if target_skill_name not in names:
+                        names.append(target_skill_name)
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
                     manifest.id, {selected_ai: [target_skill_name]}
@@ -1261,7 +1278,8 @@ class _PresetSkillMethods:
         return {skills_dir: (selected_ai, mutated_names)} if mutated_names else {}
 
     def _delete_agent_preset_skills(
-        self, agent_name: str, skill_names: List[str], pack_id: str
+        self, agent_name: str, skill_names: list[str], pack_id: str,
+        *, additional_owned_sources: dict[str, str] | None = None,
     ) -> None:
         """Delete still-preset-owned skills when an agent is deactivated."""
         skills_dir = self._safe_skills_dir_for_agent(agent_name)
@@ -1282,6 +1300,7 @@ class _PresetSkillMethods:
                 if template.get("type") == "command" and isinstance(command_name, str):
                     for skill_name in self._skill_names_for_command(command_name):
                         override_sources[skill_name] = f"override:{command_name}"
+        override_sources.update(additional_owned_sources or {})
         for skill_name in skill_names:
             if not self._is_safe_registry_skill_name(skill_name):
                 continue

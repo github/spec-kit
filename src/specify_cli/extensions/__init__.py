@@ -1538,6 +1538,94 @@ class ExtensionManager:
 
         return targets
 
+    def _materialize_extension_winners(self, manifest, extension_dir):
+        """Write resolved preset winners inside the provider's install transaction.
+
+        Return extension declarations not claimed by a preset, plus concrete
+        provider ownership for the winners. Raw extension registration must not
+        publish an intermediate lower layer at these same destinations.
+        """
+        from ..presets import PresetManager
+        from ..presets._resolver import PresetResolver
+
+        manager = PresetManager(self.project_root)
+        resolver = PresetResolver(self.project_root)
+        remaining = []
+        groups = {}
+        for command in manifest.commands:
+            layers = resolver.collect_all_layers(command["name"], "command")
+            winner = None
+            if layers and layers[0]["source"] == "project override":
+                # Project overrides outrank presets as well as the newly
+                # eligible provider. Stage the resolved payload inside the
+                # provider so its normal registrars retain their active-agent,
+                # ownership and incremental rollback behavior without first
+                # publishing the raw extension command.
+                content = resolver.resolve_content(command["name"], "command")
+                if content is None:
+                    raise ExtensionError(
+                        f"Winning project override for '{command['name']}' is unreadable"
+                    )
+                resolved_dir = extension_dir / ".resolved"
+                resolved_dir.mkdir(parents=True, exist_ok=True)
+                resolved_file = resolved_dir / f"{command['name']}.md"
+                resolved_file.write_text(content, encoding="utf-8")
+                remaining.append({
+                    **command,
+                    "file": str(resolved_file.relative_to(extension_dir)),
+                })
+                continue
+            if layers:
+                for pack_id, _metadata in manager.registry.list_by_priority():
+                    pack_dir = manager.presets_dir / pack_id
+                    if layers[0]["path"].is_relative_to(pack_dir):
+                        preset_manifest = resolver._get_manifest(pack_dir)
+                        if preset_manifest is None:
+                            break
+                        declarations = manager._expand_command_selectors(
+                            resolver, pack_dir,
+                            [t for t in preset_manifest.templates if t.get("type") == "command"],
+                        )
+                        winner = next(
+                            (t for t in declarations if t["name"] == command["name"]
+                             and pack_dir / t["file"] == layers[0]["path"]), None,
+                        )
+                        if winner is not None:
+                            groups.setdefault(pack_id, []).append({
+                                **winner,
+                                "aliases": list(dict.fromkeys(
+                                    winner.get("aliases", []) + command.get("aliases", [])
+                                )),
+                            })
+                        break
+            if winner is None:
+                remaining.append(command)
+
+        commands = {}
+        skills = []
+        # Share incremental command tracking with the outer install rollback;
+        # snapshots also restore preset skill ownership and overwritten bytes.
+        manager._preset_install_transaction = self._install_transaction_artifacts["commands"]
+        provider_names = set(self._collect_manifest_command_names(manifest))
+        for pack_id, declarations in groups.items():
+            pack_dir = manager.presets_dir / pack_id
+            preset_manifest = resolver._get_manifest(pack_dir)
+            if preset_manifest is None:
+                raise ExtensionError(f"Winning preset '{pack_id}' is unreadable")
+            written_commands = manager._register_commands(
+                preset_manifest, pack_dir, command_templates=declarations
+            )
+            written_skills = manager._register_skills(
+                preset_manifest, pack_dir, command_templates=declarations
+            )
+            for agent, names in written_commands.items():
+                commands.setdefault(agent, []).extend(n for n in names if n in provider_names)
+            for names in written_skills.values():
+                skills.extend(n for n in names if n in {
+                    self._skill_name_for_command(c["name"]) for c in manifest.commands
+                })
+        return remaining, commands, list(dict.fromkeys(skills))
+
     def _register_commands_for_active_agent(
         self,
         manifest: ExtensionManifest,
@@ -1571,7 +1659,16 @@ class ExtensionManager:
         if not manifest.commands:
             return {}
         registrar = CommandRegistrar(self.project_root)
+        transaction = getattr(self, "_install_transaction_artifacts", None)
         agent_scope = self._active_command_registration_scope()
+
+        def record_output(agent: str, command: str) -> None:
+            if not isinstance(transaction, dict):
+                return
+            commands = transaction.setdefault("commands", {})
+            names = commands.setdefault(agent, [])
+            if command not in names:
+                names.append(command)
 
         if agent_scope is None:
             return registrar.register_commands_for_all_agents(
@@ -1580,6 +1677,7 @@ class ExtensionManager:
                 self.project_root,
                 link_outputs=link_outputs,
                 create_missing_active_skills_dir=True,
+                on_output=record_output,
             )
 
         if not agent_scope:
@@ -1599,6 +1697,7 @@ class ExtensionManager:
             link_outputs=link_outputs,
             create_missing_active_skills_dir=True,
             only_agent=active_agent,
+            on_output=record_output,
         )
 
     def _register_extension_skills(
@@ -1640,6 +1739,7 @@ class ExtensionManager:
         from ..integrations import get_integration
         from ..integrations.base import IntegrationBase
 
+        transaction = getattr(self, "_install_transaction_artifacts", None)
         written: List[str] = []
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
@@ -1809,6 +1909,12 @@ class ExtensionManager:
                 if skill_file.is_symlink():
                     skill_file.unlink()
                 skill_file.write_text(skill_content, encoding="utf-8")
+                # The artifact is tracked as soon as it is materialized so
+                # outer install rollback can see partial helper failures.
+                if isinstance(transaction, dict):
+                    tracked = transaction.setdefault("skills", [])
+                    if skill_name not in tracked:
+                        tracked.append(skill_name)
             written.append(skill_name)
 
         return written
@@ -2492,22 +2598,9 @@ class ExtensionManager:
             )
 
         was_installed = self.registry.is_installed(manifest.id)
-        if dest_dir.exists() and not was_installed:
-            # User-preserved config recovery uses the established installer path.
-            self._install_transaction_artifacts = {"commands": {}, "skills": []}
-            try:
-                return self._install_from_directory_unchecked(
-                    source_dir,
-                    speckit_version,
-                    register_commands=register_commands,
-                    priority=priority,
-                    link_commands=link_commands,
-                    force=force,
-                    catalog_name=catalog_name,
-                )
-            finally:
-                del self._install_transaction_artifacts
-        old_metadata = self.registry.get(manifest.id) if was_installed else None
+        kept_config = dest_dir.exists() and not was_installed
+        # Keep the established config rescue installer, but snapshot the new
+        # eligibility/winner mutations just as for ordinary installs.
         old_registry_data = copy.deepcopy(self.registry.data)
         registry_path = self.registry.registry_path
         old_registry_bytes = (
@@ -2524,6 +2617,42 @@ class ExtensionManager:
         previous_transaction_artifacts = getattr(
             self, "_install_transaction_artifacts", None
         )
+        from ..presets import PresetManager
+        from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+
+        artifact_snapshot = _ArtifactSnapshot()
+        try:
+            from .._init_options import resolve_active_agent_for_registration
+
+            preset_manager = PresetManager(self.project_root)
+            if (
+                resolve_active_agent_for_registration(self.project_root) is not None
+                and preset_manager.registry.list_by_priority()
+            ):
+                _capture_preset_artifacts(
+                    preset_manager, artifact_snapshot,
+                    extra_commands=self._collect_manifest_command_names(manifest),
+                )
+            elif resolve_active_agent_for_registration(self.project_root) not in {None, "generic"}:
+                # No preset winners: preserve the registrar's established
+                # fail-closed handling of unusable output directories.
+                for directory in self._command_registration_targets().values():
+                    artifact_snapshot.capture(directory)
+                skills_directory = self._get_skills_dir(create=False)
+                if skills_directory is not None:
+                    from ..shared_infra import _validate_safe_shared_directory
+
+                    try:
+                        _validate_safe_shared_directory(
+                            self._extension_skill_trusted_root(skills_directory), skills_directory
+                        )
+                    except (OSError, ValueError):
+                        pass
+                    else:
+                        artifact_snapshot.capture(skills_directory)
+        except BaseException:
+            artifact_snapshot.close()
+            raise
         self._install_transaction_artifacts = transaction_artifacts
         try:
             if dest_dir.is_dir() and was_installed:
@@ -2537,7 +2666,13 @@ class ExtensionManager:
                 force=force,
                 catalog_name=catalog_name,
             )
-        except BaseException:
+        except BaseException as install_error:
+            def rollback(label, action, primary_error=install_error):
+                try:
+                    action()
+                except BaseException as rollback_error:
+                    primary_error.add_note(f"Install rollback {label} failed: {rollback_error}")
+
             # Remove artifacts even if registry.add never committed: remove()
             # only knows about previously committed ownership metadata.
             try:
@@ -2545,12 +2680,18 @@ class ExtensionManager:
                     CommandRegistrar().unregister_commands(
                         transaction_artifacts["commands"], self.project_root
                     )
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback command cleanup failed: {rollback_error}")
+            try:
                 self._unregister_extension_skills(
                     transaction_artifacts["skills"], manifest.id
                 )
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback skill cleanup failed: {rollback_error}")
+            try:
                 HookExecutor(self.project_root).unregister_hooks(manifest.id)
-            except BaseException:
-                pass
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback hook cleanup failed: {rollback_error}")
             # Generic integration rollback deliberately converts a failed install
             # into a config-only, unregistered extension directory. Preserve that
             # user-facing recovery state instead of restoring the pre-install
@@ -2566,49 +2707,47 @@ class ExtensionManager:
                 )
             )
             if preserved_generic_config:
+                # Generic installs never publish the new selector eligibility;
+                # retain their established config-only/unregistered recovery.
                 raise
+            if not kept_config:
+                rollback("registered install cleanup", lambda: (
+                    self.remove(manifest.id) if self.registry.is_installed(manifest.id) else None
+                ))
 
-            # Remove any partial install, then restore the previous on-disk
-            # extension and metadata/config snapshots byte-for-byte.
-            try:
-                if self.registry.is_installed(manifest.id):
-                    self.remove(manifest.id)
-            except BaseException:
-                pass
-            if dest_dir.is_symlink():
-                dest_dir.unlink()
-            elif dest_dir.exists():
-                shutil.rmtree(dest_dir)
-            if backup_dir.is_dir():
-                # Restore either a registered prior install or an unregistered
-                # `--keep-config` directory captured before validation/removal.
-                shutil.copytree(backup_dir, dest_dir, symlinks=True)
+                def restore_extension():
+                    if dest_dir.is_symlink():
+                        dest_dir.unlink()
+                    elif dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                    if backup_dir.is_dir():
+                        shutil.copytree(backup_dir, dest_dir, symlinks=True)
+
+                rollback("extension directory", restore_extension)
+
+            # Kept config and generic rescue directories remain under the
+            # unchecked installer's recovery contract; never delete that state.
+            # Eligibility and affected winner artifacts are independent and
+            # must be restored even if directory cleanup fails.
             self.registry.data = old_registry_data
-            if old_registry_bytes is None:
-                registry_path.unlink(missing_ok=True)
-            else:
-                registry_path.parent.mkdir(parents=True, exist_ok=True)
-                registry_path.write_bytes(old_registry_bytes)
-            if old_hook_bytes is None:
-                hook_path.unlink(missing_ok=True)
-            else:
-                hook_path.parent.mkdir(parents=True, exist_ok=True)
-                hook_path.write_bytes(old_hook_bytes)
-            if was_installed and old_metadata:
-                # Recreate owned agent artifacts from the restored manifest;
-                # registration is idempotent and scoped to the extension.
-                try:
-                    restored = ExtensionManifest(dest_dir / "extension.yml")
-                    self._register_commands_for_active_agent(restored, dest_dir)
-                    self._register_extension_skills(restored, dest_dir, force=True)
-                except BaseException:
-                    pass
+
+            def restore_file(path, content):
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+
+            rollback("extension registry", lambda: restore_file(registry_path, old_registry_bytes))
+            rollback("hook config", lambda: restore_file(hook_path, old_hook_bytes))
+            rollback("winner artifacts", artifact_snapshot.restore)
             raise
         finally:
             if previous_transaction_artifacts is None:
                 del self._install_transaction_artifacts
             else:
                 self._install_transaction_artifacts = previous_transaction_artifacts
+            artifact_snapshot.close()
             shutil.rmtree(backup_root, ignore_errors=True)
 
     def _install_from_directory_unchecked(
@@ -3305,20 +3444,47 @@ class ExtensionManager:
         hooks_started = False
         registry_started = False
         try:
-            # Register commands with AI agents (active integration only, #2948)
+            # Publish provider eligibility inside the transaction before resolving
+            # selectors. No raw command has been written yet.
+            winner_commands, winner_skills = {}, []
+            registration_manifest = manifest
+            if register_commands and not generic_active:
+                self.registry.data.setdefault("extensions", {})[manifest.id] = {
+                    "version": manifest.version, "enabled": True,
+                    "priority": priority, "registered_commands": {},
+                    "registered_skills": [],
+                }
+                self.registry._save()
+                remaining, winner_commands, winner_skills = self._materialize_extension_winners(
+                    manifest, dest_dir
+                )
+                registration_manifest = copy.copy(manifest)
+                registration_manifest.data = copy.deepcopy(manifest.data)
+                registration_manifest.data["provides"]["commands"] = remaining
             registered_commands = {}
             if register_commands:
                 registered_commands = self._register_commands_for_active_agent(
-                    manifest, dest_dir, link_outputs=link_commands
+                    registration_manifest, dest_dir, link_outputs=link_commands
                 )
+            for agent, names in winner_commands.items():
+                registered_commands.setdefault(agent, []).extend(names)
 
-            # Auto-register extension commands as agent skills when skills mode
-            # was used during project initialisation (feature parity).
-            registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+            # Merge the callback-populated partial state with returned totals;
+            # do not replace it, because registration can fail before returning.
+            transaction_commands = self._install_transaction_artifacts.setdefault(
+                "commands", {}
             )
+            for agent, commands in registered_commands.items():
+                tracked = transaction_commands.setdefault(agent, [])
+                for command in commands:
+                    if command not in tracked:
+                        tracked.append(command)
+
+            registered_skills = self._register_extension_skills(
+                registration_manifest, dest_dir, link_outputs=link_commands
+            )
+            registered_skills.extend(winner_skills)
             self._install_transaction_artifacts["commands"] = registered_commands
-            self._install_transaction_artifacts["skills"] = registered_skills
 
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
@@ -4153,9 +4319,12 @@ class ExtensionManager:
         return removed
 
     def register_enabled_extensions_for_agent(
-        self, agent_name: str, *, force: bool = False
+        self, agent_name: str, *, force: bool = False, strict: bool = False
     ) -> None:
         """Register installed, enabled extensions for ``agent_name``.
+
+        ``strict`` propagates failures to an enclosing artifact transaction;
+        other callers retain best-effort per-extension registration.
 
         Command-file registration is scoped to the explicit ``agent_name``
         argument. Since #2948, callers pass the active agent only (``use`` /
@@ -4308,7 +4477,7 @@ class ExtensionManager:
                         # Skills are a companion artifact.  If command registration
                         # already succeeded, still persist it so later cleanup can
                         # find those command files.
-                        if agent_name == "generic":
+                        if strict or agent_name == "generic":
                             raise
                         from .. import _print_cli_warning
 
@@ -4508,6 +4677,8 @@ class ExtensionManager:
                     registry_update_started = True
                     self.registry.update(ext_id, updates)
             except Exception as ext_err:
+                if strict:
+                    raise
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.
                 from .. import _print_cli_warning
@@ -4712,6 +4883,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
         only_agent: Optional[str] = None,
+        on_output=None,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -4726,6 +4898,7 @@ class CommandRegistrar:
             only_agent=only_agent,
             extension_id=manifest.id,
             author=manifest.data["extension"].get("author"),
+            on_output=on_output,
         )
 
     def unregister_commands(

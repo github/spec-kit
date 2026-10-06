@@ -76,6 +76,8 @@ def extension_remove(
             console.print("Cancelled")
             raise typer.Exit(0)
 
+    affected_commands = _commands._capture_preset_command_names(project_root)
+
     # Remove extension
     success = manager.remove(extension_id, keep_config=keep_config)
 
@@ -95,7 +97,7 @@ def extension_remove(
         # #1: regenerate native event config so the removed extension's events
         # are stripped from installed integrations.
         _commands._refresh_events_and_warn(project_root)
-        _commands._refresh_presets_and_warn(project_root)
+        _commands._refresh_presets_and_warn(project_root, affected_commands)
         console.print(f"\nTo reinstall: specify extension add {safe_extension_id}")
     else:
         console.print("[red]Error:[/red] Failed to remove extension")

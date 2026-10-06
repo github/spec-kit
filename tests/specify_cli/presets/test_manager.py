@@ -180,6 +180,69 @@ class TestPresetManager:
             if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
         } == before_artifacts
 
+    @pytest.mark.parametrize("skills", [False, True])
+    def test_force_install_regex_only_registry_add_failure_restores_commands(
+        self, project_dir, temp_dir, monkeypatch, skills
+    ):
+        """A failed forced reinstall restores regex-only commands and skills."""
+        from specify_cli import save_init_options
+
+        agent = "claude" if skills else "amp"
+        save_init_options(project_dir, {"ai": agent, "ai_skills": skills})
+        (project_dir / (".claude/skills" if skills else ".agents/commands")).mkdir(
+            parents=True
+        )
+        preset_dir = temp_dir / "regex-command"
+        (preset_dir / "commands").mkdir(parents=True)
+        (preset_dir / "commands" / "override.md").write_text(
+            "---\ndescription: Regex override\n---\n\nRegex override\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "regex-command",
+                        "name": "Regex Command",
+                        "version": "1.0.0",
+                        "description": "Regex command",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {"templates": [{
+                        "type": "command",
+                        "name": "regex:^speckit\\.specify$",
+                        "file": "commands/override.md",
+                    }]},
+                }
+            )
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        artifact = (
+            project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+            if skills
+            else project_dir / ".agents" / "commands" / "speckit.specify.md"
+        )
+        assert "Regex override" in artifact.read_text()
+        before = {
+            path.relative_to(project_dir): path.read_bytes()
+            for path in project_dir.rglob("*") if path.is_file()
+        }
+
+        def fail_add(*args, **kwargs):
+            raise OSError("simulated regex registry failure")
+
+        monkeypatch.setattr(manager.registry, "add", fail_add)
+        with pytest.raises(OSError, match="regex registry failure"):
+            manager.install_from_directory(preset_dir, "0.1.5", force=True)
+
+        assert manager.registry.is_installed("regex-command")
+        assert {
+            path.relative_to(project_dir): path.read_bytes()
+            for path in project_dir.rglob("*")
+            if path.is_file()
+        } == before
+
     def test_force_install_selector_failure_restores_install_and_artifacts(
         self, project_dir, pack_dir, monkeypatch
     ):
@@ -929,6 +992,69 @@ class TestSelfTestPreset:
 
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         assert memory.read_text() == "# Core constitution-template\n"
+
+    @pytest.mark.parametrize("selector", ["constitution-template", "regex:constitution-.*"])
+    def test_constitution_selector_removal_recomposes_remaining_regex_layers(
+        self, project_dir, temp_dir, selector
+    ):
+        """Removing a middle wrapper must refresh composite-source provenance."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        for preset_id, priority, name in (
+            ("regex-outer", 1, "regex:.*-template"),
+            ("regex-inner", 2, selector),
+        ):
+            source = temp_dir / preset_id
+            (source / "templates").mkdir(parents=True)
+            (source / "templates" / "wrapper.md").write_text(
+                f"# {preset_id}\n{{CORE_TEMPLATE}}\n"
+            )
+            (source / "preset.yml").write_text(yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {"id": preset_id, "name": preset_id,
+                           "version": "1.0.0", "description": "wrapper"},
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": [{"type": "template", "name": name,
+                    "file": "templates/wrapper.md", "strategy": "wrap"}]},
+            }))
+            manager.install_from_directory(source, "0.1.5", priority=priority)
+        assert "regex-inner" in memory.read_text()
+        assert "regex-outer" in memory.read_text()
+
+        manager.remove("regex-inner")
+
+        assert "regex-inner" not in memory.read_text()
+        assert "regex-outer" in memory.read_text()
+        assert "{CORE_TEMPLATE}" not in memory.read_text()
+        assert memory.read_text() == PresetResolver(project_dir).resolve_content(
+            "constitution-template", "template"
+        )
+
+    def test_regex_constitution_removal_without_lower_resource(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Removal detects a matching selector without depending on expansion."""
+        source = temp_dir / "unmatched-constitution"
+        source.mkdir()
+        (source / "wrapper.md").write_text("wrapper\n")
+        (source / "preset.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {"id": source.name, "name": source.name,
+                       "version": "1.0.0", "description": "wrapper"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template",
+                "name": "regex:constitution-.*", "file": "wrapper.md"}]},
+        }))
+        manager = PresetManager(project_dir)
+        monkeypatch.setattr(manager, "_has_lower_resource", lambda *args: False)
+        with pytest.warns(UserWarning, match="currently matches no"):
+            manager.install_from_directory(source, "0.1.5")
+        calls = []
+        monkeypatch.setattr(manager, "_reconcile_constitution", lambda: calls.append(True))
+
+        assert manager.remove(source.name)
+        assert calls == [True]
 
     def test_self_test_removal_preserves_edited_constitution(self, project_dir):
         """Removing a preset does not overwrite an edited generated constitution."""

@@ -143,11 +143,16 @@ class PresetResolver:
             return entry, (candidate if candidate.is_file() else None)
         return None, None
 
-    def _find_unregistered_extension_command(self, template_name: str) -> Path | None:
-        """Find the legacy extension filename only for unregistered extensions."""
+    def _find_unregistered_extension_command(
+        self, template_name: str, ext_dir: Path | None = None
+    ) -> Path | None:
+        """Find a legacy command filename within its matching extension only."""
         extension_template_name = template_name.removeprefix("speckit.")
         namespace = extension_template_name.split(".", 1)[0]
-        ext_dir = self.extensions_dir / namespace
+        expected_dir = self.extensions_dir / namespace
+        if ext_dir is not None and ext_dir.resolve() != expected_dir.resolve():
+            return None
+        ext_dir = expected_dir
         registry = ExtensionRegistry(self.extensions_dir)
         if namespace in registry.keys():
             metadata = registry.get(namespace)
@@ -293,16 +298,19 @@ class PresetResolver:
                 # collect_all_layers()/resolve_content() so resolve() and
                 # resolve_with_source() agree with them instead of returning
                 # the core template (or a stray convention file).
-                entry, manifest_candidate = self._manifest_declared_template(
+                declarations = self._preset_declarations_for_resource(
                     pack_dir, template_name, template_type
                 )
-                if entry is None:
-                    entry, manifest_candidate = self._regex_preset_declaration(
+                if not declarations:
+                    entry, candidate = self._manifest_declared_template(
                         pack_dir, template_name, template_type
                     )
-                if manifest_candidate is not None:
-                    return manifest_candidate
-                if entry is not None:
+                    if entry is not None:
+                        declarations = [(entry, candidate)]
+                for _entry, manifest_candidate in declarations:
+                    if manifest_candidate is not None:
+                        return manifest_candidate
+                if declarations:
                     # Manifest declares this template but the file is missing,
                     # non-file (e.g. a directory), or an empty/falsey ``file``
                     # value. The manifest is authoritative, so skip this pack's
@@ -322,23 +330,11 @@ class PresetResolver:
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
-            # The extension manifest is authoritative, same as preset manifests
-            # above: check it before convention-based lookup so a declared entry
-            # at a non-conventional path wins over a stale conventional file.
-            entry, manifest_candidate = self._extension_manifest_declared_template(
+            candidate = self._extension_resource(
                 ext_dir, template_name, template_type
             )
-            if manifest_candidate is not None:
-                return manifest_candidate
-            if entry is not None:
-                continue
-            for subdir in subdirs:
-                if subdir:
-                    candidate = ext_dir / subdir / f"{template_name}{ext}"
-                else:
-                    candidate = ext_dir / f"{template_name}{ext}"
-                if candidate.exists():
-                    return candidate
+            if candidate is not None:
+                return candidate
 
         # Priority 3: Project templates
         if template_type == "template":
@@ -624,12 +620,30 @@ class PresetResolver:
     ) -> bool:
         return self._has_concrete_resource(base_dir, name, template_type)
 
+    def _extension_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> Path | None:
+        """Discover one candidate per enabled provider, honoring declarations.
+
+        Legacy namespace filenames are command-only and scoped to base_dir;
+        they must never rediscover another provider's file or bypass a missing
+        manifest declaration. Share this lookup with regex eligibility so every
+        eligible base can actually be resolved and collected.
+        """
+        entry, candidate = self._extension_manifest_declared_template(
+            base_dir, name, template_type
+        )
+        if entry is not None:
+            return candidate
+        candidate = self._conventional_resource(base_dir, name, template_type)
+        if candidate is None and template_type == "command":
+            candidate = self._find_unregistered_extension_command(name, base_dir)
+        return candidate
+
     def _extension_has_concrete_resource(
         self, base_dir: Path, name: str, template_type: str
     ) -> bool:
-        return self._has_concrete_resource(
-            base_dir, name, template_type, is_extension=True
-        )
+        return self._extension_resource(base_dir, name, template_type) is not None
 
     def _core_has_concrete_resource(self, name: str, template_type: str) -> bool:
         return self._core_resource(name, template_type) is not None
@@ -797,17 +811,9 @@ class PresetResolver:
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
-            # The extension manifest is authoritative, same as preset manifests
-            # above: check it before convention-based lookup so a declared entry
-            # at a non-conventional path wins over a stale conventional file, and
-            # a declared-but-missing file isn't silently masked by convention.
-            entry, candidate = self._extension_manifest_declared_template(
+            candidate = self._extension_resource(
                 ext_dir, template_name, template_type
             )
-            if entry is None:
-                candidate = _find_in_subdirs(ext_dir)
-            if candidate is None and ext_meta is None:
-                candidate = self._find_unregistered_extension_command(template_name)
             if candidate:
                 if ext_meta:
                     version = ext_meta.get("version", "?")
@@ -824,32 +830,8 @@ class PresetResolver:
                     }
                 )
 
-        if template_type == "command":
-            extension_template_name = template_name.removeprefix("speckit.")
-            namespace = extension_template_name.split(".", 1)[0]
-            ext_dir = self.extensions_dir / namespace
-            extension_registry = ExtensionRegistry(self.extensions_dir)
-            extension_metadata = extension_registry.get(namespace)
-            namespace_is_registered = namespace in extension_registry.keys()
-            if not namespace_is_registered or (
-                extension_metadata is not None
-                and extension_metadata.get("enabled", True)
-            ):
-                candidate = self._find_unregistered_extension_command(template_name)
-                if candidate is not None:
-                    layers.append(
-                        {
-                            "path": candidate,
-                            "source": (
-                                f"extension:{namespace} v{extension_metadata.get('version', '?')}"
-                                if extension_metadata
-                                else f"extension:{namespace} (unregistered)"
-                            ),
-                            "strategy": "replace",
-                            "extension_id": namespace,
-                            "extension_dir": ext_dir,
-                        }
-                    )
+        # No separate namespace fallback: the scoped extension loop above is
+        # the only path that can append a legacy alternate command filename.
 
         # Priority 4: Core templates (always "replace")
         core = None

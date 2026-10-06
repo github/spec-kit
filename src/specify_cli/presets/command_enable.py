@@ -55,7 +55,14 @@ def preset_enable(
         )
         if isinstance(item.get("name"), str)
     }
+    names.update(manager._collect_selector_command_names(resolver))
     manager.registry.update(preset_id, {"enabled": True})
+    # Disabled regex declarations have no pre-state expansion. Always collect
+    # post-state matches, including historical destinations owned by lower packs.
+    names.update(manager._collect_selector_command_names(PresetResolver(project_root)))
+    historical_agents, historical_skills_dirs = manager._historical_command_targets(
+        names
+    )
     from .. import load_init_options
 
     options = load_init_options(project_root)
@@ -63,12 +70,13 @@ def preset_enable(
     if isinstance(active_agent, str) and active_agent:
         manager.register_enabled_presets_for_agent(active_agent)
     if names:
-        names.update(
-            manager._collect_selector_command_names(PresetResolver(project_root))
-        )
         try:
-            manager._reconcile_composed_commands(sorted(names))
-            manager._reconcile_skills(sorted(names))
+            manager._reconcile_composed_commands(
+                sorted(names), extra_agents=historical_agents or None
+            )
+            manager._reconcile_skills(
+                sorted(names), extra_skills_dirs=historical_skills_dirs or None
+            )
         except Exception as exc:
             import warnings
 

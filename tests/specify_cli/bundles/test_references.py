@@ -46,7 +46,7 @@ def test_builtin_step_type_resolves(tmp_path: Path):
     assert warnings == []
 
 
-def test_community_step_is_not_treated_as_bundled(tmp_path: Path):
+def test_community_step_is_not_treated_as_bundled(tmp_path: Path, monkeypatch):
     """A community step loaded for one project must not resolve for another.
 
     `load_custom_steps` adds project-installed ids to the process-global
@@ -68,6 +68,10 @@ def test_community_step_is_not_treated_as_bundled(tmp_path: Path):
         def execute(self, config, context):  # pragma: no cover - never run
             return StepResult(status=StepStatus.COMPLETED)
 
+    from specify_cli.workflows.catalog import StepCatalog
+
+    # This unit test checks project-local isolation, not network availability.
+    monkeypatch.setattr(StepCatalog, "get_step_info", lambda self, step_id: None)
     # Simulate project A having loaded a community step into the global registry.
     _register_step(_CommunityStep())
     try:
@@ -85,8 +89,11 @@ def test_community_step_is_not_treated_as_bundled(tmp_path: Path):
         STEP_REGISTRY.pop("community-only-step", None)
 
 
-def test_unknown_step_type_still_errors_online(tmp_path: Path):
+def test_unknown_step_type_still_errors_online(tmp_path: Path, monkeypatch):
     """The guard must not make every step id resolve."""
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(StepCatalog, "get_step_info", lambda self, step_id: None)
     root = make_project(tmp_path)
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)
