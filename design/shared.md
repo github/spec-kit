@@ -21,9 +21,9 @@ The shared layer optimizes for:
   explicit and testable.
 - **Transport neutrality:** shared contracts contain no Typer, Rich, MCP,
   stdout/stderr, protocol, or exit-code concerns.
-- **Explicit context:** requested directories, authorized project roots,
-  policy, deadlines, cancellation, and output budgets are passed rather than
-  read from mutable process globals.
+- **Explicit context:** requested directories, resolved project roots, policy,
+  filesystem authority, deadlines, cancellation, and output budgets are passed
+  rather than read from mutable process globals.
 - **Reviewable ownership:** application behavior has a predictable source and
   mirrored tests.
 
@@ -77,6 +77,8 @@ An adapter must not:
 | Capability-free and state-dependent validation | Shared operation |
 | Application orchestration and side effects | Shared operation and domain modules |
 | Operation-private phases | `_operation_<name>_<phase>.py` |
+| Read-only application-resource interface | Shared application infrastructure |
+| Binding that interface to the running distribution | Delivery-adapter composition |
 | Invocation syntax and presentation | Delivery adapter |
 | Human prompting and terminal rendering | CLI adapter |
 | MCP tool schemas, annotations, and tool errors | MCP adapter |
@@ -294,13 +296,15 @@ Contract evolution follows these rules:
 
 ## Invocation context
 
-Adapters begin with an immutable, I/O-free pre-authorization context:
+Adapters construct one immutable invocation context:
 
 ```text
-PreAuthorizationContext
+InvocationContext
 ├── launch_working_directory
 ├── requested_directory
 ├── filesystem_scope
+├── filesystem: FilesystemAccess
+├── application_resources: ReadOnlyApplicationResources
 ├── access_policy
 ├── deadline
 ├── cancellation
@@ -308,9 +312,8 @@ PreAuthorizationContext
 ```
 
 `requested_directory` is the caller-supplied value, or absent when discovery
-should begin from `launch_working_directory`. Constructing this context must
-not read the environment, inspect the filesystem, resolve symlinks, or discover
-a project.
+should begin from `launch_working_directory`. Constructing the context does not
+resolve or validate a project.
 
 `filesystem_scope` is explicit:
 
@@ -319,27 +322,22 @@ RootBound(allowed_roots)
 HostUser
 ```
 
-`RootBound` confines access to host-provided roots. `HostUser` preserves the
-direct local CLI model: filesystem access is governed by the invoking user's
-operating-system permissions rather than an application root boundary. An
-adapter must choose one; absence of a scope never means unrestricted access.
+`RootBound` confines access to host-provided roots and supplies a
+`RootedFilesystem`. `HostUser` supplies a `HostFilesystem` governed by the
+invoking user's operating-system permissions. Direct CLI and local stdio MCP
+use `HostUser` by default. A host may deliberately configure `RootBound`; an
+adapter must never infer it from cwd or silently switch scopes.
 
-After policy authorization, shared application infrastructure resolves and
-validates the canonical root and constructs:
+`application_resources` is bound during trusted adapter/process composition to
+the running Specify distribution, never from request data.
 
-```text
-AuthorizedOperationContext
-├── invocation: PreAuthorizationContext
-├── project_root
-└── filesystem: FilesystemAccess
-```
-
-`project_root` is optional for process-scoped operations and represents the
-canonical project or target root for scoped operations. `RootBound` contexts
-re-check canonical containment before state-dependent validation or side
-effects and receive a `RootedFilesystem`. `HostUser` contexts receive a
-`HostFilesystem` governed by operating-system permissions. A raw canonical
-path is identity, not authorization under a root-bound policy.
+The parsing and capability-computation phases do not call `filesystem` or
+`application_resources`. After policy authorization, the shared operation uses
+those interfaces to resolve and validate the canonical project or target root,
+then passes the resolved root explicitly through operation phases.
+`RootBound` re-checks canonical containment before state-dependent validation
+or side effects. A raw canonical path is identity, not authorization under a
+root-bound policy.
 
 Shared operations must not call `os.chdir()` to establish request context.
 They pass resolved roots through operation phases and domain calls. Deadlines,
@@ -375,16 +373,46 @@ relevant hierarchy.
 not imply force, overwrite consent, external-source trust, or permission for a
 different adapter to use host-wide access.
 
+## Trusted application resources
+
+Installed package metadata and first-party bundled assets are a separate
+read-only authority domain from caller-selected project paths. They may live
+outside an MCP server's `RootBound` roots in wheel, pipx, source-checkout, and
+editable installations.
+
+After `local-read` authorization, operations may use
+`ReadOnlyApplicationResources`. The interface:
+
+- Reads distribution metadata and validated first-party bundled resources by
+  logical identifier, not arbitrary caller-supplied path.
+- Restricts backing locations to the running Specify distribution and its
+  validated source-checkout resource roots.
+- Exposes no create, update, delete, rename, or arbitrary path traversal API.
+- Rejects malformed or unknown identifiers and fails closed when a resource
+  cannot be validated.
+- Keeps downloaded catalogs, third-party extensions, user configuration, and
+  project files outside this trusted resource domain.
+
+Operations must not add package installation paths to request-writable allowed
+roots merely to read application assets. For example, `version` reads
+distribution metadata through `application_resources`; `init` reads bundled
+templates and scripts through that interface and writes them through
+`filesystem`.
+
+Both adapters provide the application-resource interface explicitly. Shared
+operations do not discover package roots from cwd, environment variables, or
+caller input.
+
 ## Capability declarations
 
 Capabilities are independent requirements, not a highest-risk hierarchy:
 
 | Capability | Meaning |
 | --- | --- |
-| `local-read` | Read process, host, or project state within allowed roots |
-| `project-write` | Create or change project/target files or configuration |
+| `local-read` | Read process, application, host, or project state permitted by the selected filesystem scope |
+| `project-write` | Create or change files or configuration permitted by the selected filesystem scope |
 | `execution` | Start host tools, workflows, hooks, agents, or processes |
-| `unrestricted-host-execution` | Permit an executed child to use the server user's ambient host access outside allowed roots |
+| `unrestricted-host-execution` | Permit an executed child to use the server user's ambient host access outside configured confinement |
 | `self-modifying` | Change the Specify installation or machine-level state |
 
 The descriptor declares the conservative union an operation may require.
@@ -448,6 +476,8 @@ Operation tests cover:
   post-resolution containment, including symlink-escape rejection.
 - Root-bound enforcement at each descendant filesystem access, including
   symlink/junction replacement and time-of-check/time-of-use cases.
+- Read-only application resources in wheel/pipx and source/editable layouts,
+  including rejection of caller-controlled paths and write attempts.
 - Sandboxed execution and explicit `unrestricted-host-execution` policy
   denial, with no unsafe fallback.
 - Domain behavior without Typer, Rich, MCP, or transport assertions.
@@ -477,6 +507,8 @@ Avoid:
 - Letting adapters infer force, trust, consent, or extra capabilities.
 - Leaving filesystem scope or default access policy implicit so shared code
   must guess the adapter's authority.
+- Adding installed package roots to project-writable roots instead of using
+  the read-only application-resource interface.
 - Reading mutable process cwd instead of using invocation context.
 - Splitting simple operations or creating phase modules solely for symmetry.
 
@@ -492,6 +524,8 @@ For an operation with CLI and MCP adapters:
 - [ ] Shared request, outcome, warning, and error types are transport-neutral.
 - [ ] Each adapter explicitly constructs its filesystem scope and access
       policy.
+- [ ] Trusted package metadata and bundled assets use
+      `ReadOnlyApplicationResources`, not project filesystem authority.
 - [ ] Capability computation is pure and authorization precedes stateful work.
 - [ ] Under `RootBound`, canonical project resolution and its allowed-root
       re-check occur only after authorization.

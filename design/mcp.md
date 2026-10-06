@@ -247,16 +247,20 @@ The static disposition values are:
 - `excluded`: the command is intentionally not an MCP operation.
 
 Runtime policy state is separate from static inventory disposition. An
-available tool has an `effective_state` of:
+available tool has a request-specific `effective_state` of:
 
-- `enabled`: the active policy authorizes the request's required
-  capabilities.
+- `enabled`: the active policy authorizes the complete validated request,
+  including required capabilities, network access, filesystem scope and roots,
+  external-source trust policy, and unrestricted host execution.
 - `policy-disabled`: the tool remains discoverable, but invocation returns a
-  structured `policy_denied` error identifying the missing authorization.
+  structured `policy_denied` error identifying every denied policy dimension.
 
-`effective_state` is derived from the active policy and request; it is not
-stored as the inventory's static disposition. A metadata or describe surface
-may report both fields but must preserve their distinct types.
+`effective_state` is derived only after capability-free request validation and
+the full request policy decision; it is not stored as the inventory's static
+disposition. A metadata or describe surface without a concrete request reports
+the static disposition and active policy constraints, not a fabricated
+`effective_state`. A request-evaluation surface may report both fields but must
+preserve their distinct types.
 
 Every CLI leaf must appear exactly once. The inventory parity test fails for a
 missing leaf, duplicate logical operation, duplicate tool name, stale CLI
@@ -315,10 +319,18 @@ logged only through the MCP diagnostic channel.
 ## Invocation context and project resolution
 
 The MCP adapter constructs the immutable
-[shared pre-authorization context](shared.md#invocation-context) from the
-requested directory, server launch state, host roots, active policy, and call
-lifecycle. Its filesystem scope is `RootBound(allowed_roots)`. It performs no
-project discovery or filesystem resolution while constructing that context.
+[shared invocation context](shared.md#invocation-context) from the requested
+directory, server launch state, active policy, and call lifecycle. Local stdio
+uses `HostUser` filesystem access by default, like the direct CLI. A host may
+explicitly configure `RootBound(allowed_roots)`; the adapter never derives that
+boundary from cwd. Context construction performs no project discovery or
+filesystem resolution.
+
+MCP server composition also binds `application_resources` to distribution
+metadata and validated first-party assets through standard package-resource
+APIs, with a validated source/editable-layout fallback. Tool schemas never
+accept an application-resource root or raw package path. The same interface is
+available under stdio and future Streamable HTTP transports.
 
 Project-scoped MCP tools accept an optional project directory when their use
 case needs one. If omitted, project discovery starts from the server launch
@@ -331,24 +343,23 @@ The invocation follows these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Pass the unresolved requested directory and
-  `RootBound(host_provided_allowed_roots)` explicitly.
+- Pass the unresolved requested directory and explicitly selected filesystem
+  scope.
+- Pass trusted application resources separately from the project filesystem;
+  use them only after `local-read` authorization.
 - Perform preliminary policy checks without filesystem access, then resolve
   the canonical project root under authorized `local-read`.
-- Re-check canonical allowed-root containment after resolution as an admission
-  check.
-- Pass the authorized root and root-bound filesystem interface through
+- Pass the resolved project root and selected filesystem interface through
   operation phases.
-- Enforce containment at every descendant access with descriptor-/handle-based
-  no-follow traversal or an equivalent fail-closed platform mechanism; do not
-  rely on the one root check to prevent later symlink, junction, or path-swap
-  escapes.
+- Under `RootBound`, re-check canonical containment after resolution and
+  enforce it at every descendant access with descriptor-/handle-based no-follow
+  traversal or an equivalent fail-closed platform mechanism.
 - Do not infer the project from an unrelated server process state after the
   invocation begins.
 
 `init` is a special project-creation operation: its request identifies the
 target directory, while the context identifies the launch directory and
-allowed roots.
+filesystem scope.
 
 ## Non-interactive behavior
 
@@ -369,7 +380,7 @@ or `execution` does not imply:
 - `force=true`.
 - Trust of an external URL or downloaded executable content.
 - Permission to overwrite user-modified files.
-- Permission to leave the declared project root.
+- Under `RootBound`, permission to leave the declared project root.
 - Permission to execute a workflow, hook, installer, or arbitrary command.
 - Permission for a child process to use unrestricted host access.
 
@@ -415,9 +426,10 @@ default policy is conservative:
   authorization.
 - `unrestricted-host-execution` requires a separate explicit authorization and
   remains default-deny.
-- In-process filesystem access is limited to host-provided roots or, when none
-  are provided, the server launch working directory, with the boundary enforced
-  at each access.
+- Local stdio uses `HostUser` filesystem access, matching direct CLI behavior.
+- A host-configured `RootBound` scope is enforced at every access. A future
+  remote transport must select its filesystem scope explicitly and must not
+  inherit stdio's host-user default accidentally.
 - Server-managed and sandboxed network access is denied unless explicitly
   enabled. An authorized unrestricted host child is a disclosed broad
   exception, not a network-confined execution mode.
@@ -427,7 +439,7 @@ Tool annotations should conservatively reflect the full declared capability
 set, but annotations do not replace server-side enforcement. If policy denies
 any capability required by an otherwise implemented tool request, the
 registered tool returns a structured `policy_denied` error identifying the
-missing capabilities. A runtime describe surface may report
+denied policy dimensions. A request-evaluation surface may report
 `effective_state: policy-disabled`; the static inventory disposition remains
 `available`.
 
@@ -510,6 +522,7 @@ src/specify_cli/mcp_server/
 ├── registry.py
 ├── policy.py
 ├── context.py
+├── resources.py
 └── transports/
     ├── stdio.py
     └── streamable_http.py
@@ -517,6 +530,10 @@ src/specify_cli/mcp_server/
 
 Create only the modules justified by implemented behavior. The layout defines
 an architectural boundary, not a requirement to add empty files.
+
+`resources.py` binds the shared read-only application-resource interface to the
+running Specify distribution. It does not own command-specific asset selection
+or expose package paths as project roots.
 
 ## Testing structure
 
@@ -532,6 +549,9 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify access-policy, trust, timeout, cancellation, and output-budget
   failures.
 - Verify descendant filesystem escapes are rejected at the point of access.
+- Verify installed metadata and bundled assets remain readable through the
+  read-only application-resource interface when package paths are outside
+  project roots, and cannot be written or selected by caller path.
 - Verify unsandboxed child execution requires
   `unrestricted-host-execution` and never occurs as a fallback.
 
@@ -542,6 +562,9 @@ Shared operation, CLI adapter, and parity coverage follows
 - Reject duplicate operation IDs and MCP tool names.
 - Require reasons for every unavailable or excluded command.
 - Verify available tools are registered by the owning hierarchy.
+- Verify request-specific `effective_state` uses the complete policy decision,
+  including a network-required request whose capabilities are authorized but
+  whose network access is denied.
 - Preserve total pytest collection when tests move, as required by the CLI
   architecture.
 
@@ -586,10 +609,11 @@ network_access: none
 project_scope: process
 ```
 
-`_operation_version.py` owns typed version collection and `VersionResult`.
-`command_version.py` renders the panel, feature text, or established JSON
-object. `mcp_version.py` returns the same result fields as structured content.
-No adapter starts a child process.
+`_operation_version.py` reads distribution metadata through
+`ReadOnlyApplicationResources` and owns typed version collection and
+`VersionResult`. `command_version.py` renders the panel, feature text, or
+established JSON object. `mcp_version.py` returns the same result fields as
+structured content. No adapter starts a child process.
 
 ### `artifact list`: project-scoped read
 
@@ -671,6 +695,9 @@ never prompts and never turns its machine context into force or trust. The
 shared operation validates inputs, builds a plan, applies transactional
 changes, and returns created/updated paths plus structured warnings. The CLI
 adapter may gather interactive choices before constructing the same request.
+Bundled templates and scripts are read through
+`ReadOnlyApplicationResources`; created project files use the authorized
+project filesystem interface.
 
 `init` tool checks launch host binaries, so this example conservatively
 requires `unrestricted-host-execution`. A sandboxed implementation may omit
@@ -705,6 +732,8 @@ Avoid:
   hierarchy.
 - Adding operation phases or `_mcp.py` files solely for symmetry.
 - Silently omitting CLI leaves from the MCP inventory.
+- Adding installed package or source-checkout resource paths to
+  request-writable roots.
 - Returning partial, truncated, or fallback data as a successful complete
   result.
 - Letting transport concerns leak into command contracts.
@@ -721,8 +750,12 @@ For a new or migrated MCP operation:
 - [ ] Availability, possible and request-required capabilities, network
       access, project scope, and
       contract version are explicit.
+- [ ] Request-specific `effective_state` reflects the complete policy decision,
+      not capabilities alone.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
+- [ ] Distribution metadata and bundled first-party assets use the trusted
+      read-only application-resource interface, not project roots.
 - [ ] Timeouts, cancellation, stdin, and output bounds are handled.
 - [ ] Existing CLI human and JSON behavior remains compatible.
 - [ ] Operation, CLI adapter, MCP adapter, parity, and protocol tests cover

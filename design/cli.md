@@ -224,13 +224,16 @@ should remain reviewable in one place.
 ## Shared invocation context and direct CLI policy
 
 The direct local CLI constructs the
-[shared pre-authorization context](shared.md#invocation-context) explicitly:
+[shared invocation context](shared.md#invocation-context) explicitly:
 
 - `launch_working_directory` is captured once when the CLI invocation begins.
 - `requested_directory` comes from the command's typed input, or remains absent
   when project discovery should begin from the launch directory.
 - `filesystem_scope` is `HostUser`, preserving established CLI behavior for
   explicit paths such as an `init` target outside the launch directory.
+- `filesystem` is the host-user filesystem interface.
+- `application_resources` is the trusted read-only interface for the running
+  Specify distribution and validated source-checkout resources.
 - `access_policy` is `DirectCliPolicy`.
 - Deadline, cancellation, and output-budget values come from CLI invocation
   infrastructure rather than mutable command globals.
@@ -239,7 +242,7 @@ The direct local CLI constructs the
 that user's operating-system permissions. It authorizes the capabilities
 declared for the selected operation, including ambient host execution when the
 descriptor requires `unrestricted-host-execution`. The shared operation does
-not infer this policy and must not substitute MCP's launch-directory boundary.
+not infer this policy or substitute another adapter's policy.
 
 This policy preserves host access, not semantic consent:
 
@@ -282,7 +285,9 @@ command behavior.
 
 CLI adapter tests also verify `DirectCliPolicy` construction, including
 explicit targets outside the launch directory and the rule that machine modes
-do not add force, trust, or destructive consent.
+do not add force, trust, or destructive consent. They verify that distribution
+metadata and bundled assets are supplied through the read-only application
+resource interface rather than inferred from project filesystem scope.
 
 Shared operation and phase tests use `test_operation_<name>.py` and
 `test_operation_<name>_<phase>.py` as defined in
@@ -430,6 +435,8 @@ For a new or refactored command:
       adapter.
 - [ ] Direct CLI invocation constructs `HostUser` filesystem scope and
       `DirectCliPolicy`; embedded confinement is explicit.
+- [ ] The CLI supplies the trusted read-only application-resource interface
+      independently from project filesystem scope.
 - [ ] CLI-private phase modules use `_command_<name>_<phase>.py`; shared phases
       use `_operation_<name>_<phase>.py`.
 - [ ] `_commands.py` contains only group infrastructure and genuinely shared
