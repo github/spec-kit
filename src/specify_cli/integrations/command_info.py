@@ -16,6 +16,7 @@ from ._helpers import _read_integration_json
 @integration_app.command("info")
 def integration_info(
     integration_id: str = typer.Argument(..., help="Integration ID"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
 ):
     """Show catalog details for a single integration."""
     from . import (
@@ -40,6 +41,36 @@ def integration_info(
         catalog_error: Optional[IntegrationCatalogError] = exc
     else:
         catalog_error = None
+
+    if versions is True:
+        if info:
+            from ._catalog_versions import available_versions
+
+            try:
+                advertised = available_versions(info)
+            except IntegrationCatalogError as exc:
+                console.print(f"[red]Error:[/red] {_rich_escape(str(exc))}")
+                raise typer.Exit(1) from exc
+            if not advertised:
+                console.print(
+                    f"[red]Error:[/red] No catalog versions advertised for {safe_integration_id}."
+                )
+                raise typer.Exit(1)
+            console.print(f"Catalog versions for {safe_integration_id}:")
+            for index, advertised_version in enumerate(advertised):
+                label = " (current)" if index == 0 else ""
+                console.print(f"  {_rich_escape(advertised_version)}{label}")
+            if not info.get("_install_allowed", True):
+                console.print("[yellow]Discovery only; catalog installation is disabled.[/yellow]")
+            console.print(
+                "[dim]Historical versions are metadata only; integration install supports registered built-in implementations, not catalog releases.[/dim]"
+            )
+            return
+        if catalog_error:
+            console.print(f"[red]Error:[/red] Could not query integration catalog: {_rich_escape(str(catalog_error))}")
+        else:
+            console.print(f"[red]Error:[/red] No catalog versions found for {safe_integration_id}.")
+        raise typer.Exit(1)
 
     if info:
         name = _rich_escape(str(info.get("name", integration_id)))

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
 import yaml  # noqa: F401
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -27,15 +28,35 @@ def test_validate_reports_invalid_manifest(project: Path):
     assert "license" in result.output
 
 
-def test_validate_accepts_valid_manifest(project: Path):
+@pytest.mark.parametrize("version", ["1.2.0", "1.20.30-12alpha.1+build.01", "V10.20.30"])
+def test_validate_accepts_valid_manifest(project: Path, version: str):
+    data = valid_manifest_dict()
+    data["bundle"]["version"] = version
     (project / "bundle.yml").write_text(
-        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+        yaml.safe_dump(data), encoding="utf-8"
     )
     # Offline mode does not fail on references it cannot verify (synthetic ids
     # here); they surface as warnings while structure is confirmed valid.
     result = runner.invoke(app, ["bundle", "validate", "--offline"])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+@pytest.mark.parametrize("version", ["1٢.2.3", "1.2.3-1٢", "1.2.3-٢alpha"])
+@pytest.mark.parametrize("field", ["bundle", "extension"])
+def test_validate_rejects_non_ascii_version(project: Path, version: str, field: str):
+    data = valid_manifest_dict()
+    if field == "bundle":
+        data["bundle"]["version"] = version
+    else:
+        data["provides"]["extensions"][0]["version"] = version
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 1, result.output
+    assert "invalid" in result.output
+    assert version in result.output
 
 
 def test_validate_escapes_manifest_markup_in_errors(project: Path):

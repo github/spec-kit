@@ -56,6 +56,33 @@ def _assert_pinned_version(
         )
 
 
+def _select_pinned_release(
+    kind: str, component: ComponentRef, info: dict, select_release
+) -> tuple[dict, str | None]:
+    """Select the catalog release a bundle pin names.
+
+    Returns the selected release record and the version the archive must
+    declare (``None`` when the pin cannot be enforced). Selection stays within
+    the winning catalog entry, so a pinned release missing from it is an error
+    rather than a silent fall-through to the advertised release or to a
+    lower-priority catalog. An entry advertising no version cannot enforce the
+    pin, so it is installed as resolved (mirrors ``_assert_pinned_version``).
+    """
+    pinned = component.version
+    advertised = info.get("version")
+    if not pinned or advertised is None or not str(advertised).strip():
+        return info, None
+    selected = select_release(info, pinned)
+    if selected is None:
+        raise BundlerError(
+            f"{kind} '{component.id}' is pinned to version {pinned} in the bundle "
+            f"manifest, but its catalog has no release for that version (it "
+            f"advertises {str(advertised).strip()}). Update the bundle's pinned "
+            "version or the catalog before installing."
+        )
+    return selected, selected["version"]
+
+
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     """Best-effort read of a bundled asset's declared version from its manifest.
 
@@ -219,10 +246,12 @@ class _PresetKindManager:
                 f"Preset '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Preset", component.id, component.version, info.get("version")
+        from ..presets._catalog_versions import select_release
+
+        info, expected_version = _select_pinned_release(
+            "Preset", component, info, select_release
         )
-        zip_path = catalog.download_pack(component.id)
+        zip_path = catalog.download_pack_info(info)
         try:
             self._manager.install_from_zip(
                 zip_path,
@@ -230,6 +259,11 @@ class _PresetKindManager:
                 priority,
                 catalog_name=info.get("_catalog_name"),
                 **({"force": True} if force else {}),
+                **(
+                    {"expected_id": component.id, "expected_version": expected_version}
+                    if expected_version is not None
+                    else {}
+                ),
             )
         finally:
             with contextlib.suppress(Exception):
@@ -312,10 +346,12 @@ class _ExtensionKindManager:
                 f"Extension '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Extension", component.id, component.version, info.get("version")
+        from ..extensions._catalog_versions import select_release
+
+        info, expected_version = _select_pinned_release(
+            "Extension", component, info, select_release
         )
-        zip_path = catalog.download_extension(component.id)
+        zip_path = catalog.download_extension_info(info)
         try:
             manifest = self._manager.install_from_zip(
                 zip_path,
@@ -323,6 +359,11 @@ class _ExtensionKindManager:
                 priority=priority,
                 force=force,
                 catalog_name=info.get("_catalog_name"),
+                **(
+                    {"expected_id": component.id, "expected_version": expected_version}
+                    if expected_version is not None
+                    else {}
+                ),
             )
             self._manager.scaffold_config(manifest.id)
         finally:

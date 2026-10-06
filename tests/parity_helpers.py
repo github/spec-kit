@@ -208,6 +208,7 @@ def collation_range_locale() -> str | None:
                 input="é\n",
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=False,
                 env=env,
             )
@@ -235,6 +236,7 @@ def run(
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
         env=env if env is not None else clean_env(),
         timeout=timeout,
