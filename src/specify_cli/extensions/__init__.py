@@ -1235,7 +1235,7 @@ class ExtensionManager:
         which only knows about installed extensions.
 
         Exact equality is not enough. Hyphenation is not injective, so two
-        legal names can write one prompt. A command and its own aliases are
+        legal names can write one file. A command and its own aliases are
         one body and may share a path. Two command entries, or a name owned
         by another extension, may not.
         """
@@ -1246,50 +1246,27 @@ class ExtensionManager:
         core_shadow_names = {
             self._shadow_key(f"speckit.{name}") for name in CORE_COMMAND_NAMES
         }
+        installed_shadow_names: Dict[str, str] = {}
+        for installed_name in installed_names:
+            installed_shadow_names.setdefault(
+                self._shadow_key(installed_name), installed_name
+            )
 
         collisions = []
+        # _collect_manifest_command_names() has validated every entry.
         entry_groups: Dict[str, List[tuple[str, str]]] = {}
         for cmd in manifest.commands:
-            if not isinstance(cmd, dict):
-                continue
-            primary = cmd.get("name")
-            if not isinstance(primary, str) or not primary:
-                continue
-            raws = [primary]
-            aliases = cmd.get("aliases") or []
-            if isinstance(aliases, list):
-                raws.extend(alias for alias in aliases if isinstance(alias, str) and alias)
-            for raw in raws:
-                entry_groups.setdefault(self._shadow_key(raw), []).append((primary, raw))
+            primary = cmd["name"]
+            for raw in [primary, *(cmd.get("aliases") or [])]:
+                entry_groups.setdefault(self._shadow_key(raw), []).append(
+                    (primary, raw)
+                )
         for group in entry_groups.values():
-            primaries = {primary for primary, _raw in group}
-            if len(primaries) < 2:
+            if len({primary for primary, _raw in group}) < 2:
                 continue
             rendered = ", ".join(sorted({raw for _primary, raw in group}))
             display = self._normalize_shadow_name(group[0][1])
             collisions.append(f"{rendered} (all write '{display}')")
-
-        installed_norm: Dict[str, tuple[str, str]] = {}
-        for ext_id in self.registry.keys():
-            if ext_id == manifest.id:
-                continue
-            other = self.get_extension(ext_id)
-            if other is None:
-                continue
-            for cmd in other.commands:
-                if not isinstance(cmd, dict):
-                    continue
-                raws = []
-                primary = cmd.get("name")
-                if isinstance(primary, str) and primary:
-                    raws.append(primary)
-                aliases = cmd.get("aliases") or []
-                if isinstance(aliases, list):
-                    raws.extend(
-                        alias for alias in aliases if isinstance(alias, str) and alias
-                    )
-                for raw in raws:
-                    installed_norm.setdefault(self._shadow_key(raw), (ext_id, raw))
 
         for name in sorted(declared_names):
             key = self._shadow_key(name)
@@ -1297,12 +1274,12 @@ class ExtensionManager:
                 collisions.append(
                     f"{name} (already provided by extension '{installed_names[name]}')"
                 )
-            elif key in installed_norm and installed_norm[key][1] != name:
-                owner, raw = installed_norm[key]
-                display = self._normalize_shadow_name(name)
+            elif key in installed_shadow_names:
+                other = installed_shadow_names[key]
                 collisions.append(
-                    f"{name} (writes '{display}', already provided by extension "
-                    f"'{owner}' as '{raw}')"
+                    f"{name} (writes '{self._normalize_shadow_name(name)}', "
+                    f"already provided by extension '{installed_names[other]}' "
+                    f"as '{other}')"
                 )
             elif key in core_shadow_names:
                 collisions.append(f"{name} (conflicts with core command)")
@@ -1312,586 +1289,6 @@ class ExtensionManager:
                 "Extension commands conflict with core or installed extension commands:\n- "
                 + "\n- ".join(collisions)
             )
-
-    def _command_output_name(self, agent_name: str, command_name: str) -> Optional[str]:
-        """Return the command filename stem ``agent_name`` would write.
-
-        ``None`` when the agent is unknown or the name could escape its
-        command directory. The stem matches registration and removal.
-        """
-        registrar = CommandRegistrar(self.project_root)
-        inner = registrar._registrar
-        inner._ensure_configs()
-        agent_config = inner.AGENT_CONFIGS.get(agent_name)
-        if not agent_config or not inner._is_safe_command_name(command_name):
-            return None
-        return inner._compute_output_name(agent_name, command_name, agent_config)
-
-    @staticmethod
-    def _is_core_command_spelling(name: str) -> bool:
-        """True for the spellings that override one core command.
-
-        ``plan``, ``speckit.plan``, and ``speckit-plan`` are one command.
-        A preset uses those to replace the core prompt. A different
-        manifest string that only hyphenates to the same file is not.
-        """
-        for stem in CORE_COMMAND_NAMES:
-            if name in {stem, f"speckit.{stem}", f"speckit-{stem}"}:
-                return True
-        return False
-
-    def _raw_command_file_exists(self, agent_name: str, raw: str) -> bool:
-        """True when this agent still has the unformatted command file.
-
-        The hyphenated path is shared, so it does not prove this command
-        owns it. The dotted (or otherwise unformatted) filename does.
-        """
-        wrapper = CommandRegistrar(self.project_root)
-        inner = wrapper._registrar
-        inner._ensure_configs()
-        agent_config = inner.AGENT_CONFIGS.get(agent_name)
-        if not agent_config or not inner._is_safe_command_name(raw):
-            return False
-        extension = agent_config.get("extension")
-        if not isinstance(extension, str):
-            return False
-        candidates: List[Path] = []
-        try:
-            commands_dir = inner._resolve_agent_dir(
-                agent_name, agent_config, self.project_root
-            )
-            candidates.append(commands_dir / f"{raw}{extension}")
-        except (OSError, ValueError):
-            pass
-        try:
-            from ..integrations import get_integration
-
-            integration = get_integration(agent_name)
-        except (ImportError, ValueError, KeyError):
-            integration = None
-        if integration is not None:
-            legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
-            legacy_ext = getattr(integration, "legacy_flat_command_extension", None)
-            if (
-                isinstance(legacy_dir, str)
-                and legacy_dir
-                and isinstance(legacy_ext, str)
-                and legacy_ext
-            ):
-                candidates.append(
-                    self.project_root / legacy_dir / f"{raw}{legacy_ext}"
-                )
-        return any(path.is_file() or path.is_symlink() for path in candidates)
-
-    def _iter_preset_command_names(
-        self, agent_name: Optional[str] = None
-    ) -> List[tuple[str, str, str, Dict[str, Any]]]:
-        """Preset id, primary, raw name, and the command template.
-
-        Enabled presets contribute every command. A disabled preset
-        contributes a name only when ``agent_name`` still has it
-        registered or the unformatted command file is still on disk.
-        A missing or unreadable preset contributes nothing. ``raw`` is
-        the primary or one alias; aliases of one template share that
-        template so they stay one command.
-        """
-        from ..presets._manifest import PresetManifest, PresetValidationError
-        from ..presets._registry import PresetRegistry
-
-        found: List[tuple[str, str, str, Dict[str, Any]]] = []
-        registry = PresetRegistry(self.project_root / ".specify" / "presets")
-        for preset_id, metadata in registry.list().items():
-            if not isinstance(metadata, dict):
-                metadata = {}
-            enabled = bool(metadata.get("enabled", True))
-            registered: Set[str] = set()
-            if agent_name:
-                recorded = metadata.get("registered_commands", {})
-                if isinstance(recorded, dict):
-                    registered = set(
-                        self._valid_name_list(recorded.get(agent_name))
-                    )
-            manifest_path = registry.packs_dir / preset_id / "preset.yml"
-            if not manifest_path.is_file():
-                continue
-            try:
-                manifest = PresetManifest(manifest_path)
-            except PresetValidationError:
-                continue
-            for template in manifest.templates:
-                if not isinstance(template, dict) or template.get("type") != "command":
-                    continue
-                primary = template.get("name")
-                if not isinstance(primary, str) or not primary:
-                    continue
-                raws = [primary]
-                aliases = template.get("aliases") or []
-                if isinstance(aliases, list):
-                    raws.extend(
-                        alias for alias in aliases
-                        if isinstance(alias, str) and alias
-                    )
-
-                def include(raw: str) -> bool:
-                    if enabled:
-                        return True
-                    if agent_name is None:
-                        return False
-                    if raw in registered:
-                        return True
-                    return self._raw_command_file_exists(agent_name, raw)
-
-                for raw in raws:
-                    if include(raw):
-                        found.append((preset_id, primary, raw, template))
-        return found
-
-    def _command_output_claims(
-        self,
-        agent_name: str,
-        *,
-        also_enabled: Optional[Set[str]] = None,
-        pending_preset: Optional[tuple[str, List[tuple[str, str, Dict[str, Any]]]]] = None,
-    ) -> Dict[str, List[tuple]]:
-        """Formatted path -> owners.
-
-        Each item is ``(owner, entry, raw, output, command, source_dir)``.
-        ``entry`` is ``(owner_id, primary)`` so a command and its own
-        aliases are one owner. A disabled extension or preset is an owner
-        only when this agent already registered the name or the
-        unformatted file is still on disk. ``also_enabled`` treats those
-        ids as enabled, for a check that runs before the flag is flipped.
-        ``pending_preset`` is a preset that is being registered and may
-        not be listed yet.
-        """
-        also = also_enabled or set()
-        claims: Dict[str, List[tuple]] = {}
-
-        def claim(
-            owner: str,
-            entry: tuple[str, str],
-            raw: str,
-            command: Optional[Dict[str, Any]],
-            source_dir: Optional[Path],
-        ) -> None:
-            output = self._command_output_name(agent_name, raw)
-            if output is None:
-                return
-            claims.setdefault(os.path.normcase(output), []).append(
-                (owner, entry, raw, output, command, source_dir)
-            )
-
-        for core_name in CORE_COMMAND_NAMES:
-            raw = f"speckit.{core_name}"
-            claim("core", ("core", raw), raw, None, None)
-
-        for ext_id, metadata in self.registry.list().items():
-            if not isinstance(metadata, dict):
-                metadata = {}
-            enabled = bool(metadata.get("enabled", True)) or ext_id in also
-            recorded = metadata.get("registered_commands", {})
-            registered = set(
-                self._valid_name_list(recorded.get(agent_name))
-                if isinstance(recorded, dict) else []
-            )
-            manifest = self.get_extension(ext_id)
-            source_dir = self.extensions_dir / ext_id
-            if manifest is None:
-                for raw in registered:
-                    claim(ext_id, (ext_id, raw), raw, None, None)
-                continue
-
-            def owns(raw: str) -> bool:
-                if enabled:
-                    return True
-                if raw in registered:
-                    return True
-                return self._raw_command_file_exists(agent_name, raw)
-
-            for cmd in manifest.commands:
-                if not isinstance(cmd, dict):
-                    continue
-                primary = cmd.get("name")
-                if not isinstance(primary, str) or not primary:
-                    continue
-                raws = [primary]
-                aliases = cmd.get("aliases") or []
-                if isinstance(aliases, list):
-                    raws.extend(
-                        alias for alias in aliases
-                        if isinstance(alias, str) and alias
-                    )
-                for raw in raws:
-                    if owns(raw):
-                        claim(ext_id, (ext_id, primary), raw, cmd, source_dir)
-
-        preset_rows = list(self._iter_preset_command_names(agent_name))
-        if pending_preset is not None:
-            pending_id, pending_rows = pending_preset
-            preset_dir = self.project_root / ".specify" / "presets" / pending_id
-            for primary, raw, template in pending_rows:
-                preset_rows.append((pending_id, primary, raw, template))
-                # source dir is the template's home; stored on the template
-                # only when the caller set it. Fall back to the pack dir.
-                if isinstance(template, dict) and "_source_dir" not in template:
-                    template = {**template, "_source_dir": preset_dir}
-                    preset_rows[-1] = (pending_id, primary, raw, template)
-
-        claimed_primaries_that_override = {
-            raw for group in claims.values() for _owner, _entry, raw, *_rest in group
-        }
-        grouped: Dict[tuple[str, str], List[tuple[str, Dict[str, Any]]]] = {}
-        for preset_id, primary, raw, template in preset_rows:
-            grouped.setdefault((preset_id, primary), []).append((raw, template))
-        for (preset_id, primary), raws in grouped.items():
-            # The whole command is that core or extension command's override.
-            # Its aliases render the same body and must stay writable.
-            if (
-                self._is_core_command_spelling(primary)
-                or primary in claimed_primaries_that_override
-            ):
-                continue
-            preset_dir = self.project_root / ".specify" / "presets" / preset_id
-            for raw, template in raws:
-                source = template.get("_source_dir") if isinstance(template, dict) else None
-                if not isinstance(source, Path):
-                    source = preset_dir
-                claim(
-                    f"preset:{preset_id}",
-                    (f"preset:{preset_id}", primary),
-                    raw,
-                    template,
-                    source,
-                )
-        return claims
-
-    def _hyphenation_collision_blocks(
-        self,
-        agent_name: str,
-        *,
-        also_enabled: Optional[Set[str]] = None,
-        pending_preset: Optional[tuple[str, List[tuple[str, str, Dict[str, Any]]]]] = None,
-    ) -> tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
-        """Names that must not be written, by extension id and by preset id.
-
-        A formatted path owned by two command entries, or by an extension
-        and a core command, is not written. Registration would overwrite
-        one body, then retirement would delete the other body's old file.
-        Names of a single command entry share a body and stay writable.
-        A preset whose primary is exactly an extension command, or a core
-        spelling, is that command's override and is not a second owner.
-        An alias of some other preset command is. A disabled extension is
-        not an owner unless this agent already registered the name or the
-        unformatted file is still on disk, so installing it for another
-        agent and disabling it does not block this one. An unreadable
-        manifest still counts: each name it already registered is treated
-        as its own command, which can only keep extra files rather than
-        merge two prompts.
-        """
-        claims = self._command_output_claims(
-            agent_name,
-            also_enabled=also_enabled,
-            pending_preset=pending_preset,
-        )
-        extension_blocks: Dict[str, Set[str]] = {}
-        preset_blocks: Dict[str, Set[str]] = {}
-        for group in claims.values():
-            entries = {entry for _owner, entry, _raw, *_rest in group}
-            if len(entries) < 2:
-                continue
-            for owner, _entry, raw, *_rest in group:
-                if owner == "core":
-                    continue
-                if owner.startswith("preset:"):
-                    preset_blocks.setdefault(
-                        owner.removeprefix("preset:"), set()
-                    ).add(raw)
-                else:
-                    extension_blocks.setdefault(owner, set()).add(raw)
-        return extension_blocks, preset_blocks
-
-    @staticmethod
-    def _without_blocked_commands(
-        commands: List[Dict[str, Any]], blocked: Set[str]
-    ) -> List[Dict[str, Any]]:
-        """Drop command names whose formatted path belongs to someone else.
-
-        A blocked primary is omitted for this pass, aliases included, so
-        none of that command's files are rewritten or retired. Declared
-        names stay tracked. An alias that collides on its own is dropped
-        and the primary is still written.
-        """
-        if not blocked:
-            return commands
-        filtered: List[Dict[str, Any]] = []
-        for cmd in commands:
-            if not isinstance(cmd, dict):
-                continue
-            primary = cmd.get("name")
-            if isinstance(primary, str) and primary in blocked:
-                continue
-            aliases = cmd.get("aliases")
-            if not isinstance(aliases, list):
-                filtered.append(cmd)
-                continue
-            kept = [
-                alias for alias in aliases
-                if not (isinstance(alias, str) and alias in blocked)
-            ]
-            if len(kept) != len(aliases):
-                cmd = {**cmd, "aliases": kept}
-            filtered.append(cmd)
-        return filtered
-
-    def _warn_hyphenation_collisions(self, extension_id: str, names: Set[str]) -> None:
-        """Tell the user which commands were left unchanged and why."""
-        from .. import console
-
-        shown = ", ".join(sorted(names))
-        console.print(
-            f"[yellow]Warning:[/yellow] Extension '{extension_id}' has command "
-            f"names that hyphenate to one file ({shown}). Those commands "
-            "were left unchanged so an existing file is not overwritten "
-            "and its old file is not removed."
-        )
-        console.print(
-            "[dim]Rename one of the commands that format to the same file, "
-            "then register again. Continuing with this extension's other "
-            "commands.[/dim]"
-        )
-
-    def _preserved_command_outputs(
-        self,
-        agent_name: str,
-        *,
-        removing_extension_ids: Set[str],
-    ) -> Set[str]:
-        """Formatted stems removal must leave on disk.
-
-        Anything still claimed by core, by another extension, or by a
-        preset that is not an exact override stays. A path shared after
-        hyphenation is deleted only with its last owner (#4797). Exact
-        overrides are not claims, so removing the extension still removes
-        that file.
-        """
-        claims = self._command_output_claims(agent_name)
-        preserved: Set[str] = set()
-        for group in claims.values():
-            for owner, _entry, _raw, output, _command, _source in group:
-                if owner in removing_extension_ids:
-                    continue
-                preserved.add(output)
-        return preserved
-
-    def _outputs_preserved_when_forgetting(
-        self, agent_name: str, forgotten_raws: Set[str]
-    ) -> Set[str]:
-        """Stems that must stay when these raw names are unregistered.
-
-        Used when a preset command is removed. A stem stays when some
-        other raw still formats to it. An exact core spelling, and a raw
-        that is exactly an extension command name, keep the previous
-        delete behavior.
-        """
-        claims = self._command_output_claims(agent_name)
-        extension_raws = {
-            raw
-            for group in claims.values()
-            for owner, _entry, raw, *_rest in group
-            if owner != "core" and not str(owner).startswith("preset:")
-        }
-        forgotten = {raw for raw in forgotten_raws if isinstance(raw, str)}
-        preserved: Set[str] = set()
-        for group in claims.values():
-            raws = {raw for _owner, _entry, raw, *_rest in group}
-            if not (raws - forgotten):
-                continue
-            forgotten_here = raws & forgotten
-            if forgotten_here and all(
-                self._is_core_command_spelling(raw) or raw in extension_raws
-                for raw in forgotten_here
-            ):
-                continue
-            for _owner, _entry, _raw, output, *_rest in group:
-                preserved.add(output)
-        return preserved
-
-    def _pick_prompt_survivor(self, staying_items: List[tuple]) -> Optional[tuple]:
-        """Prefer an enabled extension with a readable source, then a preset."""
-
-        def readable(item: tuple) -> bool:
-            _owner, _entry, _raw, _output, command, source = item
-            if not isinstance(command, dict) or not isinstance(source, Path):
-                return False
-            file_name = command.get("file")
-            if not isinstance(file_name, str) or not file_name:
-                return False
-            path = source / file_name
-            return path.is_file()
-
-        extensions = [
-            item for item in staying_items
-            if not str(item[0]).startswith("preset:")
-        ]
-        enabled = []
-        for item in extensions:
-            meta = self.registry.get(item[0]) or {}
-            if meta.get("enabled", True) and readable(item):
-                enabled.append(item)
-        pool = enabled or [item for item in extensions if readable(item)]
-        if pool:
-            return min(pool, key=lambda item: (str(item[0]), str(item[2])))
-        presets = []
-        for item in staying_items:
-            if not str(item[0]).startswith("preset:"):
-                continue
-            command = item[4]
-            strategy = command.get("strategy", "replace") if isinstance(command, dict) else "replace"
-            if strategy != "replace" or not readable(item):
-                continue
-            presets.append(item)
-        if presets:
-            return min(presets, key=lambda item: (str(item[0]), str(item[2])))
-        return None
-
-    def _rewrite_shared_prompts_from_survivors(
-        self,
-        agent_name: str,
-        removing_extension_ids: Set[str],
-        *,
-        only_raws: Optional[Set[str]] = None,
-        keeping_raws: Optional[Set[str]] = None,
-    ) -> None:
-        """Write a remaining owner's body into a shared prompt before removal.
-
-        Keeping the file is not enough: the bytes may be the command that
-        is about to be deleted. Render the survivor's source into that
-        path first. When the source cannot be read, leave the bytes and
-        still refuse to delete the file.
-
-        ``only_raws`` are names the manifest has already stopped declaring,
-        so they are no longer claims. They still occupy the formatted path.
-        ``keeping_raws`` are names the same extension still declares, so a
-        sibling that shares the path is the survivor rather than another
-        removal.
-        """
-        from .. import console
-
-        claims = self._command_output_claims(agent_name)
-        dropped_outputs: Set[str] = set()
-        if only_raws:
-            for raw in only_raws:
-                if not isinstance(raw, str):
-                    continue
-                output = self._command_output_name(agent_name, raw)
-                if output is not None:
-                    dropped_outputs.add(os.path.normcase(output))
-        wrapper = CommandRegistrar(self.project_root)
-
-        def _kept(item: tuple) -> bool:
-            if item[0] == "core":
-                return False
-            if keeping_raws is not None and item[2] in keeping_raws:
-                return True
-            return item[0] not in removing_extension_ids
-
-        for group in claims.values():
-            staying_items = [item for item in group if _kept(item)]
-            removing_items = [
-                item for item in group
-                if item[0] in removing_extension_ids
-                and not _kept(item)
-                and (only_raws is None or item[2] in only_raws)
-            ]
-            group_output = group[0][3]
-            dropped_here = os.path.normcase(group_output) in dropped_outputs
-            if not staying_items or not (removing_items or dropped_here):
-                continue
-            output = group_output
-            survivor = self._pick_prompt_survivor(staying_items)
-            if survivor is None:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Shared prompt '{output}' still "
-                    "belongs to another command, but that command's source "
-                    "could not be read. Left the existing file in place."
-                )
-                continue
-            owner, _entry, raw, _output, command, source = survivor
-            file_name = command.get("file") if isinstance(command, dict) else None
-            if not isinstance(file_name, str) or not isinstance(source, Path):
-                continue
-            synthetic = {"name": raw, "file": file_name, "aliases": []}
-            try:
-                if str(owner).startswith("preset:"):
-                    from ..agents import CommandRegistrar as AgentRegistrar
-
-                    written = AgentRegistrar().register_commands(
-                        agent_name,
-                        [synthetic],
-                        str(owner).removeprefix("preset:"),
-                        source,
-                        self.project_root,
-                    )
-                else:
-                    manifest = self.get_extension(str(owner))
-                    if manifest is None:
-                        written = []
-                    else:
-                        written = wrapper.register_commands_for_agent(
-                            agent_name,
-                            manifest,
-                            source,
-                            self.project_root,
-                            commands=[synthetic],
-                        )
-            except (OSError, ValueError, ExtensionError) as exc:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Could not restore shared prompt "
-                    f"'{output}' from '{owner}': {exc}. Left the existing file "
-                    "in place."
-                )
-                continue
-            if raw not in written:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Shared prompt '{output}' still "
-                    f"belongs to '{owner}', but its command source could not "
-                    "be read. Left the existing file in place."
-                )
-
-    def _unlink_unclaimed_commands(
-        self,
-        agent_name: str,
-        extension_id: str,
-        names: List[str],
-        still_declared: Set[str],
-        registrar: "CommandRegistrar",
-    ) -> None:
-        """Delete prompts whose manifest owner is gone and nobody else claims.
-
-        A shared hyphenated path is restored from the remaining owner, then
-        left in place. The dropped command's own dotted filename is still
-        removed.
-        """
-        if not names:
-            return
-        self._rewrite_shared_prompts_from_survivors(
-            agent_name,
-            {extension_id},
-            only_raws=set(names),
-            keeping_raws=still_declared,
-        )
-        preserved = self._preserved_command_outputs(
-            agent_name, removing_extension_ids={extension_id}
-        )
-        for raw in still_declared:
-            output = self._command_output_name(agent_name, raw)
-            if output is not None:
-                preserved.add(output)
-        registrar.unregister_commands(
-            {agent_name: list(names)},
-            self.project_root,
-            preserved_output_names={agent_name: preserved},
-        )
 
     @staticmethod
     def _load_extensionignore(
@@ -2218,122 +1615,12 @@ class ExtensionManager:
             only_agent=active_agent,
         )
 
-    def _skill_name_owned_elsewhere(
-        self,
-        extension_id: str,
-        skill_name: str,
-        *,
-        ignore_extension_ids: Optional[Set[str]] = None,
-    ) -> bool:
-        """True when another extension's command hyphenates to this skill.
-
-        A disabled extension counts only when it already registered the
-        skill. ``ignore_extension_ids`` is the set also being removed, so
-        agent cleanup can delete a skill once every owner is leaving.
-        """
-        ignored = ignore_extension_ids or set()
-        for other_id, metadata in self.registry.list().items():
-            if other_id == extension_id or other_id in ignored:
-                continue
-            if not isinstance(metadata, dict):
-                metadata = {}
-            enabled = bool(metadata.get("enabled", True))
-            registered = metadata.get("registered_skills", [])
-            registered_names = set(
-                registered if isinstance(registered, list) else []
-            )
-            manifest = self.get_extension(other_id)
-            declared = False
-            if manifest is not None:
-                for cmd in manifest.commands:
-                    if not isinstance(cmd, dict):
-                        continue
-                    primary = cmd.get("name")
-                    if (
-                        isinstance(primary, str)
-                        and self._skill_name_for_command(primary) == skill_name
-                    ):
-                        declared = True
-                        break
-            elif skill_name in registered_names:
-                declared = True
-            if not declared:
-                continue
-            if enabled or skill_name in registered_names:
-                return True
-        return False
-
-    def _rewrite_shared_skills_from_survivors(
-        self,
-        extension_id: str,
-        skill_names: List[str],
-        *,
-        ignore_extension_ids: Optional[Set[str]] = None,
-    ) -> None:
-        """Render a remaining extension's skill over a shared directory."""
-        ignored = set(ignore_extension_ids or set())
-        ignored.add(extension_id)
-        wanted = {name for name in skill_names if isinstance(name, str)}
-        if not wanted:
-            return
-        survivors: Dict[str, Set[str]] = {}
-        for other_id, metadata in self.registry.list().items():
-            if other_id in ignored:
-                continue
-            if not isinstance(metadata, dict):
-                metadata = {}
-            enabled = bool(metadata.get("enabled", True))
-            registered = metadata.get("registered_skills", [])
-            registered_names = set(
-                item for item in registered if isinstance(item, str)
-            ) if isinstance(registered, list) else set()
-            manifest = self.get_extension(other_id)
-            if manifest is None:
-                continue
-            names: Set[str] = set()
-            for cmd in manifest.commands:
-                if not isinstance(cmd, dict):
-                    continue
-                primary = cmd.get("name")
-                if not isinstance(primary, str):
-                    continue
-                skill_name = self._skill_name_for_command(primary)
-                if skill_name not in wanted:
-                    continue
-                if not enabled and skill_name not in registered_names:
-                    continue
-                source = cmd.get("file")
-                if not isinstance(source, str):
-                    continue
-                if not (self.extensions_dir / other_id / source).is_file():
-                    continue
-                names.add(primary)
-            if names and (enabled or names):
-                survivors[other_id] = names
-        if not survivors:
-            return
-        enabled_ids = [
-            ext_id for ext_id in survivors
-            if (self.registry.get(ext_id) or {}).get("enabled", True)
-        ]
-        chosen_id = sorted(enabled_ids or list(survivors))[0]
-        manifest = self.get_extension(chosen_id)
-        if manifest is None:
-            return
-        self._register_extension_skills(
-            manifest,
-            self.extensions_dir / chosen_id,
-            force=True,
-            only_names=survivors[chosen_id],
-        )
-
     def _register_extension_skills(
         self,
         manifest: ExtensionManifest,
         extension_dir: Path,
         link_outputs: bool = False,
         force: bool = False,
-        only_names: Optional[Set[str]] = None,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -2424,16 +1711,6 @@ class ExtensionManager:
             # Derive skill name from command name using the same hyphenated
             # convention as hook rendering and preset skill registration.
             skill_name = self._skill_name_for_command(cmd_name)
-            if only_names is not None and cmd_name not in only_names:
-                continue
-            # Another extension's command hyphenates to this same skill
-            # directory. Overwriting it would replace that command's body,
-            # and a later removal would delete the directory for both.
-            if only_names is None and self._skill_name_owned_elsewhere(
-                manifest.id, skill_name
-            ):
-                self._warn_hyphenation_collisions(manifest.id, {cmd_name})
-                continue
 
             # Check if skill already exists before creating the directory
             skill_subdir = skills_dir / skill_name
@@ -2976,8 +2253,6 @@ class ExtensionManager:
         extension_id: str,
         skills_dir: Optional[Path] = None,
         generic_hashes: Optional[Dict[str, str]] = None,
-        *,
-        also_removing: Optional[Set[str]] = None,
     ) -> None:
         """Remove SKILL.md directories for extension skills.
 
@@ -3005,15 +2280,6 @@ class ExtensionManager:
             for path in (generic_hashes or {})
             if isinstance(path, str) and path.endswith("/SKILL.md")
         }
-        self._rewrite_shared_skills_from_survivors(
-            extension_id, skill_names, ignore_extension_ids=also_removing
-        )
-        skill_names = [
-            name for name in skill_names
-            if not self._skill_name_owned_elsewhere(
-                extension_id, name, ignore_extension_ids=also_removing
-            )
-        ]
         for skill_subdir in self._find_extension_skill_dirs(
             skill_names, extension_id, skills_dir=skills_dir
         ):
@@ -3854,15 +3120,6 @@ class ExtensionManager:
                 registered_commands = self._register_commands_for_active_agent(
                     manifest, dest_dir, link_outputs=link_commands
                 )
-                # install and `extension add --force` write the new prompt
-                # but do not go through register_enabled_extensions_for_agent,
-                # so a dotted file left beside the new one would stay until
-                # a later upgrade. Retire only names this install wrote.
-                for registered_agent, registered_names in registered_commands.items():
-                    if registered_names:
-                        self._retire_legacy_flat_extension_commands(
-                            registered_agent, list(registered_names)
-                        )
 
             # Auto-register extension commands as agent skills when skills mode
             # was used during project initialisation (feature parity).
@@ -4306,20 +3563,19 @@ class ExtensionManager:
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
             if safe_commands:
-                for agent_name in safe_commands:
-                    self._rewrite_shared_prompts_from_survivors(
-                        agent_name, {extension_id}
-                    )
-                preserved_output_names = {
-                    agent_name: self._preserved_command_outputs(
-                        agent_name, removing_extension_ids={extension_id}
-                    )
-                    for agent_name in safe_commands
-                }
+                # An older alias can now format to a core command's file.
+                # Registration skips it (_shared_command_files), so once the
+                # integration has installed that file it is the core
+                # command's, not this extension's (#4797).
                 CommandRegistrar().unregister_commands(
                     safe_commands,
                     self.project_root,
-                    preserved_output_names=preserved_output_names,
+                    preserved_output_names={
+                        agent_name: self._core_command_files(
+                            agent_name, installed_only=True
+                        )
+                        for agent_name in safe_commands
+                    },
                 )
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
@@ -4514,18 +3770,6 @@ class ExtensionManager:
 
         agent_skills_dir = resolve_skills_dir(self.project_root, agent_name)
 
-        removing_extension_ids = {
-            ext_id
-            for ext_id, metadata in self.registry.list().items()
-            if not (enabled_only and not metadata.get("enabled", True))
-        }
-        self._rewrite_shared_prompts_from_survivors(
-            agent_name, removing_extension_ids
-        )
-        preserved_outputs = self._preserved_command_outputs(
-            agent_name, removing_extension_ids=removing_extension_ids
-        )
-
         for ext_id, metadata in self.registry.list().items():
             if enabled_only and not metadata.get("enabled", True):
                 continue
@@ -4550,9 +3794,7 @@ class ExtensionManager:
                     )
                 if command_names:
                     registrar.unregister_commands(
-                        {agent_name: command_names},
-                        self.project_root,
-                        preserved_output_names={agent_name: preserved_outputs},
+                        {agent_name: command_names}, self.project_root
                     )
 
                 new_registered = copy.deepcopy(registered_commands)
@@ -4583,7 +3825,6 @@ class ExtensionManager:
                         metadata.get("generic_artifact_hashes")
                         if agent_name == "generic" else None
                     ),
-                    also_removing=removing_extension_ids,
                 )
 
                 # Only reconcile registry state when this agent's directory
@@ -4705,6 +3946,131 @@ class ExtensionManager:
 
         return removed
 
+    def _core_command_files(
+        self, agent_name: str, *, installed_only: bool = False
+    ) -> Set[str]:
+        """Return core command file stems for an agent that retires legacy files.
+
+        Covers agents whose integration declares legacy flat command files
+        (Qoder, Kiro CLI): moving to the formatted names can land an older
+        alias on a core command's file (#4797). Other agents return an empty
+        set.
+
+        With ``installed_only``, only stems whose file the agent's integration
+        manifest tracks are returned. Until ``integration upgrade`` renames
+        Kiro CLI's prompts, ``speckit-plan.md`` can be an older extension
+        alias rather than the core prompt. If the manifest is missing nothing
+        is installed; if it can't be read, every stem is returned.
+        """
+        from ..agents import CommandRegistrar
+        from ..integrations import get_integration
+
+        integration = get_integration(agent_name)
+        legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
+        legacy_extension = getattr(
+            integration, "legacy_flat_command_extension", None
+        )
+        if (
+            not isinstance(legacy_dir, str)
+            or not legacy_dir
+            or not isinstance(legacy_extension, str)
+            or not legacy_extension
+        ):
+            return set()
+
+        registrar = CommandRegistrar(self.project_root)
+        agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+        if not agent_config:
+            return set()
+        stems = {
+            registrar._compute_output_name(
+                agent_name, f"speckit.{name}", agent_config
+            )
+            for name in CORE_COMMAND_NAMES
+        }
+        if not installed_only:
+            return stems
+
+        from ..integrations.manifest import IntegrationManifest
+
+        try:
+            installed = IntegrationManifest.load(agent_name, self.project_root).files
+        except FileNotFoundError:
+            return set()
+        except (OSError, ValueError):
+            return stems
+        return {
+            stem
+            for stem in stems
+            if (Path(agent_config["dir"]) / f"{stem}{agent_config['extension']}")
+            .as_posix() in installed
+        }
+
+    def _shared_command_files(self, agent_name: str) -> Dict[str, Dict[str, str]]:
+        """Return extension command names that would write another command's file.
+
+        Retiring legacy flat files moves each command to its formatted name,
+        and that format is not injective: ``speckit.foo.bar-baz`` and
+        ``speckit.foo-bar.baz`` both become ``speckit-foo-bar-baz``, and an
+        older alias can land on a core command's file (#4797). Install
+        rejects such names. This finds the ones installed before that check,
+        for the agents covered by ``_core_command_files``, as extension id ->
+        {command name: "<file stem>, also written by <other writers>"}.
+        Registration skips those extensions, so neither body overwrites the
+        other and no old file is retired.
+
+        An enabled extension claims every name its manifest declares. A
+        disabled one, or one whose manifest cannot be read, claims the names
+        already registered for the agent, because its files stay on disk. A
+        command and its own aliases are one owner.
+        """
+        core_files = self._core_command_files(agent_name)
+        if not core_files:
+            return {}
+
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar(self.project_root)
+        agent_config = registrar.AGENT_CONFIGS[agent_name]
+        owners: Dict[str, Set[tuple[str, str]]] = {
+            os.path.normcase(stem): {("", stem)} for stem in core_files
+        }
+        claims: List[tuple[str, str, str, str]] = []
+        for ext_id, metadata in self.registry.list().items():
+            if not isinstance(metadata, dict):
+                continue
+            manifest = self.get_extension(ext_id)
+            primary_of: Dict[str, str] = {}
+            for command in manifest.commands if manifest is not None else []:
+                for name in [command["name"], *(command.get("aliases") or [])]:
+                    primary_of[name] = command["name"]
+            if manifest is not None and metadata.get("enabled", True):
+                names = list(primary_of)
+            else:
+                recorded = metadata.get("registered_commands")
+                names = self._valid_name_list(
+                    recorded.get(agent_name) if isinstance(recorded, dict) else None
+                )
+            for name in names:
+                stem = registrar._compute_output_name(agent_name, name, agent_config)
+                owner = (ext_id, primary_of.get(name, stem))
+                owners.setdefault(os.path.normcase(stem), set()).add(owner)
+                claims.append((*owner, name, stem))
+
+        shared: Dict[str, Dict[str, str]] = {}
+        for ext_id, primary, name, stem in claims:
+            writers = sorted({
+                "a core command" if not other_id
+                else "another command in this extension" if other_id == ext_id
+                else f"extension '{other_id}'"
+                for other_id, _ in owners[os.path.normcase(stem)] - {(ext_id, primary)}
+            })
+            if writers:
+                shared.setdefault(ext_id, {})[name] = (
+                    f"{stem}, also written by {' and '.join(writers)}"
+                )
+        return shared
+
     def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
@@ -4750,7 +4116,12 @@ class ExtensionManager:
 
             agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
-        blocked_by_ext, _preset_blocks = self._hyphenation_collision_blocks(agent_name)
+        # Registration below changes no claim this reads (#4797).
+        shared_files = (
+            self._shared_command_files(agent_name)
+            if agent_config and not skills_mode_active
+            else {}
+        )
 
         for ext_id, metadata in self.registry.list().items():
             if not metadata.get("enabled", True):
@@ -4782,22 +4153,25 @@ class ExtensionManager:
                 deferred_stale_commands: Optional[List[str]] = None
 
                 if agent_config and not skills_mode_active:
-                    blocked = blocked_by_ext.get(ext_id, set())
-                    # Pass ``commands`` only when this pass dropped a name.
-                    # Callers and tests replace ``register_commands_for_agent``
-                    # and still use the original signature (#2950).
-                    register_kwargs: Dict[str, Any] = {}
-                    if blocked:
-                        register_kwargs["commands"] = self._without_blocked_commands(
-                            manifest.commands, blocked
+                    shared = shared_files.get(ext_id)
+                    if shared:
+                        # Writing would overwrite another command's file,
+                        # and retirement would then delete this command's
+                        # old one (#4797). Leave the extension as it is, as
+                        # for any extension that fails to register.
+                        listing = "; ".join(
+                            f"{name} ({files})"
+                            for name, files in sorted(shared.items())
                         )
-                        self._warn_hyphenation_collisions(ext_id, blocked)
+                        raise ExtensionError(
+                            f"{listing}: this extension was not registered "
+                            f"for {agent_name}, so none of its files were "
+                            "written or removed. Update or remove an "
+                            "extension so that only one command writes "
+                            "each file."
+                        )
                     registered = registrar.register_commands_for_agent(
-                        agent_name,
-                        manifest,
-                        ext_dir,
-                        self.project_root,
-                        **register_kwargs,
+                        agent_name, manifest, ext_dir, self.project_root
                     )
                     if agent_name == "generic":
                         registered = self._complete_generic_refresh(
@@ -4845,16 +4219,6 @@ class ExtensionManager:
                         name for name in previous
                         if name in registered or name in declared_names
                     ]
-                    dropped = [name for name in previous if name not in kept]
-                    if dropped:
-                        # A name the manifest no longer declares used to
-                        # stay on disk forever: removal only deletes names
-                        # still tracked. Delete it when this extension is
-                        # the only owner. A shared hyphenated path stays,
-                        # because the other command still uses that file.
-                        self._unlink_unclaimed_commands(
-                            agent_name, ext_id, dropped, declared_names, registrar
-                        )
                     merged = kept + [
                         name for name in registered if name not in kept
                     ]
@@ -5067,14 +4431,7 @@ class ExtensionManager:
                                         extension_id=ext_id,
                                     )
                                 registrar.unregister_commands(
-                                    {agent_name: fully_replaced},
-                                    self.project_root,
-                                    preserved_output_names={
-                                        agent_name: self._preserved_command_outputs(
-                                            agent_name,
-                                            removing_extension_ids={ext_id},
-                                        )
-                                    },
+                                    {agent_name: fully_replaced}, self.project_root
                                 )
                                 registered_commands = metadata.get(
                                     "registered_commands", {}
@@ -5095,19 +4452,10 @@ class ExtensionManager:
                                         updates["registered_commands"] = new_registered
 
                 if registered:
-                    # Colliding names are not written above. Never retire
-                    # them either: the replacement path is another
-                    # command's file, and the old file is still the only
-                    # copy of this command.
-                    blocked = blocked_by_ext.get(ext_id, set())
-                    to_retire = [
-                        name for name in registered if name not in blocked
-                    ]
-                    if to_retire:
-                        self._retire_legacy_flat_extension_commands(
-                            agent_name,
-                            to_retire,
-                        )
+                    self._retire_legacy_flat_extension_commands(
+                        agent_name,
+                        registered,
+                    )
 
                 if agent_name == "generic":
                     hashes = self._generic_artifact_hashes(
@@ -5293,19 +4641,14 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path,
         link_outputs: bool = False,
-        commands: Optional[List[Dict[str, Any]]] = None,
     ) -> List[str]:
-        """Register extension commands for a specific agent.
-
-        ``commands`` replaces ``manifest.commands`` when the caller has
-        already dropped names that would share a formatted path.
-        """
+        """Register extension commands for a specific agent."""
         if agent_name not in self.AGENT_CONFIGS:
             raise ExtensionError(f"Unsupported agent: {agent_name}")
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
         return self._registrar.register_commands(
             agent_name,
-            manifest.commands if commands is None else commands,
+            manifest.commands,
             manifest.id,
             extension_dir,
             project_root,

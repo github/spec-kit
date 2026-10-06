@@ -16,6 +16,7 @@ from ..integration_state import default_integration_key as _default_integration_
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
     _command_file_names_changed,
+    _extension_commands_at,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
@@ -197,8 +198,9 @@ def integration_upgrade(
     # the preset can't be re-registered, stale cleanup or the other layer's
     # new file would replace the override. Refuse before any mutation, as for
     # the layout changes above.
+    planned_command_files = _planned_command_files(integration)
     if _command_file_names_changed(
-        integration, old_manifest.files, _planned_command_files(integration)
+        integration, old_manifest.files, planned_command_files
     ):
         try:
             affected_presets = _installed_command_presets_affecting_agent(
@@ -233,6 +235,26 @@ def integration_upgrade(
                 f"  [cyan]specify preset remove <id>[/cyan]\n"
                 f"  [cyan]specify integration upgrade {key}[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+        # Extension commands were written under their own names, and Spec
+        # Kit 1.0.7 and earlier accepted an alias such as ``speckit-plan``,
+        # whose file is where the renamed core command goes. Writing the core
+        # file would replace the extension's (or write through its dev-mode
+        # symlink into the extension directory).
+        taken = _extension_commands_at(
+            project_root, integration, planned_command_files
+        )
+        if taken:
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files while "
+                "extension commands use the new file name of a core command: "
+                f"[bold]{', '.join(taken)}[/bold]."
+            )
+            console.print(
+                "The upgrade would write a core command over the extension's "
+                "file, so it is refused before changing files. Update or "
+                "remove the extension(s), then run the upgrade again."
             )
             raise typer.Exit(1)
 

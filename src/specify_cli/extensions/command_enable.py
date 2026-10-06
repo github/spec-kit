@@ -42,36 +42,11 @@ def extension_enable(
         console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
+    manager.registry.update(extension_id, {"enabled": True})
+
     from .. import load_init_options
 
     init_options = load_init_options(project_root)
-    if not isinstance(init_options, dict):
-        init_options = {}
-    active_agent = init_options.get("ai")
-    if isinstance(active_agent, str) and active_agent:
-        try:
-            blocked_by_ext, _preset_blocks = manager._hyphenation_collision_blocks(
-                active_agent, also_enabled={extension_id}
-            )
-        except (OSError, ValueError):
-            # Generic settings can be missing or unreadable. Registration
-            # below already reports that and puts the flag back. A collision
-            # check that cannot resolve the agent must not replace that error,
-            # and a command-less extension has nothing to collide.
-            blocked_by_ext = {}
-        blocked_names = blocked_by_ext.get(extension_id, set())
-        if blocked_names:
-            shown = ", ".join(sorted(blocked_names))
-            console.print(
-                f"[red]Error:[/red] Cannot enable "
-                f"'{_escape_markup(str(display_name))}': "
-                f"{_escape_markup(shown)} hyphenate to a prompt another "
-                "command already owns. Rename one of those commands, or "
-                "remove the other extension, then enable again."
-            )
-            raise typer.Exit(1)
-
-    manager.registry.update(extension_id, {"enabled": True})
     if init_options.get("ai") == "generic":
         try:
             manifest = manager.get_extension(extension_id)

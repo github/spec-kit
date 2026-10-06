@@ -1365,10 +1365,11 @@ class CommandRegistrar:
         cleaned up as well.
 
         ``preserved_output_names`` maps an agent to formatted stems that
-        must stay. Extension removal passes stems still owned by a core
-        command or by another extension, so a shared hyphenated prompt is
-        not deleted with the first of its owners. The raw command name is
-        still removed when it differs from that stem.
+        must stay. Extension removal passes the core command files the
+        integration installed for an agent that renamed its command files
+        (see ``ExtensionManager._core_command_files``), so an older alias
+        that now formats to one of them does not delete it. The raw command
+        name is still removed when it differs from that stem.
 
         Args:
             registered_commands: Dict mapping agent names to command name lists

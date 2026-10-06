@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path, PurePath
 
 def _manifest_tracks_skill_layout(manifest) -> bool:
@@ -93,6 +94,37 @@ def _command_file_names_changed(integration, old_files, new_files) -> bool:
     removed = {rel.replace(".", "-") for rel in old - new}
     added = {rel.replace(".", "-") for rel in new - old}
     return bool(removed & added)
+
+
+def _extension_commands_at(project_root, integration, rel_paths) -> list[str]:
+    """Return ``"<extension> (<command>)"`` for registered commands at *rel_paths*.
+
+    *rel_paths* are manifest keys. A command is matched by the file
+    registration wrote before Kiro CLI's rename (#4797), named after the
+    command itself, so an older alias ``speckit-plan`` matches
+    ``.kiro/prompts/speckit-plan.md``. Disabled extensions count: their
+    files stay on disk.
+    """
+    from ..extensions import ExtensionManager
+
+    config = integration.registrar_config or {}
+    commands_dir, suffix = config.get("dir"), config.get("extension")
+    if not isinstance(commands_dir, str) or not isinstance(suffix, str):
+        return []
+    targets = {os.path.normcase(rel) for rel in rel_paths}
+    manager = ExtensionManager(Path(project_root))
+    found = []
+    for ext_id, metadata in manager.registry.list().items():
+        recorded = (
+            metadata.get("registered_commands") if isinstance(metadata, dict) else None
+        )
+        if not isinstance(recorded, dict):
+            continue
+        for name in manager._valid_name_list(recorded.get(integration.key)):
+            rel = (PurePath(commands_dir) / f"{name}{suffix}").as_posix()
+            if os.path.normcase(rel) in targets:
+                found.append(f"{ext_id} ({name})")
+    return sorted(found)
 
 
 def _legacy_command_root_upgrade_pending(integration, old_manifest) -> bool:

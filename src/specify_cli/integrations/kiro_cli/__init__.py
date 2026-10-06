@@ -27,14 +27,10 @@ def format_kiro_command_name(cmd_name: str) -> str:
     command, while ``/speckit-plan`` runs the prompt (issue #4797).
 
     The function is idempotent: already-formatted names are returned unchanged.
-    It is not injective. ``speckit.foo.bar-baz`` and ``speckit.foo-bar.baz``
-    both become ``speckit-foo-bar-baz``, and so does another command's alias
-    spelled ``speckit-foo-bar-baz``. Install rejects those names. Registration
-    does not write or retire either prompt. Removal writes the remaining
-    owner's body back into the shared file when that source can be read,
-    and deletes only the removed command's own file. If the source cannot
-    be read, the shared file stays. A command's own alias may reuse its
-    hyphenated name, because both render the same body.
+    It is not injective: ``speckit.foo.bar-baz`` and ``speckit.foo-bar.baz``
+    both become ``speckit-foo-bar-baz``. Extension install rejects such
+    names, and registration leaves extensions installed before that check
+    as they are (``ExtensionManager._shared_command_files``).
 
     Examples:
         >>> format_kiro_command_name("plan")

@@ -224,43 +224,6 @@ class _PresetCommandMethods:
             ):
                 return {}
 
-        if active_agent is not None and commands_to_register:
-            from ..extensions import ExtensionManager
-
-            pending_rows = []
-            for command in commands_to_register:
-                primary = command.get("name")
-                if not isinstance(primary, str) or not primary:
-                    continue
-                raws = [primary]
-                aliases = command.get("aliases") or []
-                if isinstance(aliases, list):
-                    raws.extend(
-                        alias for alias in aliases
-                        if isinstance(alias, str) and alias
-                    )
-                for raw in raws:
-                    pending_rows.append((primary, raw, {**command, "_source_dir": preset_dir}))
-            manager = ExtensionManager(self.project_root)
-            _extension_blocks, preset_blocks = manager._hyphenation_collision_blocks(
-                active_agent,
-                pending_preset=(manifest.id, pending_rows),
-            )
-            blocked = preset_blocks.get(manifest.id, set())
-            if blocked:
-                from .._console import console
-
-                shown = ", ".join(sorted(blocked))
-                console.print(
-                    f"[yellow]Warning:[/yellow] Preset '{manifest.id}' has "
-                    f"command names that hyphenate to one prompt ({shown}). "
-                    "Those commands were left unchanged so an existing prompt "
-                    "is not overwritten."
-                )
-                commands_to_register = ExtensionManager._without_blocked_commands(
-                    commands_to_register, blocked
-                )
-
         return registrar.register_commands_for_all_agents(
             commands_to_register,
             manifest.id,
@@ -865,25 +828,7 @@ class _PresetCommandMethods:
             return
 
         registrar = CommandRegistrar()
-        preserved_output_names = None
-        try:
-            from ..extensions import ExtensionManager
-
-            manager = ExtensionManager(self.project_root)
-            preserved_output_names = {
-                agent_name: manager._outputs_preserved_when_forgetting(
-                    agent_name,
-                    {name for name in names if isinstance(name, str)},
-                )
-                for agent_name, names in registered_commands.items()
-            }
-        except ImportError:
-            preserved_output_names = None
-        registrar.unregister_commands(
-            registered_commands,
-            self.project_root,
-            preserved_output_names=preserved_output_names,
-        )
+        registrar.unregister_commands(registered_commands, self.project_root)
 
     def _merge_pack_registered_commands(
         self, pack_id: str, written: Optional[Dict[str, List[str]]]
@@ -1053,41 +998,11 @@ class _PresetCommandMethods:
         if extra_agents and isinstance(resolved_agent, str):
             extra_agents = set(extra_agents) - {resolved_agent}
 
-        # Same hyphenation guard as ``_register_commands``. Reconciliation
-        # runs after that pass and would otherwise write the command the
-        # guard just refused to overwrite.
-        blocked_names: Set[str] = set()
-        if isinstance(only_agent, str) and only_agent:
-            try:
-                from ..extensions import ExtensionManager
-            except ImportError:
-                ExtensionManager = None  # type: ignore[assignment]
-            if ExtensionManager is not None:
-                _extension_blocks, preset_blocks = ExtensionManager(
-                    self.project_root
-                )._hyphenation_collision_blocks(only_agent)
-                for names in preset_blocks.values():
-                    blocked_names.update(names)
-
-        def without_blocked_aliases(template: Dict[str, Any]) -> Dict[str, Any]:
-            aliases = template.get("aliases")
-            if not isinstance(aliases, list) or not blocked_names:
-                return template
-            kept = [
-                alias for alias in aliases
-                if not (isinstance(alias, str) and alias in blocked_names)
-            ]
-            if len(kept) == len(aliases):
-                return template
-            return {**template, "aliases": kept}
-
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
         presets_by_priority = list(self.registry.list_by_priority())
 
         for cmd_name in command_names:
-            if cmd_name in blocked_names:
-                continue
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
                 continue
@@ -1112,7 +1027,7 @@ class _PresetCommandMethods:
                             for tmpl in manifest.templates:
                                 if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
                                     written = self._register_for_non_skill_agents(
-                                        registrar, [without_blocked_aliases(tmpl)], manifest.id, pack_dir,
+                                        registrar, [tmpl], manifest.id, pack_dir,
                                         only_agent=only_agent, extra_agents=extra_agents,
                                     )
                                     record_written(written)
@@ -1229,7 +1144,7 @@ class _PresetCommandMethods:
                             composed_file.write_text(composed, encoding="utf-8")
                             written = self._register_for_non_skill_agents(
                                 registrar,
-                                [without_blocked_aliases({**tmpl, "file": f".composed/{cmd_name}.md"})],
+                                [{**tmpl, "file": f".composed/{cmd_name}.md"}],
                                 manifest.id, pack_dir,
                                 only_agent=only_agent, extra_agents=extra_agents,
                             )
