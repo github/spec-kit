@@ -701,11 +701,17 @@ class WorkflowCatalog:
                     wf_data["_install_allowed"] = entry.install_allowed
                     merged[wf_id] = wf_data
             elif isinstance(workflows, list):
+                seen_in_source: set[str] = set()
                 for wf_data in workflows:
                     if not isinstance(wf_data, dict):
                         continue
                     wf_id = wf_data.get("id", "")
                     if wf_id:
+                        if wf_id in seen_in_source:
+                            raise WorkflowCatalogValidationError(
+                                f"Duplicate workflow ID '{wf_id}' in catalog '{entry.name}'."
+                            )
+                        seen_in_source.add(wf_id)
                         if workflow_id is not None and wf_id != workflow_id:
                             continue
                         wf_data["_catalog_name"] = entry.name

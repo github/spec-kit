@@ -421,7 +421,7 @@ installed locally.
 
 ## Catalog Management
 
-Workflow catalogs control where `search` and `add` look for workflows. Catalogs are checked in priority order.
+Workflow catalogs control where `search` and `add` look for workflows. Catalogs are checked in priority order. List-form catalogs must contain unique workflow IDs within each source; duplicate IDs are rejected rather than selecting an ambiguous release. The same ID may appear in different catalogs, with the highest-priority source winning.
 
 > **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
 

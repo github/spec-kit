@@ -15,6 +15,7 @@ from specify_cli import app
 from specify_cli.workflows.catalog import (
     WorkflowCatalog,
     WorkflowCatalogEntry,
+    WorkflowCatalogValidationError,
     WorkflowRegistry,
     WorkflowValidationError,
 )
@@ -141,6 +142,62 @@ def test_legacy_entry_and_winning_source(monkeypatch, project_dir):
     assert catalog.get_workflow_info("history-wf", "1.0.0") is None
     assert catalog.get_workflow_versions("history-wf") == ["2.0.0"]
     assert catalog.search(query="history-wf")[0]["version"] == "2.0.0"
+
+
+@pytest.mark.parametrize("duplicate_id", ["history-wf", "other"])
+@pytest.mark.parametrize("lookup", ["exact", "search"])
+def test_duplicate_list_workflow_ids_are_rejected(
+    monkeypatch, project_dir, duplicate_id, lookup,
+):
+    catalog = WorkflowCatalog(project_dir)
+    sources = [
+        WorkflowCatalogEntry("https://example.com/high.json", "high", 1, True),
+        WorkflowCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+    fetched = []
+
+    def fetch(source, force_refresh=False):
+        fetched.append(source.name)
+        if source.name == "high":
+            return {"workflows": [
+                {"id": "history-wf", "version": "1.0.0"},
+                {"id": duplicate_id, "version": "2.0.0"},
+                {"id": duplicate_id, "version": "3.0.0"},
+            ]}
+        return {"workflows": [{"id": "history-wf", "version": "4.0.0"}]}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    with pytest.raises(
+        WorkflowCatalogValidationError, match=f"Duplicate workflow ID '{duplicate_id}'"
+    ):
+        if lookup == "exact":
+            catalog.get_workflow_info("history-wf")
+        else:
+            catalog.search()
+    if lookup == "exact":
+        assert fetched == ["high"]
+
+
+def test_list_workflow_id_can_appear_in_distinct_catalogs(monkeypatch, project_dir):
+    catalog = WorkflowCatalog(project_dir)
+    sources = [
+        WorkflowCatalogEntry("https://example.com/high.json", "high", 1, True),
+        WorkflowCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
+    monkeypatch.setattr(
+        catalog, "_fetch_single_catalog",
+        lambda source, force_refresh=False: {
+            "workflows": [{
+                "id": "history-wf",
+                "version": "1.0.0" if source.name == "high" else "2.0.0",
+            }]
+        },
+    )
+
+    assert catalog.get_workflow_info("history-wf")["version"] == "1.0.0"
+    assert catalog.search(query="history-wf")[0]["version"] == "1.0.0"
 
 
 @pytest.mark.parametrize(
