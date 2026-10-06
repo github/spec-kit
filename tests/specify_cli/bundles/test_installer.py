@@ -121,6 +121,42 @@ def test_removal_preserves_component_required_but_not_owned_by_other_bundle(
     assert key in installer.installed
     assert installer.remove_calls == []
 
+    remaining = load_records(tmp_path)
+    assert remaining[0].bundle_id == "first"
+    assert remaining[0].contributed_components == tuple(first.components)
+    remove_bundle(tmp_path, "first", installer)
+    assert key not in installer.installed
+    assert installer.remove_calls == [key]
+
+
+def test_update_transfers_dropped_contribution_to_requiring_bundle(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"])
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    save_records(
+        tmp_path,
+        [
+            *load_records(tmp_path),
+            InstalledBundleRecord.create(
+                "other", "1.0.0", [], required_components=first.components
+            ),
+        ],
+    )
+    reduced = _bundle("first", [])
+    result = install_bundle(
+        tmp_path, _plan(reduced), installer, manifest=reduced, refresh=True
+    )
+
+    assert result.uninstalled == []
+    assert ("extensions", "ext-a") in installer.installed
+    remaining = {record.bundle_id: record for record in load_records(tmp_path)}
+    assert remaining["first"].contributed_components == ()
+    assert remaining["other"].contributed_components == tuple(first.components)
+
+    remove_bundle(tmp_path, "other", installer)
+    assert installer.remove_calls == [("extensions", "ext-a")]
+
 
 @pytest.mark.parametrize("actual", [None, "2.0.0"])
 def test_unpinned_install_cannot_bypass_unowned_bundle_pin(

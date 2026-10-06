@@ -115,7 +115,7 @@ An optional `source` in a `provides.<kind>` reference names the expected winning
 specify bundle remove <bundle_id>
 ```
 
-Uninstalls only the components this bundle contributed, leaving any component that another installed bundle still needs in place (no collateral removals).
+Uninstalls only the components this bundle contributed, leaving any component that another installed bundle still needs in place (no collateral removals). If no other bundle owns a retained component, its contribution is transferred to a remaining requiring bundle so removing that bundle later can clean it up. Independently installed components are never adopted.
 
 ## List Installed Bundles
 

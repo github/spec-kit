@@ -7,7 +7,7 @@ installed components (FR-022, SC-004).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -200,6 +200,39 @@ def remove_record(
     records: list[InstalledBundleRecord], bundle_id: str
 ) -> list[InstalledBundleRecord]:
     return [r for r in records if r.bundle_id != bundle_id]
+
+
+def transfer_contributions(
+    records: list[InstalledBundleRecord],
+    released: list[ComponentRef] | tuple[ComponentRef, ...],
+) -> list[InstalledBundleRecord]:
+    """Keep a bundle-installed component attributed while another bundle needs it."""
+    updated = list(records)
+    owned = {
+        (component.kind, component.id)
+        for record in updated
+        for component in record.contributed_components
+    }
+    for component in released:
+        key = component.kind, component.id
+        if key in owned:
+            continue
+        for index, record in enumerate(updated):
+            required = next(
+                (
+                    ref for ref in record.required_components
+                    if (ref.kind, ref.id) == key
+                ),
+                None,
+            )
+            if required is not None:
+                updated[index] = replace(
+                    record,
+                    contributed_components=(*record.contributed_components, required),
+                )
+                owned.add(key)
+                break
+    return updated
 
 
 def components_still_needed(

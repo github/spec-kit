@@ -25,6 +25,7 @@ from .records import (
     load_records,
     remove_record,
     save_records,
+    transfer_contributions,
     upsert_record,
 )
 from .resolver import InstallPlan
@@ -215,7 +216,17 @@ def install_bundle(
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,
     )
-    save_records(project_root, upsert_record(records, record))
+    updated = upsert_record(records, record)
+    if refresh and existing is not None:
+        planned = {(c.kind, c.id) for c in plan.components}
+        updated = transfer_contributions(
+            updated,
+            [
+                component for component in existing.contributed_components
+                if (component.kind, component.id) not in planned
+            ],
+        )
+    save_records(project_root, updated)
     return result
 
 
@@ -244,7 +255,10 @@ def remove_bundle(
                 remove_attempted = True
                 installer.remove(project_root, component)
                 result.uninstalled.append(component)
-        save_records(project_root, remove_record(records, bundle_id))
+        remaining = transfer_contributions(
+            remove_record(records, bundle_id), target.contributed_components
+        )
+        save_records(project_root, remaining)
     except Exception as exc:
         if result.uninstalled:
             detail = (
