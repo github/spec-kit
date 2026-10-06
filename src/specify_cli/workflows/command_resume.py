@@ -88,7 +88,7 @@ def workflow_resume(
     try:
         with cli._stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
-    except IntegrationInstallError as exc:
+    except (IntegrationInstallError, OSError) as exc:
         cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
     except FileNotFoundError:
         err.print(f"[red]Error:[/red] Run not found: {run_id}")

@@ -389,7 +389,7 @@ class IntegrationManifest:
                         skipped.append(path)
                         continue
             try:
-                before_file_change(path)
+                before_file_change(path, removal=True)
                 path.unlink()
             except OSError:
                 skipped.append(path)
@@ -409,7 +409,7 @@ class IntegrationManifest:
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
         if remove_manifest and manifest.exists():
             try:
-                before_file_change(manifest)
+                before_file_change(manifest, removal=True)
                 manifest.unlink()
                 after_file_change(manifest)
             except OSError:

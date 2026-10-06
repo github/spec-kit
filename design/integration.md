@@ -189,6 +189,11 @@ processes use the persisted package, not the catalog. Changing projects unloads
 external registry entries, synthetic Python packages and their submodules, and
 refreshes agent configuration/registrar caches in place. Built-in keys cannot
 be replaced by packages.
+Registry loading and configuration snapshots are synchronized. Each runtime
+dispatch pins a context-local project registry and its verified Python namespaces
+until dispatch finishes, including lazy relative imports. Switching another
+thread to a different project cannot replace that dispatch's adapter, and
+independent agent processes are not serialized by the registry lock.
 Catalog listing, catalog discovery, and `integration info` read metadata without
 importing installed adapters. Merely checking that a directory is a Spec Kit
 project does not load adapter code; registration managers load it when they
@@ -208,6 +213,9 @@ progress and unowned user files are left untouched. Concurrent edits to a manage
 file are preserved and reported with retained recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
+Host write helpers reject symlinked destinations and ancestors before creating
+directories or writing. Removing an owned leaf symlink unlinks the link itself
+without following its target; declared output directories cannot be symlinks.
 Cancelling initialization discards the prepared adapter without installing code
 or reporting success. Stable lifecycle locks are user-local and keyed by
 canonical project root, so cancellation does not create target lock scaffolding;
@@ -225,7 +233,13 @@ paths for manual recovery rather than deleting the only backup.
 `upgrade --force` and `uninstall --force` can recover a recorded adapter whose
 implementation is missing, modified, incompatible, or fails to import. Recovery
 excludes only that adapter, validates the others, and uses validated manifest
-ownership and persisted registrar configuration for cleanup. It reports this
+ownership and registrar configuration saved in the user-local trust store for
+cleanup. Recovery records bind the project and adapter to the previously trusted
+package identity, verified registrar configuration, and generated paths.
+Ownership is replaced only after the durable package loads successfully, so a
+failed upgrade cannot replace the previous adapter's recovery authority.
+Edited project configuration or forged manifest ownership is rejected, as is
+cleanup overlapping another integration's root. It reports this
 recovery explicitly and never bypasses catalog source policy or the replacement
 package's trust decision. Ordinary selection and lifecycle operations still fail
 explicitly for damaged installed implementations.
@@ -233,6 +247,11 @@ After copying a project or changing users, review the adapter and run
 `specify integration upgrade <id> --force --trust-integration` using an
 install-enabled catalog to establish local consent. Forced uninstall can remove
 an untrusted or missing package without importing it.
+When local ownership proof is unavailable, including copied projects or older
+grant-only trust stores, recovery preserves old generated files from cleanup and
+warns that manual cleanup may be needed. A newly trusted replacement still
+renders its declared destination under normal `upgrade --force` semantics;
+old-only destinations are not deleted using unverified project metadata.
 
 See the [catalog contract](../integrations/README.md) and
 [user reference](../docs/reference/integrations.md) for public commands.

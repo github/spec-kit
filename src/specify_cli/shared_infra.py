@@ -812,7 +812,7 @@ def install_shared_infra(
             try:
                 from .integrations._file_changes import after_file_change, before_file_change
 
-                before_file_change(dst)
+                before_file_change(dst, removal=True)
                 dst.unlink()
                 after_file_change(dst)
             except OSError as exc:

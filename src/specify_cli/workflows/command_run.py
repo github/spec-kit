@@ -140,7 +140,7 @@ def workflow_run(
                     else None
                 ),
             )
-    except IntegrationInstallError as exc:
+    except (IntegrationInstallError, OSError) as exc:
         cli._fail_integration_load(exc, json_output=json_output)
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")

@@ -60,12 +60,18 @@ class CommandRegistrar:
     _configs_loaded: bool = False
 
     def __init__(self, project_root: Path | None = None) -> None:
-        if project_root is not None:
-            from .integrations import load_installed_integrations
+        from .integrations.installer import registry_synchronized
 
-            load_installed_integrations(project_root)
-        self._ensure_configs()
-        self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
+        @registry_synchronized
+        def snapshot_configs():
+            if project_root is not None:
+                from .integrations import load_installed_integrations
+
+                load_installed_integrations(project_root)
+            self._ensure_configs()
+            self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
+
+        snapshot_configs()
         if project_root is not None:
             from .integrations.generic import registration_directory
 
@@ -1032,6 +1038,10 @@ class CommandRegistrar:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
         from .integrations._file_changes import after_file_change, before_file_change
 
+        if dest_file.is_symlink():
+            before_file_change(dest_file, removal=True)
+            dest_file.unlink()
+            after_file_change(dest_file)
         before_file_change(dest_file)
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
             if dest_file.is_symlink():
@@ -1419,7 +1429,7 @@ class CommandRegistrar:
                         if cmd_file.exists() or cmd_file.is_symlink():
                             from .integrations._file_changes import after_file_change, before_file_change
 
-                            before_file_change(cmd_file)
+                            before_file_change(cmd_file, removal=True)
                             cmd_file.unlink()
                             after_file_change(cmd_file)
                             # For SKILL.md agents each command lives in its own
@@ -1440,7 +1450,7 @@ class CommandRegistrar:
                     if prompt_file.exists():
                         from .integrations._file_changes import after_file_change, before_file_change
 
-                        before_file_change(prompt_file)
+                        before_file_change(prompt_file, removal=True)
                         prompt_file.unlink()
                         after_file_change(prompt_file)
 

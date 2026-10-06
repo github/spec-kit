@@ -268,11 +268,19 @@ If an upgrade would change an integration between command and skills layouts whi
 
 For external adapters, `upgrade --force` and `uninstall --force` can also recover
 missing, modified, incompatible, or import-failing installed code using validated
-ownership metadata. This is reported explicitly and does not bypass source policy
+user-local registrar/path ownership metadata, rejecting edited project cleanup
+claims and overlap with another integration's root. Without local ownership
+proof, old-only generated files are preserved with a manual-cleanup warning.
+A trusted replacement can still overwrite files at its declared destination
+under `upgrade --force`. Recovery is reported explicitly and does not bypass source policy
 or the replacement package's trust decision. Failed lifecycle operations restore
 only operation-owned changes. Independent workflow progress and unowned user
 files are preserved; conflicting concurrent managed-file edits are reported with
 retained recovery snapshots.
+Host writes reject symlinked destinations and ancestors before writing; forced
+removal of an owned leaf symlink unlinks only the link. Concurrent workflow
+dispatch pins the requested project's adapter and verified imports until the
+dispatch finishes, without serializing independent agent processes.
 
 ## Report Integration Status
 

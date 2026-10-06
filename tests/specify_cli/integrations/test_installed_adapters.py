@@ -1183,7 +1183,7 @@ def test_review_portable_output_paths_rejected_without_project_changes(tmp_path,
     result = run(project, ["integration", "install", KEY, "--trust-integration"])
     assert result.exit_code == 1, result.output
     assert snapshot(project) == before
-    assert not (project / folder).exists()
+    assert folder not in {child.name for child in project.iterdir()}
 
 
 def test_review_cloned_project_cannot_transfer_execution_consent(tmp_path, server):
@@ -1412,6 +1412,437 @@ def test_review_failed_init_preserves_new_unowned_scaffolding_content(tmp_path, 
     assert result.exit_code == 1, result.output
     assert notes.read_text() == "independent progress"
     assert read_records(project) == {}
+
+
+@pytest.mark.parametrize("writer", ["render", "copy", "script"])
+def test_round2_leaf_symlink_never_redirects_transaction_writes(tmp_path, server, writer):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("preserve outside data")
+    if writer == "copy":
+        source = tmp_path / "source.md"
+        source.write_text("copied command")
+        body = f"""    def setup(self, project_root, manifest, **kwargs):
+        from pathlib import Path
+        self.copy_command_to_directory(
+            Path({str(source)!r}), project_root / ".sample-agent/skills", "SKILL.md"
+        )
+        return []
+"""
+        relative = ".sample-agent/skills/SKILL.md"
+    elif writer == "script":
+        body = """    def setup(self, project_root, manifest, **kwargs):
+        return self.install_scripts(project_root, manifest)
+"""
+        relative = f".specify/integrations/{KEY}/scripts/sample.py"
+    else:
+        body = ""
+        relative = ".sample-agent/skills/speckit-plan/SKILL.md"
+    publish(
+        server, code=implementation(body=body),
+        members={"scripts/sample.py": b"print('sample')"} if writer == "script" else None,
+    )
+    project = catalog_project(tmp_path, server)
+    leaf = project / relative
+    leaf.parent.mkdir(parents=True)
+    try:
+        leaf.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "symlink" in result.output.lower(), result.output
+    assert outside.read_text() == "preserve outside data"
+    assert leaf.is_symlink()
+    assert snapshot(project) == before
+
+
+def test_round2_script_helper_installs_and_records_regular_files(tmp_path, server):
+    body = """    def setup(self, project_root, manifest, **kwargs):
+        return self.install_scripts(project_root, manifest)
+"""
+    publish(
+        server, code=implementation(body=body),
+        members={"scripts/sample.py": b"print('sample')"},
+    )
+    project = catalog_project(tmp_path, server)
+    install(project)
+    relative = f".specify/integrations/{KEY}/scripts/sample.py"
+    assert (project / relative).read_bytes() == b"print('sample')"
+    manifest = json.loads((project / f".specify/integrations/{KEY}.manifest.json").read_text())
+    assert relative in manifest["files"]
+
+
+def test_round2_forced_removal_unlinks_owned_leaf_without_following_it(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("preserve outside data")
+    leaf = project / ".sample-agent/skills/speckit-plan/SKILL.md"
+    leaf.unlink()
+    try:
+        leaf.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 0, result.output
+    assert not leaf.is_symlink()
+    assert outside.read_text() == "preserve outside data"
+
+
+def test_round2_snapshot_preserves_standalone_leaf_link_without_traversal(tmp_path, server, monkeypatch):
+    body = """    def setup(self, project_root, manifest, **kwargs):
+        self.write_file_and_record(
+            "managed notes", project_root / "sample-notes.md", project_root, manifest
+        )
+        return []
+"""
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    marker = outside / "user-notes.md"
+    marker.write_text("preserve outside directory")
+    leaf = project / "sample-notes.md"
+    leaf.unlink()
+    try:
+        leaf.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symlinks unavailable: {exc}")
+    original = shutil.copytree
+
+    def reject_root_link_traversal(source, *args, **kwargs):
+        assert not Path(source).is_symlink(), "snapshot followed a leaf link"
+        return original(source, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", reject_root_link_traversal)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 0, result.output
+    assert not leaf.is_symlink()
+    assert marker.read_text() == "preserve outside directory"
+
+
+@pytest.mark.parametrize("metadata", ["other-root", "unrelated-root", "manifest-path"])
+def test_round2_recovery_rejects_unverified_ownership_before_deleting_files(tmp_path, server, metadata):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    assert run(project, ["integration", "install", "claude"]).exit_code == 0
+    install(project)
+    marker = project / ".claude/skills/user-notes.md"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("preserve another integration")
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    if metadata == "manifest-path":
+        path = project / f".specify/integrations/{KEY}.manifest.json"
+        data = json.loads(path.read_text())
+        data["files"][marker.relative_to(project).as_posix()] = hashlib.sha256(marker.read_bytes()).hexdigest()
+    else:
+        path = project / ".specify/integrations/packages.json"
+        data = json.loads(path.read_text())
+        data["packages"][KEY]["registrar_config"]["dir"] = (
+            ".claude/skills" if metadata == "other-root" else "user-files"
+        )
+    path.write_text(json.dumps(data))
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "ownership" in result.output.lower() or "overlap" in result.output.lower()
+    assert snapshot(project) == before
+    assert marker.read_text() == "preserve another integration"
+
+
+@pytest.mark.parametrize("proof", ["copied-project", "legacy-grant"])
+@pytest.mark.parametrize("operation", ["upgrade", "uninstall"])
+def test_round2_recovery_without_local_ownership_preserves_old_outputs(tmp_path, server, proof, operation):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    if proof == "copied-project":
+        clone = tmp_path / "copied-project"
+        shutil.copytree(project, clone)
+        project = clone
+    else:
+        path = Path.home() / ".specify/integration-trust.json"
+        data = json.loads(path.read_text())
+        del data["recovery"]
+        path.write_text(json.dumps(data))
+    marker = project / ".claude/skills/user-notes.md"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("preserve unrelated data")
+    manifest_path = project / f".specify/integrations/{KEY}.manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"][marker.relative_to(project).as_posix()] = hashlib.sha256(marker.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+    skill = project / ".sample-agent/skills/speckit-plan/SKILL.md"
+    skill.write_text("preserve previous layout customization")
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    arguments = ["integration", operation, KEY, "--force"]
+    if operation == "upgrade":
+        publish(server, version="2.0.0", code=implementation(folder=".sample-new"))
+        arguments.append("--trust-integration")
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    assert "No local recovery ownership record" in result.output
+    assert marker.read_text() == "preserve unrelated data"
+    assert skill.read_text() == "preserve previous layout customization"
+    if operation == "upgrade":
+        assert (project / ".sample-new/skills/speckit-plan/SKILL.md").is_file()
+        assert read_records(project)[KEY]["version"] == "2.0.0"
+    else:
+        assert not (project / f".specify/integrations/packages/{KEY}").exists()
+
+
+@pytest.mark.parametrize("directory", ["primary", "legacy"])
+def test_round2_recovery_rejects_even_locally_recorded_overlap(tmp_path, server, directory):
+    body = "    multi_install_safe = False\n"
+    if directory == "legacy":
+        body += '    registrar_config = {**registrar_config, "legacy_dir": ".claude/skills"}\n'
+    publish(
+        server, code=implementation(
+            folder=".claude" if directory == "primary" else ".sample-agent", body=body,
+        ),
+    )
+    project = catalog_project(tmp_path, server)
+    install(project)
+    marker = project / ".claude/skills/user-notes.md"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("preserve another integration")
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "ownership overlaps 'claude'" in result.output
+    assert snapshot(project) == before
+    assert marker.read_text() == "preserve another integration"
+
+
+def test_round2_failed_durable_upgrade_retains_previous_recovery_ownership(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = Path.home() / ".specify/integration-trust.json"
+    ownership = json.loads(path.read_text())["recovery"]
+    before = snapshot(project)
+    publish(server, version="2.0.0", code=implementation(folder=".sample-new"))
+    original = installer._import_package
+
+    def fail_durable_update(package, metadata, hashes, root):
+        if metadata.version == "2.0.0" and project in package.parents:
+            raise IntegrationInstallError("sample durable import failed")
+        return original(package, metadata, hashes, root)
+
+    monkeypatch.setattr(installer, "_import_package", fail_durable_update)
+    result = run(project, ["integration", "upgrade", KEY, "--force", "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "sample durable import failed" in result.output
+    assert snapshot(project) == before
+    assert json.loads(path.read_text())["recovery"] == ownership
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    removed = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert removed.exit_code == 0, removed.output
+
+
+@pytest.mark.parametrize("operation", ["run", "resume"])
+def test_round2_workflow_reload_oserror_uses_single_json_envelope(tmp_path, server, monkeypatch, operation):
+    from specify_cli.integrations import installer
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import RunState
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    source = project / "sample-workflow.yml"
+    source.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [{"id": "sample-shell", "type": "shell", "run": "echo sample"}],
+    }))
+    state = RunState(
+        run_id="sample-run", workflow_id="sample-workflow", project_root=project,
+    )
+    state.status = RunStatus.PAUSED
+    state.save()
+    (project / ".specify/workflows/runs/sample-run/workflow.yml").write_bytes(source.read_bytes())
+    original = installer.package_hashes
+    calls = 0
+
+    def fail_second_load(package):
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            raise PermissionError("sample package read denied")
+        return original(package)
+
+    monkeypatch.setattr(installer, "package_hashes", fail_second_load)
+    result = run(project, [
+        "workflow", operation, str(source) if operation == "run" else "sample-run", "--json",
+    ])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "failed"
+    assert "sample package read denied" in payload["error"]
+    assert result.stderr == ""
+
+
+def test_round2_concurrent_load_waits_for_its_requested_project(tmp_path, server, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+    from specify_cli.integrations import installer
+
+    publish(server, code=implementation(folder=".sample-first"))
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(server, version="2.0.0", code=implementation(folder=".sample-second"))
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    unload_installed_integrations()
+    entered = threading.Event()
+    release = threading.Event()
+    original = installer.package_hashes
+
+    def slow_first_load(package):
+        if first in package.parents:
+            entered.set()
+            assert release.wait(10)
+        return original(package)
+
+    monkeypatch.setattr(installer, "package_hashes", slow_first_load)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(load_installed_integrations, first)
+        assert entered.wait(10)
+        b = pool.submit(load_installed_integrations, second)
+        try:
+            with pytest.raises(TimeoutError):
+                b.result(timeout=0.1)
+        finally:
+            release.set()
+        assert a.result(timeout=10) == [KEY]
+        assert b.result(timeout=10) == [KEY]
+    assert INTEGRATION_REGISTRY[KEY].config["folder"] == ".sample-second"
+
+
+@pytest.mark.parametrize("kind", ["prompt", "command"])
+def test_round2_workflow_dispatch_keeps_project_adapter_after_registry_switch(tmp_path, server, monkeypatch, kind):
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+    body = '''
+    def build_exec_args(self, prompt, **kwargs):
+        return ["sample-agent-process", self.config["folder"], prompt]
+'''
+    publish(server, code=implementation(folder=".sample-first", body=body))
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(server, version="2.0.0", code=implementation(folder=".sample-second", body=body))
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    engine = WorkflowEngine(first)
+    engine.on_step_start = lambda *args: load_installed_integrations(second)
+    calls = []
+    original_which = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda name: "/sample-agent-process" if name == "sample-agent-process" else original_which(name))
+
+    def harmless_process(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="sample response", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", harmless_process)
+    step = {"id": "sample-dispatch", "type": kind, "integration": KEY}
+    step["prompt" if kind == "prompt" else "command"] = "Sample prompt" if kind == "prompt" else "speckit.plan"
+    source = first / "sample-workflow.yml"
+    source.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [step],
+    }))
+    result = engine.execute(WorkflowDefinition.from_yaml(source))
+    assert result.status.value == "completed", result.steps
+    assert calls and all(argv[1] == ".sample-first" for argv in calls)
+
+
+@pytest.mark.parametrize("kind", ["prompt", "command"])
+@pytest.mark.parametrize("process_fails", [False, True])
+def test_round2_overlapping_dispatch_pins_lazy_imports_and_project_lookup(
+    tmp_path, server, monkeypatch, kind, process_fails,
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from specify_cli.integrations import installer
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+    body = '''
+    def build_exec_args(self, prompt, **kwargs):
+        from .helper import marker
+        from specify_cli.integrations import get_integration
+        assert get_integration(self.key) is self
+        return ["sample-agent-process", marker, prompt]
+'''
+    publish(
+        server, code=implementation(folder=".sample-first", body=body),
+        members={"helper.py": b"marker = '.sample-first'"},
+    )
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(
+        server, version="2.0.0", code=implementation(folder=".sample-second", body=body),
+        members={"helper.py": b"marker = '.sample-second'"},
+    )
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    engines = [WorkflowEngine(root) for root in (first, second)]
+    definitions = []
+    for root in (first, second):
+        step = {"id": "sample-dispatch", "type": kind, "integration": KEY}
+        step["prompt" if kind == "prompt" else "command"] = (
+            "Sample prompt" if kind == "prompt" else "speckit.plan"
+        )
+        source = root / "sample-workflow.yml"
+        source.write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+            "steps": [step],
+        }))
+        definitions.append(WorkflowDefinition.from_yaml(source))
+    barrier = threading.Barrier(2)
+    original = installer._VerifiedSourceLoader.get_code
+
+    def overlap_lazy_import(loader, fullname):
+        if fullname.endswith(".helper"):
+            barrier.wait(timeout=10)
+        return original(loader, fullname)
+
+    monkeypatch.setattr(installer._VerifiedSourceLoader, "get_code", overlap_lazy_import)
+    original_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "/sample-agent-process" if name == "sample-agent-process" else original_which(name),
+    )
+    calls = []
+
+    def harmless_process(argv, **kwargs):
+        calls.append((argv[1], Path(kwargs["cwd"])))
+        return SimpleNamespace(
+            returncode=1 if process_fails else 0, stdout="sample response", stderr="sample failure",
+        )
+
+    monkeypatch.setattr(subprocess, "run", harmless_process)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(engine.execute, definition)
+            for engine, definition in zip(engines, definitions, strict=True)
+        ]
+        results = [future.result(timeout=20) for future in futures]
+    assert all(result.status.value == ("failed" if process_fails else "completed") for result in results)
+    assert set(calls) == {(".sample-first", first), (".sample-second", second)}
+    assert not installer._pinned_names
+    retained = {installer._namespace(value) for value in INTEGRATION_REGISTRY.values()}
+    assert set(installer._source_packages) <= retained
+    unload_installed_integrations()
+    assert not installer._source_packages
+    assert not any(name.startswith(installer._MODULE_PREFIX) for name in sys.modules)
 
 
 def test_failed_operation_preserves_independent_workflow_and_unowned_output_edits(tmp_path, server, monkeypatch):

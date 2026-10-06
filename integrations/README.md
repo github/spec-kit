@@ -162,7 +162,12 @@ and checks its descriptor again. Do not edit installed package code in place:
 publish a new archive/version and upgrade instead.
 Catalog management/discovery and `integration info` remain metadata-only and do
 not import adapters. Forced upgrade/uninstall can recover damaged installed code
-using validated ownership metadata, without bypassing source policy or trust.
+using user-local registrar and generated-path ownership records, without
+bypassing source policy or trust. Edited project cleanup claims are rejected.
+Without local ownership proof, old-only generated files are preserved with a
+manual-cleanup warning; trusted replacement setup still targets its declared
+destination. Concurrent dispatch pins each project's adapter and verified
+imports independently.
 
 ## Contributing
 

@@ -81,16 +81,14 @@ class _FileJournal:
         self.changes: dict[Path, tuple[Path | None, Any]] = {}
         self.pending: set[Path] = set()
 
-    def safe_path(self, path: Path) -> Path:
+    def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
         relative = path.relative_to(self.root).as_posix()
-        # A removable leaf symlink is owned as a link, not as its target.
-        if "/" in relative:
-            installer.safe_project_path(self.root, relative.rsplit("/", 1)[0])
+        installer.safe_project_path(self.root, relative, allow_leaf_symlink=allow_leaf_symlink)
         return path
 
-    def observe(self, path: Path, before: bool) -> None:
-        path = self.safe_path(path)
+    def observe(self, path: Path, before: bool, removal: bool = False) -> None:
+        path = self.safe_path(path, allow_leaf_symlink=not before or removal)
         if (
             before and path in self.changes and path not in self.pending
             and _file_identity(path) != self.changes[path][1]
@@ -178,6 +176,7 @@ def _transaction(
         ".specify/integrations", ".specify/templates", ".specify/scripts",
         ".specify/.gitignore",
     }
+    manifest_leaves: set[str] = set()
     state, error = try_read_integration_json(root)
     if error:
         raise installer.IntegrationInstallError(f"Cannot read integration state: {error.detail}")
@@ -190,8 +189,8 @@ def _transaction(
         if manifest_path.exists():
             manifest = IntegrationManifest.load(key, root)
             for relative in manifest.files:
-                installer.safe_project_path(root, relative)
-                folders.add(relative)
+                installer.safe_project_path(root, relative, allow_leaf_symlink=True)
+                manifest_leaves.add(relative)
     for integration in INTEGRATION_REGISTRY.values():
         if type(integration).__module__.startswith(installer._MODULE_PREFIX):
             folders.add(integration.config["folder"].rstrip("/"))
@@ -199,7 +198,12 @@ def _transaction(
     target_folder = (target_integration.config or {}).get("folder") if target_integration else None
     if target_folder:
         folders.add(target_folder.rstrip("/"))
-    paths = [installer.safe_project_path(root, folder) for folder in sorted(folders)]
+    paths = [
+        installer.safe_project_path(
+            root, folder, allow_leaf_symlink=folder in manifest_leaves and folder not in folders
+        )
+        for folder in sorted(folders | manifest_leaves)
+    ]
     paths = [path for path in paths if not any(other != path and other in path.parents for other in paths)]
     root_existed = root.exists()
     lock_root = installer._trust_store(root).parent.parent
@@ -217,7 +221,10 @@ def _transaction(
                 )
             existing = set()
             for index, path in enumerate(paths):
-                if path.exists():
+                if path.is_symlink():
+                    existing.add(index)
+                    (backup / str(index)).symlink_to(os.readlink(path), target_is_directory=path.is_dir())
+                elif path.exists():
                     existing.add(index)
                     if path.is_dir():
                         shutil.copytree(path, backup / str(index), symlinks=True)
@@ -269,6 +276,7 @@ def external_lifecycle(operation: str):
         signature = inspect.signature(handler)
 
         @wraps(handler)
+        @installer.registry_synchronized
         def invoke(*args, **kwargs):
             values = signature.bind_partial(*args, **kwargs).arguments
             loaded = False
@@ -285,6 +293,7 @@ def external_lifecycle(operation: str):
                 root = _require_specify_project()
                 key = values.get("target" if operation == "switch" else "key")
             recovery_token = None
+            recovery_binding = None
             try:
                 records = installer.read_records(root)
                 state, error = try_read_integration_json(root)
@@ -298,6 +307,7 @@ def external_lifecycle(operation: str):
                         raise
                     recovery_token = installer.recovery_exclusion.set((root.resolve(), key))
                     installer.load_installed_integrations(root)
+                    recovery_binding = installer.recovery_metadata(root, key, records[key])
                     console.print(
                         f"[yellow]Warning:[/yellow] Recovering integration '{escape(key)}' "
                         "from validated ownership metadata without loading its failed implementation."
@@ -337,6 +347,18 @@ def external_lifecycle(operation: str):
                         )
                         stack.callback(_init_directory.reset, token)
                     with _transaction(root, key, state, records):
+                        if recovery_token is not None and recovery_binding is None:
+                            from .manifest import IntegrationManifest
+
+                            path = root / ".specify/integrations" / f"{key}.manifest.json"
+                            if path.exists():
+                                manifest = IntegrationManifest.load(key, root)
+                                IntegrationManifest(key, root, version=manifest.version).save()
+                            console.print(
+                                "[yellow]Warning:[/yellow] No local recovery ownership record; "
+                                "preserving old generated files from cleanup. They may require manual cleanup. "
+                                "A trusted replacement can overwrite files at its declared destination."
+                            )
                         try:
                             result = handler(*args, **kwargs)
                         except typer.Exit as exc:

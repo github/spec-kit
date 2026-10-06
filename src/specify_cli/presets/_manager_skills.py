@@ -1273,7 +1273,7 @@ class _PresetSkillMethods:
             if source in owned_sources:
                 from ..integrations._file_changes import after_file_change, before_file_change
 
-                before_file_change(skill_subdir)
+                before_file_change(skill_subdir, removal=True)
                 shutil.rmtree(skill_subdir)
                 after_file_change(skill_subdir)
 
@@ -1539,7 +1539,7 @@ class _PresetSkillMethods:
                 # No core or extension template — remove the skill entirely
                 from ..integrations._file_changes import after_file_change, before_file_change
 
-                before_file_change(skill_subdir)
+                before_file_change(skill_subdir, removal=True)
                 shutil.rmtree(skill_subdir)
                 after_file_change(skill_subdir)
                 mutated_names.append(skill_name)

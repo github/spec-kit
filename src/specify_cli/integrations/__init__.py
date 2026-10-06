@@ -45,6 +45,11 @@ def _register(integration: IntegrationBase) -> None:
 
 def get_integration(key: str) -> IntegrationBase | None:
     """Return the integration for *key*, or ``None`` if not registered."""
+    from .installer import dispatch_registry
+
+    scoped = dispatch_registry.get()
+    if scoped is not None:
+        return scoped.get(key)
     return INTEGRATION_REGISTRY.get(key)
 
 

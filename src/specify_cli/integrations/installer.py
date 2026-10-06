@@ -7,6 +7,7 @@ import importlib.abc
 import importlib.machinery
 import importlib.util
 import inspect
+import itertools
 import json
 import os
 import re
@@ -14,8 +15,11 @@ import shutil
 import stat
 import sys
 import tempfile
+import threading
+from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -42,7 +46,13 @@ from .base import IntegrationBase
 
 _MODULE_PREFIX = "_speckit_installed_integration_"
 _loaded_identity: tuple[Any, ...] | None = None
-_loading = False
+_loading: ContextVar[bool] = ContextVar("integration_loading", default=False)
+_registry_lock = threading.RLock()
+_module_sequence = itertools.count()
+_pinned_names: Counter[str] = Counter()
+dispatch_registry: ContextVar[dict[str, IntegrationBase] | None] = ContextVar(
+    "integration_dispatch_registry", default=None
+)
 _pending_root: Path | None = None
 _RECORD = ".specify/integrations/packages.json"
 _PACKAGES = ".specify/integrations/packages"
@@ -54,6 +64,66 @@ recovery_exclusion: ContextVar[tuple[Path, str] | None] = ContextVar(
 
 class IntegrationInstallError(ValueError):
     """An external integration cannot safely be installed or loaded."""
+
+
+def registry_synchronized(handler):
+    @wraps(handler)
+    def invoke(*args, **kwargs):
+        with _registry_lock:
+            return handler(*args, **kwargs)
+    return invoke
+
+
+def _namespace(integration: IntegrationBase) -> str:
+    return type(integration).__module__.split(".", 1)[0]
+
+
+def _discard_unused_imports() -> None:
+    retained = {_namespace(value) for value in INTEGRATION_REGISTRY.values()} | set(_pinned_names)
+    for name in tuple(sys.modules):
+        if name.startswith(_MODULE_PREFIX) and name.split(".", 1)[0] not in retained:
+            del sys.modules[name]
+    for name in tuple(_source_packages):
+        if name not in retained:
+            del _source_packages[name]
+    if not _source_packages and _source_finder in sys.meta_path:
+        sys.meta_path.remove(_source_finder)
+
+
+@contextmanager
+def project_integrations(project_root: Path):
+    """Pin a project snapshot without serializing independent agent processes."""
+    with _registry_lock:
+        load_installed_integrations(project_root)
+        snapshot = dict(INTEGRATION_REGISTRY)
+        names = {
+            _namespace(value) for value in snapshot.values()
+            if _namespace(value).startswith(_MODULE_PREFIX)
+        }
+        _pinned_names.update(names)
+    token = dispatch_registry.set(snapshot)
+    try:
+        yield
+    finally:
+        dispatch_registry.reset(token)
+        with _registry_lock:
+            _pinned_names.subtract(names)
+            for name in names:
+                if _pinned_names[name] == 0:
+                    del _pinned_names[name]
+            _discard_unused_imports()
+
+
+def project_dispatch(handler):
+    signature = inspect.signature(handler)
+
+    @wraps(handler)
+    def invoke(*args, **kwargs):
+        context = signature.bind(*args, **kwargs).arguments["context"]
+        root = Path(context.project_root) if context.project_root else Path.cwd()
+        with project_integrations(root):
+            return handler(*args, **kwargs)
+    return invoke
 
 
 class _VerifiedSourceLoader(importlib.machinery.SourceFileLoader):
@@ -74,6 +144,7 @@ class _VerifiedSourceLoader(importlib.machinery.SourceFileLoader):
 class _VerifiedSourceFinder(importlib.abc.MetaPathFinder):
     """Scope relative imports to the installed package's recorded Python files."""
 
+    @registry_synchronized
     def find_spec(self, fullname, path=None, target=None):
         for namespace, (package, hashes) in _source_packages.items():
             if not fullname.startswith(namespace + "."):
@@ -112,7 +183,7 @@ def validate_key(key: str) -> None:
         raise IntegrationInstallError(f"Invalid integration ID: {key!r}")
 
 
-def safe_project_path(root: Path, relative: str) -> Path:
+def safe_project_path(root: Path, relative: str, *, allow_leaf_symlink: bool = False) -> Path:
     """Reject non-canonical paths and symlinked ancestors before accessing them."""
     path = Path(relative)
     if (
@@ -129,6 +200,8 @@ def safe_project_path(root: Path, relative: str) -> Path:
     for part in path.parts:
         current /= part
         if current.is_symlink():
+            if allow_leaf_symlink and current == root / path:
+                continue
             if current == root / ".specify":
                 raise IntegrationInstallError(f"Refusing to use symlinked .specify directory: {current}")
             raise IntegrationInstallError(f"Symlinked integration path: {current}")
@@ -211,7 +284,7 @@ def read_records(root: Path) -> dict[str, dict[str, Any]]:
 
 def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
     path = safe_project_path(root, _RECORD)
-    before_file_change(path)
+    before_file_change(path, removal=not records)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not records:
         path.unlink(missing_ok=True)
@@ -247,7 +320,7 @@ def _trust_identity(root: Path, key: str, hashes: dict[str, str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _read_trust(path: Path) -> set[str]:
+def _read_trust_state(path: Path) -> dict[str, Any]:
     try:
         with path.open(encoding="utf-8") as stream:
             content = stream.read(1024 * 1024 + 1)
@@ -255,7 +328,7 @@ def _read_trust(path: Path) -> set[str]:
             raise ValueError("trust registry exceeds size limit")
         data = json.loads(content)
     except FileNotFoundError:
-        return set()
+        return {"schema_version": "1.0", "grants": [], "recovery": {}}
     except (OSError, ValueError, UnicodeError) as exc:
         raise IntegrationInstallError(f"Cannot read integration local trust state: {exc}") from exc
     if (
@@ -264,26 +337,101 @@ def _read_trust(path: Path) -> set[str]:
         or any(not isinstance(item, str) or not re.fullmatch(r"[a-f0-9]{64}", item) for item in data["grants"])
     ):
         raise IntegrationInstallError("Invalid integration local trust state")
-    return set(data["grants"])
+    recovery = data.get("recovery", {})
+    if not isinstance(recovery, dict):
+        raise IntegrationInstallError("Invalid integration local recovery ownership")
+    for identity, binding in recovery.items():
+        if (
+            not isinstance(identity, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", identity)
+            or not isinstance(binding, dict)
+            or not isinstance(binding.get("package"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", binding["package"])
+            or not isinstance(binding.get("registrar_config"), dict)
+            or not isinstance(binding.get("paths"), list)
+            or any(not isinstance(path, str) for path in binding["paths"])
+        ):
+            raise IntegrationInstallError("Invalid integration local recovery ownership")
+    data["recovery"] = recovery
+    return data
 
 
-def _grant_trust(root: Path, key: str, hashes: dict[str, str]) -> None:
+def _read_trust(path: Path) -> set[str]:
+    return set(_read_trust_state(path)["grants"])
+
+
+def _recovery_identity(root: Path, key: str) -> str:
+    value = json.dumps([os.path.normcase(str(root.resolve())), key])
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _grant_trust(
+    root: Path, key: str, record: dict[str, Any], *, record_ownership: bool = False,
+) -> None:
     """Persist this user's explicit consent, bound to the project and package."""
     from ..shared_infra import _exclusive_project_lock
+    from .manifest import IntegrationManifest
 
     path = _trust_store(root)
     with _exclusive_project_lock(path.parent.parent, ".integration-trust.lock", context="integration trust"):
         path = _trust_store(root)
-        grants = _read_trust(path)
-        grants.add(_trust_identity(root, key, hashes))
+        data = _read_trust_state(path)
+        identity = _trust_identity(root, key, record["files"])
+        data["grants"] = sorted(set(data["grants"]) | {identity})
+        if record_ownership:
+            data["recovery"][_recovery_identity(root, key)] = {
+                "package": identity,
+                "registrar_config": record["registrar_config"],
+                "paths": sorted(IntegrationManifest.load(key, root).files),
+            }
         with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
             temporary = Path(stream.name)
-            json.dump({"schema_version": "1.0", "grants": sorted(grants)}, stream, indent=2)
+            json.dump(data, stream, indent=2)
             stream.write("\n")
         try:
             os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Authorize cleanup from user-local ownership, never mutable project claims."""
+    from .manifest import IntegrationManifest
+
+    binding = _read_trust_state(_trust_store(root))["recovery"].get(_recovery_identity(root, key))
+    if binding is None:
+        return None
+    if record.get("registrar_config") != binding["registrar_config"]:
+        raise IntegrationInstallError(f"Integration '{key}' recovery ownership metadata has been modified")
+    config = binding["registrar_config"]
+    _validate_registrar_config(key, config)
+
+    def validate_cleanup(relative: str, *, leaf: bool = False) -> None:
+        path = safe_project_path(root, relative, allow_leaf_symlink=leaf)
+        parts = tuple(part.casefold() for part in path.relative_to(root).parts)
+        if not leaf and parts[0] in {".git", ".specify"}:
+            raise IntegrationInstallError("Reserved recovery ownership directory")
+        for other in INTEGRATION_REGISTRY.values():
+            folder = ((other.config or {}).get("folder") or "").rstrip("/")
+            protected = tuple(part.casefold() for part in Path(folder).parts)
+            if other.key != key and folder and (
+                parts[:len(protected)] == protected or protected[:len(parts)] == parts
+            ):
+                raise IntegrationInstallError(
+                    f"Integration '{key}' recovery ownership overlaps '{other.key}'"
+                )
+
+    validate_cleanup(config["dir"])
+    if "legacy_dir" in config:
+        validate_cleanup(config["legacy_dir"])
+    manifest = safe_project_path(root, f".specify/integrations/{key}.manifest.json")
+    if manifest.exists():
+        paths = IntegrationManifest.load(key, root).files
+        if not set(paths) <= set(binding["paths"]):
+            raise IntegrationInstallError(f"Integration '{key}' manifest recovery ownership has been modified")
+        for relative in paths:
+            validate_cleanup(relative, leaf=True)
+    return binding
 
 
 def _refresh_configs() -> None:
@@ -302,17 +450,13 @@ def _refresh_configs() -> None:
             cls._configs_loaded = True
 
 
+@registry_synchronized
 def unload_installed_integrations() -> None:
     global _loaded_identity
     for key in tuple(INTEGRATION_REGISTRY):
         if type(INTEGRATION_REGISTRY[key]).__module__.startswith(_MODULE_PREFIX):
             del INTEGRATION_REGISTRY[key]
-    for name in tuple(sys.modules):
-        if name.startswith(_MODULE_PREFIX):
-            del sys.modules[name]
-    _source_packages.clear()
-    if _source_finder in sys.meta_path:
-        sys.meta_path.remove(_source_finder)
+    _discard_unused_imports()
     _loaded_identity = None
     _refresh_configs()
 
@@ -427,7 +571,7 @@ def _import_package(
     if key in BUILTIN_INTEGRATION_KEYS or key in INTEGRATION_REGISTRY:
         raise IntegrationInstallError(f"Integration '{key}' is already registered or built-in")
     identity = hashlib.sha256(str(package.resolve()).encode()).hexdigest()[:16]
-    module_name = f"{_MODULE_PREFIX}{key.replace('-', '_')}_{identity}"
+    module_name = f"{_MODULE_PREFIX}{key.replace('-', '_')}_{identity}_{next(_module_sequence)}"
     loader = _VerifiedSourceLoader(module_name, package, "__init__.py", hashes["__init__.py"])
     spec = importlib.util.spec_from_file_location(
         module_name, loader.path, loader=loader, submodule_search_locations=[str(package)]
@@ -470,9 +614,10 @@ def _import_package(
         raise IntegrationInstallError(f"Failed to load integration '{key}': {exc}") from exc
 
 
+@registry_synchronized
 def load_installed_integrations(project_root: Path) -> list[str]:
-    global _loaded_identity, _loading
-    if _loading:
+    global _loaded_identity
+    if _loading.get():
         return []
     root = Path(project_root).resolve()
     if _pending_root is not None:
@@ -482,7 +627,7 @@ def load_installed_integrations(project_root: Path) -> list[str]:
             key for key, integration in INTEGRATION_REGISTRY.items()
             if type(integration).__module__.startswith(_MODULE_PREFIX)
         ]
-    _loading = True
+    loading_token = _loading.set(True)
     try:
         records = read_records(root)
         recovery = recovery_exclusion.get()
@@ -526,7 +671,8 @@ def load_installed_integrations(project_root: Path) -> list[str]:
         _loaded_identity = tuple(identity)
         _refresh_configs()
         if excluded is not None and excluded in records:
-            config = records[excluded].get("registrar_config")
+            binding = recovery_metadata(root, excluded, records[excluded])
+            config = binding["registrar_config"] if binding is not None else None
             if config is not None:
                 _validate_registrar_config(excluded, config)
                 directory = config.get("dir")
@@ -544,7 +690,7 @@ def load_installed_integrations(project_root: Path) -> list[str]:
         unload_installed_integrations()
         raise
     finally:
-        _loading = False
+        _loading.reset(loading_token)
 
 
 @contextmanager
@@ -663,8 +809,9 @@ def persist_package(root: Path, key: str, package: Path, record: dict[str, Any])
         records = read_records(root)
         records[key] = record
         write_records(root, records)
-        _grant_trust(root, key, record["files"])
+        _grant_trust(root, key, record)
     load_installed_integrations(root)
+    _grant_trust(root, key, record, record_ownership=True)
 
 
 def remove_package(root: Path, key: str) -> None:
@@ -672,7 +819,7 @@ def remove_package(root: Path, key: str) -> None:
     if key not in records:
         return
     directory = safe_project_path(root, f"{_PACKAGES}/{key}")
-    before_file_change(directory)
+    before_file_change(directory, removal=True)
     try:
         shutil.rmtree(directory)
     except FileNotFoundError:

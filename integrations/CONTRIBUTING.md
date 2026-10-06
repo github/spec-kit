@@ -178,3 +178,9 @@ covered within the adapter's declared output root; writes elsewhere must use
 metadata-only commands without import side effects, forced recovery of damaged
 installed packages, and rollback that preserves independent workflow progress
 and concurrent user edits.
+Host helpers reject symlinked write destinations; owned leaf links may be
+unlinked without following them. Exercise overlapping project dispatch and lazy
+relative imports: the host pins the correct adapter for each dispatch without
+serializing independent agent processes. Forced recovery uses user-local
+registrar/path ownership, not editable project metadata. Without that proof,
+old-only artifacts are preserved with an explicit manual-cleanup warning.
