@@ -155,7 +155,7 @@ def test_resolve_keeps_discovery_only_winner_with_the_version():
     "releases",
     [[], {"1.1.0": {"download_url": "https://example.com/x.zip"}}, {"1.0": {}}],
 )
-def test_malformed_history_fails_resolve_but_search_still_lists_bundle(releases):
+def test_malformed_history_fails_resolve_and_search_at_load(releases):
     entry = catalog_entry_dict("history", releases=releases)
     stack = _stack(
         [_source("only", 1, "install-allowed")],
@@ -164,7 +164,24 @@ def test_malformed_history_fails_resolve_but_search_still_lists_bundle(releases)
 
     with pytest.raises(BundlerError, match="Bundle 'history'"):
         stack.resolve("history")
-    assert [result.entry.id for result in stack.search()] == ["history"]
+    with pytest.raises(BundlerError, match="Bundle 'history'"):
+        stack.search()
+
+
+def test_resolve_skips_shadowed_malformed_lower_precedence_source():
+    stack = _stack(
+        [_source("high", 1, "install-allowed"), _source("low", 2, "install-allowed")],
+        {
+            "high": catalog_payload({"history": catalog_entry_dict("history")}),
+            "low": catalog_payload(
+                {"history": catalog_entry_dict("history", releases=[])}
+            ),
+        },
+    )
+
+    assert stack.resolve("history").source.id == "high"
+    with pytest.raises(BundlerError, match="Bundle 'history'"):
+        stack.search()
 
 
 def test_search_output_is_unchanged_by_release_history():

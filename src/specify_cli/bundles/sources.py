@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
 from . import BundlerError
+from .versioning import same_version
 
 # ZIP magic-byte signatures cover local headers, empty archives, and spanning markers.
 _ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
@@ -334,7 +335,7 @@ def _validate_catalog_manifest(entry, manifest) -> None:
             f"Downloaded bundle id mismatch: catalog entry {entry.id!r} points to "
             f"a manifest for {manifest.bundle.id!r}."
         )
-    if manifest.bundle.version != entry.version:
+    if not same_version(manifest.bundle.version, entry.version):
         raise BundlerError(
             f"Downloaded bundle version mismatch for {entry.id!r}: catalog declares "
             f"{entry.version!r}, but the manifest declares "

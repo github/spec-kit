@@ -7,6 +7,7 @@ import pytest
 from specify_cli.bundler import BundlerError
 from specify_cli.bundles.catalog_versions import available_versions, select_release
 from specify_cli.bundles.catalogs import CatalogEntry, load_catalog_payload
+from specify_cli.bundles.versioning import parse_version
 from tests.specify_cli.bundles.helpers import catalog_entry_dict, catalog_payload
 
 
@@ -26,7 +27,7 @@ def _record(**overrides) -> dict:
     return data
 
 
-def test_legacy_entry_keeps_current_behavior_and_raw_history_is_lazy():
+def test_legacy_entry_keeps_current_behavior_and_load_rejects_history():
     plain_legacy = _entry(version="legacy")
     legacy = _entry(version="legacy", releases={"1.0.0": _record()})
     assert select_release(plain_legacy, "legacy") is plain_legacy
@@ -34,10 +35,10 @@ def test_legacy_entry_keeps_current_behavior_and_raw_history_is_lazy():
     assert legacy.version == "legacy"
 
     malformed = _entry(releases=[])
-    loaded = load_catalog_payload(catalog_payload({"history": malformed.raw}))
-    assert loaded["history"].version == "1.2.0"
     with pytest.raises(BundlerError, match="invalid releases mapping"):
-        select_release(loaded["history"], None)
+        load_catalog_payload(catalog_payload({"history": malformed.raw}))
+    with pytest.raises(BundlerError, match="invalid current version 'legacy'"):
+        load_catalog_payload(catalog_payload({"history": legacy.raw}))
 
 
 def test_historical_selection_uses_its_own_current_only_fields():
@@ -135,16 +136,24 @@ _MALFORMED_HISTORY = [
 
 @pytest.mark.parametrize("lookup", ["available_versions", "select_release"])
 @pytest.mark.parametrize("releases, message", _MALFORMED_HISTORY)
-def test_malformed_history_is_rejected_lazily(releases, message, lookup):
+def test_malformed_history_is_rechecked_for_directly_constructed_entries(
+    releases, message, lookup
+):
     entry = _entry(releases=releases)
-    loaded = load_catalog_payload(catalog_payload({"history": entry.raw}))
 
-    assert loaded["history"].version == "1.2.0"
     with pytest.raises(BundlerError, match=f"Bundle 'history'.*{message}"):
         if lookup == "available_versions":
-            available_versions(loaded["history"])
+            available_versions(entry)
         else:
-            select_release(loaded["history"], "1.2.0")
+            select_release(entry, "1.2.0")
+
+
+@pytest.mark.parametrize("releases, message", _MALFORMED_HISTORY)
+def test_malformed_history_is_rejected_when_catalog_loads(releases, message):
+    entry = _entry(releases=releases)
+
+    with pytest.raises(BundlerError, match=f"Bundle 'history'.*{message}"):
+        load_catalog_payload(catalog_payload({"history": entry.raw}))
 
 
 @pytest.mark.parametrize(
@@ -163,6 +172,8 @@ def test_history_requires_valid_current_semver(current, message):
         available_versions(entry)
     with pytest.raises(BundlerError, match=message):
         select_release(entry, None)
+    with pytest.raises(BundlerError, match=message):
+        load_catalog_payload(catalog_payload({"history": entry.raw}))
 
 
 @pytest.mark.parametrize(
@@ -207,3 +218,41 @@ def test_historical_record_overrides_inherited_fields():
     assert selected.author == "Old Author"
     assert selected.repository == "https://example.com/history"
     assert selected.name == entry.name
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "v1.1.0",
+        "1.0.0-rc.1",
+        "1.0.0-rc1",
+        "1.0.0-alpha.1",
+        "1.0.0-RC.1",
+        "1.0.0-beta",
+        "1.0.0+b.1",
+    ],
+)
+def test_release_parser_agrees_with_bundle_version_parser(version):
+    from packaging.version import InvalidVersion, Version
+
+    try:
+        packaging_version = Version(version)
+    except InvalidVersion:
+        with pytest.raises(BundlerError):
+            parse_version(version)
+    else:
+        assert packaging_version == parse_version(version)
+
+
+@pytest.mark.parametrize("entry_id", [None, "different"])
+def test_entry_id_errors_precede_history_validation(entry_id):
+    entry = catalog_entry_dict("history", releases=[])
+    if entry_id is None:
+        del entry["id"]
+        expected = "missing its 'id'"
+    else:
+        entry["id"] = entry_id
+        expected = "id mismatch"
+
+    with pytest.raises(BundlerError, match=expected):
+        load_catalog_payload(catalog_payload({"history": entry}))

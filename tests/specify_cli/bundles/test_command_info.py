@@ -198,6 +198,16 @@ def test_info_versions_rejects_malformed_history_cleanly(project: Path, as_json:
     assert isinstance(result.exception, SystemExit)
 
 
+def test_search_rejects_malformed_history_cleanly(project: Path):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+
+
 def test_info_without_versions_is_unchanged_by_history(project: Path, monkeypatch):
     bundle_dir = project / "history-bundle"
     manifest = valid_manifest_dict()

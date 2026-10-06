@@ -157,19 +157,33 @@ def _default_artifacts() -> dict[str, bytes]:
 
 
 @pytest.mark.parametrize("command", ["install", "add"])
-@pytest.mark.parametrize("requested", ["1.1.0", "v1.1.0"])
+@pytest.mark.parametrize(
+    ("requested", "advertised", "manifest"),
+    [
+        ("1.1.0", "1.1.0", "1.1.0"),
+        ("v1.1.0", "1.1.0", "1.1.0"),
+        ("v1.1.0", "v1.1.0", "1.1.0"),
+        ("1.0.0-rc.1", "1.0.0-rc.1", "1.0.0-rc1"),
+    ],
+)
 def test_version_installs_historical_release(
-    project: Path, monkeypatch, installer, user_config, command, requested
+    project: Path, monkeypatch, installer, user_config, command, requested, advertised, manifest
 ):
-    _configure(project / ".specify", [("history", "install-allowed", _history_entry())], project)
-    downloads = _serve(monkeypatch, _default_artifacts())
+    historical_body = _manifest_bytes(manifest)
+    entry = _history_entry(historical_body=historical_body)
+    entry["releases"] = {advertised: entry["releases"]["1.1.0"]}
+    _configure(project / ".specify", [("history", "install-allowed", entry)], project)
+    downloads = _serve(
+        monkeypatch,
+        {CURRENT_URL: _manifest_bytes("1.2.0"), HISTORICAL_URL: historical_body},
+    )
 
     result = runner.invoke(app, ["bundle", command, BUNDLE_ID, "--version", requested])
 
     assert result.exit_code == 0, result.output
     assert downloads.urls == [HISTORICAL_URL]
     [record] = load_records(project)
-    assert (record.bundle_id, record.version) == (BUNDLE_ID, "1.1.0")
+    assert (record.bundle_id, record.version) == (BUNDLE_ID, manifest)
     assert installer.install_calls
 
 
@@ -315,7 +329,7 @@ def test_version_for_already_installed_bundle_keeps_existing_rules(
     _serve(monkeypatch, _default_artifacts())
     first = runner.invoke(app, ["bundle", "install", BUNDLE_ID])
     assert first.exit_code == 0, first.output
-    original = records_path(project).read_bytes()
+    original = load_records(project)
 
     older = runner.invoke(app, ["bundle", "install", BUNDLE_ID, "--version", "1.1.0"])
     same = runner.invoke(app, ["bundle", "install", BUNDLE_ID, "--version", "1.2.0"])
@@ -323,7 +337,7 @@ def test_version_for_already_installed_bundle_keeps_existing_rules(
     assert older.exit_code == 1
     assert "already installed at version 1.2.0" in " ".join(older.output.split())
     assert same.exit_code == 0, same.output
-    assert records_path(project).read_bytes() == original
+    assert load_records(project) == original
 
 
 @pytest.mark.parametrize(

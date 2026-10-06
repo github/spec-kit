@@ -158,8 +158,8 @@ class CatalogEntry:
     # Resolution provenance (filled in by the catalog stack at lookup time):
     source_id: str | None = None
     source_policy: InstallPolicy | None = None
-    # Preserve unknown additive catalog fields for lazy release-history
-    # validation and selection without changing current-entry parsing.
+    # Preserve unknown additive catalog fields for release-history materialization
+    # without changing current-entry parsing.
     raw: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @classmethod
@@ -234,6 +234,9 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
     if not isinstance(bundles_raw, dict):
         raise BundlerError("Catalog payload is missing a 'bundles' object.")
     entries: dict[str, CatalogEntry] = {}
+    # Function-local import avoids the catalogs -> catalog_versions import cycle.
+    from .catalog_versions import _validated_releases
+
     for bundle_id, entry_raw in bundles_raw.items():
         key = str(bundle_id)
         entry = CatalogEntry.from_dict(entry_raw)
@@ -250,6 +253,7 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
                 f"Catalog entry id mismatch: key '{key}' != entry id "
                 f"'{entry.id}'."
             )
+        _validated_releases(entry)
         entries[key] = entry
     return entries
 
