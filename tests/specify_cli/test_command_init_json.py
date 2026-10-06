@@ -349,6 +349,16 @@ def test_json_validation_failures_do_not_create_target(
             "--skills stray",
             "Unexpected integration option value 'stray'.",
         ),
+        (
+            "copilot",
+            "--skills --commands",
+            "--skills and --commands are mutually exclusive; pass only one.",
+        ),
+        (
+            "bob",
+            "--skills --legacy-commands",
+            "--skills and --legacy-commands are mutually exclusive; pass only one.",
+        ),
     ],
 )
 def test_json_integration_option_failures_preserve_parser_diagnostic(
@@ -1198,6 +1208,43 @@ def test_json_reports_missing_bundled_workflow(
     assert {
         warning["code"] for warning in payload["warnings"]
     } >= {"bundled_workflow_not_found"}
+
+
+def test_json_reports_bundled_workflow_install_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from specify_cli.workflows.engine import WorkflowDefinition
+
+    monkeypatch.setattr(
+        WorkflowDefinition,
+        "from_yaml",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("workflow parse failed")
+        ),
+    )
+
+    payload = _success(
+        _invoke(
+            ["project", "--json", "--ignore-agent-tools"],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["components"]["workflow"] == {
+        "id": "speckit",
+        "status": "failed",
+        "reason": "workflow parse failed",
+    }
+    warning = next(
+        warning
+        for warning in payload["warnings"]
+        if warning["code"] == "workflow_install_failed"
+    )
+    assert warning["details"] == {
+        "workflow": "speckit",
+        "reason": "workflow parse failed",
+    }
 
 
 def test_json_reports_missing_optional_preset(

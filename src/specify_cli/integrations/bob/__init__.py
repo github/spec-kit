@@ -24,8 +24,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-import typer
-
 from ..base import (
     IntegrationBase,
     IntegrationOption,
@@ -45,12 +43,13 @@ def _validate_mode_options(parsed_options: dict[str, Any] | None) -> None:
     opts = parsed_options or {}
     if opts.get("skills") and opts.get("legacy_commands"):
         from ..._console import console
+        from .._helpers import _IntegrationOptionsError
 
-        console.print(
-            "[red]Error:[/red] --skills and --legacy-commands are mutually "
-            "exclusive; pass only one."
+        diagnostic = (
+            "--skills and --legacy-commands are mutually exclusive; pass only one."
         )
-        raise typer.Exit(1)
+        console.print(f"[red]Error:[/red] {diagnostic}")
+        raise _IntegrationOptionsError(diagnostic)
 
 
 def _warn_legacy_commands_deprecated() -> None:
