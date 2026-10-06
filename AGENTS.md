@@ -16,6 +16,13 @@ naming, private command phases, nested command groups, registration ownership,
 mirrored tests, and the rationale for making the CLI structure predictable for
 both humans and coding agents.
 
+## Adding or Updating MCP Commands
+
+Before adding or changing MCP tools for Specify commands, read
+[Specify MCP Command Architecture](design/mcp.md). It defines the shared
+operation boundary, peer CLI/MCP adapters, typed contracts, explicit inventory,
+access policy, transport separation, and mirrored tests.
+
 ## Adding or Updating Agent Integrations
 
 Before adding or changing AI agent integrations, read

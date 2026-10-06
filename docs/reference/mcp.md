@@ -4,6 +4,11 @@
 > `specify mcp` is experimental. Its command inventory and tool contracts may
 > change before the MCP surface is declared stable.
 
+This page documents the current transitional implementation. See
+[Specify MCP Command Architecture](https://github.com/github/spec-kit/blob/main/design/mcp.md)
+for the intended first-class tool, shared-operation, policy, and transport
+architecture.
+
 ```bash
 specify mcp
 ```
