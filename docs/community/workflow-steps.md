@@ -19,6 +19,13 @@ and, when accepted, update
 [`workflows/step-catalog.community.json`](https://github.com/github/spec-kit/blob/main/workflows/step-catalog.community.json)
 through the normal reviewed pull request process.
 
+The built-in community catalog is **discovery-only**. Accepted entries can
+appear in `specify workflow step search` and `info`, but
+`specify workflow step add <id>` will not install executable code from that
+source. After reviewing the source, install the submitted immutable archive
+directly with `--from`, or use a separately configured step catalog that you
+explicitly allow for installation.
+
 ## Package Contract
 
 One installed package provides one workflow step type:
@@ -59,7 +66,7 @@ from provenance and disclosure fields used during manual review.
 | Step type ID | Catalog key, `step.type_key`, and matching `StepBase.type_key` |
 | Name, version, description, author | `step.yml` metadata and catalog/installed registry metadata |
 | Release artifact URL | Immutable archive used to test the supported direct-URL installation path |
-| `step.yml`, `__init__.py`, and extra-file URLs | Exact HTTPS file URLs consumed by catalog installation |
+| `step.yml`, `__init__.py`, and extra-file URLs | Exact HTTPS file URLs consumed when installing from an explicitly install-allowed catalog |
 | Per-file SHA-256 mapping | Catalog `sha256`; keys must be exactly the files the installer downloads |
 | Provided type name/count | Loader invariant: one matching type key per installed package |
 | Repository, license, documentation, changelog | Source provenance and manual-review evidence; these are not `step.yml` fields |
@@ -68,9 +75,9 @@ from provenance and disclosure fields used during manual review.
 
 Use tag-pinned URLs for the release artifact, documentation, and every catalog
 file. Do not submit branch URLs, `releases/latest` URLs, or other moving
-targets. The current exact-release catalog path requires a valid release
-version and a 64-character hexadecimal SHA-256 digest for `step.yml`,
-`__init__.py`, and every `extra_files` path.
+targets. Exact-release installation from an install-allowed catalog requires a
+valid release version and a 64-character hexadecimal SHA-256 digest for
+`step.yml`, `__init__.py`, and every `extra_files` path.
 
 ## Prepare a Submission
 
