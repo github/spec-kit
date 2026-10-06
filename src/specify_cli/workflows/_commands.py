@@ -1036,6 +1036,7 @@ def _install_workflow_from_catalog(
     expected_version: str | None = None,
     expected_installed_version: str | None = None,
     requested_version: str | None = None,
+    selected_info: dict | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
@@ -1045,6 +1046,8 @@ def _install_workflow_from_catalog(
     version does not match the catalog version that triggered the install.
     ``expected_installed_version``, when given by ``workflow update``, aborts
     if another process changes the installed source or version before commit.
+    ``selected_info`` is a bundle-selected catalog record, used without a
+    second catalog lookup while retaining the same download and commit checks.
     """
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
@@ -1061,16 +1064,19 @@ def _install_workflow_from_catalog(
 
     safe_wf_id = _escape_markup(workflow_id)
 
-    catalog = WorkflowCatalog(project_root)
-    try:
-        info = (
-            catalog.get_workflow_info(workflow_id, requested_version)
-            if requested_version is not None
-            else catalog.get_workflow_info(workflow_id)
-        )
-    except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-        raise typer.Exit(1)
+    if selected_info is not None:
+        info = selected_info
+    else:
+        catalog = WorkflowCatalog(project_root)
+        try:
+            info = (
+                catalog.get_workflow_info(workflow_id, requested_version)
+                if requested_version is not None
+                else catalog.get_workflow_info(workflow_id)
+            )
+        except WorkflowCatalogError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
     if not info:
         if requested_version is not None:

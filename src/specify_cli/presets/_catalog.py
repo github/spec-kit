@@ -27,6 +27,10 @@ class PresetCatalogValidationError(PresetError):
     """A catalog supplied invalid content rather than being unreachable."""
 
 
+class PresetCatalogFetchError(PresetError):
+    """A configured preset catalog could not be fetched."""
+
+
 def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
     """Reject duplicate keys before JSON parsing discards conflicting records."""
 
@@ -547,9 +551,9 @@ class PresetCatalog:
         except (ImportError, Exception) as e:
             if isinstance(e, PresetError):
                 raise
-            raise PresetError(
+            raise PresetCatalogFetchError(
                 f"Failed to fetch preset catalog from {entry.url}: {e}"
-            )
+            ) from e
 
     def _get_merged_packs(
         self, force_refresh: bool = False, *, pack_id: str | None = None
@@ -739,9 +743,9 @@ class PresetCatalog:
         except (ImportError, Exception) as e:
             if isinstance(e, PresetError):
                 raise
-            raise PresetError(
+            raise PresetCatalogFetchError(
                 f"Failed to fetch preset catalog from {catalog_url}: {e}"
-            )
+            ) from e
 
     def search(
         self,

@@ -180,6 +180,14 @@ class ExtensionError(Exception):
     pass
 
 
+class ExtensionCatalogFetchError(ExtensionError):
+    """Raised when no configured extension catalog can be fetched."""
+
+
+class ExtensionCatalogValidationError(ExtensionError):
+    """Raised when an extension catalog response is malformed."""
+
+
 class ValidationError(ExtensionError):
     """Raised when extension manifest validation fails."""
 
@@ -4557,13 +4565,13 @@ class ExtensionCatalog(CatalogStackBase):
             ExtensionError: If the payload's shape is invalid.
         """
         if not isinstance(catalog_data, dict):
-            raise ExtensionError(
+            raise ExtensionCatalogValidationError(
                 f"Invalid catalog format from {url}: expected a JSON object"
             )
         if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-            raise ExtensionError(f"Invalid catalog format from {url}")
+            raise ExtensionCatalogValidationError(f"Invalid catalog format from {url}")
         if not isinstance(catalog_data.get("extensions"), dict):
-            raise ExtensionError(
+            raise ExtensionCatalogValidationError(
                 f"Invalid catalog format from {url}: 'extensions' must be a JSON object"
             )
 
@@ -4753,7 +4761,7 @@ class ExtensionCatalog(CatalogStackBase):
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=ExtensionError,
+                        error_type=ExtensionCatalogValidationError,
                         label=f"extension catalog {entry.url}",
                     )
                 )
@@ -4791,9 +4799,13 @@ class ExtensionCatalog(CatalogStackBase):
             return catalog_data
 
         except urllib.error.URLError as e:
-            raise ExtensionError(f"Failed to fetch catalog from {entry.url}: {e}")
+            raise ExtensionCatalogFetchError(
+                f"Failed to fetch catalog from {entry.url}: {e}"
+            ) from e
         except json.JSONDecodeError as e:
-            raise ExtensionError(f"Invalid JSON in catalog from {entry.url}: {e}")
+            raise ExtensionCatalogValidationError(
+                f"Invalid JSON in catalog from {entry.url}: {e}"
+            ) from e
 
     def _get_merged_extensions(
         self, force_refresh: bool = False
@@ -4822,12 +4834,18 @@ class ExtensionCatalog(CatalogStackBase):
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         any_success = False
+        validation_error: ExtensionCatalogValidationError | None = None
 
         for catalog_entry in active_catalogs:
             try:
                 catalog_data = self._fetch_single_catalog(catalog_entry, force_refresh)
                 any_success = True
             except ExtensionError as e:
+                if (
+                    isinstance(e, ExtensionCatalogValidationError)
+                    and validation_error is None
+                ):
+                    validation_error = e
                 print(
                     f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
                     file=sys.stderr,
@@ -4854,7 +4872,9 @@ class ExtensionCatalog(CatalogStackBase):
                     }
 
         if not any_success and active_catalogs:
-            raise ExtensionError("Failed to fetch any extension catalog")
+            if validation_error is not None:
+                raise validation_error
+            raise ExtensionCatalogFetchError("Failed to fetch any extension catalog")
 
         return list(merged.values())
 

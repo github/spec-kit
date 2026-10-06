@@ -478,17 +478,16 @@ class _WorkflowKindManager:
             )
         from ..workflows.catalog import WorkflowCatalog
 
-        _selected_catalog_info(
+        selected = _selected_catalog_info(
             "Workflow", component, WorkflowCatalog(self._root).get_workflow_info
         )
-        from .. import workflow_add
+        from ..workflows.command_add import _install_preselected_workflow
 
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
-                lambda: workflow_add(
-                    component.id, dev=False, from_url=None,
-                    **({"version": component.version} if component.version else {}),
+                lambda: _install_preselected_workflow(
+                    component.id, version=component.version, selected_info=selected,
                 ),
             )
 
@@ -531,22 +530,38 @@ class _StepKindManager:
                 "is disabled. Installing or refreshing this component requires "
                 "network access; re-run without --offline."
             )
-        from .. import workflow_step_add
-        if component.version or component.source:
-            from ..workflows.catalog import StepCatalog
+        from ..workflows.catalog import StepCatalog, StepCatalogError
+        from ..workflows.step.installer import StepInstallError, validate_step_id
 
-            _selected_catalog_info(
+        try:
+            validate_step_id(component.id)
+        except StepInstallError as exc:
+            raise BundlerError(
+                f"Invalid step '{component.id}': {exc}"
+            ) from exc
+
+        try:
+            selected = _selected_catalog_info(
                 "Step", component, StepCatalog(self._root).get_step_info
             )
+        except StepCatalogError as exc:
+            raise BundlerError(
+                f"Failed to resolve step '{component.id}': {exc}"
+            ) from exc
+        from ..workflows.step.command_add import _install_preselected_step
 
         with _chdir(self._root):
-            _delegate_command(
-                "install", f"step '{component.id}'",
-                lambda: workflow_step_add(
-                    component.id,
-                    **({"version": component.version} if component.version else {}),
-                ),
-            )
+            try:
+                _delegate_command(
+                    "install", f"step '{component.id}'",
+                    lambda: _install_preselected_step(
+                        component.id, version=component.version, selected_info=selected,
+                    ),
+                )
+            except StepInstallError as exc:
+                raise BundlerError(
+                    f"Failed to install step '{component.id}': {exc}"
+                ) from exc
 
     def refresh(self, component: ComponentRef) -> None:
         # Preserve an existing step until we've validated we can perform refresh.

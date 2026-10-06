@@ -259,7 +259,8 @@ def _install_from_url(
 
 
 def _install_from_catalog(
-    project_root: cli.Path, step_id: str, *, force: bool, version: str | None = None
+    project_root: cli.Path, step_id: str, *, force: bool, version: str | None = None,
+    selected_info: dict | None = None,
 ) -> None:
     """Install a step package from the step catalog.
 
@@ -272,15 +273,18 @@ def _install_from_catalog(
     from .catalog import StepCatalog, StepCatalogError
     from .catalog._versions import validate_checksums
 
-    catalog = StepCatalog(project_root)
-    try:
-        info = (
-            catalog.get_step_info(step_id, version=version)
-            if version is not None
-            else catalog.get_step_info(step_id)
-        )
-    except StepCatalogError as exc:
-        raise installer.StepInstallError(str(exc)) from exc
+    if selected_info is not None:
+        info = selected_info
+    else:
+        catalog = StepCatalog(project_root)
+        try:
+            info = (
+                catalog.get_step_info(step_id, version=version)
+                if version is not None
+                else catalog.get_step_info(step_id)
+            )
+        except StepCatalogError as exc:
+            raise installer.StepInstallError(str(exc)) from exc
 
     if not info:
         raise installer.StepInstallError(
@@ -536,6 +540,18 @@ def _install_from_catalog(
             # error, or report a successful install with a warning only.
 
     _print_installed(step_id, entry)
+
+
+def _install_preselected_step(
+    step_id: str, *, version: str | None, selected_info: dict,
+) -> None:
+    """Install a bundle-selected release with the normal step ID preflight."""
+    project_root = cli._require_specify_project()
+    step_helpers._validate_step_id_or_exit(step_id)
+    _install_from_catalog(
+        project_root, step_id, force=False, version=version,
+        selected_info=selected_info,
+    )
 
 
 @step_app.command("add")

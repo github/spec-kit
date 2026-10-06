@@ -68,19 +68,38 @@ def test_offline_step_refuses_without_network(tmp_path: Path):
 
 
 def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monkeypatch):
-    import specify_cli
+    from specify_cli.workflows.catalog import StepCatalog
+    from specify_cli.workflows.step import command_add
 
     calls: list[tuple[str, Path]] = []
 
-    def _add(step_id: str) -> None:
+    def _add(project_root, step_id, **options) -> None:
         calls.append((step_id, Path.cwd()))
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    (tmp_path / ".specify").mkdir()
+    monkeypatch.setattr(StepCatalog, "get_step_info", lambda self, step_id: {
+        "id": step_id, "_catalog_name": "trusted", "_install_allowed": True,
+    })
+    monkeypatch.setattr(command_add, "_install_from_catalog", _add)
     manager = _StepKindManager(tmp_path, allow_network=True)
 
     manager.install(_component("steps", "catalog-step"))
 
     assert calls == [("catalog-step", tmp_path)]
+
+
+def test_step_manager_rejects_unsafe_id_before_catalog_lookup(tmp_path, monkeypatch):
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info",
+        lambda *args, **kwargs: pytest.fail("invalid ID reached catalog lookup"),
+    )
+
+    with pytest.raises(BundlerError, match="step"):
+        primitive_manager("steps", tmp_path).install(
+            _component("steps", "../outside"),
+        )
 
 
 @pytest.mark.parametrize(
@@ -95,9 +114,11 @@ def test_catalog_workflow_and_step_pins_delegate_exact_release(
 ):
     import importlib
 
-    import specify_cli
     import specify_cli._assets as assets
+    from specify_cli.workflows import _commands as workflow_cli
+    from specify_cli.workflows.step import command_add as step_add
 
+    (tmp_path / ".specify").mkdir()
     if kind == "workflows":
         monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
     catalog = getattr(importlib.import_module(catalog_module), catalog_class)
@@ -113,10 +134,16 @@ def test_catalog_workflow_and_step_pins_delegate_exact_release(
 
     monkeypatch.setattr(catalog, lookup, get_info)
     calls = []
-    command = "workflow_add" if kind == "workflows" else "workflow_step_add"
+    installer = (
+        (workflow_cli, "_install_workflow_from_catalog")
+        if kind == "workflows"
+        else (step_add, "_install_from_catalog")
+    )
     monkeypatch.setattr(
-        specify_cli, command,
-        lambda cid, **options: calls.append((cid, options, Path.cwd())),
+        *installer,
+        lambda project_root, destination, cid=None, **options: calls.append(
+            (cid or destination, options, Path.cwd())
+        ),
     )
     component = ComponentRef(kind=kind, id="catalog-id", version="1.0.0", source="trusted")
 
@@ -124,8 +151,64 @@ def test_catalog_workflow_and_step_pins_delegate_exact_release(
 
     assert lookups == [None, "1.0.0"]
     assert calls[0][0] == component.id
-    assert calls[0][1]["version"] == "1.0.0"
+    assert calls[0][1][
+        "requested_version" if kind == "workflows" else "version"
+    ] == "1.0.0"
     assert calls[0][2] == tmp_path
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+def test_catalog_component_installs_preselected_release_without_second_lookup(
+    tmp_path, monkeypatch, kind,
+):
+    import specify_cli
+    import specify_cli._assets as assets
+    from specify_cli.workflows import _commands as workflow_cli
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+    from specify_cli.workflows.step import command_add as step_add
+
+    selected = {
+        "id": "catalog-id", "version": "1.0.0", "_catalog_name": "trusted",
+        "_install_allowed": True, "url": "https://example.com/old-release",
+    }
+    current = {**selected, "version": "2.0.0", "url": "https://example.com/latest"}
+    lookups = []
+    (tmp_path / ".specify").mkdir()
+
+    def get_info(_self, _id, version=None):
+        lookups.append(version)
+        return selected if version == "1.0.0" else current
+
+    calls = []
+    if kind == "workflows":
+        monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
+        monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", get_info)
+        monkeypatch.setattr(
+            workflow_cli, "_install_workflow_from_catalog",
+            lambda *args, **kwargs: calls.append(kwargs),
+        )
+        monkeypatch.setattr(
+            specify_cli, "workflow_add",
+            lambda *args, **kwargs: pytest.fail("workflow_add re-resolved the catalog"),
+        )
+    else:
+        monkeypatch.setattr(StepCatalog, "get_step_info", get_info)
+        monkeypatch.setattr(
+            step_add, "_install_from_catalog",
+            lambda *args, **kwargs: calls.append(kwargs),
+        )
+        monkeypatch.setattr(
+            specify_cli, "workflow_step_add",
+            lambda *args, **kwargs: pytest.fail("workflow_step_add re-resolved the catalog"),
+        )
+
+    primitive_manager(kind, tmp_path).install(ComponentRef(
+        kind=kind, id="catalog-id", version="1.0.0", source="trusted"
+    ))
+
+    assert lookups == [None, "1.0.0"]
+    assert len(calls) == 1
+    assert calls[0]["selected_info"] is selected
 
 
 @pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
@@ -189,10 +272,11 @@ def test_missing_exact_release_never_delegates_install(tmp_path, monkeypatch, ki
 
 
 def test_bundled_workflow_with_older_pin_uses_catalog_release(tmp_path, monkeypatch):
-    import specify_cli
     import specify_cli._assets as assets
+    from specify_cli.workflows import _commands as workflow_cli
     from specify_cli.workflows.catalog import WorkflowCatalog
 
+    (tmp_path / ".specify").mkdir()
     bundled = _write_manifest(tmp_path / "bundled", "workflow", "2.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: bundled)
     monkeypatch.setattr(
@@ -203,15 +287,21 @@ def test_bundled_workflow_with_older_pin_uses_catalog_release(tmp_path, monkeypa
     )
     calls = []
     monkeypatch.setattr(
-        specify_cli, "workflow_add",
-        lambda source, **options: calls.append((source, options)),
+        workflow_cli, "_install_workflow_from_catalog",
+        lambda project_root, workflows_dir, source, **options:
+            calls.append((source, options)),
     )
 
     primitive_manager("workflows", tmp_path).install(
         ComponentRef(kind="workflows", id="x", version="1.0.0")
     )
 
-    assert calls == [("x", {"dev": False, "from_url": None, "version": "1.0.0"})]
+    assert calls == [("x", {
+        "requested_version": "1.0.0",
+        "selected_info": {
+            "version": "1.0.0", "_catalog_name": "winning",
+        },
+    })]
 
 
 def test_source_on_bundled_extension_requires_catalog(tmp_path, monkeypatch):
@@ -741,8 +831,9 @@ def _plan(manifest):
     )
 
 
+@pytest.mark.parametrize("failure_stage", ["installer", "catalog"])
 def test_step_refresh_restores_registry_entry_when_reinstall_fails(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, failure_stage
 ):
     """A failed step refresh must leave the registry entry restored.
 
@@ -759,8 +850,10 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     """
     import json
 
-    import specify_cli
-    from specify_cli.workflows.catalog import StepRegistry
+    from specify_cli.bundles import primitives
+    from specify_cli.workflows.catalog import StepCatalogError, StepRegistry
+    from specify_cli.workflows.step import command_add
+    from specify_cli.workflows.step.installer import StepInstallError
 
     steps_dir = tmp_path / ".specify" / "workflows" / "steps"
     (steps_dir / "my-step").mkdir(parents=True)
@@ -795,9 +888,18 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     # Removal succeeds (real code path); only the re-install fails, which is
     # what a catalog 404 / size-limit / type_key mismatch produces.
     def _boom(step_id, *args, **kwargs):
-        raise BundlerError(f"Failed to install step '{step_id}'.")
+        raise StepInstallError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    if failure_stage == "catalog":
+        def _catalog_failure(*args):
+            raise StepCatalogError("catalog became unreachable")
+
+        monkeypatch.setattr(primitives, "_selected_catalog_info", _catalog_failure)
+    else:
+        monkeypatch.setattr(primitives, "_selected_catalog_info", lambda *args: {
+            "_catalog_name": "trusted",
+        })
+        monkeypatch.setattr(command_add, "_install_preselected_step", _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError):

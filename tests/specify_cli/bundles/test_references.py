@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.references import make_reference_checker
 from tests.specify_cli.bundles.helpers import bundled_extension_version, make_project
@@ -204,3 +206,83 @@ def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeyp
     assert check(_ref("workflows", "unreachable")) is None
     assert len(warnings) == 1
     assert "unreachable" in warnings[0]
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_online_validation_warns_for_unreachable_component_catalog(
+    tmp_path, monkeypatch, kind,
+):
+    from specify_cli.extensions import ExtensionCatalog, ExtensionCatalogFetchError
+    from specify_cli.presets import PresetCatalog
+    from specify_cli.presets._catalog import PresetCatalogFetchError
+
+    if kind == "extensions":
+        catalog, method, failure = (
+            ExtensionCatalog, "get_extension_info",
+            ExtensionCatalogFetchError("Failed to fetch any extension catalog"),
+        )
+    else:
+        catalog, method, failure = (
+            PresetCatalog, "get_pack_info",
+            PresetCatalogFetchError("Failed to fetch preset catalog from https://example.com: timed out"),
+        )
+
+    def unavailable(_self, _id, version=None):
+        raise failure
+
+    monkeypatch.setattr(catalog, method, unavailable)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref(kind, "unreachable-component")) is None
+    assert len(warnings) == 1
+    assert "unreachable" in warnings[0]
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_online_validation_rejects_malformed_component_release(
+    tmp_path, monkeypatch, kind,
+):
+    from specify_cli.extensions import ExtensionCatalog, ExtensionError
+    from specify_cli.presets import PresetCatalog
+    from specify_cli.presets._manifest import PresetError
+
+    catalog, method, failure = (
+        (ExtensionCatalog, "get_extension_info", ExtensionError("Invalid release digest"))
+        if kind == "extensions"
+        else (PresetCatalog, "get_pack_info", PresetError("Invalid release digest"))
+    )
+
+    def invalid(_self, _id, version=None):
+        raise failure
+
+    monkeypatch.setattr(catalog, method, invalid)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert "Invalid release digest" in check(_ref(kind, "invalid-component"))
+    assert warnings == []
+
+
+def test_online_validation_rejects_malformed_extension_catalog(
+    tmp_path, monkeypatch,
+):
+    from specify_cli.extensions import (
+        CatalogEntry,
+        ExtensionCatalog,
+    )
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_active_catalogs",
+        lambda self: [CatalogEntry("https://example.com/catalog.json", "trusted", 1, True)],
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False:
+            self._validate_catalog_payload({"extensions": []}, entry.url),
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert "Invalid catalog format" in check(_ref("extensions", "invalid"))
+    assert warnings == []
