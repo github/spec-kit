@@ -103,9 +103,17 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
+    # Mirror _version._get_installed_version(): a malformed installed
+    # distribution raises InvalidMetadataError, which is not a
+    # PackageNotFoundError and must not escape the fallback path.
+    metadata_errors = [importlib.metadata.PackageNotFoundError]
+    invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
+    if invalid_metadata_error is not None:
+        metadata_errors.append(invalid_metadata_error)
+
     try:
         return importlib.metadata.version("specify-cli")
-    except importlib.metadata.PackageNotFoundError:
+    except tuple(metadata_errors):
         # Fallback: try reading from pyproject.toml
         try:
             import tomllib
@@ -113,7 +121,14 @@ def get_speckit_version() -> str:
             if pyproject_path.exists():
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
-                    return data.get("project", {}).get("version", "unknown")
+                project = data.get("project") if isinstance(data, dict) else None
+                # A present but non-mapping ``project`` table must not turn
+                # into an AttributeError from the narrowing of this branch.
+                if isinstance(project, dict):
+                    version = project.get("version")
+                    if isinstance(version, str) and version:
+                        return version
+                return "unknown"
         except (OSError, KeyError, ValueError):
             pass
     return "unknown"
