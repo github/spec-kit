@@ -40,6 +40,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "kimi",
     "kiro-cli",
     "lingma",
+    "mcode",
     "vibe",
     "muse",
     "omp",
@@ -442,3 +443,27 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_rovodev(self):
         """AGENT_CONFIG should include rovodev."""
         assert "rovodev" in AGENT_CONFIG
+
+    # --- MiniMax Code consistency checks ---
+
+    def test_mcode_in_agent_config(self):
+        """AGENT_CONFIG should include mcode with skills-based scaffold metadata."""
+        assert "mcode" in AGENT_CONFIG
+        assert AGENT_CONFIG["mcode"]["folder"] == ".minimax/"
+        assert AGENT_CONFIG["mcode"]["commands_subdir"] == "skills"
+        assert AGENT_CONFIG["mcode"]["requires_cli"] is True
+
+    def test_mcode_in_extension_registrar(self):
+        """CommandRegistrar.AGENT_CONFIGS should include mcode skill scaffold metadata."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "mcode" in cfg
+        mcode_cfg = cfg["mcode"]
+        assert mcode_cfg["dir"] == ".minimax/skills"
+        assert mcode_cfg["format"] == "markdown"
+        assert mcode_cfg["args"] == "$ARGUMENTS"
+        assert mcode_cfg["extension"] == "/SKILL.md"
+
+    def test_agent_config_includes_mcode(self):
+        """AGENT_CONFIG should include mcode."""
+        assert "mcode" in AGENT_CONFIG

@@ -139,7 +139,7 @@ def add_source(
     policy: str,
     priority: int,
     source_id: str | None = None,
-) -> CatalogSource:
+) -> tuple[CatalogSource, str]:
     url = url.strip()
     if not url:
         raise BundlerError("A catalog url is required.")
@@ -183,35 +183,61 @@ def add_source(
 
     url = _canonicalize_url(url)
     install_policy = InstallPolicy.parse(policy)
-    resolved_id = (source_id or _derive_id(url)).strip()
+    requested_id = source_id.strip() if source_id is not None else ""
+    resolved_id = requested_id or _derive_id(url)
 
     catalogs = _read(project_root)
+    requested_source = CatalogSource.from_dict(
+        {
+            "id": resolved_id,
+            "url": url,
+            "priority": priority,
+            "install_policy": install_policy.value,
+        },
+        Scope.PROJECT,
+    )
+    id_collision = False
     for existing in catalogs:
-        if existing.get("id") == resolved_id or existing.get("url") == url:
+        existing_source = CatalogSource.from_dict(existing, Scope.PROJECT)
+        if existing_source.url == requested_source.url:
+            if (
+                (not requested_id or existing_source.id == requested_source.id)
+                and existing_source.priority == requested_source.priority
+                and existing_source.install_policy is requested_source.install_policy
+            ):
+                return existing_source, "unchanged"
             raise BundlerError(
                 f"Catalog source '{resolved_id}' (or url) already exists in this project."
             )
+        if existing_source.id == requested_source.id:
+            id_collision = True
 
-    entry = {
-        "id": resolved_id,
-        "url": url,
-        "priority": int(priority),
-        "install_policy": install_policy.value,
-    }
+    if id_collision:
+        raise BundlerError(
+            f"Catalog source '{resolved_id}' (or url) already exists in this project."
+        )
+
+    entry = requested_source.to_dict()
     catalogs.append(entry)
     _write(project_root, catalogs)
-    return CatalogSource.from_dict(entry, Scope.PROJECT)
+    return requested_source, "added"
 
 
 def remove_source(project_root: Path, id_or_url: str) -> str:
     target = id_or_url.strip()
-    if target in _BUILTIN_IDS:
+    catalogs = _read(project_root)
+    # Refuse a built-in id only when there is nothing project-scoped to remove.
+    # This message tells the user to "add a same-id source to override it" --
+    # and once they did, the same guard refused to delete that override, so the
+    # documented workflow had no way back short of hand-editing the config.
+    # A project-scoped entry is the user's own file and is theirs to remove;
+    # deleting it simply restores the built-in default.
+    if target in _BUILTIN_IDS and not any(c.get("id") == target for c in catalogs):
         raise BundlerError(
             f"'{target}' is a built-in default source and cannot be deleted "
             "(add a same-id source to override it instead)."
         )
 
-    catalogs = _read(project_root)
     # Prefer an exact id/url match.
     remaining = [c for c in catalogs if c.get("id") != target and c.get("url") != target]
     if len(remaining) == len(catalogs):

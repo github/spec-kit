@@ -28,14 +28,21 @@ def catalog_add(
         project_root = require_project_root()
         from ..catalog_config import add_source
 
-        source = add_source(
+        source, status = add_source(
             project_root, url, policy=policy, priority=priority, source_id=source_id
         )
     except BundlerError as exc:
         _fail(str(exc))
         return
 
-    console.print(
-        f"[green]✓[/green] Added catalog '{_escape_markup(str(source.id))}' "
-        f"(priority {source.priority}, {source.install_policy.value})."
-    )
+    safe_id = _escape_markup(str(source.id))
+    if status == "unchanged":
+        console.print(
+            f"[green]✓[/green] Catalog '{safe_id}' already configured "
+            f"(priority {source.priority}, {source.install_policy.value})."
+        )
+    else:
+        console.print(
+            f"[green]✓[/green] Added catalog '{safe_id}' "
+            f"(priority {source.priority}, {source.install_policy.value})."
+        )

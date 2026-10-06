@@ -69,7 +69,7 @@ specify bundle install <bundle_id | path>
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
 
-If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — components already present are skipped. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
+If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — components already present are skipped. Components installed outside any bundle are skipped and never adopted, so their installed version must match the manifest pin; if it doesn't, or can't be read, install and refresh stop before changing anything and name the component, so you can remove it or install the pinned version yourself. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
 
 A normal install rejects a change to an already-recorded bundle's version or owned component metadata (version, source, preset priority, or strategy), including removal of an owned component. This applies even if a local manifest keeps the same bundle version. Reordering unchanged components or adding new components does not require refresh. To apply changes to a local bundle without adding it to a catalog, pass the revised source with `--refresh`:
 
@@ -80,6 +80,8 @@ specify bundle install ./new-release/bundle.yml --refresh
 The source may also be a bundle directory or `.zip` artifact. Refresh uses the same primitive update path as `bundle update`, re-applies components owned by a bundle, and removes previously owned components omitted from the new manifest unless another bundle still needs them. Components installed independently remain untouched and are not adopted. The success summary includes refreshed and removed counts. The bundle record advances only after the operation succeeds; as with `bundle update`, already-installed components modified during a failed refresh are not rolled back.
 
 A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
+
+> **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
 
 ## Update Bundles
 
@@ -95,7 +97,9 @@ specify bundle update [<bundle_id>]
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
-> **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update <bundle_id>` for catalog bundles or `specify bundle install <path> --refresh` for local sources to re-apply owned components at their pinned versions.
+**Pinned catalog releases.** An extension or preset pinned to a version other than the one its catalog currently advertises installs that exact release when the winning catalog entry lists it under `releases`, using that release's own download URL and SHA-256 digest. The downloaded archive must declare the pinned ID and version. If the winning catalog entry has no release for the pinned version, install stops with an error rather than substituting the advertised release or falling through to a lower-priority catalog. Workflows and components bundled with Spec Kit still require the pin to match the version they resolve to.
+
+> **Pin enforcement is install-time only.** Idempotency checks are id-based, not version-aware: a component owned by a bundle that is already present is skipped during `install` without comparing its on-disk version to the manifest pin. Version pins are therefore guaranteed to be applied only when the bundler actually installs a component for the first time or refreshes it. Run `specify bundle update <bundle_id>` for catalog bundles or `specify bundle install <path> --refresh` for local sources to re-apply owned components at their pinned versions.
 
 ## Remove a Bundle
 
@@ -174,6 +178,8 @@ from; `discovery-only` sources appear in `search` and `info` but refuse
 installation. Inspect the active stack before installing a bundle from a
 non-default source.
 
+> **Vet both the bundle source and its component catalogs.** A project can supply its own bundle catalog and `install-allowed` component catalogs (extension, preset, workflow, and step) under `.specify/`; that project configuration existing is not evidence anything in it was reviewed. Before installing a bundle from an unfamiliar project, run `specify bundle catalog list` — and the equivalent `extension`/`preset`/`workflow catalog list` and `specify workflow step catalog list` commands for the components it pulls in — and treat any source you didn't add yourself as unvetted until you've reviewed it.
+
 ### List the Catalog Stack
 
 ```bash
@@ -195,6 +201,8 @@ specify bundle catalog add <url>
 | `--id`        | Explicit source id                                      |
 
 Registers a project-scoped catalog source and persists it.
+
+Re-adding the same source with the same ID, URL, policy, and priority succeeds without changing the configuration; different settings are rejected.
 
 ### Remove a Catalog Source
 

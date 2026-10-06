@@ -38,8 +38,8 @@ specify init my-project --integration copilot
 ```
 
 > **Note:** Python 3.11+ is required.
-
-> **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from https://aka.ms/powershell.
+>
+> **Windows note:** Offline scaffolding requires PowerShell 7+ (`pwsh`), not Windows PowerShell 5.x (`powershell.exe`). Install from <https://aka.ms/powershell>.
 
 ## Git Credential Manager on Linux
 

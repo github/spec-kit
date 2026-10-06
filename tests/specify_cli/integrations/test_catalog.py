@@ -878,12 +878,28 @@ class TestCatalogSourceManagement:
         entries = data["catalogs"]
         assert [e["name"] for e in entries] == ["mine", "catalog-2"]
 
-    def test_add_catalog_rejects_duplicate_url(self, tmp_path, monkeypatch):
+    def test_add_catalog_is_idempotent_for_matching_url_and_name(
+        self, tmp_path, monkeypatch
+    ):
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
-        cat.add_catalog("https://dup.example.com/catalog.json")
-        with pytest.raises(IntegrationValidationError, match="already configured"):
+        assert (
             cat.add_catalog("https://dup.example.com/catalog.json")
+            == "added"
+        )
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        original = cfg_path.read_bytes()
+
+        assert (
+            cat.add_catalog("https://dup.example.com/catalog.json")
+            == "unchanged"
+        )
+        assert cfg_path.read_bytes() == original
+
+        with pytest.raises(IntegrationValidationError, match="already configured"):
+            cat.add_catalog(
+                "https://dup.example.com/catalog.json", name="different"
+            )
 
     def test_add_catalog_rejects_invalid_url(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
@@ -1212,13 +1228,17 @@ class TestCatalogSourceManagement:
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         assert data["catalogs"][0]["url"] == "https://a.example.com/catalog.json"
 
-    def test_add_catalog_rejects_whitespace_only_duplicate(self, tmp_path, monkeypatch):
-        """A second add with only whitespace differences must be rejected as a duplicate."""
+    def test_add_catalog_accepts_whitespace_only_duplicate(
+        self, tmp_path, monkeypatch
+    ):
+        """A second add with only whitespace differences is unchanged."""
         self._isolate(tmp_path, monkeypatch)
         cat = IntegrationCatalog(tmp_path)
         cat.add_catalog("https://a.example.com/catalog.json", name="a")
-        with pytest.raises(IntegrationValidationError, match="already configured"):
+        assert (
             cat.add_catalog("  https://a.example.com/catalog.json  ")
+            == "unchanged"
+        )
 
     def test_remove_catalog_wraps_unlink_oserror(self, tmp_path, monkeypatch):
         """An OSError from `Path.unlink` surfaces as IntegrationValidationError."""

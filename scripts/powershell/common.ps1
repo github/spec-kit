@@ -167,6 +167,12 @@ function Get-FeaturePathsEnv {
         [switch]$ReturnNullOnError
     )
 
+    # SPECIFY_FEATURE_NO_PERSIST is the environment-level equivalent of -NoPersist,
+    # letting an orchestrator (multi-agent runner, CI matrix) guarantee that no
+    # script invocation in the process tree writes .specify/feature.json, even
+    # scripts that don't pass -NoPersist themselves (#4128).
+    $noPersist = [bool]$NoPersist -or $env:SPECIFY_FEATURE_NO_PERSIST -eq '1' -or $env:SPECIFY_FEATURE_NO_PERSIST -eq 'true'
+
     $repoRoot = Get-RepoRoot -ReturnNullOnError:$ReturnNullOnError
     if (-not $repoRoot) { return $null }
     $currentBranch = Get-CurrentBranch
@@ -184,7 +190,7 @@ function Get-FeaturePathsEnv {
         }
         # Persist to feature.json so future sessions without the env var still
         # work - unless the caller opted out for read-only resolution (#3025).
-        if (-not $NoPersist) {
+        if (-not $noPersist) {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
     } elseif (Test-Path $featureJson) {
@@ -321,6 +327,16 @@ function Format-SpecKitCommand {
 # Find a usable Python 3 executable (python3, python, or py -3).
 # Returns the command/arguments as an array, or $null if none found.
 function Get-Python3Command {
+    # SPECKIT_PYTHON_EXECUTABLE is the canonical override; SPECKIT_PYTHON is
+    # kept as a deprecated fallback (still used by update-agent-context.sh).
+    $override = if ($env:SPECKIT_PYTHON_EXECUTABLE) { $env:SPECKIT_PYTHON_EXECUTABLE } else { $env:SPECKIT_PYTHON }
+    if ($override -and (Get-Command $override -ErrorAction SilentlyContinue)) {
+        $ver = & $override --version 2>&1
+        if ($ver -match 'Python 3') {
+            & $override -c 'import yaml' *> $null
+            if ($LASTEXITCODE -eq 0) { return @($override) }
+        }
+    }
     if (Get-Command python3 -ErrorAction SilentlyContinue) { return @('python3') }
     if (Get-Command python -ErrorAction SilentlyContinue) {
         $ver = & python --version 2>&1

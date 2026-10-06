@@ -17,9 +17,15 @@ def workflow_catalog_add(
     project_root = cli._require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        status = catalog.add_catalog(url, name)
     except WorkflowValidationError as exc:
         cli.console.print(f"[red]Error:[/red] {exc}")
         raise cli.typer.Exit(1)
 
-    cli.console.print(f"[green]✓[/green] Catalog source added: {url}")
+    safe_url = cli._escape_markup(url.strip())
+    if status == "unchanged":
+        cli.console.print(
+            f"[green]✓[/green] Catalog source already configured: {safe_url}"
+        )
+    else:
+        cli.console.print(f"[green]✓[/green] Catalog source added: {safe_url}")

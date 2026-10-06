@@ -11,6 +11,8 @@
   items:
     - name: Installation
       href: installation.md
+    - name: Spec Kit's Agentic SDLC
+      href: guides/agentic-sdlc.md
     - name: Spec-Driven Development
       href: quickstart.md
     - name: Bug Fixing
@@ -41,6 +43,8 @@
       href: reference/overview.md
     - name: Core Commands
       href: reference/core.md
+    - name: MCP Server
+      href: reference/mcp.md
     - name: Integrations
       href: reference/integrations.md
     - name: Extensions

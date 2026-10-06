@@ -692,13 +692,36 @@ class WorkflowCatalog:
             results.append(wf_data)
         return results
 
-    def get_workflow_info(self, workflow_id: str) -> dict[str, Any] | None:
-        """Get details for a specific workflow from the catalog."""
+    def get_workflow_info(
+        self, workflow_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get the current or an exact advertised release from the winning source."""
+        from ._versions import select_release
+
         merged = self._get_merged_workflows()
         wf = merged.get(workflow_id)
-        if wf:
-            wf.setdefault("id", workflow_id)
-        return wf
+        if wf is None:
+            return None
+        wf.setdefault("id", workflow_id)
+        return select_release(wf, version)
+
+    def get_workflow_versions(self, workflow_id: str) -> list[str]:
+        """List versions advertised by the winning catalog entry."""
+        details = self.get_workflow_version_details(workflow_id)
+        return details[0] if details is not None else []
+
+    def get_workflow_version_details(
+        self, workflow_id: str
+    ) -> tuple[list[str], bool] | None:
+        """Return advertised versions and whether their source allows installation."""
+        from ._versions import available_versions
+
+        merged = self._get_merged_workflows()
+        wf = merged.get(workflow_id)
+        if wf is None:
+            return None
+        wf.setdefault("id", workflow_id)
+        return available_versions(wf), bool(wf.get("_install_allowed", True))
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""
@@ -714,10 +737,12 @@ class WorkflowCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> None:
+    def add_catalog(self, url: str, name: str | None = None) -> str:
         """Add a catalog source to the project-level config."""
+        url = url.strip()
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
+        normalized_name = str(name).strip() if name is not None else ""
 
         data: dict[str, Any] = {"catalogs": []}
         if config_path.exists():
@@ -741,8 +766,16 @@ class WorkflowCatalog:
                 "Catalog config 'catalogs' must be a list."
             )
         # Check for duplicate URL (guard against non-dict entries)
-        for cat in catalogs:
-            if isinstance(cat, dict) and cat.get("url") == url:
+        for idx, cat in enumerate(catalogs):
+            if (
+                isinstance(cat, dict)
+                and str(cat.get("url", "")).strip() == url
+            ):
+                generated_name = f"catalog-{idx + 1}"
+                existing_name = str(cat.get("name") or generated_name).strip()
+                if not normalized_name or existing_name == normalized_name:
+                    self._load_catalog_config(config_path)
+                    return "unchanged"
                 raise WorkflowValidationError(
                     f"Catalog URL already configured: {url}"
                 )
@@ -768,7 +801,7 @@ class WorkflowCatalog:
         )
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": normalized_name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
                 "priority": max_priority + 1,
                 "install_allowed": True,
@@ -785,6 +818,7 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
+        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by index (0-based). Returns the removed name."""

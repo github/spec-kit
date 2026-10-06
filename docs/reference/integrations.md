@@ -33,6 +33,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths |
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
+| [MiniMax Code](https://github.com/MiniMax-AI/minimax-code)                          | `mcode`          | Skills-based integration; installs skills into `.minimax/skills` and invokes them as `/speckit-<command>`. Headless workflow dispatch uses `--permission full` so tool actions are not blocked by headless permission gating; set `SPECKIT_INTEGRATION_MCODE_EXTRA_ARGS="--permission smart"` to use MiniMax Code's stricter policy. |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
 | [Muse Code](https://dev.meta.ai/docs/muse-code)                                     | `muse`           | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                   |
 | [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)                  | `omp`            | Installs slash commands into `.omp/commands`                                                                                               |
@@ -41,7 +42,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
 | [RovoDev](https://www.atlassian.com/software/rovo-dev)                               | `rovodev`        | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev`                                   |
-| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
+| [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           | Workflow `command` and `prompt` steps can't run through SHAI: its CLI accepts prompt text (as arguments, on stdin, or through `shai agent`), but hands it to its auto-fix agent and never loads `.shai/commands`, so those steps fail |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
@@ -99,9 +100,13 @@ Searches the active catalog stack for integrations matching the query. Without a
 
 ```bash
 specify integration info <integration_id>
+specify integration info <integration_id> --versions
 ```
 
 Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
+`--versions` lists the advertised current and historical versions from the
+winning catalog, with the current release first and older releases in descending
+version order. Discovery-only sources are labeled as such.
 
 ## Install an Integration
 
@@ -116,6 +121,12 @@ specify integration install <key>
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
+
+**Catalog history is metadata only.** `integration install` still resolves
+registered built-in implementations, not historical catalog records. There is
+no `integration install --version` or catalog-based integration distribution
+contract, even when a catalog source is marked install-allowed. Community
+catalogs remain discovery-only.
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
@@ -233,6 +244,8 @@ specify integration catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
 
+Re-adding the same URL with the same name succeeds without changing the configuration; a different name is rejected.
+
 ### Remove a Catalog
 
 ```bash
@@ -250,6 +263,56 @@ Catalogs are resolved in this order (first match wins):
 3. **User config** — `~/.specify/integration-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
 
+### Historical Integration Metadata
+
+An integration entry may retain the existing top-level fields for its advertised
+current release and add a `releases` mapping of historical version to metadata.
+Single-version entries remain valid without a `releases` key. For example:
+
+```json
+{
+  "schema_version": "1.0",
+  "integrations": {
+    "my-agent": {
+      "id": "my-agent",
+      "name": "My Agent",
+      "author": "example",
+      "version": "2.0.0",
+      "description": "Current release",
+      "repository": "https://example.com/my-agent/current",
+      "releases": {
+        "1.0.0": {
+          "description": "Historical release",
+          "repository": "https://example.com/my-agent/v1",
+          "requires": {"speckit_version": ">=0.7"}
+        }
+      }
+    }
+  }
+}
+```
+
+The top-level fields retain their original meaning for older clients and for
+unqualified `search`, `info`, `list --catalog`, and `install` commands. Historical
+records may contain `name`, `description`, `author`, `repository`, `license`,
+`tags` (a list of strings), and `requires` (a mapping). Shared identity, name,
+author, and source policy are retained; current-only metadata such as
+description, repository, tags, and requirements is **not** inherited by an
+older release unless explicitly supplied in its record. Release records cannot
+override `id`, `version`, `releases`, or source policy, and cannot advertise
+download URLs or archives.
+
+For programmatic metadata lookup,
+`IntegrationCatalog.get_integration_info(id, version="1.0.0")` selects the
+exact historical record from the winning source, or returns `None` if that
+version is missing. `get_integration_versions(id)` returns the versions
+advertised by that same source. PEP 440-equivalent spellings (such as `v1.0`
+and `1.0.0`) match the same release while retaining its catalog spelling.
+The current release must not be repeated in `releases`; malformed records and
+duplicate equivalent versions are rejected. An absent version never falls
+through to a lower-priority source or silently selects current. These lookups
+do not install an integration.
+
 ## Integration-Specific Options
 
 Some integrations accept additional options via `--integration-options`:
@@ -257,7 +320,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
-| `generic`   | `--skills`          | Render commands as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. Generic's output directory is a runtime option rather than a static per-agent folder, so this does not enable extension/preset add-on skill registration in either layout. |
+| `generic`   | `--skills`          | Render commands and installed extension invocations as `speckit-<name>/SKILL.md` directories under `--commands-dir` instead of flat `speckit.<name>.md` files. Command references and next-step guidance switch to `/speckit-<name>`. |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
@@ -268,6 +331,14 @@ Example:
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 specify integration install generic --integration-options="--commands-dir .myagent/skills --skills"
 ```
+
+Once `generic` is the active integration, `specify extension add` registers
+extension commands in its configured `--commands-dir` (as command files or
+skills according to `--skills`). `specify extension remove` removes unchanged
+extension-owned artifacts while leaving core commands, user files, and edited
+extension files intact. The core `speckit.taskstoissues` command remains
+available; installing the GitHub extension adds the namespaced replacement
+without deprecating or removing the core command.
 
 ## Scaffold a New Integration
 
@@ -315,6 +386,7 @@ The currently declared multi-install safe integrations are:
 | `kilocode` | `.kilo/commands` |
 | `kiro-cli` | `.kiro/prompts` |
 | `lingma` | `.lingma/skills` |
+| `mcode` | `.minimax/skills` |
 | `omp` | `.omp/commands` |
 | `opencode` | `.opencode/commands` |
 | `pi` | `.pi/prompts` |

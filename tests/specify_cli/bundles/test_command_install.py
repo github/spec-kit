@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -84,6 +85,44 @@ def test_local_bundle_refuses_unbundled_workflow_offline(project: Path):
 
     assert result.exit_code == 1
     assert "network access is disabled" in " ".join(result.output.lower().split())
+
+
+def test_local_bundle_refuses_independently_installed_extension_at_other_version(
+    project: Path,
+):
+    from specify_cli.bundles.records import records_path
+
+    older = project / "bug-older"
+    shutil.copytree(REPO_ROOT / "extensions" / "bug", older)
+    ext_manifest = yaml.safe_load((older / "extension.yml").read_text(encoding="utf-8"))
+    ext_manifest["extension"]["version"] = "0.0.1"
+    (older / "extension.yml").write_text(yaml.safe_dump(ext_manifest), encoding="utf-8")
+    added = runner.invoke(app, ["extension", "add", str(older), "--dev"])
+    assert added.exit_code == 0, added.output
+
+    pinned = bundled_extension_version("bug")
+    bundle_dir = project / "pins-bug"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(
+            valid_manifest_dict(
+                provides={"extensions": [{"id": "bug", "version": pinned}]}
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(bundle_dir), "--offline"])
+
+    assert result.exit_code == 1
+    assert f"extension 'bug' to {pinned}, but 0.0.1 is installed" in " ".join(
+        result.output.split()
+    )
+    assert not records_path(project).exists()
+    registry = json.loads(
+        (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+    )
+    assert registry["extensions"]["bug"]["version"] == "0.0.1"
 
 
 def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
@@ -370,7 +409,8 @@ def test_local_refresh_catalog_extension_requires_network(
     version = "1.0.0"
     downloads = []
 
-    def download_extension(self, extension_id):
+    def download_extension_info(self, info):
+        extension_id = info["id"]
         downloads.append((extension_id, version))
         artifact = tmp_path / "extension.zip"
         extension = {
@@ -400,7 +440,9 @@ def test_local_refresh_catalog_extension_requires_network(
         "get_extension_info",
         lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
     )
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", download_extension_info
+    )
     data = valid_manifest_dict(
         provides={"extensions": [{"id": "catalog-ext", "version": version}]}
     )

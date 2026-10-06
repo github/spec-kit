@@ -118,13 +118,30 @@ Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic value
 | Boolean logic | `and`, `or`, `not` | `{{ items and status == 'ok' }}` |
 | Membership | `in`, `not in` | `{{ 'error' not in status }}` |
 | Literals | strings, numbers, booleans, lists | `{{ true }}`, `{{ [1, 2] }}` |
-| Filter: `default` | `{{ val \| default('fallback') }}` | Fallback for None/empty |
+| Filter: `default` | `{{ val \| default('fallback') }}` | Fallback for `None` or an empty string |
 | Filter: `join` | `{{ list \| join(', ') }}` | Join list elements |
 | Filter: `contains` | `{{ text \| contains('sub') }}` | Substring/membership check |
 | Filter: `map` | `{{ list \| map('attr') }}` | Extract attribute from each item |
 | Filter: `from_json` | `{{ steps.emit.output.stdout \| from_json }}` | Parse a JSON string into a typed value (raises on invalid JSON) |
+| Filter: `to_json` | `{{ obj \| to_json }}` | Serialize a value to a JSON string (inverse of `from_json`; mapping keys must be strings) |
+| Filter: `upper` | `{{ text \| upper }}` | Uppercase a string (strings only) |
+| Filter: `lower` | `{{ text \| lower }}` | Lowercase a string (strings only) |
+| Filter: `split` | `{{ csv \| split(',') }}` | Split a string on a separator into a list |
+| Filter: `length` | `{{ items \| length }}` | Length of a list or string (mappings rejected) |
 
 **Single expressions** (`{{ expr }}` only) return typed values. **Mixed templates** (`"text {{ expr }} more"`) return interpolated strings.
+
+**Filter argument strictness (new filters).** The five filters added in #4766 validate their supported inputs and raise `ValueError` naming the problem rather than leaking a Python `TypeError`/`AttributeError`: `upper`/`lower` accept only strings, `split` requires a string value and a non-empty string separator, `length` accepts only lists and strings, and `to_json` requires a JSON-serializable value whose mapping keys are strings, and additionally rejects non-finite floats (`NaN`, `Infinity`, `-Infinity`), which `json.dumps` would otherwise emit as bare tokens that are not valid JSON. Keys are checked before serialization because `json.dumps` would otherwise coerce `1` to `"1"` (colliding with an existing `"1"` key), while `sort_keys=True` raises an ordering `TypeError` on mixed key types — both surfacing as a generic "not JSON-serializable" that hides the authoring mistake. Coercion is deliberately rejected for these filters: a type mismatch almost always means the pipeline is wired to the wrong variable, and a coerced result (e.g. `"3"` for an int) would hide that. Arity is checked before the argument expression is evaluated, so a filter used with the wrong number of arguments — `| upper('x')`, `| split` with no separator, `| split(',', 1)`, `| join` bare — is reported as a known filter misused, distinct from an entirely unknown name.
+
+The older filters are more permissive and are unchanged: `join` stringifies unsupported value shapes and elements, and `map`/`contains` return fallback values for unsupported inputs rather than raising.
+
+**`to_json` output is deterministic.** It pins `sort_keys=True` and `ensure_ascii=False`, so the same value always serializes to the same bytes regardless of dict insertion order or platform, and non-ASCII text is not `\uXXXX`-escaped. This buys reproducibility only — it does **not** make the result safe to pass through a shell, because expression interpolation adds no quoting or escaping. See [Interpolation and shell safety](../docs/reference/workflows.md#interpolation-and-shell-safety) before interpolating JSON into a `run` field.
+
+**Filters and comparisons.** The parser splits on the top-level `|` before looking for operators, so a comparison or other trailing token after a filter is rejected as ambiguous rather than silently evaluated (`{{ items | default(0) > 5 }}` raises) — the same holds for the new filters. The count a `length` filter would produce does not exist before the filter runs, so there is no way to write `{{ items | length > 0 }}`; the only supported branching form is the filtered value's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+
+```yaml
+condition: "{{ inputs.items | length }}"   # 0 -> False, any non-zero count -> True
+```
 
 ### Namespace
 
@@ -191,7 +208,7 @@ When `specify workflow add <id>` installs from catalog, it downloads the workflo
 
 ## Module Structure
 
-```
+```text
 src/specify_cli/
 ├── workflows/
 │   ├── __init__.py          # STEP_REGISTRY + _register_builtin_steps()

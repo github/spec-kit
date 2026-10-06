@@ -350,6 +350,51 @@ class TestForgeIntegration:
         ]
 
 
+class TestForgeExecArgs:
+    """Forge only accepts `-p/--prompt`; `--model` and `--output-format` do
+    not exist in the Forge CLI and abort dispatch with exit code 2 (#4666)."""
+
+    def test_build_exec_args_uses_prompt_flag_only(self):
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("/speckit-plan add OAuth", output_json=False)
+
+        assert args == ["forge", "-p", "/speckit-plan add OAuth"]
+
+    def test_build_exec_args_omits_output_format_flag(self):
+        """`--output-format` is not a Forge flag; requesting JSON output must
+        not append it."""
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("hello", output_json=True)
+
+        assert args == ["forge", "-p", "hello"]
+        assert "--output-format" not in args
+
+    def test_build_exec_args_omits_model_flag(self):
+        """Forge has no model-selection flag; `model` is set out of band via
+        `forge config set model`, so it must not be forwarded onto `--model`
+        or `--agent` (the latter selects an agent ID, not a model)."""
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("hello", model="gpt-4o", output_json=True)
+
+        assert args == ["forge", "-p", "hello"]
+        assert "--model" not in args
+        assert "--agent" not in args
+        assert "gpt-4o" not in args
+
+    def test_build_exec_args_applies_extra_args_before_prompt(self, monkeypatch):
+        """Forge's global flags parse before -p, so operator-injected extra
+        args go first (matches opencode / goose / codex / cursor-agent)."""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_FORGE_EXTRA_ARGS", "--verbose")
+        forge = get_integration("forge")
+
+        args = forge.build_exec_args("check the build", output_json=False)
+
+        assert args == ["forge", "--verbose", "-p", "check the build"]
+
+
 class TestForgeCommandRegistrar:
     """Test CommandRegistrar's Forge-specific name formatting."""
 

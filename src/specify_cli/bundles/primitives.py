@@ -46,18 +46,41 @@ def _assert_pinned_version(
     actual = str(advertised).strip()
     if not actual:
         return
-    from .versioning import parse_version
+    from .versioning import same_version
 
-    try:
-        matches = parse_version(actual) == parse_version(pinned)
-    except BundlerError:
-        matches = actual == str(pinned).strip()
-    if not matches:
+    if not same_version(actual, pinned):
         raise BundlerError(
             f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
             f"manifest, but the resolved version is {actual}. Update the bundle's "
             "pinned version or the source before installing."
         )
+
+
+def _select_pinned_release(
+    kind: str, component: ComponentRef, info: dict, select_release
+) -> tuple[dict, str | None]:
+    """Select the catalog release a bundle pin names.
+
+    Returns the selected release record and the version the archive must
+    declare (``None`` when the pin cannot be enforced). Selection stays within
+    the winning catalog entry, so a pinned release missing from it is an error
+    rather than a silent fall-through to the advertised release or to a
+    lower-priority catalog. An entry advertising no version cannot enforce the
+    pin, so it is installed as resolved (mirrors ``_assert_pinned_version``).
+    """
+    pinned = component.version
+    advertised = info.get("version")
+    if not pinned or advertised is None or not str(advertised).strip():
+        return info, None
+    selected = select_release(info, pinned)
+    if selected is None:
+        raise BundlerError(
+            f"{kind} '{component.id}' is pinned to version {pinned} in the bundle "
+            f"manifest, but its catalog has no release for that version (it "
+            f"advertises {str(advertised).strip()}). Update the bundle's pinned "
+            "version or the catalog before installing."
+        )
+    return selected, selected["version"]
 
 
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
@@ -84,8 +107,25 @@ def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     return None
 
 
+def _registry_version(registry, component_id: str) -> str | None:
+    """Version a primitive registry recorded for an installed component.
+
+    Returns ``None`` when there is no entry, the registry is unreadable, or the
+    entry has no usable version, meaning the installed version is unknown.
+    """
+    try:
+        entry = registry.get(component_id)
+    except Exception:  # noqa: BLE001 - unreadable registry: version unknown
+        return None
+    version = entry.get("version") if isinstance(entry, dict) else None
+    return version if isinstance(version, str) and version.strip() else None
+
+
 class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool:
+        pass
+
+    def installed_version(self, component: ComponentRef) -> str | None:
         pass
 
     def install(self, component: ComponentRef) -> None:
@@ -156,6 +196,9 @@ class _PresetKindManager:
         except Exception:  # noqa: BLE001
             return False
 
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._manager.registry, component.id)
+
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
 
@@ -203,10 +246,12 @@ class _PresetKindManager:
                 f"Preset '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Preset", component.id, component.version, info.get("version")
+        from ..presets._catalog_versions import select_release
+
+        info, expected_version = _select_pinned_release(
+            "Preset", component, info, select_release
         )
-        zip_path = catalog.download_pack(component.id)
+        zip_path = catalog.download_pack_info(info)
         try:
             self._manager.install_from_zip(
                 zip_path,
@@ -214,6 +259,11 @@ class _PresetKindManager:
                 priority,
                 catalog_name=info.get("_catalog_name"),
                 **({"force": True} if force else {}),
+                **(
+                    {"expected_id": component.id, "expected_version": expected_version}
+                    if expected_version is not None
+                    else {}
+                ),
             )
         finally:
             with contextlib.suppress(Exception):
@@ -242,6 +292,9 @@ class _ExtensionKindManager:
             return self._manager.registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._manager.registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         self._do_install(component, force=False)
@@ -293,10 +346,12 @@ class _ExtensionKindManager:
                 f"Extension '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
-        _assert_pinned_version(
-            "Extension", component.id, component.version, info.get("version")
+        from ..extensions._catalog_versions import select_release
+
+        info, expected_version = _select_pinned_release(
+            "Extension", component, info, select_release
         )
-        zip_path = catalog.download_extension(component.id)
+        zip_path = catalog.download_extension_info(info)
         try:
             manifest = self._manager.install_from_zip(
                 zip_path,
@@ -304,6 +359,11 @@ class _ExtensionKindManager:
                 priority=priority,
                 force=force,
                 catalog_name=info.get("_catalog_name"),
+                **(
+                    {"expected_id": component.id, "expected_version": expected_version}
+                    if expected_version is not None
+                    else {}
+                ),
             )
             self._manager.scaffold_config(manifest.id)
         finally:
@@ -333,6 +393,9 @@ class _WorkflowKindManager:
             return self._registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         from .._assets import _locate_bundled_workflow
@@ -423,6 +486,9 @@ class _StepKindManager:
             return self._registry.is_installed(component.id)
         except Exception:  # noqa: BLE001
             return False
+
+    def installed_version(self, component: ComponentRef) -> str | None:
+        return _registry_version(self._registry, component.id)
 
     def install(self, component: ComponentRef) -> None:
         if not self._allow_network:
