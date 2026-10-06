@@ -665,6 +665,7 @@ class WorkflowCatalog:
         merged: dict[str, dict[str, Any]] = {}
         fetch_errors = 0
         validation_error: WorkflowCatalogValidationError | None = None
+        fetch_error: WorkflowCatalogFetchError | None = None
 
         # Search uses overwrite order; exact-ID lookup visits the highest
         # priority source first and stops at its matching entry.
@@ -682,6 +683,8 @@ class WorkflowCatalog:
                     and validation_error is None
                 ):
                     validation_error = exc
+                if isinstance(exc, WorkflowCatalogFetchError) and fetch_error is None:
+                    fetch_error = exc
                 fetch_errors += 1
                 continue
             workflows = data.get("workflows", {})
@@ -725,6 +728,8 @@ class WorkflowCatalog:
             raise WorkflowCatalogFetchError(
                 "All configured catalogs failed to fetch."
             )
+        if workflow_id is not None and fetch_error is not None:
+            raise fetch_error
         return merged
 
     # -- Public API -------------------------------------------------------

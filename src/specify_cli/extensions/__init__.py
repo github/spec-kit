@@ -4853,6 +4853,7 @@ class ExtensionCatalog(CatalogStackBase):
         merged: Dict[str, Dict[str, Any]] = {}
         any_success = False
         validation_error: ExtensionCatalogValidationError | None = None
+        fetch_error: ExtensionCatalogFetchError | None = None
 
         for catalog_entry in active_catalogs:
             try:
@@ -4868,6 +4869,8 @@ class ExtensionCatalog(CatalogStackBase):
                     e, ExtensionCatalogValidationError
                 ):
                     raise
+                if isinstance(e, ExtensionCatalogFetchError) and fetch_error is None:
+                    fetch_error = e
                 print(
                     f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
                     file=sys.stderr,
@@ -4906,6 +4909,8 @@ class ExtensionCatalog(CatalogStackBase):
             if validation_error is not None:
                 raise validation_error
             raise ExtensionCatalogFetchError("Failed to fetch any extension catalog")
+        if extension_id is not None and fetch_error is not None:
+            raise fetch_error
 
         return list(merged.values())
 

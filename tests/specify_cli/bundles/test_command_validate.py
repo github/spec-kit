@@ -97,6 +97,39 @@ def test_validate_rejects_broken_reference(project: Path):
     assert "preset-a" in result.output or "ext-a" in result.output
 
 
+def test_validate_warns_instead_of_rejecting_reference_during_partial_outage(
+    project: Path, monkeypatch,
+):
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        StepCatalogFetchError,
+    )
+
+    data = valid_manifest_dict(
+        provides={"steps": [{"id": "requested", "version": "1.0.0"}]}
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    sources = [
+        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
+        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(StepCatalog, "get_active_catalogs", lambda self: sources)
+
+    def fetch(self, entry, force_refresh=False):
+        if entry.name == "low":
+            raise StepCatalogFetchError("catalog timed out")
+        return {"steps": {"other-step": {"version": "1.0.0"}}}
+
+    monkeypatch.setattr(StepCatalog, "_fetch_single_catalog", fetch)
+
+    result = runner.invoke(app, ["bundle", "validate"])
+
+    assert result.exit_code == 0, result.output
+    assert "unreachable" in result.output
+    assert "not available" not in result.output
+
+
 def test_validate_accepts_bundled_reference(project: Path):
     data = valid_manifest_dict()
     data["provides"] = {"extensions": [{

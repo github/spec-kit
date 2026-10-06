@@ -151,7 +151,7 @@ specify bundle validate
 | `--path`     | Bundle directory or `bundle.yml` (default: current directory)       |
 | `--offline`  | Verify references against bundled/installed components only          |
 
-Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; references that cannot be checked offline or because a catalog is unreachable produce warnings.
+Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; references that cannot be checked offline or because a catalog is unreachable produce warnings. A reference is not reported missing when a readable catalog lacks it but another configured catalog is unreachable; the lookup remains unverified.
 
 ## Build a Bundle Artifact
 

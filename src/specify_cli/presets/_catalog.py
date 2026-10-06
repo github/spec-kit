@@ -575,6 +575,7 @@ class PresetCatalog:
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         first_fetch_error: PresetError | None = None
+        catalog_fetch_error: PresetCatalogFetchError | None = None
         readable_source = False
 
         sources = active_catalogs if pack_id is not None else reversed(active_catalogs)
@@ -604,10 +605,14 @@ class PresetCatalog:
             except PresetError as exc:
                 if first_fetch_error is None:
                     first_fetch_error = exc
+                if isinstance(exc, PresetCatalogFetchError) and catalog_fetch_error is None:
+                    catalog_fetch_error = exc
                 continue
 
         if not readable_source and first_fetch_error is not None:
             raise first_fetch_error
+        if pack_id is not None and catalog_fetch_error is not None:
+            raise catalog_fetch_error
         return merged
 
     def is_cache_valid(self) -> bool:

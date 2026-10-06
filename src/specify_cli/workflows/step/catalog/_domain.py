@@ -633,6 +633,7 @@ class StepCatalog:
         merged: dict[str, dict[str, Any]] = {}
         fetch_errors = 0
         validation_error: StepCatalogValidationError | None = None
+        fetch_error: StepCatalogFetchError | None = None
         target_id = step_id
 
         sources = catalogs if target_id is not None else reversed(catalogs)
@@ -651,6 +652,8 @@ class StepCatalog:
                     and validation_error is None
                 ):
                     validation_error = exc
+                if isinstance(exc, StepCatalogFetchError) and fetch_error is None:
+                    fetch_error = exc
                 fetch_errors += 1
                 continue
             steps = data.get("steps", {})
@@ -695,6 +698,8 @@ class StepCatalog:
             if validation_error is not None:
                 raise validation_error
             raise StepCatalogFetchError("All configured step catalogs failed to fetch.")
+        if target_id is not None and fetch_error is not None:
+            raise fetch_error
         return merged
 
     # -- Public API -------------------------------------------------------

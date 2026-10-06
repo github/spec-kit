@@ -343,6 +343,80 @@ def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeyp
     assert "unreachable" in warnings[0]
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+@pytest.mark.parametrize(
+    ("unreachable", "has_match"),
+    [
+        ("high", False),
+        ("low", False),
+        ("high", True),
+        ("low", True),
+        (None, False),
+    ],
+)
+def test_online_validation_distinguishes_partial_outage_from_missing_reference(
+    tmp_path, monkeypatch, kind, unreachable, has_match,
+):
+    from specify_cli.extensions import (
+        CatalogEntry,
+        ExtensionCatalog,
+        ExtensionCatalogFetchError,
+    )
+    from specify_cli.presets import PresetCatalog, PresetCatalogEntry
+    from specify_cli.presets._catalog import PresetCatalogFetchError
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        StepCatalogFetchError,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+        WorkflowCatalogFetchError,
+    )
+
+    catalog, entry_type, fetch_error = {
+        "extensions": (ExtensionCatalog, CatalogEntry, ExtensionCatalogFetchError),
+        "presets": (PresetCatalog, PresetCatalogEntry, PresetCatalogFetchError),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry, WorkflowCatalogFetchError),
+        "steps": (StepCatalog, StepCatalogEntry, StepCatalogFetchError),
+    }[kind]
+    sources = [
+        entry_type("https://example.com/high.json", "high", 1, True),
+        entry_type("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+    visited = []
+
+    def fetch(self, entry, force_refresh=False):
+        visited.append(entry.name)
+        if entry.name == unreachable:
+            raise fetch_error("catalog timed out")
+        contents = {"requested": {"version": "1.0.0"}} if has_match else {}
+        return {kind: contents}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(kind, "requested"))
+    if has_match:
+        assert problem is None
+        assert warnings == []
+        assert visited == (
+            ["high", "high"]
+            if unreachable == "low"
+            else ["high", "low", "high", "low"]
+        )
+    elif unreachable is not None:
+        assert problem is None
+        assert len(warnings) == 1
+        assert "unreachable" in warnings[0]
+        assert visited == ["high", "low"]
+    else:
+        assert problem is not None and "not available" in problem
+        assert warnings == []
+        assert visited == ["high", "low"]
+
+
 @pytest.mark.parametrize("kind", ["extensions", "presets"])
 def test_online_validation_warns_for_unreachable_component_catalog(
     tmp_path, monkeypatch, kind,
