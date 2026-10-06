@@ -6,9 +6,9 @@ the Model Context Protocol (MCP). It is the MCP counterpart to
 
 Both adapters invoke the application layer defined by
 [Shared Command Application Architecture](shared.md). This document owns MCP
-tool identity, exposure, annotations, protocol mapping, and transport. It does
-not redefine semantic validation, orchestration, results, warnings, errors, or
-side effects.
+tool identity, exposure, annotations, protocol mapping, and local stdio
+hosting. It does not redefine semantic validation, orchestration, results,
+warnings, errors, or side effects.
 
 ## Design goals
 
@@ -28,17 +28,17 @@ The design optimizes for:
 - **Small working context:** changing one operation should normally require
   only its domain, CLI adapter, MCP adapter, and mirrored tests.
 - **Side-effect visibility:** project writes, execution, network access, trust
-  decisions, and self-modification are declared for MCP hosts and clients.
-- **Transport independence:** stdio and future Streamable HTTP hosting do not
-  change command behavior.
+  decisions, and self-modification are declared for review and conservatively
+  projected into standard MCP annotations.
+- **Local stdio boundary:** protocol framing and diagnostics remain outside
+  command behavior.
 
 ## Non-goals
 
 This design does not:
 
 - Make MCP a wrapper around the human CLI.
-- Require every CLI leaf to be remotely invokable regardless of risk or
-  readiness.
+- Require every CLI leaf to be invokable regardless of risk or readiness.
 - Turn existing human output into an MCP or JSON contract.
 - Make `--json`, `--non-interactive`, or an MCP invocation imply `--force`,
   trust, destructive consent, or network permission.
@@ -61,7 +61,7 @@ The MCP adapter owns:
 - Tool name, description, annotations, and protocol schemas.
 - Mapping between MCP content and shared request/outcome types.
 - Per-group MCP registration and static inventory.
-- Protocol diagnostics and transport hosting.
+- Protocol diagnostics and local stdio server hosting.
 
 It does not own semantic validation, application orchestration, side effects,
 or command-specific domain contracts. It must not invoke Typer handlers, start
@@ -144,10 +144,10 @@ workflow.step.catalog: add, list, remove
 workflow.overlay: add, set-priority, enable, disable, remove, list
 ```
 
-`mcp` is excluded because it is the transport host. Every other available leaf
-maps to a first-class tool using the naming rule above. A leaf that is
-unavailable or excluded must still have an explicit hierarchy-owned inventory
-record and reason.
+`mcp` is excluded because it starts the local stdio server. Every other
+available leaf maps to a first-class tool using the naming rule above. A leaf
+that is unavailable or excluded must still have an explicit hierarchy-owned
+inventory record and reason.
 
 This list documents the command namespaces; it is not a registration source.
 The hierarchy-owned inventory and its parity tests are authoritative.
@@ -229,8 +229,6 @@ disposition
 disposition_reason
 capabilities
 network_access
-project_scope
-default_timeout
 ```
 
 The static disposition values are:
@@ -246,9 +244,9 @@ path, or unexplained exclusion.
 
 ### Permanent and conditional exclusions
 
-`specify mcp` is permanently excluded because it hosts the MCP transport; an
-MCP tool that starts another MCP server would be recursive infrastructure, not
-an application operation.
+`specify mcp` is permanently excluded because it starts the local stdio server;
+an MCP tool that starts another MCP server would be recursive infrastructure,
+not an application operation.
 
 Other commands are not excluded merely because they mutate state. Their
 side effects are declared so MCP hosts and clients can make informed exposure
@@ -278,8 +276,9 @@ The MCP adapter projects that contract onto MCP:
 
 - Its input schema is command-specific and maps into the shared typed request.
 - It performs protocol/schema validation but no state-dependent semantic work.
-- It exposes the operation's side-effect and network metadata through tool
-  annotations and inventory.
+- It projects the operation's side-effect and network metadata into standard
+  MCP annotations while the hierarchy-owned inventory retains the exact
+  declarations.
 - It maps the shared result and warnings into command-specific structured
   content.
 - It maps expected shared errors into MCP tool errors without adding
@@ -317,7 +316,7 @@ Local stdio runs with the operating-system permissions of the server process,
 just as the CLI runs with its process user's permissions. The command
 architecture does not claim to provide a per-operation filesystem sandbox. A
 host that needs confinement runs the MCP server inside an OS sandbox, container,
-restricted account, or equivalent transport-host boundary.
+or restricted account.
 
 ## Non-interactive behavior
 
@@ -366,11 +365,30 @@ Network access is an independent declaration: `none`, `optional`, or
 `required`. A read-only search may use the network, while a project-write
 operation may be fully offline.
 
-Tool annotations and inventory conservatively reflect the operation's declared
-capabilities and network access. The stdio server does not implement an
-allow/deny policy engine or request-specific availability state. The MCP host
-or client may use metadata to hide a tool, ask for confirmation, or decline
-to invoke it.
+The hierarchy-owned inventory retains the exact capability set and network
+state for review and parity tests. Standard MCP `ToolAnnotations` are hints,
+not a lossless capability contract:
+
+- `readOnlyHint` is true only when the operation has no `project-write`,
+  `execution`, or `self-modifying` capability.
+- `destructiveHint` is true when the operation may overwrite, delete, replace,
+  or reconfigure existing state. It is false only for additive updates.
+- `idempotentHint` is true only when the operation contract guarantees that
+  repeated calls with the same arguments have no additional effect.
+- `openWorldHint` is true when network access is `optional` or `required`, or
+  when execution may interact with external entities not bounded to the
+  process, installation, or selected project.
+
+The latter three hints depend on the full operation contract and are not
+derived from the capability set alone. Exact capability names and the
+three-state network declaration remain architecture and inventory metadata,
+not protocol fields. This architecture does not require a custom `_meta`
+contract or inventory tool.
+
+The stdio server does not implement an allow/deny policy engine or
+request-specific availability state. An MCP host or client may use standard
+annotations to inform visibility or confirmation, but the hints are not an
+access-control boundary.
 
 The server still enforces semantic request requirements such as `force`,
 external-source trust, and command-specific confirmation fields because those
@@ -403,7 +421,7 @@ as the CLI.
 
 ## Timeouts, cancellation, stdin, and bounded output
 
-The transport adapter owns protocol deadlines, cancellation, and response-size
+The stdio adapter owns protocol deadlines, cancellation, and response-size
 enforcement. Operations expose focused support only when their behavior can
 cooperate with it.
 
@@ -422,23 +440,18 @@ cooperate with it.
 - MCP response-size enforcement belongs to the adapter; pagination semantics
   belong to the command hierarchy.
 
-## Transport separation
+## Local stdio server boundary
 
-`specify_cli/mcp_server/` owns server composition and transport hosting, not
-command behavior.
+`specify_cli/mcp_server/` owns server composition and stdio protocol hosting,
+not command behavior.
 
-The initial transport remains stdio:
+The MCP server runs locally over stdio because its operations act on the local
+project, Specify installation, filesystem, and host tools:
 
 - Stdout is reserved for MCP protocol frames.
 - Logs and diagnostics use stderr or the SDK's logging channel.
 - Startup banners, Rich rendering, and CLI warnings never enter stdout.
-
-Future Streamable HTTP support should add a transport host around the same
-tool registry and operation adapters. HTTP-specific authentication, sessions,
-origin checks, request sizing, and connection cancellation belong to that
-transport layer. Tool names, schemas, operation contracts, project behavior,
-and capability requirements must not change merely because the transport
-changes.
+- The server uses the launch process user's local permissions.
 
 An illustrative infrastructure layout is:
 
@@ -447,9 +460,7 @@ src/specify_cli/mcp_server/
 ├── __init__.py
 ├── server.py
 ├── registry.py
-└── transports/
-    ├── stdio.py
-    └── streamable_http.py
+└── stdio.py
 ```
 
 Create only the modules justified by implemented behavior. The layout defines
@@ -468,8 +479,8 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify structured warnings and tool errors.
 - Verify trust, timeout, cancellation, and output-budget failures.
 - Verify project-directory mapping and operation dispatch without `os.chdir()`.
-- Verify tool annotations accurately expose declared capabilities and network
-  access.
+- Verify standard tool annotations follow the conservative mapping and the
+  inventory retains exact capability and network declarations.
 
 ### Inventory tests
 
@@ -487,8 +498,6 @@ Shared operation, CLI adapter, and parity coverage follows
 
 - Keep an in-memory MCP registration and dispatch test.
 - Keep a real stdio initialize/list/call test with protocol-pure stdout.
-- Add equivalent Streamable HTTP protocol, authentication, cancellation, and
-  isolation tests when that transport exists.
 - Test malformed input, unavailable tools, internal failure sanitization, and
   output bounds as negative cases.
 
@@ -521,7 +530,6 @@ cli_path: specify version
 mcp_tool_name: specify_version
 capabilities: [local-read]
 network_access: none
-project_scope: process
 ```
 
 `_operation_version.py` owns typed version collection and `VersionResult`,
@@ -554,7 +562,6 @@ cli_path: specify artifact list
 mcp_tool_name: specify_artifact_list
 capabilities: [local-read]
 network_access: none
-project_scope: required
 ```
 
 The request contains an optional project directory. The shared operation
@@ -597,7 +604,6 @@ cli_path: specify init
 mcp_tool_name: specify_init
 capabilities: [local-read, project-write, execution]
 network_access: optional
-project_scope: creates-target
 ```
 
 The request explicitly carries the target, integration, script type, optional
@@ -639,7 +645,7 @@ Avoid:
 - Silently omitting CLI leaves from the MCP inventory.
 - Returning partial, truncated, or fallback data as a successful complete
   result.
-- Letting transport concerns leak into command contracts.
+- Letting stdio protocol concerns leak into command contracts.
 
 ## Review checklist
 
@@ -650,13 +656,14 @@ For a new or migrated MCP operation:
 - [ ] The MCP tool is first-class and has a command-specific schema.
 - [ ] The tool name and source layout mirror the CLI path.
 - [ ] The owning command hierarchy declares registration and inventory.
-- [ ] Availability, capabilities, network access, project scope, and contract
-      version are explicit.
+- [ ] Availability, capabilities, network access, and contract version are
+      explicit.
 - [ ] Non-interactive behavior does not imply force, trust, or consent.
 - [ ] Project paths are normalized and passed explicitly without `os.chdir()`.
 - [ ] Timeouts, cancellation, stdin, and output bounds are handled.
 - [ ] Existing CLI human and JSON behavior remains compatible.
 - [ ] Operation, CLI adapter, MCP adapter, parity, and protocol tests cover
       positive and negative behavior.
-- [ ] Stdio remains protocol-pure, and command behavior is transport-neutral.
+- [ ] Stdio remains protocol-pure, and command behavior stays outside server
+      hosting.
 - [ ] No command behavior was added to central MCP infrastructure.

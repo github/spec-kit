@@ -113,8 +113,6 @@ warning_types
 error_types
 capabilities
 network_access
-project_scope
-default_timeout
 ```
 
 Adapter registration extends this metadata without moving command-specific
@@ -234,8 +232,8 @@ universal application-resource abstraction.
 This architecture does not claim that an in-process path check is an operating
 system sandbox. CLI and local stdio MCP run with the permissions of their
 process user. A deployment that requires filesystem confinement must sandbox
-the MCP server process or transport host; command behavior does not implement a
-second virtual filesystem.
+the MCP server process; command behavior does not implement a second virtual
+filesystem.
 
 ## Typed outcome contract
 
@@ -269,8 +267,8 @@ The operation hierarchy owns error codes and detail schemas. Adapters map them:
 - CLI maps them to human or JSON failure output and established exit codes.
 - MCP maps them to structured tool errors.
 
-Shared errors contain no CLI exit code, Rich markup, MCP content block, HTTP
-status, traceback, raw subprocess output, or secret.
+Shared errors contain no CLI exit code, Rich markup, MCP content block,
+traceback, raw subprocess output, or secret.
 
 Unexpected exceptions are normalized by the adapter boundary to a sanitized
 internal error and logged only through the adapter's diagnostic channel.

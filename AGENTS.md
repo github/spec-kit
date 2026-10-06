@@ -22,7 +22,7 @@ Before adding or changing MCP tools for Specify commands, read
 [Shared Command Application Architecture](design/shared.md) and
 [Specify MCP Command Architecture](design/mcp.md). They define the shared
 operation boundary, typed contracts, explicit inventory, side-effect metadata,
-transport separation, and mirrored tests.
+the local stdio protocol boundary, and mirrored tests.
 
 ## Adding or Updating Agent Integrations
 
