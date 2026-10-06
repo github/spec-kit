@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import shlex
+import subprocess
+import sys
 from pathlib import Path, PurePath
 from unittest.mock import MagicMock, patch
 
@@ -3194,3 +3197,65 @@ class TestNonDestructiveRefresh:
         # The pre-existing config was NOT destroyed before the failure
         # (install handles cleanup atomically; refresh no longer pre-strips).
         assert config_path.read_text() == original
+
+
+class TestGeneratedDispatcherLogger:
+    """The generated dispatcher is standalone: it must define its own logger.
+
+    Regression for the logger conversion that reached into
+    ``_EVENTS_DISPATCHER_TEMPLATE`` without adding a logger to the generated
+    script, turning every timeout or launch failure into a ``NameError``.
+    """
+
+    def _exec_dispatcher(self, tmp_path):
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        namespace = {"__name__": "generated_events_dispatcher"}
+        exec(compile(_EVENTS_DISPATCHER_TEMPLATE, "events.py", "exec"), namespace)
+        namespace["_find_command_template"] = lambda name, root: (
+            tmp_path / "noop.md",
+            None,
+        )
+        namespace["_resolve_argv"] = lambda path, root, ext: [
+            sys.executable,
+            "-c",
+            "pass",
+        ]
+        return namespace
+
+    def test_dispatcher_defines_logger(self):
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        namespace = {"__name__": "generated_events_dispatcher"}
+        exec(compile(_EVENTS_DISPATCHER_TEMPLATE, "events.py", "exec"), namespace)
+
+        assert namespace["logger"].name == "specify.events.dispatcher"
+
+    def test_dispatcher_logs_timeout_through_logger(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        namespace = self._exec_dispatcher(tmp_path)
+
+        def _timeout(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd="demo", timeout=1)
+
+        monkeypatch.setattr(namespace["subprocess"], "run", _timeout)
+        caplog.set_level(logging.ERROR, logger="specify.events.dispatcher")
+
+        assert namespace["_run_inline"]("demo", "{}", str(tmp_path), 5) == 2
+        assert "Event demo timed out" in caplog.text
+
+    def test_dispatcher_logs_launch_error_through_logger(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        namespace = self._exec_dispatcher(tmp_path)
+
+        def _fails(*args, **kwargs):
+            raise OSError("executable not found")
+
+        monkeypatch.setattr(namespace["subprocess"], "run", _fails)
+        caplog.set_level(logging.ERROR, logger="specify.events.dispatcher")
+
+        assert namespace["_run_inline"]("demo", "{}", str(tmp_path), 5) == 2
+        assert "Event demo error: executable not found" in caplog.text
+

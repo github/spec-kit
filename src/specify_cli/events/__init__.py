@@ -95,6 +95,7 @@ both cases it resolves the event's command template and runs its script
 directly, without requiring a persistent `specify` executable on PATH.
 """
 import json
+import logging
 import os
 import re
 import shlex
@@ -102,6 +103,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+logger = logging.getLogger("specify.events.dispatcher")
 
 
 def _script_under_base(base, token, project_root):
