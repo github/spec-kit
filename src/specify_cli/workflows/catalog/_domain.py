@@ -530,7 +530,7 @@ class WorkflowCatalog:
                 raise WorkflowCatalogValidationError(
                     f"Catalog from {entry.url} is not a valid JSON object."
                 )
-            if "workflows" in data and not isinstance(data["workflows"], (dict, list)):
+            if not isinstance(data.get("workflows"), (dict, list)):
                 raise WorkflowCatalogValidationError(
                     f"Catalog from {entry.url} has malformed workflows metadata."
                 )

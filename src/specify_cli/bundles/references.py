@@ -154,19 +154,25 @@ def make_reference_checker(
         if _resolved_locally(project_root, component):
             return None
 
-        if component.kind == "presets" and component.source is None:
-            from .._assets import _locate_bundled_preset
+        if component.kind in ("presets", "extensions") and component.source is None:
+            from .._assets import _locate_bundled_extension, _locate_bundled_preset
             from . import BundlerError
             from .primitives import _assert_pinned_version, _bundled_manifest_version
 
-            bundled = _locate_bundled_preset(component.id)
+            kind = component.kind[:-1]
+            locate = (
+                _locate_bundled_preset
+                if component.kind == "presets"
+                else _locate_bundled_extension
+            )
+            bundled = locate(component.id)
             if bundled is not None:
                 try:
                     _assert_pinned_version(
-                        "Preset",
+                        kind.capitalize(),
                         component.id,
                         component.version,
-                        _bundled_manifest_version(bundled / "preset.yml", "preset"),
+                        _bundled_manifest_version(bundled / f"{kind}.yml", kind),
                     )
                 except BundlerError as exc:
                     return str(exc)

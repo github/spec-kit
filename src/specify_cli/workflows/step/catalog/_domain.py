@@ -493,7 +493,7 @@ class StepCatalog:
                 raise StepCatalogValidationError(
                     f"Catalog from {entry.url} is not a valid JSON object."
                 )
-            if "steps" in data and not isinstance(data["steps"], (dict, list)):
+            if not isinstance(data.get("steps"), (dict, list)):
                 raise StepCatalogValidationError(
                     f"Catalog from {entry.url} has malformed steps metadata."
                 )

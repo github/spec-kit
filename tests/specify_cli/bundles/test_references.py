@@ -116,13 +116,35 @@ def test_unknown_reference_warns_offline(tmp_path: Path):
     assert any("does-not-exist" in w for w in warnings)
 
 
-def test_wrong_bundled_pin_does_not_resolve_locally(tmp_path):
-    root = make_project(tmp_path)
-    warnings = []
-    check = make_reference_checker(root, allow_network=False, warnings=warnings)
+@pytest.mark.parametrize("allow_network", [False, True])
+def test_wrong_bundled_extension_pin_is_definitive(
+    tmp_path, monkeypatch, allow_network,
+):
+    from specify_cli.extensions import ExtensionCatalog
 
-    assert check(_ref("extensions", "agent-context", "999.0.0")) is None
-    assert any("agent-context" in message for message in warnings)
+    root = make_project(tmp_path)
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info",
+        lambda self, _id, version=None: {
+            "version": version or "999.0.0",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+    warnings = []
+    check = make_reference_checker(root, allow_network=allow_network, warnings=warnings)
+
+    problem = check(_ref("extensions", "agent-context", "999.0.0"))
+    assert problem is not None and "resolved version is" in problem
+    assert warnings == []
+    if allow_network:
+        assert check(ComponentRef(
+            kind="extensions", id="agent-context", version="999.0.0", source="trusted"
+        )) is None
+        assert warnings == []
+    assert check(
+        _ref("extensions", "agent-context", bundled_extension_version("agent-context"))
+    ) is None
 
 
 @pytest.mark.parametrize("allow_network", [False, True])
@@ -709,8 +731,71 @@ def test_catalog_redirect_policy_is_validation_error(
 
 
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
+@pytest.mark.parametrize("payload", [b"[]", b"{}", b'{"schema_version":"1.0"}'])
+@pytest.mark.parametrize("cached", [False, True])
 def test_online_validation_does_not_skip_malformed_higher_priority_catalog(
-    tmp_path, monkeypatch, kind,
+    tmp_path, monkeypatch, kind, payload, cached,
+):
+    import io
+    import json
+
+    from specify_cli.authentication import http
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+    )
+
+    catalog, entry = (
+        (WorkflowCatalog, WorkflowCatalogEntry)
+        if kind == "workflows"
+        else (StepCatalog, StepCatalogEntry)
+    )
+    sources = [
+        entry("https://example.com/high.json", "high", 1, True),
+        entry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+    if cached:
+        catalog_instance = catalog(tmp_path)
+        cache_file, _ = catalog_instance._get_cache_paths(sources[0].url)
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(payload)
+        monkeypatch.setattr(
+            catalog, "_is_url_cache_valid",
+            lambda self, url: url == sources[0].url,
+        )
+
+    class Response(io.BytesIO):
+        def __init__(self, url, payload):
+            super().__init__(payload)
+            self.url = url
+
+        def geturl(self):
+            return self.url
+
+    def open_url(url, **kwargs):
+        response_payload = (
+            payload if url.endswith("high.json")
+            else json.dumps({
+                kind: {"requested": {"version": "1.0.0"}},
+            }).encode()
+        )
+        return Response(url, response_payload)
+
+    monkeypatch.setattr(http, "open_url", open_url)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert "Catalog lookup failed" in check(ComponentRef(kind=kind, id="requested"))
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+@pytest.mark.parametrize("empty", [{}, []])
+def test_valid_empty_higher_priority_catalog_allows_lower_source(
+    tmp_path, monkeypatch, kind, empty,
 ):
     import io
     import json
@@ -743,19 +828,16 @@ def test_online_validation_does_not_skip_malformed_higher_priority_catalog(
             return self.url
 
     def open_url(url, **kwargs):
-        payload = (
-            b"[]" if url.endswith("high.json")
-            else json.dumps({
-                kind: {"requested": {"version": "1.0.0"}},
-            }).encode()
-        )
-        return Response(url, payload)
+        entries = empty if url.endswith("high.json") else {
+            "requested": {"version": "1.0.0"}
+        }
+        return Response(url, json.dumps({kind: entries}).encode())
 
     monkeypatch.setattr(http, "open_url", open_url)
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
-    assert "Catalog lookup failed" in check(ComponentRef(kind=kind, id="requested"))
+    assert check(ComponentRef(kind=kind, id="requested")) is None
     assert warnings == []
 
 
@@ -792,7 +874,10 @@ def test_deeply_nested_catalog_is_handled_as_malformed_data(
     }[kind]
     catalog = catalog_type(tmp_path)
     entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
-    nested = b'{"nested":' + b"[" * 10000 + b"0" + b"]" * 10000 + b"}"
+    nested = (
+        b'{"' + kind.encode() + b'":{},"nested":'
+        + b"[" * 10000 + b"0" + b"]" * 10000 + b"}"
+    )
     valid = {"schema_version": "1.0", kind: {"requested": {"version": "1.0.0"}}}
 
     class Response(io.BytesIO):
@@ -862,7 +947,10 @@ def test_deep_catalog_does_not_escape_during_cache_write(
     }[kind]
     catalog = catalog_type(tmp_path)
     entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
-    payload = b'{"nested":' + b"[" * 1200 + b"0" + b"]" * 1200 + b"}"
+    payload = (
+        b'{"' + kind.encode() + b'":{},"nested":'
+        + b"[" * 1200 + b"0" + b"]" * 1200 + b"}"
+    )
 
     class Response(io.BytesIO):
         def geturl(self):

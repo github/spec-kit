@@ -99,6 +99,8 @@ Re-resolves a bundle and **refreshes** its components through each primitive's u
 
 **Pinned catalog releases.** Extensions, presets, workflows, and steps with version pins select that exact release from the highest-priority active catalog entry. Historical releases must be advertised under `releases` with their own artifact URL and SHA-256 digest; the bundler never guesses an old URL from the current one or falls through to another catalog. The primitive installer uses the selected workflow or step record without re-reading the catalog, and verifies downloaded archive or workflow/step metadata against that release. A pinned workflow that ships with Spec Kit uses its bundled copy when the version matches, and the catalog release when it differs and network access is allowed. A step without a pin installs the current catalog release.
 
+Without an explicit `source`, bundled extensions and presets take precedence over catalog releases. Validation rejects a pin that differs from the bundled version even when a matching catalog release exists; specify the winning catalog as `source` to opt into its release.
+
 > **One installed version per component ID.** Bundles sharing a component must agree on its pinned version. A different or unknown pin from another bundle is rejected before installation, including during `bundle update`; refreshing one bundle cannot replace a version required by another.
 
 A bundle may list a component ID only once per kind; duplicate references in the same manifest are invalid, even if their pins agree.
