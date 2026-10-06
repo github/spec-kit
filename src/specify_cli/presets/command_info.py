@@ -30,6 +30,8 @@ def preset_info(
     # Direct compatibility callers receive Typer's OptionInfo default rather
     # than a parsed bool; only the CLI's explicit True enables JSON output.
     if json_output is True:
+        if versions is True:
+            emit_json_error(ValueError("--json cannot be combined with --versions"), exit_code=2)
         try:
             manager = PresetManager(resolve_specify_project_root())
             emit_json(preset_info_item(manager.list_installed(), manager, preset_id))

@@ -292,6 +292,18 @@ def test_info_json_usage_errors_are_stderr_only(command, parameter):
     assert json.loads(result.stderr) == {"error": f"Missing parameter: {parameter}"}
 
 
+def test_preset_info_json_cannot_be_combined_with_versions(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    _preset(project)
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["preset", "info", "info-preset", "--json", "--versions"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr == '{"error": "--json cannot be combined with --versions"}\n'
+
+
 def test_extension_info_json_cannot_be_combined_with_versions(tmp_path, monkeypatch):
     project = _project(tmp_path)
     _extension(project)

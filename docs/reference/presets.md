@@ -137,8 +137,9 @@ JSON object to stdout. The object has the same `id`, `name`, `description`,
 contribution in declaration order. Each entry has `name`, `description` (`""`
 when absent), `source` (the preset's `source`), `sourcePath` (the manifest
 `file`, relative to the preset directory), and `strategy` (`replace`,
-`prepend`, `append`, or `wrap`; `replace` when the manifest omits it). A preset
-that is not installed (including one that is only in a catalog), or a missing
+`prepend`, `append`, or `wrap`; `replace` when the manifest omits it). `--json`
+cannot be combined with `--versions` (usage error, exit 2). A preset that is
+not installed (including one that is only in a catalog), or a missing
 project, writes one `{"error":"..."}` object to stderr and exits 1; usage errors
 keep their exit code (normally 2), as with `list --json`.
 
