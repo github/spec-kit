@@ -333,3 +333,37 @@ def test_rebuild_preserves_existing_artifact_mode(tmp_path: Path):
 
     second = build_bundle(bundle, output_dir=out_dir)
     assert stat.S_IMODE(second.artifact_path.stat().st_mode) == 0o640
+
+
+def test_oversized_manifest_is_rejected_before_parse(tmp_path: Path):
+    """``bundle.yml`` is fully read by the manifest parser before the member
+    loop's size check runs, so that read must be bounded too.
+
+    The message must come from the manifest read (it carries the full path),
+    not from the later member check (which names only the archive name).
+    """
+    bundle = _make_bundle(tmp_path / "b")
+    manifest_path = bundle / "bundle.yml"
+    original = manifest_path.read_text(encoding="utf-8")
+    manifest_path.write_text(
+        original + "\n#" + "x" * MAX_ZIP_MEMBER_BYTES + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        build_bundle(bundle, output_dir=tmp_path / "out")
+
+    message = str(excinfo.value)
+    assert "exceeds" in message
+    assert str(manifest_path) in message
+
+
+def test_manifest_within_limit_still_builds(tmp_path: Path):
+    """A manifest under the limit keeps the normal build path working."""
+    bundle = _make_bundle(tmp_path / "b")
+    out_dir = tmp_path / "out"
+
+    result = build_bundle(bundle, output_dir=out_dir)
+
+    assert result.artifact_path.exists()
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        assert "bundle.yml" in archive.namelist()

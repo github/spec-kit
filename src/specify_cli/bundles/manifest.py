@@ -85,8 +85,8 @@ class BundleManifest:
     # -- construction ---------------------------------------------------------
 
     @classmethod
-    def from_file(cls, path: Path) -> "BundleManifest":
-        data = load_yaml(path)
+    def from_file(cls, path: Path, *, max_bytes: int | None = None) -> "BundleManifest":
+        data = load_yaml(path, max_bytes=max_bytes)
         manifest = cls.from_dict(data)
         manifest.source_path = Path(path)
         return manifest

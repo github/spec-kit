@@ -54,7 +54,10 @@ def build_bundle(
             "README.md describing it."
         )
 
-    manifest = BundleManifest.from_file(manifest_path)
+    # The member loop below bounds every packaged file, but the manifest is
+    # parsed (fully read into memory) before that loop ever runs, so bound the
+    # read here as well.
+    manifest = BundleManifest.from_file(manifest_path, max_bytes=MAX_ZIP_MEMBER_BYTES)
     report = validate_manifest(manifest)
     if not report.ok:
         raise BundlerError(
