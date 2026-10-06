@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-02T00:00:00Z",
+  "updated_at": "2026-10-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -1049,17 +1049,20 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.5.2",
+      "version": "0.5.6",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-preset-0.5.2.zip",
-      "sha256": "9920daf8b7ebe2d5e0d5e723409719afeaaa7c59788a6f3ecda67e2f7543d0b9",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.6/specassay-preset-0.5.6.zip",
+      "sha256": "6f70580f9b349df8b850f31cf02601a24263b9faaa79c48b14a6d2ff50c1260d",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.14.0,<2.0.0"
+        "speckit_version": ">=0.14.0,<2.0.0",
+        "extensions": [
+          "specassay-check"
+        ]
       },
       "provides": {
         "templates": 3,
@@ -1072,7 +1075,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-09-24T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",
