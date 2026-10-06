@@ -1,16 +1,10 @@
 # Specify MCP Command Architecture
 
-This document defines the target architecture for exposing Specify operations
-through the Model Context Protocol (MCP). It is the MCP counterpart to
+This document defines the architecture for exposing Specify operations through
+the Model Context Protocol (MCP). It is the MCP counterpart to
 [Specify CLI Command Architecture](cli.md): command paths, ownership,
-registration, contracts, tests, and migration should be predictable from the
-surface being changed.
-
-The current `src/specify_cli/mcp_server/` implementation is intentionally
-experimental and transitional. It exposes only `version` through generic
-list, describe, and run tools, invokes the CLI in a child process, and parses
-the CLI JSON result. That is a bounded first implementation, not the target
-architecture described here.
+registration, contracts, tests, and operational policy should be predictable
+from the surface being changed.
 
 ## Design goals
 
@@ -33,8 +27,6 @@ The design optimizes for:
   decisions, and self-modification are declared and enforced.
 - **Transport independence:** stdio and future Streamable HTTP hosting do not
   change command behavior.
-- **Incremental migration:** commands move to the shared model without a flag
-  day or compatibility break.
 
 ## Non-goals
 
@@ -76,9 +68,9 @@ The CLI and MCP adapters are peers:
 - The shared operation owns semantic validation, orchestration, side effects,
   typed results, warnings, and structured domain errors.
 
-Neither adapter calls the other. In particular, the target MCP adapter must
-not invoke Typer handlers, start `specify` as a child process, scrape Rich
-output, or parse CLI stderr.
+Neither adapter calls the other. In particular, the MCP adapter must not invoke
+Typer handlers, start `specify` as a child process, scrape Rich output, or
+parse CLI stderr.
 
 The shared operation is the behavioral source of truth. Adapters may differ
 in presentation, but they must not differ in what the operation means.
@@ -129,11 +121,11 @@ the reason.
 
 ### First-class tools, not a generic execution facade
 
-The target surface exposes each *eligible* CLI leaf as a first-class MCP tool.
-A generic `specify_run_command` facade is not the target.
+The MCP surface exposes each *eligible* CLI leaf as a first-class MCP tool.
+A generic `specify_run_command` facade is not part of the architecture.
 
-The current MCP SDK creates one JSON input schema per registered tool from the
-tool's typed callable. First-class tools therefore preserve:
+The MCP SDK creates one JSON input schema per registered tool from the tool's
+typed callable. First-class tools therefore preserve:
 
 - Per-command schemas and descriptions.
 - MCP client discovery and argument validation.
@@ -153,9 +145,9 @@ per command hierarchy, but not a reason to erase command-specific contracts
 behind a generic tool. Tests should derive the current count rather than
 hard-code 90.
 
-### Current transitional inventory
+### Command inventory
 
-The point-in-time CLI leaf inventory used to establish this design is:
+The CLI leaf inventory at the time this design was established is:
 
 ```text
 root: init, check, version, mcp
@@ -181,23 +173,17 @@ workflow.step.catalog: add, list, remove
 workflow.overlay: add, set-priority, enable, disable, remove, list
 ```
 
-In the current experimental server:
+`mcp` is excluded because it is the transport host. Every other available leaf
+maps to a first-class tool using the naming rule above. A leaf that is
+unavailable or excluded must still have an explicit hierarchy-owned inventory
+record and reason.
 
-- `version` is available only through the transitional generic tools and maps
-  to the target first-class tool `specify_version`.
-- `mcp` is excluded because it is the transport host.
-- The other 88 leaves are unavailable through MCP. Their initial target
-  disposition is `deferred` until their shared operation, typed contract, and
-  access-policy behavior satisfy this design.
+This list documents the command namespaces; it is not a registration source.
+The hierarchy-owned inventory and its parity tests are authoritative.
 
-This list records the migration baseline, not a second registration source.
-Once implemented, the hierarchy-owned inventory and its parity tests are
-authoritative.
-
-Metadata-only inventory or describe tools may remain for compatibility or
-diagnostics. They do not replace first-class operation tools, and a generic
-run tool should be deprecated after migrated tools cover its supported
-operations.
+Metadata-only inventory or describe tools may exist for diagnostics. They do
+not replace first-class operation tools. A generic execution tool is not part
+of this architecture.
 
 ## Naming and file layout
 
@@ -340,8 +326,8 @@ default_timeout
 The static disposition values are:
 
 - `available`: implemented and registered as a first-class tool.
-- `deferred`: the CLI leaf exists, but shared operation extraction or a typed
-  MCP contract is incomplete.
+- `unavailable`: the logical operation is known but cannot be offered in the
+  current distribution or platform; the record states the concrete reason.
 - `excluded`: the command is intentionally not an MCP operation.
 
 An available tool may have an effective runtime state of `policy-disabled`.
@@ -375,9 +361,8 @@ declared and gated by capability. For example:
   capabilities declared when their paths require them.
 - `check` launches installed host tools to inspect their versions, so it
   requires execution capability even though it does not persist changes.
-- A command that still prompts, writes directly through its Typer handler, or
-  lacks a typed result remains `deferred` until those concerns move into a
-  shared operation.
+- A command that still depends on prompts, writes directly through its Typer
+  handler, or lacks a typed result must not be marked `available`.
 
 Exclusion and deferral are reviewable architecture decisions, not silent
 omissions.
@@ -467,7 +452,8 @@ Rules for contract evolution:
 - Backward-compatible optional fields and new warning codes may retain the
   current major contract version.
 - Removing, renaming, or changing the meaning of an input, output, warning,
-  or error requires a new major contract version and a migration plan.
+  or error requires a new major contract version and an explicit compatibility
+  strategy.
 - CLI and MCP adapters for the same operation advertise the same contract
   version.
 - An adapter-only presentation change does not change the operation contract
@@ -673,8 +659,8 @@ src/specify_cli/mcp_server/
     └── streamable_http.py
 ```
 
-Create only the modules justified by implemented behavior. The layout is a
-target boundary, not a requirement to add empty files.
+Create only the modules justified by implemented behavior. The layout defines
+an architectural boundary, not a requirement to add empty files.
 
 ## Testing structure
 
@@ -728,7 +714,7 @@ The required test layers are:
 - Walk the actual CLI command tree and require one MCP inventory disposition
   for every leaf.
 - Reject duplicate operation IDs and MCP tool names.
-- Require reasons for every deferred or excluded command.
+- Require reasons for every unavailable or excluded command.
 - Verify available tools are registered by the owning hierarchy.
 - Run CLI JSON and MCP adapters against the same operation fixture and compare
   semantic result, warning, error, and side-effect behavior.
@@ -752,40 +738,6 @@ Behavioral changes follow
 [Testing deterministic behavior](../CONTRIBUTING.md#testing-deterministic-behavior):
 positive and negative evidence is required, and bug fixes need before-and-after
 regression evidence.
-
-## Incremental migration
-
-Migration proceeds by operation, preserving the experimental server until
-first-class replacements are verified.
-
-1. **Introduce shared primitives and inventory.** Add invocation context,
-   policy, warning/error primitives, and explicit per-leaf dispositions
-   without changing supported tools.
-2. **Extract `version`.** Move version collection into a typed shared
-   operation used by both `command_version.py` and `mcp_version.py`. Register
-   `specify_version` alongside the transitional generic tools and prove output
-   parity.
-3. **Add project-scoped reads.** Migrate `artifact list`, then adjacent
-   artifact inspection operations, establishing project-root and bounded
-   output behavior.
-4. **Migrate bounded mutations.** Extract shared operations for focused
-   project-write commands, preserving CLI behavior and adding explicit policy
-   and consent tests.
-5. **Migrate complex execution and initialization.** Refactor cohesive phases
-   below both adapters. Migrate `init`, workflow execution, and similar
-   commands only after cancellation, rollback, trust, and timeout contracts
-   are explicit.
-6. **Retire subprocess dispatch.** Remove per-operation child-process
-   invocation after every command supported by the generic runner has a
-   first-class tool and compatibility window.
-7. **Deprecate the generic run tool.** Keep inventory/describe diagnostics if
-   useful, but remove generic execution from the target surface.
-8. **Add Streamable HTTP.** Reuse the same registry and adapters; add only
-   transport-specific hosting and security behavior.
-
-Migration must preserve established CLI imports and monkeypatch paths through
-thin forwarders when required. Do not combine architecture migration with
-unrelated command behavior changes.
 
 ## Representative operation layouts
 
