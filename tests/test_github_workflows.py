@@ -558,7 +558,7 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
         "description",
         "author",
         "repository",
-        "release-artifact-url",
+        "download-url",
         "step-yml-url",
         "init-url",
         "extra-files",
@@ -581,7 +581,7 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
         "description",
         "author",
         "repository",
-        "release-artifact-url",
+        "download-url",
         "step-yml-url",
         "init-url",
         "extra-files",
@@ -607,6 +607,19 @@ def test_workflow_step_submission_form_has_valid_complete_field_contract():
         option["required"] is True
         for option in field_by_id["attestations"]["attributes"]["options"]
     )
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+    bundle_fields = {
+        item["id"]: item for item in bundle_form["body"] if "id" in item
+    }
+    assert field_by_id["download-url"]["attributes"]["label"] == (
+        bundle_fields["download-url"]["attributes"]["label"]
+    )
+    download_description = field_by_id["download-url"]["attributes"]["description"]
+    assert "versioned" in download_description
+    assert "immutable" not in download_description
+    assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
 
 
 def test_workflow_step_submission_form_documents_intake_only_phase():

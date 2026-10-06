@@ -22,7 +22,7 @@ through the normal reviewed pull request process.
 The built-in community catalog is **discovery-only**. Accepted entries can
 appear in `specify workflow step search` and `info`, but
 `specify workflow step add <id>` will not install executable code from that
-source. After reviewing the source, install the submitted immutable archive
+source. After reviewing the source, install the submitted versioned archive
 directly with `--from`, or use a separately configured step catalog that you
 explicitly allow for installation.
 
@@ -65,7 +65,7 @@ from provenance and disclosure fields used during manual review.
 | --- | --- |
 | Step type ID | Catalog key, `step.type_key`, and matching `StepBase.type_key` |
 | Name, version, description, author | `step.yml` metadata and catalog/installed registry metadata |
-| Release artifact URL | Immutable archive used to test the supported direct-URL installation path |
+| Download URL | Versioned release archive used to test the supported direct-URL installation path |
 | `step.yml`, `__init__.py`, and extra-file URLs | Exact HTTPS file URLs consumed when installing from an explicitly install-allowed catalog |
 | Per-file SHA-256 mapping | Catalog `sha256`; keys must be exactly the files the installer downloads |
 | Provided type name/count | Loader invariant: one matching type key per installed package |
@@ -73,11 +73,18 @@ from provenance and disclosure fields used during manual review.
 | Spec Kit compatibility | Required intake disclosure; the step catalog accepts a `requires` mapping but does not yet define or enforce a Spec Kit compatibility schema |
 | Runtime and tool dependencies | Required intake disclosure; the CLI does not resolve or install dependencies for custom steps |
 
-Use tag-pinned URLs for the release artifact, documentation, and every catalog
-file. Do not submit branch URLs, `releases/latest` URLs, or other moving
-targets. Exact-release installation from an install-allowed catalog requires a
-valid release version and a 64-character hexadecimal SHA-256 digest for
-`step.yml`, `__init__.py`, and every `extra_files` path.
+Use a versioned release URL for the archive, consistent with the other
+community submission forms. Use version-pinned URLs for every catalog file; the
+required per-file SHA-256 mapping detects changed bytes even if a referenced
+tag is later moved. Do not submit branch URLs, `releases/latest` URLs, or other
+floating targets. Exact-release installation from an install-allowed catalog
+requires a valid release version and a 64-character hexadecimal SHA-256 digest
+for `step.yml`, `__init__.py`, and every `extra_files` path.
+
+The direct `--from` archive installer does not currently accept or verify an
+archive digest. The submitted Download URL is versioned release and test
+evidence, not an immutable content guarantee; the per-file digests protect the
+separate catalog-installation path.
 
 ## Prepare a Submission
 
@@ -85,8 +92,8 @@ valid release version and a 64-character hexadecimal SHA-256 digest for
    documentation, and changelog where applicable.
 2. Test valid and invalid configuration, `StepStatus`, outputs, errors, and any
    relevant resume, nested-step, or concurrent execution behavior.
-3. Publish an immutable versioned archive (`.zip`, `.tar.gz`, or `.tgz`) and
-   test it:
+3. Publish a versioned release archive (`.zip`, `.tar.gz`, or `.tgz`) and test
+   it:
 
    ```bash
    specify workflow step add my-step \
@@ -105,7 +112,7 @@ Maintainers currently check the form manually for:
 - complete identity, release, repository, license, and documentation metadata;
 - consistency between the package ID, manifest type key, provided class, and
   version;
-- immutable release and file URLs;
+- versioned release and catalog file URLs;
 - complete per-file checksum and extra-file mappings;
 - disclosed compatibility and runtime dependencies; and
 - evidence that the released archive follows the supported package shape and

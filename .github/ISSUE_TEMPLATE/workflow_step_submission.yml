@@ -12,8 +12,9 @@ body:
         - Review the [Community Workflow Step Types guide](https://github.com/github/spec-kit/blob/main/docs/community/workflow-steps.md)
         - Publish a package containing root-level `step.yml` and `__init__.py` files
         - Ensure `step.type_key`, the catalog ID, and the matching `StepBase.type_key` are identical
-        - Create an immutable, versioned release artifact and tag-pinned URLs for every catalog-downloaded file
-        - Test the release artifact with `specify workflow step add <step-id> --from <artifact-url>`
+        - Create a GitHub release with a versioned step package archive
+        - Provide version-pinned URLs and SHA-256 digests for every catalog-downloaded file
+        - Test the release artifact with `specify workflow step add <step-id> --from <download-url>`
 
         **After submitting:** GitHub automatically applies only the `triage-must-have` intake verdict. This phase is intake-only: no validation workflow or draft pull request is triggered. Maintainers currently review the metadata manually and, when accepted, update the community catalog through the normal reviewed pull request process.
 
@@ -72,10 +73,10 @@ body:
       required: true
 
   - type: input
-    id: release-artifact-url
+    id: download-url
     attributes:
-      label: Release Artifact URL
-      description: Exact immutable `.zip`, `.tar.gz`, or `.tgz` download URL for this version; do not use a latest-release or branch URL
+      label: Download URL
+      description: URL to the versioned `.zip`, `.tar.gz`, or `.tgz` step package archive for this release
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/releases/download/v1.0.0/deploy-1.0.0.zip"
     validations:
       required: true
@@ -216,11 +217,11 @@ body:
           required: true
         - label: The catalog ID, `step.type_key`, and the matching `StepBase.type_key` are identical and do not collide with a built-in step type
           required: true
-        - label: The submitted version matches `step.version`, and every release and file URL is pinned to this immutable version
+        - label: The submitted version matches `step.version`, the download URL identifies that versioned release, and every catalog file URL is version-pinned
           required: true
         - label: The SHA-256 mapping covers exactly every file the catalog installer downloads
           required: true
-        - label: The release artifact installs successfully with `specify workflow step add <step-id> --from <artifact-url>`
+        - label: The release artifact installs successfully with `specify workflow step add <step-id> --from <download-url>`
           required: true
         - label: Runtime and tool dependencies, side effects, configuration, outputs, and failure behavior are documented
           required: true
