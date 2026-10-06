@@ -166,6 +166,14 @@ Bundle authors validate and package bundles locally, then host the generated art
 
 If your bundle references components from non-default catalogs, document those catalog URLs and test the install path from a clean project with those catalogs added. Community bundle submissions should include that dependency-resolution evidence in the [Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml) issue.
 
+### What Happens After You Submit
+
+1. GitHub applies the `triage-must-have` verdict when the issue is opened through the Bundle Submission form. Bundle submissions join extension and preset submissions in using this intake automation; the manual triage rubric for other issues remains unchanged.
+2. A maintainer reviews the issue during issue triage and applies the separate `bundle-submission` label, which starts the automated catalog validation. On this public repository, contributors cannot apply that label themselves, so there is nothing to label or re-request — the issue simply waits in triage.
+3. The automated workflow validates the submission and, when validation passes, updates `bundles/catalog.community.json` and `docs/community/bundles.md` in a draft pull request
+4. A maintainer reviews the generated pull request and merges it when approved
+5. Your bundle becomes discoverable via `specify bundle search`
+
 ## Manage Catalog Sources
 
 Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes). The built-in sources are:
