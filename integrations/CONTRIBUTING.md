@@ -66,7 +66,7 @@ integration:
   repository: "https://github.com/your-name/speckit-sample-agent"
   license: "MIT"
 requires:
-  speckit_version: ">=1.1.1.dev0"
+  speckit_version: ">=1.1.2.dev0"
   tools:
     - name: "sample-agent"
       required: true

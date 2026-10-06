@@ -98,7 +98,7 @@ integration:
   version: "1.0.0"
   description: Adapter for Sample Agent
 requires:
-  speckit_version: ">=1.1.1.dev0"
+  speckit_version: ">=1.1.2.dev0"
 ```
 
 `integration.author`, `repository`, and `license` are optional metadata.
