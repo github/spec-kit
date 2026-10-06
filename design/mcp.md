@@ -113,13 +113,8 @@ A generic facade would instead reduce the protocol-visible input to a command
 string plus an opaque or oversized union of arguments. That weakens schema
 validation, discoverability, side-effect review, and compatibility analysis.
 
-At the time this document was written, the CLI had 90 leaf commands.
-`specify mcp` is the transport host and is permanently excluded from recursive
-exposure, leaving 89 leaf operations that require an explicit inventory
-disposition. This count is large enough that registration must be organized
-per command hierarchy, but not a reason to erase command-specific contracts
-behind a generic tool. Tests should derive the current count rather than
-hard-code 90.
+Registration is organized per command hierarchy so command-specific contracts
+remain reviewable without being hidden behind a generic tool.
 
 ### Command inventory
 
