@@ -1290,6 +1290,57 @@ def test_json_extension_status_does_not_depend_on_display_message(
     }
 
 
+def test_json_exposes_extension_event_refresh_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import specify_cli.events as events
+    from specify_cli.events import EventRefreshError
+
+    monkeypatch.setattr(
+        events,
+        "refresh_integration_events",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            EventRefreshError(
+                [
+                    ("copilot", "hook write failed"),
+                    ("claude", "settings unavailable"),
+                ]
+            )
+        ),
+    )
+
+    payload = _success(
+        _invoke(
+            [
+                "project",
+                "--json",
+                "--extension",
+                "git",
+                "--ignore-agent-tools",
+            ],
+            cwd=tmp_path,
+        )
+    )
+
+    assert payload["components"]["extensions"][0]["status"] == "installed"
+    warning = next(
+        warning
+        for warning in payload["warnings"]
+        if warning["code"] == "extension_event_refresh_failed"
+    )
+    assert warning["details"]["failures"] == [
+        {
+            "integration": "copilot",
+            "reason": "hook write failed",
+        },
+        {
+            "integration": "claude",
+            "reason": "settings unavailable",
+        },
+    ]
+
+
 def test_json_exposes_force_reregistration_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
