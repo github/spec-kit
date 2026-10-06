@@ -184,6 +184,16 @@ def _catalog_shape_error(payload: Any) -> Optional[str]:
         return "missing required 'schema_version' or 'integrations' key"
     if not isinstance(payload.get("integrations"), dict):
         return "'integrations' must be a JSON object"
+    from ._catalog_versions import _validated_releases
+
+    for integration_id, entry in payload["integrations"].items():
+        if isinstance(entry, dict) and "releases" in entry:
+            if entry.get("id", integration_id) != integration_id:
+                return f"Integration '{integration_id}' has an inconsistent id."
+            try:
+                _validated_releases({**entry, "id": integration_id})
+            except IntegrationCatalogError as exc:
+                return str(exc)
     return None
 
 
@@ -464,13 +474,24 @@ class IntegrationCatalog(CatalogStackBase):
         return results
 
     def get_integration_info(
-        self, integration_id: str
+        self, integration_id: str, version: str | None = None
     ) -> Optional[Dict[str, Any]]:
-        """Return catalog metadata for a single integration, or None."""
+        """Return current or exact-version metadata from the winning catalog."""
+        from ._catalog_versions import select_release
+
         for item in self._get_merged_integrations():
             if item["id"] == integration_id:
-                return item
+                return select_release(item, version)
         return None
+
+    def get_integration_versions(self, integration_id: str) -> list[str]:
+        """Return the current and historical versions from the winning catalog."""
+        from ._catalog_versions import available_versions
+
+        for item in self._get_merged_integrations():
+            if item["id"] == integration_id:
+                return available_versions(item)
+        return []
 
     # -- Cache management -------------------------------------------------
 
