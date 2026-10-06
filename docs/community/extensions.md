@@ -171,7 +171,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Spec2Cloud | Spec-driven workflow tuned for shipping to Azure | `process` | Read+Write | [spec2cloud](https://github.com/Azure-Samples/Spec2Cloud) |
 | SpecAssay Check | Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`). | `visibility` | Read+Write | [specassay](https://github.com/rdryfoos/specassay) |
 | SpecJudge — right-size the model before you implement | Recommends the model that fits your tasks, citing the spec fragment behind every level. | `process` | Read-only | [SpecJudge](https://github.com/JoaquinRuiz/SpecJudge) |
-| SpecKit Companion | Live spec-driven progress — lifecycle capture, status, resume, living specs, and composable commands with hooks and recipes | `process` | Read+Write | [speckit-companion](https://github.com/alfredoperez/speckit-companion) |
+| SpecKit Companion | Records your spec-kit runs live: status, resume, and a health check for what actually happened. | `process` | Read+Write | [speckit-companion](https://github.com/alfredoperez/speckit-companion) |
 | SpecKit Grill Me | Exhaustively clarify specifications and optionally sync canonical domain knowledge | `process` | Read+Write | [speckit-grill-me](https://github.com/yoshi1220/speckit-grill-me) |
 | SpecTest | Auto-generate test scaffolds from spec criteria, map coverage, and find untested requirements | `code` | Read+Write | [spec-kit-spectest](https://github.com/Quratulain-bilal/spec-kit-spectest) |
 | Squad Bridge | Bootstrap and synchronize a Squad agent team from your Speckit spec and tasks. | `process` | Read+Write | [spec-kit-squad](https://github.com/jwill824/spec-kit-squad) |

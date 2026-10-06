@@ -1355,14 +1355,15 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, living specs, and composable commands you can customize with hooks and recipes.",
+      "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.20.2",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.20.2/companion-0.20.2.zip",
+      "version": "0.24.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
+      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
       "repository": "https://github.com/alfredoperez/speckit-companion",
-      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
-      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
-      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
+      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
+      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
+      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -1376,8 +1377,8 @@
         ]
       },
       "provides": {
-        "commands": 18,
-        "hooks": 4
+        "commands": 23,
+        "hooks": 6
       },
       "tags": [
         "vscode",
@@ -1390,7 +1391,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
