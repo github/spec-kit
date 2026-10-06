@@ -2,9 +2,13 @@
 
 This document defines the architecture for exposing Specify operations through
 the Model Context Protocol (MCP). It is the MCP counterpart to
-[Specify CLI Command Architecture](cli.md): command paths, ownership,
-registration, contracts, tests, and operational policy should be predictable
-from the surface being changed.
+[Specify CLI Command Architecture](cli.md).
+
+Both adapters invoke the application layer defined by
+[Shared Command Application Architecture](shared.md). This document owns MCP
+tool identity, exposure, policy, protocol mapping, and transport. It does not
+redefine semantic validation, orchestration, results, warnings, errors, or
+side effects.
 
 ## Design goals
 
@@ -45,55 +49,28 @@ This design does not:
 - Require an otherwise simple operation to be split into extra modules only
   for visual symmetry.
 
-## One logical operation, two adapters
+## Shared operation dependency
 
-For every MCP-eligible CLI leaf, the architecture has three conceptual
-layers:
+An MCP tool is a delivery adapter for a logical operation defined by
+[the shared architecture](shared.md). It maps MCP input into the shared typed
+request and maps the shared outcome into MCP structured content or a tool
+error.
 
-```text
-CLI arguments/options ─┐
-                      ├─> shared operation request -> application behavior
-MCP tool input JSON ───┘                          -> operation outcome
+The MCP adapter owns:
 
-operation outcome ─────┬─> CLI human or JSON rendering
-                       └─> MCP structured content or tool error
-```
+- Tool name, description, annotations, and protocol schemas.
+- Mapping between MCP content and shared request/outcome types.
+- Per-group MCP registration and static inventory.
+- Access-policy enforcement for MCP invocation.
+- Protocol diagnostics and transport hosting.
 
-The CLI and MCP adapters are peers:
+It does not own semantic validation, application orchestration, side effects,
+or command-specific domain contracts. It must not invoke Typer handlers, start
+`specify` as application dispatch, scrape Rich output, or parse CLI stderr.
 
-- The CLI adapter owns Typer/Click declarations, terminal interaction, human
-  rendering, exit codes, and CLI JSON serialization.
-- The MCP adapter owns tool metadata, MCP input/output schemas, protocol
-  result conversion, and MCP annotations.
-- The shared operation owns semantic validation, orchestration, side effects,
-  typed results, warnings, and structured domain errors.
-
-Neither adapter calls the other. In particular, the MCP adapter must not invoke
-Typer handlers, start `specify` as a child process, scrape Rich output, or
-parse CLI stderr.
-
-The shared operation is the behavioral source of truth. Adapters may differ
-in presentation, but they must not differ in what the operation means.
-
-## Ownership boundaries
-
-| Concern | Owner |
-| --- | --- |
-| Semantic request and result models | The relevant command/domain hierarchy |
-| Semantic validation and orchestration | The shared operation/application module |
-| Domain errors and warning codes | The relevant command/domain hierarchy |
-| CLI arguments, prompts, text, JSON streams, and exit codes | `command_<name>.py` |
-| MCP tool name, description, annotations, and protocol conversion | `mcp_<name>.py` |
-| Per-group MCP registration and command inventory | The hierarchy's `_mcp.py` or small package registration module |
-| Cross-command invocation context and access-policy primitives | Shared MCP/application infrastructure |
-| MCP server lifecycle and transport hosting | `specify_cli/mcp_server/` |
-| Authentication and connection concerns for future HTTP hosting | The HTTP transport layer |
-
-Command-specific contracts do not belong in a central MCP catalog. Shared MCP
-infrastructure may define primitives such as `InvocationContext`,
-`OperationWarning`, `OperationError`, access policy, cancellation, and output
-budgets. It must not accumulate command-specific request models, result
-models, validation, or orchestration.
+Shared MCP infrastructure may define policy and protocol primitives. It must
+not become a central catalog of command-specific request models, results,
+validation, or orchestration.
 
 ## Operation identity and MCP tool design
 
@@ -215,10 +192,8 @@ The conventions are:
 - `_mcp.py` owns explicit MCP registration and inventory for a command group.
 - Nested directories continue to correspond to real CLI namespaces or bounded
   subdomains, following [the CLI design](cli.md#nested-command-groups).
-- The shared operation lives in the closest Typer-free domain module when one
-  already exists.
-- If a dedicated application entry point is needed, use
-  `_operation_<name>.py`.
+- Shared operation and phase modules follow
+  [the shared naming rules](shared.md#naming-and-layout).
 - Tests mirror these names under `tests/specify_cli/`.
 
 Do not create a top-level MCP mirror of the entire CLI tree under
@@ -230,65 +205,6 @@ Do not add `_mcp.py` merely for symmetry. A package with one small tool may
 register it through an existing focused registration module. Create `_mcp.py`
 when the hierarchy needs an explicit list of several tools, shared adapter
 helpers, or inventory dispositions.
-
-## Simple and complex operations
-
-The same cohesion rules used for command-private phases apply below both
-adapters.
-
-### Simple operation
-
-A simple operation may use an existing domain module or one focused operation
-module:
-
-```text
-command_version.py
-mcp_version.py
-_operation_version.py
-```
-
-Both adapters map to the typed operation in `_operation_version.py`. No extra
-phase module is required.
-
-### Complex operation
-
-When a shared operation has cohesive phases with distinct invariants or
-failure behavior, use:
-
-```text
-_operation_<name>.py
-_operation_<name>_<phase>.py
-```
-
-For example:
-
-```text
-command_init.py
-mcp_init.py
-_operation_init.py
-_operation_init_validation.py
-_operation_init_plan.py
-_operation_init_apply.py
-_operation_init_finalize.py
-```
-
-`_operation_init.py` remains the application entry point. Phase modules do not
-register CLI commands or MCP tools.
-
-Adapter-only phases retain adapter-specific names:
-
-```text
-_command_<name>_<phase>.py
-_mcp_<name>_<phase>.py
-```
-
-Use them only when the phase genuinely belongs to presentation or protocol
-adaptation. If both adapters need the phase, it belongs below them as an
-operation or domain phase.
-
-Do not split a linear operation because it crossed an arbitrary line count.
-Split when a phase has distinct invariants, rollback behavior, inputs,
-outputs, or tests.
 
 ## Registration and explicit inventory
 
@@ -373,155 +289,48 @@ declared and gated by capability. For example:
 Unavailability and exclusion are reviewable architecture decisions, not silent
 omissions.
 
-## Command contracts
+## MCP contract projection
 
-### Typed requests
+Shared request, outcome, warning, error, validation, and contract-version rules
+are defined by
+[Shared Command Application Architecture](shared.md#typed-request-contract).
+The MCP adapter projects that contract onto MCP:
 
-The command/domain hierarchy owns a typed request model for semantic inputs.
-The model:
+- Its input schema is command-specific and maps into the shared typed request.
+- It performs protocol/schema validation but no state-dependent semantic work.
+- It invokes the shared validation and authorization lifecycle before
+  application behavior.
+- It maps the shared result and warnings into command-specific structured
+  content.
+- It maps expected shared errors into MCP tool errors without adding
+  success-shaped fallbacks.
+- It exposes the operation's declared `contract_version` through tool or
+  inventory metadata.
 
-- Uses domain names rather than CLI flag spellings.
-- Distinguishes omitted values from explicit false or empty values.
-- Rejects unknown fields.
-- Represents paths, enums, identifiers, and bounded collections explicitly.
-- Contains explicit consent fields such as `force` or
-  `trust_extension_urls` only when the operation supports them.
-
-The CLI adapter maps parsed arguments and options into the request. The MCP
-adapter exposes a command-specific JSON schema and maps schema-validated tool
-input into the same request.
-
-Typer usage errors remain CLI concerns. Pure request errors and state-dependent
-semantic errors belong to the operation so both adapters report the same
-failure.
-
-### Validation and authorization order
-
-Capability authorization occurs before any state-dependent validation. The
-invocation sequence is:
-
-1. The adapter parses and schema-validates transport input without filesystem,
-   network, environment, or process access.
-2. The operation performs capability-free request validation. It may check
-   types, enum values, mutually exclusive fields, required combinations, and
-   other invariants derived solely from request values and static operation
-   metadata.
-3. The operation computes `required_capabilities(request)` and request-specific
-   network requirements. This computation is pure and performs no I/O.
-4. The access-policy layer authorizes every computed capability, network
-   requirement, and requested root. A denial stops the invocation.
-5. Only after authorization may the operation resolve project state and run
-   state-dependent semantic validation, such as checking an integration,
-   reading project files, consulting a catalog, or inspecting an installed
-   tool.
-6. The operation performs its side effects and returns its typed outcome.
-
-The capability computation must conservatively cover every path reachable
-from the validated request. Stateful validation must not discover and then
-exercise an additional unauthorized capability. If an invariant cannot be
-checked without a capability, the check belongs after authorization.
-
-### Typed results and warnings
-
-The operation returns a typed outcome containing:
-
-- The command-specific result.
-- Zero or more structured warnings.
-- Execution metadata needed by adapters, such as changed paths or whether a
-  transaction committed.
-
-Warnings have a stable `code`, human-readable `message`, and optional typed
-details. A warning is not printed inside the operation. The CLI adapter
-renders it to the appropriate human or JSON channel; the MCP adapter includes
-it in the command-specific structured result.
-
-Output types remain command-owned. There is no mandatory universal
-`{"ok": true, "result": ...}` envelope. A shared outcome type is an internal
-application mechanism, not a reason to replace established machine contracts.
-
-### Structured errors
-
-Expected failures use a typed operation error with:
-
-```text
-code
-message
-details
-retryable
-```
-
-The operation hierarchy owns the error code and details schema. The CLI
-adapter maps it to human output or the command's JSON failure contract and
-maps stable operation error codes to established CLI exit codes. The MCP
-adapter maps it to an MCP tool error with structured content. Neither adapter
-exposes a traceback, secret, raw subprocess output, or success-shaped
-fallback.
-
-Unexpected exceptions are normalized at the adapter boundary to a sanitized
-`internal_error`, logged only through the transport-appropriate diagnostic
-channel.
-
-## Machine contracts and version metadata
-
-Existing CLI JSON contracts are compatibility constraints. Extracting a
-shared operation must preserve field names, value semantics, stdout/stderr
-purity, and error behavior unless a separately reviewed contract change says
-otherwise.
-
-Each logical operation declares a `contract_version` in its inventory and MCP
-tool metadata. The version identifies the request/result/warning/error
-contract, not the MCP transport version or CLI package version.
-
-Contract version metadata must not be injected into an established result
-whose schema does not already contain it. For example, the current
-`specify version --json` result intentionally returns `cli_version`,
-`runtime`, `system`, and `features` directly. Its MCP tool should preserve
-that result shape while exposing the contract version through tool or
-inventory metadata.
-
-Rules for contract evolution:
-
-- Backward-compatible optional fields and new warning codes may retain the
-  current major contract version.
-- Removing, renaming, or changing the meaning of an input, output, warning,
-  or error requires a new major contract version and an explicit compatibility
-  strategy.
-- Both adapters conform to the contract version declared by the
-  hierarchy-owned inventory. MCP exposes that version through tool or
-  inventory metadata; CLI contract tests reference the same declaration and
-  lock its machine result, warning, and error shapes without adding a new CLI
-  output field.
-- An adapter-only presentation change does not change the operation contract
-  version.
-- Tests lock established JSON shapes and MCP schemas at the command boundary.
+MCP protocol envelopes do not force a universal application result envelope.
+The command/domain hierarchy continues to own the semantic result shape.
+Unexpected exceptions become sanitized `internal_error` tool failures and are
+logged only through the MCP diagnostic channel.
 
 ## Invocation context and project resolution
 
-Shared operations receive an immutable invocation context rather than reading
-transport globals:
-
-```text
-InvocationContext
-├── launch_working_directory
-├── project_root
-├── allowed_roots
-├── access_policy
-├── deadline
-├── cancellation
-└── output_budget
-```
+The MCP adapter constructs the immutable
+[shared invocation context](shared.md#invocation-context) from server launch
+state, host roots, active policy, and call lifecycle.
 
 Project-scoped MCP tools accept an optional project directory when their use
 case needs one. If omitted, project discovery starts from the server launch
-working directory, matching normal CLI behavior. Resolution uses the same
-domain helper as the CLI and produces the same semantic errors.
+working directory, matching normal CLI behavior. The adapter carries that
+requested context into the shared request; after capability authorization, the
+shared operation resolves the project through the same domain helper used by
+CLI and produces the same semantic errors.
 
-The adapter resolves and normalizes paths before invoking the operation:
+The invocation follows these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Pass the resolved project root explicitly through the operation and its
-  phases.
+- Pass the requested directory and allowed roots explicitly; pass the resolved
+  project root through operation phases after shared resolution.
 - Enforce host-provided allowed roots when available.
 - Reject a path outside allowed roots with a structured policy error.
 - Do not infer the project from an unrelated server process state after the
@@ -558,19 +367,10 @@ enforces operation requirements.
 
 ## Capability requirements and access policy
 
-Every operation declares a set of independent capabilities. Policy must
-authorize every capability required by the validated request; choosing one
-"highest" class is not sufficient.
-
-| Capability | Meaning | Representative commands |
-| --- | --- | --- |
-| `local-read` | Reads process, host, or project state within allowed roots without persistent mutation | `version`, `artifact list` |
-| `project-write` | Creates or changes files or configuration within an allowed project/target root | `init`, `extension add`, `preset enable` |
-| `execution` | Starts host tools, workflows, hooks, agent/tool processes, or other executable behavior | `check`, `workflow run`, `workflow resume`, `event run` |
-| `self-modifying` | Changes the Specify installation, server runtime, or machine-level state | `self upgrade` |
-
-Capabilities are cumulative requirements, not a hierarchy with implied
-permissions. Examples:
+Operations declare and compute capabilities according to
+[the shared capability contract](shared.md#capability-declarations). MCP policy
+must authorize every request-required capability; choosing one "highest" class
+is not sufficient. Examples:
 
 ```text
 version       -> {local-read}
@@ -578,18 +378,6 @@ check         -> {local-read, execution}
 workflow.run  -> {local-read, project-write, execution}
 self.upgrade  -> {local-read, execution, self-modifying}
 ```
-
-The inventory declares the conservative set of capabilities any request for
-the operation may require. When options activate materially different paths,
-the command-owned operation may implement
-`required_capabilities(request) -> set[Capability]` to compute the exact
-subset after capability-free request validation. The computation uses only
-request values and static operation metadata and must perform no filesystem,
-network, environment, or process access. For example, `init` declares
-`{local-read, project-write, execution}` because its normal tool checks launch
-host binaries; a validated request that explicitly skips those checks may not
-require `execution`. The MCP adapter and access-policy layer must not
-independently infer or reduce the set.
 
 `read-only` is a derived description, not an authorizable capability. A
 request is read-only only when it requires no `project-write`, `execution`, or
@@ -621,9 +409,8 @@ missing capabilities. A runtime describe surface may report
 
 An operation must not omit a capability merely because the path is rare,
 optional, expected to be idempotent, or combined with a more powerful
-capability. The static declaration contains the union of possible
-requirements; request-specific evaluation may only narrow it from validated
-inputs.
+capability. MCP enforces the shared operation's static and request-specific
+declarations; it does not infer or reduce them independently.
 
 ## Trust, confirmation, and network responsibilities
 
@@ -702,42 +489,9 @@ an architectural boundary, not a requirement to add empty files.
 
 ## Testing structure
 
-Tests mirror source ownership:
-
-```text
-src/specify_cli/artifacts/_operation_list.py
-tests/specify_cli/artifacts/test_operation_list.py
-
-src/specify_cli/artifacts/command_list.py
-tests/specify_cli/artifacts/test_command_list.py
-
-src/specify_cli/artifacts/mcp_list.py
-tests/specify_cli/artifacts/test_mcp_list.py
-```
-
-Private operation phases use:
-
-```text
-src/specify_cli/_operation_init_validation.py
-tests/specify_cli/test_operation_init_validation.py
-```
-
-The required test layers are:
-
-### Operation tests
-
-- Cover valid requests and intended results.
-- Cover invalid inputs, prevented behavior, and domain failures.
-- Verify warnings, typed errors, side effects, rollback, cancellation, and
-  bounded behavior where applicable.
-- Avoid Typer, MCP transport, and Rich assertions.
-
-### CLI adapter tests
-
-- Verify argument and option mapping.
-- Verify prompts and non-interactive behavior.
-- Verify human rendering, JSON streams, and exit codes.
-- Preserve established help and compatibility import paths.
+Shared operation, CLI adapter, and parity coverage follows
+[the shared testing structure](shared.md#testing-structure) and
+[the CLI test structure](cli.md#test-structure). MCP adds the following layers.
 
 ### MCP adapter tests
 
@@ -747,21 +501,15 @@ The required test layers are:
 - Verify access-policy, trust, timeout, cancellation, and output-budget
   failures.
 
-### Inventory and parity tests
+### Inventory tests
 
 - Walk the actual CLI command tree and require one MCP inventory disposition
   for every leaf.
 - Reject duplicate operation IDs and MCP tool names.
 - Require reasons for every unavailable or excluded command.
 - Verify available tools are registered by the owning hierarchy.
-- Run CLI JSON and MCP adapters against the same operation fixture and compare
-  semantic result, warning, error, and side-effect behavior.
 - Preserve total pytest collection when tests move, as required by the CLI
   architecture.
-
-Adapter parity does not require byte-identical human terminal output. It
-requires both adapters to invoke the same operation contract with equivalent
-inputs and to represent the same outcome without inventing behavior.
 
 ### Protocol tests
 
