@@ -100,29 +100,45 @@ class StepRegistry:
         return False
 
     def _load(self) -> dict[str, Any]:
-        """Load registry from disk or create default."""
+        """Load registry from disk or create default.
+
+        Raises ``OSError`` when the registry exists but cannot be read or is
+        not a valid registry document, instead of silently handing back an
+        empty registry and hiding the corruption from the caller.
+        """
         default_registry: dict[str, Any] = {"schema_version": self.SCHEMA_VERSION, "steps": {}}
         # Defense-in-depth: refuse to read the registry if any parent directory
         # under .specify/workflows/steps is a symlink, which could redirect the
-        # read outside the project root.
-        if self._has_symlinked_parent():
-            return default_registry
-        # Defense-in-depth: also refuse to read a symlinked registry file,
-        # which could redirect the read outside the project root.
-        if self.registry_path.is_symlink():
-            return default_registry
+        # read outside the project root, or if the registry file itself is one.
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                f"Refusing to read step registry at {self.registry_path}: "
+                "a parent directory or the registry file itself is a symlink"
+            )
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
-                # Validate shape: must be a dict with a dict "steps" field
-                if not isinstance(data, dict):
-                    return default_registry
-                if not isinstance(data.get("steps"), dict):
-                    data["steps"] = {}
-                return data
-            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
-                return default_registry
+            except OSError as exc:
+                raise OSError(
+                    f"Failed to read step registry at {self.registry_path}: {exc}"
+                ) from exc
+            except (json.JSONDecodeError, ValueError, UnicodeError) as exc:
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: {exc}"
+                ) from exc
+            # Validate shape: must be a dict with a dict "steps" field
+            if not isinstance(data, dict):
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: "
+                    "top-level value must be an object"
+                )
+            if not isinstance(data.get("steps"), dict):
+                raise OSError(
+                    f"Step registry at {self.registry_path} is corrupted: "
+                    "'steps' must be an object"
+                )
+            return data
         return default_registry
 
     def save(self) -> None:
