@@ -315,8 +315,10 @@ logged only through the MCP diagnostic channel.
 ## Invocation context and project resolution
 
 The MCP adapter constructs the immutable
-[shared invocation context](shared.md#invocation-context) from server launch
-state, host roots, active policy, and call lifecycle.
+[shared pre-authorization context](shared.md#invocation-context) from the
+requested directory, server launch state, host roots, active policy, and call
+lifecycle. It performs no project discovery or filesystem resolution while
+constructing that context.
 
 Project-scoped MCP tools accept an optional project directory when their use
 case needs one. If omitted, project discovery starts from the server launch
@@ -329,10 +331,13 @@ The invocation follows these rules:
 
 - Do not call `os.chdir()` for an MCP request. A long-lived server may process
   concurrent or sequential calls with different project contexts.
-- Pass the requested directory and allowed roots explicitly; pass the resolved
-  project root through operation phases after shared resolution.
-- Enforce host-provided allowed roots when available.
-- Reject a path outside allowed roots with a structured policy error.
+- Pass the unresolved requested directory and host-provided allowed roots
+  explicitly.
+- Perform preliminary policy checks without filesystem access, then resolve
+  the canonical project root under authorized `local-read`.
+- Re-check canonical allowed-root containment after resolution and reject
+  escapes with a structured policy error.
+- Pass only the authorized resolved project root through operation phases.
 - Do not infer the project from an unrelated server process state after the
   invocation begins.
 
@@ -585,12 +590,13 @@ network_access: none
 project_scope: required
 ```
 
-The request contains an optional project directory. Project resolution
-produces a normalized root in the invocation context. `_operation_list.py`
-uses `ArtifactCatalog` and returns typed artifact rows. The CLI adapter
-preserves its JSON stream contract; the MCP adapter exposes the rows through
-its output schema and never captures CLI stdout. Invocation output budgets
-must produce explicit bounded-output behavior rather than silent truncation.
+The request contains an optional project directory. After authorization,
+project resolution produces a canonical root in the authorized operation
+context and re-checks allowed-root containment. `_operation_list.py` uses
+`ArtifactCatalog` and returns typed artifact rows. The CLI adapter preserves
+its JSON stream contract; the MCP adapter exposes the rows through its output
+schema and never captures CLI stdout. Invocation output budgets must produce
+explicit bounded-output behavior rather than silent truncation.
 
 ### `init`: complex project mutation
 

@@ -21,8 +21,9 @@ The shared layer optimizes for:
   explicit and testable.
 - **Transport neutrality:** shared contracts contain no Typer, Rich, MCP,
   stdout/stderr, protocol, or exit-code concerns.
-- **Explicit context:** project roots, policy, deadlines, cancellation, and
-  output budgets are passed rather than read from mutable process globals.
+- **Explicit context:** requested directories, authorized project roots,
+  policy, deadlines, cancellation, and output budgets are passed rather than
+  read from mutable process globals.
 - **Reviewable ownership:** application behavior has a predictable source and
   mirrored tests.
 
@@ -205,10 +206,12 @@ authorized. Invocation follows this order:
    only request values and static operation metadata.
 3. The shared operation computes request-required capabilities, network
    requirements, and requested roots without I/O.
-4. The applicable policy layer authorizes those requirements. A denial stops
-   the invocation.
-5. Under authorized capabilities, the shared operation resolves project
-   context and performs state-dependent validation.
+4. The applicable policy layer authorizes those requirements and performs a
+   preliminary allowed-root check on the unresolved requested path. A denial
+   stops the invocation.
+5. Under authorized `local-read`, the shared operation resolves the canonical
+   project or target root, re-checks allowed-root containment, and performs
+   state-dependent validation.
 6. The shared operation performs side effects and returns its typed outcome.
 
 Capability-free validation covers types, enums, mutually exclusive fields,
@@ -217,8 +220,11 @@ validation includes reading project files, resolving installed integrations,
 consulting catalogs, inspecting host tools, and other I/O.
 
 The computed requirements must conservatively cover every path reachable from
-the pure validated request. Stateful validation must not discover and exercise
-an additional unauthorized capability.
+the pure validated request. Canonical resolution can inspect the filesystem
+and follow symlinks, so it must not occur before authorization. The
+post-resolution containment check prevents an unresolved path that appeared
+allowed from escaping through a symlink. Stateful validation must not discover
+and exercise an additional unauthorized capability.
 
 ## Typed outcome contract
 
@@ -284,13 +290,12 @@ Contract evolution follows these rules:
 
 ## Invocation context
 
-Shared operations receive an immutable context rather than reading adapter or
-process globals:
+Adapters begin with an immutable, I/O-free pre-authorization context:
 
 ```text
-InvocationContext
+PreAuthorizationContext
 ├── launch_working_directory
-├── project_root
+├── requested_directory
 ├── allowed_roots
 ├── access_policy
 ├── deadline
@@ -298,8 +303,24 @@ InvocationContext
 └── output_budget
 ```
 
-Not every operation uses every field. Adapters and application infrastructure
-construct the context; command/domain code consumes it explicitly.
+`requested_directory` is the caller-supplied value, or absent when discovery
+should begin from `launch_working_directory`. Constructing this context must
+not read the environment, inspect the filesystem, resolve symlinks, or discover
+a project.
+
+After policy authorization, shared application infrastructure resolves and
+validates the canonical root and constructs:
+
+```text
+AuthorizedOperationContext
+├── invocation: PreAuthorizationContext
+└── project_root
+```
+
+`project_root` is optional for process-scoped operations and represents the
+canonical project or target root for scoped operations. Canonical containment
+against `allowed_roots` is checked again before state-dependent validation or
+side effects.
 
 Shared operations must not call `os.chdir()` to establish request context.
 They pass resolved roots through operation phases and domain calls. Deadlines,
@@ -319,6 +340,9 @@ Capabilities are independent requirements, not a highest-risk hierarchy:
 The descriptor declares the conservative union an operation may require.
 `required_capabilities(request)` may compute an exact subset only from the
 capability-free validated request and static metadata.
+
+Resolving or validating a project or target root requires `local-read`, even
+when the operation's eventual side effect is `project-write`.
 
 Network access is declared separately as `none`, `optional`, or `required`.
 Trust and destructive consent remain explicit request values, not implied
@@ -350,6 +374,8 @@ Operation tests cover:
 - Warnings and structured errors.
 - Capabilities, trust, consent, network behavior, side effects, rollback,
   cancellation, and output bounds.
+- Preliminary requested-root authorization and canonical post-resolution
+  containment, including symlink-escape rejection.
 - Domain behavior without Typer, Rich, MCP, or transport assertions.
 
 Adapter tests cover invocation mapping and adapter-specific reporting.
@@ -388,6 +414,8 @@ For an operation with CLI and MCP adapters:
       adapter-specific concerns.
 - [ ] Shared request, outcome, warning, and error types are transport-neutral.
 - [ ] Capability computation is pure and authorization precedes stateful work.
+- [ ] Canonical project resolution and its allowed-root re-check occur only
+      after authorization.
 - [ ] CLI exit codes and MCP tool errors remain adapter-owned.
 - [ ] Contract-version ownership and compatibility tests are explicit.
 - [ ] Operation tests and adapter parity tests cover positive and negative
