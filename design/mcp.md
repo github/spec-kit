@@ -422,17 +422,21 @@ as the CLI.
 
 ## Timeouts, cancellation, stdin, and bounded output
 
-The stdio adapter owns protocol deadlines, cancellation, and response-size
-enforcement. Operations expose focused support only when their behavior can
+The MCP client owns its request deadline. If it no longer wants the result, it
+sends `notifications/cancelled`. The stdio adapter handles that notification
+and response-size enforcement; it does not create or own the client deadline.
+Operations expose focused cancellation support only when their behavior can
 cooperate with it.
 
-- Subprocesses and network calls receive explicit timeouts.
-- A complex operation may accept a cancellation token or deadline as a focused
-  parameter; there is no universal invocation context.
+- Subprocesses and network calls receive explicit server-side timeouts.
+- A complex operation may accept a focused cancellation signal or
+  operation-owned timeout; there is no universal invocation context.
 - Transactional mutations roll back or report partial state according to
   their domain contract.
-- Cancellation returns a structured cancellation error, never a successful
-  empty result.
+- After client cancellation, the server stops work and sends no tool result or
+  tool error for that request.
+- A server-enforced timeout while the request remains active returns a
+  structured timeout error, never a successful empty result.
 - No operation reads stdin or inherits an interactive child stdin.
 - Captured stdout/stderr and diagnostic details are size-bounded.
 - Potentially large lists use command-owned limits or pagination.
@@ -478,7 +482,8 @@ Shared operation, CLI adapter, and parity coverage follows
 - Verify tool name, description, annotations, and exact input/output schemas.
 - Verify mapping to the shared operation request and outcome.
 - Verify structured warnings and tool errors.
-- Verify trust, timeout, cancellation, and output-budget failures.
+- Verify trust failures, server-enforced timeout errors, client cancellation
+  without a response, and output-budget failures.
 - Verify project-directory mapping and operation dispatch without `os.chdir()`.
 - Verify standard tool annotations follow the conservative mapping and the
   inventory retains exact capability and network declarations.
@@ -499,6 +504,7 @@ Shared operation, CLI adapter, and parity coverage follows
 
 - Keep an in-memory MCP registration and dispatch test.
 - Keep a real stdio initialize/list/call test with protocol-pure stdout.
+- Verify `notifications/cancelled` stops cooperative work without a response.
 - Test malformed input, unavailable tools, internal failure sanitization, and
   output bounds as negative cases.
 

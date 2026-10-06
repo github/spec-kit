@@ -341,12 +341,14 @@ host confirmation never implies `force`, trust, or destructive consent.
 
 Do not force every operation through a universal runtime object.
 
-- The MCP adapter owns protocol deadlines, cancellation, and response-size
-  enforcement.
-- A command that can cooperatively cancel or accept a deadline exposes a
-  focused typed parameter or operation dependency for that behavior.
+- The MCP client owns its request deadline and may send a cancellation
+  notification. The stdio adapter handles that signal and enforces response
+  size limits.
+- A command that can cooperatively stop exposes a focused cancellation
+  parameter or operation dependency for that behavior.
 - Subprocess and network helpers receive explicit timeouts from the operation
   that invokes them.
+- A server-enforced operation timeout is distinct from client cancellation.
 - Potentially large commands own pagination or limit fields in their request
   and result contracts.
 - Truncation is explicit and never returned as a successful complete result.
