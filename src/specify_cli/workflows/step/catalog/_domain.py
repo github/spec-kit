@@ -682,7 +682,7 @@ class StepCatalog:
                     step_id = str(raw_step_id).strip()
                     if step_id:
                         if step_id in seen_in_source:
-                            raise StepCatalogError(
+                            raise StepCatalogValidationError(
                                 f"Duplicate step ID '{step_id}' in catalog '{entry.name}'."
                             )
                         seen_in_source.add(step_id)

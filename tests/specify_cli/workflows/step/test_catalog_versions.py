@@ -12,6 +12,7 @@ from specify_cli.workflows.step.catalog import (
     StepCatalogEntry,
     StepCatalogError,
     StepCatalogFetchError,
+    StepCatalogValidationError,
 )
 from specify_cli.workflows.step.catalog._versions import available_versions
 
@@ -121,7 +122,8 @@ def test_targeted_lookup_rejects_lower_match_after_higher_fetch_failure(
     assert catalog.get_step_info("deploy")["_catalog_name"] == "high"
 
 
-def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch):
+@pytest.mark.parametrize("targeted", [False, True])
+def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch, targeted):
     catalog = StepCatalog(project_dir)
     source = StepCatalogEntry("https://example.com/steps.json", "test", 1, True)
     monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [source])
@@ -135,8 +137,11 @@ def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch):
             ]
         },
     )
-    with pytest.raises(StepCatalogError, match="Duplicate step ID 'deploy'"):
-        catalog.get_step_info("deploy")
+    with pytest.raises(StepCatalogValidationError, match="Duplicate step ID 'deploy'"):
+        if targeted:
+            catalog.get_step_info("deploy")
+        else:
+            catalog.search(query="deploy")
 
 
 @pytest.mark.parametrize("raised_during_fetch", [False, True])

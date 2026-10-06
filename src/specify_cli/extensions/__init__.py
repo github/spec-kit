@@ -4706,6 +4706,7 @@ class ExtensionCatalog(CatalogStackBase):
                     KeyError,
                     TypeError,
                     AttributeError,
+                    RecursionError,
                 ):
                     # Cache validity is best-effort: invalid/missing metadata
                     # fields, an unreadable metadata file (permissions / disk),
@@ -4729,7 +4730,13 @@ class ExtensionCatalog(CatalogStackBase):
                 cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
                 self._validate_catalog_payload(cached_data, entry.url)
                 return cached_data
-            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
+            except (
+                json.JSONDecodeError,
+                OSError,
+                UnicodeError,
+                RecursionError,
+                ExtensionError,
+            ):
                 # Cache is best-effort: a JSON-decode failure, an OS-level
                 # read failure (permissions / disk / handle limit), or a
                 # text-encoding failure on a cache file written by an older
@@ -4797,7 +4804,7 @@ class ExtensionCatalog(CatalogStackBase):
                     ),
                     encoding="utf-8",
                 )
-            except OSError:
+            except (OSError, RecursionError):
                 pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
@@ -4817,6 +4824,10 @@ class ExtensionCatalog(CatalogStackBase):
         except json.JSONDecodeError as e:
             raise ExtensionCatalogValidationError(
                 f"Invalid JSON in catalog from {entry.url}: {e}"
+            ) from e
+        except RecursionError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid JSON nesting in catalog from {entry.url}: {e}"
             ) from e
         except UnicodeError as e:
             raise ExtensionCatalogValidationError(
@@ -4946,6 +4957,7 @@ class ExtensionCatalog(CatalogStackBase):
             KeyError,
             TypeError,
             AttributeError,
+            RecursionError,
         ):
             # ``AttributeError`` covers the case where the metadata file is
             # valid JSON but parses to a non-mapping (``[]``, ``"oops"``,
@@ -4984,7 +4996,13 @@ class ExtensionCatalog(CatalogStackBase):
                 cached_data = json.loads(self.cache_file.read_text(encoding="utf-8"))
                 self._validate_catalog_payload(cached_data, catalog_url)
                 return cached_data
-            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
+            except (
+                json.JSONDecodeError,
+                OSError,
+                UnicodeError,
+                RecursionError,
+                ExtensionError,
+            ):
                 pass  # Fall through to network fetch
 
         try:
@@ -5041,7 +5059,7 @@ class ExtensionCatalog(CatalogStackBase):
                 self.cache_metadata_file.write_text(
                     json.dumps(metadata, indent=2), encoding="utf-8"
                 )
-            except OSError:
+            except (OSError, RecursionError):
                 pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
@@ -5060,6 +5078,10 @@ class ExtensionCatalog(CatalogStackBase):
             ) from e
         except json.JSONDecodeError as e:
             raise ExtensionError(f"Invalid JSON in catalog: {e}") from e
+        except RecursionError as e:
+            raise ExtensionCatalogValidationError(
+                f"Invalid JSON nesting in catalog from {catalog_url}: {e}"
+            ) from e
         except UnicodeError as e:
             raise ExtensionCatalogValidationError(
                 f"Invalid encoding in catalog from {catalog_url}: {e}"

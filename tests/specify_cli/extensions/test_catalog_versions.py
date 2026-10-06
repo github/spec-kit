@@ -15,6 +15,7 @@ from specify_cli import app
 from specify_cli.extensions import (
     CatalogEntry,
     ExtensionCatalog,
+    ExtensionCatalogValidationError,
     ExtensionError,
     ExtensionManifest,
 )
@@ -85,6 +86,77 @@ class _ArchiveResponse(BytesIO):
 
     def getheader(self, _name):
         return "application/zip"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_deeply_nested_catalog_json_is_a_validation_error(
+    tmp_path, monkeypatch, legacy
+):
+    source = CatalogEntry("https://example.com/deep.json", "deep", 1, True)
+    catalog = ExtensionCatalog(tmp_path)
+    payload = b"[" * 12000 + b"0" + b"]" * 12000
+    monkeypatch.setattr(
+        catalog,
+        "_open_url",
+        lambda *_args, **_kwargs: _ArchiveResponse(payload, source.url),
+    )
+    if legacy:
+        monkeypatch.setattr(catalog, "get_catalog_url", lambda: source.url)
+
+    with pytest.raises(ExtensionCatalogValidationError, match="nesting"):
+        if legacy:
+            catalog.fetch_catalog(force_refresh=True)
+        else:
+            catalog._fetch_single_catalog(source, force_refresh=True)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_deeply_nested_cached_catalog_refetches(tmp_path, monkeypatch, legacy):
+    catalog = ExtensionCatalog(tmp_path)
+    url = catalog.DEFAULT_CATALOG_URL
+    source = CatalogEntry(url, "default", 1, True)
+    catalog.cache_file.parent.mkdir(parents=True, exist_ok=True)
+    catalog.cache_file.write_bytes(b"[" * 12000 + b"0" + b"]" * 12000)
+    monkeypatch.setattr(catalog, "is_cache_valid", lambda: True)
+    monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
+    monkeypatch.setattr(
+        catalog,
+        "_open_url",
+        lambda *_args, **_kwargs: _ArchiveResponse(
+            b'{"schema_version":"1.0","extensions":{}}', url
+        ),
+    )
+
+    data = catalog.fetch_catalog() if legacy else catalog._fetch_single_catalog(source)
+    assert data["extensions"] == {}
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_deeply_nested_cache_metadata_refetches(tmp_path, monkeypatch, legacy):
+    catalog = ExtensionCatalog(tmp_path)
+    url = catalog.DEFAULT_CATALOG_URL if legacy else "https://example.com/deep.json"
+    source = CatalogEntry(url, "deep", 1, True)
+    if legacy:
+        cache_file = catalog.cache_file
+        metadata_file = catalog.cache_metadata_file
+        monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
+    else:
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        cache_file = catalog.cache_dir / f"catalog-{url_hash}.json"
+        metadata_file = catalog.cache_dir / f"catalog-{url_hash}-metadata.json"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_bytes(b'{"schema_version":"1.0","extensions":{}}')
+    metadata_file.write_bytes(b"[" * 12000 + b"0" + b"]" * 12000)
+    monkeypatch.setattr(
+        catalog,
+        "_open_url",
+        lambda *_args, **_kwargs: _ArchiveResponse(
+            b'{"schema_version":"1.0","extensions":{}}', url
+        ),
+    )
+
+    data = catalog.fetch_catalog() if legacy else catalog._fetch_single_catalog(source)
+    assert data["extensions"] == {}
 
 
 def test_legacy_entry_still_selects_its_current_release(tmp_path, monkeypatch):
