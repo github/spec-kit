@@ -20,6 +20,7 @@ from specify_cli.artifacts import _commands, _mcp, _operation_list, mcp_list
 from specify_cli.artifacts._operation_list import (
     ARTIFACT_LIST_OPERATION,
     ArtifactListRequest,
+    ArtifactListResolutionError,
     ArtifactListResult,
 )
 from specify_cli.artifacts.mcp_list import (
@@ -926,12 +927,12 @@ def test_artifact_tool_requires_absolute_server_launch_directory():
         create_artifact_list_tool(launch_directory=Path("relative"))
 
 
-def test_artifact_tool_requires_room_for_json_rpc_envelope(
+def test_artifact_tool_requires_room_for_bounded_error_response(
     spec_kit_project: Path,
 ):
     with pytest.raises(
         ValueError,
-        match="MCP response-size limit must exceed the JSON-RPC envelope reserve",
+        match="MCP response-size limit cannot hold the bounded error response",
     ):
         create_artifact_list_tool(
             launch_directory=spec_kit_project,
@@ -1014,6 +1015,58 @@ def test_in_memory_protocol_enforces_near_boundary_wire_size(
         },
         retryable=True,
     )
+
+
+def test_in_memory_protocol_bounds_oversized_expected_error(
+    spec_kit_project: Path,
+):
+    max_wire_response_bytes = 4096
+    oversized_path = Path("/") / ("private-" * 1024)
+
+    async def exercise():
+        server = MCPServer(name="test")
+        mcp_list.register(
+            server,
+            launch_directory=spec_kit_project,
+            max_wire_response_bytes=max_wire_response_bytes,
+        )
+        with patch(
+            "specify_cli.artifacts.mcp_list.list_artifacts",
+            side_effect=ArtifactListResolutionError(oversized_path),
+        ):
+            async with (
+                create_client_server_memory_streams() as (
+                    client_streams,
+                    server_streams,
+                ),
+                anyio.create_task_group() as task_group,
+            ):
+                task_group.start_soon(
+                    server._lowlevel_server.run,
+                    server_streams[0],
+                    server_streams[1],
+                    server._lowlevel_server.create_initialization_options(),
+                )
+                async with ClientSession(*client_streams) as session:
+                    await session.initialize()
+                    failure = await session.call_tool(TOOL_NAME, {})
+                task_group.cancel_scope.cancel()
+        return failure
+
+    failure = _run(exercise())
+
+    assert failure.is_error is True
+    assert failure.structured_content == _expected_error(
+        "response_too_large",
+        "The artifact list result exceeds the MCP response-size limit.",
+        details={
+            "max_bytes": max_wire_response_bytes,
+            "requested_limit": 100,
+        },
+        retryable=True,
+    )
+    assert str(oversized_path) not in failure.model_dump_json(by_alias=True)
+    assert mcp_list._wire_response_size(failure) <= max_wire_response_bytes
 
 
 def test_in_memory_client_preserves_artifact_success_and_failure_wire_shapes(

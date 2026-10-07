@@ -176,7 +176,7 @@ class ArtifactListOperationDescriptor:
     """Stable metadata shared by delivery adapters for ``artifact.list``."""
 
     operation_id: Literal["artifact.list"]
-    contract_version: Literal["1"]
+    contract_version: Literal["2"]
     request_type: type[ArtifactListRequest]
     result_type: type[ArtifactListResult]
     warning_types: tuple[type[object], ...]
@@ -187,7 +187,7 @@ class ArtifactListOperationDescriptor:
 
 ARTIFACT_LIST_OPERATION = ArtifactListOperationDescriptor(
     operation_id="artifact.list",
-    contract_version="1",
+    contract_version="2",
     request_type=ArtifactListRequest,
     result_type=ArtifactListResult,
     warning_types=(),

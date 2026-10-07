@@ -154,10 +154,6 @@ class _InvalidOperationResult(Exception):
     """The shared operation returned an incomplete or invalid typed result."""
 
 
-class _ResponseTooLarge(Exception):
-    """The serialized structured result exceeds the MCP response budget."""
-
-
 ArtifactListCallResult = Annotated[CallToolResult, ArtifactListToolResult]
 ArtifactListTool = Callable[
     [ArtifactProjectDirectory | None, ArtifactListLimit, ArtifactListCursor | None],
@@ -228,6 +224,36 @@ def _wire_response_size(result: CallToolResult) -> int:
     return result_bytes + _WIRE_ENVELOPE_RESERVE_BYTES
 
 
+def _response_too_large_error(
+    *,
+    max_wire_response_bytes: int,
+    requested_limit: int,
+) -> CallToolResult:
+    return _tool_error(
+        "response_too_large",
+        _RESPONSE_TOO_LARGE_MESSAGE,
+        details={
+            "max_bytes": max_wire_response_bytes,
+            "requested_limit": requested_limit,
+        },
+        retryable=True,
+    )
+
+
+def _bound_tool_result(
+    result: CallToolResult,
+    *,
+    max_wire_response_bytes: int,
+    requested_limit: int,
+) -> CallToolResult:
+    if _wire_response_size(result) <= max_wire_response_bytes:
+        return result
+    return _response_too_large_error(
+        max_wire_response_bytes=max_wire_response_bytes,
+        requested_limit=requested_limit,
+    )
+
+
 def create_artifact_list_tool(
     *,
     launch_directory: Path,
@@ -237,9 +263,13 @@ def create_artifact_list_tool(
     launch_directory = Path(launch_directory)
     if not launch_directory.is_absolute():
         raise ValueError("MCP server launch directory must be absolute")
-    if max_wire_response_bytes <= _WIRE_ENVELOPE_RESERVE_BYTES:
+    largest_fallback = _response_too_large_error(
+        max_wire_response_bytes=max_wire_response_bytes,
+        requested_limit=ARTIFACT_LIST_MAX_LIMIT,
+    )
+    if _wire_response_size(largest_fallback) > max_wire_response_bytes:
         raise ValueError(
-            "MCP response-size limit must exceed the JSON-RPC envelope reserve"
+            "MCP response-size limit cannot hold the bounded error response"
         )
 
     def specify_artifact_list(
@@ -272,34 +302,38 @@ def create_artifact_list_tool(
                 )
             )
             success = _build_success_result(result)
-            if _wire_response_size(success) > max_wire_response_bytes:
-                raise _ResponseTooLarge
-            return success
+            return _bound_tool_result(
+                success,
+                max_wire_response_bytes=max_wire_response_bytes,
+                requested_limit=tool_input.limit,
+            )
         except ArtifactListError as exc:
-            return _tool_error(
-                exc.code,
-                exc.message,
-                details=exc.details,
-                retryable=exc.retryable,
+            return _bound_tool_result(
+                _tool_error(
+                    exc.code,
+                    exc.message,
+                    details=exc.details,
+                    retryable=exc.retryable,
+                ),
+                max_wire_response_bytes=max_wire_response_bytes,
+                requested_limit=tool_input.limit,
             )
         except _InvalidOperationResult:
-            return _tool_error(
-                "invalid_operation_result",
-                _INVALID_RESULT_MESSAGE,
-            )
-        except _ResponseTooLarge:
-            return _tool_error(
-                "response_too_large",
-                _RESPONSE_TOO_LARGE_MESSAGE,
-                details={
-                    "max_bytes": max_wire_response_bytes,
-                    "requested_limit": tool_input.limit,
-                },
-                retryable=True,
+            return _bound_tool_result(
+                _tool_error(
+                    "invalid_operation_result",
+                    _INVALID_RESULT_MESSAGE,
+                ),
+                max_wire_response_bytes=max_wire_response_bytes,
+                requested_limit=tool_input.limit,
             )
         except Exception:
             logger.exception("Unexpected failure in the artifact list MCP adapter.")
-            return _tool_error("internal_error", _INTERNAL_ERROR_MESSAGE)
+            return _bound_tool_result(
+                _tool_error("internal_error", _INTERNAL_ERROR_MESSAGE),
+                max_wire_response_bytes=max_wire_response_bytes,
+                requested_limit=tool_input.limit,
+            )
 
     return specify_artifact_list
 

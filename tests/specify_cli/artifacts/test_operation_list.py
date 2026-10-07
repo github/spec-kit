@@ -11,8 +11,8 @@ import yaml
 from specify_cli import artifacts
 from specify_cli.artifacts import ArtifactCatalog, _operation_list
 from specify_cli.artifacts._operation_list import (
-    ARTIFACT_LIST_OPERATION,
     ARTIFACT_LIST_MAX_LIMIT,
+    ARTIFACT_LIST_OPERATION,
     ArtifactListPaginationError,
     ArtifactListProjectDirectoryError,
     ArtifactListProjectError,
@@ -27,7 +27,7 @@ from specify_cli.presets import PresetError
 
 def test_artifact_list_operation_descriptor_is_stable():
     assert ARTIFACT_LIST_OPERATION.operation_id == "artifact.list"
-    assert ARTIFACT_LIST_OPERATION.contract_version == "1"
+    assert ARTIFACT_LIST_OPERATION.contract_version == "2"
     assert ARTIFACT_LIST_OPERATION.request_type is ArtifactListRequest
     assert ARTIFACT_LIST_OPERATION.result_type is ArtifactListResult
     assert ARTIFACT_LIST_OPERATION.warning_types == ()
