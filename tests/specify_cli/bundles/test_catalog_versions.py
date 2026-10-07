@@ -118,6 +118,7 @@ _MALFORMED_HISTORY = [
     ({"1.1.0": _record(version="1.1.0")}, "release '1.1.0' contains reserved fields"),
     ({"1.1.0": _record(releases={})}, "release '1.1.0' contains reserved fields"),
     ({"": _record()}, "invalid release version key"),
+    ({"1.1.0\n": _record()}, "invalid release version '1.1.0\n'"),
     ({"1.0": _record()}, "invalid release version '1.0'"),
     ({"1.0.0.post1": _record()}, "invalid release version '1.0.0.post1'"),
     ({"not-a-version": _record()}, "invalid release version 'not-a-version'"),

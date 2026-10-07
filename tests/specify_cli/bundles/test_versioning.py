@@ -25,6 +25,7 @@ from specify_cli.bundles.versioning import is_semver, satisfies
     ("1.2.3-１beta", False),
     ("not-a-version", False),
     ("", False),
+    ("1.2.3\n", False),
     # packaging.version.Version accepts these partial versions; SemVer must not.
     ("1", False),
     ("1.0", False),

@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .._download_security import MAX_DOWNLOAD_BYTES, read_response_limited
+from .._download_security import (
+    MAX_DOWNLOAD_BYTES,
+    is_https_or_localhost_http,
+    read_response_limited,
+)
 from . import BundlerError
 from .versioning import same_version
 
@@ -156,25 +160,8 @@ def _download_manifest(resolved, *, offline: bool):
 
 
 def _require_https(label: str, url: str) -> None:
-    from urllib.parse import urlparse
-
-    # urlparse / hostname access raise ValueError on a malformed authority;
-    # keep the documented BundlerError contract (older Pythons surface this via
-    # the .hostname access below rather than at the urlparse call).
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        # Accessing ``port`` performs urllib's syntax/range validation.
-        _ = parsed.port
-    except ValueError:
-        raise BundlerError(
-            f"Refusing to download {label}: URL is malformed: {url}"
-        ) from None
-    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+    if not is_https_or_localhost_http(url):
         raise BundlerError(f"Refusing to download {label} over non-HTTPS URL: {url}")
-    if not parsed.hostname:
-        raise BundlerError(f"Refusing to download {label} from URL with no host: {url}")
 
 
 def _download_remote_manifest(
