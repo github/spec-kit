@@ -7,6 +7,7 @@ from collections.abc import Callable
 from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent
 
+from ..mcp_version import register as register_version
 from .catalog import (
     CommandAdapterError,
     CommandDescription,
@@ -42,8 +43,7 @@ def create_server(
         name="specify",
         title="Spec Kit CLI",
         description=(
-            "Experimental stdio-only MCP adapter for stable Specify CLI JSON "
-            "commands."
+            "Experimental stdio-only MCP adapter for stable Specify CLI JSON commands."
         ),
         version="experimental",
         log_level="ERROR",
@@ -77,6 +77,8 @@ def create_server(
             return command_runner(command)
         except CommandAdapterError as exc:
             return _tool_error(exc)
+
+    register_version(server)
 
     return server
 

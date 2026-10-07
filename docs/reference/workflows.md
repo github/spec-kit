@@ -594,6 +594,9 @@ my-step/
 └── helpers.py      # optional nested modules and data files
 ```
 
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
+
 `step.yml` declares the step's identity. `step.type_key` must exactly match the
 `<step_id>` passed on the command line — the ID is never inferred from package
 content:
@@ -663,6 +666,54 @@ specify workflow step add my-step
 Catalog installs resolve individual file URLs from the active step catalogs and
 then go through the same validation and commit path as `--dev` and `--from`.
 Discovery-only catalogs cannot be installed from.
+
+##### Catalog release history
+
+`specify workflow step info <id> --versions` lists the current and historical
+releases in the winning catalog. `specify workflow step add <id> --version <v>`
+selects the exact catalog release; without `--version`, `add` installs the
+advertised current release. The requested version never falls back to a
+lower-priority catalog, and discovery-only sources remain non-installable.
+`--version` cannot be combined with direct `--dev` or `--from` installs.
+
+Existing single-version catalog entries continue to work. Keep the current
+release's `version`, `step_yml_url` (or `url`), `init_url`, and optional files
+at the top level. An optional `releases` mapping adds historical versions:
+
+```json
+{
+  "steps": {
+    "my-step": {
+      "version": "2.0",
+      "step_yml_url": "https://example.com/my-step/2.0/step.yml",
+      "releases": {
+        "1.0": {
+          "step_yml_url": "https://example.com/my-step/1.0/step.yml",
+          "init_url": "https://example.com/my-step/1.0/__init__.py",
+          "extra_files": {"helper.py": "https://example.com/my-step/1.0/helper.py"},
+          "sha256": {
+            "step.yml": "<64 hex digits>",
+            "__init__.py": "<64 hex digits>",
+            "helper.py": "<64 hex digits>"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Each historical release must supply its own step URL and SHA-256 digest for
+every downloaded file. `init_url` can be omitted when derived from a
+`step_yml_url` ending in `step.yml`. To select the current version explicitly,
+its top-level entry must likewise supply the per-file `sha256` mapping.
+Release-specific files and requirements are not inherited from the current
+release. Repeated or malformed versions are rejected; equivalent PEP 440
+spellings such as `v1.0` and `1.0` select the same advertised release. The
+downloaded `step.yml` must declare the selected step ID and version. An
+unqualified legacy catalog install does not require digests or a step version.
+Only one version of each step ID can be installed at a time; use `--force` to
+replace a previous installation after reviewing the selected package.
 
 #### Replacement and force
 

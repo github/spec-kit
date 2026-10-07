@@ -100,9 +100,13 @@ Searches the active catalog stack for integrations matching the query. Without a
 
 ```bash
 specify integration info <integration_id>
+specify integration info <integration_id> --versions
 ```
 
 Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
+`--versions` lists the advertised current and historical versions from the
+winning catalog, with the current release first and older releases in descending
+version order. Discovery-only sources are labeled as such.
 
 ## Install an Integration
 
@@ -117,6 +121,12 @@ specify integration install <key>
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
+
+**Catalog history is metadata only.** `integration install` still resolves
+registered built-in implementations, not historical catalog records. There is
+no `integration install --version` or catalog-based integration distribution
+contract, even when a catalog source is marked install-allowed. Community
+catalogs remain discovery-only.
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
@@ -252,6 +262,56 @@ Catalogs are resolved in this order (first match wins):
 2. **Project config** — `.specify/integration-catalogs.yml`
 3. **User config** — `~/.specify/integration-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
+
+### Historical Integration Metadata
+
+An integration entry may retain the existing top-level fields for its advertised
+current release and add a `releases` mapping of historical version to metadata.
+Single-version entries remain valid without a `releases` key. For example:
+
+```json
+{
+  "schema_version": "1.0",
+  "integrations": {
+    "my-agent": {
+      "id": "my-agent",
+      "name": "My Agent",
+      "author": "example",
+      "version": "2.0.0",
+      "description": "Current release",
+      "repository": "https://example.com/my-agent/current",
+      "releases": {
+        "1.0.0": {
+          "description": "Historical release",
+          "repository": "https://example.com/my-agent/v1",
+          "requires": {"speckit_version": ">=0.7"}
+        }
+      }
+    }
+  }
+}
+```
+
+The top-level fields retain their original meaning for older clients and for
+unqualified `search`, `info`, `list --catalog`, and `install` commands. Historical
+records may contain `name`, `description`, `author`, `repository`, `license`,
+`tags` (a list of strings), and `requires` (a mapping). Shared identity, name,
+author, and source policy are retained; current-only metadata such as
+description, repository, tags, and requirements is **not** inherited by an
+older release unless explicitly supplied in its record. Release records cannot
+override `id`, `version`, `releases`, or source policy, and cannot advertise
+download URLs or archives.
+
+For programmatic metadata lookup,
+`IntegrationCatalog.get_integration_info(id, version="1.0.0")` selects the
+exact historical record from the winning source, or returns `None` if that
+version is missing. `get_integration_versions(id)` returns the versions
+advertised by that same source. PEP 440-equivalent spellings (such as `v1.0`
+and `1.0.0`) match the same release while retaining its catalog spelling.
+The current release must not be repeated in `releases`; malformed records and
+duplicate equivalent versions are rejected. An absent version never falls
+through to a lower-priority source or silently selects current. These lookups
+do not install an integration.
 
 ## Integration-Specific Options
 

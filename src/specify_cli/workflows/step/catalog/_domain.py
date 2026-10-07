@@ -40,6 +40,19 @@ class StepValidationError(StepCatalogError):
     """Validation error for step catalog config or step data."""
 
 
+class _DuplicateCatalogField(StepCatalogError):
+    """An ambiguous JSON object in a step catalog."""
+
+
+def _unique_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateCatalogField(f"Duplicate field '{key}' in step catalog.")
+        result[key] = value
+    return result
+
+
 # ---------------------------------------------------------------------------
 # StepCatalogEntry
 # ---------------------------------------------------------------------------
@@ -470,9 +483,11 @@ class StepCatalog:
         if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f)
+                    cached = json.load(f, object_pairs_hook=_unique_json_fields)
                 if isinstance(cached, dict):
                     return cached
+            except _DuplicateCatalogField:
+                raise
             except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
@@ -530,15 +545,20 @@ class StepCatalog:
                         max_bytes=_max_json_catalog_bytes(),
                         error_type=StepCatalogError,
                         label="step catalog",
-                    ).decode("utf-8")
+                    ).decode("utf-8"),
+                    object_pairs_hook=_unique_json_fields,
                 )
+        except _DuplicateCatalogField:
+            raise
         except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f)
+                        cached = json.load(f, object_pairs_hook=_unique_json_fields)
                     if isinstance(cached, dict):
                         return cached
+                except _DuplicateCatalogField:
+                    raise
                 except (json.JSONDecodeError, ValueError, OSError):
                     # Stale-cache read failed; let the original fetch error propagate.
                     pass
@@ -574,6 +594,8 @@ class StepCatalog:
         for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
+            except _DuplicateCatalogField:
+                raise
             except StepCatalogError:
                 fetch_errors += 1
                 continue
@@ -586,6 +608,7 @@ class StepCatalog:
                     step_data["_install_allowed"] = entry.install_allowed
                     merged[step_id] = step_data
             elif isinstance(steps, list):
+                seen_in_source: set[str] = set()
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
@@ -594,6 +617,11 @@ class StepCatalog:
                         continue
                     step_id = str(raw_step_id).strip()
                     if step_id:
+                        if step_id in seen_in_source:
+                            raise StepCatalogError(
+                                f"Duplicate step ID '{step_id}' in catalog '{entry.name}'."
+                            )
+                        seen_in_source.add(step_id)
                         step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
                         step_data["_install_allowed"] = entry.install_allowed
@@ -609,10 +637,13 @@ class StepCatalog:
         query: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search step types across all configured catalogs."""
+        from ._versions import available_versions
+
         merged = self._get_merged_steps()
         results: list[dict[str, Any]] = []
 
         for step_id, step_data in merged.items():
+            available_versions(step_data, step_id)
             step_data.setdefault("id", step_id)
             if query:
                 q = query.lower()
@@ -628,13 +659,18 @@ class StepCatalog:
             results.append(step_data)
         return results
 
-    def get_step_info(self, step_id: str) -> dict[str, Any] | None:
-        """Get details for a specific step from the catalog."""
+    def get_step_info(
+        self, step_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get the current or an exact release from the winning catalog."""
+        from ._versions import select_release
+
         merged = self._get_merged_steps()
         step = merged.get(step_id)
         if step:
             step.setdefault("id", step_id)
-        return step
+            return select_release(step, step_id, version)
+        return None
 
     def get_catalog_configs(self) -> list[dict[str, Any]]:
         """Return current catalog configuration as a list of dicts."""
