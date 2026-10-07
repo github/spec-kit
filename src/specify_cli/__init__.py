@@ -281,7 +281,10 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
         return project_path / registration_directory(project_path).relative_to(
             project_path.resolve()
         )
-    agent_config = AGENT_CONFIG.get(selected_ai, {})
+    from .integrations import get_integration
+
+    integration = get_integration(selected_ai)
+    agent_config = (integration.config or {}) if integration is not None else {}
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
         return project_path / agent_folder.rstrip("/") / "skills"

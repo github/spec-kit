@@ -14,6 +14,7 @@ from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
+from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
@@ -96,6 +97,7 @@ class _PresetSkillMethods:
         if changed:
             self.registry.update(pack_id, {"registered_skills": merged_skills})
 
+    @project_registration
     def _reconcile_skills(
         self,
         command_names: List[str],
@@ -435,6 +437,7 @@ class _PresetSkillMethods:
                 return root
         return None
 
+    @project_registration
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
@@ -615,6 +618,7 @@ class _PresetSkillMethods:
 
         return restore_index
 
+    @project_registration
     def _register_skills(
         self,
         manifest: "PresetManifest",
@@ -1301,6 +1305,7 @@ class _PresetSkillMethods:
             stacklevel=2,
         )
 
+    @project_registration
     def _unregister_skills_in_dir(
         self,
         skill_names: List[str],

@@ -3241,3 +3241,320 @@ def test_adapter_cannot_overwrite_a_concurrent_managed_edit_with_a_second_write(
         for backup in backups:
             if backup.exists():
                 shutil.rmtree(backup)
+
+
+@pytest.mark.parametrize("operation", ["install", "switch"])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("change", ["concurrent", "deleted"])
+def test_failed_setup_preserves_pending_tracked_changes(tmp_path, server, monkeypatch, operation, existing, change):
+    from specify_cli.integrations import _lifecycle
+
+    body = f'''    def setup(self, project_root, manifest, **kwargs):
+        from threading import Thread
+        from specify_cli.integrations._file_changes import changing_file
+        path = manifest.record_file(".sample-agent/skills/sample-pending.md", "first completed write")
+        with changing_file(path):
+            writer = Thread(target=lambda: (
+                path.write_text("concurrent edit") if {change!r} == "concurrent" else path.unlink()
+            ))
+            writer.start()
+            writer.join()
+            raise OSError("interrupted second write")
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    if operation == "switch":
+        assert run(project, ["integration", "install", "claude"]).exit_code == 0
+    target = project / ".sample-agent/skills/sample-pending.md"
+    target.parent.mkdir(parents=True)
+    if existing:
+        target.write_text("original bytes")
+    backups = []
+    original_mkdtemp = _lifecycle.tempfile.mkdtemp
+
+    def record_backup(*args, **kwargs):
+        directory = original_mkdtemp(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(directory))
+        return directory
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    conflict = change == "concurrent" or existing
+    try:
+        result = run(project, ["integration", operation, KEY, "--trust-integration", "--script", "py"])
+        assert result.exit_code == 1, result.output
+        assert "interrupted second write" in " ".join(result.output.split())
+        assert ("Preserved concurrent edits" in result.output) == conflict
+        if change == "concurrent":
+            assert target.read_text() == "concurrent edit"
+        else:
+            assert not target.exists()
+        assert len(backups) == 1 and backups[0].exists() == conflict
+        if existing:
+            assert any(path.read_bytes() == b"original bytes" for path in backups[0].rglob("*") if path.is_file())
+        assert KEY not in read_records(project)
+        assert KEY not in INTEGRATION_REGISTRY
+    finally:
+        for backup in backups:
+            if backup.exists():
+                shutil.rmtree(backup)
+
+
+@pytest.mark.parametrize("operation", ["install", "switch"])
+@pytest.mark.parametrize("preexisting", [None, ".sample-agent", ".sample-agent/skills", ".sample-agent/skills/sample"])
+def test_failed_setup_restores_completed_writes_and_original_directories(tmp_path, server, operation, preexisting):
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        manifest.record_file(".sample-agent/skills/sample/SKILL.md", "completed write")
+        raise OSError("setup failure after completed write")
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    if operation == "switch":
+        assert run(project, ["integration", "install", "claude"]).exit_code == 0
+    if preexisting:
+        (project / preexisting).mkdir(parents=True)
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+    before = snapshot(project)
+    result = run(project, ["integration", operation, KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "setup failure after completed write" in " ".join(result.output.split())
+    assert "Preserved concurrent edits" not in result.output
+    assert snapshot(project) == before
+    assert all(path.is_dir() for path in original_directories)
+    if preexisting:
+        assert not any((project / preexisting).iterdir())
+    else:
+        assert not (project / ".sample-agent").exists()
+
+
+@pytest.mark.parametrize("record_ownership", [False, True])
+@pytest.mark.parametrize("limit_offset", [-1, 0, 1])
+def test_trust_grant_respects_reader_limit_before_replacement(tmp_path, server, monkeypatch, record_ownership, limit_offset):
+    from specify_cli.integrations import installer
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    publish(server)
+    first = catalog_project(tmp_path, server)
+    install(first)
+    second = catalog_project(tmp_path / "second", server)
+    manifest = IntegrationManifest(KEY, second, version="1.0.0")
+    manifest.record_file(".sample-agent/skills/sample.md", "sample output")
+    manifest.save()
+    record = read_records(first)[KEY]
+    trust = installer._trust_store(first)
+    original = trust.read_bytes()
+    original_trust_paths = set(trust.parent.iterdir())
+    expected = json.loads(original)
+    identity = installer._trust_identity(second, KEY, record["files"])
+    expected["grants"] = sorted(set(expected["grants"]) | {identity})
+    if record_ownership:
+        expected["recovery"][installer._recovery_identity(second, KEY)] = {
+            "package": identity,
+            "files": record["files"],
+            "registrar_config": record["registrar_config"],
+            "paths": sorted(manifest.files),
+        }
+    content = json.dumps(expected, indent=2) + "\n"
+    monkeypatch.setattr(installer, "_MAX_TRUST_STATE_BYTES", len(content.encode("utf-8")) + limit_offset, raising=False)
+    if limit_offset < 0:
+        with pytest.raises(IntegrationInstallError, match="trust registry exceeds size limit"):
+            installer._grant_trust(second, KEY, record, record_ownership=record_ownership)
+        assert trust.read_bytes() == original
+    else:
+        installer._grant_trust(second, KEY, record, record_ownership=record_ownership)
+        assert trust.read_text() == content
+        assert identity in installer._read_trust(trust)
+    assert load_installed_integrations(first) == [KEY]
+    assert set(trust.parent.iterdir()) == original_trust_paths
+
+
+def test_install_trust_limit_failure_rolls_back_without_disabling_existing_adapter(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    publish(server)
+    first = catalog_project(tmp_path, server)
+    install(first)
+    second = catalog_project(tmp_path / "second", server)
+    record = read_records(first)[KEY]
+    trust = installer._trust_store(first)
+    expected = json.loads(trust.read_text())
+    identity = installer._trust_identity(second, KEY, record["files"])
+    expected["grants"] = sorted(set(expected["grants"]) | {identity})
+    expected["recovery"][installer._recovery_identity(second, KEY)] = {
+        "package": identity,
+        "files": record["files"],
+        "registrar_config": record["registrar_config"],
+        "paths": sorted(IntegrationManifest.load(KEY, first).files),
+    }
+    limit = len((json.dumps(expected, indent=2) + "\n").encode("utf-8")) - 1
+    monkeypatch.setattr(installer, "_MAX_TRUST_STATE_BYTES", limit, raising=False)
+    before = snapshot(second)
+    result = run(second, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "trust registry exceeds size limit" in " ".join(result.output.split())
+    assert snapshot(second) == before
+    assert KEY not in read_records(second)
+    assert load_installed_integrations(first) == [KEY]
+    assert installer._recovery_identity(first, KEY) in installer._read_trust_state(trust)["recovery"]
+
+
+@pytest.mark.parametrize("consumer", ["retained-registrar", "preset-registration"])
+@pytest.mark.parametrize("interleaved", [False, True])
+@pytest.mark.parametrize("lazy_import", [False, True])
+def test_registration_keeps_requested_project_hooks(tmp_path, server, monkeypatch, consumer, interleaved, lazy_import):
+    from specify_cli.presets import PresetManager
+
+    def package(marker, folder):
+        hook = (
+            "        from .helper import MARKER\n"
+            if lazy_import else f"        MARKER = {marker!r}\n"
+        )
+        code = implementation(
+            flavor="markdown", folder=folder,
+            body="    def post_process_command_content(self, content):\n" + hook + "        return content + '\\n' + MARKER + '\\n'\n",
+        )
+        publish(server, code=code, members={"helper.py": f"MARKER = {marker!r}\n".encode()})
+
+    package("FIRST PROJECT ADAPTER", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    registrar = CommandRegistrar(first)
+    package("SECOND PROJECT ADAPTER", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text("---\ndescription: Sample command\n---\nBody\n")
+    if consumer == "retained-registrar":
+        if not interleaved:
+            load_installed_integrations(first)
+        registrar.register_commands(
+            KEY, [{"name": "speckit.sample", "file": "command.md"}],
+            "sample", source, first,
+        )
+    else:
+        manager = PresetManager(first)
+        original = manager._command_registrar
+
+        def snapshot_then_interleave():
+            scoped_registrar = original()
+            if interleaved:
+                load_installed_integrations(second)
+            return scoped_registrar
+
+        monkeypatch.setattr(manager, "_command_registrar", snapshot_then_interleave)
+        manifest = SimpleNamespace(id="sample", templates=[{
+            "type": "command", "name": "speckit.sample", "file": "command.md",
+        }])
+        manager._register_commands(manifest, source)
+    output = (first / ".sample-agent/commands/speckit.sample.md").read_text()
+    assert "FIRST PROJECT ADAPTER" in output
+    assert "SECOND PROJECT ADAPTER" not in output
+    assert not (first / ".other-agent").exists()
+
+
+@pytest.mark.parametrize("consumer", ["extension", "preset"])
+def test_skill_directory_uses_pinned_project_configuration(tmp_path, server, monkeypatch, consumer):
+    import specify_cli
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    publish(server)
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(server, code=implementation(folder=".other-agent"))
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original = specify_cli.resolve_active_skills_dir
+
+    def interleave_before_directory_resolution(root):
+        load_installed_integrations(second)
+        return original(root)
+
+    monkeypatch.setattr(specify_cli, "resolve_active_skills_dir", interleave_before_directory_resolution)
+    manager = ExtensionManager(first) if consumer == "extension" else PresetManager(first)
+    assert manager._get_skills_dir() == first / ".sample-agent/skills"
+    assert not (first / ".other-agent").exists()
+
+
+@pytest.mark.parametrize("consumer", ["retained-registrar", "preset-registration"])
+def test_registration_pins_hooks_and_lazy_imports_during_another_thread_load(tmp_path, server, monkeypatch, consumer):
+    from specify_cli.integrations import installer
+    from specify_cli.presets import PresetManager
+
+    body = '''    def post_process_command_content(self, content):
+        from specify_cli.integrations import get_integration, installer
+        callback = getattr(installer, "_review_registration_interleave", None)
+        if callback is not None:
+            callback()
+        assert get_integration(self.key) is self, "wrong project registry"
+        from .helper import MARKER
+        return content + "\\n" + MARKER + "\\n"
+'''
+    publish(server, code=implementation(flavor="markdown", body=body), members={
+        "helper.py": b"MARKER = 'FIRST PROJECT ADAPTER'\n",
+    })
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(server, code=implementation(flavor="markdown", folder=".other-agent"))
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text("---\ndescription: Sample command\n---\nBody\n")
+
+    def interleave():
+        errors = []
+
+        def load_second():
+            try:
+                load_installed_integrations(second)
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=load_second)
+        thread.start()
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+        assert not errors
+
+    monkeypatch.setattr(installer, "_review_registration_interleave", interleave, raising=False)
+    if consumer == "retained-registrar":
+        registrar = CommandRegistrar(first)
+        registrar.register_commands(
+            KEY, [{"name": "speckit.sample", "file": "command.md"}],
+            "sample", source, first,
+        )
+    else:
+        manager = PresetManager(first)
+        manifest = SimpleNamespace(id="sample", templates=[{
+            "type": "command", "name": "speckit.sample", "file": "command.md",
+        }])
+        manager._register_commands(manifest, source)
+    output = (first / ".sample-agent/commands/speckit.sample.md").read_text()
+    assert "FIRST PROJECT ADAPTER" in output
+    assert not (first / ".other-agent").exists()
+
+
+def test_retained_registrar_rechecks_revoked_local_consent_before_rendering(tmp_path, server):
+    from specify_cli.integrations import installer
+
+    publish(server, code=implementation(flavor="markdown"))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    registrar = CommandRegistrar(project)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text("---\ndescription: Sample command\n---\nBody\n")
+    trust = installer._trust_store(project)
+    data = json.loads(trust.read_text())
+    data["grants"] = []
+    trust.write_text(json.dumps(data))
+    before = snapshot(project)
+    with pytest.raises(IntegrationInstallError, match="no local trust decision"):
+        registrar.register_commands(
+            KEY, [{"name": "speckit.sample", "file": "command.md"}],
+            "sample", source, project,
+        )
+    assert snapshot(project) == before

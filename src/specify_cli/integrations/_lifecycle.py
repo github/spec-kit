@@ -37,6 +37,11 @@ _MAX_BACKUP_BYTES = 128 * 1024 * 1024
 _MAX_BACKUP_ENTRIES = 4096
 
 
+def lifecycle_owns_rollback() -> bool:
+    """Leave failure cleanup to the active transaction's mutation journal."""
+    return file_change_observer.get() is not None
+
+
 def lifecycle_success(message: str) -> None:
     """Report success only after an external package transaction commits."""
     pending = _success_messages.get()

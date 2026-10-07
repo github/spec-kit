@@ -53,6 +53,7 @@ from ..integration_state import (
     integration_setting,
     try_read_integration_json,
 )
+from ..integrations._registration import project_registration
 from ..shared_infra import verify_archive_sha256
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
@@ -1336,6 +1337,7 @@ class ExtensionManager:
 
         return _ignore
 
+    @project_registration
     def _get_skills_dir(self, *, create: bool = True) -> Optional[Path]:
         """Return the active skills directory for extension skill registration.
 
@@ -1574,6 +1576,7 @@ class ExtensionManager:
             only_agent=active_agent,
         )
 
+    @project_registration
     def _register_extension_skills(
         self,
         manifest: ExtensionManifest,
@@ -3829,6 +3832,7 @@ class ExtensionManager:
             if updates:
                 self.registry.update(ext_id, updates)
 
+    @project_registration
     def _retire_legacy_flat_extension_commands(
         self,
         agent_name: str,

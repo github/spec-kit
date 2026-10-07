@@ -20,6 +20,7 @@ from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
+from .integrations._registration import project_registration
 
 
 def _build_agent_configs() -> dict[str, Any]:
@@ -664,6 +665,7 @@ class CommandRegistrar:
             return None
         return agent
 
+    @project_registration
     def register_commands(
         self,
         agent_name: str,

@@ -196,6 +196,9 @@ integration ID, and the complete verified package file-hash mapping. Copying
 a project, changing users, changing package bytes, or deleting a grant requires
 a new local decision; a legacy project `trusted` field grants no authority.
 Consent is checked before every load, including configuration-cache reuse.
+The trust reader and writer share a 1 MiB byte limit. An update that would
+exceed it fails before replacement, leaving the previous grants and recovery
+records readable; existing grants are never evicted implicitly.
 Only recorded, locally trusted packages are loaded, and hash/descriptor
 validation precedes import. Missing, modified,
 incompatible, or unimportable implementations produce explicit errors.
@@ -213,6 +216,10 @@ dispatch pins a context-local project registry and its verified Python namespace
 until dispatch finishes, including lazy relative imports. Switching another
 thread to a different project cannot replace that dispatch's adapter, and
 independent agent processes are not serialized by the registry lock.
+Command and skill registration also pin the target project's registry for the
+entire rendering operation, including implementation hooks and lazy relative
+imports. A retained registrar or interleaved registration in another project
+cannot substitute another project's adapter while rendering.
 Catalog listing, catalog discovery, and `integration info` read metadata without
 importing installed adapters. Merely checking that a directory is a Spec Kit
 project does not load adapter code; registration managers load it when they
@@ -239,8 +246,12 @@ with an aggregate limit of 128 MiB of file content and 4,096 entries per
 transaction. Exceeding either limit fails before the affected write or removal.
 Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
-progress and unowned user files are left untouched. Rollback removes newly
-created empty parent directories only until the first pre-existing parent;
+progress and unowned user files are left untouched.
+While the lifecycle journal is active, install/switch failure handlers defer
+cleanup to it rather than forcing teardown or rewriting fallback state first.
+This preserves pending-file conflicts and the original directory inventory.
+Rollback removes newly created empty parent directories only until the first
+pre-existing parent;
 original empty directories are preserved in project and built-in home scopes.
 This also applies when an adapter records an already-written file.
 Custom writes to existing files must use `IntegrationManifest.record_file()`

@@ -57,6 +57,7 @@ dispatch_registry: ContextVar[dict[str, IntegrationBase] | None] = ContextVar(
 _pending_root: Path | None = None
 _RECORD = ".specify/integrations/packages.json"
 _PACKAGES = ".specify/integrations/packages"
+_MAX_TRUST_STATE_BYTES = 1024 * 1024
 _source_packages: dict[str, tuple[Path, dict[str, str]]] = {}
 recovery_exclusion: ContextVar[tuple[Path, str] | None] = ContextVar(
     "integration_recovery_exclusion", default=None
@@ -324,9 +325,9 @@ def _trust_identity(root: Path, key: str, hashes: dict[str, str]) -> str:
 
 def _read_trust_state(path: Path) -> dict[str, Any]:
     try:
-        with path.open(encoding="utf-8") as stream:
-            content = stream.read(1024 * 1024 + 1)
-        if len(content) > 1024 * 1024:
+        with path.open("rb") as stream:
+            content = stream.read(_MAX_TRUST_STATE_BYTES + 1)
+        if len(content) > _MAX_TRUST_STATE_BYTES:
             raise ValueError("trust registry exceeds size limit")
         data = json.loads(content)
     except FileNotFoundError:
@@ -396,14 +397,20 @@ def _grant_trust(
                 "registrar_config": record["registrar_config"],
                 "paths": sorted(IntegrationManifest.load(key, root).files),
             }
-        with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
-            temporary = Path(stream.name)
-            json.dump(data, stream, indent=2)
-            stream.write("\n")
+        content = json.dumps(data, indent=2) + "\n"
+        if len(content.encode("utf-8")) > _MAX_TRUST_STATE_BYTES:
+            raise IntegrationInstallError(
+                "Cannot write integration local trust state: trust registry exceeds size limit"
+            )
+        temporary = None
         try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(content)
             os.replace(temporary, path)
         finally:
-            temporary.unlink(missing_ok=True)
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:

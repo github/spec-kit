@@ -125,10 +125,10 @@ specify integration install <key>
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
 
 **Catalog history is metadata only.** `integration install` still resolves
-registered built-in implementations, not historical catalog records. There is
-no `integration install --version` or catalog-based integration distribution
-contract, even when a catalog source is marked install-allowed. Community
-catalogs remain discovery-only.
+registered built-in implementations directly, or the current external adapter
+release from an install-enabled catalog, not historical catalog records.
+There is no `integration install --version`. The default community catalog
+remains discovery-only.
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
@@ -184,6 +184,8 @@ digest. It is checked before loading, even when adapter configuration is
 cached. A project's `packages.json` is provenance, not permission; copying
 it cannot transfer consent. The managed `.specify/.gitignore` excludes
 `integrations/packages/` and `integrations/packages.json`.
+Trust-registry updates that would exceed the 1 MiB read limit fail explicitly
+before replacing the existing store; previously granted packages remain usable.
 After copying a project or changing users, review the adapter and reauthorize
 from an install-enabled catalog:
 

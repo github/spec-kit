@@ -18,7 +18,7 @@ from ..integration_state import (
     integration_settings as _integration_settings,
 )
 from ._commands import integration_app
-from ._lifecycle import external_lifecycle, lifecycle_success
+from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
 from ._helpers import _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _update_init_options_for_integration, _write_integration_json
 
 
@@ -171,25 +171,25 @@ def integration_install(
             _refresh_init_options_speckit_version(project_root)
 
     except Exception as exc:
-        # Attempt rollback of any files written by setup
-        try:
-            integration.teardown(project_root, manifest, force=True)
-        except Exception as rollback_err:
-            # Suppress so the original setup error remains the primary failure
-            from .. import _print_cli_warning
-            _print_cli_warning(
-                "rollback",
-                "integration",
-                key,
-                rollback_err,
-                continuing="The original install failure is still the primary error.",
-            )
-        if installed_keys:
-            _write_integration_json(
-                project_root, default_key, installed_keys, _integration_settings(current)
-            )
-        else:
-            _remove_integration_json(project_root)
+        if not lifecycle_owns_rollback():
+            try:
+                integration.teardown(project_root, manifest, force=True)
+            except Exception as rollback_err:
+                # Suppress so the original setup error remains the primary failure
+                from .. import _print_cli_warning
+                _print_cli_warning(
+                    "rollback",
+                    "integration",
+                    key,
+                    rollback_err,
+                    continuing="The original install failure is still the primary error.",
+                )
+            if installed_keys:
+                _write_integration_json(
+                    project_root, default_key, installed_keys, _integration_settings(current)
+                )
+            else:
+                _remove_integration_json(project_root)
         console.print(
             f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', key)}: "
             f"{_cli_error_detail(exc)}"
