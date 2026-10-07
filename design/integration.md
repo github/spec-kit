@@ -226,12 +226,24 @@ files unless `--force` is supplied. `uninstall` removes executable code and its
 registration while retaining modified generated files unless forced.
 Adapter lifecycle mutations are project-locked and journal operation-owned
 file changes, including package code, metadata, shared infrastructure, and
-generated artifacts. Failed setup or durable package commit restores those
+generated artifacts. Initial inventories retain only names and filesystem
+metadata; they do not copy agent trees, user data, or the installed package
+store. Content snapshots are created lazily before the first observed mutation,
+with an aggregate limit of 128 MiB of file content and 4,096 entries per
+transaction. Exceeding either limit fails before the affected write or removal.
+Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
 progress and unowned user files are left untouched. Rollback removes newly
 created empty parent directories only until the first pre-existing parent;
 original empty directories are preserved in project and built-in home scopes.
 This also applies when an adapter records an already-written file.
+Custom writes to existing files must use `IntegrationManifest.record_file()`
+or the host's before-write primitives, such as
+`IntegrationBase.write_file_and_record()`. `record_existing()` alone remains
+supported for new files and unchanged existing files; it cannot recover bytes
+already overwritten outside the journal. Such an unobserved overwrite fails
+explicitly, retains the resulting file rather than deleting it, and reports
+that its original bytes cannot be restored.
 Concurrent edits to a managed file are preserved and reported with retained
 recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets

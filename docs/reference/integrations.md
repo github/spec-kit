@@ -282,6 +282,13 @@ or the replacement package's trust decision. Failed lifecycle operations restore
 only operation-owned changes. Independent workflow progress and unowned user
 files are preserved; conflicting concurrent managed-file edits are reported with
 retained recovery snapshots.
+Rollback snapshots are lazy and bounded to 128 MiB of file content and 4,096
+entries per operation; an oversized snapshot refuses the affected mutation.
+No-op operations do not copy agent directories or the installed package store.
+Custom adapters must journal writes to existing files through the host's
+before-write helpers or `IntegrationManifest.record_file()`. Recording a new
+or unchanged file afterward remains supported; an unobserved overwrite is
+reported as unrecoverable rather than deleting the resulting file.
 Host writes reject symlinked destinations and ancestors before writing; forced
 removal of an owned leaf symlink unlinks only the link. Concurrent workflow
 dispatch pins the requested project's adapter and verified imports until the

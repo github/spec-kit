@@ -188,6 +188,153 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("command", ["install", "use", "switch"])
+def test_round7_noop_lifecycle_does_not_copy_output_roots_or_package_store(tmp_path, server, monkeypatch, command):
+    from specify_cli.integrations import _lifecycle
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    unowned = project / ".sample-agent/unowned-data.bin"
+    unowned.write_bytes(b"sample user data\n" * 100_000)
+    before = snapshot(project)
+    original_copytree = _lifecycle.shutil.copytree
+    original_journal = _lifecycle._FileJournal
+
+    def journal_without_eager_bytes(*args, **kwargs):
+        journal = original_journal(*args, **kwargs)
+        assert sum(path.stat().st_size for path in journal.backup.rglob("*") if path.is_file()) == 0
+        return journal
+
+    def refuse_eager_snapshot(source, destination, *args, **kwargs):
+        assert Path(source) not in {
+            project / ".sample-agent", project / ".specify/integrations",
+        }, "an untouched output root must not be copied"
+        return original_copytree(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(_lifecycle.shutil, "copytree", refuse_eager_snapshot)
+    monkeypatch.setattr(_lifecycle, "_FileJournal", journal_without_eager_bytes)
+    result = run(project, ["integration", command, KEY])
+    assert result.exit_code == 0, result.output
+    assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("cache", ["agent", "registrar"])
+def test_round7_failed_candidate_cache_refresh_cleans_pending_state(tmp_path, server, monkeypatch, cache):
+    from specify_cli import _agent_config, agents
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    module = _agent_config if cache == "agent" else agents
+    name = "_build_agent_config" if cache == "agent" else "_build_agent_configs"
+    original = getattr(module, name)
+    failed = False
+
+    def fail_candidate_refresh():
+        nonlocal failed
+        if installer._pending_root is not None and not failed:
+            failed = True
+            raise RuntimeError("sample cache refresh failure")
+        return original()
+
+    monkeypatch.setattr(module, name, fail_candidate_refresh)
+    try:
+        result = run(project, ["integration", "install", KEY, "--trust-integration"])
+        assert result.exit_code == 1, result.output
+        assert "sample cache refresh failure" in " ".join(result.output.split())
+        assert failed
+        assert installer._pending_root is None
+        assert KEY not in INTEGRATION_REGISTRY
+        assert KEY not in AGENT_CONFIG
+        assert KEY not in CommandRegistrar.AGENT_CONFIGS
+        assert not installer._source_packages
+        assert not any(name.startswith(installer._MODULE_PREFIX) for name in sys.modules)
+        assert snapshot(project) == before
+        other = catalog_project(tmp_path / "other", server)
+        install(other)
+        assert KEY in INTEGRATION_REGISTRY
+    finally:
+        installer._pending_root = None
+        unload_installed_integrations()
+
+
+@pytest.mark.parametrize("budget", ["bytes", "entries", "exact"])
+def test_round7_snapshot_budget_is_checked_before_overwriting_existing_output(tmp_path, server, monkeypatch, budget):
+    from specify_cli.integrations import _lifecycle
+
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        manifest.record_file(".sample-agent/skills/speckit-sample/SKILL.md", "new sample output")
+        return []
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    target = project / ".sample-agent/skills/speckit-sample/SKILL.md"
+    target.parent.mkdir(parents=True)
+    original = "original sample output"
+    target.write_text(original)
+    before = snapshot(project)
+    monkeypatch.setattr(
+        _lifecycle, "_MAX_BACKUP_BYTES", len(original.encode()) if budget == "exact" else 4,
+        raising=False,
+    )
+    monkeypatch.setattr(_lifecycle, "_MAX_BACKUP_ENTRIES", 0 if budget == "entries" else 1, raising=False)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    if budget == "exact":
+        assert result.exit_code == 0, result.output
+        assert target.read_text() == "new sample output"
+    else:
+        assert result.exit_code == 1, result.output
+        assert "snapshot budget" in " ".join(result.output.split())
+        assert snapshot(project) == before
+        assert KEY not in INTEGRATION_REGISTRY
+
+
+def test_round7_recording_unchanged_existing_output_needs_no_content_snapshot(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        manifest.record_existing(".sample-agent/skills/sample-existing.md", recovered=True)
+        return []
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    target = project / ".sample-agent/skills/sample-existing.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original sample output")
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert snapshot(project) == before
+
+
+def test_round7_unobserved_overwrite_reports_unrecoverable_output_instead_of_deleting_it(tmp_path, server):
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        target = project_root / ".sample-agent/skills/sample-existing.md"
+        target.write_text("unobserved sample write")
+        manifest.record_existing(".sample-agent/skills/sample-existing.md")
+        return []
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    target = project / ".sample-agent/skills/sample-existing.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original sample output")
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "before-write" in " ".join(result.output.split())
+    assert "cannot restore" in " ".join(result.output.split())
+    assert target.read_text() == "unobserved sample write"
+    assert KEY not in read_records(project)
+    assert KEY not in INTEGRATION_REGISTRY
+
+
 @pytest.mark.parametrize("operation", ["install", "load"])
 @pytest.mark.parametrize("alias", [False, True])
 def test_round6_project_cannot_supply_its_local_trust_state(tmp_path, server, operation, alias):
@@ -1436,8 +1583,15 @@ def test_failed_filesystem_recovery_retains_and_reports_snapshots(tmp_path, serv
     assert result.exit_code == 1
     assert "rollback failed" in result.output and "Recovery snapshots retained" in result.output
     assert len(backups) == 1 and backups[0].is_dir()
-    assert any(backups[0].rglob("packages.json"))
-    shutil.rmtree(backups[0])
+    try:
+        descriptors = list(backups[0].rglob("integration.yml"))
+        assert descriptors
+        assert any(
+            yaml.safe_load(path.read_text())["integration"]["version"] == "1.0.0"
+            for path in descriptors
+        )
+    finally:
+        shutil.rmtree(backups[0])
 
 
 def test_successful_install_does_not_reimport_after_committing(tmp_path, server):
@@ -1868,7 +2022,15 @@ def test_review_artifact_fresh_process_loads_adapter_and_preserves_json_errors(
     )
     assert failed.returncode == 1
     assert failed.stdout == ""
-    assert "modified" in json.loads(failed.stderr)["error"]
+    failure = json.loads(failed.stderr)
+    assert set(failure) == {"error"}
+    if command == "list":
+        assert failure["error"] in {
+            "artifact resolution failed",
+            f"artifact resolution failed: Integration '{KEY}' installed package has been modified",
+        }
+    else:
+        assert "modified" in failure["error"]
     assert not marker.exists()
 
 

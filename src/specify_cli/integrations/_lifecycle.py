@@ -33,6 +33,8 @@ _init_directory: ContextVar[tuple[Path, bool, list[Path]] | None] = ContextVar(
 _success_messages: ContextVar[list[str] | None] = ContextVar(
     "external_integration_success_messages", default=None
 )
+_MAX_BACKUP_BYTES = 128 * 1024 * 1024
+_MAX_BACKUP_ENTRIES = 4096
 
 
 def lifecycle_success(message: str) -> None:
@@ -70,20 +72,50 @@ def _file_identity(path: Path):
     return ("file", digest)
 
 
+def _entry_state(path: Path) -> tuple[int, ...]:
+    entry = path.lstat()
+    return (
+        entry.st_mode, entry.st_dev, entry.st_ino, entry.st_size,
+        entry.st_mtime_ns, entry.st_ctime_ns,
+    )
+
+
+def _initial_entries(paths: list[Path]) -> dict[Path, tuple[int, ...]]:
+    """Census names and metadata without reading or copying file contents."""
+    entries = {}
+
+    def fail_walk(error: OSError) -> None:
+        raise error
+
+    for path in paths:
+        try:
+            entries[path] = _entry_state(path)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(entries[path][0]):
+            for directory, folders, files in os.walk(path, onerror=fail_walk, followlinks=False):
+                for name in folders + files:
+                    child = Path(directory) / name
+                    entries[child] = _entry_state(child)
+    return entries
+
+
 class _FileJournal:
     """Restore observed owned writes, never every file under an output root."""
 
     def __init__(
-        self, root: Path, paths: list[Path], backup: Path, existing: set[int],
+        self, root: Path, paths: list[Path], backup: Path, initial: dict[Path, tuple[int, ...]],
         home_scopes: tuple[Path, ...] = (),
     ):
         self.root = root
         self.paths = paths
         self.backup = backup
-        self.existing = existing
+        self.initial = initial
         self.home_scopes = home_scopes
         self.changes: dict[Path, tuple[Path | None, Any]] = {}
         self.pending: set[Path] = set()
+        self.backup_bytes = 0
+        self.backup_entries = 0
         self.directory_states: dict[Path, bool] = {}
         for path in paths:
             self._remember_parents(path)
@@ -95,14 +127,38 @@ class _FileJournal:
                 break
             if parent in self.directory_states:
                 continue
-            for index, scope in enumerate(self.paths):
+            for scope in self.paths:
                 if parent == scope or scope in parent.parents:
-                    # record_existing() observes parents after an adapter creates them.
-                    original = self.backup / str(index) / parent.relative_to(scope)
-                    self.directory_states[parent] = index in self.existing and original.is_dir()
+                    original = self.initial.get(parent)
+                    self.directory_states[parent] = original is not None and stat.S_ISDIR(original[0])
                     break
             else:
                 self.directory_states[parent] = parent.is_dir()
+
+    def _snapshot(self, source: Path, destination: Path) -> None:
+        self.backup_entries += 1
+        if self.backup_entries > _MAX_BACKUP_ENTRIES:
+            raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (entries)")
+        mode = source.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            destination.symlink_to(os.readlink(source))
+        elif stat.S_ISDIR(mode):
+            destination.mkdir()
+            for child in source.iterdir():
+                self._snapshot(child, destination / child.name)
+            shutil.copystat(source, destination, follow_symlinks=False)
+        elif stat.S_ISREG(mode):
+            if source.stat().st_size > _MAX_BACKUP_BYTES - self.backup_bytes:
+                raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+            with source.open("rb") as incoming, destination.open("wb") as outgoing:
+                while content := incoming.read(min(65536, _MAX_BACKUP_BYTES - self.backup_bytes + 1)):
+                    self.backup_bytes += len(content)
+                    if self.backup_bytes > _MAX_BACKUP_BYTES:
+                        raise installer.IntegrationInstallError("Integration rollback snapshot budget exceeded (bytes)")
+                    outgoing.write(content)
+            shutil.copystat(source, destination, follow_symlinks=False)
+        else:
+            raise installer.IntegrationInstallError(f"Unsupported integration output: {source}")
 
     def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
@@ -131,24 +187,21 @@ class _FileJournal:
                 if path.exists() or path.is_symlink():
                     saved = self.backup / "writes" / str(len(self.changes))
                     saved.parent.mkdir(parents=True, exist_ok=True)
-                    if path.is_symlink():
-                        saved.symlink_to(os.readlink(path))
-                    elif path.is_dir():
-                        shutil.copytree(path, saved, symlinks=True)
-                    else:
-                        shutil.copy2(path, saved)
+                    self._snapshot(path, saved)
             else:
-                # record_existing() follows a write performed by an adapter.
-                for index, scope in enumerate(self.paths):
-                    if path == scope or scope in path.parents:
-                        candidate = self.backup / str(index) / path.relative_to(scope)
-                        if index in self.existing and (candidate.exists() or candidate.is_symlink()):
-                            saved = candidate
-                        break
-                else:
+                if not any(path == scope or scope in path.parents for scope in self.paths):
                     raise installer.IntegrationInstallError(
                         f"Integration output {path} must use manifest.record_file() "
                         "or the host file-writing helpers outside its declared output root"
+                    )
+                original = self.initial.get(path)
+                if original is not None:
+                    if _entry_state(path) == original:
+                        return
+                    raise installer.IntegrationInstallError(
+                        f"Integration output {path} changed without before-write observation; "
+                        "cannot restore its original bytes. Use manifest.record_file() "
+                        "or IntegrationBase.write_file_and_record() before overwriting existing files."
                     )
             self.changes[path] = (saved, _file_identity(path))
         if not before:
@@ -257,18 +310,7 @@ def _transaction(
                 raise installer.IntegrationInstallError(
                     "Integration state changed while preparing the operation; retry with the current project state"
                 )
-            existing = set()
-            for index, path in enumerate(paths):
-                if path.is_symlink():
-                    existing.add(index)
-                    (backup / str(index)).symlink_to(os.readlink(path), target_is_directory=path.is_dir())
-                elif path.exists():
-                    existing.add(index)
-                    if path.is_dir():
-                        shutil.copytree(path, backup / str(index), symlinks=True)
-                    else:
-                        shutil.copy2(path, backup / str(index))
-            journal = _FileJournal(root, paths, backup, existing, tuple(home_scopes))
+            journal = _FileJournal(root, paths, backup, _initial_entries(paths), tuple(home_scopes))
             token = file_change_observer.set(journal.observe)
             try:
                 yield
@@ -289,7 +331,7 @@ def _transaction(
                     raise installer.IntegrationInstallError(
                         f"Integration operation failed ({operation_error}); rollback failed "
                         f"({restore_error}). Recovery snapshots retained at {backup}; "
-                        f"snapshot indexes correspond to {[str(path) for path in paths]}"
+                        f"write snapshot indexes correspond to {[str(path) for path in journal.changes]}"
                     ) from operation_error
                 raise
             finally:

@@ -892,8 +892,8 @@ def prepared_adapter(root: Path, key: str, package: Path, record: dict[str, Any]
         "dev_no_symlink": integration.dev_no_symlink,
     }
     _pending_root = root.resolve()
-    _refresh_configs()
     try:
+        _refresh_configs()
         yield integration
     finally:
         if _pending_root is not None:
