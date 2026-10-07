@@ -709,6 +709,11 @@ class WorkflowCatalog:
                     if not isinstance(wf_data, dict):
                         continue
                     wf_id = wf_data.get("id", "")
+                    if not isinstance(wf_id, str):
+                        raise WorkflowCatalogValidationError(
+                            f"Invalid workflow ID in catalog '{entry.name}': "
+                            "expected a string."
+                        )
                     if wf_id:
                         if wf_id in seen_in_source:
                             raise WorkflowCatalogValidationError(

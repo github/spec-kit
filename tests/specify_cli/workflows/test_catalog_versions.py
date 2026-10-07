@@ -204,6 +204,32 @@ def test_duplicate_list_workflow_ids_are_rejected(
         assert fetched == ["high"]
 
 
+@pytest.mark.parametrize("invalid_id", [{"bad": "id"}, ["bad"], 42, True, None])
+@pytest.mark.parametrize("lookup", ["exact", "search"])
+def test_list_catalog_rejects_non_string_workflow_ids(
+    monkeypatch, project_dir, invalid_id, lookup,
+):
+    catalog = WorkflowCatalog(project_dir)
+    source = WorkflowCatalogEntry("https://example.com/workflows.json", "test", 1, True)
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [source])
+    monkeypatch.setattr(
+        catalog,
+        "_fetch_single_catalog",
+        lambda *_args, **_kwargs: {
+            "workflows": [
+                {"id": "history-wf", "version": "1.0.0"},
+                {"id": invalid_id, "version": "2.0.0"},
+            ]
+        },
+    )
+
+    with pytest.raises(WorkflowCatalogValidationError, match="Invalid workflow ID"):
+        if lookup == "exact":
+            catalog.get_workflow_info("history-wf")
+        else:
+            catalog.search()
+
+
 def test_list_workflow_id_can_appear_in_distinct_catalogs(monkeypatch, project_dir):
     catalog = WorkflowCatalog(project_dir)
     sources = [
