@@ -7948,6 +7948,117 @@ steps:
             )
         assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
 
+    @pytest.mark.parametrize("resume", [False, True], ids=["fresh", "resume"])
+    @pytest.mark.parametrize("max_concurrency", [1, 2])
+    @pytest.mark.parametrize("container", ["fan-out", "while", "do-while"])
+    def test_nested_dynamic_descendants_visible_downstream(
+        self, project_dir, container, max_concurrency, resume
+    ):
+        """Every namespaced result an outer fan-out item produces must reach
+        the live `context.steps`, including ids a nested while/do-while
+        body or fan-out generates dynamically at runtime.
+
+        A concurrent item publishes its private steps view back to the
+        shared dict after it finishes. That publish used to walk only the
+        item's static `id_map`, which never contains a nested container's
+        runtime-generated ids (`fan:inner:<i>:leaf:0`). Those results
+        still reached `state.step_results`, but a later `steps.<id>`
+        reference resolved to nothing on a fresh concurrent run.
+        """
+        from unittest.mock import patch
+
+        from specify_cli.workflows.base import RunStatus, StepResult
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        inner = {
+            "fan-out": """\
+      id: inner
+      type: fan-out
+      items: "{{ ['x'] }}"
+      max_concurrency: 1
+      step:
+        id: leaf
+        type: shell
+        run: "echo {{ item }}-{{ item }}"
+""",
+            "while": """\
+      id: inner
+      type: while
+      condition: "true"
+      max_iterations: 1
+      steps:
+        - id: leaf
+          type: shell
+          run: "echo x-x"
+""",
+            "do-while": """\
+      id: inner
+      type: do-while
+      condition: "false"
+      steps:
+        - id: leaf
+          type: shell
+          run: "echo x-x"
+""",
+        }[container]
+        gate = (
+            """\
+  - id: approve
+    type: gate
+    message: "Approve?"
+"""
+            if resume
+            else ""
+        )
+        yaml_str = (
+            """
+schema_version: "1.0"
+workflow:
+  id: "fan-out-nested-dynamic-visibility"
+  name: "Fan Out Nested Dynamic Visibility"
+  version: "1.0.0"
+steps:
+"""
+            + gate
+            + f"""\
+  - id: fan
+    type: fan-out
+    items: "{{{{ ['a', 'b'] }}}}"
+    max_concurrency: {max_concurrency}
+    step:
+"""
+            + inner
+            + "".join(
+                f"""\
+  - id: after{idx}
+    type: shell
+    run: "echo {{{{ steps.fan:inner:{idx}:leaf:0.output.stdout | default('MISSING') }}}}"
+"""
+                for idx in range(2)
+            )
+        )
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+        if resume:
+            assert state.status == RunStatus.PAUSED
+            with patch(
+                "specify_cli.workflows.step.gate.GateStep.execute",
+                return_value=StepResult(output={"approved": True}),
+            ):
+                state = engine.resume(state.run_id)
+
+        assert state.status == RunStatus.COMPLETED
+        for idx in range(2):
+            assert (
+                state.step_results[f"fan:inner:{idx}:leaf:0"]["output"]["stdout"]
+                == "x-x\n"
+            )
+            assert (
+                state.step_results[f"after{idx}"]["output"]["stdout"].strip()
+                == "x-x"
+            )
+
     def test_concurrent_fan_out_items_copy_fixed_pre_fan_out_snapshot(
         self, tmp_path
     ):

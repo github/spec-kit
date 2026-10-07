@@ -1858,10 +1858,9 @@ class WorkflowEngine:
             # the shared dict made after this item started, but fan-out
             # items were never entitled to see those anyway.
             original_steps = item_ctx.steps
+            snapshot_src = original_steps if base_steps is None else base_steps
             if local_only:
-                item_steps = dict(
-                    original_steps if base_steps is None else base_steps
-                )
+                item_steps = dict(snapshot_src)
             else:
                 item_steps = original_steps
             item_ctx.steps = item_steps
@@ -1914,18 +1913,27 @@ class WorkflowEngine:
                             original_steps[orig] = val
             steps_view = item_steps if local_only else item_ctx.steps
             if local_only and original_steps is not state.step_results:
-                for new_id in id_map:
-                    if new_id in steps_view:
-                        # Publish the namespaced (disjoint, per-item) result
-                        # into the truly-shared steps dict explicitly — safe
-                        # even under concurrency since each item only ever
-                        # writes its own namespaced keys here. Skipped when
-                        # that dict IS ``state.step_results`` (a resume run —
-                        # see ``_record_result``): _record_result already
-                        # wrote every namespaced key there under the run
-                        # lock, and an unlocked write here could race another
-                        # worker's ``state.save()`` iterating it.
-                        original_steps[new_id] = steps_view[new_id]
+                # Publish every namespaced (disjoint, per-item) result this
+                # item recorded into the truly-shared steps dict explicitly —
+                # safe even under concurrency since each item only ever
+                # writes its own namespaced keys here. That is every key the
+                # item added to or replaced in its private view, minus its
+                # bare-id aliases (``alias_records``), which the caller
+                # publishes in item order instead. Diffing the view rather
+                # than walking ``id_map`` also catches ids a nested
+                # while/do-while body or fan-out generated dynamically at
+                # runtime, which the static ``id_map`` never contains.
+                # Skipped when that dict IS ``state.step_results`` (a resume
+                # run — see ``_record_result``): _record_result already wrote
+                # every namespaced key there under the run lock, and an
+                # unlocked write here could race another worker's
+                # ``state.save()`` iterating it.
+                for key, val in steps_view.items():
+                    if key in alias_records:
+                        continue
+                    if snapshot_src.get(key, _MISSING_STEP) is val:
+                        continue
+                    original_steps[key] = val
             # Read back through the local view, not the outer closure —
             # clearer and robust if StepContext copying ever stops sharing
             # the steps dict by reference.
