@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-06T00:00:00Z",
+  "updated_at": "2026-10-07T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -485,7 +485,7 @@
         "lifecycle"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-10-05T00:00:00Z"
+      "updated_at": "2026-10-07T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
