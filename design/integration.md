@@ -149,8 +149,10 @@ registrar configuration supplies its own optional values.
 An optional `registrar_config.legacy_dir` must be a non-empty canonical
 project-relative directory under the same reserved-root and symlink restrictions;
 home-relative destinations are not supported for external adapters.
-Multi-install-safe adapters cannot declare overlapping agent roots or legacy
-destinations. Comparisons use case-folded path components on every platform so
+An adapter's primary root and optional legacy destination must not overlap,
+regardless of whether it supports multi-install. Multi-install-safe adapters
+also cannot overlap another integration's agent roots or legacy destinations.
+Comparisons use case-folded path components on every platform so
 packages remain safe on case-insensitive filesystems. Custom
 setup must keep generated agent files under its declared root, track writes
 with `IntegrationManifest`, and leave shared infrastructure ownership to the
@@ -180,7 +182,10 @@ and per-file hashes live in
 and do not appear in `<id>.manifest.json`. The managed `.specify/.gitignore`
 excludes both executable packages and their registry.
 Authoritative execution consent lives in `~/.specify/integration-trust.json`,
-never in project metadata. Each grant binds the canonical project root,
+never in project metadata. Projects containing that canonical trust path,
+including a project rooted at `~/.specify`, cannot install or load adapters.
+The trust path and local state are validated before importing a candidate.
+Each grant binds the canonical project root,
 integration ID, and the complete verified package file-hash mapping. Copying
 a project, changing users, changing package bytes, or deleting a grant requires
 a new local decision; a legacy project `trusted` field grants no authority.
@@ -223,8 +228,12 @@ Adapter lifecycle mutations are project-locked and journal operation-owned
 file changes, including package code, metadata, shared infrastructure, and
 generated artifacts. Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
-progress and unowned user files are left untouched. Concurrent edits to a managed
-file are preserved and reported with retained recovery snapshots; a later host
+progress and unowned user files are left untouched. Rollback removes newly
+created empty parent directories only until the first pre-existing parent;
+original empty directories are preserved in project and built-in home scopes.
+This also applies when an adapter records an already-written file.
+Concurrent edits to a managed file are preserved and reported with retained
+recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
 Host settings merges, native event updates/removal, legacy migrations, and

@@ -188,6 +188,203 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("operation", ["install", "load"])
+@pytest.mark.parametrize("alias", [False, True])
+def test_round6_project_cannot_supply_its_local_trust_state(tmp_path, server, operation, alias):
+    from specify_cli.integrations.installer import _trust_identity
+
+    marker = tmp_path / "adapter-imported"
+    publish(server, code=f"from pathlib import Path\nPath({str(marker)!r}).touch()\n" + implementation())
+    project = Path.home() / ".specify"
+    if operation == "load":
+        original = catalog_project(tmp_path, server)
+        install(original)
+        shutil.copytree(original, project, dirs_exist_ok=True)
+        trust = project / "integration-trust.json"
+        data = json.loads(trust.read_text())
+        data["grants"].append(_trust_identity(project, KEY, read_records(project)[KEY]["files"]))
+        trust.write_text(json.dumps(data))
+        marker.unlink()
+    else:
+        (project / ".specify").mkdir(parents=True)
+        added = run(project, [
+            "integration", "catalog", "add", f"{server.url}/catalog.json", "--name", "samples",
+        ])
+        assert added.exit_code == 0, added.output
+    if alias:
+        link = tmp_path / "project-alias"
+        try:
+            link.symlink_to(project, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Symlinks unavailable: {exc}")
+        project = link
+    before = snapshot(project)
+    arguments = (
+        ["integration", "list"] if operation == "load"
+        else ["integration", "install", KEY, "--trust-integration"]
+    )
+    result = run(project, arguments)
+    assert result.exit_code == 1, result.output
+    assert "outside the project" in " ".join(result.output.split())
+    assert not marker.exists()
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("directory", ["projects", ".specify/projects", ".specify-other"])
+def test_round6_home_projects_outside_trust_path_remain_supported(server, directory):
+    publish(server)
+    project = catalog_project(Path.home() / directory, server)
+    install(project)
+    unload_installed_integrations()
+    result = run(project, ["integration", "list"])
+    assert result.exit_code == 0, result.output
+    assert KEY in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("content", ["{", '{"schema_version":"1.0","grants":[false]}'])
+def test_round6_invalid_local_trust_state_fails_before_candidate_import(tmp_path, server, content):
+    marker = tmp_path / "adapter-imported"
+    publish(server, code=f"from pathlib import Path\nPath({str(marker)!r}).touch()\n" + implementation())
+    project = catalog_project(tmp_path, server)
+    trust = Path.home() / ".specify/integration-trust.json"
+    trust.parent.mkdir()
+    trust.write_text(content)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "local trust state" in " ".join(result.output.split())
+    assert not marker.exists()
+    assert snapshot(project) == before
+    assert trust.read_text() == content
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("multi_install_safe", [False, True])
+@pytest.mark.parametrize("folder,legacy", [
+    (".sample-agent", ".sample-agent"),
+    (".sample-agent", ".sample-agent/skills"),
+    (".sample-agent", ".sample-agent/skills/previous"),
+    (".sample-agent", ".SAMPLE-AGENT"),
+    (".sample-agent", ".SAMPLE-AGENT/previous"),
+    (".sample-agent/current", ".sample-agent"),
+    (".sample-agent/current", ".SAMPLE-AGENT"),
+])
+def test_round6_overlapping_own_output_roots_fail_before_setup(
+    tmp_path, server, multi_install_safe, folder, legacy,
+):
+    body = f'''    multi_install_safe = {multi_install_safe!r}
+    registrar_config = {{**registrar_config, "legacy_dir": {legacy!r}}}
+    def setup(self, project_root, manifest, **kwargs):
+        (project_root / "setup-ran").touch()
+        return []
+'''
+    publish(server, code=implementation(folder=folder, body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "overlap" in result.output.lower(), result.output
+    assert not (project / "setup-ran").exists()
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("multi_install_safe", [False, True])
+def test_round6_distinct_own_output_roots_with_shared_name_prefix_are_supported(
+    tmp_path, server, multi_install_safe,
+):
+    body = f'''    multi_install_safe = {multi_install_safe!r}
+    registrar_config = {{**registrar_config, "legacy_dir": ".sample-agent-previous/skills"}}
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    assert CommandRegistrar(project).AGENT_CONFIGS[KEY]["legacy_dir"] == ".sample-agent-previous/skills"
+
+
+@pytest.mark.parametrize("recording", ["record_file", "record_existing"])
+@pytest.mark.parametrize("preexisting", [
+    None, ".sample-agent", ".sample-agent/skills", ".sample-agent/skills/speckit-sample",
+])
+def test_round6_failed_install_preserves_original_empty_output_directories(
+    tmp_path, server, monkeypatch, recording, preexisting,
+):
+    from specify_cli.integrations import installer
+
+    writing = (
+        '            manifest.record_file(relative, "sample output")\n'
+        if recording == "record_file" else
+        '''            path = project_root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("sample output")
+            manifest.record_existing(relative)
+'''
+    )
+    body = '''    def setup(self, project_root, manifest, **kwargs):
+        for name in ("SKILL.md", "extra.md"):
+            relative = f".sample-agent/skills/speckit-sample/{name}"
+''' + writing + '        return []\n'
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    if preexisting:
+        (project / preexisting).mkdir(parents=True)
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert (project / ".sample-agent/skills/speckit-sample/SKILL.md").is_file()
+        assert (project / ".sample-agent/skills/speckit-sample/extra.md").is_file()
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+    assert all(path.is_dir() for path in original_directories)
+    if preexisting:
+        assert not any((project / preexisting).iterdir())
+    else:
+        assert not (project / ".sample-agent").exists()
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("integration,relative,home_scoped", [
+    ("copilot", ".vscode", False),
+    ("hermes", ".hermes/skills/speckit-plan", True),
+])
+@pytest.mark.parametrize("existing", [False, True])
+def test_round6_failed_switch_preserves_directory_ownership_outside_adapter_root(
+    tmp_path, server, monkeypatch, integration, relative, home_scoped, existing,
+):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    directory = (Path.home() if home_scoped else project) / relative
+    if existing:
+        directory.mkdir(parents=True)
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert any(directory.iterdir())
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, [
+        "integration", "switch", integration,
+        *([] if home_scoped else ["--integration-options=--commands"]),
+    ])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+    assert directory.is_dir() == existing
+    if existing:
+        assert not any(directory.iterdir())
+
+
 @pytest.mark.parametrize("damaged", [False, True])
 @pytest.mark.parametrize("command", ["status", "status-json", "status-run-json", "info"])
 def test_round4_workflow_metadata_does_not_load_adapter(tmp_path, server, damaged, command, monkeypatch):

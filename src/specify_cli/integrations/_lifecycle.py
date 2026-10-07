@@ -84,6 +84,25 @@ class _FileJournal:
         self.home_scopes = home_scopes
         self.changes: dict[Path, tuple[Path | None, Any]] = {}
         self.pending: set[Path] = set()
+        self.directory_states: dict[Path, bool] = {}
+        for path in paths:
+            self._remember_parents(path)
+
+    def _remember_parents(self, path: Path) -> None:
+        boundary = self.root if path.is_relative_to(self.root) else Path.home().absolute()
+        for parent in path.parents:
+            if parent == boundary:
+                break
+            if parent in self.directory_states:
+                continue
+            for index, scope in enumerate(self.paths):
+                if parent == scope or scope in parent.parents:
+                    # record_existing() observes parents after an adapter creates them.
+                    original = self.backup / str(index) / parent.relative_to(scope)
+                    self.directory_states[parent] = index in self.existing and original.is_dir()
+                    break
+            else:
+                self.directory_states[parent] = parent.is_dir()
 
     def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
@@ -98,6 +117,7 @@ class _FileJournal:
 
     def observe(self, path: Path, before: bool, removal: bool = False) -> None:
         path = self.safe_path(path, allow_leaf_symlink=not before or removal)
+        self._remember_parents(path)
         if (
             before and path in self.changes and path not in self.pending
             and _file_identity(path) != self.changes[path][1]
@@ -164,7 +184,7 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
         else:
             parent = path.parent
             boundary = root if path.is_relative_to(root) else Path.home().absolute()
-            while parent != boundary:
+            while parent != boundary and not journal.directory_states[parent]:
                 try:
                     parent.rmdir()
                 except OSError:

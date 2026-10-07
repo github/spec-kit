@@ -307,9 +307,10 @@ def _trust_store(root: Path) -> Path:
         raise IntegrationInstallError("Refusing symlinked integration trust directory")
     home = home.resolve()
     project = root.resolve()
-    if home == project or project in home.parents:
+    trust = safe_project_path(home, ".specify/integration-trust.json")
+    if trust.is_relative_to(project):
         raise IntegrationInstallError("Integration local trust state must be outside the project")
-    return safe_project_path(home, ".specify/integration-trust.json")
+    return trust
 
 
 def _trust_identity(root: Path, key: str, hashes: dict[str, str]) -> str:
@@ -525,6 +526,10 @@ def _validate_output_paths(integration: IntegrationBase, project_root: Path) -> 
         safe_project_path(project_root, relative)
         if Path(relative).parts[0].casefold() in {".specify", ".git"}:
             raise IntegrationInstallError(f"Integration '{integration.key}' output uses reserved directory")
+    roots = _output_roots(integration)
+    for index, current in enumerate(roots):
+        if any(_paths_overlap(current, other) for other in roots[index + 1:]):
+            raise IntegrationInstallError(f"Integration '{integration.key}' own output roots overlap")
 
 
 def _validate_registrar_config(key: str, registrar: Any) -> None:
@@ -874,6 +879,7 @@ def remove_package(root: Path, key: str) -> None:
 def prepared_adapter(root: Path, key: str, package: Path, record: dict[str, Any]):
     """Expose a trusted candidate only for its project's lifecycle transaction."""
     global _pending_root, _loaded_identity
+    _read_trust_state(_trust_store(root))
     _loaded_identity = None
     INTEGRATION_REGISTRY.pop(key, None)
     descriptor = _descriptor(package, key, record)
