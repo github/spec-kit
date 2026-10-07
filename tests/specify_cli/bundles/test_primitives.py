@@ -241,6 +241,42 @@ def test_explicit_source_cannot_bypass_winning_catalog(tmp_path, monkeypatch, ki
         primitive_manager(kind, tmp_path).install(component)
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+def test_primitive_install_rejects_ambiguous_catalog_source(tmp_path, monkeypatch, kind):
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+    from specify_cli.presets import PresetCatalog, PresetCatalogEntry
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+    )
+
+    catalog_type, entry_type, lookup = {
+        "extensions": (ExtensionCatalog, CatalogEntry, "get_extension_info"),
+        "presets": (PresetCatalog, PresetCatalogEntry, "get_pack_info"),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry, "get_workflow_info"),
+        "steps": (StepCatalog, StepCatalogEntry, "get_step_info"),
+    }[kind]
+    sources = [
+        entry_type("https://example.com/expected.json", "trusted", 1, True),
+        entry_type("https://example.com/other.json", "trusted", 2, True),
+    ]
+    monkeypatch.setattr(catalog_type, "get_active_catalogs", lambda self: sources)
+    monkeypatch.setattr(
+        catalog_type,
+        lookup,
+        lambda *_args, **_kwargs: pytest.fail(
+            "catalog lookup must not start with an ambiguous source"
+        ),
+    )
+
+    with pytest.raises(BundlerError, match="ambiguous catalog source"):
+        primitive_manager(kind, tmp_path).install(
+            ComponentRef(kind=kind, id="catalog-id", source="trusted")
+        )
+
+
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
 def test_missing_exact_release_never_delegates_install(tmp_path, monkeypatch, kind):
     import specify_cli

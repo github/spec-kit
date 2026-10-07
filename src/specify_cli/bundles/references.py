@@ -77,7 +77,10 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
     return False
 
 
-def _catalog_has_release(component: ComponentRef, get_info) -> bool:
+def _catalog_has_release(component: ComponentRef, catalog, get_info) -> bool:
+    from .primitives import _assert_unambiguous_catalog_source
+
+    _assert_unambiguous_catalog_source(component, catalog)
     current = get_info(component.id)
     if current is None or not current.get("_install_allowed", True):
         return False
@@ -101,23 +104,27 @@ def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | str | No
         if kind == "presets":
             from ..presets import PresetCatalog
 
-            return _catalog_has_release(component, PresetCatalog(root).get_pack_info)
+            catalog = PresetCatalog(root)
+            return _catalog_has_release(component, catalog, catalog.get_pack_info)
         if kind == "extensions":
             from ..extensions import ExtensionCatalog
 
+            catalog = ExtensionCatalog(root)
             return _catalog_has_release(
-                component, ExtensionCatalog(root).get_extension_info
+                component, catalog, catalog.get_extension_info
             )
         if kind == "workflows":
             from ..workflows.catalog import WorkflowCatalog
 
+            catalog = WorkflowCatalog(root)
             return _catalog_has_release(
-                component, WorkflowCatalog(root).get_workflow_info
+                component, catalog, catalog.get_workflow_info
             )
         if kind == "steps":
             from ..workflows.catalog import StepCatalog
 
-            return _catalog_has_release(component, StepCatalog(root).get_step_info)
+            catalog = StepCatalog(root)
+            return _catalog_has_release(component, catalog, catalog.get_step_info)
     except (ConnectionError, TimeoutError):
         return None
     except Exception as exc:  # noqa: BLE001 - report malformed catalog errors

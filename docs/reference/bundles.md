@@ -107,7 +107,7 @@ Without an explicit `source`, bundled extensions and presets take precedence ove
 
 A bundle may list a component ID only once per kind; duplicate references in the same manifest are invalid, even if their pins agree.
 
-An optional `source` in a `provides.<kind>` reference names the expected winning component catalog (as displayed by `specify <kind> catalog list`, or `specify workflow step catalog list` for steps). It is **not** an artifact URL and does not override catalog priority or install policy. When specified, the component is verified against that catalog even if already installed, rather than resolved from a Spec Kit-bundled copy; a different winning catalog or a discovery-only source prevents installation. Verifying an explicit source requires network access. Direct primitive `--from` URLs are a separate, explicitly requested route.
+An optional `source` in a `provides.<kind>` reference names the expected winning component catalog (as displayed by `specify <kind> catalog list`, or `specify workflow step catalog list` for steps). It is **not** an artifact URL and does not override catalog priority or install policy. When specified, the component is verified against that catalog even if already installed, rather than resolved from a Spec Kit-bundled copy; a different winning catalog or a discovery-only source prevents installation. If multiple active catalogs share the named source, bundle validation and installation reject it as ambiguous; give each catalog a unique name. Verifying an explicit source requires network access. Direct primitive `--from` URLs are a separate, explicitly requested route.
 
 ## Remove a Bundle
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -88,17 +89,32 @@ class _ArchiveResponse(BytesIO):
         return "application/zip"
 
 
+_DEEP_JSON = b"[" * 12000 + b"0" + b"]" * 12000
+
+
+def _raise_on_deep_json(monkeypatch):
+    """Exercise parser recursion independent of Python's nesting threshold."""
+    loads = json.loads
+
+    def decode(data, *args, **kwargs):
+        if data == _DEEP_JSON or data == _DEEP_JSON.decode("utf-8"):
+            raise RecursionError("maximum recursion depth exceeded while decoding JSON")
+        return loads(data, *args, **kwargs)
+
+    monkeypatch.setattr(json, "loads", decode)
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_deeply_nested_catalog_json_is_a_validation_error(
     tmp_path, monkeypatch, legacy
 ):
     source = CatalogEntry("https://example.com/deep.json", "deep", 1, True)
     catalog = ExtensionCatalog(tmp_path)
-    payload = b"[" * 12000 + b"0" + b"]" * 12000
+    _raise_on_deep_json(monkeypatch)
     monkeypatch.setattr(
         catalog,
         "_open_url",
-        lambda *_args, **_kwargs: _ArchiveResponse(payload, source.url),
+        lambda *_args, **_kwargs: _ArchiveResponse(_DEEP_JSON, source.url),
     )
     if legacy:
         monkeypatch.setattr(catalog, "get_catalog_url", lambda: source.url)
@@ -116,7 +132,8 @@ def test_deeply_nested_cached_catalog_refetches(tmp_path, monkeypatch, legacy):
     url = catalog.DEFAULT_CATALOG_URL
     source = CatalogEntry(url, "default", 1, True)
     catalog.cache_file.parent.mkdir(parents=True, exist_ok=True)
-    catalog.cache_file.write_bytes(b"[" * 12000 + b"0" + b"]" * 12000)
+    catalog.cache_file.write_bytes(_DEEP_JSON)
+    _raise_on_deep_json(monkeypatch)
     monkeypatch.setattr(catalog, "is_cache_valid", lambda: True)
     monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
     monkeypatch.setattr(
@@ -146,7 +163,8 @@ def test_deeply_nested_cache_metadata_refetches(tmp_path, monkeypatch, legacy):
         metadata_file = catalog.cache_dir / f"catalog-{url_hash}-metadata.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_bytes(b'{"schema_version":"1.0","extensions":{}}')
-    metadata_file.write_bytes(b"[" * 12000 + b"0" + b"]" * 12000)
+    metadata_file.write_bytes(_DEEP_JSON)
+    _raise_on_deep_json(monkeypatch)
     monkeypatch.setattr(
         catalog,
         "_open_url",

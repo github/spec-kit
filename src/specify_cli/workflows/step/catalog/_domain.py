@@ -676,10 +676,13 @@ class StepCatalog:
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
-                    raw_step_id = step_data.get("id")
-                    if raw_step_id is None:
-                        continue
-                    step_id = str(raw_step_id).strip()
+                    raw_step_id = step_data.get("id", "")
+                    if not isinstance(raw_step_id, str):
+                        raise StepCatalogValidationError(
+                            f"Invalid step ID in catalog '{entry.name}': "
+                            "expected a string."
+                        )
+                    step_id = raw_step_id.strip()
                     if step_id:
                         if step_id in seen_in_source:
                             raise StepCatalogValidationError(

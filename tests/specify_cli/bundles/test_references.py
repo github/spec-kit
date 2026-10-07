@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.references import make_reference_checker
@@ -1074,4 +1075,75 @@ def test_targeted_lookup_stops_before_lower_priority_catalog(
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
     assert check(ComponentRef(kind=kind, id="requested", source="high")) is None
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+@pytest.mark.parametrize("duplicate_name", [False, True])
+def test_explicit_source_requires_unique_catalog_name(
+    tmp_path, monkeypatch, kind, duplicate_name,
+):
+    from specify_cli.bundles import BundlerError
+    from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        WorkflowCatalog,
+    )
+
+    catalog_type, lookup, env_key = {
+        "extensions": (ExtensionCatalog, "get_extension_info", "SPECKIT_CATALOG_URL"),
+        "presets": (PresetCatalog, "get_pack_info", "SPECKIT_PRESET_CATALOG_URL"),
+        "workflows": (
+            WorkflowCatalog, "get_workflow_info", "SPECKIT_WORKFLOW_CATALOG_URL"
+        ),
+        "steps": (StepCatalog, "get_step_info", "SPECKIT_STEP_CATALOG_URL"),
+    }[kind]
+    monkeypatch.delenv(env_key, raising=False)
+    config = tmp_path / ".specify" / f"{kind[:-1]}-catalogs.yml"
+    config.parent.mkdir()
+    config.write_text(
+        yaml.safe_dump({"catalogs": [
+            {
+                "url": "https://example.com/expected.json",
+                "name": "trusted",
+                "priority": 1,
+                "install_allowed": True,
+            },
+            {
+                "url": "https://example.com/other.json",
+                "name": "trusted" if duplicate_name else "other",
+                "priority": 2,
+                "install_allowed": True,
+            },
+        ]}),
+        encoding="utf-8",
+    )
+    assert [entry.name for entry in catalog_type(tmp_path).get_active_catalogs()] == [
+        "trusted",
+        "trusted" if duplicate_name else "other",
+    ]
+    monkeypatch.setattr(
+        catalog_type,
+        lookup,
+        lambda self, component_id, version=None: {
+            "id": component_id,
+            "version": version or "1.0.0",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+    ref = ComponentRef(kind=kind, id="requested", source="trusted")
+    warnings: list[str] = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    installer = DefaultPrimitiveInstaller()
+
+    if duplicate_name:
+        assert "ambiguous" in check(ref).lower()
+        with pytest.raises(BundlerError, match="ambiguous"):
+            installer.validate_source(tmp_path, ref)
+    else:
+        assert check(ref) is None
+        installer.validate_source(tmp_path, ref)
     assert warnings == []

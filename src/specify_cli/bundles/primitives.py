@@ -101,8 +101,20 @@ def _assert_catalog_source(kind: str, component: ComponentRef, info: dict) -> No
         )
 
 
-def _selected_catalog_info(kind: str, component: ComponentRef, get_info) -> dict:
+def _assert_unambiguous_catalog_source(component: ComponentRef, catalog) -> None:
+    if component.source and sum(
+        entry.name == component.source for entry in catalog.get_active_catalogs()
+    ) > 1:
+        raise BundlerError(
+            f"{component.kind[:-1]} '{component.id}' requests ambiguous catalog "
+            f"source '{component.source}': multiple active catalogs share this name. "
+            "Give each catalog a unique name before installing."
+        )
+
+
+def _selected_catalog_info(kind: str, component: ComponentRef, get_info, catalog) -> dict:
     """Resolve an exact workflow/step release within the winning catalog."""
+    _assert_unambiguous_catalog_source(component, catalog)
     current = get_info(component.id)
     if current is None:
         raise BundlerError(f"{kind} '{component.id}' not found in any catalog.")
@@ -285,6 +297,7 @@ class _PresetKindManager:
         from ..presets import PresetCatalog
 
         catalog = PresetCatalog(self._root)
+        _assert_unambiguous_catalog_source(component, catalog)
         info = catalog.get_pack_info(component.id)
         if not info:
             raise BundlerError(f"Preset '{component.id}' not found in any catalog.")
@@ -378,6 +391,7 @@ class _ExtensionKindManager:
         from ..extensions import ExtensionCatalog
 
         catalog = ExtensionCatalog(self._root)
+        _assert_unambiguous_catalog_source(component, catalog)
         info = catalog.get_extension_info(component.id)
         if not info:
             raise BundlerError(
@@ -478,8 +492,9 @@ class _WorkflowKindManager:
             )
         from ..workflows.catalog import WorkflowCatalog
 
+        catalog = WorkflowCatalog(self._root)
         selected = _selected_catalog_info(
-            "Workflow", component, WorkflowCatalog(self._root).get_workflow_info
+            "Workflow", component, catalog.get_workflow_info, catalog
         )
         from ..workflows.command_add import _install_preselected_workflow
 
@@ -541,8 +556,9 @@ class _StepKindManager:
             ) from exc
 
         try:
+            catalog = StepCatalog(self._root)
             selected = _selected_catalog_info(
-                "Step", component, StepCatalog(self._root).get_step_info
+                "Step", component, catalog.get_step_info, catalog
             )
         except StepCatalogError as exc:
             raise BundlerError(

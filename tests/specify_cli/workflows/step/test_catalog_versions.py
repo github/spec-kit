@@ -144,6 +144,32 @@ def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch, targe
             catalog.search(query="deploy")
 
 
+@pytest.mark.parametrize("invalid_id", [True, 42, {"bad": "id"}, ["bad"], None])
+@pytest.mark.parametrize("targeted", [False, True])
+def test_list_catalog_rejects_non_string_step_ids(
+    project_dir, monkeypatch, invalid_id, targeted
+):
+    catalog = StepCatalog(project_dir)
+    source = StepCatalogEntry("https://example.com/steps.json", "test", 1, True)
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [source])
+    monkeypatch.setattr(
+        catalog,
+        "_fetch_single_catalog",
+        lambda *_args, **_kwargs: {
+            "steps": [
+                {"id": invalid_id, "version": "1.0"},
+                {"id": "deploy", "version": "2.0"},
+            ]
+        },
+    )
+
+    with pytest.raises(StepCatalogValidationError, match="Invalid step ID"):
+        if targeted:
+            catalog.get_step_info(str(invalid_id) if invalid_id is not None else "deploy")
+        else:
+            catalog.search()
+
+
 @pytest.mark.parametrize("raised_during_fetch", [False, True])
 def test_targeted_lookup_rejects_duplicate_ids_before_lower_catalog(
     project_dir, monkeypatch, raised_during_fetch,
