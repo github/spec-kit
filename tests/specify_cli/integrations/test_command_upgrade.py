@@ -636,6 +636,42 @@ class TestIntegrationUpgradeDetailed:
         assert (prompts / "speckit-git-feature.md").is_file()
         assert (prompts / "speckit-plan.md").is_file()
 
+    @pytest.mark.parametrize(
+        ("agent", "output"),
+        [
+            ("claude", ".claude/skills/speckit-foo-bar-baz/SKILL.md"),
+            ("cline", ".clinerules/workflows/speckit-foo-bar-baz.md"),
+            ("junie", ".junie/commands/speckit-foo-bar-baz.md"),
+        ],
+    )
+    def test_unwritten_name_is_dropped_where_removal_does_not_check_owners(
+        self, tmp_path, agent, output
+    ):
+        """Only Kiro CLI and Qoder keep a registered name whose source is
+        missing, because only their removal checks who owns a shared file.
+        Elsewhere an older pair can share the file, and keeping ``foo``'s
+        name would let removing ``foo`` delete ``foo-bar``'s (#4797)."""
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, agent)
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": "FOO-BODY\n"},
+        ], agent=agent)
+        self._plant_extension(project, "foo-bar", [
+            {"name": "speckit.foo-bar.baz", "body": "BAR-BODY\n"},
+        ], agent=agent)
+        (
+            project / ".specify/extensions/foo/commands/speckit.foo.bar-baz.md"
+        ).unlink()
+        ExtensionManager(project).register_enabled_extensions_for_agent(agent)
+        shared = project / output
+        before = shared.read_bytes()
+        assert b"BAR-BODY" in before
+
+        result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
+        assert result.exit_code == 0, result.output
+        assert shared.read_bytes() == before
+
     def _plant_extension(
         self,
         project,

@@ -4288,6 +4288,9 @@ class ExtensionManager:
             if agent_config and not skills_mode_active
             else {}
         )
+        # Only agents whose removal checks who owns a shared file keep a
+        # registered name this pass did not write (see below).
+        keep_unwritten = bool(self._core_command_files(agent_name))
 
         for ext_id, metadata in self.registry.list().items():
             if not metadata.get("enabled", True):
@@ -4364,7 +4367,9 @@ class ExtensionManager:
                     # another extension may now own that file. Retirement
                     # below still runs only for names written this pass,
                     # and only once that pass's replacement file exists
-                    # (#4797, #2948).
+                    # (#4797, #2948). Other agents drop an unwritten name
+                    # as before: an older pair of extensions can share its
+                    # file, and their removal doesn't check the owner.
                     declared_names: Set[str] = set()
                     for command in manifest.commands:
                         if not isinstance(command, dict):
@@ -4383,7 +4388,8 @@ class ExtensionManager:
                     )
                     kept = [
                         name for name in previous
-                        if name in registered or name in declared_names
+                        if name in registered
+                        or (keep_unwritten and name in declared_names)
                     ]
                     merged = kept + [
                         name for name in registered if name not in kept
