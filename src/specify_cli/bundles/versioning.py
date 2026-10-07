@@ -122,4 +122,4 @@ def is_semver(value: str) -> bool:
     """
     text = str(value)
     core = text[1:] if text[:1] in ("v", "V") else text
-    return bool(_SEMVER_RE.match(core))
+    return bool(_SEMVER_RE.fullmatch(core))

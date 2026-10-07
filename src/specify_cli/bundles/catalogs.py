@@ -6,7 +6,7 @@ sources.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -165,6 +165,9 @@ class CatalogEntry:
     # Resolution provenance (filled in by the catalog stack at lookup time):
     source_id: str | None = None
     source_policy: InstallPolicy | None = None
+    # Preserve unknown additive catalog fields for release-history materialization
+    # without changing current-entry parsing.
+    raw: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_dict(cls, data: Any) -> "CatalogEntry":
@@ -215,17 +218,13 @@ class CatalogEntry:
             repository=(str(data["repository"]) if data.get("repository") else None),
             tags=_parse_tags(data.get("tags"), entry_id),
             verified=_parse_verified(data.get("verified", False), entry_id),
+            raw=dict(data),
         )
 
     def with_provenance(self, source: CatalogSource) -> "CatalogEntry":
-        return CatalogEntry(
-            id=self.id, name=self.name, version=self.version, role=self.role,
-            description=self.description, author=self.author, license=self.license,
-            download_url=self.download_url,
-            requires_speckit_version=self.requires_speckit_version,
-            sha256=self.sha256,
-            provides=self.provides, repository=self.repository, tags=self.tags,
-            verified=self.verified, source_id=source.id,
+        return replace(
+            self,
+            source_id=source.id,
             source_policy=source.install_policy,
         )
 
@@ -248,6 +247,9 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
     if not isinstance(bundles_raw, dict):
         raise BundlerError("Catalog payload is missing a 'bundles' object.")
     entries: dict[str, CatalogEntry] = {}
+    # Function-local import avoids the catalogs -> catalog_versions import cycle.
+    from .catalog_versions import _validated_releases
+
     for bundle_id, entry_raw in bundles_raw.items():
         key = str(bundle_id)
         entry = CatalogEntry.from_dict(entry_raw)
@@ -264,6 +266,7 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
                 f"Catalog entry id mismatch: key '{key}' != entry id "
                 f"'{entry.id}'."
             )
+        _validated_releases(entry)
         entries[key] = entry
     return entries
 

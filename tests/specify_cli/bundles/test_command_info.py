@@ -5,6 +5,7 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
@@ -104,6 +105,126 @@ def test_info_expands_full_component_set(project: Path, monkeypatch):
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
+
+
+def test_info_versions_lists_history_without_downloading_manifest(project: Path):
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        releases={
+            "1.1.0": {
+                "download_url": "https://example.com/history-1.1.0.zip",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "history"]
+    )
+    assert added.exit_code == 0, added.output
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    assert text.exit_code == 0, text.output
+    assert "Catalog versions for history:" in text.output
+    assert "1.2.0 (current)" in text.output
+    assert "1.1.0" in text.output
+    assert "1.1.0 (current)" not in text.output
+    assert text.output.index("1.2.0") < text.output.index("1.1.0")
+    assert "Source: history (install-allowed)" in text.output
+    assert "Discovery only" not in text.output
+
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output) == {
+        "id": "history",
+        "versions": ["1.2.0", "1.1.0"],
+        "current": "1.2.0",
+        "source": "history",
+        "install_policy": "install-allowed",
+    }
+
+
+def _add_history_catalog(project: Path, releases, *, policy="install-allowed") -> None:
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        download_url="https://example.com/history-1.2.0.zip",
+        releases=releases,
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "history", "--policy", policy],
+    )
+    assert added.exit_code == 0, added.output
+
+
+def test_info_versions_notes_discovery_only_winner(project: Path):
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+        policy="discovery-only",
+    )
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+
+    assert text.exit_code == 0, text.output
+    assert "Source: history (discovery-only)" in text.output
+    assert "Discovery only; catalog installation is disabled." in text.output
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output)["install_policy"] == "discovery-only"
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_info_versions_rejects_malformed_history_cleanly(project: Path, as_json: bool):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+    args = ["bundle", "info", "history", "--versions", "--offline"]
+    if as_json:
+        args.append("--json")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_search_rejects_malformed_history_cleanly(project: Path):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+
+
+def test_info_without_versions_is_unchanged_by_history(project: Path, monkeypatch):
+    bundle_dir = project / "history-bundle"
+    manifest = valid_manifest_dict()
+    manifest["bundle"]["id"] = "history"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+    )
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
+
+    result = runner.invoke(app, ["bundle", "info", "history", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert "Catalog versions for" not in result.output
+    assert "preset-a v2.0.0" in result.output
 
 
 def test_info_escapes_catalog_markup(project: Path, monkeypatch):
