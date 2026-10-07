@@ -232,11 +232,13 @@ def scaffold_integration(
             f"'{package_name}', which cannot name an importable package. "
             "Choose a different key."
         )
-    # A package shadows a same-named module in the same directory, so
-    # scaffolding a key that matches one of this package's own modules (base,
-    # catalog, manifest) would silently take its place -- and every integration
-    # does ``from ..base import ...``. The existing-file check below cannot
-    # catch it, because it only looks at ``<key>/__init__.py``.
+    # A package shadows a same-named module in the same directory: when a
+    # sibling module ``integrations/<package_name>.py`` already exists, the
+    # generated ``integrations/<package_name>/`` would silently take its place
+    # on import -- and every integration does ``from ..base import ...``. The
+    # check uses the derived package name, so a hyphenated key whose package
+    # name matches a module is caught as well. The existing-file check below
+    # cannot catch this case: it only looks for ``<package_name>/__init__.py``.
     shadowed = integrations_root / f"{package_name}.py"
     if shadowed.exists():
         raise ValueError(

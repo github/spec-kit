@@ -148,28 +148,39 @@ def test_scaffold_refuses_a_python_keyword_key(tmp_path, key):
     assert not (root / "src" / "specify_cli" / "integrations" / key).exists()
 
 
-@pytest.mark.parametrize("key", ["base", "catalog", "manifest"])
-def test_scaffold_refuses_a_key_shadowing_an_existing_module(tmp_path, key):
+@pytest.mark.parametrize(
+    "key,module",
+    [
+        ("base", "base"),
+        ("manifest", "manifest"),
+        # The derived package name, not the key, is what shadows: the valid
+        # key `command-info` becomes package `command_info`, which matches the
+        # real `integrations/command_info.py`.
+        ("command-info", "command_info"),
+    ],
+    ids=["base", "manifest", "hyphenated_key"],
+)
+def test_scaffold_refuses_a_key_shadowing_an_existing_module(tmp_path, key, module):
     """A package shadows a same-named module in the same directory.
 
     `integrations/base.py` and a scaffolded `integrations/base/` can coexist on
     disk, and Python resolves the *package* — so `from ..base import ...`, which
     every integration does, would silently load the empty scaffold instead. The
-    existing-file guard cannot catch this: it only checks `<key>/__init__.py`.
+    existing-file guard cannot catch this: it only checks
+    `<package>/__init__.py`.
     """
     root = _repo_root(tmp_path)
-    (root / "src" / "specify_cli" / "integrations" / f"{key}.py").write_text(
-        "SENTINEL = 1\n", encoding="utf-8"
-    )
+    integrations = root / "src" / "specify_cli" / "integrations"
+    (integrations / f"{module}.py").write_text("SENTINEL = 1\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="collides with the existing module"):
         scaffold_integration(root, key, "markdown")
 
     # The real module is untouched and no package was created beside it.
-    assert (
-        root / "src" / "specify_cli" / "integrations" / f"{key}.py"
-    ).read_text(encoding="utf-8") == "SENTINEL = 1\n"
-    assert not (root / "src" / "specify_cli" / "integrations" / key).exists()
+    assert (integrations / f"{module}.py").read_text(encoding="utf-8") == (
+        "SENTINEL = 1\n"
+    )
+    assert not (integrations / module).exists()
 
 
 @pytest.mark.parametrize("key", ["match", "case", "my-agent"])
