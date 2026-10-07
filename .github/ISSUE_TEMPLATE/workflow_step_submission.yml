@@ -1,0 +1,177 @@
+name: Workflow Step Submission
+description: Submit a custom workflow step type to the Spec Kit community catalog
+title: "[Workflow Step]: Add "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Submit a new step type, version update, or metadata correction.
+
+        **Before submitting:**
+        - Review the [Community Workflow Steps guide](https://github.com/github/spec-kit/blob/main/docs/community/workflow-steps.md).
+        - Include `step.yml` and `__init__.py` in your package.
+        - Publish a GitHub release with a version tag.
+        - Test installation and execution yourself. Maintainers check metadata and distribution evidence, not your code.
+
+        **After submitting:** a maintainer applies `workflow-step-submission` during triage to start automated validation.
+
+  - type: input
+    id: step-id
+    attributes:
+      label: Step ID
+      description: Lowercase letters, digits, and hyphens; must match step.type_key
+      placeholder: "e.g., deploy-preview"
+    validations:
+      required: true
+
+  - type: input
+    id: step-name
+    attributes:
+      label: Step Name
+      description: Human-readable name
+      placeholder: Deploy Preview
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Semantic version X.Y.Z without a v prefix; must match step.version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Brief description of the step type (under 200 characters)
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Your name or organization
+    validations:
+      required: true
+
+  - type: input
+    id: repository
+    attributes:
+      label: Repository URL
+      placeholder: "https://github.com/your-org/your-step"
+    validations:
+      required: true
+
+  - type: input
+    id: release-tag
+    attributes:
+      label: Release Tag
+      description: Published tag matching the submitted version, including scoped tags
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: documentation
+    attributes:
+      label: Documentation URL
+      description: GitHub README explaining installation, dependencies, configuration, and example workflow YAML
+      placeholder: "https://github.com/your-org/your-step/blob/v1.0.0/README.md"
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: License
+      description: Open source license identifier; include a license file in the repository
+      placeholder: MIT
+    validations:
+      required: true
+
+  - type: input
+    id: speckit-version
+    attributes:
+      label: Required Spec Kit Version
+      placeholder: ">=0.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: List required Python packages, external tools, credentials, and setup; enter None if there are none
+    validations:
+      required: true
+
+  - type: textarea
+    id: tags
+    attributes:
+      label: Tags
+      description: 2-5 lowercase tags, separated by commas
+      placeholder: "deployment, preview"
+    validations:
+      required: true
+
+  - type: textarea
+    id: catalog-entry
+    attributes:
+      label: Proposed Catalog Entry
+      description: |
+        JSON object keyed by Step ID with version, step_yml_url, init_url, optional extra_files, and per-file sha256.
+        Use raw.githubusercontent.com URLs pinned to the Release Tag in the same repository.
+        Include every package file needed at runtime. See the Community Workflow Steps guide for the full shape.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: testing-details
+    attributes:
+      label: Testing Details
+      description: Describe clean-project installation, a successful execution, an invalid-input or failure case, and the Spec Kit version tested
+    validations:
+      required: true
+
+  - type: textarea
+    id: example-usage
+    attributes:
+      label: Example Usage
+      description: Provide installation commands and workflow YAML using the submitted Step ID
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing Checklist
+      options:
+        - label: Installed the published package in a clean project
+          required: true
+        - label: Tested successful execution and an invalid-input or failure case
+          required: true
+        - label: Documented all dependencies and setup requirements
+          required: true
+
+  - type: checkboxes
+    id: requirements
+    attributes:
+      label: Submission Requirements
+      options:
+        - label: Package includes step.yml and __init__.py with matching type_key
+          required: true
+        - label: Published a GitHub release with a version tag
+          required: true
+        - label: All catalog file URLs are tag-pinned and have SHA-256 digests
+          required: true
+        - label: README includes installation commands and example workflow YAML
+          required: true
+        - label: Repository includes an open source license file
+          required: true

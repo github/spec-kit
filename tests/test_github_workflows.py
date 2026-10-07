@@ -150,11 +150,11 @@ def _safe_output_config(compiled: dict) -> dict:
     return json.loads(step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"])
 
 
-def _bundle_success_label_step() -> dict:
-    _, _, source, _ = _agentic_workflow("add-community-bundle")
+def _bundle_success_label_step(kind="bundle") -> dict:
+    _, _, source, _ = _agentic_workflow(f"add-community-{kind}")
     return _workflow_step(
         source["jobs"]["conclusion"]["pre-steps"],
-        "Mark bundle submission passed after PR creation",
+        f"Mark {'bundle' if kind == 'bundle' else 'step'} submission passed after PR creation",
     )
 
 
@@ -175,8 +175,8 @@ def test_bundle_success_labels_run_after_successful_pr_publication():
     assert compiled["jobs"]["agent"]["permissions"]["issues"] == "read"
 
 
-def _run_bundle_success_labels(result, pr_number, labels, fail_api=""):
-    step = _bundle_success_label_step()
+def _run_bundle_success_labels(result, pr_number, labels, fail_api="", kind="bundle"):
+    step = _bundle_success_label_step(kind)
     harness = r"""
 const fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -220,13 +220,15 @@ const shouldRun = new Function('needs', `return ${input.condition}`)(needs);
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("labels", [
     ["bundle-submission", "validation-failed"],
     ["bundle-submission", "validation-failed", "needs-info", "triaged"],
     ["bundle-submission", "validation-passed"],
 ])
-def test_bundle_success_labels_correct_omitted_agent_updates(labels):
-    result = _run_bundle_success_labels("success", "37", labels)
+def test_bundle_success_labels_correct_omitted_agent_updates(labels, kind):
+    labels = [f"{kind}-submission" if label == "bundle-submission" else label for label in labels]
+    result = _run_bundle_success_labels("success", "37", labels, kind=kind)
     assert result["error"] is None
     assert result["labels"] == sorted(
         (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
@@ -240,21 +242,23 @@ def test_bundle_success_labels_correct_omitted_agent_updates(labels):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize(("status", "pr_number"), [
     ("success", ""), ("failure", ""), ("failure", "37"),
     ("cancelled", "37"), ("skipped", ""),
 ])
-def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number):
-    labels = ["bundle-submission", "validation-failed"]
-    result = _run_bundle_success_labels(status, pr_number, labels)
+def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number, kind):
+    labels = [f"{kind}-submission", "validation-failed"]
+    result = _run_bundle_success_labels(status, pr_number, labels, kind=kind)
     assert result == {"labels": sorted(labels), "calls": [], "error": None}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("fail_api", ["listLabelsOnIssue", "removeLabel", "addLabels"])
-def test_bundle_success_labels_surface_api_errors(fail_api):
+def test_bundle_success_labels_surface_api_errors(fail_api, kind):
     result = _run_bundle_success_labels(
-        "success", "37", ["bundle-submission", "validation-failed"], fail_api
+        "success", "37", [f"{kind}-submission", "validation-failed"], fail_api, kind
     )
     assert result["error"] == f"API failure: {fail_api}"
     assert result["calls"][-1]["api"] == fail_api
