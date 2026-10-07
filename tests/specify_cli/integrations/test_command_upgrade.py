@@ -893,6 +893,81 @@ class TestIntegrationUpgradeDetailed:
         assert not (prompts / "speckit.old.plan.md").exists()
         assert not (prompts / "plan.md").exists()
 
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("state", ["enabled", "disabled", "unreadable"])
+    @pytest.mark.parametrize("removed", ["foo", "foo-bar"])
+    @pytest.mark.parametrize("marker", ["generated", "missing", "invalid-utf8"])
+    def test_removing_colliding_extension_preserves_other_owners_migrated_file(
+        self, tmp_path, agent, state, removed, marker
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, agent)
+        self._plant_extension(
+            project,
+            "foo",
+            [{"name": "speckit.foo.bar-baz", "body": "FOO-BODY\n"}],
+            agent=agent,
+        )
+        manager = ExtensionManager(project)
+        manager.register_enabled_extensions_for_agent(agent)
+        if agent == "kiro-cli":
+            migrated = project / ".kiro/prompts/speckit-foo-bar-baz.md"
+            legacy = project / ".kiro/prompts/speckit.foo-bar.baz.md"
+        else:
+            migrated = project / ".qoder/skills/speckit-foo-bar-baz/SKILL.md"
+            legacy = project / ".qoder/commands/speckit.foo-bar.baz.md"
+        assert b"FOO-BODY" in migrated.read_bytes()
+        if marker == "missing":
+            migrated.write_text("UNMARKED-BODY\n", encoding="utf-8")
+        elif marker == "invalid-utf8":
+            migrated.write_bytes(b"\xff")
+        before = migrated.read_bytes()
+
+        self._plant_extension(
+            project,
+            "foo-bar",
+            [{
+                "name": "speckit.foo-bar.baz",
+                "body": "BAR-BODY\n",
+                "aliases": ["speckit-foo-bar-baz"],
+            }],
+            enabled=state != "disabled",
+            agent=agent,
+        )
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text("BAR-BODY\n", encoding="utf-8")
+        legacy_alias = legacy.parent / "speckit-foo-bar-baz.md"
+        if agent == "qodercli":
+            legacy_alias.write_text("BAR-ALIAS\n", encoding="utf-8")
+        if state == "unreadable":
+            (
+                project / ".specify/extensions/foo-bar/extension.yml"
+            ).write_text("invalid: [", encoding="utf-8")
+
+        manager = ExtensionManager(project)
+        manager.register_enabled_extensions_for_agent(agent)
+        assert migrated.read_bytes() == before
+        assert legacy.read_text(encoding="utf-8") == "BAR-BODY\n"
+
+        result = _run_in_project(
+            project, ["extension", "remove", removed, "--force"]
+        )
+        assert result.exit_code == 0, result.output
+        if removed == "foo-bar" or marker != "generated":
+            assert migrated.read_bytes() == before
+            assert "Preserving the shared file" in result.output
+        else:
+            assert not migrated.exists()
+        if removed == "foo-bar":
+            assert not legacy.exists()
+            if agent == "qodercli":
+                assert not legacy_alias.exists()
+        else:
+            assert legacy.read_text(encoding="utf-8") == "BAR-BODY\n"
+            if agent == "qodercli":
+                assert legacy_alias.read_text(encoding="utf-8") == "BAR-ALIAS\n"
+
     def test_upgrade_refuses_while_an_extension_prompt_has_a_core_prompt_name(
         self, tmp_path, monkeypatch
     ):

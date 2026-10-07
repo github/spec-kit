@@ -58,6 +58,11 @@ specify extension remove <name>
 
 Removes an installed extension. Configuration files are backed up by default; use `--keep-config` to leave them in place or `--force` to skip the confirmation.
 
+For older Kiro CLI or Qoder CLI extensions whose names collide after hyphenation,
+removal deletes the extension's legacy commands but preserves a shared migrated
+prompt or skill unless its source marker identifies the removed extension as
+the owner. Installed core commands are also preserved.
+
 ## List Installed Extensions
 
 ```bash

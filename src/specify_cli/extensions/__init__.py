@@ -3578,19 +3578,16 @@ class ExtensionManager:
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
             if safe_commands:
-                # An older alias can now format to a core command's file.
-                # Registration skips it (_shared_command_files), so once the
-                # integration has installed that file it is the core
-                # command's, not this extension's (#4797).
+                preserved = {
+                    agent_name: self._preserved_command_files(
+                        extension_id, agent_name
+                    )
+                    for agent_name in safe_commands
+                }
                 CommandRegistrar().unregister_commands(
                     safe_commands,
                     self.project_root,
-                    preserved_output_names={
-                        agent_name: self._core_command_files(
-                            agent_name, installed_only=True
-                        )
-                        for agent_name in safe_commands
-                    },
+                    preserved_output_names=preserved,
                 )
                 # Registration leaves an extension's old flat files in place
                 # when it skips the extension, and they live outside the
@@ -3600,6 +3597,7 @@ class ExtensionManager:
                         agent_name,
                         self._valid_name_list(command_names),
                         require_replacement=False,
+                        preserved_output_names=preserved[agent_name],
                     )
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
@@ -3894,6 +3892,7 @@ class ExtensionManager:
         command_names: List[str],
         *,
         require_replacement: bool = True,
+        preserved_output_names: Optional[Set[str]] = None,
     ) -> List[Path]:
         """Remove old flat commands whose replacements were written.
 
@@ -3907,7 +3906,8 @@ class ExtensionManager:
         Extension removal passes ``require_replacement=False``: the old files
         go with the extension, including those registration left in place
         because a command shares a file (``_shared_command_files``). A core
-        command's own old file is never removed.
+        command's own old file and files preserved by ownership checks are
+        never removed.
         """
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
@@ -3951,12 +3951,19 @@ class ExtensionManager:
             return []
 
         core_names = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
+        preserved = (
+            {os.path.normcase(name) for name in (preserved_output_names or set())}
+            if registrar._same_lexical_path(legacy_root, output_root)
+            and legacy_extension == agent_config["extension"]
+            else set()
+        )
         removed: List[Path] = []
         for command_name in command_names:
             if (
                 not isinstance(command_name, str)
                 or not command_name
                 or command_name in core_names
+                or os.path.normcase(command_name) in preserved
                 or not registrar._is_safe_command_name(command_name)
             ):
                 continue
@@ -3980,6 +3987,64 @@ class ExtensionManager:
                 removed.append(legacy_file)
 
         return removed
+
+    def _preserved_command_files(
+        self, extension_id: str, agent_name: str
+    ) -> Set[str]:
+        """Keep shared migrated outputs unless their marker proves ownership."""
+        from .. import _print_cli_warning
+        from ..agents import CommandRegistrar
+        from ..shared_infra import _validate_safe_shared_directory
+
+        preserved = self._core_command_files(agent_name, installed_only=True)
+        shared = self._shared_command_files(
+            agent_name, include_core=False
+        ).get(extension_id, {})
+        if not shared:
+            return preserved
+
+        registrar = CommandRegistrar(self.project_root)
+        config = registrar.AGENT_CONFIGS[agent_name]
+        for name in shared:
+            stem = registrar._compute_output_name(agent_name, name, config)
+            if stem in preserved:
+                continue
+            path = self.project_root / config["dir"] / f"{stem}{config['extension']}"
+            if not path.exists() and not path.is_symlink():
+                continue
+            try:
+                _validate_safe_shared_directory(self.project_root, path.parent)
+                registrar._ensure_inside(path.resolve(), self.project_root.resolve())
+                content = path.read_text(encoding="utf-8")
+                if config["extension"] == "/SKILL.md":
+                    frontmatter, _ = registrar.parse_frontmatter(content)
+                    metadata = frontmatter.get("metadata")
+                    source = metadata.get("source") if isinstance(metadata, dict) else None
+                    owned = isinstance(source, str) and (
+                        source == f"extension:{extension_id}"
+                        or source.startswith(f"{extension_id}:")
+                    )
+                else:
+                    owned = (
+                        f"<!-- Extension: {extension_id} -->" in content.splitlines()
+                    )
+            except (OSError, ValueError) as exc:
+                preserved.add(stem)
+                _print_cli_warning(
+                    "verify ownership of", "shared command file", str(path), exc,
+                    continuing="Preserving the shared file.",
+                )
+                continue
+            if not owned:
+                preserved.add(stem)
+                _print_cli_warning(
+                    "verify ownership of", "shared command file", str(path),
+                    ExtensionError(
+                        f"Not marked as owned by extension '{extension_id}'"
+                    ),
+                    continuing="Preserving the shared file.",
+                )
+        return preserved
 
     def _core_command_files(
         self, agent_name: str, *, installed_only: bool = False
@@ -4041,7 +4106,9 @@ class ExtensionManager:
             .as_posix() in installed
         }
 
-    def _shared_command_files(self, agent_name: str) -> Dict[str, Dict[str, str]]:
+    def _shared_command_files(
+        self, agent_name: str, *, include_core: bool = True
+    ) -> Dict[str, Dict[str, str]]:
         """Return extension command names that would write another command's file.
 
         Retiring legacy flat files moves each command to its formatted name,
@@ -4058,6 +4125,9 @@ class ExtensionManager:
         disabled one, or one whose manifest cannot be read, claims the names
         already registered for the agent, because its files stay on disk. A
         command and its own aliases are one owner.
+
+        Removal excludes planned core files: only the integration manifest
+        can establish that a core command has actually been installed.
         """
         core_files = self._core_command_files(agent_name)
         if not core_files:
@@ -4069,7 +4139,7 @@ class ExtensionManager:
         agent_config = registrar.AGENT_CONFIGS[agent_name]
         owners: Dict[str, Set[tuple[str, str]]] = {
             os.path.normcase(stem): {("", stem)} for stem in core_files
-        }
+        } if include_core else {}
         claims: List[tuple[str, str, str, str]] = []
         for ext_id, metadata in self.registry.list().items():
             if not isinstance(metadata, dict):

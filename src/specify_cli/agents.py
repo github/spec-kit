@@ -1365,11 +1365,9 @@ class CommandRegistrar:
         cleaned up as well.
 
         ``preserved_output_names`` maps an agent to formatted stems that
-        must stay. Extension removal passes the core command files the
-        integration installed for an agent that renamed its command files
-        (see ``ExtensionManager._core_command_files``), so an older alias
-        that now formats to one of them does not delete it. The raw command
-        name is still removed when it differs from that stem.
+        must stay. Extension removal protects installed core commands and
+        shared migrated files not owned by the extension being removed.
+        Protection applies to both formatted and raw command names.
 
         Args:
             registered_commands: Dict mapping agent names to command name lists
@@ -1408,7 +1406,11 @@ class CommandRegistrar:
                 names_to_clean = []
                 if os.path.normcase(output_name) not in preserved:
                     names_to_clean.append(output_name)
-                if output_name != cmd_name and self._is_safe_command_name(cmd_name):
+                if (
+                    output_name != cmd_name
+                    and os.path.normcase(cmd_name) not in preserved
+                    and self._is_safe_command_name(cmd_name)
+                ):
                     names_to_clean.append(cmd_name)
 
                 for target_dir in dirs_to_clean:
