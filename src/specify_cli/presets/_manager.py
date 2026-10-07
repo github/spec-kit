@@ -751,6 +751,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         force: bool = False,
         *,
         catalog_name: str | None = None,
+        expected_id: str | None = None,
+        expected_version: str | None = None,
     ) -> PresetManifest:
         """Install a preset from a supported archive.
 
@@ -794,6 +796,27 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             if not manifest_path.exists():
                 raise PresetValidationError("No preset.yml found in archive")
 
+            if expected_id is not None or expected_version is not None:
+                manifest = PresetManifest(manifest_path)
+                if expected_id is not None and manifest.id != expected_id:
+                    raise PresetValidationError(
+                        f"Preset archive ID '{manifest.id}' does not match catalog ID '{expected_id}'."
+                    )
+                if expected_version is not None:
+                    try:
+                        matches_version = (
+                            pkg_version.Version(manifest.version)
+                            == pkg_version.Version(expected_version)
+                        )
+                    except (pkg_version.InvalidVersion, TypeError):
+                        raise PresetValidationError(
+                            f"Invalid expected catalog version: {expected_version!r}"
+                        ) from None
+                    if not matches_version:
+                        raise PresetValidationError(
+                            f"Preset archive version '{manifest.version}' does not match catalog version '{expected_version}'."
+                        )
+
             return self.install_from_directory(
                 pack_dir,
                 speckit_version,
@@ -810,6 +833,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         force: bool = False,
         *,
         catalog_name: str | None = None,
+        expected_id: str | None = None,
+        expected_version: str | None = None,
     ) -> PresetManifest:
         """Backward-compatible wrapper for archive installation."""
         return self.install_from_archive(
@@ -818,6 +843,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             priority,
             force=force,
             catalog_name=catalog_name,
+            expected_id=expected_id,
+            expected_version=expected_version,
         )
 
     def remove(self, pack_id: str) -> bool:

@@ -17,8 +17,60 @@ from .._download_security import (
     build_safe_download_path,
     detect_archive_format,
     is_https_or_localhost_http,
+    is_safe_download_redirect,
 )
+from ._catalog_versions import available_versions, select_release
 from ._manifest import PresetError, PresetValidationError
+
+
+class PresetCatalogValidationError(PresetError):
+    """A catalog supplied invalid content rather than being unreachable."""
+
+
+def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
+    """Reject duplicate keys before JSON parsing discards conflicting records."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise PresetCatalogValidationError(
+                    f"Invalid preset catalog format from {url}: duplicate JSON key '{key}'."
+                )
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(raw, object_pairs_hook=unique_object)
+    except json.JSONDecodeError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid JSON ({exc})"
+        ) from exc
+    except UnicodeError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid encoding ({exc})"
+        ) from exc
+    except RecursionError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: excessive nesting ({exc})"
+        ) from exc
+    except ValueError as exc:
+        raise PresetCatalogValidationError(
+            f"Invalid preset catalog format from {url}: invalid JSON value ({exc})"
+        ) from exc
+
+
+def _select_catalog_release(
+    pack_id: str, pack: dict[str, Any], version: str | None
+) -> dict[str, Any] | None:
+    if "releases" in pack and pack.get("id", pack_id) != pack_id:
+        raise PresetCatalogValidationError(
+            f"Preset '{pack_id}' has an inconsistent catalog ID."
+        )
+    try:
+        return select_release({**pack, "id": pack_id}, version)
+    except PresetError as exc:
+        raise PresetCatalogValidationError(str(exc)) from exc
 
 
 @dataclass
@@ -172,7 +224,7 @@ class PresetCatalog:
             PresetError: If the payload's shape is invalid.
         """
         if not isinstance(catalog_data, dict):
-            raise PresetError(
+            raise PresetCatalogValidationError(
                 f"Invalid preset catalog format from {url}: "
                 "expected a JSON object"
             )
@@ -180,9 +232,9 @@ class PresetCatalog:
             "schema_version" not in catalog_data
             or "presets" not in catalog_data
         ):
-            raise PresetError(f"Invalid preset catalog format from {url}")
+            raise PresetCatalogValidationError(f"Invalid preset catalog format from {url}")
         if not isinstance(catalog_data.get("presets"), dict):
-            raise PresetError(
+            raise PresetCatalogValidationError(
                 f"Invalid preset catalog format from {url}: "
                 "'presets' must be a JSON object"
             )
@@ -424,7 +476,9 @@ class PresetCatalog:
         # refreshed.
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+                cached_data = _decode_catalog_json(
+                    cache_file.read_text(encoding="utf-8"), entry.url
+                )
                 self._validate_catalog_payload(cached_data, entry.url)
                 return cached_data
             except (json.JSONDecodeError, OSError, UnicodeError, PresetError):
@@ -451,13 +505,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(
+                catalog_data = _decode_catalog_json(
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=PresetError,
+                        error_type=PresetCatalogValidationError,
                         label=f"preset catalog {entry.url}",
-                    )
+                    ),
+                    entry.url,
                 )
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -496,37 +551,54 @@ class PresetCatalog:
                 f"Failed to fetch preset catalog from {entry.url}: {e}"
             )
 
-    def _get_merged_packs(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
+    def _get_merged_packs(
+        self, force_refresh: bool = False, *, pack_id: str | None = None
+    ) -> Dict[str, Dict[str, Any]]:
         """Fetch and merge presets from all active catalogs.
 
         Higher-priority catalogs (lower priority number) win on ID conflicts.
+        For a requested ID, stop at the first matching catalog so malformed
+        lower-priority sources cannot block its winning entry.
 
         Returns:
             Merged dictionary of pack_id -> pack_data
         """
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
+        first_fetch_error: PresetError | None = None
+        readable_source = False
 
-        for entry in reversed(active_catalogs):
+        sources = active_catalogs if pack_id is not None else reversed(active_catalogs)
+        for entry in sources:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
-                for pack_id, pack_data in data.get("presets", {}).items():
-                    # Per-entry guard: ``_fetch_single_catalog`` already
-                    # validates that ``data["presets"]`` is a mapping, but it
-                    # does not (and should not) validate every entry shape
-                    # there — one malformed entry shouldn't poison an
-                    # otherwise valid catalog. Skip non-mapping entries here
-                    # so a payload like ``{"presets": {"foo": [], "bar":
-                    # {...}}}`` still merges the valid entries without
-                    # crashing on ``**pack_data``. Mirrors
-                    # ``integrations/catalog.py:245``.
+                readable_source = True
+                for found_id, pack_data in data.get("presets", {}).items():
+                    if pack_id is not None and found_id != pack_id:
+                        continue
+                    # Untargeted searches skip malformed entries; an exact
+                    # matching ID must fail instead of falling through to a
+                    # lower-priority installable source.
                     if not isinstance(pack_data, dict):
+                        if pack_id is not None:
+                            raise PresetCatalogValidationError(
+                                f"Invalid preset catalog entry for '{pack_id}' "
+                                f"from {entry.url}: expected a JSON object"
+                            )
                         continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
-                    merged[pack_id] = pack_data_with_catalog
-            except PresetError:
+                    merged[found_id] = pack_data_with_catalog
+                    if pack_id is not None:
+                        return merged
+            except PresetCatalogValidationError:
+                raise
+            except PresetError as exc:
+                if first_fetch_error is None:
+                    first_fetch_error = exc
                 continue
 
+        if not readable_source and first_fetch_error is not None:
+            raise first_fetch_error
         return merged
 
     def is_cache_valid(self) -> bool:
@@ -599,8 +671,8 @@ class PresetCatalog:
                     self.cache_metadata_file.read_text(encoding="utf-8")
                 )
                 if metadata.get("catalog_url") == catalog_url:
-                    cached_data = json.loads(
-                        self.cache_file.read_text(encoding="utf-8")
+                    cached_data = _decode_catalog_json(
+                        self.cache_file.read_text(encoding="utf-8"), catalog_url
                     )
                     self._validate_catalog_payload(cached_data, catalog_url)
                     return cached_data
@@ -622,13 +694,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(
+                catalog_data = _decode_catalog_json(
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=PresetError,
+                        error_type=PresetCatalogValidationError,
                         label=f"preset catalog {catalog_url}",
-                    )
+                    ),
+                    catalog_url,
                 )
 
             # Validate catalog structure. Reuses the same helper as
@@ -691,12 +764,15 @@ class PresetCatalog:
         """
         try:
             packs = self._get_merged_packs()
+        except PresetCatalogValidationError:
+            raise
         except PresetError:
             return []
 
         results = []
 
         for pack_id, pack_data in packs.items():
+            _select_catalog_release(pack_id, pack_data, None)
             if author:
                 author_val = pack_data.get("author", "")
                 if not isinstance(author_val, str):
@@ -735,11 +811,11 @@ class PresetCatalog:
         return results
 
     def get_pack_info(
-        self, pack_id: str
-    ) -> Optional[Dict[str, Any]]:
+        self, pack_id: str, version: str | None = None
+    ) -> dict[str, Any] | None:
         """Get detailed information about a specific preset.
 
-        Searches across all active catalogs (merged by priority).
+        Searches active catalogs in priority order, stopping at the winning ID.
 
         Args:
             pack_id: ID of the preset
@@ -747,22 +823,33 @@ class PresetCatalog:
         Returns:
             Pack metadata or None if not found
         """
-        try:
-            packs = self._get_merged_packs()
-        except PresetError:
-            return None
+        packs = self._get_merged_packs(pack_id=pack_id)
 
         if pack_id in packs:
-            return {**packs[pack_id], "id": pack_id}
+            return _select_catalog_release(pack_id, packs[pack_id], version)
         return None
+
+    def get_pack_versions(self, pack_id: str) -> list[str]:
+        """List the versions advertised by the winning catalog entry."""
+        pack = self.get_pack_info(pack_id)
+        return available_versions(pack) if pack is not None else []
 
     def download_pack(
         self, pack_id: str, target_dir: Optional[Path] = None
     ) -> Path:
-        """Download a preset archive from a catalog.
+        """Download the advertised current preset archive from a catalog."""
+        pack_info = self.get_pack_info(pack_id)
+        if pack_info is None:
+            raise PresetError(f"Preset '{pack_id}' not found in catalog")
+        return self.download_pack_info(pack_info, target_dir)
+
+    def download_pack_info(
+        self, pack_info: dict[str, Any], target_dir: Path | None = None
+    ) -> Path:
+        """Download an already-selected release without resolving its ID again.
 
         Args:
-            pack_id: ID of the preset to download
+            pack_info: Metadata returned by get_pack_info
             target_dir: Directory to save the archive
 
         Returns:
@@ -775,11 +862,7 @@ class PresetCatalog:
 
         from . import read_response_limited, verify_archive_sha256
 
-        pack_info = self.get_pack_info(pack_id)
-        if not pack_info:
-            raise PresetError(
-                f"Preset '{pack_id}' not found in catalog"
-            )
+        pack_id = pack_info["id"]
 
         # Bundled presets without a download URL must be installed locally
         if pack_info.get("bundled") and not pack_info.get("download_url"):
@@ -857,17 +940,36 @@ class PresetCatalog:
 
         staging_path: Path | None = None
         try:
-            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
+            def _validate_redirect(old_url: str, new_url: str) -> None:
+                if not is_safe_download_redirect(old_url, new_url):
+                    raise PresetError(
+                        f"Preset download redirected to a disallowed URL: {new_url}"
+                    )
+
+            with self._open_url(
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                redirect_validator=_validate_redirect,
+            ) as response:
                 archive_data = read_response_limited(
                     response,
                     error_type=PresetError,
                     label=f"preset '{pack_id}' download",
                 )
-                final_url = (
+                response_url = (
                     response.geturl()
                     if hasattr(response, "geturl")
                     else download_url
                 )
+                final_url = response_url if isinstance(response_url, str) else download_url
+                if not is_https_or_localhost_http(final_url) or (
+                    final_url != download_url
+                    and not is_safe_download_redirect(download_url, final_url)
+                ):
+                    raise PresetError(
+                        f"Preset download redirected to a disallowed URL: {final_url}"
+                    )
                 content_type = (
                     response.getheader("Content-Type")
                     if hasattr(response, "getheader")

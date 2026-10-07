@@ -409,7 +409,8 @@ def test_local_refresh_catalog_extension_requires_network(
     version = "1.0.0"
     downloads = []
 
-    def download_extension(self, extension_id):
+    def download_extension_info(self, info):
+        extension_id = info["id"]
         downloads.append((extension_id, version))
         artifact = tmp_path / "extension.zip"
         extension = {
@@ -439,7 +440,9 @@ def test_local_refresh_catalog_extension_requires_network(
         "get_extension_info",
         lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
     )
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", download_extension_info
+    )
     data = valid_manifest_dict(
         provides={"extensions": [{"id": "catalog-ext", "version": version}]}
     )

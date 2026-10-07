@@ -337,13 +337,15 @@ git push origin add-your-preset
 
 ## Verification Process
 
-> **How submissions get picked up:** the automated catalog-validation workflow only runs
-> once the `preset-submission` label is on the issue. On this public repository, contributors
-> cannot apply that label themselves — a maintainer applies it during issue triage. Until then
-> the issue simply waits in triage; there is no action required from you, and there is no need to
-> re-request the label in a comment.
+### What Happens After You Submit
 
-After submission, maintainers will review:
+1. GitHub applies the `triage-must-have` verdict when the issue is opened through the Preset Submission form. This intake automation is specific to preset submissions and does not change the manual triage rubric for other issues.
+2. A maintainer reviews the issue during issue triage and applies the separate `preset-submission` label, which starts the automated catalog validation. On this public repository, contributors cannot apply that label themselves, so there is nothing to label or re-request — the issue simply waits in triage.
+3. The automated workflow validates the submission and, when validation passes, updates `presets/catalog.community.json` and `docs/community/presets.md` in a draft pull request
+4. A maintainer reviews the generated pull request and merges it when approved
+5. Your preset becomes discoverable via `specify preset search`
+
+### What Maintainers Check
 
 1. **Manifest validation** — valid `preset.yml`, all files exist
 2. **Template quality** — templates are useful and well-structured

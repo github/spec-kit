@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -231,6 +232,60 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
             current.resolve().relative_to(root)
         except (OSError, ValueError):
             raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+
+
+@contextlib.contextmanager
+def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str):
+    """Hold an exclusive inter-process lock on ``.specify/<lock_name>``.
+
+    Callers use one lock file per mutable project resource so that its
+    directory and registry changes are serialized across processes. Every
+    failure to acquire the lock is raised as ``OSError``.
+    """
+    project_root = Path(project_root)
+    lock_dir = project_root / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            project_root, lock_dir, context=f"{context} lock directory"
+        )
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
+    lock_file = lock_dir / lock_name
+    if lock_file.is_symlink():
+        raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_file, flags, 0o600)
+    try:
+        if lock_file.is_symlink():
+            raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+        # Call the lock primitives through their modules so tests can observe
+        # contention by patching ``msvcrt.locking`` / ``fcntl.flock``.
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def _ensure_safe_shared_destination(

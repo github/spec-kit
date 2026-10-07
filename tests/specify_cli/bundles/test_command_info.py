@@ -578,6 +578,60 @@ def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
     assert payload["id"] == "demo-bundle"
 
 
+def test_bundle_info_resolves_ghecom_browser_release_url_zip(project: Path):
+    """bundle info resolves a GHE.com release ZIP through its API subdomain."""
+    import zipfile
+
+    web_host = "msft.ghe.com"
+    api_host = f"api.{web_host}"
+    browser_url = f"https://{web_host}/org/repo/releases/download/v2.0/bundle.zip"
+    api_asset_url = f"https://{api_host}/repos/org/repo/releases/assets/42"
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = archive.getvalue()
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps(
+                    {"assets": [{"name": "bundle.zip", "url": api_asset_url}]}
+                ).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with (
+        patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url),
+        patch(
+            "specify_cli.authentication.http.github_provider_hosts",
+            return_value=(web_host, api_host),
+        ),
+    ):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert tag_calls == [f"https://{api_host}/repos/org/repo/releases/tags/v2.0"]
+
+    asset_calls = [(url, headers) for url, headers in captured if url == api_asset_url]
+    assert asset_calls == [(api_asset_url, {"Accept": "application/octet-stream"})]
+
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
 def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
     """Bundle download rejects responses exceeding MAX_DOWNLOAD_BYTES."""
     # Monkeypatch to a small limit so the test is fast and low-memory.

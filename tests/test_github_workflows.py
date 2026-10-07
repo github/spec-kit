@@ -232,6 +232,7 @@ def test_bundle_success_labels_correct_omitted_agent_updates(labels):
         (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
     )
     assert result["calls"][-1]["api"] == "addLabels"
+    assert result["calls"][-1]["args"]["labels"] == ["validation-passed"]
     for call in result["calls"]:
         assert call["args"]["owner"] == "test-owner"
         assert call["args"]["repo"] == "test-repo"
@@ -258,6 +259,40 @@ def test_bundle_success_labels_surface_api_errors(fail_api):
     assert result["error"] == f"API failure: {fail_api}"
     assert result["calls"][-1]["api"] == fail_api
     assert "validation-passed" not in result["labels"]
+
+
+@pytest.mark.parametrize("name", [
+    "add-community-bundle", "add-community-extension", "add-community-preset",
+    "bug-assess", "bug-fix", "bug-test", "feature-assess",
+])
+def test_agentic_workflow_labels_are_applied_not_suggested(name):
+    source_text, compiled_text, source, compiled = _agentic_workflow(name)
+    assert source["safe-outputs"]["add-labels"]["issue-intent"] is False
+    assert _safe_output_config(compiled)["add_labels"]["issue_intent"] is False
+    agent_config_step = _workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+    )
+    agent_config = json.loads(agent_config_step["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
+    assert agent_config["add_labels"]["issue_intent"] is False
+    responsibilities = " ".join(
+        source_text.split("## Label Responsibilities\n", 1)[1].split("\n## ", 1)[0].split()
+    )
+    assert "Applying the outcome labels is your responsibility" in responsibilities
+    assert (
+        "Use the `add_labels` safe output on source issue "
+        "#${{ github.event.issue.number }}"
+    ) in responsibilities
+    assert "with plain strings in its `labels` array" in responsibilities
+    assert (
+        "Never emit label objects with `suggest: true` or suggestion-only output."
+    ) in responsibilities
+    assert f"{{{{#runtime-import .github/workflows/{name}.md}}}}" in compiled_text
+    if name.startswith("add-community-"):
+        assert 'For a Passed outcome, emit `labels: ["validation-passed"]`' in responsibilities
+        assert 'for a Failed outcome, emit `labels: ["validation-failed"]`' in responsibilities
+        assert (
+            "this requirement does not turn environment blockers into submission failures."
+        ) in responsibilities
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -460,6 +495,187 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+def test_extension_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    extension_form = yaml.safe_load(
+        (forms_dir / "extension_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert extension_form["labels"] == ["triage-must-have"]
+    assert "extension-submission" not in extension_form["labels"]
+
+
+def test_preset_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    preset_form = yaml.safe_load(
+        (forms_dir / "preset_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert preset_form["labels"] == ["triage-must-have"]
+    assert "preset-submission" not in preset_form["labels"]
+
+
+def test_bundle_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert bundle_form["labels"] == ["triage-must-have"]
+    assert "bundle-submission" not in bundle_form["labels"]
+
+
+def test_workflow_step_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert workflow_step_form["labels"] == ["triage-must-have"]
+    assert not {
+        "enhancement",
+        "needs-triage",
+        "workflow-step-submission",
+        "validation-passed",
+        "validation-failed",
+    } & set(workflow_step_form["labels"])
+
+
+def test_workflow_step_submission_form_has_valid_complete_field_contract():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    fields = [item for item in workflow_step_form["body"] if "id" in item]
+    field_ids = [field["id"] for field in fields]
+
+    assert len(field_ids) == len(set(field_ids))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", field_id) for field_id in field_ids)
+    assert set(field_ids) == {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "changelog",
+        "testing-details",
+        "attestations",
+        "additional-context",
+        "ai-disclosure",
+    }
+    required_ids = {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "testing-details",
+        "ai-disclosure",
+    }
+    assert {
+        field["id"]
+        for field in fields
+        if field.get("validations", {}).get("required") is True
+    } == required_ids
+    field_by_id = {field["id"]: field for field in fields}
+    assert field_by_id["step-type-count"][
+        "attributes"
+    ]["options"] == ["1"]
+    assert all(
+        option["required"] is True
+        for option in field_by_id["attestations"]["attributes"]["options"]
+    )
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+    bundle_fields = {
+        item["id"]: item for item in bundle_form["body"] if "id" in item
+    }
+    assert field_by_id["download-url"]["attributes"]["label"] == (
+        bundle_fields["download-url"]["attributes"]["label"]
+    )
+    download_description = field_by_id["download-url"]["attributes"]["description"]
+    assert "versioned" in download_description
+    assert "immutable" not in download_description
+    assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
+    extra_files_description = field_by_id["extra-files"]["attributes"]["description"]
+    assert "forward slashes" in extra_files_description
+    assert "relative and non-empty" in extra_files_description
+    assert "no empty, `.` or `..` segments" in extra_files_description
+    assert "case-insensitively alias `step.yml` or `__init__.py`" in (
+        extra_files_description
+    )
+    feature_form = yaml.safe_load(
+        (forms_dir / "feature_request.yml").read_text(encoding="utf-8")
+    )
+    feature_fields = {
+        item["id"]: item for item in feature_form["body"] if "id" in item
+    }
+    assert field_by_id["ai-disclosure"] == feature_fields["ai-disclosure"]
+
+
+def test_workflow_step_submission_form_documents_intake_only_phase():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    introduction = workflow_step_form["body"][0]["attributes"]["value"]
+
+    assert "This phase is intake-only" in introduction
+    assert "no validation workflow or draft pull request is triggered" in introduction
+    assert "update the community catalog through the normal reviewed pull request" in (
+        introduction
+    )
+
+
+def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    automatic_intake_forms = {
+        "bundle_submission.yml",
+        "extension_submission.yml",
+        "preset_submission.yml",
+        "workflow_step_submission.yml",
+    }
+    other_forms = sorted(
+        path
+        for path in forms_dir.glob("*.yml")
+        if path.name != "config.yml" and path.name not in automatic_intake_forms
+    )
+
+    assert [path.name for path in other_forms] == [
+        "agent_request.yml",
+        "bug_report.yml",
+        "feature_request.yml",
+    ]
+    for form_path in other_forms:
+        form = yaml.safe_load(form_path.read_text(encoding="utf-8"))
+        assert "triage-must-have" not in form["labels"]
+
+
 @pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
 def test_community_upgrade_uses_established_runtime_defaults(kind):
     _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")
@@ -590,9 +806,13 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
+    expected_labels = {
         "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
         "max": 3,
+    }
+    assert outputs["add_labels"] == {**expected_labels, "issue_intent": False}
+    assert source["safe-outputs"]["add-labels"] == {
+        **expected_labels, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
@@ -817,10 +1037,21 @@ def test_community_archive_permission_failures_are_not_submission_failures(kind)
         "If there are no environment blockers and every required check completed "
         "and passed:"
     )
-    assert re.search(
-        r"remove `validation-failed`.*add (?:the )?`validation-passed`",
-        passed, re.IGNORECASE | re.DOTALL,
-    )
+    if kind == "preset":
+        assert "Remove any stale `validation-passed` and `validation-failed`" in passed
+        assert "Do not add `validation-passed` yet" in passed
+        generated = source_text.split("### Verify the generated files", 1)[1].split(
+            "\n## Step 6", 1
+        )[0]
+        assert "validate_community_preset.py generated" in generated
+        assert "add the `validation-passed`" in source_text.split(
+            "\n## Step 6", 1
+        )[1]
+    else:
+        assert re.search(
+            r"remove `validation-failed`.*add (?:the )?`validation-passed`",
+            passed, re.IGNORECASE | re.DOTALL,
+        )
     assert "validation-failed" in source["safe-outputs"]["remove-labels"]["allowed"]
     assert "validation-failed" in _safe_output_config(compiled)["remove_labels"]["allowed"]
     assert "validation-passed" in source["safe-outputs"]["remove-labels"]["allowed"]
@@ -1276,8 +1507,11 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     assert set(outputs) == expected_outputs
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 1}
-    assert outputs["add_labels"] == source["safe-outputs"]["add-labels"] == {
-        "allowed": labels, "max": 1
+    assert outputs["add_labels"] == {
+        "allowed": labels, "max": 1, "issue_intent": False
+    }
+    assert source["safe-outputs"]["add-labels"] == {
+        "allowed": labels, "max": 1, "issue-intent": False
     }
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
     assert outputs["noop"] == {"max": 1, "report-as-issue": "false"}
