@@ -941,14 +941,21 @@ class WorkflowEngine:
 
     def __init__(self, project_root: Path | None = None) -> None:
         self.project_root = project_root or Path(".")
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(self.project_root)
+        self._load_integrations()
         self.on_step_start: Any = None  # Callable[[str, str], None] | None
         # Serializes on_step_start so a concurrent fan-out can't interleave the
         # callback's output (the CLI sets it to a console.print lambda). Uncontended
         # for sequential runs.
         self._callback_lock = threading.Lock()
+
+    def _load_integrations(self) -> None:
+        from ..integrations import load_installed_integrations
+        from ..integrations.installer import IntegrationInstallError
+
+        try:
+            load_installed_integrations(self.project_root)
+        except OSError as exc:
+            raise IntegrationInstallError(f"Cannot load installed integrations: {exc}") from exc
 
     def load_workflow(self, source: str | Path) -> WorkflowDefinition:
         """Load a workflow from an installed ID or a local YAML path.
@@ -1035,9 +1042,7 @@ class WorkflowEngine:
         -------
         The final ``RunState`` after execution completes (or pauses).
         """
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(self.project_root)
+        self._load_integrations()
         dispatch_default_errors = _dispatch_default_errors(definition)
         if dispatch_default_errors:
             raise ValueError(" ".join(dispatch_default_errors))
@@ -1128,9 +1133,7 @@ class WorkflowEngine:
         workflow inputs. Keys not supplied keep their persisted values; an
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(self.project_root)
+        self._load_integrations()
         state = RunState.load(run_id, self.project_root)
         if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."

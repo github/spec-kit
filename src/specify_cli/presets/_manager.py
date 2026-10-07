@@ -165,10 +165,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
     def _command_registrar(self):
         from ..agents import CommandRegistrar
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(self.project_root)
-        return CommandRegistrar()
+        return CommandRegistrar(self.project_root, include_generic=False)
 
     def check_compatibility(
         self,

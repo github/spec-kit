@@ -412,11 +412,7 @@ def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str,
         if not leaf and parts[0] in {".git", ".specify"}:
             raise IntegrationInstallError("Reserved recovery ownership directory")
         for other in INTEGRATION_REGISTRY.values():
-            folder = ((other.config or {}).get("folder") or "").rstrip("/")
-            protected = tuple(part.casefold() for part in Path(folder).parts)
-            if other.key != key and folder and (
-                parts[:len(protected)] == protected or protected[:len(parts)] == parts
-            ):
+            if other.key != key and any(_paths_overlap(relative, folder) for folder in _output_roots(other)):
                 raise IntegrationInstallError(
                     f"Integration '{key}' recovery ownership overlaps '{other.key}'"
                 )
@@ -485,11 +481,32 @@ def _descriptor(package: Path, key: str, info: dict[str, Any]) -> IntegrationDes
     return descriptor
 
 
+def _paths_overlap(first: str, second: str) -> bool:
+    left = tuple(part.casefold() for part in Path(first).parts)
+    right = tuple(part.casefold() for part in Path(second).parts)
+    return left[:len(right)] == right or right[:len(left)] == left
+
+
+def _output_roots(integration: IntegrationBase) -> list[str]:
+    return [
+        path.rstrip("/") for path in (
+            (integration.config or {}).get("folder"),
+            (integration.registrar_config or {}).get("legacy_dir"),
+        )
+        if isinstance(path, str) and path
+    ]
+
+
 def _validate_output_paths(integration: IntegrationBase, project_root: Path) -> None:
     config = integration.config
     folder = config["folder"].rstrip("/")
     destination = f"{folder}/{config['commands_subdir']}"
-    for relative in (folder, destination, integration.registrar_config["dir"]):
+    paths = [folder, destination, integration.registrar_config["dir"]]
+    if "legacy_dir" in integration.registrar_config:
+        paths.append(integration.registrar_config["legacy_dir"])
+    for relative in paths:
+        if relative.startswith("~"):
+            raise IntegrationInstallError(f"Integration '{integration.key}' output must be project-local")
         safe_project_path(project_root, relative)
         if Path(relative).parts[0].casefold() in {".specify", ".git"}:
             raise IntegrationInstallError(f"Integration '{integration.key}' output uses reserved directory")
@@ -513,6 +530,10 @@ def _validate_registrar_config(key: str, registrar: Any) -> None:
         raise IntegrationInstallError(f"Integration '{key}' registrar_config.invoke_separator must be a non-empty string")
     if "dev_no_symlink" in registrar and not isinstance(registrar["dev_no_symlink"], bool):
         raise IntegrationInstallError(f"Integration '{key}' registrar_config.dev_no_symlink must be a boolean")
+    if "legacy_dir" in registrar and (
+        not isinstance(registrar["legacy_dir"], str) or not registrar["legacy_dir"].strip()
+    ):
+        raise IntegrationInstallError(f"Integration '{key}' registrar_config.legacy_dir must be a non-empty string")
 
 
 def _validate_implementation(
@@ -541,12 +562,11 @@ def _validate_implementation(
     if not isinstance(integration.multi_install_safe, bool):
         raise IntegrationInstallError(f"Integration '{key}' multi_install_safe must be a boolean")
     if integration.multi_install_safe:
+        roots = _output_roots(integration)
         for other in INTEGRATION_REGISTRY.values():
-            other_folder = ((other.config or {}).get("folder") or "").rstrip("/")
-            if other.key != key and other_folder and (
-                folder == other_folder
-                or folder.startswith(other_folder + "/")
-                or other_folder.startswith(folder + "/")
+            if other.key != key and any(
+                _paths_overlap(path, other_folder)
+                for path in roots for other_folder in _output_roots(other)
             ):
                 raise IntegrationInstallError(f"Integration '{key}' multi-install root overlaps '{other.key}'")
     signature = inspect.signature(integration.build_exec_args)

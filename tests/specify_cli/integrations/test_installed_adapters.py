@@ -1845,6 +1845,231 @@ def test_round2_overlapping_dispatch_pins_lazy_imports_and_project_lookup(
     assert not any(name.startswith(installer._MODULE_PREFIX) for name in sys.modules)
 
 
+@pytest.mark.parametrize("legacy", [
+    "../outside", "/outside", ".sample/../outside", ".git/hooks", ".SPECIFY/scripts",
+    "", None, 42, False, [],
+])
+def test_round3_invalid_legacy_destination_is_rejected_before_setup(tmp_path, server, legacy):
+    marker = tmp_path / "setup-ran"
+    body = f'''    registrar_config = {{**registrar_config, "legacy_dir": {legacy!r}}}
+    def setup(self, project_root, manifest, **kwargs):
+        from pathlib import Path
+        Path({str(marker)!r}).touch()
+        return []
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert not marker.exists()
+    assert snapshot(project) == before
+
+
+def test_round3_valid_legacy_destination_remains_supported(tmp_path, server):
+    body = '    registrar_config = {**registrar_config, "legacy_dir": ".sample-previous/skills"}\n'
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    assert CommandRegistrar(project).AGENT_CONFIGS[KEY]["legacy_dir"] == ".sample-previous/skills"
+    assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").is_file()
+
+
+@pytest.mark.parametrize("directory", ["primary", "legacy"])
+def test_round3_home_relative_output_cannot_escape_project_contract(tmp_path, server, directory):
+    body = (
+        '    registrar_config = {**registrar_config, "legacy_dir": "~/.sample-previous/skills"}\n'
+        if directory == "legacy" else ""
+    )
+    publish(server, code=implementation(
+        folder="~/.sample-agent" if directory == "primary" else ".sample-agent", body=body,
+    ))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "project-local" in result.output
+    assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("directory", ["primary", "legacy"])
+@pytest.mark.parametrize("alias", [".CLAUDE", ".CLAUDE/nested", ".KILOCODE"])
+def test_round3_multi_install_overlap_uses_portable_casefolded_paths(tmp_path, server, directory, alias):
+    body = (
+        f'    registrar_config = {{**registrar_config, "legacy_dir": {alias!r}}}\n'
+        if directory == "legacy" else ""
+    )
+    publish(server, code=implementation(
+        folder=alias if directory == "primary" else ".sample-agent", body=body,
+    ))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert "overlap" in result.output.lower(), result.output
+    assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("consumer", ["extension-candidates", "extension-remove", "preset"])
+def test_round3_managers_snapshot_the_requested_project_atomically(tmp_path, server, monkeypatch, consumer):
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    publish(server, code=implementation(folder=".sample-first"))
+    first = catalog_project(tmp_path, server)
+    install(first)
+    publish(server, version="2.0.0", code=implementation(folder=".sample-second"))
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original = CommandRegistrar.__init__
+
+    def switch_before_unscoped_snapshot(registrar, project_root=None, **kwargs):
+        if project_root is None:
+            load_installed_integrations(second)
+        original(registrar, project_root, **kwargs)
+
+    monkeypatch.setattr(CommandRegistrar, "__init__", switch_before_unscoped_snapshot)
+    if consumer == "preset":
+        registrar = PresetManager(first)._command_registrar()
+        assert registrar.AGENT_CONFIGS[KEY]["dir"] == ".sample-first/skills"
+    elif consumer == "extension-candidates":
+        candidates = ExtensionManager(first)._extension_skill_candidate_dirs()
+        assert first / ".sample-first/skills" in candidates
+        assert first / ".sample-second/skills" not in candidates
+    else:
+        manager = ExtensionManager(first)
+        manager.registry.add("sample-extension", {
+            "version": "1.0.0", "registered_commands": {KEY: ["speckit.sample"]},
+        })
+        first_leaf = first / ".sample-first/skills/speckit-sample/SKILL.md"
+        other_leaf = first / ".sample-second/skills/speckit-sample/SKILL.md"
+        for leaf in (first_leaf, other_leaf):
+            leaf.parent.mkdir(parents=True, exist_ok=True)
+            leaf.write_text("preserve the correct project scope")
+        assert manager.remove("sample-extension")
+        assert not first_leaf.exists()
+        assert other_leaf.read_text() == "preserve the correct project scope"
+
+
+@pytest.mark.parametrize("operation", ["add", "remove", "enable", "disable"])
+def test_round3_extension_event_refresh_loads_adapter_in_fresh_process(tmp_path, server, operation):
+    from specify_cli.events import refresh_integration_events
+
+    body = '''    CANONICAL_TO_NATIVE = {"session_start": "SampleStart"}
+    events_config_file = ".sample-agent/events.json"
+    events_format = "json-nested"
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    extension = tmp_path / "sample-events"
+    extension.mkdir()
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {
+            "id": "sample-events", "name": "Sample Events", "version": "1.0.0",
+            "description": "Sample event-only extension",
+        },
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": []},
+        "events": {"session_start": {"command": "speckit.sample.boot"}},
+    }))
+    config = project / ".sample-agent/events.json"
+    if operation != "add":
+        result = run(project, ["extension", "add", "--dev", str(extension)])
+        assert result.exit_code == 0, result.output
+        refresh_integration_events(project)
+    if operation == "enable":
+        result = run(project, ["extension", "disable", "sample-events"])
+        assert result.exit_code == 0, result.output
+        refresh_integration_events(project)
+    arguments = (
+        ["extension", "add", "--dev", str(extension)]
+        if operation == "add" else ["extension", operation, "sample-events"]
+    )
+    if operation == "remove":
+        arguments.append("--force")
+    executable = Path(sys.executable).parent / ("specify.exe" if os.name == "nt" else "specify")
+    result = subprocess.run(
+        [str(executable), *arguments], cwd=project, capture_output=True,
+        text=True, encoding="utf-8", timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(config.read_text()) if config.exists() else {}
+    hooks = data.get("hooks", {}).get("SampleStart", [])
+    assert bool(hooks) == (operation in {"add", "enable"})
+
+
+def test_round3_event_refresh_surfaces_failed_adapter_load(tmp_path, server):
+    from specify_cli.events import EventRefreshError, refresh_integration_events
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").write_text(
+        "raise RuntimeError('sample adapter should not execute')"
+    )
+    with pytest.raises(EventRefreshError, match="sample-agent.*modified") as exc:
+        refresh_integration_events(project)
+    assert exc.value.failures[0][0] == "installed adapters"
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_round3_resume_disappearing_run_has_specific_missing_run_error(tmp_path, server, monkeypatch, json_output):
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    state = RunState(run_id="sample-run", workflow_id="sample-workflow", project_root=project)
+    state.status = RunStatus.PAUSED
+    state.installed_origin_tracked = True
+    state.save()
+
+    def disappear(engine, run_id, inputs):
+        raise FileNotFoundError("sample state disappeared")
+
+    monkeypatch.setattr(WorkflowEngine, "resume", disappear)
+    result = run(project, ["workflow", "resume", "sample-run", *(["--json"] if json_output else [])])
+    assert result.exit_code == 1, result.output
+    if json_output:
+        assert json.loads(result.stdout)["error"] == "Run not found: sample-run"
+        assert result.stderr == ""
+    else:
+        assert "Run not found: sample-run" in result.stdout
+
+
+def test_round3_resume_adapter_file_disappearance_is_not_a_missing_run(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import RunState
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    state = RunState(run_id="sample-run", workflow_id="sample-workflow", project_root=project)
+    state.status = RunStatus.PAUSED
+    state.installed_origin_tracked = True
+    state.save()
+    original = installer.package_hashes
+    calls = 0
+
+    def disappear_on_resume(package):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise FileNotFoundError("sample adapter source disappeared")
+        return original(package)
+
+    monkeypatch.setattr(installer, "package_hashes", disappear_on_resume)
+    result = run(project, ["workflow", "resume", "sample-run", "--json"])
+    assert result.exit_code == 1, result.output
+    assert "sample adapter source disappeared" in json.loads(result.stdout)["error"]
+    assert "Run not found" not in result.stdout
+    assert result.stderr == ""
+
+
 def test_failed_operation_preserves_independent_workflow_and_unowned_output_edits(tmp_path, server, monkeypatch):
     from specify_cli.integrations import installer
     from specify_cli.workflows.engine import RunState

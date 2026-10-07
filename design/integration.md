@@ -143,7 +143,12 @@ the registration directory must match `folder/commands_subdir`. Output paths
 must be canonical, project-local, and outside `.git` and `.specify`.
 Registration extensions must be plain dotted filename suffixes (such as
 `.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
-Multi-install-safe adapters cannot declare overlapping agent roots. Custom
+An optional `registrar_config.legacy_dir` must be a non-empty canonical
+project-relative directory under the same reserved-root and symlink restrictions;
+home-relative destinations are not supported for external adapters.
+Multi-install-safe adapters cannot declare overlapping agent roots or legacy
+destinations. Comparisons use case-folded path components on every platform so
+packages remain safe on case-insensitive filesystems. Custom
 setup must keep generated agent files under its declared root, track writes
 with `IntegrationManifest`, and leave shared infrastructure ownership to the
 host. Use the host's format bases rather than copied core templates.
@@ -198,6 +203,9 @@ Catalog listing, catalog discovery, and `integration info` read metadata without
 importing installed adapters. Merely checking that a directory is a Spec Kit
 project does not load adapter code; registration managers load it when they
 actually need the adapter's rendering configuration.
+Extension-native event refresh also loads and pins the project's trusted adapters,
+including fresh-process event-only extension add/remove and enable/disable.
+Adapter loading failures are reported as event-refresh failures, not skipped.
 
 `init --integration`, `integration install`, and `integration switch` can
 resolve an uninstalled adapter from an install-enabled catalog. `use` selects

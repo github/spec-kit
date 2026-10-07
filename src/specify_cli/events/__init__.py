@@ -1826,6 +1826,17 @@ def refresh_integration_events(project_root: Path) -> None:
     the lifecycle command can't claim the extension was fully deactivated
     while a stale native hook may still be active (R3).
     """
+    from ..integrations.installer import IntegrationInstallError, project_integrations
+
+    try:
+        with project_integrations(project_root):
+            _refresh_loaded_integration_events(project_root)
+    except (IntegrationInstallError, OSError) as exc:
+        raise EventRefreshError([("installed adapters", str(exc))]) from exc
+
+
+def _refresh_loaded_integration_events(project_root: Path) -> None:
+    """Refresh against the pinned project registry."""
     from ..integrations import get_integration
     from ..integrations._helpers import _read_integration_json, _resolve_integration_options
     from ..integrations.manifest import IntegrationManifest

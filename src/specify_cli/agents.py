@@ -59,7 +59,7 @@ class CommandRegistrar:
     AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
     _configs_loaded: bool = False
 
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(self, project_root: Path | None = None, *, include_generic: bool = True) -> None:
         from .integrations.installer import registry_synchronized
 
         @registry_synchronized
@@ -72,7 +72,7 @@ class CommandRegistrar:
             self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
 
         snapshot_configs()
-        if project_root is not None:
+        if project_root is not None and include_generic:
             from .integrations.generic import registration_directory
 
             from ._init_options import load_init_options

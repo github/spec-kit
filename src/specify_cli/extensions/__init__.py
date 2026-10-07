@@ -1901,8 +1901,20 @@ class ExtensionManager:
 
     def _extension_skill_candidate_dirs(self) -> Dict[Path, Path]:
         """Return every configured skill output and its trusted root."""
-        from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+        from .. import DEFAULT_SKILLS_DIR
         from ..agents import CommandRegistrar
+        from ..integrations import get_integration
+        from ..integrations.installer import project_integrations
+
+        with project_integrations(self.project_root):
+            registrar = CommandRegistrar(self.project_root, include_generic=False)
+            folders = []
+            for key in registrar.AGENT_CONFIGS:
+                integration = get_integration(key)
+                if integration is not None:
+                    folder = (integration.config or {}).get("folder")
+                    if folder:
+                        folders.append(folder)
 
         candidates: Dict[Path, Path] = {}
 
@@ -1912,12 +1924,10 @@ class ExtensionManager:
             if trusted_root is not None:
                 candidates[candidate] = trusted_root
 
-        for cfg in AGENT_CONFIG.values():
-            folder = cfg.get("folder", "")
-            if folder:
-                add_candidate(
-                    self.project_root / folder.rstrip("/") / "skills"
-                )
+        for folder in folders:
+            add_candidate(
+                self.project_root / folder.rstrip("/") / "skills"
+            )
         add_candidate(self.project_root / DEFAULT_SKILLS_DIR)
 
         from ..integration_state import integration_setting, try_read_integration_json
@@ -1932,10 +1942,6 @@ class ExtensionManager:
                 # Recorded paths and static roots still allow safe cleanup.
                 pass
 
-        from ..integrations import load_installed_integrations
-
-        load_installed_integrations(self.project_root)
-        registrar = CommandRegistrar()
         for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
             if agent_config.get("extension") != "/SKILL.md":
                 continue
@@ -3525,10 +3531,7 @@ class ExtensionManager:
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
             if safe_commands:
-                from ..integrations import load_installed_integrations
-
-                load_installed_integrations(self.project_root)
-                CommandRegistrar().unregister_commands(
+                CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
                     safe_commands, self.project_root
                 )
         if metadata:
@@ -4354,10 +4357,10 @@ class CommandRegistrar:
 
     AGENT_CONFIGS = _AgentRegistrar.AGENT_CONFIGS
 
-    def __init__(self, project_root: Path | None = None):
+    def __init__(self, project_root: Path | None = None, *, include_generic: bool = True):
         from ..agents import CommandRegistrar as _Registrar
 
-        self._registrar = _Registrar(project_root)
+        self._registrar = _Registrar(project_root, include_generic=include_generic)
         self.AGENT_CONFIGS = self._registrar.AGENT_CONFIGS
 
     # Delegate static/utility methods

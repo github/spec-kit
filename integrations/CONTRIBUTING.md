@@ -184,3 +184,8 @@ relative imports: the host pins the correct adapter for each dispatch without
 serializing independent agent processes. Forced recovery uses user-local
 registrar/path ownership, not editable project metadata. Without that proof,
 old-only artifacts are preserved with an explicit manual-cleanup warning.
+Validate optional legacy destinations as canonical project-relative paths; they
+cannot use reserved roots, symlinked directories, or home-relative syntax.
+Primary and legacy output overlap is checked case-insensitively on all platforms.
+For event-capable adapters, test event-only extension add/remove and enable/disable
+in fresh CLI processes, including explicit errors when installed code cannot load.
