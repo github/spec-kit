@@ -1612,6 +1612,7 @@ class ExtensionManager:
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
         from ..integrations.base import IntegrationBase
+        from ..integrations._file_changes import changing_file, unlink, write_text
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1769,19 +1770,20 @@ class ExtensionManager:
             if use_dev_symlink:
                 try:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
-                    cache_file.write_text(skill_content, encoding="utf-8")
+                    write_text(cache_file, skill_content, encoding="utf-8")
                     if skill_file.exists() or skill_file.is_symlink():
-                        skill_file.unlink()
+                        unlink(skill_file)
                     target = os.path.relpath(cache_file, skill_file.parent)
-                    os.symlink(target, skill_file)
+                    with changing_file(skill_file):
+                        os.symlink(target, skill_file)
                 except (OSError, ValueError):
                     if skill_file.is_symlink():
-                        skill_file.unlink()
-                    skill_file.write_text(skill_content, encoding="utf-8")
+                        unlink(skill_file)
+                    write_text(skill_file, skill_content, encoding="utf-8")
             else:
                 if skill_file.is_symlink():
-                    skill_file.unlink()
-                skill_file.write_text(skill_content, encoding="utf-8")
+                    unlink(skill_file)
+                write_text(skill_file, skill_content, encoding="utf-8")
             written.append(skill_name)
 
         return written
@@ -2055,6 +2057,7 @@ class ExtensionManager:
             _ensure_safe_shared_directory,
             _validate_safe_shared_directory,
         )
+        from ..integrations._file_changes import changing_file, unlink, write_bytes
 
         root = self.project_root.resolve()
         source = (self.extensions_dir / extension_id).resolve()
@@ -2067,7 +2070,7 @@ class ExtensionManager:
                         raise ValueError("unexpected symlink at output path")
                     if os.readlink(path) == link:
                         continue
-                    path.unlink()
+                    unlink(path)
                 elif path.exists() and not path.is_file():
                     raise ValueError("output path is no longer a file")
                 elif content is not None and link is None and path.is_file():
@@ -2075,7 +2078,7 @@ class ExtensionManager:
                         continue
                 if content is None:
                     if path.is_file():
-                        path.unlink()
+                        unlink(path)
                     if not parent_existed and path.parent.is_dir():
                         try:
                             path.parent.rmdir()
@@ -2085,10 +2088,11 @@ class ExtensionManager:
                     _ensure_safe_shared_directory(root, path.parent)
                     if link is not None:
                         if path.is_file():
-                            path.unlink()
-                        path.symlink_to(link)
+                            unlink(path)
+                        with changing_file(path):
+                            path.symlink_to(link)
                     else:
-                        path.write_bytes(content)
+                        write_bytes(path, content)
             except (OSError, ValueError) as exc:
                 errors.append(f"{path}: {exc}")
         if errors:
@@ -2156,6 +2160,7 @@ class ExtensionManager:
     ) -> None:
         """Clean recorded generic paths even after the configured directory moves."""
         from ..shared_infra import _validate_safe_shared_directory
+        from ..integrations._file_changes import unlink, write_bytes
 
         manifest = self.get_extension(extension_id)
         registered = metadata.get("registered_commands", {})
@@ -2205,10 +2210,10 @@ class ExtensionManager:
             content = path.read_bytes()
             if hashlib.sha256(content).hexdigest() != expected:
                 if path.is_symlink():
-                    path.unlink()
-                    path.write_bytes(content)
+                    unlink(path)
+                    write_bytes(path, content)
                 continue
-            path.unlink()
+            unlink(path)
             if skill_output:
                 try:
                     path.parent.rmdir()
@@ -2243,6 +2248,8 @@ class ExtensionManager:
                 every configured agent's skills directory is scanned
                 instead of resolving just the currently active one.
         """
+        from ..integrations._file_changes import changing_file, unlink
+
         generic_roots = {
             Path(path).parent.parent
             for path in (generic_hashes or {})
@@ -2269,13 +2276,14 @@ class ExtensionManager:
                         skill_file.read_bytes()
                     ).hexdigest():
                         continue
-                    skill_file.unlink()
+                    unlink(skill_file)
                     try:
                         skill_subdir.rmdir()
                     except OSError:
                         pass
                     continue
-            shutil.rmtree(skill_subdir)
+            with changing_file(skill_subdir, removal=True):
+                shutil.rmtree(skill_subdir)
 
     def _extension_owned_skill_names(
         self, skill_names: List[str], extension_id: str

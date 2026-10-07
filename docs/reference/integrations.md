@@ -162,6 +162,8 @@ and an archive `download_url`; an optional explicit `id` must match the map key;
 an archive `sha256` digest is recommended. Downloads support ZIP, tar.gz, and tgz,
 HTTPS or loopback HTTP, and the existing authenticated GitHub asset flow.
 See the [catalog schema](../../integrations/README.md#catalog-schema).
+Search advertises `specify integration install <id>` for install-enabled sources;
+discovery-only results do not advertise installation.
 
 A package contains root `integration.yml` and `__init__.py`, not a copied
 inventory of Spec Kit's commands. The host renders shared templates through the
@@ -172,6 +174,9 @@ load the trusted package without consulting the catalog. Missing, modified, or
 incompatible code is an error, not a silent fallback. Upgrade installs the
 catalog's current adapter version; uninstall removes its persisted code while
 preserving modified generated files by default.
+Metadata-only `workflow status` and `workflow info` remain available without
+loading adapter code, including when an installed adapter is damaged. Workflow
+execution and resume still report adapter-loading failures explicitly.
 
 Execution consent is stored in `~/.specify/integration-trust.json`, bound to
 the canonical project root, integration ID, and complete verified package

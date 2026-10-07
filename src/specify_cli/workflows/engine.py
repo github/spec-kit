@@ -941,7 +941,6 @@ class WorkflowEngine:
 
     def __init__(self, project_root: Path | None = None) -> None:
         self.project_root = project_root or Path(".")
-        self._load_integrations()
         self.on_step_start: Any = None  # Callable[[str, str], None] | None
         # Serializes on_step_start so a concurrent fan-out can't interleave the
         # callback's output (the CLI sets it to a console.print lambda). Uncontended

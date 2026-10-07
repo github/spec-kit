@@ -188,6 +188,262 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("damaged", [False, True])
+@pytest.mark.parametrize("command", ["status", "status-json", "status-run-json", "info"])
+def test_round4_workflow_metadata_does_not_load_adapter(tmp_path, server, damaged, command, monkeypatch):
+    from specify_cli.integrations import installer
+    from specify_cli.workflows.engine import RunState
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    state = RunState(run_id="sample-run", workflow_id="sample-workflow", project_root=project)
+    state.save()
+    source = project / "sample-workflow.yml"
+    source.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [{"id": "sample-shell", "type": "shell", "run": "echo sample"}],
+    }))
+    if damaged:
+        (project / ".specify/integrations/packages/sample-agent/__init__.py").write_text("damaged")
+
+    def forbidden_load(*args, **kwargs):
+        raise AssertionError("metadata inspection must not execute installed adapters")
+
+    monkeypatch.setattr(installer, "load_installed_integrations", forbidden_load)
+    arguments = {
+        "status": ["workflow", "status"],
+        "status-json": ["workflow", "status", "--json"],
+        "status-run-json": ["workflow", "status", "sample-run", "--json"],
+        "info": ["workflow", "info", str(source)],
+    }[command]
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    if command == "status-json":
+        assert json.loads(result.stdout)["runs"][0]["run_id"] == "sample-run"
+    elif command == "status-run-json":
+        assert json.loads(result.stdout)["run_id"] == "sample-run"
+    else:
+        assert "sample-workflow" in result.stdout
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_round4_failed_switch_restores_builtin_settings(tmp_path, server, monkeypatch, existing):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    settings = project / ".vscode/settings.json"
+    if existing:
+        settings.parent.mkdir()
+        settings.write_text('{"user.setting": true}\n')
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert json.loads(settings.read_text())["chat.promptFilesRecommendations"]
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, [
+        "integration", "switch", "copilot", "--integration-options=--commands",
+    ])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("install_allowed", [False, True])
+def test_round4_search_advertises_only_allowed_external_installation(tmp_path, server, install_allowed):
+    publish(server, code='raise RuntimeError("discovery must not import sample code")')
+    project = catalog_project(tmp_path, server, install_allowed=install_allowed)
+    result = run(project, ["integration", "search", KEY])
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert (f"specify integration install {KEY}" in output) == install_allowed
+    assert "Only built-in" not in output
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("target", ["hermes", "kimi"])
+def test_round4_failed_switch_restores_builtin_global_and_legacy_outputs(tmp_path, server, monkeypatch, target):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    if target == "hermes":
+        scope = Path.home() / ".hermes/skills"
+        managed = scope / "speckit-plan/SKILL.md"
+    else:
+        scope = project / ".kimi/skills"
+        managed = scope / "speckit.sample/SKILL.md"
+    managed.parent.mkdir(parents=True)
+    original = (
+        "---\nmetadata:\n  author: github-spec-kit\n"
+        "  source: templates/commands/sample.md\n---\nSample legacy skill\n"
+    )
+    managed.write_text(original)
+    untouched = scope / "user-skill/SKILL.md"
+    untouched.parent.mkdir()
+    untouched.write_text("user-owned skill")
+    before = snapshot(project)
+    home_before = snapshot(scope)
+
+    def fail_commit(*args, **kwargs):
+        if target == "hermes":
+            assert managed.read_text() != original
+        else:
+            assert not managed.exists()
+            assert (project / ".kimi-code/skills/speckit-sample/SKILL.md").exists()
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, [
+        "integration", "switch", target,
+        *(["--integration-options=--migrate-legacy"] if target == "kimi" else []),
+    ])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+    assert snapshot(scope) == home_before
+    if target == "hermes":
+        assert not (project / ".hermes").exists()
+
+
+@pytest.mark.parametrize("events_format", ["json-nested", "copilot-json", "toml"])
+def test_round4_failed_switch_restores_native_event_merges(tmp_path, server, monkeypatch, events_format):
+    from specify_cli.integrations import installer
+
+    extension = tmp_path / "sample-events"
+    extension.mkdir()
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {
+            "id": "sample-events", "name": "Sample Events", "version": "1.0.0",
+            "description": "Sample event-only extension",
+        },
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": []},
+        "events": {"session_start": {"command": "speckit.sample.boot"}},
+    }))
+    suffix = "toml" if events_format == "toml" else "json"
+    body = (
+        '    CANONICAL_TO_NATIVE = {"session_start": "SampleStart"}\n'
+        f'    events_config_file = ".sample-agent/events.{suffix}"\n'
+        f'    events_format = {events_format!r}\n'
+    )
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    assert run(project, ["extension", "add", "--dev", str(extension)]).exit_code == 0
+    config = project / f".sample-agent/events.{suffix}"
+    assert config.is_file()
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert not config.exists()
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "switch", "claude"])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+
+
+def test_round4_failed_switch_restores_preset_composition_cache(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    preset = tmp_path / "sample-preset"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/sample.md").write_text(
+        "---\ndescription: Sample wrapper\nstrategy: wrap\n---\n{CORE_TEMPLATE}\nSample wrapper\n"
+    )
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "sample-preset", "name": "Sample Preset", "version": "1.0.0", "description": "Sample wrapper"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"templates": [{
+            "type": "command", "name": "speckit.plan", "file": "commands/sample.md",
+            "strategy": "wrap",
+        }]},
+    }))
+    added = run(project, ["preset", "add", "--dev", str(preset)])
+    assert added.exit_code == 0, added.output
+    cache = project / ".specify/presets/sample-preset/.composed/speckit.plan.md"
+    cache.write_text("previous cache bytes")
+    settings = project / ".vscode/settings.json"
+    settings.parent.mkdir()
+    settings.write_bytes(INTEGRATION_REGISTRY["copilot"]._vscode_settings_path().read_bytes())
+    before = snapshot(project)
+
+    def fail_commit(*args, **kwargs):
+        assert cache.read_text() != "previous cache bytes"
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "switch", "copilot", "--integration-options=--commands"])
+    assert result.exit_code == 1, result.output
+    assert "sample package commit failure" in result.output
+    assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_round4_successful_switch_retains_settings_ownership_rules(tmp_path, server, existing):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    settings = project / ".vscode/settings.json"
+    if existing:
+        settings.parent.mkdir()
+        settings.write_text('{"user.setting": true}')
+    result = run(project, ["integration", "switch", "copilot", "--integration-options=--commands"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(settings.read_text())["chat.promptFilesRecommendations"]
+    manifest = json.loads((project / ".specify/integrations/copilot.manifest.json").read_text())
+    assert (".vscode/settings.json" in manifest["files"]) != existing
+    if existing:
+        assert json.loads(settings.read_text())["user.setting"] is True
+
+
+def test_round4_failed_settings_merge_preserves_concurrent_user_edit(tmp_path, server, monkeypatch):
+    from specify_cli.integrations import _lifecycle, installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    settings = project / ".vscode/settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{"user.setting": true}')
+    original_mkdtemp = _lifecycle.tempfile.mkdtemp
+    backups = []
+
+    def record_backup(*args, **kwargs):
+        path = original_mkdtemp(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(path))
+        return path
+
+    def fail_commit(*args, **kwargs):
+        settings.write_text('{"concurrent.user.edit": true}')
+        raise OSError("sample package commit failure")
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    monkeypatch.setattr(installer, "write_records", fail_commit)
+    result = run(project, ["integration", "switch", "copilot", "--integration-options=--commands"])
+    assert result.exit_code == 1, result.output
+    assert json.loads(settings.read_text()) == {"concurrent.user.edit": True}
+    assert "Preserved concurrent edits" in result.output
+    assert len(backups) == 1
+    shutil.rmtree(backups[0])
+
+
 def test_adapter_only_descriptor(tmp_path):
     path = tmp_path / "integration.yml"
     path.write_text(yaml.safe_dump(descriptor()))
@@ -974,6 +1230,7 @@ def test_reused_workflow_engine_reloads_its_own_project(tmp_path, server, monkey
     other = tmp_path / "other-project"
     other.mkdir()
     WorkflowEngine(other)
+    load_installed_integrations(other)
     assert KEY not in INTEGRATION_REGISTRY
     result = first.resume(state.run_id) if operation == "resume" else first.execute(definition)
     assert result.status.value == "completed"

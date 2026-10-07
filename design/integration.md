@@ -203,6 +203,9 @@ Catalog listing, catalog discovery, and `integration info` read metadata without
 importing installed adapters. Merely checking that a directory is a Spec Kit
 project does not load adapter code; registration managers load it when they
 actually need the adapter's rendering configuration.
+Workflow metadata inspection (`workflow status` and `workflow info`) also leaves
+adapters unloaded, even if an installed package is damaged. Workflow run/resume
+load adapters within their error-handling boundary and reload before dispatch.
 Extension-native event refresh also loads and pins the project's trusted adapters,
 including fresh-process event-only extension add/remove and enable/disable.
 Adapter loading failures are reported as event-refresh failures, not skipped.
@@ -221,6 +224,10 @@ progress and unowned user files are left untouched. Concurrent edits to a manage
 file are preserved and reported with retained recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
+Host settings merges, native event updates/removal, legacy migrations, and
+extension/preset rendering caches participate in the journal without becoming
+uninstall-owned files. Existing built-in home-scoped destinations are journaled
+only for participating built-ins; external adapters remain project-local.
 Host write helpers reject symlinked destinations and ancestors before creating
 directories or writing. Removing an owned leaf symlink unlinks the link itself
 without following its target; declared output directories cannot be symlinks.

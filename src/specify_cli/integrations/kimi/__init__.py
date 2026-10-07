@@ -146,7 +146,10 @@ class KimiIntegration(SkillsIntegration):
                     continue
                 if _is_speckit_generated_skill(legacy_dir):
                     try:
-                        shutil.rmtree(legacy_dir)
+                        from .._file_changes import changing_file
+
+                        with changing_file(legacy_dir, removal=True):
+                            shutil.rmtree(legacy_dir)
                         removed.append(legacy_dir)
                     except OSError:
                         skipped.append(legacy_dir)
@@ -258,7 +261,10 @@ def _migrate_legacy_kimi_skills_dir(
 
         if not target_dir.exists():
             target_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(legacy_dir), str(target_dir))
+            from .._file_changes import changing_file
+
+            with changing_file(legacy_dir, removal=True), changing_file(target_dir):
+                shutil.move(str(legacy_dir), str(target_dir))
             migrated_count += 1
             continue
 
@@ -278,7 +284,10 @@ def _migrate_legacy_kimi_skills_dir(
                     child.name != "SKILL.md" for child in legacy_dir.iterdir()
                 )
                 if not has_extra:
-                    shutil.rmtree(legacy_dir)
+                    from .._file_changes import changing_file
+
+                    with changing_file(legacy_dir, removal=True):
+                        shutil.rmtree(legacy_dir)
                     removed_count += 1
         except OSError:
             pass

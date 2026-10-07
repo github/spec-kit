@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any
 import yaml
 import typer
 
+from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
+
 if TYPE_CHECKING:
     from ..integrations.base import IntegrationBase
     from ..integrations.manifest import IntegrationManifest
@@ -1394,7 +1396,7 @@ def install_integration_events(
     dispatcher_path = dispatcher_dir / EVENTS_DISPATCHER_FILENAME
     _ensure_safe_destination(dispatcher_path)
     dispatcher_dir.mkdir(parents=True, exist_ok=True)
-    dispatcher_path.write_text(_EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
+    _write_text(dispatcher_path, _EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
     dispatcher_path.chmod(0o755)
     manifest.record_file(
         str(dispatcher_path.relative_to(project_root)),
@@ -1416,7 +1418,8 @@ def install_integration_events(
         plugin_path = project_root / plugin_rel
         _ensure_safe_destination(plugin_path)
         plugin_path.parent.mkdir(parents=True, exist_ok=True)
-        plugin_path.write_text(
+        _write_text(
+            plugin_path,
             _build_opencode_plugin(filtered, canonical_to_native),
             encoding="utf-8",
         )
@@ -1747,7 +1750,7 @@ def _cleanup_shared_dispatcher(
         dispatcher_path = project_root / dispatcher_rel
         if dispatcher_path.exists():
             _ensure_safe_destination(dispatcher_path)
-            dispatcher_path.unlink(missing_ok=True)
+            _unlink_file(dispatcher_path, missing_ok=True)
 
 
 def remove_integration_events(
@@ -1770,7 +1773,7 @@ def remove_integration_events(
             plugin_path = project_root / plugin_rel
             if plugin_path.exists():
                 _ensure_safe_destination(plugin_path)
-                plugin_path.unlink(missing_ok=True)
+                _unlink_file(plugin_path, missing_ok=True)
             manifest.remove(plugin_rel)
 
 
@@ -2156,7 +2159,7 @@ def _remove_opencode_entries(config_path: Path) -> bool:
         else:
             existing.pop("plugin", None)
     if not existing:
-        config_path.unlink(missing_ok=True)
+        _unlink_file(config_path, missing_ok=True)
         return True
     _safe_write_json(config_path, existing)
     return False
@@ -2195,7 +2198,7 @@ def _merge_toml_fragment(dst: Path, fragment: str) -> bool:
     if not fragment and stripped == existing:
         return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    _write_text(dst, stripped.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 
@@ -2231,7 +2234,7 @@ def _merge_vibe_toml_fragment(dst: Path, fragment: str) -> bool:
         flags=re.DOTALL,
     )
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+    _write_text(dst, existing.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
     return True
 
 
@@ -2280,9 +2283,9 @@ def _remove_toml_entries(dst: Path) -> bool:
         if line.strip() and not line.strip().startswith("#")
     )
     if not stripped:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
-    dst.write_text(cleaned, encoding="utf-8")
+    _write_text(dst, cleaned, encoding="utf-8")
     return False
 
 
@@ -2317,9 +2320,9 @@ def _remove_vibe_toml_entries(dst: Path) -> bool:
         if line.strip() and not line.strip().startswith("#")
     )
     if not stripped:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
-    dst.write_text(cleaned, encoding="utf-8")
+    _write_text(dst, cleaned, encoding="utf-8")
     return False
 
 
@@ -2388,7 +2391,7 @@ def _remove_copilot_entries(dst: Path) -> bool:
     # ``version`` key would remain — no user content to preserve.
     user_keys = {k for k in existing if k != "version"}
     if not user_keys:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return False
@@ -2485,7 +2488,7 @@ def _merge_json_root(dst: Path, new_hooks: dict) -> bool:
     else:
         existing = {}
     if not existing:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return True
@@ -2511,7 +2514,7 @@ def _remove_json_root_entries(dst: Path) -> bool:
         if kept_entries:
             cleaned[event] = kept_entries
     if not cleaned:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, cleaned)
     return False
@@ -2576,7 +2579,8 @@ def _safe_write_json(dst: Path, data: dict) -> None:
     _ensure_safe_destination(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     # A lone surrogate (\ud800) can't be UTF-8 encoded; write it back as its JSON escape.
-    dst.write_text(
+    _write_text(
+        dst,
         json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
         errors="backslashreplace",
@@ -2642,7 +2646,7 @@ def _remove_json_entries(dst: Path) -> bool:
     # doesn't leave a generated stub behind.
     user_keys = {k for k in existing if k != "version"}
     if not user_keys:
-        dst.unlink(missing_ok=True)
+        _unlink_file(dst, missing_ok=True)
         return True
     _safe_write_json(dst, existing)
     return False

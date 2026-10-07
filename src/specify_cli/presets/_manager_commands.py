@@ -15,6 +15,7 @@ from .._init_options import (
     resolve_active_agent_for_registration,
 )
 from ..extensions import ExtensionRegistry
+from ..integrations._file_changes import write_text as _write_text
 from ._manifest import PresetManifest
 from ._resolver import PresetResolver
 
@@ -149,7 +150,7 @@ class _PresetCommandMethods:
                             composed_dir = preset_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                         composed_file = composed_dir / f"{cmd['name']}.md"
-                        composed_file.write_text(composed, encoding="utf-8")
+                        _write_text(composed_file, composed, encoding="utf-8")
                         commands_to_register.append({
                             **cmd,
                             "file": f".composed/{cmd['name']}.md",
@@ -1132,7 +1133,7 @@ class _PresetCommandMethods:
                             composed_dir = pack_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"
-                            composed_file.write_text(composed, encoding="utf-8")
+                            _write_text(composed_file, composed, encoding="utf-8")
                             written = self._register_for_non_skill_agents(
                                 registrar,
                                 [{**tmpl, "file": f".composed/{cmd_name}.md"}],
@@ -1152,7 +1153,7 @@ class _PresetCommandMethods:
                     shared_composed = self.presets_dir / ".composed"
                     shared_composed.mkdir(parents=True, exist_ok=True)
                     composed_file = shared_composed / f"{cmd_name}.md"
-                    composed_file.write_text(composed, encoding="utf-8")
+                    _write_text(composed_file, composed, encoding="utf-8")
                     source = layers[0]["source"]
                     if source.startswith("extension:"):
                         source_id = source.split(":", 1)[1].split(" ", 1)[0]

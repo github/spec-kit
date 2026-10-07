@@ -28,6 +28,7 @@ def workflow_resume(
         with cli._stdout_to_stderr_when(json_output):
             load_custom_steps(project_root)
             engine = WorkflowEngine(project_root)
+            engine._load_integrations()
     except (IntegrationInstallError, OSError) as exc:
         cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
     if not json_output:

@@ -73,18 +73,27 @@ def _file_identity(path: Path):
 class _FileJournal:
     """Restore observed owned writes, never every file under an output root."""
 
-    def __init__(self, root: Path, paths: list[Path], backup: Path, existing: set[int]):
+    def __init__(
+        self, root: Path, paths: list[Path], backup: Path, existing: set[int],
+        home_scopes: tuple[Path, ...] = (),
+    ):
         self.root = root
         self.paths = paths
         self.backup = backup
         self.existing = existing
+        self.home_scopes = home_scopes
         self.changes: dict[Path, tuple[Path | None, Any]] = {}
         self.pending: set[Path] = set()
 
     def safe_path(self, path: Path, *, allow_leaf_symlink: bool = True) -> Path:
         path = path.absolute()
-        relative = path.relative_to(self.root).as_posix()
-        installer.safe_project_path(self.root, relative, allow_leaf_symlink=allow_leaf_symlink)
+        boundary = self.root
+        if not path.is_relative_to(boundary):
+            if not any(path.is_relative_to(scope) for scope in self.home_scopes):
+                raise installer.IntegrationInstallError(f"Integration output escapes trusted scopes: {path}")
+            boundary = Path.home().absolute()
+        relative = path.relative_to(boundary).as_posix()
+        installer.safe_project_path(boundary, relative, allow_leaf_symlink=allow_leaf_symlink)
         return path
 
     def observe(self, path: Path, before: bool, removal: bool = False) -> None:
@@ -154,7 +163,8 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
                 shutil.copy2(saved, path)
         else:
             parent = path.parent
-            while parent != root:
+            boundary = root if path.is_relative_to(root) else Path.home().absolute()
+            while parent != boundary:
                 try:
                     parent.rmdir()
                 except OSError:
@@ -204,6 +214,14 @@ def _transaction(
         )
         for folder in sorted(folders | manifest_leaves)
     ]
+    home_scopes = []
+    for key in {*installed_integration_keys(state or {}), target} & BUILTIN_INTEGRATION_KEYS:
+        integration = INTEGRATION_REGISTRY[key]
+        directory = (integration.registrar_config or {}).get("dir", "")
+        if directory.startswith("~/"):
+            scope = installer.safe_project_path(Path.home().absolute(), directory[2:])
+            home_scopes.append(scope)
+    paths.extend(home_scopes)
     paths = [path for path in paths if not any(other != path and other in path.parents for other in paths)]
     root_existed = root.exists()
     lock_root = installer._trust_store(root).parent.parent
@@ -230,7 +248,7 @@ def _transaction(
                         shutil.copytree(path, backup / str(index), symlinks=True)
                     else:
                         shutil.copy2(path, backup / str(index))
-            journal = _FileJournal(root, paths, backup, existing)
+            journal = _FileJournal(root, paths, backup, existing, tuple(home_scopes))
             token = file_change_observer.set(journal.observe)
             try:
                 yield

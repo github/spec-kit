@@ -1056,8 +1056,10 @@ class CommandRegistrar:
         CommandRegistrar._ensure_inside(cache_file, cache_root)
 
         try:
+            before_file_change(cache_file)
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(content, encoding="utf-8")
+            after_file_change(cache_file)
             if dest_file.exists() or dest_file.is_symlink():
                 dest_file.unlink()
             target = os.path.relpath(cache_file, dest_file.parent)
