@@ -181,6 +181,15 @@ class IntegrationDescriptorError(Exception):
     """Raised when an integration.yml descriptor is invalid."""
 
 
+def _optional_metadata_error(metadata: dict[str, Any]) -> str | None:
+    for field in ("author", "repository", "license"):
+        if field in metadata and (
+            not isinstance(metadata[field], str) or not metadata[field].strip()
+        ):
+            return f"{field} must be a non-empty string"
+    return None
+
+
 def _catalog_shape_error(payload: Any) -> Optional[str]:
     """Return a human-readable reason if *payload* is not a valid integration
     catalog document, else ``None``.
@@ -906,6 +915,10 @@ class IntegrationDescriptor:
                 raise IntegrationDescriptorError(
                     f"integration.{field} must be a string, got {type(integ[field]).__name__}"
                 )
+
+        optional_error = _optional_metadata_error(integ)
+        if optional_error:
+            raise IntegrationDescriptorError(f"integration.{optional_error}")
 
         if not re.match(r"^[a-z0-9-]+$", integ["id"]):
             raise IntegrationDescriptorError(

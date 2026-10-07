@@ -40,6 +40,7 @@ from . import (
     IntegrationCatalog,
     IntegrationDescriptor,
     IntegrationDescriptorError,
+    _optional_metadata_error,
 )
 from ._file_changes import after_file_change, before_file_change
 from .base import IntegrationBase, resolve_registrar_config
@@ -474,6 +475,9 @@ def unload_installed_integrations() -> None:
 
 
 def _descriptor(package: Path, key: str, info: dict[str, Any]) -> IntegrationDescriptor:
+    optional_error = _optional_metadata_error(info)
+    if optional_error:
+        raise IntegrationInstallError(f"Integration '{key}' catalog {optional_error}")
     try:
         descriptor = IntegrationDescriptor(package / "integration.yml")
     except IntegrationDescriptorError as exc:
@@ -760,6 +764,9 @@ def catalog_package(root: Path, key: str, *, trusted: bool = False):
     for field in ("name", "version", "description"):
         if not isinstance(info.get(field), str) or not info[field].strip():
             raise IntegrationInstallError(f"Integration catalog entry requires {field}")
+    optional_error = _optional_metadata_error(info)
+    if optional_error:
+        raise IntegrationInstallError(f"Integration '{key}' catalog {optional_error}")
     try:
         Version(info["version"])
     except ValueError as exc:

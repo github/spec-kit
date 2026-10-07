@@ -188,6 +188,219 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("change", ["unchanged", "partial", "concurrent", "deleted"])
+def test_round9_pending_write_preserves_unattributed_changes(tmp_path, server, monkeypatch, existing, change):
+    from specify_cli.integrations import _lifecycle
+
+    body = f'''    def setup(self, project_root, manifest, **kwargs):
+        from threading import Thread
+        from specify_cli.integrations._file_changes import before_file_change
+        target = project_root / ".sample-agent/skills/sample-pending.md"
+        before_file_change(target)
+        if {change!r} in ("partial", "concurrent"):
+            target.write_text("partial write")
+        if {change!r} == "concurrent":
+            writer = Thread(target=lambda: target.write_text("concurrent edit"))
+            writer.start()
+            writer.join()
+        if {change!r} == "deleted":
+            target.unlink(missing_ok=True)
+        raise OSError("sample write interrupted before completion")
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    target = project / ".sample-agent/skills/sample-pending.md"
+    target.parent.mkdir(parents=True)
+    if existing:
+        target.write_text("original bytes")
+    before = snapshot(project)
+    backups = []
+    original_mkdtemp = _lifecycle.tempfile.mkdtemp
+
+    def record_backup(*args, **kwargs):
+        directory = original_mkdtemp(*args, **kwargs)
+        if kwargs.get("prefix") == "speckit-integration-rollback-":
+            backups.append(Path(directory))
+        return directory
+
+    monkeypatch.setattr(_lifecycle.tempfile, "mkdtemp", record_backup)
+    conflict = change in {"partial", "concurrent"} or (change == "deleted" and existing)
+    try:
+        result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+        assert result.exit_code == 1, result.output
+        assert "sample write interrupted" in " ".join(result.output.split())
+        assert ("Preserved concurrent edits" in result.output) == conflict
+        if change in {"partial", "concurrent"}:
+            assert target.read_text() == ("partial write" if change == "partial" else "concurrent edit")
+        elif change == "deleted":
+            assert not target.exists()
+        else:
+            assert snapshot(project) == before
+        assert len(backups) == 1
+        assert backups[0].exists() == conflict
+        if conflict and existing:
+            assert any(path.read_bytes() == b"original bytes" for path in backups[0].rglob("*") if path.is_file())
+        assert KEY not in read_records(project)
+        assert KEY not in INTEGRATION_REGISTRY
+    finally:
+        for backup in backups:
+            if backup.exists():
+                shutil.rmtree(backup)
+
+
+@pytest.mark.parametrize("field", ["author", "repository", "license"])
+@pytest.mark.parametrize("value", [None, "", " \t", [], {"value": "sample"}, True, 12])
+@pytest.mark.parametrize("source", ["descriptor", "catalog", "both"])
+def test_round9_optional_metadata_rejects_invalid_values_before_import(tmp_path, server, field, value, source):
+    marker = tmp_path / "unexpected-import"
+    metadata = descriptor()
+    if source in {"descriptor", "both"}:
+        metadata["integration"][field] = value
+    code = f"from pathlib import Path\nPath({str(marker)!r}).write_text('unexpected import')\n" + implementation()
+    info, _ = publish(server, metadata=metadata, code=code)
+    if source == "descriptor":
+        info.pop(field)
+    else:
+        info[field] = value
+    write_catalog(server, info)
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert field in result.output
+    assert "non-empty string" in " ".join(result.output.split())
+    assert not marker.exists()
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("optional", [False, True])
+def test_round9_optional_metadata_preserves_valid_install_and_reload(tmp_path, server, optional):
+    metadata = descriptor()
+    fields = {"author": "Sample Publisher", "repository": "https://example.com/sample-agent", "license": "MIT"}
+    if optional:
+        metadata["integration"].update(fields)
+    publish(server, metadata=metadata)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    unload_installed_integrations()
+    load_installed_integrations(project)
+    record = read_records(project)[KEY]
+    for field, value in fields.items():
+        assert (record[field] == value) if optional else field not in record
+    assert INTEGRATION_REGISTRY[KEY].config["name"] == "Sample Agent"
+
+
+@pytest.mark.parametrize("operation", ["run", "resume"])
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("failure", ["step", "save"])
+@pytest.mark.parametrize("error_type", [OSError, FileNotFoundError])
+def test_round9_workflow_runtime_io_keeps_run_context(
+    tmp_path, monkeypatch, operation, json_output, failure, error_type,
+):
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    source = project / "sample-workflow.yml"
+    source.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [{"id": "sample-gate", "type": "gate", "message": "Sample review", "options": ["approve", "reject"]}],
+    }))
+    if operation == "resume":
+        started = run(project, ["workflow", "run", str(source), "--json"])
+        assert started.exit_code == 0, started.output
+        run_id = json.loads(started.stdout)["run_id"]
+    observed = []
+    original_save = RunState.save
+
+    def save_with_runtime_failure(state):
+        observed.append(state.run_id)
+        if failure == "save" and state.status == RunStatus.RUNNING and state.current_step_id:
+            raise error_type("sample state save failed")
+        return original_save(state)
+
+    def failing_steps(engine, steps, context, state, registry, **kwargs):
+        state.current_step_id = steps[0]["id"]
+        state.save()
+        raise error_type("sample step I/O failed")
+
+    monkeypatch.setattr(RunState, "save", save_with_runtime_failure)
+    if failure == "step":
+        monkeypatch.setattr(WorkflowEngine, "_execute_steps", failing_steps)
+    arguments = ["workflow", operation, str(source) if operation == "run" else run_id]
+    if json_output:
+        arguments.append("--json")
+    result = run(project, arguments)
+    assert result.exit_code == 1, result.output
+    assert observed, result.output
+    actual_run_id = observed[0]
+    error = "sample state save failed" if failure == "save" else "sample step I/O failed"
+    if json_output:
+        payload = json.loads(result.stdout)
+        assert payload["run_id"] == actual_run_id
+        assert payload["workflow_id"] == "sample-workflow"
+        assert payload["status"] == "failed"
+        assert payload["error"] == error
+        assert result.stderr == ""
+    else:
+        assert ("Workflow failed" if operation == "run" else "Resume failed") in result.output
+        assert error in result.output
+    persisted = RunState.load(actual_run_id, project)
+    assert persisted.workflow_id == "sample-workflow"
+    if failure == "step" or operation == "run":
+        assert persisted.status == RunStatus.FAILED
+        assert persisted.error == error
+    else:
+        assert persisted.status == RunStatus.PAUSED
+
+
+def test_round9_execution_state_is_context_local_and_cleared_before_loading(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    engine = WorkflowEngine(project)
+    definition = WorkflowDefinition.from_string(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [{"id": "sample-gate", "type": "gate", "message": "Sample review", "options": ["approve", "reject"]}],
+    }))
+    barrier = threading.Barrier(2)
+
+    def fail_steps(self, steps, context, state, registry, **kwargs):
+        barrier.wait(timeout=10)
+        raise OSError("sample execution failure")
+
+    def execute(run_id):
+        with pytest.raises(OSError, match="sample execution failure"):
+            engine.execute(definition, run_id=run_id)
+        return engine._execution_state.get().run_id
+
+    with monkeypatch.context() as patches:
+        patches.setattr(WorkflowEngine, "_execute_steps", fail_steps)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(execute, "sample-first")
+            second = pool.submit(execute, "sample-second")
+            assert first.result(timeout=20) == "sample-first"
+            assert second.result(timeout=20) == "sample-second"
+    assert engine._execution_state.get() is None
+    engine.execute(definition)
+    assert engine._execution_state.get() is not None
+
+    def fail_loading():
+        raise IntegrationInstallError("sample adapter load failure")
+
+    monkeypatch.setattr(engine, "_load_integrations", fail_loading)
+    with pytest.raises(IntegrationInstallError, match="sample adapter load failure"):
+        engine.execute(definition)
+    assert engine._execution_state.get() is None
+
+
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("missing_manifest", [False, True])
 def test_round8_upgrade_persists_only_after_regenerating_files(tmp_path, server, force, missing_manifest):

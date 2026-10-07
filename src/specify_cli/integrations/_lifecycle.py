@@ -217,7 +217,10 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
         journal.safe_path(path)
         current_identity = _file_identity(path)
-        if path in journal.pending and saved is not None and current_identity == _file_identity(saved):
+        if path in journal.pending:
+            original_identity = _file_identity(saved) if saved is not None else None
+            if current_identity != original_identity:
+                conflicts.append(path)
             continue
         if path not in journal.pending and current_identity != written_identity:
             conflicts.append(path)
@@ -323,7 +326,7 @@ def _transaction(
                     if conflicts:
                         preserve_backup = True
                         console.print(
-                            "[yellow]Warning:[/yellow] Preserved concurrent edits to "
+                            "[yellow]Warning:[/yellow] Preserved concurrent edits or incomplete writes to "
                             f"{escape(str(conflicts))}. Recovery snapshots retained at {escape(str(backup))}"
                         )
                 except (OSError, installer.IntegrationInstallError) as restore_error:

@@ -18,6 +18,7 @@ import tempfile
 import threading
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -946,6 +947,9 @@ class WorkflowEngine:
         # callback's output (the CLI sets it to a console.print lambda). Uncontended
         # for sequential runs.
         self._callback_lock = threading.Lock()
+        self._execution_state: ContextVar[RunState | None] = ContextVar(
+            "workflow_execution_state", default=None
+        )
 
     def _load_integrations(self) -> None:
         from ..integrations import load_installed_integrations
@@ -1041,6 +1045,7 @@ class WorkflowEngine:
         -------
         The final ``RunState`` after execution completes (or pauses).
         """
+        self._execution_state.set(None)
         self._load_integrations()
         dispatch_default_errors = _dispatch_default_errors(definition)
         if dispatch_default_errors:
@@ -1065,6 +1070,7 @@ class WorkflowEngine:
                 else None
             ),
         )
+        self._execution_state.set(state)
 
         # Persist a copy of the workflow definition so resume can
         # reload it even if the original source is no longer available
@@ -1132,8 +1138,10 @@ class WorkflowEngine:
         workflow inputs. Keys not supplied keep their persisted values; an
         empty/``None`` ``inputs`` leaves the run's inputs unchanged.
         """
+        self._execution_state.set(None)
         self._load_integrations()
         state = RunState.load(run_id, self.project_root)
+        self._execution_state.set(state)
         if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
             raise ValueError(msg)

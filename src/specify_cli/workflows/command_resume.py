@@ -89,12 +89,20 @@ def workflow_resume(
     try:
         with cli._stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        if engine._execution_state.get() is not None:
+            cli._fail_workflow_io(
+                exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+            )
         cli._fail_integration_load(
             FileNotFoundError(f"Run not found: {run_id}"), json_output=json_output, run_id=run_id,
         )
-    except (IntegrationInstallError, OSError) as exc:
+    except IntegrationInstallError as exc:
         cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
+    except OSError as exc:
+        cli._fail_workflow_io(
+            exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+        )
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)

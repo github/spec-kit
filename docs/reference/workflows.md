@@ -54,6 +54,12 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
 
+Adapter-load failures before run creation have no run ID. I/O failures during
+execution or resume instead report the actual run and workflow IDs with a
+failed JSON outcome; they are not classified as adapter-load failures. If
+saving state fails, the on-disk status may still reflect the last successful
+save rather than the reported I/O failure.
+
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow

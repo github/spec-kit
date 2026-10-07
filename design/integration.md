@@ -102,6 +102,8 @@ requires:
 ```
 
 `integration.author`, `repository`, and `license` are optional metadata.
+When present in a descriptor or catalog entry, each must be a non-empty string.
+Their types are validated before importing package code and on installed reload.
 `requires.tools` is an optional list of mappings with a non-empty `name`,
 optional boolean `required` (default `true`), and optional PEP 440 `version`
 constraint. Installation checks required tools on PATH; tool version detection
@@ -252,6 +254,10 @@ Concurrent edits to a managed file are preserved and reported with retained
 recovery snapshots; a later host
 write refuses to overwrite an edit made after its previous write. Extensions and presets
 remain independently installed and follow the active integration as before.
+If a write fails before its completion is observed, changed or newly present
+bytes cannot be attributed to that operation. Rollback leaves those pending
+paths untouched and retains recovery snapshots, including when a previously
+existing path was deleted. An unchanged pending path needs no restoration.
 Host settings merges, native event updates/removal, legacy migrations, and
 extension/preset rendering caches participate in the journal without becoming
 uninstall-owned files. Existing built-in home-scoped destinations are journaled
