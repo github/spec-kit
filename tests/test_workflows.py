@@ -8981,6 +8981,86 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
+    @pytest.fixture(params=["workflow", "step"])
+    def removal_catalog(self, request, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        kind = request.param
+        catalog_cls, error = (
+            (WorkflowCatalog, WorkflowValidationError)
+            if kind == "workflow" else (StepCatalog, StepValidationError)
+        )
+        env_key = f"SPECKIT_{kind.upper()}_CATALOG_URL"
+        monkeypatch.delenv(env_key, raising=False)
+        config = project_dir / ".specify" / f"{kind}-catalogs.yml"
+        return catalog_cls(project_dir), error, config, env_key
+
+    @pytest.mark.parametrize("index,original_index", [(0, 2), (1, 4), (2, 3), (3, 1)])
+    def test_remove_catalog_uses_listed_position(
+        self, removal_catalog, index, original_index
+    ):
+        catalog, _, config, _ = removal_catalog
+        data = {"notes": "keep", "catalogs": [
+            {"name": "skipped", "url": "  "},
+            {"name": "duplicate", "url": "https://example.com/low.json", "priority": 10},
+            {"name": "duplicate", "url": "https://example.com/first.json", "priority": "2"},
+            {"url": "https://example.com/unnamed.json"},
+            {"name": "duplicate", "url": "https://example.com/tied.json", "priority": 2},
+        ]}
+        config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        selected = catalog.get_catalog_configs()[index]
+        assert selected["url"] == data["catalogs"][original_index]["url"]
+
+        assert catalog.remove_catalog(index) == selected["name"]
+
+        data["catalogs"].pop(original_index)
+        assert yaml.safe_load(config.read_text(encoding="utf-8")) == data
+
+    @pytest.mark.parametrize("index", [-1, 1])
+    def test_remove_catalog_bounds_use_visible_entries(self, removal_catalog, index):
+        catalog, error, config, _ = removal_catalog
+        config.write_text(
+            "# keep this comment\ncatalogs:\n  - name: skipped\n"
+            "  - url: https://example.com/only.json\n", encoding="utf-8",
+        )
+        before = config.read_bytes()
+        with pytest.raises(error, match="out of range"):
+            catalog.remove_catalog(index)
+        assert config.read_bytes() == before
+
+    def test_remove_catalog_refuses_environment_source(self, removal_catalog, monkeypatch):
+        catalog, error, config, env_key = removal_catalog
+        catalog.add_catalog("https://example.com/project.json", "project")
+        before = config.read_bytes()
+        monkeypatch.setenv(env_key, " https://example.com/override.json ")
+        assert catalog.get_catalog_configs()[0]["name"] == "env-override"
+
+        with pytest.raises(error, match=env_key) as exc:
+            catalog.remove_catalog(0)
+        assert "Unset" in str(exc.value)
+        assert config.read_bytes() == before
+
+    def test_remove_catalog_ignores_blank_environment_override(self, removal_catalog, monkeypatch):
+        catalog, _, config, env_key = removal_catalog
+        catalog.add_catalog("https://example.com/project.json", "project")
+        monkeypatch.setenv(env_key, " \t ")
+        assert catalog.remove_catalog(0) == "project"
+        assert yaml.safe_load(config.read_text(encoding="utf-8"))["catalogs"] == []
+
+    @pytest.mark.parametrize("entry", ["invalid", {"name": "no-url"}, {
+        "url": "https://example.com/invalid.json", "priority": "invalid",
+    }])
+    def test_remove_catalog_rejects_unlistable_config(self, removal_catalog, entry):
+        catalog, error, config, _ = removal_catalog
+        config.write_text(yaml.safe_dump({"catalogs": [entry]}), encoding="utf-8")
+        before = config.read_bytes()
+        with pytest.raises(error):
+            catalog.get_catalog_configs()
+        with pytest.raises(error):
+            catalog.remove_catalog(0)
+        assert config.read_bytes() == before
+
     @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
     def test_non_mapping_cache_metadata_is_invalid(
         self, project_dir, catalog_type
