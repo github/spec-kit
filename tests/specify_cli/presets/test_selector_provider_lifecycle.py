@@ -24,7 +24,7 @@ def project(tmp_path, monkeypatch, agent="gemini", skills=False):
     return root
 
 
-def preset(tmp_path, identifier, name, body, aliases=False):
+def preset(tmp_path, identifier, name, body, aliases=False, strategy=None):
     source = tmp_path / identifier
     (source / "commands").mkdir(parents=True)
     (source / "commands" / "body.md").write_text(
@@ -33,6 +33,8 @@ def preset(tmp_path, identifier, name, body, aliases=False):
     declaration = {"type": "command", "name": name, "file": "commands/body.md"}
     if aliases:
         declaration["aliases"] = [ALIAS]
+    if strategy is not None:
+        declaration["strategy"] = strategy
     (source / "preset.yml").write_text(
         yaml.safe_dump(
             {
@@ -45,6 +47,53 @@ def preset(tmp_path, identifier, name, body, aliases=False):
                 },
                 "requires": {"speckit_version": ">=0.1.0"},
                 "provides": {"templates": [declaration]},
+            }
+        )
+    )
+    return source
+
+
+def second_provider_extension(
+    tmp_path, extension_id="secondary", declared=None, body="SECOND BODY"
+):
+    """Extension that layers on ``COMMAND`` through a conventional command file.
+
+    Primary extension command names are namespace-validated
+    (``speckit.<extension-id>.<command>``), so a second extension can only
+    contribute a parallel resolution layer for the same concrete command
+    through the documented ``commands/<full-command-name>.md`` conventional
+    lookup — which is exactly the two-provider stack the lifecycle tests need.
+    """
+    declared = declared or f"speckit.{extension_id}.collect"
+    source = tmp_path / f"{extension_id}-source"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands" / "body.md").write_text(
+        f"---\ndescription: {extension_id}\n---\n{body}\n"
+    )
+    (source / "commands" / f"{COMMAND}.md").write_text(
+        f"---\ndescription: {extension_id}\n---\n{body}\n"
+    )
+    (source / "extension.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "extension": {
+                    "id": extension_id,
+                    "name": extension_id,
+                    "version": "1.0.0",
+                    "description": "Test",
+                    "author": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "commands": [
+                        {
+                            "name": declared,
+                            "file": "commands/body.md",
+                            "description": "Test",
+                        }
+                    ]
+                },
             }
         )
     )
@@ -175,6 +224,135 @@ def test_extension_removal_rewrites_surviving_fallback(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["preset", "disable", "selector"])
     assert result.exit_code == 0, result.output
     assert "FALLBACK BODY" in output.read_text()
+
+
+@pytest.mark.parametrize(
+    "strategy,selector_body",
+    [
+        ("append", "SELECTOR BODY"),
+        ("prepend", "SELECTOR BODY"),
+        ("wrap", "WRAPPER START\n{CORE_TEMPLATE}\nWRAPPER END"),
+    ],
+)
+def test_extension_removal_recomposes_selector_composition(
+    tmp_path, monkeypatch, strategy, selector_body
+):
+    """Removing one of two extension providers must recompose the selector output.
+
+    The selector preset composes over the higher-precedence extension provider.
+    Removing that provider must switch the composition base to the surviving
+    provider and drop the removed provider's fragment entirely — not merely
+    refresh the registry.
+    """
+    root = project(tmp_path, monkeypatch)
+    extension_manager = ExtensionManager(root)
+    extension_manager.install_from_directory(extension(tmp_path), "0.1.5", priority=10)
+    extension_manager.install_from_directory(
+        second_provider_extension(tmp_path), "0.1.5", priority=20
+    )
+    manager = PresetManager(root)
+    manager.install_from_directory(
+        preset(
+            tmp_path,
+            "selector",
+            r"regex:speckit\.provider\..*",
+            selector_body,
+            strategy=strategy,
+        ),
+        "0.1.5",
+        priority=5,
+    )
+
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    text = output.read_text()
+    assert "EXTENSION BODY" in text
+    assert "SECOND BODY" not in text
+
+    result = CliRunner().invoke(app, ["extension", "remove", "provider", "--force"])
+    assert result.exit_code == 0, result.output
+
+    text = output.read_text()
+    assert "SECOND BODY" in text
+    assert "EXTENSION BODY" not in text
+    if strategy == "wrap":
+        assert "WRAPPER START" in text and "WRAPPER END" in text
+    else:
+        assert "SELECTOR BODY" in text
+
+    # Ownership stays with the preset that still materializes the command, and
+    # the removed provider is gone from the extension registry.
+    metadata = PresetManager(root).registry.get("selector")
+    assert metadata is not None
+    assert COMMAND in metadata["registered_commands"]["gemini"]
+    assert ExtensionManager(root).registry.get("provider") is None
+
+    # Repeated reconciliation must stay stable (no resurrection, no flip-flop).
+    _refresh_presets_and_warn(root)
+    _refresh_presets_and_warn(root)
+    text = output.read_text()
+    assert "SECOND BODY" in text
+    assert "EXTENSION BODY" not in text
+
+
+@pytest.mark.parametrize(
+    "strategy,selector_body",
+    [
+        ("append", "SELECTOR BODY"),
+        ("wrap", "WRAPPER START\n{CORE_TEMPLATE}\nWRAPPER END"),
+    ],
+)
+def test_extension_removal_sole_provider_retires_composition(
+    tmp_path, monkeypatch, strategy, selector_body
+):
+    """A composing selector with no surviving lower layer must be retired.
+
+    The affected-name set has to come from the pre-removal selector expansion;
+    after removal nothing matches, so a post-state-only scan would leave the
+    stale command/alias/skill artifacts and registry provenance behind.
+    """
+    root = project(tmp_path, monkeypatch)
+    ExtensionManager(root).install_from_directory(
+        extension(tmp_path), "0.1.5", priority=10
+    )
+    manager = PresetManager(root)
+    manager.install_from_directory(
+        preset(
+            tmp_path,
+            "selector",
+            r"regex:speckit\.provider\..*",
+            selector_body,
+            aliases=True,
+            strategy=strategy,
+        ),
+        "0.1.5",
+        priority=5,
+    )
+
+    command = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    alias = root / ".gemini" / "commands" / f"{ALIAS}.toml"
+    assert command.exists()
+    assert alias.exists()
+
+    result = CliRunner().invoke(app, ["extension", "remove", "provider", "--force"])
+    assert result.exit_code == 0, result.output
+    assert not command.exists()
+    assert not alias.exists()
+
+    metadata = PresetManager(root).registry.get("selector")
+    assert metadata is not None
+    assert metadata["registered_commands"] == {}
+    assert metadata["registered_skills"] == {}
+    # The raw selector string must never enter concrete command tracking.
+    assert all(
+        not name.startswith("regex:")
+        for names in metadata["registered_commands"].values()
+        for name in names
+    )
+
+    _refresh_presets_and_warn(root)
+    _refresh_presets_and_warn(root)
+    assert not command.exists()
+    assert not alias.exists()
 
 
 @pytest.mark.parametrize(
