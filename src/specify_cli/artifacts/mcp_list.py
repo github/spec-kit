@@ -22,14 +22,16 @@ from ._operation_list import (
 
 logger = logging.getLogger(__name__)
 _DEFAULT_LIMIT = 100
-_MAX_RESPONSE_BYTES = 1024 * 1024
+_MAX_WIRE_RESPONSE_BYTES = 1024 * 1024
+_WIRE_ENVELOPE_RESERVE_BYTES = 1024
 _INVALID_RESULT_MESSAGE = "The artifact list operation returned an invalid result."
 _INTERNAL_ERROR_MESSAGE = "Unable to list Spec Kit artifacts."
 _RESPONSE_TOO_LARGE_MESSAGE = (
     "The artifact list result exceeds the MCP response-size limit."
 )
 _TOOL_DESCRIPTION = (
-    "List every command, template, script, and hook Spec Kit exposes for a project."
+    "Return one paginated artifact inventory page for a project. "
+    "While truncated is true, pass next_cursor as cursor to retrieve the next page."
 )
 
 ArtifactListLimit = Annotated[
@@ -198,24 +200,48 @@ def _convert_result(result: ArtifactListResult) -> ArtifactListToolResult:
         raise _InvalidOperationResult from exc
 
 
+def _build_success_result(result: ArtifactListToolResult) -> CallToolResult:
+    """Build the duplicated structured and compatibility content sent by MCP."""
+    return CallToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=result.model_dump_json(indent=2),
+            )
+        ],
+        structuredContent=result.model_dump(mode="json"),
+        isError=False,
+    )
+
+
+def _wire_response_size(result: CallToolResult) -> int:
+    """Bound the serialized result plus conservative JSON-RPC envelope space."""
+    result_bytes = len(
+        result.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+    )
+    return result_bytes + _WIRE_ENVELOPE_RESERVE_BYTES
+
+
 def create_artifact_list_tool(
     *,
     launch_directory: Path,
-    max_response_bytes: int = _MAX_RESPONSE_BYTES,
+    max_wire_response_bytes: int = _MAX_WIRE_RESPONSE_BYTES,
 ) -> ArtifactListTool:
     """Create a tool bound to the immutable MCP server launch directory."""
     launch_directory = Path(launch_directory)
     if not launch_directory.is_absolute():
         raise ValueError("MCP server launch directory must be absolute")
-    if max_response_bytes < 1:
-        raise ValueError("MCP response-size limit must be positive")
+    if max_wire_response_bytes <= _WIRE_ENVELOPE_RESERVE_BYTES:
+        raise ValueError(
+            "MCP response-size limit must exceed the JSON-RPC envelope reserve"
+        )
 
     def specify_artifact_list(
         project_directory: str | None = None,
         limit: ArtifactListLimit = _DEFAULT_LIMIT,
         cursor: ArtifactListCursor | None = None,
     ) -> ArtifactListToolResult:
-        """List every artifact exposed by the selected Spec Kit project."""
+        """Return one page; follow next_cursor while truncated is true."""
         tool_input = ArtifactListToolInput.model_validate(
             {
                 "project_directory": project_directory,
@@ -239,9 +265,10 @@ def create_artifact_list_tool(
                     ),
                 )
             )
-            if len(result.model_dump_json().encode("utf-8")) > max_response_bytes:
+            success = _build_success_result(result)
+            if _wire_response_size(success) > max_wire_response_bytes:
                 raise _ResponseTooLarge
-            return result
+            return success
         except ArtifactListError as exc:
             return _tool_error(
                 exc.code,
@@ -259,7 +286,7 @@ def create_artifact_list_tool(
                 "response_too_large",
                 _RESPONSE_TOO_LARGE_MESSAGE,
                 details={
-                    "max_bytes": max_response_bytes,
+                    "max_bytes": max_wire_response_bytes,
                     "requested_limit": tool_input.limit,
                 },
                 retryable=True,
@@ -271,15 +298,16 @@ def create_artifact_list_tool(
     return specify_artifact_list
 
 
-def _forbid_unexpected_arguments(server: MCPServer, tool_name: str) -> None:
+def _configure_strict_arguments(server: MCPServer, tool_name: str) -> None:
     tool = server._tool_manager.get_tool(tool_name)
     if tool is None:  # pragma: no cover - registration immediately precedes this
         raise RuntimeError(f"Tool registration failed: {tool_name}")
 
-    # MCP SDK argument models ignore extras by default even when discovery
-    # advertises a closed command-specific schema.
+    # MCP SDK argument models ignore extras and coerce values by default even
+    # when discovery advertises a closed typed schema.
     argument_model = tool.fn_metadata.arg_model
     argument_model.model_config["extra"] = "forbid"
+    argument_model.model_config["strict"] = True
     argument_model.model_rebuild(force=True)
     tool.parameters = argument_model.model_json_schema(by_alias=True)
 
@@ -289,13 +317,17 @@ def register(
     *,
     launch_directory: Path,
     tool_name: str = "specify_artifact_list",
+    max_wire_response_bytes: int = _MAX_WIRE_RESPONSE_BYTES,
 ) -> None:
     """Register the first-class artifact-list MCP tool exactly once."""
     if server._tool_manager.get_tool(tool_name) is not None:
         raise ValueError(f"MCP tool name collision: {tool_name}")
 
     server.add_tool(
-        create_artifact_list_tool(launch_directory=launch_directory),
+        create_artifact_list_tool(
+            launch_directory=launch_directory,
+            max_wire_response_bytes=max_wire_response_bytes,
+        ),
         name=tool_name,
         description=_TOOL_DESCRIPTION,
         annotations=ToolAnnotations(
@@ -305,4 +337,4 @@ def register(
         ),
         structured_output=True,
     )
-    _forbid_unexpected_arguments(server, tool_name)
+    _configure_strict_arguments(server, tool_name)

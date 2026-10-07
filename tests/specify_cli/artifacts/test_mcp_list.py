@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -14,7 +15,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
-from specify_cli.artifacts import _commands, _mcp, _operation_list
+from specify_cli.artifacts import _commands, _mcp, _operation_list, mcp_list
 from specify_cli.artifacts._operation_list import (
     ARTIFACT_LIST_OPERATION,
     ArtifactListRequest,
@@ -29,7 +30,8 @@ from specify_cli.presets import PresetError
 
 TOOL_NAME = "specify_artifact_list"
 TOOL_DESCRIPTION = (
-    "List every command, template, script, and hook Spec Kit exposes for a project."
+    "Return one paginated artifact inventory page for a project. "
+    "While truncated is true, pass next_cursor as cursor to retrieve the next page."
 )
 
 ARTIFACT_ROWS = (
@@ -370,14 +372,19 @@ def test_artifact_list_preserves_complete_typed_rows_unicode_and_order(
     ):
         result = tool()
 
-    assert isinstance(result, ArtifactListToolResult)
-    assert result.model_dump() == ARTIFACT_PAYLOAD
-    assert [row.id for row in result.rows] == [
+    assert result.is_error is False
+    assert result.structured_content == ARTIFACT_PAYLOAD
+    assert json.loads(result.content[0].text) == ARTIFACT_PAYLOAD
+    typed_result = ArtifactListToolResult.model_validate(
+        result.structured_content,
+        strict=True,
+    )
+    assert [row.id for row in typed_result.rows] == [
         "template:réview",
         "hook:before_plan:quality",
     ]
-    assert result.rows[0].stack[0].sourcePath.endswith("réview-checklist.md")
-    assert result.rows[1].stack[0].sourcePath is None
+    assert typed_result.rows[0].stack[0].sourcePath.endswith("réview-checklist.md")
+    assert typed_result.rows[1].stack[0].sourcePath is None
 
 
 def test_artifact_list_uses_server_launch_directory_by_default(
@@ -459,12 +466,12 @@ def test_artifact_list_forwards_pagination_and_returns_continuation(
     )
 
 
-def test_artifact_list_rejects_oversized_structured_page(
+def test_artifact_list_rejects_oversized_wire_response(
     spec_kit_project: Path,
 ):
     tool = create_artifact_list_tool(
         launch_directory=spec_kit_project,
-        max_response_bytes=64,
+        max_wire_response_bytes=2048,
     )
     with patch(
         "specify_cli.artifacts.mcp_list.list_artifacts",
@@ -476,7 +483,7 @@ def test_artifact_list_rejects_oversized_structured_page(
     assert result.structured_content == _expected_error(
         "response_too_large",
         "The artifact list result exceeds the MCP response-size limit.",
-        details={"max_bytes": 64, "requested_limit": 100},
+        details={"max_bytes": 2048, "requested_limit": 100},
         retryable=True,
     )
     assert result.content[0].text == (
@@ -609,7 +616,9 @@ def test_artifact_list_rejects_invalid_project_directory_type_before_dispatch(
     [
         {"limit": 0},
         {"limit": 1001},
+        {"limit": "2"},
         {"cursor": "01"},
+        {"cursor": 2},
     ],
 )
 def test_artifact_list_rejects_invalid_pagination_before_dispatch(
@@ -866,17 +875,94 @@ def test_artifact_tool_requires_absolute_server_launch_directory():
         create_artifact_list_tool(launch_directory=Path("relative"))
 
 
-def test_artifact_tool_requires_positive_response_size_limit(
+def test_artifact_tool_requires_room_for_json_rpc_envelope(
     spec_kit_project: Path,
 ):
     with pytest.raises(
         ValueError,
-        match="MCP response-size limit must be positive",
+        match="MCP response-size limit must exceed the JSON-RPC envelope reserve",
     ):
         create_artifact_list_tool(
             launch_directory=spec_kit_project,
-            max_response_bytes=0,
+            max_wire_response_bytes=1024,
         )
+
+
+def test_in_memory_protocol_enforces_near_boundary_wire_size(
+    spec_kit_project: Path,
+):
+    max_wire_response_bytes = 4096
+    within_limit: ArtifactListResult | None = None
+    oversized: ArtifactListResult | None = None
+
+    for description_length in range(max_wire_response_bytes):
+        candidate = ArtifactListResult(
+            rows=(
+                {
+                    **ARTIFACT_ROWS[0],
+                    "description": "x" * description_length,
+                },
+            )
+        )
+        converted = mcp_list._convert_result(candidate)
+        wire_size = mcp_list._wire_response_size(
+            mcp_list._build_success_result(converted)
+        )
+        if wire_size <= max_wire_response_bytes:
+            within_limit = candidate
+            continue
+        oversized = candidate
+        assert (
+            len(converted.model_dump_json().encode("utf-8")) < max_wire_response_bytes
+        )
+        break
+
+    assert within_limit is not None
+    assert oversized is not None
+
+    async def exercise():
+        server = MCPServer(name="test")
+        mcp_list.register(
+            server,
+            launch_directory=spec_kit_project,
+            max_wire_response_bytes=max_wire_response_bytes,
+        )
+        operation = Mock(side_effect=[within_limit, oversized])
+        with patch("specify_cli.artifacts.mcp_list.list_artifacts", operation):
+            async with (
+                create_client_server_memory_streams() as (
+                    client_streams,
+                    server_streams,
+                ),
+                anyio.create_task_group() as task_group,
+            ):
+                task_group.start_soon(
+                    server._lowlevel_server.run,
+                    server_streams[0],
+                    server_streams[1],
+                    server._lowlevel_server.create_initialization_options(),
+                )
+                async with ClientSession(*client_streams) as session:
+                    await session.initialize()
+                    success = await session.call_tool(TOOL_NAME, {})
+                    failure = await session.call_tool(TOOL_NAME, {})
+                task_group.cancel_scope.cancel()
+        return success, failure
+
+    success, failure = _run(exercise())
+
+    assert success.is_error is False
+    assert mcp_list._wire_response_size(success) <= max_wire_response_bytes
+    assert failure.is_error is True
+    assert failure.structured_content == _expected_error(
+        "response_too_large",
+        "The artifact list result exceeds the MCP response-size limit.",
+        details={
+            "max_bytes": max_wire_response_bytes,
+            "requested_limit": 100,
+        },
+        retryable=True,
+    )
 
 
 def test_in_memory_client_preserves_artifact_success_and_failure_wire_shapes(
