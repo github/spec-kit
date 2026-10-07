@@ -248,11 +248,11 @@ class GateStep(StepBase):
             try:
                 raw = input(f"  Choose [1-{len(options)}]: ").strip()
             except KeyboardInterrupt:
-                # Ctrl+C is not a gate verdict at all. ``WorkflowEngine`` turns a
-                # propagated KeyboardInterrupt into ``RunStatus.PAUSED`` plus a
-                # ``workflow_interrupted`` log event (engine.py:1059-1063 and
-                # :1144-1148), so the operator can pick the run back up with
-                # ``specify workflow resume``. Swallowing it here produced a
+                # Ctrl+C is not a gate verdict at all. ``WorkflowEngine.execute``
+                # and ``WorkflowEngine.resume`` turn a propagated
+                # KeyboardInterrupt into ``RunStatus.PAUSED`` plus a
+                # ``workflow_interrupted`` log event, so the operator can pick
+                # the run back up with ``specify workflow resume``. Swallowing it here produced a
                 # *decision* instead -- ``on_reject`` then fired, usually
                 # aborting the whole run -- which is the one outcome an
                 # interrupted reviewer did not choose. Re-raise so the gate
