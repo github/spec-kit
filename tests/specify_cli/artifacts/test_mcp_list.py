@@ -84,7 +84,11 @@ ARTIFACT_ROWS = (
     },
 )
 
-ARTIFACT_PAYLOAD = {"rows": list(ARTIFACT_ROWS)}
+ARTIFACT_PAYLOAD = {
+    "rows": list(ARTIFACT_ROWS),
+    "next_cursor": None,
+    "truncated": False,
+}
 
 EXPECTED_OUTPUT_SCHEMA = {
     "$defs": {
@@ -275,9 +279,24 @@ EXPECTED_OUTPUT_SCHEMA = {
             },
             "title": "Rows",
             "type": "array",
-        }
+        },
+        "next_cursor": {
+            "anyOf": [
+                {
+                    "maxLength": 20,
+                    "pattern": "^(0|[1-9][0-9]*)$",
+                    "type": "string",
+                },
+                {"type": "null"},
+            ],
+            "title": "Next Cursor",
+        },
+        "truncated": {
+            "title": "Truncated",
+            "type": "boolean",
+        },
     },
-    "required": ["rows"],
+    "required": ["rows", "next_cursor", "truncated"],
     "title": "ArtifactListToolResult",
     "type": "object",
 }
@@ -292,13 +311,14 @@ def _expected_error(
     message: str,
     *,
     details: dict[str, object] | None = None,
+    retryable: bool = False,
 ) -> dict[str, object]:
     return {
         "error": {
             "code": code,
             "message": message,
             "details": details or {},
-            "retryable": False,
+            "retryable": retryable,
         }
     }
 
@@ -330,7 +350,11 @@ def test_artifact_list_dispatches_directly_to_shared_operation(
 
     assert result.structured_content == ARTIFACT_PAYLOAD
     request = operation.call_args.args[0]
-    assert request == ArtifactListRequest(project_directory=spec_kit_project)
+    assert request == ArtifactListRequest(
+        project_directory=spec_kit_project,
+        limit=100,
+        cursor=None,
+    )
     command_runner.assert_not_called()
     run_cli_process.assert_not_called()
     cli_adapter.assert_not_called()
@@ -368,8 +392,16 @@ def test_artifact_list_uses_server_launch_directory_by_default(
     with patch("specify_cli.artifacts.mcp_list.list_artifacts", operation):
         result = _run(server.call_tool(TOOL_NAME, {}))
 
-    assert result.structured_content == {"rows": []}
-    assert operation.call_args.args[0].project_directory == spec_kit_project
+    assert result.structured_content == {
+        "rows": [],
+        "next_cursor": None,
+        "truncated": False,
+    }
+    assert operation.call_args.args[0] == ArtifactListRequest(
+        project_directory=spec_kit_project,
+        limit=100,
+        cursor=None,
+    )
 
 
 def test_artifact_list_accepts_explicit_absolute_project_directory(
@@ -385,8 +417,72 @@ def test_artifact_list_accepts_explicit_absolute_project_directory(
             )
         )
 
-    assert result.structured_content == {"rows": []}
-    assert operation.call_args.args[0].project_directory == spec_kit_project
+    assert result.structured_content == {
+        "rows": [],
+        "next_cursor": None,
+        "truncated": False,
+    }
+    assert operation.call_args.args[0] == ArtifactListRequest(
+        project_directory=spec_kit_project,
+        limit=100,
+        cursor=None,
+    )
+
+
+def test_artifact_list_forwards_pagination_and_returns_continuation(
+    spec_kit_project: Path,
+):
+    operation = Mock(
+        return_value=ArtifactListResult(
+            rows=(ARTIFACT_ROWS[1],),
+            next_cursor="7",
+            truncated=True,
+        )
+    )
+    with patch("specify_cli.artifacts.mcp_list.list_artifacts", operation):
+        result = _run(
+            create_server(launch_directory=spec_kit_project).call_tool(
+                TOOL_NAME,
+                {"limit": 2, "cursor": "5"},
+            )
+        )
+
+    assert result.structured_content == {
+        "rows": [ARTIFACT_ROWS[1]],
+        "next_cursor": "7",
+        "truncated": True,
+    }
+    assert operation.call_args.args[0] == ArtifactListRequest(
+        project_directory=spec_kit_project,
+        limit=2,
+        cursor="5",
+    )
+
+
+def test_artifact_list_rejects_oversized_structured_page(
+    spec_kit_project: Path,
+):
+    tool = create_artifact_list_tool(
+        launch_directory=spec_kit_project,
+        max_response_bytes=64,
+    )
+    with patch(
+        "specify_cli.artifacts.mcp_list.list_artifacts",
+        return_value=ArtifactListResult(rows=ARTIFACT_ROWS),
+    ):
+        result = tool()
+
+    assert result.is_error is True
+    assert result.structured_content == _expected_error(
+        "response_too_large",
+        "The artifact list result exceeds the MCP response-size limit.",
+        details={"max_bytes": 64, "requested_limit": 100},
+        retryable=True,
+    )
+    assert result.content[0].text == (
+        "response_too_large: "
+        "The artifact list result exceeds the MCP response-size limit."
+    )
 
 
 def test_artifact_list_isolates_sequential_project_contexts(
@@ -441,7 +537,26 @@ def test_artifact_list_discovery_has_exact_contract(
                 "anyOf": [{"type": "string"}, {"type": "null"}],
                 "default": None,
                 "title": "Project Directory",
-            }
+            },
+            "limit": {
+                "default": 100,
+                "maximum": 1000,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer",
+            },
+            "cursor": {
+                "anyOf": [
+                    {
+                        "maxLength": 20,
+                        "pattern": "^(0|[1-9][0-9]*)$",
+                        "type": "string",
+                    },
+                    {"type": "null"},
+                ],
+                "default": None,
+                "title": "Cursor",
+            },
         },
         "title": "specify_artifact_listArguments",
         "type": "object",
@@ -483,6 +598,33 @@ def test_artifact_list_rejects_invalid_project_directory_type_before_dispatch(
             create_server(launch_directory=spec_kit_project).call_tool(
                 TOOL_NAME,
                 {"project_directory": 123},
+            )
+        )
+
+    operation.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"limit": 0},
+        {"limit": 1001},
+        {"cursor": "01"},
+    ],
+)
+def test_artifact_list_rejects_invalid_pagination_before_dispatch(
+    spec_kit_project: Path,
+    arguments: dict[str, object],
+):
+    operation = Mock(side_effect=AssertionError("operation reached"))
+    with (
+        patch("specify_cli.artifacts.mcp_list.list_artifacts", operation),
+        pytest.raises(ToolError),
+    ):
+        _run(
+            create_server(launch_directory=spec_kit_project).call_tool(
+                TOOL_NAME,
+                arguments,
             )
         )
 
@@ -592,6 +734,9 @@ def test_artifact_list_preserves_operation_owned_resolution_mapping(
                 },
             )
         ),
+        ArtifactListResult(rows=(), next_cursor=1, truncated=True),
+        ArtifactListResult(rows=(), next_cursor=None, truncated=True),
+        ArtifactListResult(rows=(), next_cursor="1", truncated=False),
     ],
 )
 def test_artifact_list_rejects_invalid_operation_results(
@@ -719,6 +864,19 @@ def test_artifact_tool_requires_absolute_server_launch_directory():
         match="MCP server launch directory must be absolute",
     ):
         create_artifact_list_tool(launch_directory=Path("relative"))
+
+
+def test_artifact_tool_requires_positive_response_size_limit(
+    spec_kit_project: Path,
+):
+    with pytest.raises(
+        ValueError,
+        match="MCP response-size limit must be positive",
+    ):
+        create_artifact_list_tool(
+            launch_directory=spec_kit_project,
+            max_response_bytes=0,
+        )
 
 
 def test_in_memory_client_preserves_artifact_success_and_failure_wire_shapes(

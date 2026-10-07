@@ -38,7 +38,11 @@ def test_tool_discovery_exposes_first_class_and_transitional_tools(tmp_path):
     assert schemas["specify_version"]["properties"] == {}
     assert schemas["specify_version"]["additionalProperties"] is False
     assert schemas["specify_artifact_list"]["additionalProperties"] is False
-    assert set(schemas["specify_artifact_list"]["properties"]) == {"project_directory"}
+    assert set(schemas["specify_artifact_list"]["properties"]) == {
+        "project_directory",
+        "limit",
+        "cursor",
+    }
     for name in ("specify_describe_command", "specify_run_command"):
         assert schemas[name]["required"] == ["command"]
         assert schemas[name]["properties"]["command"]["type"] == "string"

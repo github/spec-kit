@@ -12,6 +12,8 @@ from specify_cli import artifacts
 from specify_cli.artifacts import ArtifactCatalog, _operation_list
 from specify_cli.artifacts._operation_list import (
     ARTIFACT_LIST_OPERATION,
+    ARTIFACT_LIST_MAX_LIMIT,
+    ArtifactListPaginationError,
     ArtifactListProjectError,
     ArtifactListRequest,
     ArtifactListResolutionError,
@@ -31,6 +33,7 @@ def test_artifact_list_operation_descriptor_is_stable():
     assert ARTIFACT_LIST_OPERATION.error_types == (
         ArtifactListProjectError,
         ArtifactListResolutionError,
+        ArtifactListPaginationError,
     )
     assert ARTIFACT_LIST_OPERATION.capabilities == frozenset({"local-read"})
     assert ARTIFACT_LIST_OPERATION.network_access == "none"
@@ -48,6 +51,8 @@ def test_list_artifacts_returns_complete_typed_inventory(spec_kit_project: Path)
         {"id", "name", "kind", "description", "stack"} <= row.keys()
         for row in result.rows
     )
+    assert result.next_cursor is None
+    assert result.truncated is False
 
 
 def test_list_artifacts_preserves_empty_inventory(
@@ -74,6 +79,90 @@ def test_list_artifacts_is_stable_across_repeated_calls(spec_kit_project: Path):
 
     assert first == second
     assert [row["id"] for row in first.rows] == [row["id"] for row in second.rows]
+
+
+def test_list_artifacts_returns_deterministic_pages(
+    spec_kit_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    rows = [
+        {
+            "id": f"template:item-{index}",
+            "name": f"item-{index}",
+            "kind": "template",
+            "description": f"Item {index}",
+            "stack": [],
+        }
+        for index in range(5)
+    ]
+    list_with_stack = Mock(return_value=rows)
+    monkeypatch.setattr(
+        _operation_list,
+        "ArtifactCatalog",
+        lambda _project_directory: Mock(list_artifacts_with_stack=list_with_stack),
+    )
+
+    first = list_artifacts(ArtifactListRequest(spec_kit_project, limit=2))
+    second = list_artifacts(
+        ArtifactListRequest(spec_kit_project, limit=2, cursor=first.next_cursor)
+    )
+    final = list_artifacts(
+        ArtifactListRequest(spec_kit_project, limit=2, cursor=second.next_cursor)
+    )
+
+    assert [row["id"] for row in first.rows] == [
+        "template:item-0",
+        "template:item-1",
+    ]
+    assert first.next_cursor == "2"
+    assert first.truncated is True
+    assert [row["id"] for row in second.rows] == [
+        "template:item-2",
+        "template:item-3",
+    ]
+    assert second.next_cursor == "4"
+    assert second.truncated is True
+    assert [row["id"] for row in final.rows] == ["template:item-4"]
+    assert final.next_cursor is None
+    assert final.truncated is False
+
+
+@pytest.mark.parametrize("limit", [0, ARTIFACT_LIST_MAX_LIMIT + 1, True])
+def test_list_artifacts_rejects_invalid_limit(
+    spec_kit_project: Path,
+    limit: int,
+):
+    with pytest.raises(ArtifactListPaginationError) as exc_info:
+        list_artifacts(ArtifactListRequest(spec_kit_project, limit=limit))
+
+    assert exc_info.value.code == "invalid_pagination"
+    assert exc_info.value.message == (
+        f"artifact list limit must be between 1 and {ARTIFACT_LIST_MAX_LIMIT}"
+    )
+    assert exc_info.value.details == {
+        "field": "limit",
+        "value": limit,
+        "max_limit": ARTIFACT_LIST_MAX_LIMIT,
+    }
+
+
+@pytest.mark.parametrize("cursor", ["", "01", "-1", "1.5", "é", "1" * 21, 1])
+def test_list_artifacts_rejects_invalid_cursor(
+    spec_kit_project: Path,
+    cursor: object,
+):
+    with pytest.raises(ArtifactListPaginationError) as exc_info:
+        list_artifacts(ArtifactListRequest(spec_kit_project, cursor=cursor))
+
+    assert exc_info.value.code == "invalid_pagination"
+    assert exc_info.value.message == (
+        "artifact list cursor must be a canonical decimal offset"
+    )
+    assert exc_info.value.details == {
+        "field": "cursor",
+        "value": cursor,
+        "max_limit": ARTIFACT_LIST_MAX_LIMIT,
+    }
 
 
 def test_list_artifacts_preserves_unicode_source_paths_and_stack(

@@ -69,6 +69,8 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
         assert artifacts.is_error is False
         assert isinstance(artifacts.structured_content["rows"], list)
         assert artifacts.structured_content["rows"]
+        assert artifacts.structured_content["next_cursor"] is None
+        assert artifacts.structured_content["truncated"] is False
         assert artifact_failure.is_error is True
         assert artifact_failure.structured_content == {
             "error": {
