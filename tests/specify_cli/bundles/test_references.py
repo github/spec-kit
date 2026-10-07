@@ -36,6 +36,12 @@ def _mock_catalog(monkeypatch, catalog_type, kind, component_id, record, *, name
 
 
 def _installable_current(kind: str) -> dict:
+    if kind == "extensions":
+        return {
+            "version": "1.0.0",
+            "download_url": "https://example.com/release.zip",
+            "sha256": "a" * 64,
+        }
     return {
         "version": "1.0.0",
         "url": f"https://example.com/{'workflow.yml' if kind == 'workflows' else 'step.yml'}",
@@ -156,7 +162,10 @@ def test_wrong_bundled_extension_pin_is_definitive(
     root = make_project(tmp_path)
     _mock_catalog(
         monkeypatch, ExtensionCatalog, "extensions",
-        "agent-context", {"version": "999.0.0"},
+        "agent-context", {
+            "version": "999.0.0",
+            "download_url": "https://example.com/release.zip",
+        },
     )
     warnings = []
     check = make_reference_checker(root, allow_network=allow_network, warnings=warnings)
@@ -538,6 +547,53 @@ def test_online_validation_rejects_malformed_component_release(
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
     assert "SHA-256" in check(_ref(kind, "invalid-component"))
+    assert warnings == []
+
+
+@pytest.mark.parametrize("historical", [False, True])
+@pytest.mark.parametrize(
+    "url",
+    ["http://example.com/release.zip", "https://[::1", "https:///release.zip", 42],
+)
+def test_online_validation_rejects_invalid_pinned_extension_url(
+    tmp_path, monkeypatch, historical, url,
+):
+    from specify_cli.extensions import ExtensionCatalog
+
+    record = {"download_url": url, "sha256": "a" * 64}
+    current = {"version": "2.0.0", **record}
+    if historical:
+        current["releases"] = {"1.0.0": record}
+    _mock_catalog(
+        monkeypatch, ExtensionCatalog, "extensions", "invalid-extension", current
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(
+        "extensions", "invalid-extension", "1.0.0" if historical else "2.0.0"
+    ))
+    assert problem is not None and ("URL" in problem or "download_url" in problem)
+    assert warnings == []
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_online_validation_accepts_safe_pinned_extension_url(
+    tmp_path, monkeypatch, historical,
+):
+    from specify_cli.extensions import ExtensionCatalog
+
+    record = {"download_url": "https://example.com/release.zip", "sha256": "a" * 64}
+    current = {"version": "2.0.0", **record}
+    if historical:
+        current["releases"] = {"1.0.0": record}
+    _mock_catalog(monkeypatch, ExtensionCatalog, "extensions", "valid-extension", current)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref(
+        "extensions", "valid-extension", "1.0.0" if historical else "2.0.0"
+    )) is None
     assert warnings == []
 
 

@@ -377,7 +377,12 @@ def test_source_is_checked_even_when_component_is_already_installed(
         fetches.append(source.name)
         return {
             "schema_version": "1.0",
-            "extensions": {"ext-a": {"version": "1.0.0"}},
+            "extensions": {
+                "ext-a": {
+                    "version": "1.0.0",
+                    "download_url": "https://example.com/release.zip",
+                }
+            },
         }
 
     from specify_cli.extensions import CatalogEntry

@@ -89,6 +89,10 @@ def _validate_pinned_install_metadata(component: ComponentRef, selected: dict) -
             )
         return value
 
+    if component.kind == "extensions":
+        require_url(selected.get("download_url"), "download URL")
+        return
+
     if component.kind == "workflows":
         from ..workflows.catalog._versions import _SHA256
 
@@ -149,7 +153,7 @@ def _catalog_has_release(component: ComponentRef, catalog) -> bool:
         or not _matches_pin(component, selected.get("version"))
     ):
         return False
-    if component.kind in ("workflows", "steps"):
+    if component.kind in ("extensions", "workflows", "steps"):
         _validate_pinned_install_metadata(component, selected)
     return True
 
