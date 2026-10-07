@@ -27,7 +27,9 @@ attestations, then proposes catalog/docs changes in a draft PR for maintainer
 review. It does not install, import, execute, or audit your step.
 
 Your package must contain `step.yml` and `__init__.py`, with `step.type_key`
-matching the submitted ID. Publish a GitHub release with a tag matching version
+matching the submitted ID. IDs must also pass the CLI's cross-platform path
+validation; Windows device names such as `con`, `aux`, `com1`, and `lpt1` are
+not allowed. Publish a GitHub release with a tag matching version
 `X.Y.Z` (for example `v1.0.0` or `deploy-preview-v1.0.0`; no slashes in the tag).
 Catalog installs download individual files, not archives. List all runtime files
 using raw GitHub URLs pinned to that exact tag and a SHA-256 digest for each:

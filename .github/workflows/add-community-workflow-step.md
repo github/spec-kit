@@ -36,10 +36,12 @@ checkout:
 
 steps:
   - name: Set up Python for step metadata validation
+    continue-on-error: true
     uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
     with:
       python-version: "3.13"
   - name: Install metadata parser
+    continue-on-error: true
     run: python3 -m pip install 'PyYAML==6.0.3'
 
 safe-outputs:
@@ -137,6 +139,19 @@ required check has completed and passed.
   `type_key`. Read built-in registrations in
   `src/specify_cli/workflows/__init__.py` and their repository-owned metadata;
   do not load submitted code to determine identity.
+- Also require the repository-owned `installer.validate_step_id` check, which
+  rejects Windows device names such as `con`, `aux`, `com1`, and `lpt1`.
+  Use the edit tool to write `/tmp/gh-aw/step-submission.json` as a JSON object
+  containing the form values under `step_id`, `repository`, `version`, and
+  `release_tag`. Run this fixed command, never interpolating issue text into
+  shell commands:
+
+  ```bash
+  python3 .github/scripts/validate_community_workflow_step.py identity --submission /tmp/gh-aw/step-submission.json
+  ```
+
+  Exit 1 is a submission defect; exit 2 is an environment blocker. A missing
+  YAML parser or failed setup is Blocked, not a successful identity check.
 - Version must be `X.Y.Z` with digits only, no `v` prefix.
 - Description must be nonempty and under 200 characters.
 - Require 2-5 distinct lowercase tags.
@@ -180,22 +195,29 @@ escapes, traversal segments, whitespace, control characters, and characters
 outside `^[A-Za-z0-9._~/-]+$` in the owner, repository, tag, and file path.
 Do not fetch invalid URLs or rewrite them to make them pass.
 
-Use the edit tool to write one validated URL and a trailing newline to
-`/tmp/gh-aw/step-file-url.txt`. Never interpolate issue data into shell commands.
-Download each file with this fixed command unchanged (overwrite this scratch
-file for each URL):
+Add `catalog_entry` (the proposed entry object without its outer Step ID key)
+to `/tmp/gh-aw/step-submission.json`. For each package file, use the edit tool to
+set `file` to its package-relative name (for example `step.yml`, `__init__.py`,
+or an `extra_files` key). All submitted values remain JSON data, never shell
+syntax. Run this fixed command unchanged for each file:
 
 ```bash
-curl --proto '=https' --max-time 60 --max-filesize 10485760 --silent --show-error --write-out '%{http_code}' --output /tmp/gh-aw/step-file.bin "$(cat /tmp/gh-aw/step-file-url.txt)"
+python3 .github/scripts/validate_community_workflow_step.py fetch --submission /tmp/gh-aw/step-submission.json
 ```
 
-Do not follow redirects. Require exit code zero and HTTP 200 before computing
-`sha256sum /tmp/gh-aw/step-file.bin` in a separate shell call. Compare each
-computed digest to the submitted digest, ignoring hex case. A mismatch fails
-validation; never replace a mismatching submitted digest to make it pass.
-Record the computed per-file digests for the generated entry. Release metadata
-is not a substitute for downloading every file. A file exceeding the 10 MiB
-download limit is a submission failure, not an environment blocker.
+The repository-owned helper validates identity, URL boundaries, paths, and
+digest shape before invoking curl with a direct argument list, never a shell.
+It does not follow redirects and only hashes downloaded bytes after curl exits
+zero and returns HTTP 200. It rejects submitted digest mismatches and files
+exceeding 10 MiB. Exit 1 is Failed; exit 2 is Blocked, including missing tools,
+timeouts, HTTP 403/429, and HTTP 5xx. HTTP 404 and redirects are submission
+failures. Never treat a nonzero exit as a passed download or replace a
+mismatching submitted digest to make it pass.
+
+On exit zero, the helper prints the file name and computed digest as JSON and
+leaves its bytes at `/tmp/gh-aw/step-file.bin`. Record each digest, then inspect
+the manifest as data before the next download overwrites that scratch file.
+Release metadata is not a substitute for downloading every file.
 
 Parse the downloaded `step.yml` as data using `yaml.safe_load`, never unsafe
 YAML loading. Require a mapping with a `step` mapping; `step.type_key`,

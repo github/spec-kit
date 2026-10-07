@@ -20,7 +20,7 @@ body:
     id: step-id
     attributes:
       label: Step ID
-      description: Lowercase letters, digits, and hyphens; must match step.type_key
+      description: Lowercase letters, digits, and hyphens; must match step.type_key; Windows device names such as con, aux, com1, and lpt1 are not allowed
       placeholder: "e.g., deploy-preview"
     validations:
       required: true
