@@ -139,7 +139,9 @@ unique display name, ignoring case. The object has the same `id`, `name`,
 the matching `specify extension list --json` item. In place of the `provides`
 counts it has `commands`, `templates`, `scripts`, and `hooks` arrays. Command,
 template, and script entries have `name`, `description` (`""` when absent),
-`source` (the extension's `source`), and `sourcePath` (the manifest `file`,
+`source` (`{"layer": "extension", "extensionId": "<id>"}`, the extension that
+provides it; the top-level `source` is where it was installed from), and
+`sourcePath` (the manifest `file`,
 relative to the extension directory); script entries also have `runtimes` when
 the manifest declares them. Extension entries carry no `strategy`, because
 extension-provided files always replace. Each hook entry has `trigger` (the

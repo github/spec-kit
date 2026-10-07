@@ -15,6 +15,9 @@ from specify_cli.presets import PresetManager
 runner = CliRunner()
 
 SOURCE = {"kind": "catalog", "catalog": "speckit-official"}
+# provenance of each contribution, as in #4213; SOURCE is where the pack was installed from
+PRESET_SOURCE = {"layer": "preset", "presetId": "info-preset"}
+EXTENSION_SOURCE = {"layer": "extension", "extensionId": "info-ext"}
 
 
 def _project(tmp_path):
@@ -126,7 +129,7 @@ def test_preset_info_json_expands_the_list_item(tmp_path, monkeypatch):
         {
             "name": "speckit.plan",
             "description": "Wrapped plan",
-            "source": SOURCE,
+            "source": PRESET_SOURCE,
             "sourcePath": "commands/plan.md",
             "strategy": "wrap",
         }
@@ -135,7 +138,7 @@ def test_preset_info_json_expands_the_list_item(tmp_path, monkeypatch):
         {
             "name": "spec-template",
             "description": "",
-            "source": SOURCE,
+            "source": PRESET_SOURCE,
             "sourcePath": "templates/spec.md",
             "strategy": "replace",
         }
@@ -144,12 +147,26 @@ def test_preset_info_json_expands_the_list_item(tmp_path, monkeypatch):
         {
             "name": "setup-plan",
             "description": "",
-            "source": SOURCE,
+            "source": PRESET_SOURCE,
             "sourcePath": "scripts/setup-plan.sh",
             "strategy": "wrap",
         }
     ]
 
+
+
+def test_preset_info_json_gives_an_empty_description_as_a_string(tmp_path, monkeypatch):
+    # ``description:`` with no value reads as None; the preset manifest accepts it
+    project = _project(tmp_path)
+    _preset(project)
+    manifest = project / ".specify" / "presets" / "info-preset" / "preset.yml"
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(text.replace("      description: Wrapped plan\n", "      description:\n"), encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    info = _json_result(runner.invoke(app, ["preset", "info", "info-preset", "--json"]))
+
+    assert info["commands"][0]["description"] == ""
 
 
 def test_a_direct_call_to_preset_info_keeps_the_human_readable_view(tmp_path, monkeypatch, capsys):
@@ -182,22 +199,22 @@ def test_extension_info_json_expands_the_list_item(tmp_path, monkeypatch):
         {
             "name": "speckit.info-ext.check",
             "description": "Run the check",
-            "source": SOURCE,
+            "source": EXTENSION_SOURCE,
             "sourcePath": "commands/check.md",
         }
     ]
     assert info["templates"] == [
-        {"name": "report", "description": "", "source": SOURCE, "sourcePath": "templates/report.md"}
+        {"name": "report", "description": "", "source": EXTENSION_SOURCE, "sourcePath": "templates/report.md"}
     ]
     assert info["scripts"] == [
         {
             "name": "collect",
             "description": "",
-            "source": SOURCE,
+            "source": EXTENSION_SOURCE,
             "sourcePath": "scripts/collect.sh",
             "runtimes": ["bash", "python"],
         },
-        {"name": "notify", "description": "", "source": SOURCE, "sourcePath": "scripts/notify.sh"},
+        {"name": "notify", "description": "", "source": EXTENSION_SOURCE, "sourcePath": "scripts/notify.sh"},
     ]
 
 

@@ -37,10 +37,17 @@ def _find_installed(
 
 
 def _contribution(entry: dict[str, Any], source: dict[str, str]) -> dict[str, Any]:
-    """Return one command, template or script entry of an installed pack."""
+    """Return one command, template or script entry of an installed pack.
+
+    ``source`` is the entry's provenance, the layer and the pack that provide
+    it (#4213); where the pack was installed from is the top-level ``source``.
+    """
+    description = entry.get("description")
     return {
         "name": entry["name"],
-        "description": entry.get("description", ""),
+        # ``description:`` with no value reads as None, and the preset manifest
+        # does not check contribution descriptions
+        "description": description if isinstance(description, str) else "",
         "source": dict(source),
         "sourcePath": entry["file"],
     }
@@ -56,8 +63,9 @@ def preset_info_item(records: list[dict[str, Any]], manager: Any, key: str) -> d
     item = installed_list_item(record, include_hooks=False)
     del item["provides"]
     groups: dict[str, list[dict[str, Any]]] = {"commands": [], "templates": [], "scripts": []}
+    provenance = {"layer": "preset", "presetId": record["id"]}
     for template in manifest.templates:
-        entry = _contribution(template, item["source"])
+        entry = _contribution(template, provenance)
         entry["strategy"] = template.get("strategy", "replace")
         groups[f"{template['type']}s"].append(entry)
     return {**item, **groups}
@@ -74,9 +82,10 @@ def extension_info_item(records: list[dict[str, Any]], manager: Any, key: str) -
 
     item = installed_list_item(record, include_hooks=True)
     del item["provides"]
+    provenance = {"layer": "extension", "extensionId": record["id"]}
     scripts = []
     for script in manifest.scripts:
-        entry = _contribution(script, item["source"])
+        entry = _contribution(script, provenance)
         if "runtimes" in script:
             entry["runtimes"] = list(script["runtimes"])
         scripts.append(entry)
@@ -103,8 +112,8 @@ def extension_info_item(records: list[dict[str, Any]], manager: Any, key: str) -
 
     return {
         **item,
-        "commands": [_contribution(command, item["source"]) for command in manifest.commands],
-        "templates": [_contribution(template, item["source"]) for template in manifest.templates],
+        "commands": [_contribution(command, provenance) for command in manifest.commands],
+        "templates": [_contribution(template, provenance) for template in manifest.templates],
         "scripts": scripts,
         "hooks": hooks,
     }

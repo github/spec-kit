@@ -135,7 +135,9 @@ JSON object to stdout. The object has the same `id`, `name`, `description`,
 `specify preset list --json` item. In place of the `provides` counts it has
 `commands`, `templates`, and `scripts` arrays, one entry per manifest
 contribution in declaration order. Each entry has `name`, `description` (`""`
-when absent), `source` (the preset's `source`), `sourcePath` (the manifest
+when absent or empty), `source` (`{"layer": "preset", "presetId": "<id>"}`, the
+preset that provides it; the top-level `source` is where it was installed
+from), `sourcePath` (the manifest
 `file`, relative to the preset directory), and `strategy` (`replace`,
 `prepend`, `append`, or `wrap`; `replace` when the manifest omits it). `--json`
 cannot be combined with `--versions` (usage error, exit 2). A preset that is
