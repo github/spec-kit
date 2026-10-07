@@ -96,6 +96,14 @@ def _command_file_names_changed(integration, old_files, new_files) -> bool:
     return bool(removed & added)
 
 
+class _ExtensionRegistryUnreadableError(Exception):
+    """Raised when the extension registry can't show who owns a command file.
+
+    The counterpart of :class:`_PresetRegistryUnreadableError` for
+    ``_extension_commands_at``.
+    """
+
+
 def _extension_commands_at(project_root, integration, rel_paths) -> list[str]:
     """Return ``"<extension> (<command>)"`` for registered commands at *rel_paths*.
 
@@ -104,23 +112,55 @@ def _extension_commands_at(project_root, integration, rel_paths) -> list[str]:
     command itself, so an older alias ``speckit-plan`` matches
     ``.kiro/prompts/speckit-plan.md``. Disabled extensions count: their
     files stay on disk.
+
+    Fails **closed** like ``_installed_presets_affecting_agent``: an absent
+    registry returns an empty list, but a registry that exists and can't be
+    read or parsed, or an entry whose ``registered_commands`` for the
+    integration isn't a list of names, raises
+    :class:`_ExtensionRegistryUnreadableError`. Skipping it would let the
+    rename write a core file over an extension's.
     """
-    from ..extensions import ExtensionManager
+    from ..extensions import ExtensionRegistry
 
     config = integration.registrar_config or {}
     commands_dir, suffix = config.get("dir"), config.get("extension")
     if not isinstance(commands_dir, str) or not isinstance(suffix, str):
         return []
-    targets = {os.path.normcase(rel) for rel in rel_paths}
-    manager = ExtensionManager(Path(project_root))
-    found = []
-    for ext_id, metadata in manager.registry.list().items():
-        recorded = (
-            metadata.get("registered_commands") if isinstance(metadata, dict) else None
+    registry_path = (
+        Path(project_root) / ".specify" / "extensions" / ExtensionRegistry.REGISTRY_FILE
+    )
+    if not os.path.lexists(registry_path):
+        return []
+    try:
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise _ExtensionRegistryUnreadableError(str(exc)) from exc
+    extensions = data.get("extensions", {}) if isinstance(data, dict) else None
+    if not isinstance(extensions, dict):
+        raise _ExtensionRegistryUnreadableError(
+            "extension registry structure is malformed"
         )
-        if not isinstance(recorded, dict):
-            continue
-        for name in manager._valid_name_list(recorded.get(integration.key)):
+
+    targets = {os.path.normcase(rel) for rel in rel_paths}
+    found = []
+    for ext_id, metadata in extensions.items():
+        recorded = (
+            metadata.get("registered_commands", {})
+            if isinstance(metadata, dict)
+            else None
+        )
+        names = (
+            recorded.get(integration.key, [])
+            if isinstance(recorded, dict)
+            else None
+        )
+        if not isinstance(names, list) or not all(
+            isinstance(name, str) for name in names
+        ):
+            raise _ExtensionRegistryUnreadableError(
+                f"extension '{ext_id}' registered_commands is malformed"
+            )
+        for name in names:
             rel = (PurePath(commands_dir) / f"{name}{suffix}").as_posix()
             if os.path.normcase(rel) in targets:
                 found.append(f"{ext_id} ({name})")

@@ -1170,9 +1170,10 @@ class ExtensionManager:
     ) -> Dict[str, str]:
         """Return registered command and alias names for installed extensions.
 
-        An extension whose manifest can't be read contributes the names the
-        registry tracks for it, because its command files are still on disk
-        (#4797).
+        Besides its manifest's names, an extension contributes the names the
+        registry tracks for it. Their command files stay on disk while its
+        manifest can't be read, or no longer declares them, until it is
+        registered again or removed, and removal deletes them (#4797).
         """
         installed_names: Dict[str, str] = {}
 
@@ -1180,18 +1181,19 @@ class ExtensionManager:
             if ext_id == exclude_extension_id:
                 continue
 
+            metadata = self.registry.get(ext_id)
+            recorded = (
+                metadata.get("registered_commands")
+                if isinstance(metadata, dict)
+                else None
+            )
+            if isinstance(recorded, dict):
+                for names in recorded.values():
+                    for name in self._valid_name_list(names):
+                        installed_names.setdefault(name, ext_id)
+
             manifest = self.get_extension(ext_id)
             if manifest is None:
-                metadata = self.registry.get(ext_id)
-                recorded = (
-                    metadata.get("registered_commands")
-                    if isinstance(metadata, dict)
-                    else None
-                )
-                if isinstance(recorded, dict):
-                    for names in recorded.values():
-                        for name in self._valid_name_list(names):
-                            installed_names.setdefault(name, ext_id)
                 continue
 
             for cmd in manifest.commands:
@@ -4121,10 +4123,11 @@ class ExtensionManager:
         Registration skips those extensions, so neither body overwrites the
         other and no old file is retired.
 
-        An enabled extension claims every name its manifest declares. A
-        disabled one, or one whose manifest cannot be read, claims the names
-        already registered for the agent, because its files stay on disk. A
-        command and its own aliases are one owner.
+        Every extension claims the names already registered for the agent,
+        because their files stay on disk, including names its manifest no
+        longer declares. An enabled extension with a readable manifest also
+        claims every name it declares. A command, its own aliases, and a
+        registered name that writes the same file are one owner.
 
         Removal excludes planned core files: only the integration manifest
         can establish that a core command has actually been installed.
@@ -4149,16 +4152,25 @@ class ExtensionManager:
             for command in manifest.commands if manifest is not None else []:
                 for name in [command["name"], *(command.get("aliases") or [])]:
                     primary_of[name] = command["name"]
+            recorded = metadata.get("registered_commands")
+            names = self._valid_name_list(
+                recorded.get(agent_name) if isinstance(recorded, dict) else None
+            )
             if manifest is not None and metadata.get("enabled", True):
-                names = list(primary_of)
-            else:
-                recorded = metadata.get("registered_commands")
-                names = self._valid_name_list(
-                    recorded.get(agent_name) if isinstance(recorded, dict) else None
-                )
+                names = list(primary_of) + [n for n in names if n not in primary_of]
+            primary_of_stem = {
+                os.path.normcase(
+                    registrar._compute_output_name(agent_name, name, agent_config)
+                ): primary
+                for name, primary in primary_of.items()
+            }
             for name in names:
                 stem = registrar._compute_output_name(agent_name, name, agent_config)
-                owner = (ext_id, primary_of.get(name, stem))
+                owner = (
+                    ext_id,
+                    primary_of.get(name)
+                    or primary_of_stem.get(os.path.normcase(stem), stem),
+                )
                 owners.setdefault(os.path.normcase(stem), set()).add(owner)
                 claims.append((*owner, name, stem))
 

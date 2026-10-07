@@ -1012,6 +1012,182 @@ class TestIntegrationUpgradeDetailed:
         )
         assert not (prompts / "speckit.plan.md").exists()
 
+    @pytest.mark.parametrize(
+        "corruption",
+        ["registry", "entry", "registered_commands", "agent_entry", "agent_item"],
+    )
+    def test_upgrade_refuses_kiro_prompt_rename_while_extension_registry_is_unreadable(
+        self, tmp_path, monkeypatch, corruption
+    ):
+        """Without a readable registry entry, upgrade can't tell that the
+        alias ``speckit-plan`` owns the renamed core prompt's file, so it
+        refuses before changing files, even with ``--force`` (#4797)."""
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        prompts = project / ".kiro" / "prompts"
+        body = "---\ndescription: Old\n---\n\nOLD-BODY\n"
+        self._plant_extension(project, "old", [
+            {"name": "speckit.old.plan", "body": body, "aliases": ["speckit-plan"]},
+        ])
+        for name in ("speckit.old.plan", "speckit-plan"):
+            (prompts / f"{name}.md").write_bytes(body.encode("utf-8"))
+        registry = project / ".specify" / "extensions" / ".registry"
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        entry = data["extensions"]["old"]
+        if corruption == "registry":
+            registry.write_text("{not json", encoding="utf-8")
+        else:
+            if corruption == "entry":
+                data["extensions"]["old"] = "old"
+            elif corruption == "registered_commands":
+                entry["registered_commands"] = "kiro-cli"
+            elif corruption == "agent_entry":
+                entry["registered_commands"] = {"kiro-cli": "speckit-plan"}
+            else:
+                entry["registered_commands"] = {"kiro-cli": [1, 2]}
+            registry.write_text(json.dumps(data), encoding="utf-8")
+        manifest = project / ".specify" / "integrations" / "kiro-cli.manifest.json"
+        before = {path.name: path.read_bytes() for path in prompts.iterdir()}
+        manifest_before = manifest.read_bytes()
+
+        for args in (
+            ["integration", "upgrade", "kiro-cli"],
+            ["integration", "upgrade", "kiro-cli", "--force"],
+        ):
+            result = _run_in_project(project, args)
+            assert result.exit_code == 1, result.output
+            assert "extension registry could not be read" in " ".join(
+                result.output.split()
+            )
+            assert {
+                path.name: path.read_bytes() for path in prompts.iterdir()
+            } == before
+            assert manifest.read_bytes() == manifest_before
+
+    @pytest.mark.parametrize("kind", ["file", "symlink"])
+    def test_upgrade_replaces_a_kiro_prompt_it_did_not_install_only_with_force(
+        self, tmp_path, monkeypatch, kind
+    ):
+        """No extension tracks this ``speckit-plan.md``; a user may have
+        written it because Kiro ignored the dotted prompts. Upgrade replaces
+        it only with ``--force``, and never writes through a symlink (#4797)."""
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        prompts = project / ".kiro" / "prompts"
+        mine = b"---\ndescription: Mine\n---\n\nMY-PLAN\n"
+        if kind == "symlink":
+            target = tmp_path / "my-plan.md"
+            target.write_bytes(mine)
+            try:
+                (prompts / "speckit-plan.md").symlink_to(target)
+            except OSError:
+                pytest.skip("symlinks are unavailable")
+        else:
+            (prompts / "speckit-plan.md").write_bytes(mine)
+        before = {path.name: path.read_bytes() for path in prompts.iterdir()}
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 1, result.output
+        assert ".kiro/prompts/speckit-plan.md" in result.output
+        assert {path.name: path.read_bytes() for path in prompts.iterdir()} == before
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "kiro-cli", "--force"]
+        )
+        if kind == "symlink":
+            assert result.exit_code == 1, result.output
+            assert "Symbolic links are not overwritten" in " ".join(
+                result.output.split()
+            )
+            assert {
+                path.name: path.read_bytes() for path in prompts.iterdir()
+            } == before
+        else:
+            assert result.exit_code == 0, result.output
+            assert "MY-PLAN" not in (prompts / "speckit-plan.md").read_text(
+                encoding="utf-8"
+            )
+            assert not (prompts / "speckit.plan.md").exists()
+
+    def test_install_refuses_a_kiro_prompt_name_another_extension_still_tracks(
+        self, tmp_path
+    ):
+        """foo's manifest stops declaring ``speckit.foo.bar-baz``, but its
+        prompt stays registered and on disk. ``speckit.foo-bar.baz`` would
+        write the same file, and removing foo would then delete it, so the
+        install is refused (#4797)."""
+        import yaml
+
+        def write_source(ext_id, name, body):
+            source = tmp_path / f"src-{ext_id}"
+            (source / "commands").mkdir(parents=True)
+            (source / "commands" / "cmd.md").write_text(body, encoding="utf-8")
+            (source / "extension.yml").write_text(yaml.safe_dump({
+                "schema_version": "1.0",
+                "extension": {
+                    "id": ext_id,
+                    "name": ext_id,
+                    "version": "1.0.0",
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "commands": [{"name": name, "file": "commands/cmd.md"}]
+                },
+            }), encoding="utf-8")
+            return source
+
+        project = _init_project(tmp_path, "kiro-cli")
+        prompts = project / ".kiro" / "prompts"
+        foo = write_source("foo", "speckit.foo.bar-baz", "FOO-BODY\n")
+        result = _run_in_project(project, ["extension", "add", "--dev", str(foo)])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify" / "extensions" / "foo" / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"][0]["name"] = "speckit.foo.qux"
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+        bar = write_source("foo-bar", "speckit.foo-bar.baz", "BAR-BODY\n")
+        result = _run_in_project(project, ["extension", "add", "--dev", str(bar)])
+        assert result.exit_code != 0
+        assert (
+            "speckit.foo-bar.baz (writes 'speckit-foo-bar-baz', already provided "
+            "by extension 'foo' as 'speckit.foo.bar-baz')"
+        ) in " ".join(result.output.split())
+        assert "FOO-BODY" in (prompts / "speckit-foo-bar-baz.md").read_text(
+            encoding="utf-8"
+        )
+
+    def test_removal_keeps_a_kiro_prompt_another_extension_wrote_at_a_stale_name(
+        self, tmp_path
+    ):
+        """foo's manifest no longer declares ``speckit.foo.bar-baz``, but the
+        registry still does. When foo-bar's ``speckit.foo-bar.baz`` already
+        wrote ``speckit-foo-bar-baz.md``, removing foo checks the file's owner
+        and keeps it (#4797)."""
+        import yaml
+
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, "kiro-cli")
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": "FOO-BODY\n"},
+        ])
+        ExtensionManager(project).register_enabled_extensions_for_agent("kiro-cli")
+        shared = project / ".kiro" / "prompts" / "speckit-foo-bar-baz.md"
+        assert "FOO-BODY" in shared.read_text(encoding="utf-8")
+        manifest_path = project / ".specify" / "extensions" / "foo" / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"][0]["name"] = "speckit.foo.qux"
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        self._plant_extension(project, "foo-bar", [
+            {"name": "speckit.foo-bar.baz", "body": "BAR-BODY\n"},
+        ])
+        shared.write_bytes(b"<!-- Extension: foo-bar -->\nBAR-BODY\n")
+
+        result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
+        assert result.exit_code == 0, result.output
+        assert "Preserving the shared file" in result.output
+        assert shared.read_bytes() == b"<!-- Extension: foo-bar -->\nBAR-BODY\n"
+
     def test_qoder_upgrade_leaves_extensions_that_share_a_skill_unregistered(
         self, tmp_path
     ):

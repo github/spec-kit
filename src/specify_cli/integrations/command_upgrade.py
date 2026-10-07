@@ -14,6 +14,7 @@ from ..integration_runtime import (
 )
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
+    _ExtensionRegistryUnreadableError,
     _PresetRegistryUnreadableError,
     _command_file_names_changed,
     _extension_commands_at,
@@ -242,9 +243,23 @@ def integration_upgrade(
         # whose file is where the renamed core command goes. Writing the core
         # file would replace the extension's (or write through its dev-mode
         # symlink into the extension directory).
-        taken = _extension_commands_at(
-            project_root, integration, planned_command_files
-        )
+        try:
+            taken = _extension_commands_at(
+                project_root, integration, planned_command_files
+            )
+        except _ExtensionRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files: the "
+                "extension registry could not be read to verify which "
+                "extension commands use the new file names."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "The upgrade could write a core command over an extension's "
+                "file, so it is refused before changing files. Fix or restore "
+                "[cyan].specify/extensions/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
         if taken:
             console.print(
                 f"[red]Error:[/red] Cannot rename '{key}' command files while "
@@ -256,6 +271,34 @@ def integration_upgrade(
                 "file, so it is refused before changing files. Update or "
                 "remove the extension(s), then run the upgrade again."
             )
+            raise typer.Exit(1)
+        # Any other file already at a new core name is tracked by nothing,
+        # e.g. a prompt the user wrote because Kiro ignored the dotted names,
+        # so ownership can't be verified. Replace it only with --force, and
+        # never write through a symlink to wherever it points.
+        occupied = sorted(
+            rel for rel in planned_command_files
+            if rel not in old_manifest.files
+            and os.path.lexists(project_root / rel)
+        )
+        linked = [rel for rel in occupied if (project_root / rel).is_symlink()]
+        if linked or (occupied and not force):
+            console.print(
+                f"[yellow]⚠[/yellow]  {len(occupied)} file(s) not installed by "
+                f"'{key}' already use the new command file names:"
+            )
+            for rel in occupied:
+                console.print(f"    {rel}")
+            if linked:
+                console.print(
+                    "\nSymbolic links are not overwritten, even with "
+                    "[cyan]--force[/cyan]. Move them away and retry."
+                )
+            else:
+                console.print(
+                    "\nUse [cyan]--force[/cyan] to overwrite them, or move "
+                    "them away and retry."
+                )
             raise typer.Exit(1)
 
     # Ensure shared infrastructure is up to date; --force overwrites existing files.

@@ -3280,6 +3280,29 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="extension 'foo-bar'"):
             manager.install_from_directory(second, "0.1.0", register_commands=False)
 
+    def test_install_rejects_collision_with_a_name_only_the_registry_still_tracks(
+        self, temp_dir, project_dir
+    ):
+        """A registered name the installed manifest no longer declares still
+        has its command file on disk, and removing that extension deletes it,
+        so it counts too."""
+        first = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.qux", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        manager.registry.update(
+            "foo-bar",
+            {"registered_commands": {"kiro-cli": ["speckit.foo-bar.baz"]}},
+        )
+        assert manager.get_extension("foo-bar") is not None
+
+        with pytest.raises(ValidationError, match="extension 'foo-bar'"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
     def test_install_rejects_alias_that_hyphenates_to_another_command(
         self, temp_dir, project_dir
     ):
