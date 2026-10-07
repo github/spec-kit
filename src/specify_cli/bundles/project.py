@@ -83,22 +83,21 @@ def active_integration(project_root: Path) -> str | None:
     except BundlerError:
         return None
     if isinstance(data, dict):
-        # ``default_integration`` first, matching the canonical reader
-        # (``integration_state.default_integration_key``):
-        # ``state.get("default_integration") or state.get("integration")``.
-        # ``write_integration_json`` writes both keys, so a marker produced by
-        # the current CLI already resolved through the ``integration`` alias --
-        # this is about which field is authoritative when they disagree, and
-        # about resolving a marker that carries only ``default_integration``
-        # (hand-edited, or written by anything that follows the canonical
-        # reader's shape). ``integration``/``id``/``active`` stay as fallbacks.
-        # Clean EACH candidate before selecting it, rather than picking the
-        # first truthy raw value and normalizing only that one. A raw ``or``
-        # chain selects a whitespace-only ``default_integration`` (truthy) and
-        # then normalizes it to ``None``, losing the valid legacy key behind
-        # it -- whereas ``normalize_integration_state`` does
+        # Resolve the way the canonical path does: normalize first
+        # (``normalize_integration_state``), then read the default
+        # (``default_integration_key``). ``default_integration_key`` alone is
+        # not that reader -- it expects *normalized* state, and on a raw marker
+        # its ``state.get("default_integration") or state.get("integration")``
+        # picks a whitespace-only default (truthy) over a valid legacy key
+        # behind it.
+        #
+        # ``default_integration`` is authoritative; ``integration`` (the legacy
+        # alias ``write_integration_json`` also writes), then ``id``/``active``,
+        # are fallbacks. Clean EACH candidate before selecting it, as
+        # ``normalize_integration_state`` does with
         # ``clean_integration_key(data.get("default_integration")) or
-        # legacy_key`` and falls through:
+        # legacy_key``, rather than picking the first truthy raw value and
+        # normalizing only that one:
         #     {"default_integration": "   ", "integration": "copilot"}
         #         raw-then-clean -> None      canonical -> 'copilot'
         #

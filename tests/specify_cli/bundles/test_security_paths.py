@@ -189,8 +189,10 @@ def test_active_integration_matches_the_canonical_key_reader(
 ):
     """`active_integration` must normalize the way the canonical reader does.
 
-    That reader runs every value through `clean_integration_key`, while this
-    one only checked `isinstance(value, str) and value`. A whitespace-only key
+    The canonical path -- `normalize_integration_state`, then
+    `default_integration_key` -- runs every candidate through
+    `clean_integration_key`, while this one only checked
+    `isinstance(value, str) and value`. A whitespace-only key
     is truthy, so it was returned as a real integration *and* suppressed the
     "not determinable" fallback; a padded key was returned verbatim and
     matches no registered integration.
@@ -249,7 +251,8 @@ def test_active_integration_cleans_each_candidate_before_selecting(
 def test_active_integration_resolves_installed_only_state(
     tmp_path: Path, recorded, expected
 ):
-    """Installed-only state resolves exactly as the canonical reader does.
+    """Installed-only state resolves exactly as the canonical reader does
+    (``normalize_integration_state``, then ``default_integration_key``).
 
     With ``installed_integrations`` populated but no default recorded,
     ``normalize_integration_state`` promotes the first installed key to the
