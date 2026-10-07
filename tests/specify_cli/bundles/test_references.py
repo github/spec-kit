@@ -90,8 +90,13 @@ def test_community_step_is_not_treated_as_bundled(tmp_path: Path):
         STEP_REGISTRY.pop("community-only-step", None)
 
 
-def test_unknown_step_type_still_errors_online(tmp_path: Path):
+def test_unknown_step_type_still_errors_online(tmp_path: Path, monkeypatch):
     """The guard must not make every step id resolve."""
+    from specify_cli.workflows.catalog import StepCatalog
+
+    monkeypatch.setattr(
+        StepCatalog, "get_step_info", lambda self, _id, version=None: None
+    )
     root = make_project(tmp_path)
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)

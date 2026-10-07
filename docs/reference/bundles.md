@@ -99,7 +99,7 @@ specify bundle update [<bundle_id>]
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
-**Pinned catalog releases.** Extensions, presets, workflows, and steps with version pins select that exact release from the highest-priority active catalog entry. Historical releases must be advertised under `releases` with their own artifact URL and SHA-256 digest; the bundler never guesses an old URL from the current one or falls through to another catalog. The primitive installer uses the selected workflow or step record without re-reading the catalog, and verifies downloaded archive or workflow/step metadata against that release. A pinned workflow that ships with Spec Kit uses its bundled copy when the version matches, and the catalog release when it differs and network access is allowed. A step without a pin installs the current catalog release.
+**Pinned catalog releases.** Extensions, presets, workflows, and steps with version pins select that exact release from the highest-priority active catalog entry. Historical releases must be advertised under `releases` with their own artifact URL and SHA-256 digest; the bundler never guesses an old URL from the current one or falls through to another catalog. Legacy extension and preset entries that advertise no version are an exception: the bundler uses the winning entry as-is and cannot enforce its pin or verify the installed archive's version. Publish a versioned entry to make that pin enforceable. The primitive installer uses the selected workflow or step record without re-reading the catalog, and verifies downloaded archive or workflow/step metadata against that release. A pinned workflow that ships with Spec Kit uses its bundled copy when the version matches, and the catalog release when it differs and network access is allowed. A step without a pin installs the current catalog release.
 
 Without an explicit `source`, bundled extensions and presets take precedence over catalog releases. Validation rejects a pin that differs from the bundled version even when a matching catalog release exists; specify the winning catalog as `source` to opt into its release.
 
@@ -127,7 +127,7 @@ specify bundle list
 | -------- | ---------------------------- |
 | `--json` | Emit machine-readable JSON   |
 
-Lists the bundles installed in the project with their versions, component counts, and install timestamps.
+Lists the bundles installed in the project with their versions, required component counts (including components supplied independently), and install timestamps.
 
 ## Initialize a Project with a Bundle
 
