@@ -35,6 +35,17 @@ def _mock_catalog(monkeypatch, catalog_type, kind, component_id, record, *, name
     )
 
 
+def _installable_current(kind: str) -> dict:
+    return {
+        "version": "1.0.0",
+        "url": f"https://example.com/{'workflow.yml' if kind == 'workflows' else 'step.yml'}",
+        "sha256": (
+            "a" * 64 if kind == "workflows"
+            else {"step.yml": "a" * 64, "__init__.py": "b" * 64}
+        ),
+    }
+
+
 def test_bundled_extension_resolves(tmp_path: Path):
     root = make_project(tmp_path)
     warnings: list[str] = []
@@ -344,6 +355,57 @@ def test_online_validation_reports_invalid_release_metadata(tmp_path, monkeypatc
     assert warnings == []
 
 
+@pytest.mark.parametrize(
+    ("kind", "field", "bad_value", "message"),
+    [
+        ("workflows", "url", None, "install URL"),
+        ("workflows", "url", 42, "install URL"),
+        ("workflows", "url", "http://example.com/workflow.yml", "install URL"),
+        ("workflows", "sha256", "not-a-digest", "SHA-256"),
+        ("steps", "url", None, "step.yml URL"),
+        ("steps", "url", 42, "step.yml URL"),
+        ("steps", "url", "http://example.com/step.yml", "step.yml URL"),
+        ("steps", "url", "https://example.com/other.yml", "__init__.py URL"),
+        ("steps", "init_url", "http://example.com/__init__.py", "__init__.py URL"),
+        ("steps", "sha256", {"step.yml": "a" * 64}, "SHA-256"),
+        ("steps", "extra_files", {"helper.py": "http://example.com/helper.py"}, "extra file URL"),
+    ],
+)
+def test_online_validation_rejects_malformed_pinned_current_release(
+    tmp_path, monkeypatch, kind, field, bad_value, message,
+):
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    catalog = WorkflowCatalog if kind == "workflows" else StepCatalog
+    record = _installable_current(kind)
+    record[field] = bad_value
+    if field == "extra_files":
+        record["sha256"]["helper.py"] = "c" * 64
+    _mock_catalog(monkeypatch, catalog, kind, "requested", record)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(kind, "requested"))
+    assert problem is not None and message in problem
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+def test_online_validation_accepts_installable_pinned_current_release(
+    tmp_path, monkeypatch, kind,
+):
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    catalog = WorkflowCatalog if kind == "workflows" else StepCatalog
+    record = _installable_current(kind)
+    _mock_catalog(monkeypatch, catalog, kind, "requested", record)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref(kind, "requested")) is None
+    assert warnings == []
+
+
 def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeypatch):
     from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -401,7 +463,7 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
         visited.append(entry.name)
         if entry.name == unreachable:
             raise URLError("catalog timed out")
-        contents = {"requested": {"version": "1.0.0"}} if has_match else {}
+        contents = {"requested": _installable_current(kind)} if has_match else {}
         return {kind: contents}
 
     monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
@@ -933,11 +995,11 @@ def test_bundle_catalog_handles_recursion_without_fallback(
     )
 
     catalog_type = WorkflowCatalog if kind == "workflows" else StepCatalog
-    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {"version": "1.0.0"})
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", _installable_current(kind))
 
     def fetch(self, entry, force_refresh=False):
         if source == "fresh-cache":
-            return {kind: {"requested": {"version": "1.0.0"}}}
+            return {kind: {"requested": _installable_current(kind)}}
         if source == "stale-cache":
             raise URLError("connection failed")
         raise RecursionError("catalog nesting limit exceeded")

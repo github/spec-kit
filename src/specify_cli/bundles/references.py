@@ -77,6 +77,56 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
     return False
 
 
+def _validate_pinned_install_metadata(component: ComponentRef, selected: dict) -> None:
+    from .._download_security import is_https_or_localhost_http
+    from . import BundlerError
+
+    def require_url(value: object, label: str) -> str:
+        if not isinstance(value, str) or not is_https_or_localhost_http(value):
+            raise BundlerError(
+                f"{component.kind[:-1]} '{component.id}' has an invalid {label} "
+                f"for pinned version {component.version}."
+            )
+        return value
+
+    if component.kind == "workflows":
+        from ..workflows.catalog._versions import _SHA256
+
+        require_url(selected.get("url"), "install URL")
+        digest = selected.get("sha256")
+        if digest is not None and (
+            not isinstance(digest, str) or not _SHA256.fullmatch(digest)
+        ):
+            raise BundlerError(
+                f"workflow '{component.id}' has an invalid SHA-256 digest "
+                f"for pinned version {component.version}."
+            )
+        if "requires" in selected and not isinstance(selected["requires"], dict):
+            raise BundlerError(
+                f"workflow '{component.id}' has invalid requirements "
+                f"for pinned version {component.version}."
+            )
+        return
+
+    from ..workflows.step.catalog._versions import validate_checksums
+
+    validate_checksums(selected, component.id, required=True)
+    step_url = require_url(
+        selected.get("step_yml_url") or selected.get("url"), "step.yml URL"
+    )
+    init_url = selected.get("init_url")
+    if init_url is None:
+        if not step_url.endswith("step.yml"):
+            raise BundlerError(
+                f"step '{component.id}' has no __init__.py URL "
+                f"for pinned version {component.version}."
+            )
+    else:
+        require_url(init_url, "__init__.py URL")
+    for url in selected.get("extra_files", {}).values():
+        require_url(url, "extra file URL")
+
+
 def _catalog_has_release(component: ComponentRef, catalog) -> bool:
     from .component_catalog import select_catalog_release, winning_catalog_entry
 
@@ -92,12 +142,16 @@ def _catalog_has_release(component: ComponentRef, catalog) -> bool:
         # installer likewise accepts their unversioned current entry.
         return True
     selected = select_catalog_release(component, current)
-    return (
-        selected is not None
-        and selected.get("_catalog_name") == current.get("_catalog_name")
-        and selected.get("_install_allowed", True)
-        and _matches_pin(component, selected.get("version"))
-    )
+    if (
+        selected is None
+        or selected.get("_catalog_name") != current.get("_catalog_name")
+        or not selected.get("_install_allowed", True)
+        or not _matches_pin(component, selected.get("version"))
+    ):
+        return False
+    if component.kind in ("workflows", "steps"):
+        _validate_pinned_install_metadata(component, selected)
+    return True
 
 
 def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | str | None:
