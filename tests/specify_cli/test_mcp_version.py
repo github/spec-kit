@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import Mock, patch
 
 import anyio
@@ -12,17 +13,25 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
+from specify_cli import app
 from specify_cli._operation_version import (
+    VERSION_OPERATION,
     VersionResult,
     VersionRuntime,
     VersionSystem,
 )
 from specify_cli.mcp_server.server import create_server
 from specify_cli.mcp_version import (
-    TOOL_NAME,
+    VERSION_TOOL,
     VersionToolResult,
     register,
     specify_version,
+)
+
+TOOL_NAME = VERSION_TOOL.mcp_tool_name
+TOOL_DESCRIPTION = (
+    "Return the installed Spec Kit CLI version, runtime, system, and "
+    "feature capabilities."
 )
 
 VERSION_RESULT = VersionResult(
@@ -165,11 +174,14 @@ def test_specify_version_rejects_invalid_operation_results(operation_result):
     )
 
 
-def test_specify_version_sanitizes_unexpected_operation_failure():
+def test_specify_version_sanitizes_and_logs_unexpected_operation_failure(caplog):
     unsafe = "SECRET_TOKEN=do-not-print /Users/example/private/project"
-    with patch(
-        "specify_cli.mcp_version.collect_version_result",
-        side_effect=RuntimeError(unsafe),
+    with (
+        patch(
+            "specify_cli.mcp_version.collect_version_result",
+            side_effect=RuntimeError(unsafe),
+        ),
+        caplog.at_level(logging.ERROR, logger="specify_cli.mcp_version"),
     ):
         result = specify_version()
 
@@ -185,6 +197,30 @@ def test_specify_version_sanitizes_unexpected_operation_failure():
     assert unsafe not in rendered
     assert "RuntimeError" not in rendered
     assert "Traceback" not in rendered
+    assert len(caplog.records) == 1
+    assert caplog.records[0].message == (
+        "Unexpected failure in the version MCP adapter."
+    )
+    assert caplog.records[0].exc_info is not None
+
+
+def test_version_inventory_matches_operation_cli_and_registration():
+    callback_names = [
+        command.callback.__name__
+        for command in app.registered_commands
+        if command.callback is not None
+    ]
+    tool_names = [tool.name for tool in _run(create_server().list_tools())]
+
+    assert VERSION_TOOL.operation_id == VERSION_OPERATION.operation_id
+    assert VERSION_TOOL.cli_path.split() == ["specify", VERSION_TOOL.operation_id]
+    assert callback_names.count(VERSION_TOOL.operation_id) == 1
+    assert tool_names.count(VERSION_TOOL.mcp_tool_name) == 1
+    assert VERSION_TOOL.contract_version == VERSION_OPERATION.contract_version
+    assert VERSION_TOOL.disposition == "available"
+    assert VERSION_TOOL.disposition_reason is None
+    assert VERSION_TOOL.capabilities == VERSION_OPERATION.capabilities
+    assert VERSION_TOOL.network_access == VERSION_OPERATION.network_access
 
 
 def test_specify_version_discovery_has_no_argument_schema_and_typed_output():
@@ -197,20 +233,87 @@ def test_specify_version_discovery_has_no_argument_schema_and_typed_output():
         "title": "specify_versionArguments",
         "type": "object",
     }
-    assert set(tool.output_schema["properties"]) == {
-        "cli_version",
-        "runtime",
-        "system",
-        "features",
+    assert tool.description == TOOL_DESCRIPTION
+    assert tool.output_schema == {
+        "$defs": {
+            "VersionRuntimeResult": {
+                "additionalProperties": False,
+                "description": "Runtime portion of the MCP version result.",
+                "properties": {
+                    "python": {
+                        "title": "Python",
+                        "type": "string",
+                    },
+                    "openssl": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"type": "null"},
+                        ],
+                        "title": "Openssl",
+                    },
+                },
+                "required": ["python", "openssl"],
+                "title": "VersionRuntimeResult",
+                "type": "object",
+            },
+            "VersionSystemResult": {
+                "additionalProperties": False,
+                "description": "System portion of the MCP version result.",
+                "properties": {
+                    "platform": {
+                        "title": "Platform",
+                        "type": "string",
+                    },
+                    "architecture": {
+                        "title": "Architecture",
+                        "type": "string",
+                    },
+                    "os_version": {
+                        "title": "Os Version",
+                        "type": "string",
+                    },
+                },
+                "required": [
+                    "platform",
+                    "architecture",
+                    "os_version",
+                ],
+                "title": "VersionSystemResult",
+                "type": "object",
+            },
+        },
+        "additionalProperties": False,
+        "description": "Typed structured result returned by ``specify_version``.",
+        "properties": {
+            "cli_version": {
+                "title": "Cli Version",
+                "type": "string",
+            },
+            "runtime": {
+                "$ref": "#/$defs/VersionRuntimeResult",
+            },
+            "system": {
+                "$ref": "#/$defs/VersionSystemResult",
+            },
+            "features": {
+                "additionalProperties": {
+                    "type": "boolean",
+                },
+                "title": "Features",
+                "type": "object",
+            },
+        },
+        "required": [
+            "cli_version",
+            "runtime",
+            "system",
+            "features",
+        ],
+        "title": "VersionToolResult",
+        "type": "object",
     }
-    assert tool.output_schema["required"] == [
-        "cli_version",
-        "runtime",
-        "system",
-        "features",
-    ]
     assert tool.annotations.read_only_hint is True
-    assert tool.annotations.destructive_hint is False
+    assert tool.annotations.destructive_hint is None
     assert tool.annotations.idempotent_hint is True
     assert tool.annotations.open_world_hint is False
 
