@@ -77,18 +77,21 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
     return False
 
 
-def _catalog_has_release(component: ComponentRef, catalog, get_info) -> bool:
-    from .primitives import _assert_unambiguous_catalog_source
+def _catalog_has_release(component: ComponentRef, catalog) -> bool:
+    from .component_catalog import select_catalog_release, winning_catalog_entry
 
-    _assert_unambiguous_catalog_source(component, catalog)
-    current = get_info(component.id)
+    current = winning_catalog_entry(catalog, component)
     if current is None or not current.get("_install_allowed", True):
         return False
     if component.source and current.get("_catalog_name") != component.source:
         return False
     if component.version is None:
         return True
-    selected = get_info(component.id, version=component.version)
+    if component.kind in ("extensions", "presets") and not current.get("version"):
+        # These legacy catalogs cannot attest a version; the primitive
+        # installer likewise accepts their unversioned current entry.
+        return True
+    selected = select_catalog_release(component, current)
     return (
         selected is not None
         and selected.get("_catalog_name") == current.get("_catalog_name")
@@ -99,47 +102,39 @@ def _catalog_has_release(component: ComponentRef, catalog, get_info) -> bool:
 
 def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | str | None:
     """Return the lookup result, a validation error, or None if unreachable."""
+    from ..extensions import ExtensionError
+    from ..presets import PresetError
+    from ..workflows.catalog import StepCatalogError, WorkflowCatalogError
+    from . import BundlerError
+    from .component_catalog import CatalogUnavailable
+
     kind = component.kind
     try:
         if kind == "presets":
             from ..presets import PresetCatalog
 
             catalog = PresetCatalog(root)
-            return _catalog_has_release(component, catalog, catalog.get_pack_info)
+            return _catalog_has_release(component, catalog)
         if kind == "extensions":
             from ..extensions import ExtensionCatalog
 
             catalog = ExtensionCatalog(root)
-            return _catalog_has_release(
-                component, catalog, catalog.get_extension_info
-            )
+            return _catalog_has_release(component, catalog)
         if kind == "workflows":
             from ..workflows.catalog import WorkflowCatalog
 
             catalog = WorkflowCatalog(root)
-            return _catalog_has_release(
-                component, catalog, catalog.get_workflow_info
-            )
+            return _catalog_has_release(component, catalog)
         if kind == "steps":
             from ..workflows.catalog import StepCatalog
 
             catalog = StepCatalog(root)
-            return _catalog_has_release(component, catalog, catalog.get_step_info)
+            return _catalog_has_release(component, catalog)
     except (ConnectionError, TimeoutError):
         return None
-    except Exception as exc:  # noqa: BLE001 - report malformed catalog errors
-        from ..extensions import ExtensionCatalogFetchError
-        from ..presets._catalog import PresetCatalogFetchError
-        from ..workflows.catalog import (
-            StepCatalogFetchError,
-            WorkflowCatalogFetchError,
-        )
-
-        if isinstance(exc, (
-            ExtensionCatalogFetchError, PresetCatalogFetchError,
-            WorkflowCatalogFetchError, StepCatalogFetchError,
-        )):
-            return None
+    except CatalogUnavailable:
+        return None
+    except (BundlerError, ExtensionError, PresetError, WorkflowCatalogError, StepCatalogError) as exc:
         return f"Catalog lookup failed: {exc}"
     return None
 

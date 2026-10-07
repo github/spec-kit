@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli.bundler import BundlerError
+from specify_cli.bundles import component_catalog
 from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
 from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.primitives import (
@@ -29,6 +30,47 @@ from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 def _component(kind: str, cid: str = "x") -> ComponentRef:
     return ComponentRef(kind=kind, id=cid)
+
+
+def _patch_winning_entry(monkeypatch, entry: dict | None) -> None:
+    monkeypatch.setattr(
+        component_catalog, "winning_catalog_entry",
+        lambda _catalog, _component: entry,
+    )
+
+
+def _patch_catalog_sources(monkeypatch, catalog_type, kind, sources, fetches=None):
+    """Keep the bundle resolver real while replacing only network catalog reads."""
+    configured = [
+        SimpleNamespace(name=name, url=f"https://example.com/{name}.json",
+                        install_allowed=True)
+        for name, _entries in sources
+    ]
+    payloads = {
+        source.url: {kind: entries}
+        for source, (_name, entries) in zip(configured, sources)
+    }
+    monkeypatch.setattr(catalog_type, "get_active_catalogs", lambda self: configured)
+
+    def fetch(_self, source):
+        if fetches is not None:
+            fetches.append(source.name)
+        return payloads[source.url]
+
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", fetch)
+
+
+def _workflow_or_step_entry(kind: str, cid: str) -> dict:
+    old = {"url": "https://example.com/old/step.yml" if kind == "steps"
+           else "https://example.com/old/workflow.yml"}
+    if kind == "steps":
+        old["sha256"] = {"step.yml": "a" * 64, "__init__.py": "b" * 64}
+    else:
+        old["sha256"] = "a" * 64
+    return {
+        "id": cid, "version": "2.0.0", "url": "https://example.com/latest",
+        "releases": {"1.0.0": old},
+    }
 
 
 def test_primitive_manager_routes_each_kind(tmp_path: Path):
@@ -68,7 +110,6 @@ def test_offline_step_refuses_without_network(tmp_path: Path):
 
 
 def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monkeypatch):
-    from specify_cli.workflows.catalog import StepCatalog
     from specify_cli.workflows.step import command_add
 
     calls: list[tuple[str, Path]] = []
@@ -77,8 +118,8 @@ def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monke
         calls.append((step_id, Path.cwd()))
 
     (tmp_path / ".specify").mkdir()
-    monkeypatch.setattr(StepCatalog, "get_step_info", lambda self, step_id: {
-        "id": step_id, "_catalog_name": "trusted", "_install_allowed": True,
+    _patch_winning_entry(monkeypatch, {
+        "id": "catalog-step", "_catalog_name": "trusted", "_install_allowed": True,
     })
     monkeypatch.setattr(command_add, "_install_from_catalog", _add)
     manager = _StepKindManager(tmp_path, allow_network=True)
@@ -89,11 +130,9 @@ def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monke
 
 
 def test_step_manager_rejects_unsafe_id_before_catalog_lookup(tmp_path, monkeypatch):
-    from specify_cli.workflows.catalog import StepCatalog
-
     monkeypatch.setattr(
-        StepCatalog, "get_step_info",
-        lambda *args, **kwargs: pytest.fail("invalid ID reached catalog lookup"),
+        component_catalog, "winning_catalog_entry",
+        lambda *args: pytest.fail("invalid ID reached catalog lookup"),
     )
 
     with pytest.raises(BundlerError, match="step"):
@@ -103,14 +142,14 @@ def test_step_manager_rejects_unsafe_id_before_catalog_lookup(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize(
-    "kind,catalog_module,catalog_class,lookup",
+    "kind,catalog_module,catalog_class",
     [
-        ("workflows", "specify_cli.workflows.catalog", "WorkflowCatalog", "get_workflow_info"),
-        ("steps", "specify_cli.workflows.catalog", "StepCatalog", "get_step_info"),
+        ("workflows", "specify_cli.workflows.catalog", "WorkflowCatalog"),
+        ("steps", "specify_cli.workflows.catalog", "StepCatalog"),
     ],
 )
 def test_catalog_workflow_and_step_pins_delegate_exact_release(
-    tmp_path, monkeypatch, kind, catalog_module, catalog_class, lookup,
+    tmp_path, monkeypatch, kind, catalog_module, catalog_class,
 ):
     import importlib
 
@@ -122,17 +161,12 @@ def test_catalog_workflow_and_step_pins_delegate_exact_release(
     if kind == "workflows":
         monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
     catalog = getattr(importlib.import_module(catalog_module), catalog_class)
-    lookups = []
-
-    def get_info(_self, _id, version=None):
-        lookups.append(version)
-        return {
-            "version": version or "2.0.0",
-            "_catalog_name": "trusted",
-            "_install_allowed": True,
-        }
-
-    monkeypatch.setattr(catalog, lookup, get_info)
+    fetches = []
+    _patch_catalog_sources(
+        monkeypatch, catalog, kind,
+        [("trusted", {"catalog-id": _workflow_or_step_entry(kind, "catalog-id")})],
+        fetches,
+    )
     calls = []
     installer = (
         (workflow_cli, "_install_workflow_from_catalog")
@@ -149,11 +183,13 @@ def test_catalog_workflow_and_step_pins_delegate_exact_release(
 
     primitive_manager(kind, tmp_path).install(component)
 
-    assert lookups == [None, "1.0.0"]
+    assert fetches == ["trusted"]
     assert calls[0][0] == component.id
     assert calls[0][1][
         "requested_version" if kind == "workflows" else "version"
     ] == "1.0.0"
+    assert calls[0][1]["selected_info"]["version"] == "1.0.0"
+    assert calls[0][1]["selected_info"]["_catalog_name"] == "trusted"
     assert calls[0][2] == tmp_path
 
 
@@ -167,22 +203,21 @@ def test_catalog_component_installs_preselected_release_without_second_lookup(
     from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
     from specify_cli.workflows.step import command_add as step_add
 
-    selected = {
-        "id": "catalog-id", "version": "1.0.0", "_catalog_name": "trusted",
-        "_install_allowed": True, "url": "https://example.com/old-release",
-    }
-    current = {**selected, "version": "2.0.0", "url": "https://example.com/latest"}
-    lookups = []
+    catalog = WorkflowCatalog if kind == "workflows" else StepCatalog
+    current = _workflow_or_step_entry(kind, "catalog-id")
+    fetches = []
+    _patch_catalog_sources(
+        monkeypatch, catalog, kind, [("trusted", {"catalog-id": current})], fetches,
+    )
     (tmp_path / ".specify").mkdir()
-
-    def get_info(_self, _id, version=None):
-        lookups.append(version)
-        return selected if version == "1.0.0" else current
+    monkeypatch.setattr(
+        catalog, "get_workflow_info" if kind == "workflows" else "get_step_info",
+        lambda *args, **kwargs: pytest.fail("installer re-resolved the catalog"),
+    )
 
     calls = []
     if kind == "workflows":
         monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
-        monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", get_info)
         monkeypatch.setattr(
             workflow_cli, "_install_workflow_from_catalog",
             lambda *args, **kwargs: calls.append(kwargs),
@@ -192,7 +227,6 @@ def test_catalog_component_installs_preselected_release_without_second_lookup(
             lambda *args, **kwargs: pytest.fail("workflow_add re-resolved the catalog"),
         )
     else:
-        monkeypatch.setattr(StepCatalog, "get_step_info", get_info)
         monkeypatch.setattr(
             step_add, "_install_from_catalog",
             lambda *args, **kwargs: calls.append(kwargs),
@@ -206,9 +240,13 @@ def test_catalog_component_installs_preselected_release_without_second_lookup(
         kind=kind, id="catalog-id", version="1.0.0", source="trusted"
     ))
 
-    assert lookups == [None, "1.0.0"]
+    assert fetches == ["trusted"]
     assert len(calls) == 1
-    assert calls[0]["selected_info"] is selected
+    assert calls[0]["selected_info"] == {
+        "id": "catalog-id", "version": "1.0.0",
+        **current["releases"]["1.0.0"],
+        "_catalog_name": "trusted", "_install_allowed": True,
+    }
 
 
 @pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
@@ -219,26 +257,26 @@ def test_explicit_source_cannot_bypass_winning_catalog(tmp_path, monkeypatch, ki
     from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
 
     catalogs = {
-        "extensions": (ExtensionCatalog, "get_extension_info", "_locate_bundled_extension"),
-        "presets": (PresetCatalog, "get_pack_info", "_locate_bundled_preset"),
-        "workflows": (WorkflowCatalog, "get_workflow_info", "_locate_bundled_workflow"),
-        "steps": (StepCatalog, "get_step_info", None),
+        "extensions": (ExtensionCatalog, "_locate_bundled_extension"),
+        "presets": (PresetCatalog, "_locate_bundled_preset"),
+        "workflows": (WorkflowCatalog, "_locate_bundled_workflow"),
+        "steps": (StepCatalog, None),
     }
-    catalog, method, asset = catalogs[kind]
+    catalog, asset = catalogs[kind]
     if asset:
         monkeypatch.setattr(assets, asset, lambda _id: None)
-    monkeypatch.setattr(
-        catalog, method,
-        lambda _self, _id, version=None: {
-            "version": version or "2.0.0",
-            "_catalog_name": "winning",
-            "_install_allowed": True,
-        },
+    fetches = []
+    _patch_catalog_sources(
+        monkeypatch, catalog, kind, [
+            ("winning", {"catalog-id": {"version": "2.0.0"}}),
+            ("lower", {"catalog-id": {"version": "1.0.0"}}),
+        ], fetches,
     )
     component = ComponentRef(kind=kind, id="catalog-id", version="1.0.0", source="lower")
 
     with pytest.raises(BundlerError, match="winning"):
         primitive_manager(kind, tmp_path).install(component)
+    assert fetches == ["winning"]
 
 
 @pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
@@ -252,11 +290,11 @@ def test_primitive_install_rejects_ambiguous_catalog_source(tmp_path, monkeypatc
         WorkflowCatalogEntry,
     )
 
-    catalog_type, entry_type, lookup = {
-        "extensions": (ExtensionCatalog, CatalogEntry, "get_extension_info"),
-        "presets": (PresetCatalog, PresetCatalogEntry, "get_pack_info"),
-        "workflows": (WorkflowCatalog, WorkflowCatalogEntry, "get_workflow_info"),
-        "steps": (StepCatalog, StepCatalogEntry, "get_step_info"),
+    catalog_type, entry_type = {
+        "extensions": (ExtensionCatalog, CatalogEntry),
+        "presets": (PresetCatalog, PresetCatalogEntry),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry),
+        "steps": (StepCatalog, StepCatalogEntry),
     }[kind]
     sources = [
         entry_type("https://example.com/expected.json", "trusted", 1, True),
@@ -265,9 +303,9 @@ def test_primitive_install_rejects_ambiguous_catalog_source(tmp_path, monkeypatc
     monkeypatch.setattr(catalog_type, "get_active_catalogs", lambda self: sources)
     monkeypatch.setattr(
         catalog_type,
-        lookup,
+        "_fetch_single_catalog",
         lambda *_args, **_kwargs: pytest.fail(
-            "catalog lookup must not start with an ambiguous source"
+            "catalog fetch must not start with an ambiguous source"
         ),
     )
 
@@ -281,24 +319,27 @@ def test_primitive_install_rejects_ambiguous_catalog_source(tmp_path, monkeypatc
 def test_missing_exact_release_never_delegates_install(tmp_path, monkeypatch, kind):
     import specify_cli
     import specify_cli._assets as assets
-    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+    from specify_cli.workflows import command_add as workflow_add
+    from specify_cli.workflows.step import command_add as step_add
 
     if kind == "workflows":
         monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
-    catalog, lookup, command = (
-        (WorkflowCatalog, "get_workflow_info", "workflow_add")
+    command = (
+        "workflow_add"
         if kind == "workflows"
-        else (StepCatalog, "get_step_info", "workflow_step_add")
+        else "workflow_step_add"
     )
-    monkeypatch.setattr(
-        catalog, lookup,
-        lambda _self, _id, version=None: (
-            {"version": "2.0.0", "_catalog_name": "winning"}
-            if version is None else None
-        ),
-    )
+    _patch_winning_entry(monkeypatch, {
+        "id": "catalog-id", "version": "2.0.0", "_catalog_name": "winning",
+        "_install_allowed": True,
+    })
     calls = []
     monkeypatch.setattr(specify_cli, command, lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(
+        workflow_add if kind == "workflows" else step_add,
+        "_install_preselected_workflow" if kind == "workflows" else "_install_preselected_step",
+        lambda *a, **k: calls.append((a, k)),
+    )
 
     with pytest.raises(BundlerError, match="no catalog release"):
         primitive_manager(kind, tmp_path).install(
@@ -310,17 +351,14 @@ def test_missing_exact_release_never_delegates_install(tmp_path, monkeypatch, ki
 def test_bundled_workflow_with_older_pin_uses_catalog_release(tmp_path, monkeypatch):
     import specify_cli._assets as assets
     from specify_cli.workflows import _commands as workflow_cli
-    from specify_cli.workflows.catalog import WorkflowCatalog
 
     (tmp_path / ".specify").mkdir()
     bundled = _write_manifest(tmp_path / "bundled", "workflow", "2.0.0")
     monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: bundled)
-    monkeypatch.setattr(
-        WorkflowCatalog, "get_workflow_info",
-        lambda _self, _id, version=None: {
-            "version": version or "2.0.0", "_catalog_name": "winning",
-        },
-    )
+    _patch_winning_entry(monkeypatch, {
+        **_workflow_or_step_entry("workflows", "x"),
+        "_catalog_name": "winning", "_install_allowed": True,
+    })
     calls = []
     monkeypatch.setattr(
         workflow_cli, "_install_workflow_from_catalog",
@@ -335,26 +373,24 @@ def test_bundled_workflow_with_older_pin_uses_catalog_release(tmp_path, monkeypa
     assert calls == [("x", {
         "requested_version": "1.0.0",
         "selected_info": {
-            "version": "1.0.0", "_catalog_name": "winning",
+            "id": "x", "version": "1.0.0", "_catalog_name": "winning",
+            "_install_allowed": True,
+            **_workflow_or_step_entry("workflows", "x")["releases"]["1.0.0"],
         },
     })]
 
 
 def test_source_on_bundled_extension_requires_catalog(tmp_path, monkeypatch):
     import specify_cli._assets as assets
-    from specify_cli.extensions import ExtensionCatalog
 
     monkeypatch.setattr(
         assets, "_locate_bundled_extension",
         lambda _id: _write_manifest(tmp_path / "bundled", "extension", "1.0.0"),
     )
-    monkeypatch.setattr(
-        ExtensionCatalog, "get_extension_info",
-        lambda _self, _id: {
-            "version": "1.0.0", "_catalog_name": "other",
-            "_install_allowed": True,
-        },
-    )
+    _patch_winning_entry(monkeypatch, {
+        "version": "1.0.0", "_catalog_name": "other",
+        "_install_allowed": True,
+    })
     with pytest.raises(BundlerError, match="other"):
         primitive_manager("extensions", tmp_path).install(
             ComponentRef(
@@ -446,14 +482,10 @@ def test_assert_pinned_version_mismatch_raises():
 
 
 def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
-    from specify_cli.workflows.catalog import WorkflowCatalog
-
-    monkeypatch.setattr(
-        WorkflowCatalog, "get_workflow_info",
-        lambda self, wid, version=None: (
-            {"version": "9.9.9"} if version is None else None
-        ),
-    )
+    _patch_winning_entry(monkeypatch, {
+        "id": "wf-a", "version": "9.9.9", "_catalog_name": "trusted",
+        "_install_allowed": True,
+    })
     manager = primitive_manager("workflows", tmp_path, allow_network=True)
     component = ComponentRef(kind="workflows", id="wf-a", version="0.3.0")
     with pytest.raises(BundlerError, match="no catalog release for pinned version 0.3.0"):
@@ -494,15 +526,11 @@ def test_catalog_preset_install_and_refresh_forward_catalog_name(
             calls.append(kwargs)
 
     monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
-    monkeypatch.setattr(
-        PresetCatalog,
-        "get_pack_info",
-        lambda _self, _id: {
-            "version": "1.0.0",
-            "_install_allowed": True,
-            "_catalog_name": "bundle-preset-catalog",
-        },
-    )
+    _patch_winning_entry(monkeypatch, {
+        "version": "1.0.0",
+        "_install_allowed": True,
+        "_catalog_name": "bundle-preset-catalog",
+    })
     monkeypatch.setattr(
         PresetCatalog, "download_pack_info", lambda _self, _info: archive
     )
@@ -541,15 +569,11 @@ def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
             scaffolded.append(extension_id)
 
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
-    monkeypatch.setattr(
-        ExtensionCatalog,
-        "get_extension_info",
-        lambda _self, _id: {
-            "version": "1.0.0",
-            "_install_allowed": True,
-            "_catalog_name": "bundle-extension-catalog",
-        },
-    )
+    _patch_winning_entry(monkeypatch, {
+        "version": "1.0.0",
+        "_install_allowed": True,
+        "_catalog_name": "bundle-extension-catalog",
+    })
     monkeypatch.setattr(
         ExtensionCatalog, "download_extension_info", lambda _self, _info: archive
     )
@@ -690,11 +714,7 @@ def test_catalog_extension_install_scaffolds_config(tmp_path: Path, monkeypatch)
 
     # No bundled asset located: forces the catalog/ZIP branch (install_from_zip).
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
-    monkeypatch.setattr(
-        ExtensionCatalog,
-        "get_extension_info",
-        lambda self, eid: {"id": eid, "_install_allowed": True},
-    )
+    _patch_winning_entry(monkeypatch, {"id": "my-ext", "_install_allowed": True})
     monkeypatch.setattr(
         ExtensionCatalog, "download_extension_info", lambda self, info: zip_path
     )
@@ -978,8 +998,10 @@ def _patch_extension_catalog(monkeypatch, entry: dict, archive: Path, downloads:
     from specify_cli.extensions import ExtensionCatalog
 
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+    _patch_winning_entry(monkeypatch, entry)
     monkeypatch.setattr(
-        ExtensionCatalog, "get_extension_info", lambda _self, _id: entry
+        ExtensionCatalog, "get_extension_info",
+        lambda *args, **kwargs: pytest.fail("extension catalog was re-resolved"),
     )
 
     def _download(_self, info):
@@ -994,7 +1016,11 @@ def _patch_preset_catalog(monkeypatch, entry: dict, archive: Path, downloads: li
     from specify_cli.presets import PresetCatalog
 
     monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
-    monkeypatch.setattr(PresetCatalog, "get_pack_info", lambda _self, _id: entry)
+    _patch_winning_entry(monkeypatch, entry)
+    monkeypatch.setattr(
+        PresetCatalog, "get_pack_info",
+        lambda *args, **kwargs: pytest.fail("preset catalog was re-resolved"),
+    )
 
     def _download(_self, info):
         downloads.append(info)

@@ -82,9 +82,7 @@ class TestWorkflowCliAlignment:
         monkeypatch.setattr(
             WorkflowCatalog,
             "_get_merged_workflows",
-            lambda self, force_refresh=False, *, workflow_id=None: {
-                k: dict(v) for k, v in workflows.items()
-            },
+            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
         )
         runner = CliRunner()
         searched = runner.invoke(app, ["workflow", "search"])

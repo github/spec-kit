@@ -36,19 +36,11 @@ class StepCatalogError(Exception):
     """Base error for step catalog operations."""
 
 
-class StepCatalogFetchError(StepCatalogError):
-    """A configured step catalog could not be fetched."""
-
-
-class StepCatalogValidationError(StepCatalogError):
-    """A step catalog supplied malformed metadata."""
-
-
 class StepValidationError(StepCatalogError):
     """Validation error for step catalog config or step data."""
 
 
-class _DuplicateCatalogField(StepCatalogValidationError):
+class _DuplicateCatalogField(StepCatalogError):
     """An ambiguous JSON object in a step catalog."""
 
 
@@ -488,38 +480,20 @@ class StepCatalog:
         cache_safe = self._is_cache_path_safe()
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        def validate_payload(data: Any) -> dict[str, Any]:
-            if not isinstance(data, dict):
-                raise StepCatalogValidationError(
-                    f"Catalog from {entry.url} is not a valid JSON object."
-                )
-            if not isinstance(data.get("steps"), (dict, list)):
-                raise StepCatalogValidationError(
-                    f"Catalog from {entry.url} has malformed steps metadata."
-                )
-            return data
-
         if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
                     cached = json.load(f, object_pairs_hook=_unique_json_fields)
-                return validate_payload(cached)
+                if isinstance(cached, dict):
+                    return cached
             except _DuplicateCatalogField:
                 raise
-            except (
-                UnicodeDecodeError,
-                json.JSONDecodeError,
-                RecursionError,
-                OSError,
-                StepCatalogValidationError,
-            ):
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
-        from http.client import HTTPException
         from urllib.parse import urlparse
 
-        from specify_cli.authentication.http import RedirectPolicyError
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
@@ -533,18 +507,18 @@ class StepCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise StepCatalogValidationError(
+                raise StepCatalogError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
             is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
-                raise StepCatalogValidationError(
+                raise StepCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise StepCatalogValidationError(
+                raise StepCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
 
@@ -569,45 +543,33 @@ class StepCatalog:
                     read_response_limited(
                         resp,
                         max_bytes=_max_json_catalog_bytes(),
-                        error_type=StepCatalogValidationError,
+                        error_type=StepCatalogError,
                         label="step catalog",
                     ).decode("utf-8"),
                     object_pairs_hook=_unique_json_fields,
                 )
         except _DuplicateCatalogField:
             raise
-        except (
-            StepCatalogValidationError,
-            RedirectPolicyError,
-            UnicodeError,
-            json.JSONDecodeError,
-            RecursionError,
-        ) as exc:
-            raise StepCatalogValidationError(
-                f"Invalid step catalog from {entry.url}: {exc}"
-            ) from exc
-        except (OSError, HTTPException) as exc:
+        except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
                         cached = json.load(f, object_pairs_hook=_unique_json_fields)
-                    return validate_payload(cached)
+                    if isinstance(cached, dict):
+                        return cached
                 except _DuplicateCatalogField:
                     raise
-                except (
-                    json.JSONDecodeError,
-                    ValueError,
-                    RecursionError,
-                    OSError,
-                    StepCatalogValidationError,
-                ):
+                except (json.JSONDecodeError, ValueError, OSError):
                     # Stale-cache read failed; let the original fetch error propagate.
                     pass
-            raise StepCatalogFetchError(
+            raise StepCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
 
-        data = validate_payload(data)
+        if not isinstance(data, dict):
+            raise StepCatalogError(
+                f"Catalog from {entry.url} is not a valid JSON object."
+            )
 
         if cache_safe:
             try:
@@ -618,55 +580,29 @@ class StepCatalog:
                     json.dump({"url": entry.url, "fetched_at": time.time()}, f)
             except OSError:
                 pass  # Proceed without caching if disk write fails
-            except RecursionError as exc:
-                raise StepCatalogValidationError(
-                    f"Invalid step catalog from {entry.url}: excessive nesting ({exc})"
-                ) from exc
 
         return data
 
     def _get_merged_steps(
-        self, force_refresh: bool = False, *, step_id: str | None = None
+        self, force_refresh: bool = False
     ) -> dict[str, dict[str, Any]]:
-        """Merge for search, or resolve one ID from the first valid winning source."""
+        """Merge steps from all active catalogs (lower priority number wins)."""
         catalogs = self.get_active_catalogs()
         merged: dict[str, dict[str, Any]] = {}
         fetch_errors = 0
-        validation_error: StepCatalogValidationError | None = None
-        fetch_error: StepCatalogFetchError | None = None
-        target_id = step_id
 
-        sources = catalogs if target_id is not None else reversed(catalogs)
-        for entry in sources:
+        for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
             except _DuplicateCatalogField:
                 raise
-            except StepCatalogError as exc:
-                if target_id is not None and not isinstance(
-                    exc, StepCatalogFetchError
-                ):
-                    raise
-                if (
-                    isinstance(exc, StepCatalogValidationError)
-                    and validation_error is None
-                ):
-                    validation_error = exc
-                if isinstance(exc, StepCatalogFetchError) and fetch_error is None:
-                    fetch_error = exc
+            except StepCatalogError:
                 fetch_errors += 1
                 continue
             steps = data.get("steps", {})
             if isinstance(steps, dict):
                 for step_id, step_data in steps.items():
-                    if target_id is not None and step_id != target_id:
-                        continue
                     if not isinstance(step_data, dict):
-                        if target_id is not None:
-                            raise StepCatalogValidationError(
-                                f"Invalid step catalog entry for '{step_id}' "
-                                f"from {entry.url}: expected a JSON object"
-                            )
                         continue
                     step_data["_catalog_name"] = entry.name
                     step_data["_install_allowed"] = entry.install_allowed
@@ -676,35 +612,22 @@ class StepCatalog:
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
-                    raw_step_id = step_data.get("id", "")
-                    if not isinstance(raw_step_id, str):
-                        raise StepCatalogValidationError(
-                            f"Invalid step ID in catalog '{entry.name}': "
-                            "expected a string."
-                        )
-                    step_id = raw_step_id.strip()
+                    raw_step_id = step_data.get("id")
+                    if raw_step_id is None:
+                        continue
+                    step_id = str(raw_step_id).strip()
                     if step_id:
                         if step_id in seen_in_source:
-                            raise StepCatalogValidationError(
+                            raise StepCatalogError(
                                 f"Duplicate step ID '{step_id}' in catalog '{entry.name}'."
                             )
                         seen_in_source.add(step_id)
-                        if target_id is not None and step_id != target_id:
-                            continue
                         step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
                         step_data["_install_allowed"] = entry.install_allowed
                         merged[step_id] = step_data
-            if target_id is not None and target_id in merged:
-                if fetch_error is not None:
-                    raise fetch_error
-                return merged
         if fetch_errors == len(catalogs) and catalogs:
-            if validation_error is not None:
-                raise validation_error
-            raise StepCatalogFetchError("All configured step catalogs failed to fetch.")
-        if target_id is not None and fetch_error is not None:
-            raise fetch_error
+            raise StepCatalogError("All configured step catalogs failed to fetch.")
         return merged
 
     # -- Public API -------------------------------------------------------
@@ -742,7 +665,7 @@ class StepCatalog:
         """Get the current or an exact release from the winning catalog."""
         from ._versions import select_release
 
-        merged = self._get_merged_steps(step_id=step_id)
+        merged = self._get_merged_steps()
         step = merged.get(step_id)
         if step:
             step.setdefault("id", step_id)

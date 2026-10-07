@@ -100,10 +100,11 @@ def test_validate_rejects_broken_reference(project: Path):
 def test_validate_warns_instead_of_rejecting_reference_during_partial_outage(
     project: Path, monkeypatch,
 ):
+    from urllib.error import URLError
+
     from specify_cli.workflows.catalog import (
         StepCatalog,
         StepCatalogEntry,
-        StepCatalogFetchError,
     )
 
     data = valid_manifest_dict(
@@ -118,7 +119,7 @@ def test_validate_warns_instead_of_rejecting_reference_during_partial_outage(
 
     def fetch(self, entry, force_refresh=False):
         if entry.name == "low":
-            raise StepCatalogFetchError("catalog timed out")
+            raise URLError("catalog timed out")
         return {"steps": {"other-step": {"version": "1.0.0"}}}
 
     monkeypatch.setattr(StepCatalog, "_fetch_single_catalog", fetch)

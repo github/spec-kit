@@ -437,8 +437,11 @@ def test_local_refresh_catalog_extension_requires_network(
 
     monkeypatch.setattr(
         ExtensionCatalog,
-        "get_extension_info",
-        lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
+        "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False: {
+            "schema_version": "1.0",
+            "extensions": {"catalog-ext": {"version": version}},
+        },
     )
     monkeypatch.setattr(
         ExtensionCatalog, "download_extension_info", download_extension_info

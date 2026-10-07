@@ -613,32 +613,25 @@ def test_oversized_discovery_catalog_cannot_delegate_install(project_dir):
     assert PresetManager(project_dir).get_pack("sample") is None
 
 
-def test_unreachable_high_priority_catalog_does_not_select_lower_source(project_dir):
-    from specify_cli.presets._catalog import PresetCatalogFetchError
-
+def test_unreachable_high_priority_catalog_still_uses_lower_source(project_dir):
     catalog = PresetCatalog(project_dir)
     sources = [
         PresetCatalogEntry("https://example.com/unavailable.json", "high", 1, False),
         PresetCatalogEntry("https://example.com/trusted.json", "low", 2, True),
     ]
-    high_available = False
 
     def fetch(source, _refresh):
-        if source.name == "high" and not high_available:
-            raise PresetCatalogFetchError("Failed to fetch preset catalog: offline")
+        if source.name == "high":
+            raise PresetError("Failed to fetch preset catalog: offline")
         return {"presets": {"sample": _entry()}}
 
     with (
         patch.object(catalog, "get_active_catalogs", return_value=sources),
         patch.object(catalog, "_fetch_single_catalog", side_effect=fetch),
     ):
-        with pytest.raises(PresetCatalogFetchError, match="offline"):
-            catalog.get_pack_info("sample", "1.0.0")
-        assert catalog.search("sample")[0]["_catalog_name"] == "low"
-        high_available = True
         selected = catalog.get_pack_info("sample", "1.0.0")
-        assert selected["_catalog_name"] == "high"
-        assert selected["_install_allowed"] is False
+    assert selected["_catalog_name"] == "low"
+    assert selected["_install_allowed"] is True
 
 
 def test_versions_report_all_source_outage_instead_of_missing_preset(project_dir):
@@ -664,9 +657,7 @@ def test_versions_report_all_source_outage_instead_of_missing_preset(project_dir
     assert "No catalog versions found" not in result.output
 
 
-def test_versions_report_partial_outage_instead_of_missing_preset(project_dir):
-    from specify_cli.presets._catalog import PresetCatalogFetchError
-
+def test_versions_report_missing_preset_when_catalog_is_readable(project_dir):
     sources = [
         PresetCatalogEntry("https://example.com/high.json", "high", 1, True),
         PresetCatalogEntry("https://example.com/low.json", "low", 2, True),
@@ -674,9 +665,7 @@ def test_versions_report_partial_outage_instead_of_missing_preset(project_dir):
 
     def fetch(source, _refresh):
         if source.name == "high":
-            raise PresetCatalogFetchError(
-                f"Failed to fetch preset catalog from {source.url}: offline"
-            )
+            raise PresetError(f"Failed to fetch preset catalog from {source.url}: offline")
         return {"presets": {"another-preset": _entry()}}
 
     with (
@@ -684,13 +673,12 @@ def test_versions_report_partial_outage_instead_of_missing_preset(project_dir):
         patch.object(PresetCatalog, "_fetch_single_catalog", side_effect=fetch),
         patch.object(Path, "cwd", return_value=project_dir),
     ):
-        with pytest.raises(PresetCatalogFetchError, match="high.json: offline"):
-            PresetCatalog(project_dir).get_pack_info("sample")
+        assert PresetCatalog(project_dir).get_pack_info("sample") is None
         result = CliRunner().invoke(app, ["preset", "info", "sample", "--versions"])
 
     assert result.exit_code == 1, result.output
-    assert "high.json:" in result.output and "offline" in result.output
-    assert "No catalog versions found" not in result.output
+    assert "No catalog versions found for sample" in result.output
+    assert "offline" not in result.output
 
 
 def test_discovery_only_winner_does_not_delegate_exact_release(project_dir):

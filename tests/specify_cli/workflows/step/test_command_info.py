@@ -119,7 +119,7 @@ def test_info_versions_shows_current_and_history_from_discovery_catalog(
     monkeypatch.chdir(project_dir)
     monkeypatch.setattr(
         StepCatalog, "_get_merged_steps",
-        lambda self, *, step_id=None: {
+        lambda self: {
             "deploy": {
                 "id": "deploy", "name": "Deploy", "version": "2.0",
                 "_install_allowed": False,

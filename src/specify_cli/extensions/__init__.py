@@ -180,14 +180,6 @@ class ExtensionError(Exception):
     pass
 
 
-class ExtensionCatalogFetchError(ExtensionError):
-    """Raised when no configured extension catalog can be fetched."""
-
-
-class ExtensionCatalogValidationError(ExtensionError):
-    """Raised when an extension catalog response is malformed."""
-
-
 class ValidationError(ExtensionError):
     """Raised when extension manifest validation fails."""
 
@@ -4565,13 +4557,13 @@ class ExtensionCatalog(CatalogStackBase):
             ExtensionError: If the payload's shape is invalid.
         """
         if not isinstance(catalog_data, dict):
-            raise ExtensionCatalogValidationError(
+            raise ExtensionError(
                 f"Invalid catalog format from {url}: expected a JSON object"
             )
         if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-            raise ExtensionCatalogValidationError(f"Invalid catalog format from {url}")
+            raise ExtensionError(f"Invalid catalog format from {url}")
         if not isinstance(catalog_data.get("extensions"), dict):
-            raise ExtensionCatalogValidationError(
+            raise ExtensionError(
                 f"Invalid catalog format from {url}: 'extensions' must be a JSON object"
             )
 
@@ -4706,7 +4698,6 @@ class ExtensionCatalog(CatalogStackBase):
                     KeyError,
                     TypeError,
                     AttributeError,
-                    RecursionError,
                 ):
                     # Cache validity is best-effort: invalid/missing metadata
                     # fields, an unreadable metadata file (permissions / disk),
@@ -4730,13 +4721,7 @@ class ExtensionCatalog(CatalogStackBase):
                 cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
                 self._validate_catalog_payload(cached_data, entry.url)
                 return cached_data
-            except (
-                json.JSONDecodeError,
-                OSError,
-                UnicodeError,
-                RecursionError,
-                ExtensionError,
-            ):
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
                 # Cache is best-effort: a JSON-decode failure, an OS-level
                 # read failure (permissions / disk / handle limit), or a
                 # text-encoding failure on a cache file written by an older
@@ -4746,10 +4731,6 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
-            from http.client import HTTPException
-
-            from specify_cli.authentication.http import RedirectPolicyError
-
             # Validate EVERY redirect hop, not just the terminal URL. _open_url
             # follows redirects; _StripAuthOnRedirect drops auth on an HTTPS->HTTP
             # downgrade AND whenever the redirect leaves the configured trusted
@@ -4772,7 +4753,7 @@ class ExtensionCatalog(CatalogStackBase):
                     read_response_limited(
                         response,
                         max_bytes=MAX_JSON_CATALOG_BYTES,
-                        error_type=ExtensionCatalogValidationError,
+                        error_type=ExtensionError,
                         label=f"extension catalog {entry.url}",
                     )
                 )
@@ -4804,38 +4785,18 @@ class ExtensionCatalog(CatalogStackBase):
                     ),
                     encoding="utf-8",
                 )
-            except (OSError, RecursionError):
+            except OSError:
                 pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
-        except ValidationError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid catalog URL from {entry.url}: {e}"
-            ) from e
-        except RedirectPolicyError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid catalog redirect from {entry.url}: {e}"
-            ) from e
-        except (urllib.error.URLError, OSError, HTTPException) as e:
-            raise ExtensionCatalogFetchError(
-                f"Failed to fetch catalog from {entry.url}: {e}"
-            ) from e
+        except urllib.error.URLError as e:
+            raise ExtensionError(f"Failed to fetch catalog from {entry.url}: {e}")
         except json.JSONDecodeError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid JSON in catalog from {entry.url}: {e}"
-            ) from e
-        except RecursionError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid JSON nesting in catalog from {entry.url}: {e}"
-            ) from e
-        except UnicodeError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid encoding in catalog from {entry.url}: {e}"
-            ) from e
+            raise ExtensionError(f"Invalid JSON in catalog from {entry.url}: {e}")
 
     def _get_merged_extensions(
-        self, force_refresh: bool = False, *, extension_id: str | None = None
+        self, force_refresh: bool = False
     ) -> List[Dict[str, Any]]:
         """Fetch and merge extensions from all active catalogs.
 
@@ -4844,9 +4805,8 @@ class ExtensionCatalog(CatalogStackBase):
           - _catalog_name: name of the source catalog
           - _install_allowed: whether installation is allowed from this catalog
 
-        An ID lookup stops at its first matching source and refuses malformed
-        higher-priority catalogs. Untargeted searches continue past malformed
-        sources so other catalog results remain discoverable.
+        Catalogs that fail to fetch are skipped. Raises ExtensionError only if
+        ALL catalogs fail.
 
         Args:
             force_refresh: If True, bypass all caches
@@ -4855,33 +4815,19 @@ class ExtensionCatalog(CatalogStackBase):
             List of merged extension dicts
 
         Raises:
-            ExtensionError: If no catalog is readable, or an ID lookup
-                encounters malformed catalog data.
+            ExtensionError: If all catalogs fail to fetch
         """
         import sys
 
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         any_success = False
-        validation_error: ExtensionCatalogValidationError | None = None
-        fetch_error: ExtensionCatalogFetchError | None = None
 
         for catalog_entry in active_catalogs:
             try:
                 catalog_data = self._fetch_single_catalog(catalog_entry, force_refresh)
                 any_success = True
             except ExtensionError as e:
-                if (
-                    isinstance(e, ExtensionCatalogValidationError)
-                    and validation_error is None
-                ):
-                    validation_error = e
-                if extension_id is not None and isinstance(
-                    e, ExtensionCatalogValidationError
-                ):
-                    raise
-                if isinstance(e, ExtensionCatalogFetchError) and fetch_error is None:
-                    fetch_error = e
                 print(
                     f"Warning: Could not fetch catalog '{catalog_entry.name}': {e}",
                     file=sys.stderr,
@@ -4889,8 +4835,6 @@ class ExtensionCatalog(CatalogStackBase):
                 continue
 
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
-                if extension_id is not None and ext_id != extension_id:
-                    continue
                 # Per-entry guard: ``_fetch_single_catalog`` already validates
                 # that ``catalog_data["extensions"]`` is a mapping, but it
                 # does not (and should not) validate every entry shape there
@@ -4900,11 +4844,6 @@ class ExtensionCatalog(CatalogStackBase):
                 # the valid entries without crashing on ``**ext_data``.
                 # Mirrors ``integrations/catalog.py:245``.
                 if not isinstance(ext_data, dict):
-                    if extension_id is not None:
-                        raise ExtensionCatalogValidationError(
-                            f"Invalid extension catalog entry for '{ext_id}' "
-                            f"from {catalog_entry.url}: expected a JSON object"
-                        )
                     continue
                 if ext_id not in merged:  # Higher-priority catalog wins
                     merged[ext_id] = {
@@ -4913,17 +4852,9 @@ class ExtensionCatalog(CatalogStackBase):
                         "_catalog_name": catalog_entry.name,
                         "_install_allowed": catalog_entry.install_allowed,
                     }
-                    if extension_id is not None:
-                        if fetch_error is not None:
-                            raise fetch_error
-                        return list(merged.values())
 
         if not any_success and active_catalogs:
-            if validation_error is not None:
-                raise validation_error
-            raise ExtensionCatalogFetchError("Failed to fetch any extension catalog")
-        if extension_id is not None and fetch_error is not None:
-            raise fetch_error
+            raise ExtensionError("Failed to fetch any extension catalog")
 
         return list(merged.values())
 
@@ -4957,7 +4888,6 @@ class ExtensionCatalog(CatalogStackBase):
             KeyError,
             TypeError,
             AttributeError,
-            RecursionError,
         ):
             # ``AttributeError`` covers the case where the metadata file is
             # valid JSON but parses to a non-mapping (``[]``, ``"oops"``,
@@ -4996,20 +4926,11 @@ class ExtensionCatalog(CatalogStackBase):
                 cached_data = json.loads(self.cache_file.read_text(encoding="utf-8"))
                 self._validate_catalog_payload(cached_data, catalog_url)
                 return cached_data
-            except (
-                json.JSONDecodeError,
-                OSError,
-                UnicodeError,
-                RecursionError,
-                ExtensionError,
-            ):
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
                 pass  # Fall through to network fetch
 
         try:
             import urllib.error
-            from http.client import HTTPException
-
-            from specify_cli.authentication.http import RedirectPolicyError
 
             # Same redirect hardening as _fetch_single_catalog: validate every
             # redirect hop AND the final URL so this legacy single-catalog path
@@ -5059,33 +4980,15 @@ class ExtensionCatalog(CatalogStackBase):
                 self.cache_metadata_file.write_text(
                     json.dumps(metadata, indent=2), encoding="utf-8"
                 )
-            except (OSError, RecursionError):
+            except OSError:
                 pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
-        except ValidationError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid catalog URL from {catalog_url}: {e}"
-            ) from e
-        except RedirectPolicyError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid catalog redirect from {catalog_url}: {e}"
-            ) from e
-        except (urllib.error.URLError, OSError, HTTPException) as e:
-            raise ExtensionCatalogFetchError(
-                f"Failed to fetch catalog from {catalog_url}: {e}"
-            ) from e
+        except urllib.error.URLError as e:
+            raise ExtensionError(f"Failed to fetch catalog from {catalog_url}: {e}")
         except json.JSONDecodeError as e:
-            raise ExtensionError(f"Invalid JSON in catalog: {e}") from e
-        except RecursionError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid JSON nesting in catalog from {catalog_url}: {e}"
-            ) from e
-        except UnicodeError as e:
-            raise ExtensionCatalogValidationError(
-                f"Invalid encoding in catalog from {catalog_url}: {e}"
-            ) from e
+            raise ExtensionError(f"Invalid JSON in catalog: {e}")
 
     def search(
         self,
@@ -5170,7 +5073,7 @@ class ExtensionCatalog(CatalogStackBase):
             Extension metadata (annotated with ``_catalog_name`` and
             ``_install_allowed``) or None if not found.
         """
-        all_extensions = self._get_merged_extensions(extension_id=extension_id)
+        all_extensions = self._get_merged_extensions()
         for ext_data in all_extensions:
             if ext_data["id"] == extension_id:
                 from ._catalog_versions import select_release
@@ -5182,7 +5085,7 @@ class ExtensionCatalog(CatalogStackBase):
         """List versions advertised by the winning catalog source."""
         from ._catalog_versions import available_versions
 
-        for ext_data in self._get_merged_extensions(extension_id=extension_id):
+        for ext_data in self._get_merged_extensions():
             if ext_data["id"] == extension_id:
                 return available_versions(ext_data)
         return []

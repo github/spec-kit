@@ -11,8 +11,6 @@ from specify_cli.workflows.step.catalog import (
     StepCatalog,
     StepCatalogEntry,
     StepCatalogError,
-    StepCatalogFetchError,
-    StepCatalogValidationError,
 )
 from specify_cli.workflows.step.catalog._versions import available_versions
 
@@ -47,7 +45,7 @@ def _entry() -> dict:
 
 def test_current_and_exact_release_keep_separate_metadata(project_dir, monkeypatch):
     catalog = StepCatalog(project_dir)
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": _entry()})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": _entry()})
 
     current = catalog.get_step_info("deploy")
     old = catalog.get_step_info("deploy", version="v1.0")
@@ -72,7 +70,7 @@ def test_legacy_current_and_exact_spelling(project_dir, monkeypatch):
         "version": "release-1",
         "url": "https://example.com/step.yml",
     }
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": legacy})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": legacy})
     assert catalog.get_step_info("deploy") is legacy
     assert catalog.get_step_info("deploy", version="release-1") is legacy
     assert catalog.get_step_info("deploy", version="release-2") is None
@@ -98,32 +96,7 @@ def test_winning_source_never_falls_back_for_missing_release(project_dir, monkey
     assert catalog.get_step_info("deploy", version="1.0") is None
 
 
-def test_targeted_lookup_rejects_lower_match_after_higher_fetch_failure(
-    project_dir, monkeypatch,
-):
-    catalog = StepCatalog(project_dir)
-    sources = [
-        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
-        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
-    ]
-    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
-    high_available = False
-
-    def fetch(source, force_refresh=False):
-        if source.name == "high" and not high_available:
-            raise StepCatalogFetchError("high catalog is offline")
-        return {"steps": {"deploy": _entry()}}
-
-    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
-    with pytest.raises(StepCatalogFetchError, match="offline"):
-        catalog.get_step_info("deploy", version="1.0")
-    assert catalog.search(query="deploy")[0]["_catalog_name"] == "low"
-    high_available = True
-    assert catalog.get_step_info("deploy")["_catalog_name"] == "high"
-
-
-@pytest.mark.parametrize("targeted", [False, True])
-def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch, targeted):
+def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch):
     catalog = StepCatalog(project_dir)
     source = StepCatalogEntry("https://example.com/steps.json", "test", 1, True)
     monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [source])
@@ -137,65 +110,8 @@ def test_list_catalog_rejects_duplicate_step_ids(project_dir, monkeypatch, targe
             ]
         },
     )
-    with pytest.raises(StepCatalogValidationError, match="Duplicate step ID 'deploy'"):
-        if targeted:
-            catalog.get_step_info("deploy")
-        else:
-            catalog.search(query="deploy")
-
-
-@pytest.mark.parametrize("invalid_id", [True, 42, {"bad": "id"}, ["bad"], None])
-@pytest.mark.parametrize("targeted", [False, True])
-def test_list_catalog_rejects_non_string_step_ids(
-    project_dir, monkeypatch, invalid_id, targeted
-):
-    catalog = StepCatalog(project_dir)
-    source = StepCatalogEntry("https://example.com/steps.json", "test", 1, True)
-    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [source])
-    monkeypatch.setattr(
-        catalog,
-        "_fetch_single_catalog",
-        lambda *_args, **_kwargs: {
-            "steps": [
-                {"id": invalid_id, "version": "1.0"},
-                {"id": "deploy", "version": "2.0"},
-            ]
-        },
-    )
-
-    with pytest.raises(StepCatalogValidationError, match="Invalid step ID"):
-        if targeted:
-            catalog.get_step_info(str(invalid_id) if invalid_id is not None else "deploy")
-        else:
-            catalog.search()
-
-
-@pytest.mark.parametrize("raised_during_fetch", [False, True])
-def test_targeted_lookup_rejects_duplicate_ids_before_lower_catalog(
-    project_dir, monkeypatch, raised_during_fetch,
-):
-    catalog = StepCatalog(project_dir)
-    sources = [
-        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
-        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
-    ]
-    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
-
-    def fetch(source, force_refresh=False):
-        if source.name == "high":
-            if raised_during_fetch:
-                raise StepCatalogError("Duplicate step ID 'deploy' in catalog 'high'.")
-            return {"steps": [
-                {"id": "deploy", "version": "1.0"},
-                {"id": "deploy", "version": "2.0"},
-            ]}
-        return {"steps": {"deploy": {"version": "3.0"}}}
-
-    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
     with pytest.raises(StepCatalogError, match="Duplicate step ID 'deploy'"):
         catalog.get_step_info("deploy")
-    if raised_during_fetch:
-        assert catalog.search(query="deploy")[0]["version"] == "3.0"
 
 
 @pytest.mark.parametrize("cached", [True, False])
@@ -297,6 +213,6 @@ def test_duplicate_json_release_key_is_not_silently_overwritten(
 def test_bad_history_rejected_not_ignored(project_dir, monkeypatch, change, error):
     catalog = StepCatalog(project_dir)
     entry = {**_entry(), **change}
-    monkeypatch.setattr(catalog, "_get_merged_steps", lambda *, step_id=None: {"deploy": entry})
+    monkeypatch.setattr(catalog, "_get_merged_steps", lambda: {"deploy": entry})
     with pytest.raises(StepCatalogError, match=error):
         catalog.get_step_info("deploy")

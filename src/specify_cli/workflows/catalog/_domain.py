@@ -43,14 +43,6 @@ class WorkflowCatalogError(Exception):
     """Base error for workflow catalog operations."""
 
 
-class WorkflowCatalogFetchError(WorkflowCatalogError):
-    """A configured workflow catalog could not be fetched."""
-
-
-class WorkflowCatalogValidationError(WorkflowCatalogError):
-    """A workflow catalog supplied malformed metadata."""
-
-
 class WorkflowValidationError(WorkflowCatalogError):
     """Validation error for catalog config or workflow data."""
 
@@ -525,37 +517,18 @@ class WorkflowCatalog:
         """Fetch a single catalog, using cache when possible."""
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        def validate_payload(data: Any) -> dict[str, Any]:
-            if not isinstance(data, dict):
-                raise WorkflowCatalogValidationError(
-                    f"Catalog from {entry.url} is not a valid JSON object."
-                )
-            if not isinstance(data.get("workflows"), (dict, list)):
-                raise WorkflowCatalogValidationError(
-                    f"Catalog from {entry.url} has malformed workflows metadata."
-                )
-            return data
-
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
                     cached = json.load(f)
-                return validate_payload(cached)
-            except (
-                UnicodeDecodeError,
-                json.JSONDecodeError,
-                RecursionError,
-                OSError,
-                WorkflowCatalogValidationError,
-            ):
+                if isinstance(cached, dict):
+                    return cached
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
                 # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
         # Fetch from URL — validate scheme before opening and after redirects
-        from http.client import HTTPException
         from urllib.parse import urlparse
-
-        from specify_cli.authentication.http import RedirectPolicyError
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
@@ -569,18 +542,18 @@ class WorkflowCatalog:
                 hostname = parsed.hostname
                 _ = parsed.port
             except (TypeError, ValueError):
-                raise WorkflowCatalogValidationError(
+                raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
             is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
-                raise WorkflowCatalogValidationError(
+                raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
             if not hostname:
-                raise WorkflowCatalogValidationError(
+                raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
 
@@ -605,41 +578,29 @@ class WorkflowCatalog:
                     read_response_limited(
                         resp,
                         max_bytes=_max_json_catalog_bytes(),
-                        error_type=WorkflowCatalogValidationError,
+                        error_type=WorkflowCatalogError,
                         label="workflow catalog",
                     ).decode("utf-8")
                 )
-        except (
-            WorkflowCatalogValidationError,
-            RedirectPolicyError,
-            UnicodeError,
-            json.JSONDecodeError,
-            RecursionError,
-        ) as exc:
-            raise WorkflowCatalogValidationError(
-                f"Invalid workflow catalog from {entry.url}: {exc}"
-            ) from exc
-        except (OSError, HTTPException) as exc:
+        except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
                         cached = json.load(f)
-                    return validate_payload(cached)
-                except (
-                    json.JSONDecodeError,
-                    ValueError,
-                    RecursionError,
-                    OSError,
-                    WorkflowCatalogValidationError,
-                ):
+                    if isinstance(cached, dict):
+                        return cached
+                except (json.JSONDecodeError, ValueError, OSError):
                     # Stale-cache read failed; let the original fetch error propagate.
                     pass
-            raise WorkflowCatalogFetchError(
+            raise WorkflowCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
 
-        data = validate_payload(data)
+        if not isinstance(data, dict):
+            raise WorkflowCatalogError(
+                f"Catalog from {entry.url} is not a valid JSON object."
+            )
 
         # Write cache
         try:
@@ -650,93 +611,47 @@ class WorkflowCatalog:
                 json.dump({"url": entry.url, "fetched_at": time.time()}, f)
         except OSError:
             pass  # Proceed without caching if disk write fails
-        except RecursionError as exc:
-            raise WorkflowCatalogValidationError(
-                f"Invalid workflow catalog from {entry.url}: excessive nesting ({exc})"
-            ) from exc
 
         return data
 
     def _get_merged_workflows(
-        self, force_refresh: bool = False, *, workflow_id: str | None = None
+        self, force_refresh: bool = False
     ) -> dict[str, dict[str, Any]]:
-        """Merge for search, or resolve one ID from the first valid winning source."""
+        """Merge workflows from all active catalogs (lower priority number wins)."""
         catalogs = self.get_active_catalogs()
         merged: dict[str, dict[str, Any]] = {}
         fetch_errors = 0
-        validation_error: WorkflowCatalogValidationError | None = None
-        fetch_error: WorkflowCatalogFetchError | None = None
 
-        # Search uses overwrite order; exact-ID lookup visits the highest
-        # priority source first and stops at its matching entry.
-        sources = catalogs if workflow_id is not None else reversed(catalogs)
-        for entry in sources:
+        # Process later/higher-numbered entries first so earlier/lower-numbered
+        # entries overwrite them on workflow ID conflicts.
+        for entry in reversed(catalogs):
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
-            except WorkflowCatalogError as exc:
-                if workflow_id is not None and isinstance(
-                    exc, WorkflowCatalogValidationError
-                ):
-                    raise
-                if (
-                    isinstance(exc, WorkflowCatalogValidationError)
-                    and validation_error is None
-                ):
-                    validation_error = exc
-                if isinstance(exc, WorkflowCatalogFetchError) and fetch_error is None:
-                    fetch_error = exc
+            except WorkflowCatalogError:
                 fetch_errors += 1
                 continue
             workflows = data.get("workflows", {})
             # Handle both dict and list formats
             if isinstance(workflows, dict):
                 for wf_id, wf_data in workflows.items():
-                    if workflow_id is not None and wf_id != workflow_id:
-                        continue
                     if not isinstance(wf_data, dict):
-                        if workflow_id is not None:
-                            raise WorkflowCatalogValidationError(
-                                f"Invalid workflow catalog entry for '{wf_id}' "
-                                f"from {entry.url}: expected a JSON object"
-                            )
                         continue
                     wf_data["_catalog_name"] = entry.name
                     wf_data["_install_allowed"] = entry.install_allowed
                     merged[wf_id] = wf_data
             elif isinstance(workflows, list):
-                seen_in_source: set[str] = set()
                 for wf_data in workflows:
                     if not isinstance(wf_data, dict):
                         continue
                     wf_id = wf_data.get("id", "")
-                    if not isinstance(wf_id, str):
-                        raise WorkflowCatalogValidationError(
-                            f"Invalid workflow ID in catalog '{entry.name}': "
-                            "expected a string."
-                        )
                     if wf_id:
-                        if wf_id in seen_in_source:
-                            raise WorkflowCatalogValidationError(
-                                f"Duplicate workflow ID '{wf_id}' in catalog '{entry.name}'."
-                            )
-                        seen_in_source.add(wf_id)
-                        if workflow_id is not None and wf_id != workflow_id:
-                            continue
                         wf_data["_catalog_name"] = entry.name
                         wf_data["_install_allowed"] = entry.install_allowed
                         merged[wf_id] = wf_data
-            if workflow_id is not None and workflow_id in merged:
-                if fetch_error is not None:
-                    raise fetch_error
-                return merged
         if fetch_errors == len(catalogs) and catalogs:
-            if validation_error is not None:
-                raise validation_error
-            raise WorkflowCatalogFetchError(
+            raise WorkflowCatalogError(
                 "All configured catalogs failed to fetch."
             )
-        if workflow_id is not None and fetch_error is not None:
-            raise fetch_error
         return merged
 
     # -- Public API -------------------------------------------------------
@@ -783,7 +698,7 @@ class WorkflowCatalog:
         """Get the current or an exact advertised release from the winning source."""
         from ._versions import select_release
 
-        merged = self._get_merged_workflows(workflow_id=workflow_id)
+        merged = self._get_merged_workflows()
         wf = merged.get(workflow_id)
         if wf is None:
             return None
@@ -801,7 +716,7 @@ class WorkflowCatalog:
         """Return advertised versions and whether their source allows installation."""
         from ._versions import available_versions
 
-        merged = self._get_merged_workflows(workflow_id=workflow_id)
+        merged = self._get_merged_workflows()
         wf = merged.get(workflow_id)
         if wf is None:
             return None

@@ -371,16 +371,24 @@ def test_source_is_checked_even_when_component_is_already_installed(
     ExtensionRegistry(tmp_path / ".specify" / "extensions").add(
         "ext-a", {"version": "1.0.0"}
     )
-    lookups = []
+    fetches = []
 
-    def get_info(_self, _id, version=None):
-        lookups.append(version)
+    def fetch(self, source, force_refresh=False):
+        fetches.append(source.name)
         return {
-            "version": "1.0.0", "_catalog_name": winning,
-            "_install_allowed": True,
+            "schema_version": "1.0",
+            "extensions": {"ext-a": {"version": "1.0.0"}},
         }
 
-    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", get_info)
+    from specify_cli.extensions import CatalogEntry
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_active_catalogs",
+        lambda self: [
+            CatalogEntry("https://example.com/catalog.json", winning, 1, True)
+        ],
+    )
+    monkeypatch.setattr(ExtensionCatalog, "_fetch_single_catalog", fetch)
     data = valid_manifest_dict()
     data["provides"] = {
         "extensions": [
@@ -394,7 +402,7 @@ def test_source_is_checked_even_when_component_is_already_installed(
             tmp_path, _plan(manifest), DefaultPrimitiveInstaller(), manifest=manifest
         )
         assert result.skipped == manifest.components
-        assert lookups == [None, "1.0.0"]
+        assert fetches == [winning]
     else:
         with pytest.raises(BundlerError, match="expected"):
             install_bundle(

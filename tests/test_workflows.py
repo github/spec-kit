@@ -10485,13 +10485,9 @@ class TestStepCatalog:
         results = catalog.search(query="missing")
         assert len(results) == 0
 
-    def test_get_merged_steps_rejects_non_string_list_ids(self, project_dir, monkeypatch):
-        """List-based catalog entries must declare string IDs."""
-        from specify_cli.workflows.step.catalog import (
-            StepCatalog,
-            StepCatalogEntry,
-            StepCatalogValidationError,
-        )
+    def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
+        """List-based catalog entries with non-string ids must be normalized."""
+        from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
 
         catalog = StepCatalog(project_dir)
         entry = StepCatalogEntry(
@@ -10509,8 +10505,10 @@ class TestStepCatalog:
             },
         )
 
-        with pytest.raises(StepCatalogValidationError, match="Invalid step ID"):
-            catalog._get_merged_steps()
+        merged = catalog._get_merged_steps()
+        assert "42" in merged
+        assert 42 not in merged
+        assert merged["42"]["id"] == "42"
 
     def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
         """get_step_info returns matching entry or None for missing ids."""

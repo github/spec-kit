@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -16,7 +15,6 @@ from specify_cli import app
 from specify_cli.extensions import (
     CatalogEntry,
     ExtensionCatalog,
-    ExtensionCatalogValidationError,
     ExtensionError,
     ExtensionManifest,
 )
@@ -71,8 +69,7 @@ def _catalog(
     monkeypatch: pytest.MonkeyPatch, project: Path, entry: dict
 ) -> ExtensionCatalog:
     monkeypatch.setattr(
-        ExtensionCatalog, "_get_merged_extensions",
-        lambda self, *, extension_id=None: [entry]
+        ExtensionCatalog, "_get_merged_extensions", lambda self: [entry]
     )
     return ExtensionCatalog(project)
 
@@ -87,94 +84,6 @@ class _ArchiveResponse(BytesIO):
 
     def getheader(self, _name):
         return "application/zip"
-
-
-_DEEP_JSON = b"[" * 12000 + b"0" + b"]" * 12000
-
-
-def _raise_on_deep_json(monkeypatch):
-    """Exercise parser recursion independent of Python's nesting threshold."""
-    loads = json.loads
-
-    def decode(data, *args, **kwargs):
-        if data == _DEEP_JSON or data == _DEEP_JSON.decode("utf-8"):
-            raise RecursionError("maximum recursion depth exceeded while decoding JSON")
-        return loads(data, *args, **kwargs)
-
-    monkeypatch.setattr(json, "loads", decode)
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_deeply_nested_catalog_json_is_a_validation_error(
-    tmp_path, monkeypatch, legacy
-):
-    source = CatalogEntry("https://example.com/deep.json", "deep", 1, True)
-    catalog = ExtensionCatalog(tmp_path)
-    _raise_on_deep_json(monkeypatch)
-    monkeypatch.setattr(
-        catalog,
-        "_open_url",
-        lambda *_args, **_kwargs: _ArchiveResponse(_DEEP_JSON, source.url),
-    )
-    if legacy:
-        monkeypatch.setattr(catalog, "get_catalog_url", lambda: source.url)
-
-    with pytest.raises(ExtensionCatalogValidationError, match="nesting"):
-        if legacy:
-            catalog.fetch_catalog(force_refresh=True)
-        else:
-            catalog._fetch_single_catalog(source, force_refresh=True)
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_deeply_nested_cached_catalog_refetches(tmp_path, monkeypatch, legacy):
-    catalog = ExtensionCatalog(tmp_path)
-    url = catalog.DEFAULT_CATALOG_URL
-    source = CatalogEntry(url, "default", 1, True)
-    catalog.cache_file.parent.mkdir(parents=True, exist_ok=True)
-    catalog.cache_file.write_bytes(_DEEP_JSON)
-    _raise_on_deep_json(monkeypatch)
-    monkeypatch.setattr(catalog, "is_cache_valid", lambda: True)
-    monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
-    monkeypatch.setattr(
-        catalog,
-        "_open_url",
-        lambda *_args, **_kwargs: _ArchiveResponse(
-            b'{"schema_version":"1.0","extensions":{}}', url
-        ),
-    )
-
-    data = catalog.fetch_catalog() if legacy else catalog._fetch_single_catalog(source)
-    assert data["extensions"] == {}
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-def test_deeply_nested_cache_metadata_refetches(tmp_path, monkeypatch, legacy):
-    catalog = ExtensionCatalog(tmp_path)
-    url = catalog.DEFAULT_CATALOG_URL if legacy else "https://example.com/deep.json"
-    source = CatalogEntry(url, "deep", 1, True)
-    if legacy:
-        cache_file = catalog.cache_file
-        metadata_file = catalog.cache_metadata_file
-        monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
-    else:
-        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-        cache_file = catalog.cache_dir / f"catalog-{url_hash}.json"
-        metadata_file = catalog.cache_dir / f"catalog-{url_hash}-metadata.json"
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_bytes(b'{"schema_version":"1.0","extensions":{}}')
-    metadata_file.write_bytes(_DEEP_JSON)
-    _raise_on_deep_json(monkeypatch)
-    monkeypatch.setattr(
-        catalog,
-        "_open_url",
-        lambda *_args, **_kwargs: _ArchiveResponse(
-            b'{"schema_version":"1.0","extensions":{}}', url
-        ),
-    )
-
-    data = catalog.fetch_catalog() if legacy else catalog._fetch_single_catalog(source)
-    assert data["extensions"] == {}
 
 
 def test_legacy_entry_still_selects_its_current_release(tmp_path, monkeypatch):
@@ -252,62 +161,6 @@ def test_requested_version_does_not_fall_through_to_lower_priority_catalog(
     assert catalog.get_extension_versions("demo-history") == ["0.5.1"]
 
 
-def test_targeted_lookup_rejects_malformed_higher_catalog_but_search_continues(
-    tmp_path, monkeypatch,
-):
-    from specify_cli.extensions import ExtensionCatalogValidationError
-
-    catalog = ExtensionCatalog(tmp_path)
-    sources = [
-        CatalogEntry("https://example.com/high.json", "high", 1, True),
-        CatalogEntry("https://example.com/low.json", "low", 2, True),
-    ]
-    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
-
-    def fetch(source, _force=False):
-        if source.name == "high":
-            catalog._validate_catalog_payload({"extensions": []}, source.url)
-        return {
-            "schema_version": "1.0",
-            "extensions": {"demo-history": {"version": "1.0.0"}},
-        }
-
-    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
-
-    with pytest.raises(ExtensionCatalogValidationError, match="Invalid catalog format"):
-        catalog.get_extension_info("demo-history")
-    assert catalog.search("demo-history")[0]["_catalog_name"] == "low"
-
-
-def test_targeted_lookup_rejects_lower_match_when_higher_catalog_is_unreachable(
-    tmp_path, monkeypatch,
-):
-    from specify_cli.extensions import ExtensionCatalogFetchError
-
-    catalog = ExtensionCatalog(tmp_path)
-    sources = [
-        CatalogEntry("https://example.com/high.json", "high", 1, True),
-        CatalogEntry("https://example.com/low.json", "low", 2, True),
-    ]
-    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: sources)
-    high_available = False
-
-    def fetch(source, _force=False):
-        if source.name == "high" and not high_available:
-            raise ExtensionCatalogFetchError("high catalog is offline")
-        return {
-            "schema_version": "1.0",
-            "extensions": {"demo-history": {"version": "1.0.0"}},
-        }
-
-    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
-    with pytest.raises(ExtensionCatalogFetchError, match="offline"):
-        catalog.get_extension_info("demo-history", "1.0.0")
-    assert catalog.search("demo-history")[0]["_catalog_name"] == "low"
-    high_available = True
-    assert catalog.get_extension_info("demo-history")["_catalog_name"] == "high"
-
-
 @pytest.mark.parametrize("second_lookup", ["lower_priority", "unavailable"])
 def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
     tmp_path, monkeypatch, second_lookup
@@ -321,7 +174,7 @@ def test_exact_cli_install_uses_first_resolved_catalog_snapshot(
     fetches = []
     selected = []
 
-    def merged(_self, *, extension_id=None):
+    def merged(_self):
         fetches.append(True)
         if len(fetches) == 1:
             return [high]
@@ -625,7 +478,7 @@ def test_info_versions_uses_first_resolved_catalog_snapshot(tmp_path, monkeypatc
     low["version"] = "0.8.0"
     fetches = []
 
-    def merged(_self, *, extension_id=None):
+    def merged(_self):
         fetches.append(True)
         return [high if len(fetches) == 1 else low]
 

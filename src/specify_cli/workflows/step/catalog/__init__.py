@@ -29,8 +29,6 @@ _DOMAIN_EXPORTS = {
     "StepCatalog",
     "StepCatalogEntry",
     "StepCatalogError",
-    "StepCatalogFetchError",
-    "StepCatalogValidationError",
     "StepRegistry",
     "StepValidationError",
 }

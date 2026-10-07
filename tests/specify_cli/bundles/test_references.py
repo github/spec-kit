@@ -6,6 +6,8 @@ network; unknown ids fail online and downgrade to warnings offline.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import URLError
 
 import pytest
 import yaml
@@ -17,6 +19,20 @@ from tests.specify_cli.bundles.helpers import bundled_extension_version, make_pr
 
 def _ref(kind: str, id_: str, version: str | None = "1.0.0") -> ComponentRef:
     return ComponentRef(kind=kind, id=id_, version=version)
+
+
+def _mock_catalog(monkeypatch, catalog_type, kind, component_id, record, *, name="trusted"):
+    source = SimpleNamespace(
+        name=name, url="https://example.com/catalog.json", install_allowed=True
+    )
+    monkeypatch.setattr(catalog_type, "get_active_catalogs", lambda self: [source])
+    monkeypatch.setattr(
+        catalog_type,
+        "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False: {
+            "schema_version": "1.0", kind: {component_id: record}
+        },
+    )
 
 
 def test_bundled_extension_resolves(tmp_path: Path):
@@ -94,9 +110,7 @@ def test_unknown_step_type_still_errors_online(tmp_path: Path, monkeypatch):
     """The guard must not make every step id resolve."""
     from specify_cli.workflows.catalog import StepCatalog
 
-    monkeypatch.setattr(
-        StepCatalog, "get_step_info", lambda self, _id, version=None: None
-    )
+    _mock_catalog(monkeypatch, StepCatalog, "steps", "other-step", {"version": "1.0.0"})
     root = make_project(tmp_path)
     warnings: list[str] = []
     check = make_reference_checker(root, allow_network=True, warnings=warnings)
@@ -129,13 +143,9 @@ def test_wrong_bundled_extension_pin_is_definitive(
     from specify_cli.extensions import ExtensionCatalog
 
     root = make_project(tmp_path)
-    monkeypatch.setattr(
-        ExtensionCatalog, "get_extension_info",
-        lambda self, _id, version=None: {
-            "version": version or "999.0.0",
-            "_catalog_name": "trusted",
-            "_install_allowed": True,
-        },
+    _mock_catalog(
+        monkeypatch, ExtensionCatalog, "extensions",
+        "agent-context", {"version": "999.0.0"},
     )
     warnings = []
     check = make_reference_checker(root, allow_network=allow_network, warnings=warnings)
@@ -166,13 +176,8 @@ def test_bundled_preset_pin_mismatch_is_definitive(
         "preset:\n  id: requested\n  version: 1.0.0\n", encoding="utf-8"
     )
     monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: bundled)
-    monkeypatch.setattr(
-        PresetCatalog, "get_pack_info",
-        lambda self, _id, version=None: {
-            "version": version or "2.0.0",
-            "_catalog_name": "trusted",
-            "_install_allowed": True,
-        },
+    _mock_catalog(
+        monkeypatch, PresetCatalog, "presets", "requested", {"version": "2.0.0"}
     )
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=allow_network, warnings=warnings)
@@ -216,31 +221,26 @@ def test_bundled_preset_mismatch_allows_matching_installed_version(
     assert warnings == []
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_extension_http_protocol_error_is_unreachable_catalog(
-    tmp_path, monkeypatch, legacy,
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_bundle_http_protocol_error_is_unreachable_catalog(
+    tmp_path, monkeypatch, kind,
 ):
     from http.client import BadStatusLine
 
-    from specify_cli.extensions import (
-        CatalogEntry,
-        ExtensionCatalog,
-        ExtensionCatalogFetchError,
-    )
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
 
-    catalog = ExtensionCatalog(tmp_path)
-    entry = CatalogEntry("https://example.com/catalog.json", "trusted", 1, True)
-    monkeypatch.setattr(catalog, "get_catalog_url", lambda: entry.url)
+    catalog_type = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {})
 
-    def bad_status(*args, **kwargs):
+    def bad_status(self, source, force_refresh=False):
         raise BadStatusLine("bad response")
 
-    monkeypatch.setattr(catalog, "_open_url", bad_status)
-    with pytest.raises(ExtensionCatalogFetchError, match="bad response"):
-        if legacy:
-            catalog.fetch_catalog(force_refresh=True)
-        else:
-            catalog._fetch_single_catalog(entry, force_refresh=True)
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", bad_status)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert check(_ref(kind, "requested")) is None
+    assert len(warnings) == 1 and "unreachable" in warnings[0]
 
 
 def test_online_validation_warns_for_extension_http_protocol_error(
@@ -271,23 +271,27 @@ def test_online_validation_checks_winning_exact_release_and_source(tmp_path, mon
     from specify_cli.workflows.catalog import WorkflowCatalog
 
     monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda _id: None)
-    lookups = []
+    fetches = []
+    _mock_catalog(
+        monkeypatch, WorkflowCatalog, "workflows", "catalog-workflow",
+        {
+            "version": "2.0.0",
+            "releases": {
+                "1.0.0": {
+                    "url": "https://example.com/old.yml",
+                    "sha256": "a" * 64,
+                }
+            },
+        },
+        name="winning",
+    )
+    original_fetch = WorkflowCatalog._fetch_single_catalog
 
-    def lookup(_self, _id, version=None):
-        lookups.append(version)
-        if version == "1.0.0":
-            return {
-                "version": "1.0.0", "_catalog_name": "winning",
-                "_install_allowed": True,
-            }
-        if version is None:
-            return {
-                "version": "2.0.0", "_catalog_name": "winning",
-                "_install_allowed": True,
-            }
-        return None
+    def fetch(self, source, force_refresh=False):
+        fetches.append(source.name)
+        return original_fetch(self, source, force_refresh)
 
-    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", lookup)
+    monkeypatch.setattr(WorkflowCatalog, "_fetch_single_catalog", fetch)
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
     requested = ComponentRef(
@@ -295,7 +299,7 @@ def test_online_validation_checks_winning_exact_release_and_source(tmp_path, mon
     )
 
     assert check(requested) is None
-    assert lookups == [None, "1.0.0"]
+    assert fetches == ["winning"]
     assert check(ComponentRef(kind="workflows", id=requested.id, version="3.0.0"))
     assert check(ComponentRef(
         kind="workflows", id=requested.id, version="1.0.0", source="lower"
@@ -304,13 +308,14 @@ def test_online_validation_checks_winning_exact_release_and_source(tmp_path, mon
 
 
 def test_online_validation_rejects_discovery_only_exact_release(tmp_path, monkeypatch):
-    from specify_cli.workflows.catalog import StepCatalog
+    from specify_cli.workflows.catalog import StepCatalog, StepCatalogEntry
 
+    source = StepCatalogEntry("https://example.com/catalog.json", "winning", 1, False)
+    monkeypatch.setattr(StepCatalog, "get_active_catalogs", lambda self: [source])
     monkeypatch.setattr(
-        StepCatalog, "get_step_info",
-        lambda _self, _id, version=None: {
-            "version": version or "2.0.0", "_catalog_name": "winning",
-            "_install_allowed": version is None,
+        StepCatalog, "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False: {
+            "steps": {"catalog-step": {"version": "2.0.0"}}
         },
     )
     warnings = []
@@ -321,12 +326,17 @@ def test_online_validation_rejects_discovery_only_exact_release(tmp_path, monkey
 
 
 def test_online_validation_reports_invalid_release_metadata(tmp_path, monkeypatch):
-    from specify_cli.workflows.catalog import StepCatalog, StepCatalogError
+    from specify_cli.workflows.catalog import StepCatalog
 
-    def invalid_release(_self, _id, version=None):
-        raise StepCatalogError("Step release needs a SHA-256 digest.")
-
-    monkeypatch.setattr(StepCatalog, "get_step_info", invalid_release)
+    _mock_catalog(
+        monkeypatch, StepCatalog, "steps", "invalid-release",
+        {
+            "version": "2.0.0",
+            "releases": {
+                "1.0.0": {"step_yml_url": "https://example.com/step.yml"}
+            },
+        },
+    )
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
@@ -335,12 +345,14 @@ def test_online_validation_reports_invalid_release_metadata(tmp_path, monkeypatc
 
 
 def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeypatch):
-    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogFetchError
+    from specify_cli.workflows.catalog import WorkflowCatalog
 
-    def unavailable(_self, _id, version=None):
-        raise WorkflowCatalogFetchError("All configured catalogs failed to fetch.")
+    _mock_catalog(monkeypatch, WorkflowCatalog, "workflows", "unreachable", {})
 
-    monkeypatch.setattr(WorkflowCatalog, "get_workflow_info", unavailable)
+    def unavailable(self, source, force_refresh=False):
+        raise URLError("timed out")
+
+    monkeypatch.setattr(WorkflowCatalog, "_fetch_single_catalog", unavailable)
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
@@ -363,27 +375,20 @@ def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeyp
 def test_online_validation_distinguishes_partial_outage_from_missing_reference(
     tmp_path, monkeypatch, kind, unreachable, has_match,
 ):
-    from specify_cli.extensions import (
-        CatalogEntry,
-        ExtensionCatalog,
-        ExtensionCatalogFetchError,
-    )
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
     from specify_cli.presets import PresetCatalog, PresetCatalogEntry
-    from specify_cli.presets._catalog import PresetCatalogFetchError
     from specify_cli.workflows.catalog import (
         StepCatalog,
         StepCatalogEntry,
-        StepCatalogFetchError,
         WorkflowCatalog,
         WorkflowCatalogEntry,
-        WorkflowCatalogFetchError,
     )
 
-    catalog, entry_type, fetch_error = {
-        "extensions": (ExtensionCatalog, CatalogEntry, ExtensionCatalogFetchError),
-        "presets": (PresetCatalog, PresetCatalogEntry, PresetCatalogFetchError),
-        "workflows": (WorkflowCatalog, WorkflowCatalogEntry, WorkflowCatalogFetchError),
-        "steps": (StepCatalog, StepCatalogEntry, StepCatalogFetchError),
+    catalog, entry_type = {
+        "extensions": (ExtensionCatalog, CatalogEntry),
+        "presets": (PresetCatalog, PresetCatalogEntry),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry),
+        "steps": (StepCatalog, StepCatalogEntry),
     }[kind]
     sources = [
         entry_type("https://example.com/high.json", "high", 1, True),
@@ -395,7 +400,7 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
     def fetch(self, entry, force_refresh=False):
         visited.append(entry.name)
         if entry.name == unreachable:
-            raise fetch_error("catalog timed out")
+            raise URLError("catalog timed out")
         contents = {"requested": {"version": "1.0.0"}} if has_match else {}
         return {kind: contents}
 
@@ -404,7 +409,16 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
     problem = check(_ref(kind, "requested"))
-    if has_match and unreachable == "high":
+    if unreachable == "high":
+        assert problem is None
+        assert len(warnings) == 1
+        assert "unreachable" in warnings[0]
+        assert visited == ["high"]
+    elif has_match and unreachable == "low":
+        assert problem is None
+        assert warnings == []
+        assert visited == ["high"]
+    elif unreachable is not None:
         assert problem is None
         assert len(warnings) == 1
         assert "unreachable" in warnings[0]
@@ -412,12 +426,7 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
     elif has_match:
         assert problem is None
         assert warnings == []
-        assert visited == ["high", "high"]
-    elif unreachable is not None:
-        assert problem is None
-        assert len(warnings) == 1
-        assert "unreachable" in warnings[0]
-        assert visited == ["high", "low"]
+        assert visited == ["high"]
     else:
         assert problem is not None and "not available" in problem
         assert warnings == []
@@ -428,25 +437,16 @@ def test_online_validation_distinguishes_partial_outage_from_missing_reference(
 def test_online_validation_warns_for_unreachable_component_catalog(
     tmp_path, monkeypatch, kind,
 ):
-    from specify_cli.extensions import ExtensionCatalog, ExtensionCatalogFetchError
+    from specify_cli.extensions import ExtensionCatalog
     from specify_cli.presets import PresetCatalog
-    from specify_cli.presets._catalog import PresetCatalogFetchError
 
-    if kind == "extensions":
-        catalog, method, failure = (
-            ExtensionCatalog, "get_extension_info",
-            ExtensionCatalogFetchError("Failed to fetch any extension catalog"),
-        )
-    else:
-        catalog, method, failure = (
-            PresetCatalog, "get_pack_info",
-            PresetCatalogFetchError("Failed to fetch preset catalog from https://example.com: timed out"),
-        )
+    catalog = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(monkeypatch, catalog, kind, "unreachable-component", {})
 
-    def unavailable(_self, _id, version=None):
-        raise failure
+    def unavailable(self, source, force_refresh=False):
+        raise URLError("timed out")
 
-    monkeypatch.setattr(catalog, method, unavailable)
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", unavailable)
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
@@ -459,24 +459,39 @@ def test_online_validation_warns_for_unreachable_component_catalog(
 def test_online_validation_rejects_malformed_component_release(
     tmp_path, monkeypatch, kind,
 ):
-    from specify_cli.extensions import ExtensionCatalog, ExtensionError
+    from specify_cli.extensions import ExtensionCatalog
     from specify_cli.presets import PresetCatalog
-    from specify_cli.presets._manifest import PresetError
 
-    catalog, method, failure = (
-        (ExtensionCatalog, "get_extension_info", ExtensionError("Invalid release digest"))
-        if kind == "extensions"
-        else (PresetCatalog, "get_pack_info", PresetError("Invalid release digest"))
+    catalog = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(
+        monkeypatch, catalog, kind, "invalid-component",
+        {
+            "version": "2.0.0",
+            "releases": {
+                "1.0.0": {"download_url": "https://example.com/release.zip"}
+            },
+        },
     )
-
-    def invalid(_self, _id, version=None):
-        raise failure
-
-    monkeypatch.setattr(catalog, method, invalid)
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
-    assert "Invalid release digest" in check(_ref(kind, "invalid-component"))
+    assert "SHA-256" in check(_ref(kind, "invalid-component"))
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_online_validation_accepts_unversioned_legacy_component(
+    tmp_path, monkeypatch, kind,
+):
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+
+    catalog = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(monkeypatch, catalog, kind, "legacy-component", {})
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref(kind, "legacy-component", "1.0.0")) is None
     assert warnings == []
 
 
@@ -704,32 +719,28 @@ def test_online_validation_does_not_skip_unsafe_higher_priority_catalog(
     assert warnings == []
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_extension_catalog_invalid_utf8_is_validation_error(
-    tmp_path, monkeypatch, legacy,
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_bundle_invalid_utf8_catalog_is_validation_error(
+    tmp_path, monkeypatch, kind,
 ):
     import io
 
-    from specify_cli.extensions import (
-        CatalogEntry,
-        ExtensionCatalog,
-        ExtensionCatalogValidationError,
-    )
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
 
     class Response(io.BytesIO):
         def geturl(self):
             return "https://example.com/catalog.json"
 
-    catalog = ExtensionCatalog(tmp_path)
-    entry = CatalogEntry("https://example.com/catalog.json", "bad", 1, True)
-    monkeypatch.setattr(catalog, "get_catalog_url", lambda: entry.url)
-    monkeypatch.setattr(catalog, "_open_url", lambda url, **kwargs: Response(b"\xff"))
-
-    with pytest.raises(ExtensionCatalogValidationError, match="encoding"):
-        if legacy:
-            catalog.fetch_catalog(force_refresh=True)
-        else:
-            catalog._fetch_single_catalog(entry, force_refresh=True)
+    catalog_type = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    original_fetch = catalog_type._fetch_single_catalog
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {})
+    monkeypatch.setattr(catalog_type, "_open_url", lambda self, url, **kw: Response(b"\xff"))
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", original_fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert "decode" in check(_ref(kind, "requested"))
+    assert warnings == []
 
 
 def test_online_validation_does_not_skip_invalid_utf8_extension_catalog(
@@ -768,47 +779,36 @@ def test_online_validation_does_not_skip_invalid_utf8_extension_catalog(
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
 
-    assert "Invalid encoding" in check(_ref("extensions", "requested"))
+    assert "decode" in check(_ref("extensions", "requested"))
     assert warnings == []
 
 
 @pytest.mark.parametrize("kind", ["extensions", "presets"])
-@pytest.mark.parametrize("legacy", [False, True])
-def test_catalog_redirect_policy_is_validation_error(
-    tmp_path, monkeypatch, kind, legacy,
+@pytest.mark.parametrize("status", [404, 503])
+def test_bundle_catalog_http_errors_preserve_failure_type(
+    tmp_path, monkeypatch, kind, status,
 ):
-    from specify_cli.authentication.http import RedirectPolicyError
-    from specify_cli.extensions import (
-        CatalogEntry,
-        ExtensionCatalog,
-        ExtensionCatalogValidationError,
-    )
-    from specify_cli.presets import (
-        PresetCatalog,
-        PresetCatalogEntry,
-    )
-    from specify_cli.presets._catalog import PresetCatalogValidationError
+    from urllib.error import HTTPError
 
-    catalog_type, entry_type, error_type = (
-        (ExtensionCatalog, CatalogEntry, ExtensionCatalogValidationError)
-        if kind == "extensions"
-        else (PresetCatalog, PresetCatalogEntry, PresetCatalogValidationError)
-    )
-    catalog = catalog_type(tmp_path)
-    url = "https://example.com/catalog.json"
-    monkeypatch.setattr(catalog, "get_catalog_url", lambda: url)
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
 
-    def unsafe_redirect(*args, **kwargs):
-        raise RedirectPolicyError("unsafe catalog redirect")
+    catalog_type = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {})
 
-    monkeypatch.setattr(catalog, "_open_url", unsafe_redirect)
-    with pytest.raises(error_type, match="unsafe catalog redirect"):
-        if legacy:
-            catalog.fetch_catalog(force_refresh=True)
-        else:
-            catalog._fetch_single_catalog(
-                entry_type(url, "trusted", 1, True), force_refresh=True
-            )
+    def failed(self, source, force_refresh=False):
+        raise HTTPError(source.url, status, "catalog failure", {}, None)
+
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", failed)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    problem = check(_ref(kind, "requested"))
+    if status == 503:
+        assert problem is None
+        assert len(warnings) == 1 and "unreachable" in warnings[0]
+    else:
+        assert problem is not None and "404" in problem
+        assert warnings == []
 
 
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
@@ -924,124 +924,54 @@ def test_valid_empty_higher_priority_catalog_allows_lower_source(
 
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
 @pytest.mark.parametrize("source", ["network", "fresh-cache", "stale-cache"])
-def test_deeply_nested_catalog_is_handled_as_malformed_data(
+def test_bundle_catalog_handles_recursion_without_fallback(
     tmp_path, monkeypatch, kind, source,
 ):
-    import io
-    import json
-    from urllib.error import URLError
-
-    from specify_cli.authentication import http
     from specify_cli.workflows.catalog import (
         StepCatalog,
-        StepCatalogEntry,
-        StepCatalogFetchError,
-        StepCatalogValidationError,
         WorkflowCatalog,
-        WorkflowCatalogEntry,
-        WorkflowCatalogFetchError,
-        WorkflowCatalogValidationError,
     )
 
-    catalog_type, entry_type, validation_error, fetch_error = {
-        "workflows": (
-            WorkflowCatalog, WorkflowCatalogEntry,
-            WorkflowCatalogValidationError, WorkflowCatalogFetchError,
-        ),
-        "steps": (
-            StepCatalog, StepCatalogEntry,
-            StepCatalogValidationError, StepCatalogFetchError,
-        ),
-    }[kind]
-    catalog = catalog_type(tmp_path)
-    entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
-    nested = (
-        b'{"' + kind.encode() + b'":{},"nested":'
-        + b"[" * 10000 + b"0" + b"]" * 10000 + b"}"
-    )
-    valid = {"schema_version": "1.0", kind: {"requested": {"version": "1.0.0"}}}
+    catalog_type = WorkflowCatalog if kind == "workflows" else StepCatalog
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {"version": "1.0.0"})
 
-    class Response(io.BytesIO):
-        def geturl(self):
-            return entry.url
-
-    if source != "network":
-        cache_file, _ = catalog._get_cache_paths(entry.url)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_bytes(nested)
-        monkeypatch.setattr(
-            catalog, "_is_url_cache_valid", lambda _url: source == "fresh-cache"
-        )
-
-        def read_nested_cache(*args, **kwargs):
-            raise RecursionError("catalog nesting limit exceeded")
-
-        monkeypatch.setattr(json, "load", read_nested_cache)
-    else:
-        original_loads = json.loads
-
-        def decode_nested_catalog(raw, *args, **kwargs):
-            if raw == nested.decode("utf-8"):
-                raise RecursionError("catalog nesting limit exceeded")
-            return original_loads(raw, *args, **kwargs)
-
-        monkeypatch.setattr(json, "loads", decode_nested_catalog)
-
-    def open_url(*args, **kwargs):
+    def fetch(self, entry, force_refresh=False):
+        if source == "fresh-cache":
+            return {kind: {"requested": {"version": "1.0.0"}}}
         if source == "stale-cache":
             raise URLError("connection failed")
-        payload = nested if source == "network" else json.dumps(valid).encode()
-        return Response(payload)
+        raise RecursionError("catalog nesting limit exceeded")
 
-    monkeypatch.setattr(http, "open_url", open_url)
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    problem = check(_ref(kind, "requested"))
     if source == "network":
-        with pytest.raises(validation_error, match="Invalid.*catalog"):
-            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert problem is not None and "nesting limit exceeded" in problem
+        assert warnings == []
     elif source == "stale-cache":
-        with pytest.raises(fetch_error, match="Failed to fetch catalog"):
-            catalog._fetch_single_catalog(entry)
+        assert problem is None
+        assert len(warnings) == 1 and "unreachable" in warnings[0]
     else:
-        assert catalog._fetch_single_catalog(entry) == valid
+        assert problem is None
+        assert warnings == []
 
 
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
-def test_deep_catalog_does_not_escape_during_cache_write(
-    tmp_path, monkeypatch, kind,
-):
-    import io
+def test_bundle_catalog_handles_cache_write_recursion(tmp_path, monkeypatch, kind):
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
 
-    from specify_cli.authentication import http
-    from specify_cli.workflows.catalog import (
-        StepCatalog,
-        StepCatalogEntry,
-        StepCatalogValidationError,
-        WorkflowCatalog,
-        WorkflowCatalogEntry,
-        WorkflowCatalogValidationError,
-    )
+    catalog_type = WorkflowCatalog if kind == "workflows" else StepCatalog
+    _mock_catalog(monkeypatch, catalog_type, kind, "requested", {"version": "1.0.0"})
 
-    catalog_type, entry_type, error_type = {
-        "workflows": (
-            WorkflowCatalog, WorkflowCatalogEntry, WorkflowCatalogValidationError,
-        ),
-        "steps": (StepCatalog, StepCatalogEntry, StepCatalogValidationError),
-    }[kind]
-    catalog = catalog_type(tmp_path)
-    entry = entry_type("https://example.com/catalog.json", "trusted", 1, True)
-    payload = (
-        b'{"' + kind.encode() + b'":{},"nested":'
-        + b"[" * 1200 + b"0" + b"]" * 1200 + b"}"
-    )
+    def fetch(self, entry, force_refresh=False):
+        raise RecursionError("cache write nesting limit exceeded")
 
-    class Response(io.BytesIO):
-        def geturl(self):
-            return entry.url
-
-    monkeypatch.setattr(
-        http, "open_url", lambda *args, **kwargs: Response(payload)
-    )
-    with pytest.raises(error_type, match="Invalid.*catalog"):
-        catalog._fetch_single_catalog(entry, force_refresh=True)
+    monkeypatch.setattr(catalog_type, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert "cache write nesting limit exceeded" in check(_ref(kind, "requested"))
+    assert warnings == []
 
 
 @pytest.mark.parametrize("kind", ["extensions", "workflows", "steps"])
@@ -1084,6 +1014,146 @@ def test_targeted_lookup_stops_before_lower_priority_catalog(
 
 
 @pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+@pytest.mark.parametrize("malformed", [None, 42, "invalid", True])
+def test_bundle_rejects_malformed_higher_source_before_lower_match(
+    tmp_path, monkeypatch, kind, malformed,
+):
+    from specify_cli.extensions import CatalogEntry, ExtensionCatalog
+    from specify_cli.presets import PresetCatalog, PresetCatalogEntry
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+    )
+
+    catalog, entry_type = {
+        "extensions": (ExtensionCatalog, CatalogEntry),
+        "presets": (PresetCatalog, PresetCatalogEntry),
+        "workflows": (WorkflowCatalog, WorkflowCatalogEntry),
+        "steps": (StepCatalog, StepCatalogEntry),
+    }[kind]
+    sources = [
+        entry_type("https://example.com/high.json", "high", 1, True),
+        entry_type("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+    fetched = []
+
+    def fetch(self, source, force_refresh=False):
+        fetched.append(source.name)
+        if source.name == "high":
+            return {"schema_version": "1.0", kind: malformed}
+        return {"schema_version": "1.0", kind: {"requested": {"version": "1.0.0"}}}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(kind, "requested"))
+    assert problem is not None and "malformed" in problem
+    assert fetched == ["high"]
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+@pytest.mark.parametrize("duplicate_id", ["requested", "other"])
+def test_bundle_rejects_duplicate_list_ids_before_lower_source(
+    tmp_path, monkeypatch, kind, duplicate_id,
+):
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+    )
+
+    catalog, entry_type = (
+        (WorkflowCatalog, WorkflowCatalogEntry)
+        if kind == "workflows" else (StepCatalog, StepCatalogEntry)
+    )
+    sources = [
+        entry_type("https://example.com/high.json", "high", 1, True),
+        entry_type("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+    visited = []
+
+    def fetch(self, source, force_refresh=False):
+        visited.append(source.name)
+        if source.name == "low":
+            pytest.fail("duplicate IDs in the higher source were ignored")
+        return {kind: [
+            {"id": "requested", "version": "1.0.0"},
+            {"id": duplicate_id, "version": "2.0.0"},
+            {"id": duplicate_id, "version": "3.0.0"},
+        ]}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert f"Duplicate {kind[:-1]} ID '{duplicate_id}'" in check(_ref(kind, "requested"))
+    assert visited == ["high"]
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+@pytest.mark.parametrize("invalid_id", [{"bad": "id"}, ["bad"], 42, True, None, ""])
+def test_bundle_rejects_invalid_list_ids(
+    tmp_path, monkeypatch, kind, invalid_id,
+):
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    catalog = WorkflowCatalog if kind == "workflows" else StepCatalog
+    _mock_catalog(monkeypatch, catalog, kind, "requested", {})
+    monkeypatch.setattr(
+        catalog, "_fetch_single_catalog",
+        lambda self, source, force_refresh=False: {
+            kind: [
+                {"id": "requested", "version": "1.0.0"},
+                {"id": invalid_id, "version": "2.0.0"},
+            ]
+        },
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert f"Invalid {kind[:-1]} ID" in check(_ref(kind, "requested"))
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["workflows", "steps"])
+def test_bundle_accepts_list_id_from_first_source(tmp_path, monkeypatch, kind):
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+        WorkflowCatalog,
+        WorkflowCatalogEntry,
+    )
+
+    catalog, entry_type = (
+        (WorkflowCatalog, WorkflowCatalogEntry)
+        if kind == "workflows" else (StepCatalog, StepCatalogEntry)
+    )
+    sources = [
+        entry_type("https://example.com/high.json", "high", 1, True),
+        entry_type("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda self: sources)
+    visited = []
+
+    def fetch(self, source, force_refresh=False):
+        visited.append(source.name)
+        return {kind: [{"id": "requested", "version": source.name}]}
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+    assert check(ComponentRef(kind=kind, id="requested")) is None
+    assert visited == ["high"]
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
 @pytest.mark.parametrize("duplicate_name", [False, True])
 def test_explicit_source_requires_unique_catalog_name(
     tmp_path, monkeypatch, kind, duplicate_name,
@@ -1097,13 +1167,13 @@ def test_explicit_source_requires_unique_catalog_name(
         WorkflowCatalog,
     )
 
-    catalog_type, lookup, env_key = {
-        "extensions": (ExtensionCatalog, "get_extension_info", "SPECKIT_CATALOG_URL"),
-        "presets": (PresetCatalog, "get_pack_info", "SPECKIT_PRESET_CATALOG_URL"),
+    catalog_type, env_key = {
+        "extensions": (ExtensionCatalog, "SPECKIT_CATALOG_URL"),
+        "presets": (PresetCatalog, "SPECKIT_PRESET_CATALOG_URL"),
         "workflows": (
-            WorkflowCatalog, "get_workflow_info", "SPECKIT_WORKFLOW_CATALOG_URL"
+            WorkflowCatalog, "SPECKIT_WORKFLOW_CATALOG_URL"
         ),
-        "steps": (StepCatalog, "get_step_info", "SPECKIT_STEP_CATALOG_URL"),
+        "steps": (StepCatalog, "SPECKIT_STEP_CATALOG_URL"),
     }[kind]
     monkeypatch.delenv(env_key, raising=False)
     config = tmp_path / ".specify" / f"{kind[:-1]}-catalogs.yml"
@@ -1131,12 +1201,10 @@ def test_explicit_source_requires_unique_catalog_name(
     ]
     monkeypatch.setattr(
         catalog_type,
-        lookup,
-        lambda self, component_id, version=None: {
-            "id": component_id,
-            "version": version or "1.0.0",
-            "_catalog_name": "trusted",
-            "_install_allowed": True,
+        "_fetch_single_catalog",
+        lambda self, source, force_refresh=False: {
+            "schema_version": "1.0",
+            kind: {"requested": {"version": "1.0.0"}},
         },
     )
     ref = ComponentRef(kind=kind, id="requested", source="trusted")

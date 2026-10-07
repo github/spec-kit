@@ -27,10 +27,6 @@ class PresetCatalogValidationError(PresetError):
     """A catalog supplied invalid content rather than being unreachable."""
 
 
-class PresetCatalogFetchError(PresetError):
-    """A configured preset catalog could not be fetched."""
-
-
 def _decode_catalog_json(raw: str | bytes, url: str) -> Any:
     """Reject duplicate keys before JSON parsing discards conflicting records."""
 
@@ -468,7 +464,6 @@ class PresetCatalog:
             PresetError: If catalog cannot be fetched
         """
         # Honor the established package-level patch points during extraction.
-        from ..authentication.http import RedirectPolicyError
         from . import MAX_JSON_CATALOG_BYTES, read_response_limited
 
         cache_file, metadata_file = self._get_cache_paths(entry.url)
@@ -550,15 +545,11 @@ class PresetCatalog:
             return catalog_data
 
         except (ImportError, Exception) as e:
-            if isinstance(e, RedirectPolicyError):
-                raise PresetCatalogValidationError(
-                    f"Invalid preset catalog redirect from {entry.url}: {e}"
-                ) from e
             if isinstance(e, PresetError):
                 raise
-            raise PresetCatalogFetchError(
+            raise PresetError(
                 f"Failed to fetch preset catalog from {entry.url}: {e}"
-            ) from e
+            )
 
     def _get_merged_packs(
         self, force_refresh: bool = False, *, pack_id: str | None = None
@@ -575,7 +566,6 @@ class PresetCatalog:
         active_catalogs = self.get_active_catalogs()
         merged: Dict[str, Dict[str, Any]] = {}
         first_fetch_error: PresetError | None = None
-        catalog_fetch_error: PresetCatalogFetchError | None = None
         readable_source = False
 
         sources = active_catalogs if pack_id is not None else reversed(active_catalogs)
@@ -599,22 +589,16 @@ class PresetCatalog:
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[found_id] = pack_data_with_catalog
                     if pack_id is not None:
-                        if first_fetch_error is not None:
-                            raise first_fetch_error
                         return merged
-            except (PresetCatalogValidationError, PresetValidationError):
+            except PresetCatalogValidationError:
                 raise
             except PresetError as exc:
                 if first_fetch_error is None:
                     first_fetch_error = exc
-                if isinstance(exc, PresetCatalogFetchError) and catalog_fetch_error is None:
-                    catalog_fetch_error = exc
                 continue
 
         if not readable_source and first_fetch_error is not None:
             raise first_fetch_error
-        if pack_id is not None and catalog_fetch_error is not None:
-            raise catalog_fetch_error
         return merged
 
     def is_cache_valid(self) -> bool:
@@ -671,7 +655,6 @@ class PresetCatalog:
         Raises:
             PresetError: If catalog cannot be fetched
         """
-        from ..authentication.http import RedirectPolicyError
         from . import MAX_JSON_CATALOG_BYTES, read_response_limited
 
         catalog_url = self.get_catalog_url()
@@ -754,15 +737,11 @@ class PresetCatalog:
             return catalog_data
 
         except (ImportError, Exception) as e:
-            if isinstance(e, RedirectPolicyError):
-                raise PresetCatalogValidationError(
-                    f"Invalid preset catalog redirect from {catalog_url}: {e}"
-                ) from e
             if isinstance(e, PresetError):
                 raise
-            raise PresetCatalogFetchError(
+            raise PresetError(
                 f"Failed to fetch preset catalog from {catalog_url}: {e}"
-            ) from e
+            )
 
     def search(
         self,
