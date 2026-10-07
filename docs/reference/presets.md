@@ -120,6 +120,7 @@ Presets are printed in **resolution/precedence order**: the highest-precedence p
 ```bash
 specify preset info <preset_id>
 specify preset info <preset_id> --versions
+specify preset info <preset_id> --json
 ```
 
 Shows detailed information about an installed or available preset, including its templates, metadata, and tags.
@@ -127,6 +128,22 @@ Shows detailed information about an installed or available preset, including its
 catalog versions, even for discovery-only entries; listing does not make
 them installable. This view consults the catalog rather than the installed
 preset.
+
+`--json` describes one installed preset, matched by ID, and writes a single
+JSON object to stdout. The object has the same `id`, `name`, `description`,
+`version`, `author`, `priority`, `enabled`, and `source` keys as the matching
+`specify preset list --json` item. In place of the `provides` counts it has
+`commands`, `templates`, and `scripts` arrays, one entry per manifest
+contribution in declaration order. Each entry has `name`, `description` (`""`
+when absent or empty), `source` (`{"layer": "preset", "presetId": "<id>"}`, the
+preset that provides it; the top-level `source` is where it was installed
+from), `sourcePath` (the manifest
+`file`, relative to the preset directory), and `strategy` (`replace`,
+`prepend`, `append`, or `wrap`; `replace` when the manifest omits it). `--json`
+cannot be combined with `--versions` (usage error, exit 2). A preset that is
+not installed (including one that is only in a catalog), or a missing
+project, writes one `{"error":"..."}` object to stderr and exits 1; usage errors
+keep their exit code (normally 2), as with `list --json`.
 
 ## Resolve a File
 
