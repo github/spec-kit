@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from specify_cli import _operation_version
 from specify_cli._operation_version import (
+    VERSION_OPERATION,
     VersionResult,
     VersionRuntime,
     VersionSystem,
@@ -21,6 +22,14 @@ EXPECTED_FEATURES = {
     "workflow_catalog": True,
     "bundled_templates": True,
 }
+
+
+def test_version_operation_descriptor_is_stable():
+    """Adapters share one stable operation identity and capability contract."""
+    assert VERSION_OPERATION.operation_id == "version"
+    assert VERSION_OPERATION.contract_version == "1"
+    assert VERSION_OPERATION.capabilities == frozenset({"local-read"})
+    assert VERSION_OPERATION.network_access == "none"
 
 
 def test_collect_version_result_returns_complete_typed_result():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import platform
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from ._assets import get_speckit_version
 
@@ -34,6 +35,24 @@ class VersionResult:
     runtime: VersionRuntime | None
     system: VersionSystem | None
     features: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class VersionOperationDescriptor:
+    """Stable metadata shared by delivery adapters for ``version``."""
+
+    operation_id: Literal["version"]
+    contract_version: Literal["1"]
+    capabilities: frozenset[Literal["local-read"]]
+    network_access: Literal["none"]
+
+
+VERSION_OPERATION = VersionOperationDescriptor(
+    operation_id="version",
+    contract_version="1",
+    capabilities=frozenset({"local-read"}),
+    network_access="none",
+)
 
 
 def _feature_capabilities() -> dict[str, bool]:
