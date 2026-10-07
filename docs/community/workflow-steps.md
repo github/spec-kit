@@ -28,6 +28,27 @@ source. After reviewing the source, install the submitted versioned archive
 directly with `--from`, or use a separately configured step catalog that you
 explicitly allow for installation.
 
+## Available Step Types
+
+| Step type | Version | Maintainer | Description |
+| --- | --- | --- | --- |
+| [Decision](https://github.com/markuswondrak/spec-kit-decision-step) (`decision`) | 0.9.0 | [Markus Wondrak](https://github.com/markuswondrak) | Typed bounded choice, score, and noul decisions with native probabilities and score legends using Jev and Laya backends. |
+
+Decision declares runtime compatibility with Spec Kit `>=0.11.0`; installing
+its [versioned release archive](https://github.com/markuswondrak/spec-kit-decision-step/releases/download/v0.9.0/decision-0.9.0.zip)
+with `--from` requires Spec Kit `>=1.1.0`. The catalog compatibility field is
+advisory and is not enforced by the current step installer.
+
+The package uses the host's PyYAML and `specify_cli` packages. Jev requires
+`TYPESAFE_API_KEY` (or a configured `api_key_env`) and outbound HTTPS to the
+configured backend endpoint; in-process Laya requires the optional
+`laya[onnx]` package. See the
+[version-pinned documentation](https://github.com/markuswondrak/spec-kit-decision-step/blob/v0.9.0/README.md)
+for configuration, outputs, failure behavior, and side effects, and the
+[changelog](https://github.com/markuswondrak/spec-kit-decision-step/blob/v0.9.0/CHANGELOG.md)
+for release details. The MIT-licensed manifest credits
+`spec-kit-decision-step contributors` as the package author.
+
 ## Package Contract
 
 One installed package provides one workflow step type:
