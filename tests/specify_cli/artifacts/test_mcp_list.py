@@ -14,6 +14,7 @@ from mcp import ClientSession
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
+from mcp.types import CallToolResult
 
 from specify_cli.artifacts import _commands, _mcp, _operation_list, mcp_list
 from specify_cli.artifacts._operation_list import (
@@ -387,6 +388,15 @@ def test_artifact_list_preserves_complete_typed_rows_unicode_and_order(
     assert typed_result.rows[1].stack[0].sourcePath is None
 
 
+def test_artifact_list_callable_declares_call_tool_result_contract(
+    spec_kit_project: Path,
+):
+    tool = create_artifact_list_tool(launch_directory=spec_kit_project)
+
+    assert tool.__annotations__["return"] == "ArtifactListCallResult"
+    assert mcp_list.ArtifactListCallResult.__origin__ is CallToolResult
+
+
 def test_artifact_list_uses_server_launch_directory_by_default(
     spec_kit_project: Path,
     non_project: Path,
@@ -652,8 +662,8 @@ def test_artifact_list_rejects_relative_project_directory(
 
     assert result.is_error is True
     assert result.structured_content == _expected_error(
-        "not_a_spec_kit_project",
-        "not a Spec Kit project: no .specify/ directory found",
+        "invalid_project_directory",
+        "project_directory must be an absolute path",
         details={"project_directory": "relative-project"},
     )
 
@@ -865,6 +875,47 @@ def test_artifact_registration_adds_available_tool_once_and_rejects_collision(
     with pytest.raises(ValueError, match=f"MCP tool name collision: {TOOL_NAME}"):
         _mcp.register(server, launch_directory=spec_kit_project)
     assert [tool.name for tool in _run(server.list_tools())] == available_names
+
+
+def test_sdk_tool_lookup_failure_is_descriptive():
+    with pytest.raises(
+        RuntimeError,
+        match="MCP SDK compatibility error: registered tool lookup is unavailable",
+    ):
+        mcp_list._lookup_registered_tool(object(), TOOL_NAME)
+
+
+def test_sdk_tool_lookup_wraps_manager_failure():
+    server = Mock()
+    server._tool_manager.get_tool.side_effect = RuntimeError("SDK changed")
+
+    with pytest.raises(
+        RuntimeError,
+        match="MCP SDK compatibility error: registered tool lookup is unavailable",
+    ):
+        mcp_list._lookup_registered_tool(server, TOOL_NAME)
+
+
+def test_closed_argument_configuration_requires_retained_registration():
+    server = Mock()
+    server._tool_manager.get_tool.return_value = None
+
+    with pytest.raises(
+        RuntimeError,
+        match=f"MCP tool registration was not retained: {TOOL_NAME}",
+    ):
+        mcp_list._configure_closed_arguments(server, TOOL_NAME)
+
+
+def test_closed_argument_configuration_wraps_incompatible_metadata():
+    server = Mock()
+    server._tool_manager.get_tool.return_value = object()
+
+    with pytest.raises(
+        RuntimeError,
+        match=f"MCP SDK compatibility error while closing arguments for {TOOL_NAME}",
+    ):
+        mcp_list._configure_closed_arguments(server, TOOL_NAME)
 
 
 def test_artifact_tool_requires_absolute_server_launch_directory():

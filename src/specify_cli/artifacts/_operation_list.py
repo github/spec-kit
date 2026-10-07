@@ -117,6 +117,17 @@ class ArtifactListError(ArtifactError):
         super().__init__(message)
 
 
+class ArtifactListProjectDirectoryError(ArtifactListError):
+    """The supplied project directory is not an absolute path."""
+
+    def __init__(self, project_directory: Path) -> None:
+        super().__init__(
+            code="invalid_project_directory",
+            message="project_directory must be an absolute path",
+            details={"project_directory": str(project_directory)},
+        )
+
+
 class ArtifactListProjectError(ArtifactListError):
     """The supplied directory is not a Spec Kit project root."""
 
@@ -181,6 +192,7 @@ ARTIFACT_LIST_OPERATION = ArtifactListOperationDescriptor(
     result_type=ArtifactListResult,
     warning_types=(),
     error_types=(
+        ArtifactListProjectDirectoryError,
         ArtifactListProjectError,
         ArtifactListResolutionError,
         ArtifactListPaginationError,
@@ -219,7 +231,7 @@ def list_artifacts(request: ArtifactListRequest) -> ArtifactListResult:
     """Return one typed artifact inventory page for an explicit project."""
     project_directory = Path(request.project_directory)
     if not project_directory.is_absolute():
-        raise ArtifactListProjectError(project_directory)
+        raise ArtifactListProjectDirectoryError(project_directory)
     offset = _pagination_offset(request)
 
     try:

@@ -14,6 +14,7 @@ from specify_cli.artifacts._operation_list import (
     ARTIFACT_LIST_OPERATION,
     ARTIFACT_LIST_MAX_LIMIT,
     ArtifactListPaginationError,
+    ArtifactListProjectDirectoryError,
     ArtifactListProjectError,
     ArtifactListRequest,
     ArtifactListResolutionError,
@@ -31,6 +32,7 @@ def test_artifact_list_operation_descriptor_is_stable():
     assert ARTIFACT_LIST_OPERATION.result_type is ArtifactListResult
     assert ARTIFACT_LIST_OPERATION.warning_types == ()
     assert ARTIFACT_LIST_OPERATION.error_types == (
+        ArtifactListProjectDirectoryError,
         ArtifactListProjectError,
         ArtifactListResolutionError,
         ArtifactListPaginationError,
@@ -235,13 +237,11 @@ def test_list_artifacts_uses_explicit_project_without_process_cwd(
 
 
 def test_list_artifacts_rejects_relative_project_directory():
-    with pytest.raises(ArtifactListProjectError) as exc_info:
+    with pytest.raises(ArtifactListProjectDirectoryError) as exc_info:
         list_artifacts(ArtifactListRequest(Path("relative-project")))
 
-    assert exc_info.value.code == "not_a_spec_kit_project"
-    assert exc_info.value.message == (
-        "not a Spec Kit project: no .specify/ directory found"
-    )
+    assert exc_info.value.code == "invalid_project_directory"
+    assert exc_info.value.message == "project_directory must be an absolute path"
     assert exc_info.value.details == {"project_directory": "relative-project"}
     assert exc_info.value.retryable is False
 

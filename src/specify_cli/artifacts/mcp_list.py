@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
@@ -29,6 +29,9 @@ _INTERNAL_ERROR_MESSAGE = "Unable to list Spec Kit artifacts."
 _RESPONSE_TOO_LARGE_MESSAGE = (
     "The artifact list result exceeds the MCP response-size limit."
 )
+_SDK_LOOKUP_ERROR = (
+    "MCP SDK compatibility error: registered tool lookup is unavailable."
+)
 _TOOL_DESCRIPTION = (
     "Return one paginated artifact inventory page for a project. "
     "While truncated is true, pass next_cursor as cursor to retrieve the next page."
@@ -36,15 +39,17 @@ _TOOL_DESCRIPTION = (
 
 ArtifactListLimit = Annotated[
     int,
-    Field(ge=1, le=ARTIFACT_LIST_MAX_LIMIT),
+    Field(strict=True, ge=1, le=ARTIFACT_LIST_MAX_LIMIT),
 ]
 ArtifactListCursor = Annotated[
     str,
     Field(
+        strict=True,
         max_length=ARTIFACT_LIST_CURSOR_MAX_LENGTH,
         pattern=r"^(0|[1-9][0-9]*)$",
     ),
 ]
+ArtifactProjectDirectory = Annotated[str, Field(strict=True)]
 
 
 class ArtifactListToolInput(BaseModel):
@@ -52,7 +57,7 @@ class ArtifactListToolInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_directory: str | None = None
+    project_directory: ArtifactProjectDirectory | None = None
     limit: ArtifactListLimit = _DEFAULT_LIMIT
     cursor: ArtifactListCursor | None = None
 
@@ -153,9 +158,10 @@ class _ResponseTooLarge(Exception):
     """The serialized structured result exceeds the MCP response budget."""
 
 
+ArtifactListCallResult = Annotated[CallToolResult, ArtifactListToolResult]
 ArtifactListTool = Callable[
-    [str | None, ArtifactListLimit, ArtifactListCursor | None],
-    ArtifactListToolResult | CallToolResult,
+    [ArtifactProjectDirectory | None, ArtifactListLimit, ArtifactListCursor | None],
+    CallToolResult,
 ]
 
 
@@ -237,10 +243,10 @@ def create_artifact_list_tool(
         )
 
     def specify_artifact_list(
-        project_directory: str | None = None,
+        project_directory: ArtifactProjectDirectory | None = None,
         limit: ArtifactListLimit = _DEFAULT_LIMIT,
         cursor: ArtifactListCursor | None = None,
-    ) -> ArtifactListToolResult:
+    ) -> ArtifactListCallResult:
         """Return one page; follow next_cursor while truncated is true."""
         tool_input = ArtifactListToolInput.model_validate(
             {
@@ -298,18 +304,35 @@ def create_artifact_list_tool(
     return specify_artifact_list
 
 
-def _configure_strict_arguments(server: MCPServer, tool_name: str) -> None:
-    tool = server._tool_manager.get_tool(tool_name)
-    if tool is None:  # pragma: no cover - registration immediately precedes this
-        raise RuntimeError(f"Tool registration failed: {tool_name}")
+def _lookup_registered_tool(server: MCPServer, tool_name: str) -> Any | None:
+    try:
+        manager = server._tool_manager
+        get_tool = manager.get_tool
+    except AttributeError as exc:
+        raise RuntimeError(_SDK_LOOKUP_ERROR) from exc
+    try:
+        return get_tool(tool_name)
+    except Exception as exc:
+        raise RuntimeError(_SDK_LOOKUP_ERROR) from exc
 
-    # MCP SDK argument models ignore extras and coerce values by default even
-    # when discovery advertises a closed typed schema.
-    argument_model = tool.fn_metadata.arg_model
-    argument_model.model_config["extra"] = "forbid"
-    argument_model.model_config["strict"] = True
-    argument_model.model_rebuild(force=True)
-    tool.parameters = argument_model.model_json_schema(by_alias=True)
+
+def _configure_closed_arguments(server: MCPServer, tool_name: str) -> None:
+    tool = _lookup_registered_tool(server, tool_name)
+    if tool is None:
+        raise RuntimeError(f"MCP tool registration was not retained: {tool_name}")
+
+    # MCP SDK argument models ignore extras by default even when discovery
+    # advertises a closed typed schema. Field-level strictness is declared on
+    # the callable; this compatibility shim only closes the generated model.
+    try:
+        argument_model = tool.fn_metadata.arg_model
+        argument_model.model_config["extra"] = "forbid"
+        argument_model.model_rebuild(force=True)
+        tool.parameters = argument_model.model_json_schema(by_alias=True)
+    except Exception as exc:
+        raise RuntimeError(
+            f"MCP SDK compatibility error while closing arguments for {tool_name}"
+        ) from exc
 
 
 def register(
@@ -320,7 +343,7 @@ def register(
     max_wire_response_bytes: int = _MAX_WIRE_RESPONSE_BYTES,
 ) -> None:
     """Register the first-class artifact-list MCP tool exactly once."""
-    if server._tool_manager.get_tool(tool_name) is not None:
+    if _lookup_registered_tool(server, tool_name) is not None:
         raise ValueError(f"MCP tool name collision: {tool_name}")
 
     server.add_tool(
@@ -337,4 +360,4 @@ def register(
         ),
         structured_output=True,
     )
-    _configure_strict_arguments(server, tool_name)
+    _configure_closed_arguments(server, tool_name)
