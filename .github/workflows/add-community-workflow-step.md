@@ -196,10 +196,9 @@ outside `^[A-Za-z0-9._~/-]+$` in the owner, repository, tag, and file path.
 Do not fetch invalid URLs or rewrite them to make them pass.
 
 Add `catalog_entry` (the proposed entry object without its outer Step ID key)
-to `/tmp/gh-aw/step-submission.json`. For each package file, use the edit tool to
-set `file` to its package-relative name (for example `step.yml`, `__init__.py`,
-or an `extra_files` key). All submitted values remain JSON data, never shell
-syntax. Run this fixed command unchanged for each file:
+to `/tmp/gh-aw/step-submission.json`. All submitted values remain JSON data,
+never shell syntax. Run this fixed command unchanged once for the complete
+package, not separately for selected files:
 
 ```bash
 python3 .github/scripts/validate_community_workflow_step.py fetch --submission /tmp/gh-aw/step-submission.json
@@ -207,6 +206,11 @@ python3 .github/scripts/validate_community_workflow_step.py fetch --submission /
 
 The repository-owned helper validates identity, URL boundaries, paths, and
 digest shape before invoking curl with a direct argument list, never a shell.
+It enforces the installer's limits of 512 entries (files and distinct package
+directories combined), 32 directory levels, and 50 MiB cumulative downloaded
+bytes. These limits are read from the repository-owned installer. File count
+and nesting are checked before any request, and the remaining package byte
+budget bounds each download.
 It does not follow redirects and only hashes downloaded bytes after curl exits
 zero and returns HTTP 200. It rejects submitted digest mismatches and files
 exceeding 10 MiB. Exit 1 is Failed; exit 2 is Blocked, including missing tools,
@@ -214,17 +218,20 @@ timeouts, HTTP 403/429, and HTTP 5xx. HTTP 404 and redirects are submission
 failures. Never treat a nonzero exit as a passed download or replace a
 mismatching submitted digest to make it pass.
 
-On exit zero, the helper prints the file name and computed digest as JSON and
-leaves its bytes at `/tmp/gh-aw/step-file.bin`. Record each digest, then inspect
-the manifest as data before the next download overwrites that scratch file.
+On exit zero, the helper prints the complete per-file `sha256` mapping and
+total `bytes` as JSON and leaves the manifest at `/tmp/gh-aw/step-file.bin`.
+Only use this complete-package success result; record the digests and inspect
+the retained manifest as data. A failed or blocked file prevents the entire
+package from passing.
 Release metadata is not a substitute for downloading every file.
 
 Parse the downloaded `step.yml` as data using `yaml.safe_load`, never unsafe
 YAML loading. Require a mapping with a `step` mapping; `step.type_key`,
 `step.name`, `step.version`, `step.author`, and `step.description` must match
 the form. If the manifest includes `requires.speckit_version`, it must match
-the form. Verify `__init__.py` is present and nonempty, but do not inspect or
-review its implementation. Extra files may be binary; hash their exact bytes.
+the form. The helper requires both `step.yml` and `__init__.py` to be nonempty;
+do not inspect or review the initializer's implementation. Extra files may be
+binary; hash their exact bytes.
 
 ### Documentation and author evidence
 
