@@ -143,6 +143,9 @@ the registration directory must match `folder/commands_subdir`. Output paths
 must be canonical, project-local, and outside `.git` and `.specify`.
 Registration extensions must be plain dotted filename suffixes (such as
 `.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
+The public class attribute `invoke_separator` must be a non-empty string;
+`dev_no_symlink` and `multi_install_safe` must be booleans, including when
+registrar configuration supplies its own optional values.
 An optional `registrar_config.legacy_dir` must be a non-empty canonical
 project-relative directory under the same reserved-root and symlink restrictions;
 home-relative destinations are not supported for external adapters.
@@ -251,6 +254,12 @@ excludes only that adapter, validates the others, and uses validated manifest
 ownership and registrar configuration saved in the user-local trust store for
 cleanup. Recovery records bind the project and adapter to the previously trusted
 package identity, verified registrar configuration, and generated paths.
+New records retain the verified package file-hash mapping locally, so recovery
+checks the package identity against its original project, key, and hashes,
+not damaged bytes or edited project metadata. The identity must still have a
+local trust grant; otherwise cleanup treats ownership proof as unavailable and
+preserves generated files. Older hash-less ownership records remain supported
+when their package identity has a local grant.
 Ownership is replaced only after the durable package loads successfully, so a
 failed upgrade cannot replace the previous adapter's recovery authority.
 Edited project configuration or forged manifest ownership is rejected, as is

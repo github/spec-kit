@@ -444,6 +444,118 @@ def test_round4_failed_settings_merge_preserves_concurrent_user_edit(tmp_path, s
     shutil.rmtree(backups[0])
 
 
+@pytest.mark.parametrize("field,value", [
+    ("invoke_separator", None), ("invoke_separator", ""), ("invoke_separator", 1),
+    ("invoke_separator", False), ("dev_no_symlink", "false"),
+    ("dev_no_symlink", 1), ("dev_no_symlink", None),
+])
+def test_round5_invalid_public_adapter_attributes_are_rejected(tmp_path, server, field, value):
+    publish(server, code=implementation(body=f"    {field} = {value!r}\n"))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration"])
+    assert result.exit_code == 1, result.output
+    assert field in result.output, result.output
+    assert snapshot(project) == before
+    assert KEY not in INTEGRATION_REGISTRY
+
+
+@pytest.mark.parametrize("no_symlinks", [False, True])
+def test_round5_valid_public_attributes_propagate_to_rendering_and_recovery(tmp_path, server, no_symlinks):
+    from specify_cli.integrations.installer import recovery_metadata
+
+    publish(server, code=implementation(
+        body=f'    invoke_separator = "_"\n    dev_no_symlink = {no_symlinks!r}\n',
+    ))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    registrar = CommandRegistrar(project)
+    assert registrar.AGENT_CONFIGS[KEY]["invoke_separator"] == "_"
+    assert bool(registrar.AGENT_CONFIGS[KEY].get("dev_no_symlink")) == no_symlinks
+    record = read_records(project)[KEY]
+    binding = recovery_metadata(project, KEY, record)
+    assert binding["registrar_config"]["invoke_separator"] == "_"
+    assert binding["registrar_config"]["dev_no_symlink"] is no_symlinks
+    assert binding["files"] == record["files"]
+
+
+@pytest.mark.parametrize("damage", ["package", "files", "project"])
+def test_round5_recovery_checks_local_package_identity(tmp_path, server, damage):
+    from specify_cli.integrations.installer import _recovery_identity
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = Path.home() / ".specify/integration-trust.json"
+    data = json.loads(path.read_text())
+    binding = data["recovery"][_recovery_identity(project, KEY)]
+    if damage == "package":
+        binding["package"] = "0" * 64
+    elif damage == "files":
+        binding["files"] = {"__init__.py": "0" * 64}
+    else:
+        other = catalog_project(tmp_path / "other", server)
+        install(other)
+        data = json.loads(path.read_text())
+        data["recovery"][_recovery_identity(project, KEY)] = data["recovery"][_recovery_identity(other, KEY)]
+    path.write_text(json.dumps(data))
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "package identity" in " ".join(result.output.split()).lower(), result.output
+    assert snapshot(project) == before
+
+
+def test_round5_legacy_recovery_binding_remains_supported(tmp_path, server):
+    from specify_cli.integrations.installer import _recovery_identity
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = Path.home() / ".specify/integration-trust.json"
+    data = json.loads(path.read_text())
+    data["recovery"][_recovery_identity(project, KEY)].pop("files", None)
+    path.write_text(json.dumps(data))
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 0, result.output
+    assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+
+
+def test_round5_revoked_package_grant_preserves_generated_files_on_forced_cleanup(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = Path.home() / ".specify/integration-trust.json"
+    data = json.loads(path.read_text())
+    data["grants"] = []
+    path.write_text(json.dumps(data))
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 0, result.output
+    assert "No local recovery ownership record" in " ".join(result.output.split())
+    assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+    assert not (project / f".specify/integrations/packages/{KEY}").exists()
+
+
+@pytest.mark.parametrize("hashes", [None, [], {"__init__.py": None}])
+def test_round5_invalid_local_recovery_hashes_fail_explicitly(tmp_path, server, hashes):
+    from specify_cli.integrations.installer import _recovery_identity
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = Path.home() / ".specify/integration-trust.json"
+    data = json.loads(path.read_text())
+    data["recovery"][_recovery_identity(project, KEY)]["files"] = hashes
+    path.write_text(json.dumps(data))
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "Invalid integration local recovery package hashes" in " ".join(result.output.split())
+    assert snapshot(project) == before
+
+
 def test_adapter_only_descriptor(tmp_path):
     path = tmp_path / "integration.yml"
     path.write_text(yaml.safe_dump(descriptor()))

@@ -352,6 +352,15 @@ def _read_trust_state(path: Path) -> dict[str, Any]:
             or any(not isinstance(path, str) for path in binding["paths"])
         ):
             raise IntegrationInstallError("Invalid integration local recovery ownership")
+        if "files" in binding and (
+            not isinstance(binding["files"], dict)
+            or any(
+                not isinstance(name, str) or not isinstance(digest, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", digest)
+                for name, digest in binding["files"].items()
+            )
+        ):
+            raise IntegrationInstallError("Invalid integration local recovery package hashes")
     data["recovery"] = recovery
     return data
 
@@ -381,6 +390,7 @@ def _grant_trust(
         if record_ownership:
             data["recovery"][_recovery_identity(root, key)] = {
                 "package": identity,
+                "files": dict(record["files"]),
                 "registrar_config": record["registrar_config"],
                 "paths": sorted(IntegrationManifest.load(key, root).files),
             }
@@ -398,8 +408,13 @@ def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str,
     """Authorize cleanup from user-local ownership, never mutable project claims."""
     from .manifest import IntegrationManifest
 
-    binding = _read_trust_state(_trust_store(root))["recovery"].get(_recovery_identity(root, key))
+    trust = _read_trust_state(_trust_store(root))
+    binding = trust["recovery"].get(_recovery_identity(root, key))
     if binding is None:
+        return None
+    if "files" in binding and binding["package"] != _trust_identity(root, key, binding["files"]):
+        raise IntegrationInstallError(f"Integration '{key}' recovery package identity has been modified")
+    if binding["package"] not in trust["grants"]:
         return None
     if record.get("registrar_config") != binding["registrar_config"]:
         raise IntegrationInstallError(f"Integration '{key}' recovery ownership metadata has been modified")
@@ -561,6 +576,10 @@ def _validate_implementation(
         raise IntegrationInstallError(f"Integration '{key}' registration directory does not match config")
     if not isinstance(integration.multi_install_safe, bool):
         raise IntegrationInstallError(f"Integration '{key}' multi_install_safe must be a boolean")
+    if not isinstance(integration.invoke_separator, str) or not integration.invoke_separator:
+        raise IntegrationInstallError(f"Integration '{key}' invoke_separator must be a non-empty string")
+    if not isinstance(integration.dev_no_symlink, bool):
+        raise IntegrationInstallError(f"Integration '{key}' dev_no_symlink must be a boolean")
     if integration.multi_install_safe:
         roots = _output_roots(integration)
         for other in INTEGRATION_REGISTRY.values():
