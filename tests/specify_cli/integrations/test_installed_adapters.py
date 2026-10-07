@@ -188,6 +188,86 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("missing_manifest", [False, True])
+def test_round8_upgrade_persists_only_after_regenerating_files(tmp_path, server, force, missing_manifest):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    manifest = project / f".specify/integrations/{KEY}.manifest.json"
+    if missing_manifest:
+        manifest.unlink()
+    before = snapshot(project)
+    trust_path = Path.home() / ".specify/integration-trust.json"
+    ownership = json.loads(trust_path.read_text())["recovery"]
+    publish(server, version="2.0.0", code=implementation(folder=".sample-next"))
+    arguments = ["integration", "upgrade", KEY, "--trust-integration"]
+    if force:
+        arguments.append("--force")
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    assert installer._pending_root is None
+    if missing_manifest:
+        assert "Nothing to upgrade" in result.output
+        assert snapshot(project) == before
+        assert json.loads(trust_path.read_text())["recovery"] == ownership
+        assert read_records(project)[KEY]["version"] == "1.0.0"
+        assert INTEGRATION_REGISTRY[KEY].config["folder"] == ".sample-agent"
+        assert CommandRegistrar(project).AGENT_CONFIGS[KEY]["dir"] == ".sample-agent/skills"
+        assert not (project / ".sample-next").exists()
+    else:
+        assert "Nothing to upgrade" not in result.output
+        assert read_records(project)[KEY]["version"] == "2.0.0"
+        assert (project / ".sample-next/skills/speckit-plan/SKILL.md").is_file()
+        assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+        assert INTEGRATION_REGISTRY[KEY].config["folder"] == ".sample-next"
+        assert CommandRegistrar(project).AGENT_CONFIGS[KEY]["dir"] == ".sample-next/skills"
+
+
+@pytest.mark.parametrize("class_separator,registrar_separator", [(".", "_"), ("_", "."), ("-", None)])
+@pytest.mark.parametrize("class_no_symlink,registrar_no_symlink", [
+    (False, False), (False, True), (True, False), (True, True), (False, None), (True, None),
+])
+def test_round8_recovery_retains_effective_registrar_settings(
+    tmp_path, server, class_separator, registrar_separator, class_no_symlink, registrar_no_symlink,
+):
+    from specify_cli.integrations.installer import recovery_metadata
+
+    overrides = {}
+    if registrar_separator is not None:
+        overrides["invoke_separator"] = registrar_separator
+    if registrar_no_symlink is not None:
+        overrides["dev_no_symlink"] = registrar_no_symlink
+    body = (
+        f"    invoke_separator = {class_separator!r}\n"
+        f"    dev_no_symlink = {class_no_symlink!r}\n"
+        f"    registrar_config = {{**registrar_config, **{overrides!r}}}\n"
+    )
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    healthy = CommandRegistrar(project).AGENT_CONFIGS[KEY]
+    expected_separator = registrar_separator or class_separator
+    expected_no_symlink = class_no_symlink or bool(registrar_no_symlink)
+    assert healthy["invoke_separator"] == expected_separator
+    assert healthy.get("dev_no_symlink", False) == expected_no_symlink
+    record = read_records(project)[KEY]
+    expected = {**healthy, "dev_no_symlink": expected_no_symlink}
+    assert record["registrar_config"] == expected
+    binding = recovery_metadata(project, KEY, record)
+    assert binding["registrar_config"] == expected
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    unload_installed_integrations()
+    assert recovery_metadata(project, KEY, read_records(project)[KEY])["registrar_config"] == expected
+    removed = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert removed.exit_code == 0, removed.output
+    assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+    assert KEY not in read_records(project)
+    assert KEY not in INTEGRATION_REGISTRY
+
+
 @pytest.mark.parametrize("command", ["install", "use", "switch"])
 def test_round7_noop_lifecycle_does_not_copy_output_roots_or_package_store(tmp_path, server, monkeypatch, command):
     from specify_cli.integrations import _lifecycle

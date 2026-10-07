@@ -71,6 +71,15 @@ def yaml_quote(value: str) -> str:
     ).strip()
 
 
+def resolve_registrar_config(integration: IntegrationBase) -> dict[str, Any]:
+    """Resolve static registrar overrides and integration-class defaults."""
+    config = dict(integration.registrar_config or {})
+    config.setdefault("invoke_separator", integration.invoke_separator)
+    if integration.dev_no_symlink:
+        config["dev_no_symlink"] = True
+    return config
+
+
 # ---------------------------------------------------------------------------
 # IntegrationOption
 # ---------------------------------------------------------------------------

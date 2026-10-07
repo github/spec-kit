@@ -269,6 +269,11 @@ Reinstalls an installed integration with updated templates and commands (e.g., a
 
 Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration. A non-default upgrade still refreshes that integration's core commands, but does not re-register its extension or preset layers — `use`/`switch` that integration afterward to rescaffold them.
 
+If the generated-file manifest is missing, upgrade reports that there is nothing
+to upgrade and leaves the installed adapter package, generated files, and local
+recovery ownership unchanged, including with `--force`. Replacement code is
+persisted only after the upgrade regenerates the managed files successfully.
+
 If an upgrade would change an integration between command and skills layouts while preset artifacts are registered for it, the upgrade is rejected before changing files. Remove the affected presets, run the layout-changing upgrade, then reinstall them.
 
 For external adapters, `upgrade --force` and `uninstall --force` can also recover

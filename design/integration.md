@@ -146,6 +146,10 @@ Registration extensions must be plain dotted filename suffixes (such as
 The public class attribute `invoke_separator` must be a non-empty string;
 `dev_no_symlink` and `multi_install_safe` must be booleans, including when
 registrar configuration supplies its own optional values.
+An explicit `registrar_config.invoke_separator` takes precedence over the class
+default. `dev_no_symlink` is enabled when either the class or registrar
+configuration enables it. Healthy registration and persisted recovery metadata
+use the same resolved configuration.
 An optional `registrar_config.legacy_dir` must be a non-empty canonical
 project-relative directory under the same reserved-root and symlink restrictions;
 home-relative destinations are not supported for external adapters.

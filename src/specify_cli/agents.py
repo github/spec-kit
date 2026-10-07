@@ -25,24 +25,14 @@ from ._utils import relative_extension_path_violation
 def _build_agent_configs() -> dict[str, Any]:
     """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
     from specify_cli.integrations import INTEGRATION_REGISTRY
+    from specify_cli.integrations.base import resolve_registrar_config
 
     configs: dict[str, dict[str, Any]] = {}
     for key, integration in INTEGRATION_REGISTRY.items():
         if key == "generic":
             continue
         if integration.registrar_config:
-            config = dict(integration.registrar_config)
-            # Propagate invoke_separator from the integration class when the
-            # registrar_config dict doesn't already declare it explicitly.
-            # SkillsIntegration subclasses (claude, codex, …) set
-            # invoke_separator="-" as a class attribute but omit it from
-            # registrar_config, so without this they would fall back to "."
-            # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
-            if "invoke_separator" not in config:
-                config["invoke_separator"] = integration.invoke_separator
-            if integration.dev_no_symlink:
-                config["dev_no_symlink"] = True
-            configs[key] = config
+            configs[key] = resolve_registrar_config(integration)
     return configs
 
 

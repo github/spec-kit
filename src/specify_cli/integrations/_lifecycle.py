@@ -442,7 +442,7 @@ def external_lifecycle(operation: str):
                         try:
                             result = handler(*args, **kwargs)
                         except typer.Exit as exc:
-                            if exc.exit_code != 0:
+                            if exc.exit_code != 0 or (candidate and operation == "upgrade"):
                                 raise
                             if candidate:
                                 exited_state, exited_error = try_read_integration_json(root)

@@ -42,7 +42,7 @@ from . import (
     IntegrationDescriptorError,
 )
 from ._file_changes import after_file_change, before_file_change
-from .base import IntegrationBase
+from .base import IntegrationBase, resolve_registrar_config
 
 _MODULE_PREFIX = "_speckit_installed_integration_"
 _loaded_identity: tuple[Any, ...] | None = None
@@ -886,11 +886,8 @@ def prepared_adapter(root: Path, key: str, package: Path, record: dict[str, Any]
     integration = _import_package(package, descriptor, record["files"], root)
     safe_project_path(root, integration.config["folder"].rstrip("/"))
     INTEGRATION_REGISTRY[key] = integration
-    record["registrar_config"] = {
-        **integration.registrar_config,
-        "invoke_separator": integration.invoke_separator,
-        "dev_no_symlink": integration.dev_no_symlink,
-    }
+    record["registrar_config"] = resolve_registrar_config(integration)
+    record["registrar_config"].setdefault("dev_no_symlink", False)
     _pending_root = root.resolve()
     try:
         _refresh_configs()
