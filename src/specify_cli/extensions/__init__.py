@@ -1194,6 +1194,16 @@ class ExtensionManager:
 
             manifest = self.get_extension(ext_id)
             if manifest is None:
+                if not isinstance(recorded, dict) or any(
+                    not isinstance(names, list)
+                    or any(not isinstance(name, str) for name in names)
+                    for names in recorded.values()
+                ):
+                    raise ValidationError(
+                        f"Cannot check installed command names for extension '{ext_id}': "
+                        "its manifest cannot be read and its registered commands are invalid. "
+                        "Fix or restore its extension.yml or .specify/extensions/.registry."
+                    )
                 continue
 
             for cmd in manifest.commands:
@@ -1254,8 +1264,14 @@ class ExtensionManager:
         Exact equality is not enough. Hyphenation is not injective, so two
         legal names can write one file. A command and its own aliases are
         one body and may share a path. Two command entries, or a name owned
-        by another extension, may not.
+        by another extension, may not. Unreadable installed names must not
+        allow an existing prompt to be overwritten (#4797).
         """
+        if self.registry.is_corrupt():
+            raise ValidationError(
+                "The extension registry cannot be read, so installed command names "
+                "cannot be checked. Fix or restore .specify/extensions/.registry."
+            )
         declared_names = self._collect_manifest_command_names(manifest)
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
@@ -3598,6 +3614,7 @@ class ExtensionManager:
                     self._retire_legacy_flat_extension_commands(
                         agent_name,
                         self._valid_name_list(command_names),
+                        extension_id,
                         require_replacement=False,
                         preserved_output_names=preserved[agent_name],
                     )
@@ -3818,7 +3835,10 @@ class ExtensionManager:
                     )
                 if command_names:
                     registrar.unregister_commands(
-                        {agent_name: command_names}, self.project_root
+                        {agent_name: command_names}, self.project_root,
+                        preserved_output_names={
+                            agent_name: self._preserved_command_files(ext_id, agent_name)
+                        },
                     )
 
                 new_registered = copy.deepcopy(registered_commands)
@@ -3892,6 +3912,7 @@ class ExtensionManager:
         self,
         agent_name: str,
         command_names: List[str],
+        extension_id: str,
         *,
         require_replacement: bool = True,
         preserved_output_names: Optional[Set[str]] = None,
@@ -3905,12 +3926,13 @@ class ExtensionManager:
         inactive, or the extension disabled) is cleaned up when it is next
         registered (#2948).
 
-        Extension removal passes ``require_replacement=False``: the old files
+        Extension removal passes ``require_replacement=False``: marked old files
         go with the extension, including those registration left in place
         because a command shares a file (``_shared_command_files``). A core
         command's own old file and files preserved by ownership checks are
         never removed.
         """
+        from .. import _print_cli_warning
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
 
@@ -3985,28 +4007,69 @@ class ExtensionManager:
             if registrar._same_lexical_path(legacy_file, replacement):
                 continue
             if legacy_file.is_symlink() or legacy_file.is_file():
+                if not require_replacement:
+                    try:
+                        if not self._command_file_owned_by_extension(legacy_file, extension_id):
+                            raise ExtensionError(
+                                f"Not marked as owned by extension '{extension_id}'"
+                            )
+                    except (OSError, ValueError, ExtensionError) as exc:
+                        _print_cli_warning(
+                            "verify ownership of", "legacy command file", str(legacy_file), exc,
+                            continuing="Preserving the legacy file.",
+                        )
+                        continue
                 legacy_file.unlink()
                 removed.append(legacy_file)
 
         return removed
 
-    def _preserved_command_files(
-        self, extension_id: str, agent_name: str
-    ) -> Set[str]:
-        """Keep shared migrated outputs unless their marker proves ownership."""
-        from .. import _print_cli_warning
+    def _command_file_owned_by_extension(self, path: Path, extension_id: str) -> bool:
+        """Read the generated ownership marker, ignoring later quoted markers (#4797)."""
         from ..agents import CommandRegistrar
         from ..shared_infra import _validate_safe_shared_directory
 
+        _validate_safe_shared_directory(self.project_root, path.parent)
+        CommandRegistrar._ensure_inside(path.resolve(), self.project_root.resolve())
+        content = path.read_text(encoding="utf-8")
+        if path.name == "SKILL.md":
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+            metadata = frontmatter.get("metadata")
+            source = metadata.get("source") if isinstance(metadata, dict) else None
+            return isinstance(source, str) and (
+                source == f"extension:{extension_id}"
+                or source.startswith(f"{extension_id}:")
+            )
+        marker = next((
+            line for line in content.splitlines()
+            if line.startswith("<!-- Extension: ") and line.endswith(" -->")
+        ), None)
+        return marker == f"<!-- Extension: {extension_id} -->"
+
+    def _preserved_command_files(
+        self, extension_id: str, agent_name: str
+    ) -> Set[str]:
+        """Keep core and shared migrated outputs unless ownership is proven (#4797)."""
+        from .. import _print_cli_warning
+        from ..agents import CommandRegistrar
+
         preserved = self._core_command_files(agent_name, installed_only=True)
+        core = self._core_command_files(agent_name)
         shared = self._shared_command_files(
             agent_name, include_core=False
         ).get(extension_id, {})
-        if not shared:
+        if not core and not shared:
             return preserved
 
         registrar = CommandRegistrar(self.project_root)
         config = registrar.AGENT_CONFIGS[agent_name]
+        for stem in core - preserved:
+            path = self.project_root / config["dir"] / f"{stem}{config['extension']}"
+            try:
+                if not self._command_file_owned_by_extension(path, extension_id):
+                    preserved.add(stem)
+            except (OSError, ValueError):
+                preserved.add(stem)
         for name in shared:
             stem = registrar._compute_output_name(agent_name, name, config)
             if stem in preserved:
@@ -4015,21 +4078,7 @@ class ExtensionManager:
             if not path.exists() and not path.is_symlink():
                 continue
             try:
-                _validate_safe_shared_directory(self.project_root, path.parent)
-                registrar._ensure_inside(path.resolve(), self.project_root.resolve())
-                content = path.read_text(encoding="utf-8")
-                if config["extension"] == "/SKILL.md":
-                    frontmatter, _ = registrar.parse_frontmatter(content)
-                    metadata = frontmatter.get("metadata")
-                    source = metadata.get("source") if isinstance(metadata, dict) else None
-                    owned = isinstance(source, str) and (
-                        source == f"extension:{extension_id}"
-                        or source.startswith(f"{extension_id}:")
-                    )
-                else:
-                    owned = (
-                        f"<!-- Extension: {extension_id} -->" in content.splitlines()
-                    )
+                owned = self._command_file_owned_by_extension(path, extension_id)
             except (OSError, ValueError) as exc:
                 preserved.add(stem)
                 _print_cli_warning(
@@ -4129,8 +4178,8 @@ class ExtensionManager:
         claims every name it declares. A command, its own aliases, and a
         registered name that writes the same file are one owner.
 
-        Removal excludes planned core files: only the integration manifest
-        can establish that a core command has actually been installed.
+        Removal checks core files separately using the integration manifest
+        and the file's ownership marker.
         """
         core_files = self._core_command_files(agent_name)
         if not core_files:
@@ -4572,6 +4621,7 @@ class ExtensionManager:
                     self._retire_legacy_flat_extension_commands(
                         agent_name,
                         registered,
+                        ext_id,
                     )
 
                 if agent_name == "generic":

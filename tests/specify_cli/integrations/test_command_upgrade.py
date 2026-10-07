@@ -894,6 +894,52 @@ class TestIntegrationUpgradeDetailed:
         assert not (prompts / "plan.md").exists()
 
     @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("damage", ["missing", "empty-files"])
+    def test_removal_preserves_core_without_manifest_tracking(self, tmp_path, agent, damage):
+        """An old alias must not delete an untracked core prompt (#4797)."""
+        project = _init_project(tmp_path, agent)
+        self._plant_extension(project, "old", [{
+            "name": "speckit.old.plan", "aliases": ["plan"], "body": "OLD-BODY\n",
+        }], agent=agent)
+        core = project / (
+            ".kiro/prompts/speckit-plan.md" if agent == "kiro-cli"
+            else ".qoder/skills/speckit-plan/SKILL.md"
+        )
+        before = core.read_bytes()
+        manifest = project / ".specify/integrations" / f"{agent}.manifest.json"
+        if damage == "missing":
+            manifest.unlink()
+        else:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["files"] = {}
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+
+        result = _run_in_project(project, ["extension", "remove", "old", "--force"])
+        assert result.exit_code == 0, result.output
+        assert core.read_bytes() == before
+        assert "Preserving" not in result.output
+
+    @pytest.mark.parametrize("operation", ["switch", "uninstall"])
+    def test_integration_cleanup_preserves_modified_core_with_old_alias(
+        self, tmp_path, monkeypatch, operation
+    ):
+        """Extension cleanup must keep a core prompt preserved by teardown (#4797)."""
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        self._plant_extension(project, "old", [{
+            "name": "speckit.old.plan", "aliases": ["plan"], "body": "OLD-BODY\n",
+        }])
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        core = project / ".kiro/prompts/speckit-plan.md"
+        before = core.read_bytes() + b"\nUser customization\n"
+        core.write_bytes(before)
+
+        target = "claude" if operation == "switch" else "kiro-cli"
+        result = _run_in_project(project, ["integration", operation, target])
+        assert result.exit_code == 0, result.output
+        assert core.read_bytes() == before
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
     @pytest.mark.parametrize("state", ["enabled", "disabled", "unreadable"])
     @pytest.mark.parametrize("removed", ["foo", "foo-bar"])
     @pytest.mark.parametrize("marker", ["generated", "missing", "invalid-utf8"])
@@ -936,10 +982,12 @@ class TestIntegrationUpgradeDetailed:
             agent=agent,
         )
         legacy.parent.mkdir(parents=True, exist_ok=True)
-        legacy.write_text("BAR-BODY\n", encoding="utf-8")
+        legacy_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
+        legacy.write_text(legacy_body, encoding="utf-8")
         legacy_alias = legacy.parent / "speckit-foo-bar-baz.md"
+        alias_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-ALIAS\n"
         if agent == "qodercli":
-            legacy_alias.write_text("BAR-ALIAS\n", encoding="utf-8")
+            legacy_alias.write_text(alias_body, encoding="utf-8")
         if state == "unreadable":
             (
                 project / ".specify/extensions/foo-bar/extension.yml"
@@ -948,7 +996,7 @@ class TestIntegrationUpgradeDetailed:
         manager = ExtensionManager(project)
         manager.register_enabled_extensions_for_agent(agent)
         assert migrated.read_bytes() == before
-        assert legacy.read_text(encoding="utf-8") == "BAR-BODY\n"
+        assert legacy.read_text(encoding="utf-8") == legacy_body
 
         result = _run_in_project(
             project, ["extension", "remove", removed, "--force"]
@@ -964,9 +1012,9 @@ class TestIntegrationUpgradeDetailed:
             if agent == "qodercli":
                 assert not legacy_alias.exists()
         else:
-            assert legacy.read_text(encoding="utf-8") == "BAR-BODY\n"
+            assert legacy.read_text(encoding="utf-8") == legacy_body
             if agent == "qodercli":
-                assert legacy_alias.read_text(encoding="utf-8") == "BAR-ALIAS\n"
+                assert legacy_alias.read_text(encoding="utf-8") == alias_body
 
     def test_upgrade_refuses_while_an_extension_prompt_has_a_core_prompt_name(
         self, tmp_path, monkeypatch
@@ -978,7 +1026,7 @@ class TestIntegrationUpgradeDetailed:
         (#4797)."""
         project = _init_dotted_kiro_project(tmp_path, monkeypatch)
         prompts = project / ".kiro" / "prompts"
-        body = "---\ndescription: Old\n---\n\nOLD-BODY\n"
+        body = "---\ndescription: Old\n---\n\n<!-- Extension: old -->\nOLD-BODY\n"
         self._plant_extension(project, "old", [
             {"name": "speckit.old.plan", "body": body, "aliases": ["speckit-plan"]},
         ])
@@ -1188,6 +1236,27 @@ class TestIntegrationUpgradeDetailed:
         assert "Preserving the shared file" in result.output
         assert shared.read_bytes() == b"<!-- Extension: foo-bar -->\nBAR-BODY\n"
 
+    def test_removal_ignores_another_extensions_marker_quoted_in_body(self, tmp_path):
+        """The first generated marker owns a prompt even if its body quotes another (#4797)."""
+        project = _init_project(tmp_path, "kiro-cli")
+        self._plant_extension(project, "foo", [{
+            "name": "speckit.foo.bar-baz",
+            "body": "FOO-BODY\n\nExample header:\n<!-- Extension: foo-bar -->\n",
+        }])
+        result = _run_in_project(project, ["integration", "use", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        shared = project / ".kiro/prompts/speckit-foo-bar-baz.md"
+        before = shared.read_bytes()
+        assert b"<!-- Extension: foo -->" in before
+        self._plant_extension(project, "foo-bar", [{
+            "name": "speckit.foo-bar.baz", "body": "BAR-BODY\n",
+        }])
+
+        result = _run_in_project(project, ["extension", "remove", "foo-bar", "--force"])
+        assert result.exit_code == 0, result.output
+        assert shared.read_bytes() == before
+        assert "Preserving the shared file" in result.output
+
     def test_qoder_upgrade_leaves_extensions_that_share_a_skill_unregistered(
         self, tmp_path
     ):
@@ -1196,8 +1265,8 @@ class TestIntegrationUpgradeDetailed:
         project = _init_project(tmp_path, "qodercli")
         commands = project / ".qoder" / "commands"
         commands.mkdir(parents=True, exist_ok=True)
-        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
-        bar_body = "---\ndescription: Bar\n---\n\nBAR-BODY\n"
+        foo_body = "---\ndescription: Foo\n---\n\n<!-- Extension: foo -->\nFOO-BODY\n"
+        bar_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
         self._plant_extension(
             project,
             "foo",
@@ -1239,6 +1308,34 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, result.output
         assert "FOO-BODY" in skill.read_text(encoding="utf-8")
         assert not (commands / "speckit.foo.bar-baz.md").exists()
+
+    @pytest.mark.parametrize("marker", ["missing", "other-extension", "invalid-utf8", "owned"])
+    def test_qoder_removal_requires_ownership_of_legacy_command(self, tmp_path, marker):
+        """Removal may retire a Qoder flat command only with its owner's marker (#4797)."""
+        project = _init_project(tmp_path, "qodercli")
+        self._plant_extension(project, "foo", [{
+            "name": "speckit.foo.run", "body": "FOO-BODY\n",
+        }], agent="qodercli")
+        result = _run_in_project(project, ["integration", "use", "qodercli"])
+        assert result.exit_code == 0, result.output
+        legacy = project / ".qoder/commands/speckit.foo.run.md"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        before = {
+            "missing": b"User command\n",
+            "other-extension": b"<!-- Extension: other -->\nOther owner's command\n",
+            "invalid-utf8": b"\xff",
+            "owned": b"---\ndescription: Foo\n---\n\n<!-- Extension: foo -->\nFOO-BODY\n",
+        }[marker]
+        legacy.write_bytes(before)
+
+        result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
+        assert result.exit_code == 0, result.output
+        assert not (project / ".qoder/skills/speckit-foo-run/SKILL.md").exists()
+        if marker == "owned":
+            assert not legacy.exists()
+        else:
+            assert legacy.read_bytes() == before
+            assert "Preserving the legacy file" in result.output
 
     def test_upgrade_migrates_alias_that_hyphenates_to_its_own_command(
         self, tmp_path, monkeypatch

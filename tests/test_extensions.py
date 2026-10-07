@@ -3303,6 +3303,61 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="extension 'foo-bar'"):
             manager.install_from_directory(second, "0.1.0", register_commands=False)
 
+    @pytest.mark.parametrize("readable_manifest", [False, True])
+    @pytest.mark.parametrize("damage", [
+        "registry-json", "entry-list", "commands-list", "agent-string", "non-string-item",
+    ])
+    def test_install_checks_names_before_writing_with_damaged_owner_metadata(
+        self, tmp_path, damage, readable_manifest
+    ):
+        """Unverifiable owners block installs; readable manifests still supply names (#4797)."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "kiro-cli")
+        first = self._write_named_extension(
+            tmp_path, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        second = self._write_named_extension(
+            tmp_path, "foo-bar", [(
+                "speckit.foo-bar.other" if readable_manifest else "speckit.foo-bar.baz", [],
+            )]
+        )
+        result = _run_in_project(project, ["extension", "add", "--dev", str(first)])
+        assert result.exit_code == 0, result.output
+        output = project / ".kiro/prompts/speckit-foo-bar-baz.md"
+        before = output.read_bytes()
+        if not readable_manifest:
+            (project / ".specify/extensions/foo/extension.yml").write_text(
+                "invalid: [", encoding="utf-8"
+            )
+        registry = project / ".specify/extensions/.registry"
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        if damage == "registry-json":
+            registry.write_text("{", encoding="utf-8")
+        else:
+            if damage == "entry-list":
+                data["extensions"]["foo"] = []
+            else:
+                data["extensions"]["foo"]["registered_commands"] = {
+                    "commands-list": [],
+                    "agent-string": {"kiro-cli": "speckit.foo.bar-baz"},
+                    "non-string-item": {"kiro-cli": [{"name": "speckit.foo.bar-baz"}]},
+                }[damage]
+            registry.write_text(json.dumps(data), encoding="utf-8")
+        registry_before = registry.read_bytes()
+
+        result = _run_in_project(project, ["extension", "add", "--dev", str(second)])
+        if readable_manifest and damage != "registry-json":
+            assert result.exit_code == 0, result.output
+            assert (project / ".kiro/prompts/speckit-foo-bar-other.md").is_file()
+        else:
+            assert result.exit_code != 0, result.output
+            assert "installed command names" in " ".join(result.output.split())
+            assert ".specify/extensions/.registry" in result.output
+            assert registry.read_bytes() == registry_before
+            assert not (project / ".specify/extensions/foo-bar").exists()
+        assert output.read_bytes() == before
+
     def test_install_rejects_alias_that_hyphenates_to_another_command(
         self, temp_dir, project_dir
     ):
