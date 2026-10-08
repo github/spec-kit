@@ -525,36 +525,46 @@ class _StepKindManager:
         # that same lock, and ``_exclusive_project_lock`` blocks in
         # ``fcntl.flock(LOCK_EX)`` on a new fd, so a nested acquire in this
         # process deadlocks. Remove through ``_remove_step_locked`` instead.
-        # The catalog reinstall stays outside the lock.
+        # The catalog reinstall stays outside the lock. A step missing from
+        # the locked snapshot has nothing to roll back: release the lock and
+        # delegate to ``install``, which acquires this same lock.
         backup_root: Path | None = None
         keep_backup = False
         metadata = None
+        not_installed = False
         try:
             try:
                 with step_installer._step_install_transaction(self._root):
                     registry = StepRegistry(self._root)
                     entry = registry.get(component.id)
-                    metadata = copy.deepcopy(entry) if entry is not None else None
-                    backup_root = Path(
-                        tempfile.mkdtemp(prefix="speckit-step-refresh-")
-                    )
-                    backup_dir = backup_root / component.id
-                    step_dir = registry.steps_dir / component.id
-                    if step_dir.exists():
-                        shutil.copytree(step_dir, backup_dir)
-                    with _chdir(self._root):
-                        _delegate_command(
-                            "remove",
-                            f"step '{component.id}'",
-                            lambda: command_remove._remove_step_locked(
-                                self._root, component.id
-                            ),
+                    if entry is None:
+                        not_installed = True
+                    else:
+                        metadata = copy.deepcopy(entry)
+                        backup_root = Path(
+                            tempfile.mkdtemp(prefix="speckit-step-refresh-")
                         )
+                        backup_dir = backup_root / component.id
+                        step_dir = registry.steps_dir / component.id
+                        if step_dir.exists():
+                            shutil.copytree(step_dir, backup_dir)
+                        with _chdir(self._root):
+                            _delegate_command(
+                                "remove",
+                                f"step '{component.id}'",
+                                lambda: command_remove._remove_step_locked(
+                                    self._root, component.id
+                                ),
+                            )
             except step_installer.StepInstallError as exc:
                 # Lock acquisition failed before any package or registry snapshot.
                 raise BundlerError(
                     f"Failed to refresh step '{component.id}': {exc}"
                 ) from exc
+
+            if not_installed:
+                self.install(component)
+                return
 
             try:
                 self.install(component)

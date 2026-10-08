@@ -950,6 +950,96 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
     assert calls == [("missing-step", tmp_path)]
 
 
+def test_step_refresh_installs_when_removed_before_locked_snapshot(
+    tmp_path: Path, monkeypatch
+):
+    """A remove that commits before the locked snapshot takes the install path.
+
+    The manager is built while the step is installed, so the pre-lock
+    ``is_installed`` check stays True. A concurrent ``step remove`` then
+    deletes the registry entry and package before this refresh enters its
+    lock. The locked snapshot is absent, so refresh must release the lock
+    and delegate to ``install`` without ``_remove_step_locked`` or a backup.
+    """
+    import contextlib
+    import json
+    import shutil
+    import tempfile
+
+    import specify_cli
+    import specify_cli.workflows.step.command_remove as command_remove
+    import specify_cli.workflows.step.installer as step_installer
+
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+    component = _component("steps", "my-step")
+
+    hold = {"depth": 0}
+    removed = {"done": False}
+    remove_calls: list[str] = []
+    install_calls: list[tuple[str, int]] = []
+    backup_dirs: list[Path] = []
+    real_txn = step_installer._step_install_transaction
+    real_remove = command_remove._remove_step_locked
+    real_mkdtemp = tempfile.mkdtemp
+
+    def _commit_remove() -> None:
+        document = json.loads(registry_path.read_text(encoding="utf-8"))
+        document["steps"].pop("my-step", None)
+        registry_path.write_text(json.dumps(document), encoding="utf-8")
+        shutil.rmtree(steps_dir / "my-step")
+        assert not StepRegistry(tmp_path).is_installed("my-step")
+        assert not (steps_dir / "my-step").exists()
+
+    @contextlib.contextmanager
+    def _remove_before_first_lock(project_root):
+        # Concurrent ``step remove`` commits after manager construction and
+        # before this transaction's locked snapshot.
+        if not removed["done"]:
+            removed["done"] = True
+            _commit_remove()
+        if hold["depth"] >= 1:
+            raise AssertionError("nested _step_install_transaction")
+        hold["depth"] += 1
+        try:
+            with real_txn(project_root):
+                yield
+        finally:
+            hold["depth"] -= 1
+
+    def _tracking_remove(project_root, step_id):
+        remove_calls.append(step_id)
+        return real_remove(project_root, step_id)
+
+    def _add(step_id: str, *args, **kwargs) -> None:
+        install_calls.append((step_id, hold["depth"]))
+
+    def _mkdtemp(*args, **kwargs):
+        prefix = kwargs.get("prefix", args[0] if args else "")
+        path = Path(real_mkdtemp(*args, **kwargs))
+        if str(prefix).startswith("speckit-step-refresh-"):
+            backup_dirs.append(path)
+        return str(path)
+
+    monkeypatch.setattr(
+        step_installer, "_step_install_transaction", _remove_before_first_lock
+    )
+    monkeypatch.setattr(command_remove, "_remove_step_locked", _tracking_remove)
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    assert manager.is_installed(component)
+
+    manager.refresh(component)
+
+    assert removed["done"]
+    assert remove_calls == []
+    assert install_calls == [("my-step", 0)]
+    # No refresh backup is created, so none can be left behind.
+    assert backup_dirs == []
+
+
 def _backup_root_from_note(note: str) -> Path:
     return Path(note.split("from backup '", 1)[1].split("'", 1)[0])
 
