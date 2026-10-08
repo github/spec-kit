@@ -800,6 +800,36 @@ def test_missing_history_digests_cli_blocks_and_discards_stale_snapshot(catalog_
     assert not (paths / "snapshot.json").exists()
 
 
+@pytest.mark.parametrize("failure", ["missing", "non_utf8", "directory"])
+@pytest.mark.parametrize("phase", ["generated", "original", "snapshot", "receipt"])
+def test_catalog_read_failures_preserve_phase_exit_codes(catalog_files, phase, failure):
+    paths = catalog_files
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 0, result.stdout + result.stderr
+    name = "catalog" if phase in ("generated", "original") else phase
+    damaged = paths / f"{name}.json"
+    damaged.unlink()
+    if failure == "non_utf8":
+        damaged.write_bytes(b"\xff\xfeinvalid UTF-8")
+    elif failure == "directory":
+        damaged.mkdir()
+    operation = "generated" if phase in ("generated", "snapshot") else "snapshot"
+    result = run_catalog_verifier(paths, operation)
+    assert result.returncode == (3 if phase == "generated" else 2)
+    assert result.stdout.startswith("GENERATED ERROR:" if phase == "generated" else "BLOCKED:")
+    assert not result.stderr
+
+
+@pytest.mark.parametrize("error_class", ["GeneratedError", "Blocked"])
+def test_permission_read_errors_keep_callers_error_type(verifier, tmp_path, monkeypatch, error_class):
+    def denied(*args, **kwargs):
+        raise PermissionError("synthetic read permission denial")
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(getattr(verifier, error_class), match="permission denial") as error:
+        verifier.read_json(tmp_path / "catalog.json", getattr(verifier, error_class))
+    assert isinstance(error.value.__cause__, PermissionError)
+
 def add_package_files(submission, paths):
     entry = submission["catalog_entry"]
     base = entry["step_yml_url"].removesuffix("step.yml")

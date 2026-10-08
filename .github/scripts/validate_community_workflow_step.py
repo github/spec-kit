@@ -440,7 +440,7 @@ def read_json(
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
-        raise Blocked(f"cannot read JSON evidence at {path}: {exc}") from exc
+        raise error_type(f"cannot read JSON evidence at {path}: {exc}") from exc
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:
