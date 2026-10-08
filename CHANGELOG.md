@@ -2,6 +2,81 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.1.2] - 2026-10-07
+
+### Changed
+
+- feat(mcp): add first-class artifact list tool (#4867)
+- fix(workflows): remove the catalog source shown at the listed index (#4870)
+- fix(bundler): resolve the active integration like the canonical reader (#4541)
+- fix(workflows): an interrupted gate prompt must not approve the gate (#4529)
+- [preset] Update Intake Authoring Governance preset to v0.3.7 (#4838)
+- fix(workflows): state the equal-priority tie-break in 'workflow resolve' output (#4542)
+- feat: add --json to preset info and extension info (#4833)
+- feat(bundles): select exact bundle catalog releases (#4849)
+- fix(bundler): treat an explicitly null catalog field as empty, not "None" (#4532)
+- refactor(artifact): extract list operation (#4866)
+- fix(bundler): report a newline-containing version constraint instead of crashing (#4538)
+- feat(mcp): add first-class version tool (#4864)
+- refactor(version): extract shared operation (#4863)
+- feat(workflows): add workflow step submission intake (#4861)
+- docs: define shared CLI and MCP command architecture (#4847)
+- Add AttackTree extension to community catalog (#4859)
+- Update SpecKit Companion extension to v0.24.0 (#4858)
+- Automatically prioritize bundle submissions (#4856)
+- Update SpecAssay preset to v0.5.6 (#4854)
+- chore: release 1.1.1, begin 1.1.2.dev0 development (#4860)
+
+## [1.1.1] - 2026-10-06
+
+### Changed
+
+- Update SpecAssay bundle to v0.5.6 (#4855)
+- Update SpecAssay Check extension to v0.5.6 (#4853)
+- chore(triage): prioritize preset submissions (#4848)
+- Automatically prioritize extension submissions (#4845)
+- fix(bundles): install pinned catalog releases via exact-release selection (#4753)
+- feat(integrations): expose versioned catalog metadata (#4841)
+- fix(workflows): init step must not replace init's own error with "SystemExit: 1" (#4530)
+- feat(workflows): select exact step catalog releases (#4840)
+- feat(presets): select exact catalog releases (#4823)
+- fix(bundler): let 'catalog remove' delete a project source overriding a built-in (#4533)
+- Update Quality Gates (Enforcement Layer) extension to v0.3.6 (#4837)
+- fix(bundles): reject non-ASCII digits in SemVer identifiers (#4835)
+- Updating the ad hoc project to the tenant url (#4828)
+- feat(workflows): add upper, lower, split, length, and to_json expression filters (#4766)
+- Revert community submission intake and outcome reporting changes (#4831)
+- fix: recognize community submission types and report workflow outcomes (#4829)
+- feat(mcp): add experimental version-only stdio server (#4822)
+- fix: apply required agentic workflow labels (#4824)
+- feat(version): print complete version information as JSON (#4821)
+- chore: release 1.1.0, begin 1.1.1.dev0 development (#4820)
+
+## [1.1.0] - 2026-10-02
+
+### Changed
+
+- chore(deps): bump the codeql-action group with 2 updates (#4809)
+- Validate community preset submissions before opening catalog PRs (#4787)
+- fix: use bounded read for workflow catalog HTTP responses (#3766)
+- [extension] Update Archive Extension to v1.4.0 (#4818)
+- [bug-fix] Fix non-latin-feature-names: preserve Unicode feature names (#4780)
+- [extension] Add Conformidad Software Humano extension to community catalog (#4812)
+- Add Software Humano preset to community catalog (#4816)
+- [extension] Add Log Intake (logreduce) extension to community catalog (#4813)
+- Update Quality Gates extension to v0.3.5 (#4814)
+- feat(workflows): install custom step types from local dirs and archives (#4769)
+- fix(integrations): stop dispatching workflow steps to SHAI (#4791)
+- Add September 2026 newsletter (#4811)
+- fix(workflows): split expression operators across any whitespace (#4801)
+- fix(authentication): support GHE.com release asset downloads (#4807)
+- feat(extensions): select exact catalog releases (#4726)
+- Register extension commands and skills for generic integration (#4785)
+- feat(workflows): select exact workflow catalog releases (#4788)
+- fix(bundles): verify pins of independently installed components (#4789)
+- Update Intake Authoring Governance to v0.3.5 (#4779)
+- chore: release 1.0.13, begin 1.0.14.dev0 development (#4790)
+
 ## [1.0.13] - 2026-09-29
 
 ### Changed

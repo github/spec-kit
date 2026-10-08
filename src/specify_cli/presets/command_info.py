@@ -6,20 +6,62 @@ import typer
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from ._catalog import PresetCatalogValidationError
+from ._catalog_versions import available_versions
+from .._installed_info_json import preset_info_item
+from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
+from .._project import resolve_specify_project_root
 from ._commands import preset_app
 
 
-@preset_app.command("info")
+@preset_app.command("info", cls=InstalledListJSONCommand)
 def preset_info(
     preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output the installed preset as JSON"
+    ),
 ):
     """Show detailed information about a preset."""
     from .. import _require_specify_project
     from ..extensions import normalize_priority
     from . import PresetCatalog, PresetError, PresetManager
 
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables JSON output.
+    if json_output is True:
+        if versions is True:
+            emit_json_error(ValueError("--json cannot be combined with --versions"), exit_code=2)
+        try:
+            manager = PresetManager(resolve_specify_project_root())
+            emit_json(preset_info_item(manager.list_installed(), manager, preset_id))
+            return
+        except Exception as error:  # noqa: BLE001 - emit the JSON error contract
+            emit_json_error(error)
+
     project_root = _require_specify_project()
     safe_preset_id = _escape_markup(str(preset_id))
+    if versions is True:
+        catalog = PresetCatalog(project_root)
+        try:
+            pack_info = catalog.get_pack_info(preset_id)
+            available = available_versions(pack_info) if pack_info else []
+        except PresetError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
+        if not available:
+            console.print(
+                f"[red]Error:[/red] No catalog versions found for {safe_preset_id}."
+            )
+            raise typer.Exit(1)
+        console.print(f"Catalog versions for {safe_preset_id}:")
+        for index, item in enumerate(available):
+            console.print(
+                f"  {_escape_markup(item)}{' (current)' if index == 0 else ''}"
+            )
+        if not pack_info.get("_install_allowed", True):
+            console.print("[yellow]Discovery only; catalog installation is disabled.[/yellow]")
+        return
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
@@ -63,6 +105,9 @@ def preset_info(
     catalog = PresetCatalog(project_root)
     try:
         pack_info = catalog.get_pack_info(preset_id)
+    except PresetCatalogValidationError as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
     except PresetError:
         pack_info = None
 

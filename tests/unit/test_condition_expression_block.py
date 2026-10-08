@@ -553,17 +553,13 @@ MULTI_POSITION_UNFIXABLE = [
     ("in inputs.tags", "missing an operand"),             # leading word operator
     ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
     ("inputs.f(]", "brackets do not balance"),
-    ("inputs.items | length", "the evaluator rejects it"),
+    ("inputs.items | truncate", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
     ('he said "hi" then left', "is not a name the evaluator can resolve"),
     ("inputs.count+1", "is not a valid path segment"),
     ("inputs.a === inputs.b", "is not a name the evaluator can resolve"),
     ("bogus == 'x'", "is not one of the namespace roots"),
     ("inputs.payload | from_json()", "the evaluator rejects it"),
-    # `_find_top_level` matches " and " with literal spaces, so a newline before
-    # the keyword is not an operator: the wrapped form evaluates False where the
-    # same expression with a space evaluates True.
-    ("inputs.x == 1\nand inputs.name == 'abc'", "is not a name the evaluator can resolve"),
 ]
 
 
@@ -576,6 +572,25 @@ def test_gates_inspect_every_position_not_just_the_first(step_cls, condition, ex
     assert len(errors) == 1
     assert "Wrap the expression" not in errors[0]
     assert expected in errors[0]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_a_condition_wrapped_across_lines_gets_a_paste_ready_correction(step_cls):
+    """A line break before ``and`` no longer hides the operator.
+
+    The evaluator used to match " and " with literal spaces, so the wrapped form
+    of this condition read False where the one-line form read True, and the gate
+    had to withhold the correction. It now splits on any whitespace, so wrapping
+    repairs the condition and the correction is offered.
+    """
+    condition = "inputs.x == 1\nand inputs.name == 'abc'"
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "Wrap the expression" in errors[0]
+    ctx = StepContext(inputs={"x": 1, "name": "abc"})
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
 
 
 @pytest.mark.parametrize(
@@ -612,10 +627,15 @@ def test_the_probe_reports_what_the_evaluator_reports():
     Asking the evaluator removes that class: any filter used under an unknown name
     or in an unsupported form is reported by the code that will run.
     """
-    assert _evaluator_rejects("inputs.items | length") is not None
+    assert _evaluator_rejects("inputs.items | truncate") is not None
     assert _evaluator_rejects("inputs.tags | join") is not None
     assert _evaluator_rejects("inputs.tags | join(',')") is None
     assert _evaluator_rejects("inputs.count > 100") is None
+    # A registered filter used in an unsupported form is a rejection too.
+    assert _evaluator_rejects("inputs.items | split") is not None
+    # Registered filters that are wired correctly are not.
+    assert _evaluator_rejects("inputs.items | length") is None
+    assert _evaluator_rejects("inputs.tags | split(',')") is None
 
 
 @pytest.mark.parametrize(
@@ -671,7 +691,12 @@ def test_probe_value_errors_are_not_treated_as_rejections(condition):
 
 @pytest.mark.parametrize(
     "condition",
-    ["inputs.items | length", "inputs.tags | join"],
+    [
+        "inputs.items | truncate",
+        "inputs.tags | join",
+        "inputs.items | split",
+        "inputs.text | upper('x')",
+    ],
 )
 def test_filter_wiring_errors_are_still_rejections(condition):
     """The other half: a filter named wrong or used wrong is the author's text."""

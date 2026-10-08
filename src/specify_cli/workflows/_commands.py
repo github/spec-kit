@@ -434,51 +434,12 @@ def _stage_workflow_file(
 @contextlib.contextmanager
 def _workflow_install_transaction(project_root: Path):
     """Serialize workflow file swaps with their registry updates."""
-    from ..shared_infra import _ensure_safe_shared_directory
+    from ..shared_infra import _exclusive_project_lock
 
-    lock_dir = project_root / ".specify"
-    try:
-        _ensure_safe_shared_directory(
-            project_root, lock_dir, context="workflow install lock directory"
-        )
-    except ValueError as exc:
-        raise OSError(str(exc)) from exc
-    lock_file = lock_dir / ".workflow-install.lock"
-    if lock_file.is_symlink():
-        raise OSError(f"Refusing to use symlinked workflow install lock: {lock_file}")
-
-    flags = os.O_RDWR | os.O_CREAT
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    flags |= getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(lock_file, flags, 0o600)
-    try:
-        if lock_file.is_symlink():
-            raise OSError(
-                f"Refusing to use symlinked workflow install lock: {lock_file}"
-            )
-        if os.name == "nt":
-            import errno
-            import msvcrt
-            import time
-
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b"\0")
-            while True:
-                os.lseek(fd, 0, os.SEEK_SET)
-                try:
-                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError as exc:
-                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
-                        raise
-                    time.sleep(0.05)
-        else:
-            import fcntl
-
-            fcntl.flock(fd, fcntl.LOCK_EX)
+    with _exclusive_project_lock(
+        project_root, ".workflow-install.lock", context="workflow install"
+    ):
         yield
-    finally:
-        os.close(fd)
 
 
 def _commit_workflow_file(

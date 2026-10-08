@@ -269,6 +269,72 @@ def test_catalog_entry_rejects_non_boolean_verified():
         CatalogEntry.from_dict(data)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "name",
+        "version",
+        "role",
+        "description",
+        "author",
+        "license",
+        "download_url",
+    ],
+)
+def test_catalog_entry_explicit_null_field_reads_as_empty(field: str):
+    """An explicitly null field must read as "", not the literal "None".
+
+    `str(data.get(key, ""))` only defaults for a *missing* key. A key present
+    but null — how YAML spells an empty field (`author:` with nothing after
+    it) — yields `None`, and `str(None)` is the truthy string `"None"`. The
+    same constructor already guards `sha256` and `repository` against exactly
+    this.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data[field] = None
+
+    entry = CatalogEntry.from_dict(data)
+
+    assert getattr(entry, field) == ""
+
+
+def test_catalog_source_rejects_an_explicitly_null_id():
+    """`id: null` must be refused, not registered as a source named "None".
+
+    The `if not source_id` guard was defeated by the truthy literal, so the
+    source was accepted and carried the name `"None"` into the stack.
+    """
+    from specify_cli.bundles.catalogs import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        CatalogSource.from_dict(
+            {
+                "id": None,
+                "url": "https://example.test/catalog.json",
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
+
+
+def test_catalog_source_rejects_an_explicitly_null_url():
+    from specify_cli.bundles.catalogs import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'url'"):
+        CatalogSource.from_dict(
+            {
+                "id": "demo",
+                "url": None,
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
+
+
 def test_catalog_entry_preserves_sha256_through_provenance():
     digest = "a" * 64
     payload = catalog_payload(
@@ -351,3 +417,37 @@ def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
     data[field] = bad
     with pytest.raises(BundlerError, match=f"'{field}' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+def test_catalog_entry_explicit_null_id_reports_missing_id():
+    """`id: null` must surface as the missing-id error, not an id mismatch.
+
+    `entry_id` was still computed with `str(data.get("id", ""))`, so an explicit
+    null became the literal "None". That is truthy, so `load_catalog_payload`
+    compared it against the mapping key and reported
+    "id mismatch: key 'demo' != entry id 'None'" instead of the accurate
+    missing-id error.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["id"] = None
+    assert CatalogEntry.from_dict(data).id == ""
+
+    with pytest.raises(BundlerError, match="missing its 'id' field"):
+        load_catalog_payload(catalog_payload({"demo": data}))
+
+
+def test_catalog_entry_explicit_null_requires_speckit_version_reads_as_empty():
+    """The nested `requires.speckit_version` branch is covered too.
+
+    It was switched to `_text` alongside the top-level fields, but only the
+    top-level attributes were exercised — so this branch could regress while
+    the suite still passed.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["requires"] = {"speckit_version": None}
+
+    assert CatalogEntry.from_dict(data).requires_speckit_version == ""

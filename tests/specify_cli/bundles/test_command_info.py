@@ -5,6 +5,7 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
@@ -104,6 +105,126 @@ def test_info_expands_full_component_set(project: Path, monkeypatch):
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
+
+
+def test_info_versions_lists_history_without_downloading_manifest(project: Path):
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        releases={
+            "1.1.0": {
+                "download_url": "https://example.com/history-1.1.0.zip",
+                "sha256": "a" * 64,
+            }
+        },
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "history"]
+    )
+    assert added.exit_code == 0, added.output
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    assert text.exit_code == 0, text.output
+    assert "Catalog versions for history:" in text.output
+    assert "1.2.0 (current)" in text.output
+    assert "1.1.0" in text.output
+    assert "1.1.0 (current)" not in text.output
+    assert text.output.index("1.2.0") < text.output.index("1.1.0")
+    assert "Source: history (install-allowed)" in text.output
+    assert "Discovery only" not in text.output
+
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output) == {
+        "id": "history",
+        "versions": ["1.2.0", "1.1.0"],
+        "current": "1.2.0",
+        "source": "history",
+        "install_policy": "install-allowed",
+    }
+
+
+def _add_history_catalog(project: Path, releases, *, policy="install-allowed") -> None:
+    catalog = project / "history-catalog.json"
+    entry = catalog_entry_dict(
+        "history",
+        version="1.2.0",
+        download_url="https://example.com/history-1.2.0.zip",
+        releases=releases,
+    )
+    write_catalog_file(catalog, {"history": entry})
+    added = runner.invoke(
+        app,
+        ["bundle", "catalog", "add", str(catalog), "--id", "history", "--policy", policy],
+    )
+    assert added.exit_code == 0, added.output
+
+
+def test_info_versions_notes_discovery_only_winner(project: Path):
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+        policy="discovery-only",
+    )
+
+    text = runner.invoke(app, ["bundle", "info", "history", "--versions", "--offline"])
+    as_json = runner.invoke(
+        app, ["bundle", "info", "history", "--versions", "--json", "--offline"]
+    )
+
+    assert text.exit_code == 0, text.output
+    assert "Source: history (discovery-only)" in text.output
+    assert "Discovery only; catalog installation is disabled." in text.output
+    assert as_json.exit_code == 0, as_json.output
+    assert json.loads(as_json.output)["install_policy"] == "discovery-only"
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_info_versions_rejects_malformed_history_cleanly(project: Path, as_json: bool):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+    args = ["bundle", "info", "history", "--versions", "--offline"]
+    if as_json:
+        args.append("--json")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_search_rejects_malformed_history_cleanly(project: Path):
+    _add_history_catalog(project, {"1.1.0": {"download_url": "https://example.com/x.zip"}})
+
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+
+    assert result.exit_code == 1
+    assert "release '1.1.0' needs a SHA-256 digest" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+
+
+def test_info_without_versions_is_unchanged_by_history(project: Path, monkeypatch):
+    bundle_dir = project / "history-bundle"
+    manifest = valid_manifest_dict()
+    manifest["bundle"]["id"] = "history"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    _add_history_catalog(
+        project,
+        {"1.1.0": {"download_url": "https://example.com/history-1.1.0.zip", "sha256": "a" * 64}},
+    )
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
+
+    result = runner.invoke(app, ["bundle", "info", "history", "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert "Catalog versions for" not in result.output
+    assert "preset-a v2.0.0" in result.output
 
 
 def test_info_escapes_catalog_markup(project: Path, monkeypatch):
@@ -573,6 +694,60 @@ def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
     assert len(asset_calls) == 1
     assert asset_calls[0][0] == api_asset_url
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_info_resolves_ghecom_browser_release_url_zip(project: Path):
+    """bundle info resolves a GHE.com release ZIP through its API subdomain."""
+    import zipfile
+
+    web_host = "msft.ghe.com"
+    api_host = f"api.{web_host}"
+    browser_url = f"https://{web_host}/org/repo/releases/download/v2.0/bundle.zip"
+    api_asset_url = f"https://{api_host}/repos/org/repo/releases/assets/42"
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = archive.getvalue()
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps(
+                    {"assets": [{"name": "bundle.zip", "url": api_asset_url}]}
+                ).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with (
+        patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url),
+        patch(
+            "specify_cli.authentication.http.github_provider_hosts",
+            return_value=(web_host, api_host),
+        ),
+    ):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert tag_calls == [f"https://{api_host}/repos/org/repo/releases/tags/v2.0"]
+
+    asset_calls = [(url, headers) for url, headers in captured if url == api_asset_url]
+    assert asset_calls == [(api_asset_url, {"Accept": "application/octet-stream"})]
 
     payload = json.loads(result.output)
     assert payload["id"] == "demo-bundle"
