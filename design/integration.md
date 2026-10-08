@@ -252,6 +252,12 @@ metadata; they do not copy agent trees, user data, or the installed package
 store. Content snapshots are created lazily before the first observed mutation,
 with an aggregate limit of 128 MiB of file content and 4,096 entries per
 transaction. Exceeding either limit fails before the affected write or removal.
+Preset and extension package installation/replacement, configuration rescue
+directories, and project extension configuration participate in the journal.
+Package replacements keep one bounded directory snapshot rather than duplicate
+snapshots for every generated descendant. Late external-init failures therefore
+remove new packages and restore pre-existing package contents, not orphan sources
+after their registries and agent outputs have been rolled back.
 Failed setup or durable package commit restores those
 changes, not entire agent directories or all of `.specify`. Independent workflow
 progress and unowned user files are left untouched.

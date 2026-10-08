@@ -249,6 +249,51 @@ def test_round9_pending_write_preserves_unattributed_changes(tmp_path, server, m
                 shutil.rmtree(backup)
 
 
+@pytest.mark.parametrize("package_kind", ["preset", "extension"])
+def test_registered_package_force_replacement_restores_sources_and_config_on_rollback(
+    tmp_path, server, package_kind,
+):
+    from specify_cli._assets import get_speckit_version
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.integration_state import try_read_integration_json
+    from specify_cli.integrations._lifecycle import _transaction
+    from specify_cli.presets import PresetManager
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    source = tmp_path / "package-source"
+    source.mkdir()
+    (source / "package.txt").write_text("original package bytes")
+    identity = {"id": "sample-replace", "name": "Sample Replace", "version": "1.0.0", "description": "Sample package"}
+    manifest = {
+        "schema_version": "1.0", package_kind: identity,
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": []} if package_kind == "extension" else {"templates": [
+            {"type": "template", "name": "spec-template", "file": "package.txt"},
+        ]},
+    }
+    if package_kind == "extension":
+        manifest["events"] = {"session_start": {"command": "speckit.sample.boot"}}
+    (source / f"{package_kind}.yml").write_text(yaml.safe_dump(manifest))
+    manager = ExtensionManager(project) if package_kind == "extension" else PresetManager(project)
+    manager.install_from_directory(source, get_speckit_version())
+    destination = project / f".specify/{package_kind}s/sample-replace"
+    (destination / "sample-replace-config.yml").write_text("user: preserved\n")
+    before = snapshot(project)
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+    (source / "package.txt").write_text("replacement package bytes")
+    state, error = try_read_integration_json(project)
+    assert error is None
+    with pytest.raises(OSError, match="sample late forced replacement failure"):
+        with _transaction(project, KEY, state, read_records(project)):
+            manager.install_from_directory(source, get_speckit_version(), force=True)
+            assert (destination / "package.txt").read_text() == "replacement package bytes"
+            raise OSError("sample late forced replacement failure")
+    assert snapshot(project) == before
+    assert all(path.is_dir() for path in original_directories)
+
+
 @pytest.mark.parametrize("field", ["author", "repository", "license"])
 @pytest.mark.parametrize("value", [None, "", " \t", [], {"value": "sample"}, True, 12])
 @pytest.mark.parametrize("source", ["descriptor", "catalog", "both"])
@@ -4290,3 +4335,96 @@ def test_builtin_manifest_cleanup_does_not_follow_symlinked_stale_parent(tmp_pat
     if operation == "upgrade":
         assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
     assert read_records(project) == {}
+
+
+@pytest.mark.parametrize("package_kind", ["preset", "extension", "both"])
+@pytest.mark.parametrize("original", ["absent", "existing", "existing-package"])
+@pytest.mark.parametrize("failure", ["registry", "ownership", "none"])
+def test_external_init_package_directories_follow_late_commit_rollback(
+    tmp_path, server, monkeypatch, package_kind, original, failure,
+):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", f"{server.url}/catalog.json")
+    preset = tmp_path / "sample-preset"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/speckit.specify.md").write_text(
+        "---\ndescription: Sample prepend\n---\nSample preset before command\n"
+    )
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "sample-init", "name": "Sample Init", "version": "1.0.0", "description": "Sample init"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"templates": [{
+            "type": "command", "name": "speckit.specify", "file": "commands/speckit.specify.md", "strategy": "prepend",
+        }]},
+    }))
+    extension = tmp_path / "sample-extension"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "commands/boot.md").write_text(
+        "---\ndescription: Sample init extension\n---\nSample boot\n"
+    )
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "sample-init", "name": "Sample Init", "version": "1.0.0", "description": "Sample init"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": [{"name": "speckit.sample-init.boot", "file": "commands/boot.md"}]},
+    }))
+    project = tmp_path / "target"
+    if original != "absent":
+        project.mkdir()
+        (project / "notes.txt").write_text("unowned notes")
+    if original == "existing-package":
+        for kind in (["preset", "extension"] if package_kind == "both" else [package_kind]):
+            directory = project / f".specify/{kind}s/sample-init"
+            directory.mkdir(parents=True)
+            (directory / "original.txt").write_text("original unregistered package")
+    before = snapshot(project)
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+
+    def verify_installed_packages():
+        if package_kind in {"preset", "both"}:
+            assert (project / ".specify/presets/sample-init/preset.yml").is_file()
+            assert "Sample preset before command" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+        if package_kind in {"extension", "both"}:
+            assert (project / ".specify/extensions/sample-init/extension.yml").is_file()
+            assert (project / ".sample-agent/skills/speckit-sample-init-boot/SKILL.md").is_file()
+
+    if failure == "registry":
+        def fail_records(*args, **kwargs):
+            verify_installed_packages()
+            raise OSError("sample late package registry failure")
+
+        monkeypatch.setattr(installer, "write_records", fail_records)
+    elif failure == "ownership":
+        original_grant = installer._grant_trust
+
+        def fail_ownership(*args, **kwargs):
+            if kwargs.get("record_ownership"):
+                verify_installed_packages()
+                raise OSError("sample late package ownership failure")
+            return original_grant(*args, **kwargs)
+
+        monkeypatch.setattr(installer, "_grant_trust", fail_ownership)
+    arguments = [
+        "init", str(project), "--force", "--ignore-agent-tools",
+        "--integration", KEY, "--trust-integration", "--script", "py",
+    ]
+    if package_kind in {"preset", "both"}:
+        arguments.extend(["--preset", str(preset)])
+    if package_kind in {"extension", "both"}:
+        arguments.extend(["--extension", str(extension)])
+    result = run(tmp_path, arguments)
+    if failure == "none":
+        assert result.exit_code == 0, result.output
+        verify_installed_packages()
+        assert KEY in read_records(project)
+    else:
+        assert result.exit_code == 1, result.output
+        assert "sample late package" in " ".join(result.output.split())
+        assert snapshot(project) == before
+        assert project.exists() == (original != "absent"), [str(path.relative_to(project)) for path in project.rglob("*")]
+        assert all(path.is_dir() for path in original_directories)
+        assert "Recovery snapshots retained" not in result.output
+        assert KEY not in read_records(project)

@@ -178,6 +178,10 @@ class _FileJournal:
 
     def observe(self, path: Path, before: bool, removal: bool = False) -> None:
         path = self.safe_path(path, allow_leaf_symlink=not before or removal)
+        # A pending directory replacement snapshots the package as a unit.
+        # Its completion records descendant writes without duplicate snapshots.
+        if any(parent in self.pending for parent in path.parents):
+            return
         self._remember_parents(path)
         if (
             before and path in self.changes and path not in self.pending
@@ -265,7 +269,8 @@ def _transaction(
 
     folders = {
         ".specify/integrations", ".specify/templates", ".specify/scripts",
-        ".specify/.gitignore",
+        ".specify/.gitignore", ".specify/presets", ".specify/extensions",
+        ".specify/extensions.yml", ".specify/workflows/speckit",
     }
     manifest_leaves: set[str] = set()
     state, error = try_read_integration_json(root)

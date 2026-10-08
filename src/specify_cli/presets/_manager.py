@@ -393,15 +393,19 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         self.check_compatibility(manifest, speckit_version)
 
-        if self.registry.is_installed(manifest.id):
-            if not force:
-                raise PresetError(
-                    f"Preset '{manifest.id}' is already installed. "
-                    f"Use 'specify preset remove {manifest.id}' first."
-                )
-            self.remove(manifest.id)
+        from ..integrations._file_changes import after_file_change, before_file_change
 
         dest_dir = self.presets_dir / manifest.id
+        installed = self.registry.is_installed(manifest.id)
+        if installed and not force:
+            raise PresetError(
+                f"Preset '{manifest.id}' is already installed. "
+                f"Use 'specify preset remove {manifest.id}' first."
+            )
+        before_file_change(dest_dir, removal=True)
+        if installed:
+            self.remove(manifest.id)
+
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
@@ -494,6 +498,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         # previous install-time behavior for teams that want reviewed snapshots.
         self._seed_constitution_from_preset(manifest, dest_dir)
 
+        after_file_change(dest_dir)
         return manifest
 
     def _seed_constitution_from_preset(

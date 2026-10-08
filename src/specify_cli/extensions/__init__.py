@@ -2579,6 +2579,15 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
+        from ..integrations._file_changes import after_file_change, before_file_change
+
+        package_paths = (
+            dest_dir, self.extensions_dir / ".backup" / manifest.id,
+            self._rescue_staging_dir(manifest.id),
+        )
+        for package_path in package_paths:
+            before_file_change(package_path, removal=True)
+
         # Remove existing installation AFTER all validations pass so that a
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).
@@ -3245,6 +3254,8 @@ class ExtensionManager:
         from .. import ensure_executable_scripts
         ensure_executable_scripts(self.project_root)
 
+        for package_path in package_paths:
+            after_file_change(package_path)
         return manifest
 
     def install_from_archive(
@@ -5738,8 +5749,11 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
+        from ..integrations._file_changes import write_text
+
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        self.config_file.write_text(
+        write_text(
+            self.config_file,
             yaml.dump(
                 config, default_flow_style=False, sort_keys=False, allow_unicode=True
             ),
