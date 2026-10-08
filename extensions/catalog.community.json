@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-06T00:00:00Z",
+  "updated_at": "2026-10-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2343,11 +2343,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.6",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.6/gates-0.3.6.zip",
-      "sha256": "74390f742a1a24dadb0bde15d2a555a2c6db51ee85f2a7a0557511bacec2444f",
+      "version": "0.4.1",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.1/gates-0.4.1.zip",
+      "sha256": "ecf445653d71d96b50480e04b741b142f08f2857f42e915ea76f7d64f1800f80",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2364,7 +2364,15 @@
           },
           {
             "name": "git",
-            "required": false
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          },
+          {
+            "name": "cmp",
+            "required": true
           },
           {
             "name": "node",
@@ -2391,7 +2399,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-05T00:00:00Z"
+      "updated_at": "2026-10-08T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
