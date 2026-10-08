@@ -15,8 +15,16 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 from mcp.types import CallToolResult
+from typer.testing import CliRunner
 
-from specify_cli.artifacts import _commands, _mcp, _operation_info, mcp_info
+from specify_cli import app
+from specify_cli.artifacts import (
+    _commands,
+    _mcp,
+    _operation_info,
+    command_info,
+    mcp_info,
+)
 from specify_cli.artifacts._operation_info import (
     ARTIFACT_INFO_OPERATION,
     ArtifactInfoAmbiguousError,
@@ -157,6 +165,86 @@ def test_artifact_info_dispatches_directly_to_shared_operation(
     command_runner.assert_not_called()
     run_cli_process.assert_not_called()
     cli_adapter.assert_not_called()
+
+
+def test_artifact_info_cli_mcp_success_parity(
+    spec_kit_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    expected = _named_result()
+    operation = Mock(return_value=expected)
+    request = ArtifactInfoRequest(
+        project_directory=spec_kit_project,
+        identifier="réview",
+        kind="template",
+    )
+    monkeypatch.chdir(spec_kit_project)
+
+    with (
+        patch.object(command_info, "get_artifact_info", operation),
+        patch.object(mcp_info, "get_artifact_info", operation),
+    ):
+        cli_result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "info",
+                "réview",
+                "--json",
+                "--kind",
+                "template",
+            ],
+        )
+        mcp_result = create_artifact_info_tool(launch_directory=spec_kit_project)(
+            "réview", "template"
+        )
+
+    assert cli_result.exit_code == 0, cli_result.stderr
+    assert cli_result.stderr == ""
+    assert mcp_result.is_error is False
+    assert json.loads(cli_result.stdout) == mcp_result.structured_content
+    assert [item.args[0] for item in operation.call_args_list] == [request, request]
+
+
+def test_artifact_info_cli_mcp_expected_error_parity(
+    spec_kit_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fail(request: ArtifactInfoRequest) -> ArtifactInfoResult:
+        raise ArtifactInfoNotFoundError(request.identifier)
+
+    operation = Mock(side_effect=fail)
+    request = ArtifactInfoRequest(
+        project_directory=spec_kit_project,
+        identifier="missing",
+        kind=None,
+    )
+    monkeypatch.chdir(spec_kit_project)
+
+    with (
+        patch.object(command_info, "get_artifact_info", operation),
+        patch.object(mcp_info, "get_artifact_info", operation),
+    ):
+        cli_result = CliRunner().invoke(
+            app,
+            ["artifact", "info", "missing", "--json"],
+        )
+        mcp_result = create_artifact_info_tool(launch_directory=spec_kit_project)(
+            "missing"
+        )
+
+    assert cli_result.exit_code == 1
+    assert cli_result.stdout == ""
+    assert mcp_result.is_error is True
+    assert mcp_result.structured_content == _expected_error(
+        "unknown_artifact",
+        "unknown artifact missing",
+        details={"identifier": "missing"},
+    )
+    assert json.loads(cli_result.stderr) == {
+        "error": mcp_result.structured_content["error"]["message"]
+    }
+    assert [item.args[0] for item in operation.call_args_list] == [request, request]
 
 
 def test_artifact_info_preserves_complete_unicode_layered_result(
