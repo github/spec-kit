@@ -127,11 +127,20 @@ def validate_files(data: dict[str, Any]) -> dict[str, tuple[str, str]]:
                 f"package exceeds the {installer._MAX_STEP_PACKAGE_FILES}-entry limit "
                 "(files and directories combined)"
             )
+    folded_paths = {
+        tuple(part.casefold() for part in name.split("/")) for name in files
+    }
+    if len(folded_paths) != len(files):
+        raise SubmissionMismatch("case-insensitive duplicate package file path")
+    if any(
+        path[:depth] in folded_paths
+        for path in folded_paths
+        for depth in range(1, len(path))
+    ):
+        raise SubmissionMismatch("case-insensitive file/directory path collision")
     for name, url in files.items():
         if not isinstance(url, str) or package_path(url) != directory + name:
             raise SubmissionMismatch("file URL must match its package-relative path")
-        if any(name.startswith(other + "/") for other in files):
-            raise SubmissionMismatch("file/directory path collision")
     hashes = entry.get("sha256")
     if (
         not isinstance(hashes, dict)

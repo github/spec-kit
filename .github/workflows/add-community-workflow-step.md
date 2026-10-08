@@ -175,8 +175,9 @@ Require the proposed entry to include:
   in `/__init__.py`.
 - Optional `extra_files`, an object mapping package-relative paths to URLs.
   Reject absolute paths, backslashes, empty or dot path segments, traversal,
-  case-insensitive aliases of `step.yml` or `__init__.py`, file/directory path
-  collisions, and paths containing `.git`, `__pycache__`, or `.DS_Store`.
+  case-insensitive aliases of `step.yml` or `__init__.py`, duplicate file paths
+  and file/directory collisions after component-wise `casefold()`, and paths
+  containing `.git`, `__pycache__`, or `.DS_Store`.
 - `sha256`, an object containing exactly `step.yml`, `__init__.py`, and every
   `extra_files` key, each with a 64-hex-character digest.
 - `verified: false`. Never set this to true.

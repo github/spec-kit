@@ -401,6 +401,10 @@ def test_package_limit_preflight_accepts_exact_installer_boundaries(
     ["nested/.DS_Store"], ["STEP.YML"], ["__INIT__.PY"],
     ["helper", "helper/nested.py"],
     ["step.yml/nested.py"], ["__init__.py/nested.py"],
+    ["Helper", "helper/module.py"], ["helper/module.py", "Helper"],
+    ["Foo.py", "foo.py"], ["Folder/Foo.py", "folder/foo.py"],
+    ["folder/Child", "FOLDER/child/module.py"],
+    ["STEP.YML/module.py"], ["__INIT__.PY/module.py"],
 ])
 def test_package_path_guards_reject_before_fetch(
     verifier, file_submission, paths, tmp_path, monkeypatch,
@@ -413,6 +417,19 @@ def test_package_path_guards_reject_before_fetch(
     monkeypatch.setattr(verifier.subprocess, "run", unexpected_fetch)
     with pytest.raises(verifier.SubmissionMismatch):
         verifier.fetch_file(file_submission, tmp_path / "download")
+
+
+@pytest.mark.parametrize("paths", [
+    ["Helper.py", "helper/module.py"],
+    ["foo", "foobar/module.py"],
+    ["Folder/a.py", "folder/b.py"],
+    ["STEP.YML.py", "step.yml-data/file.bin"],
+])
+def test_package_paths_without_case_insensitive_collisions_are_accepted(
+    verifier, file_submission, paths,
+):
+    add_package_files(file_submission, paths)
+    assert verifier.validate_file(file_submission)[0] == "__init__.py"
 
 
 @pytest.mark.parametrize(("total", "accepted"), [

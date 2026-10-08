@@ -65,6 +65,8 @@ using raw GitHub URLs pinned to that exact tag and a SHA-256 digest for each:
 Replace the example metadata and digest placeholders with actual values.
 Omit `extra_files` when no additional package files are needed. All file URLs
 must belong to the submitted repository, tag, and package directory.
+File paths must not alias one another or conflict with package directories
+when compared case-insensitively, including on Windows.
 Packages must fit the CLI's limits: 512 entries (files and distinct package
 directories combined), 32 directory levels, and 50 MiB total. Submission
 downloads also have a 10 MiB per-file limit. Validation downloads the complete
