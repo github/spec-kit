@@ -92,6 +92,26 @@ context-file handling to the CLI. `specify init` does not enable the extension
 implicitly. Extensions and presets register command or skill overrides for the
 current default integration, not every installed integration.
 
+## Integration delivery boundary
+
+Integration-specific behavior belongs in the integration package. Its delivery
+PR may also include registry wiring, catalog metadata, integration-specific
+tests, documentation, and agent-specific devcontainer tooling outside that
+package. File location alone does not determine whether a separate PR is needed.
+
+If delivery requires changes to shared runtime behavior, integration base
+classes, rendering, lifecycle management, CLI behavior, or core templates or
+scripts, it requires **at least two PRs**: a separate prerequisite PR for the
+shared behavior and a PR for the integration itself. The shared change must
+have independent justification and behavioral coverage, including regression
+evidence for bug fixes, and must work and be testable without the new
+integration. An agent-specific workaround is not sufficient justification for
+changing core behavior.
+
+The integration PR must identify its prerequisite PRs and must not merge until
+they have merged. See the
+[integration PR submission requirements](../CONTRIBUTING.md#integration-pull-requests).
+
 ## Adding an agent
 
 1. Run `specify integration scaffold my-agent --type markdown` from this
