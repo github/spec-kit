@@ -176,6 +176,57 @@ steps:
         assert human.exit_code == 0, human.output
         assert f"child: {expected}" in human.stdout
 
+    def test_status_reports_failed_call_after_resumed_gate(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        class Explode(StepBase):
+            type_key = "explode"
+
+            def execute(self, config, context):
+                raise RuntimeError("boom")
+
+        monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+        child_dir = project_dir / ".specify" / "workflows" / "child"
+        child_dir.mkdir(parents=True)
+        (child_dir / "workflow.yml").write_text(
+            "workflow: {id: child, name: Child}\n"
+            "inputs:\n  verdict: {type: string, default: ''}\n"
+            "steps:\n"
+            "  - {id: review, type: gate, message: Review, verdict_input: verdict}\n"
+            "  - {id: work, type: explode}\n",
+            encoding="utf-8",
+        )
+        WorkflowRegistry(project_dir).add("child", {"enabled": True})
+        engine = WorkflowEngine(project_dir)
+        root = WorkflowDefinition({
+            "workflow": {"id": "parent", "name": "Parent"},
+            "inputs": {"verdict": {"type": "string", "default": ""}},
+            "steps": [{
+                "id": "call", "type": "workflow", "workflow": "child",
+                "input": {"verdict": "{{ inputs.verdict }}"},
+            }],
+        })
+        assert engine.execute(root, run_id="resumed-call").status.value == "paused"
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.resume("resumed-call", {"verdict": "approve"})
+
+        status = self._invoke(project_dir, ["workflow", "status", "resumed-call", "--json"])
+        assert status.exit_code == 0, status.output
+        payload = json.loads(status.stdout)
+        assert payload["status"] == "failed"
+        assert payload["workflow_scopes"] == [
+            {"scope_path": ["call"], "workflow_id": "child", "status": "failed"}
+        ]
+        human = self._invoke(project_dir, ["workflow", "status", "resumed-call"])
+        assert human.exit_code == 0, human.output
+        assert "child: failed" in human.stdout
+        assert "child: paused" not in human.stdout
+
 
 
 class TestWorkflowCliAlignment:

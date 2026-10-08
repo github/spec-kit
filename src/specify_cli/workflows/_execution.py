@@ -475,6 +475,12 @@ class Execution:
                 )
             if operation == "begin":
                 candidate["active"] = True
+                if node["phase"] == "blocked" and candidate.get("binding"):
+                    # A resumed call's recorded status summarized its previous
+                    # attempt; its children now hold the authoritative progress.
+                    for key in ("result", "outcome", "error"):
+                        candidate.pop(key, None)
+                    candidate["phase"] = "children"
             elif operation in {"finish", "settle", "leave"}:
                 candidate["active"] = False
             previous = node.get("children", [])
@@ -487,6 +493,7 @@ class Execution:
             # The same node rules are checked when a checkpoint is loaded.
             check_node(occurrence.config, candidate, changed=set(changes or ()),
                        new_children=new_children)
+            node.clear()
             node.update(candidate)
             if operation == "begin":
                 self.state.current_step_id = occurrence.qualified

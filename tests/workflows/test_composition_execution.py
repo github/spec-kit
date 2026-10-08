@@ -1647,6 +1647,69 @@ def test_unfinished_workflow_call_emits_events_on_resume(tmp_path, probe):
 
 
 @pytest.mark.parametrize(
+    "failure, expected",
+    [(RuntimeError, RunStatus.FAILED), (KeyboardInterrupt, RunStatus.PAUSED)],
+)
+def test_resumed_call_discards_status_of_previous_attempt(
+    tmp_path, monkeypatch, probe, failure, expected
+):
+    from specify_cli.workflows._execution import scope_summaries
+
+    explode = {"enabled": True}
+
+    class Explode(StepBase):
+        type_key = "explode"
+
+        def execute(self, config, context):
+            if explode["enabled"]:
+                raise failure("boom")
+            return StepResult(StepStatus.COMPLETED)
+
+    monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+    install(
+        tmp_path,
+        definition(
+            "child",
+            [
+                {"id": "wait", "type": "probe", "await": True},
+                {"id": "work", "type": "explode"},
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        ),
+    )
+    root = definition(
+        "parent",
+        [call(input={"approve": "{{ inputs.approve }}"})],
+        inputs={"approve": {"type": "boolean", "default": False}},
+    )
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(root)
+    assert state.status == RunStatus.PAUSED
+    run_id = state.run_id
+
+    if failure is RuntimeError:
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.resume(run_id, {"approve": True})
+    else:
+        engine.resume(run_id, {"approve": True})
+
+    state = RunState.load(run_id, tmp_path)
+    node = state.execution["sequence"]["nodes"][0]
+    assert state.status == expected
+    assert node["phase"] == "children"
+    assert not {"result", "outcome", "error"} & node.keys()
+    assert scope_summaries(state.execution, state.status.value) == [
+        {"scope_path": ["call"], "workflow_id": "child", "status": expected.value}
+    ]
+
+    explode["enabled"] = False
+    state = engine.resume(run_id)
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["output"]["status"] == "completed"
+    assert probe["wait"] == 2
+
+
+@pytest.mark.parametrize(
     "template, expected_event, status",
     [
         ({"status": "failed"}, "step_failed", RunStatus.FAILED),
@@ -2083,6 +2146,8 @@ def test_interrupted_bound_call_reports_run_outcome(tmp_path, monkeypatch, probe
 
 
 def test_rebind_failure_has_one_failed_caller_outcome(tmp_path, probe):
+    from specify_cli.workflows._execution import scope_summaries
+
     install(
         tmp_path,
         definition(
@@ -2106,7 +2171,15 @@ def test_rebind_failure_has_one_failed_caller_outcome(tmp_path, probe):
     failed = RunState.load(state.run_id, tmp_path)
     node = failed.execution["sequence"]["nodes"][0]
     assert failed.status == RunStatus.FAILED
-    assert node == before
+    # Invalid inputs fail the run, not the call: the re-entered call keeps its
+    # binding and children and records no outcome of its own.
+    assert node["phase"] == "children"
+    assert not {"result", "outcome", "error"} & node.keys()
+    assert node["binding"] == before["binding"]
+    assert node["children"] == before["children"]
+    assert scope_summaries(failed.execution, failed.status.value) == [
+        {"scope_path": ["call"], "workflow_id": "child", "status": "failed"}
+    ]
     assert WorkflowEngine(tmp_path).resume(
         state.run_id, {"approve": "true"}
     ).status == RunStatus.COMPLETED
