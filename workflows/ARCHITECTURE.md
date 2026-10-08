@@ -115,8 +115,11 @@ under the run lock. Callers cannot supply a destination phase.
 `phase` identifies the continuation point, `active` identifies entered occurrences
 (several may be active in a fan-out), and `outcome` identifies a subtree halt or
 completion. A container's own result may be completed while its children are
-paused. `current_step_id` is a compatibility status view, updated on entry and
-reconciled against the tree on exit, rather than a resume cursor.
+paused. `current_step_id` is a compatibility status view updated as
+occurrences are entered, rather than a resume cursor. Completion does not
+reconcile this scalar; during parallel fan-out it may name an item that has
+already finished, while the tree's per-occurrence `active` flags remain
+authoritative.
 Status reporting uses a bound call's recorded result when available. If an
 interruption or exception leaves the active call unfinished without a result,
 its scope inherits the run's paused or failed status; completed calls keep
