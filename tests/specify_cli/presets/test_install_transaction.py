@@ -21,7 +21,7 @@ from tests.specify_cli.presets._helpers import (
 
 def tree_state(root):
     return {
-        str(path.relative_to(root)): (
+        path.relative_to(root).as_posix(): (
             ("link", os.readlink(path))
             if path.is_symlink()
             else ("dir",)

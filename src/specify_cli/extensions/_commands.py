@@ -113,8 +113,37 @@ def _capture_preset_command_names(project_root: Path) -> set[str]:
     )
 
 
+def _snapshot_command_candidates(manager, manifest) -> set[str]:
+    """Concrete command names an extension can provide, declared or conventional.
+
+    The preset resolver also honours conventional command filenames inside an
+    extension directory (``commands/<name>.md`` and the namespace fallback
+    ``commands/<name without the speckit prefix>.md``). A regex selector can
+    match those concrete names even though no manifest entry names them, and an
+    agent then gets brand-new skill directories. Rollback snapshots seeded from
+    the manifest alone would leave those directories behind, so callers include
+    every conventional candidate as well. A raw ``regex:...`` name is a
+    selector, never a concrete resource, and is skipped.
+    """
+    names = set(manager._collect_manifest_command_names(manifest))
+    extension_dir = manager.extensions_dir / manifest.id
+    for subdir in ("commands", "templates/commands"):
+        candidate_dir = extension_dir / subdir
+        if not candidate_dir.is_dir():
+            continue
+        for path in candidate_dir.glob("*.md"):
+            stem = path.stem
+            if not stem or stem.startswith("regex:"):
+                continue
+            names.add(stem if stem.startswith("speckit.") else f"speckit.{stem}")
+    return names
+
+
 def _refresh_presets_and_warn(
-    project_root: Path, affected_commands: set[str] | None = None
+    project_root: Path,
+    affected_commands: set[str] | None = None,
+    *,
+    strict: bool = False,
 ) -> None:
     """Re-register enabled preset overrides after extension stack changes.
 
@@ -123,20 +152,31 @@ def _refresh_presets_and_warn(
     can change which concrete command declarations are materialized. Keep the
     normal preset enablement and active-integration rules by using its existing
     integration-switch registration path.
-    """
-    try:
-        from .._init_options import load_init_options
-        from ..presets import PresetManager
 
-        agent = load_init_options(project_root).get("ai")
-        if agent:
-            manager = PresetManager(project_root)
-            if affected_commands:
-                manager.register_enabled_presets_for_agent(
-                    agent, affected_commands=affected_commands
-                )
-            else:
-                manager.register_enabled_presets_for_agent(agent)
+    ``strict=True`` propagates reconciliation failures to a caller that owns an
+    atomic transaction (priority changes must not commit while selector-backed
+    artifacts still reflect the previous ordering). Default callers keep the
+    existing best-effort warning behavior.
+    """
+    from .._init_options import load_init_options
+    from ..presets import PresetManager
+
+    agent = load_init_options(project_root).get("ai")
+    if not agent:
+        return
+    manager = PresetManager(project_root)
+    if strict:
+        manager.register_enabled_presets_for_agent(
+            agent, affected_commands=affected_commands, strict=True
+        )
+        return
+    try:
+        if affected_commands:
+            manager.register_enabled_presets_for_agent(
+                agent, affected_commands=affected_commands
+            )
+        else:
+            manager.register_enabled_presets_for_agent(agent)
     except Exception as exc:
         from .. import _print_cli_warning
 

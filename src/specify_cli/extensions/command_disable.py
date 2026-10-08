@@ -13,6 +13,63 @@ from .._console import console
 from . import _commands
 
 
+def _disable_hooks(hook_executor, extension_id):
+    """Flip every hook owned by *extension_id* to disabled in extensions.yml."""
+    config = hook_executor.get_project_config()
+    if "hooks" not in config:
+        return
+    for hook_name in config["hooks"]:
+        for hook in config["hooks"][hook_name]:
+            if hook.get("extension") == extension_id:
+                hook["enabled"] = False
+    hook_executor.save_project_config(config)
+
+
+def _capture_disabled_agent_roots(
+    snapshot,
+    manager,
+    preset_manager,
+    project_root,
+    extension_id,
+    historical_agents,
+) -> None:
+    """Snapshot every directory this extension's own agents are stripped from.
+
+    ``_capture_preset_artifacts`` derives its agent set from preset ownership,
+    so an extension-only agent (for example a native-skill integration that
+    never received a preset artifact) would be missed and its files deleted
+    without a backup. Capture the resolved command and skill roots for each
+    historical agent, including the global skill roots of skills-mode agents.
+    """
+    from ..agents import CommandRegistrar
+
+    registrar = CommandRegistrar(project_root)
+    manifest = manager.get_extension(extension_id)
+    for historical_agent in sorted(historical_agents):
+        if not historical_agent or historical_agent == "generic":
+            continue
+        agent_config = registrar.AGENT_CONFIGS.get(historical_agent)
+        if agent_config and agent_config.get("extension") != "/SKILL.md":
+            directory = registrar._resolve_agent_dir(
+                historical_agent, agent_config, project_root
+            )
+            if directory.is_relative_to(project_root):
+                snapshot.capture(directory)
+        skills_dir = preset_manager._resolve_agent_skills_dir(historical_agent)
+        if skills_dir is None:
+            continue
+        if skills_dir.is_relative_to(project_root):
+            snapshot.capture(skills_dir)
+        elif manifest is not None:
+            # Global skill root outside the project: capture exactly the
+            # concrete skill directories this extension can own, never a
+            # raw regex selector name.
+            for name in _commands._snapshot_command_candidates(manager, manifest):
+                for skill in preset_manager._skill_names_for_command(name):
+                    if preset_manager._is_safe_registry_skill_name(skill):
+                        snapshot.capture(skills_dir / skill)
+
+
 @_commands.extension_app.command("disable")
 def extension_disable(
     extension: str = typer.Argument(help="Extension ID or name to disable"),
@@ -58,27 +115,71 @@ def extension_disable(
         except (ExtensionError, ValueError, OSError) as exc:
             console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1) from exc
+        _disable_hooks(hook_executor, extension_id)
     else:
-        # Remove this agent's tracked artifacts before flipping enabled. If
-        # cleanup fails, ownership metadata and enabled state remain retryable.
+        # Cleanup mutates several agents' artifacts, both registries, and the
+        # hook config. A failure part-way through must not leave the extension
+        # enabled with the earlier agents already stripped, so snapshot every
+        # touched destination first and restore it as a unit on error.
+        import copy
+
+        from ..presets import PresetManager
+        from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+
         registered = metadata.get("registered_commands", {})
         historical_agents = set(registered) if isinstance(registered, dict) else set()
         if agent:
             historical_agents.add(agent)
-        for historical_agent in sorted(historical_agents):
-            manager.unregister_agent_artifacts(
-                historical_agent, extension_ids={extension_id}
+        preset_manager = PresetManager(project_root)
+        registry_before = copy.deepcopy(manager.registry.data)
+        snapshot = _ArtifactSnapshot()
+        captured = False
+        try:
+            _capture_preset_artifacts(preset_manager, snapshot)
+            snapshot.capture(project_root / ".specify" / "extensions.yml")
+            _capture_disabled_agent_roots(
+                snapshot,
+                manager,
+                preset_manager,
+                project_root,
+                extension_id,
+                historical_agents,
             )
-        manager.registry.update(extension_id, {"enabled": False})
+            captured = True
+            # Remove each agent's tracked artifacts before flipping enabled so a
+            # rollback restores the exact prior ownership state.
+            for historical_agent in sorted(historical_agents):
+                manager.unregister_agent_artifacts(
+                    historical_agent, extension_ids={extension_id}
+                )
+            manager.registry.update(extension_id, {"enabled": False})
+            _disable_hooks(hook_executor, extension_id)
+        except BaseException as exc:
+            manager.registry.data = registry_before
+            try:
+                if captured:
+                    snapshot.restore()
+            except Exception as rollback_exc:
+                exc.add_note(f"Extension disable rollback failed: {rollback_exc}")
+            console.print(
+                f"[red]Error:[/red] Could not disable "
+                f"'{_escape_markup(str(display_name))}': "
+                f"{_escape_markup(str(exc))}"
+            )
+            raise
+        finally:
+            import sys
 
-    # Disable hooks in extensions.yml
-    config = hook_executor.get_project_config()
-    if "hooks" in config:
-        for hook_name in config["hooks"]:
-            for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension_id:
-                    hook["enabled"] = False
-        hook_executor.save_project_config(config)
+            operation_exc = sys.exception()
+            try:
+                snapshot.close()
+            except Exception as cleanup_exc:
+                if operation_exc is not None:
+                    operation_exc.add_note(
+                        f"Extension disable snapshot cleanup failed: {cleanup_exc}"
+                    )
+                else:
+                    raise
 
     console.print(
         f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled"

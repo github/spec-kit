@@ -77,7 +77,9 @@ def extension_enable(
             _capture_preset_artifacts(
                 preset_manager,
                 snapshot,
-                extra_commands=manager._collect_manifest_command_names(manifest),
+                extra_commands=_commands._snapshot_command_candidates(
+                    manager, manifest
+                ),
             )
             snapshot.capture(project_root / ".specify" / "extensions.yml")
             affected = _commands._capture_preset_command_names(project_root)

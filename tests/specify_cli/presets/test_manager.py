@@ -1019,17 +1019,20 @@ class TestSelfTestPreset:
                     "file": "templates/wrapper.md", "strategy": "wrap"}]},
             }))
             manager.install_from_directory(source, "0.1.5", priority=priority)
-        assert "regex-inner" in memory.read_text()
-        assert "regex-outer" in memory.read_text()
+        assert "regex-inner" in memory.read_text(encoding="utf-8")
+        assert "regex-outer" in memory.read_text(encoding="utf-8")
 
         manager.remove("regex-inner")
 
-        assert "regex-inner" not in memory.read_text()
-        assert "regex-outer" in memory.read_text()
-        assert "{CORE_TEMPLATE}" not in memory.read_text()
-        assert memory.read_text() == PresetResolver(project_dir).resolve_content(
-            "constitution-template", "template"
-        )
+        assert "regex-inner" not in memory.read_text(encoding="utf-8")
+        assert "regex-outer" in memory.read_text(encoding="utf-8")
+        assert "{CORE_TEMPLATE}" not in memory.read_text(encoding="utf-8")
+        # The core constitution template contains non-ASCII text (``->`` arrows),
+        # so the comparison must decode as UTF-8 on every platform instead of
+        # relying on the locale codec (cp1252 on Windows).
+        assert memory.read_text(encoding="utf-8") == PresetResolver(
+            project_dir
+        ).resolve_content("constitution-template", "template")
 
     def test_regex_constitution_removal_without_lower_resource(
         self, project_dir, temp_dir, monkeypatch

@@ -44,7 +44,11 @@ def test_priority_override_write_failure_restores_state(
 
     def fail_override(src, dst, *args, **kwargs):
         calls.append(str(dst))
-        if Path(dst) == skill and "OVERRIDE_NEW" in Path(src).read_text():
+        # Resolve both sides: Windows reports 8.3 short names (RUNNER~1) for the
+        # temp root while the fixture resolved the long name.
+        if Path(dst).resolve() == skill and "OVERRIDE_NEW" in Path(src).read_text(
+            encoding="utf-8"
+        ):
             hits.append(skill.read_bytes())
             raise OSError("override skill publication denied")
         return original_replace(src, dst, *args, **kwargs)
