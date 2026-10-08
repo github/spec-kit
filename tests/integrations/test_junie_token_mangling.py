@@ -33,6 +33,37 @@ def test_junie_token_mangling_reproduction():
     # EXPECTED: allowPromptArgument: false
     assert "allowPromptArgument: false" in updated
 
+def test_junie_escaped_literals_preservation():
+    """Verify that already escaped literals are preserved and not double-escaped."""
+    junie = get_integration("junie")
+
+    # $$HOME should stay $$HOME
+    content = "Literal: $$HOME"
+    updated = junie.post_process_command_content(content)
+    assert "$$HOME" in updated
+    assert "$$$HOME" not in updated
+
+    # $$ARGUMENTS should stay $$ARGUMENTS and NOT trigger allowPromptArgument
+    content = "Help: $$ARGUMENTS literal"
+    updated = junie.post_process_command_content(content)
+    assert "$$ARGUMENTS" in updated
+    assert "$$$ARGUMENTS" not in updated
+    assert "allowPromptArgument: false" in updated
+
+def test_junie_frontmatter_preservation():
+    """Verify that variables in YAML frontmatter are not escaped."""
+    junie = get_integration("junie")
+
+    content = "---\nkey: $VAL\n---\nbody with $HOME"
+    updated = junie.post_process_command_content(content)
+
+    # Frontmatter should be preserved
+    assert "key: $VAL" in updated
+    assert "key: $$VAL" not in updated
+
+    # Body should still be transformed
+    assert "body with $$HOME" in updated
+
 def test_transform_body_variables_direct():
     """Directly test _transform_body_variables with various tokens."""
     junie = get_integration("junie")

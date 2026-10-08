@@ -185,7 +185,7 @@ class JunieIntegration(MarkdownIntegration):
                 return "$prompt"
             return "$$" + word
 
-        return re.sub(r"\$([A-Za-z_][A-Za-z0-9_-]*)", replacer, content)
+        return re.sub(r"(?<!\$)\$([A-Za-z_][A-Za-z0-9_-]*)", replacer, content)
 
     def post_process_command_content(self, content: str) -> str:
         """Apply Junie-specific transformations to command content.
@@ -195,20 +195,36 @@ class JunieIntegration(MarkdownIntegration):
         ``post_process_command_content``) applies these transforms to
         extension/preset command files too, not just core commands.
         """
-        # If it looks like frontmatter but is malformed (missing closing dashes),
-        # short-circuit to avoid partial transformations on an invalid file.
+        # FR-001: Detect $ARGUMENTS before transformation.
+        # Use a token-aware search and avoid matching escaped $$ARGUMENTS.
+        has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", content))
+
+        # If it has frontmatter, we must isolate it to avoid transforming variables
+        # inside the YAML header (e.g. key: $VAL should not become key: $$VAL).
         if content.startswith("---"):
             parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
             if len(parts) < 3:
+                # Malformed frontmatter (missing closing dashes) - return as is.
                 return content
+            
+            frontmatter_block = f"---{parts[1]}---"
+            body = parts[2]
 
-        # FR-001: Detect $ARGUMENTS before transformation
-        # Use a token-aware search to avoid false positives with substrings like $ARGUMENTS_SUFFIX.
-        has_arguments = bool(re.search(r"\$ARGUMENTS(?![A-Za-z0-9_-])", content))
+            updated_body = self._inject_hook_command_note(body)
+            updated_body = self._rewrite_handoff_references(updated_body)
+            updated_body = self._transform_body_variables(updated_body)
 
+            # Recombine and then inject/update allowPromptArgument in the frontmatter.
+            return self._inject_allow_prompt_argument(
+                frontmatter_block + updated_body, 
+                allow_prompt=has_arguments
+            )
+
+        # No frontmatter case.
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
-        # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence
+        # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence.
+        # This will prepends frontmatter if none exists.
         updated = self._inject_allow_prompt_argument(updated, allow_prompt=has_arguments)
         updated = self._transform_body_variables(updated)
         return updated
