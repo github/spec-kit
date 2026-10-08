@@ -706,6 +706,62 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     assert (steps_dir / "my-step" / "__init__.py").read_text(encoding="utf-8") == ""
 
 
+def test_step_refresh_restores_null_registry_entry_when_reinstall_fails(
+    tmp_path: Path, monkeypatch
+):
+    """A JSON null registry value is installed by key, and rollback restores it.
+
+    ``get()`` returns None for both a missing id and a registered null, so
+    presence must be decided by key membership. The snapshot is tracked
+    separately from its value so rollback can write null back verbatim
+    instead of skipping restore or taking the non-force install path.
+    """
+    import json
+
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+    (steps_dir / "my-step").mkdir(parents=True)
+    (steps_dir / "my-step" / "step.yml").write_text(
+        "step:\n  type_key: my-step\n", encoding="utf-8"
+    )
+    (steps_dir / "my-step" / "__init__.py").write_text("", encoding="utf-8")
+    (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps({"schema_version": "1.0", "steps": {"my-step": None}}),
+        encoding="utf-8",
+    )
+
+    seeded = StepRegistry(tmp_path)
+    assert seeded.is_installed("my-step")
+    assert seeded.get("my-step") is None
+    package_text = (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8")
+
+    def _boom(step_id, *args, **kwargs):
+        # Refresh must snapshot/remove before reinstall. Delegating to the
+        # non-force install path would still see this id as installed.
+        assert not StepRegistry(tmp_path).is_installed(step_id)
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
+        manager.refresh(_component("steps", "my-step"))
+
+    restored = StepRegistry(tmp_path)
+    assert restored.is_installed("my-step")
+    assert restored.get("my-step") is None
+    saved = json.loads(
+        (steps_dir / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8")
+    )
+    assert "my-step" in saved["steps"]
+    assert saved["steps"]["my-step"] is None
+    assert (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8") == (
+        package_text
+    )
+
+
 def _seed_refresh_step(root: Path) -> tuple[Path, dict]:
     """Install ``my-step`` on disk the way a previous ``step add`` would have."""
     import json

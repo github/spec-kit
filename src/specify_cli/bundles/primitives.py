@@ -531,16 +531,17 @@ class _StepKindManager:
         backup_root: Path | None = None
         keep_backup = False
         metadata = None
-        not_installed = False
+        had_snapshot = False
         try:
             try:
                 with step_installer._step_install_transaction(self._root):
                     registry = StepRegistry(self._root)
-                    entry = registry.get(component.id)
-                    if entry is None:
-                        not_installed = True
-                    else:
-                        metadata = copy.deepcopy(entry)
+                    # ``get()`` is None for a JSON null entry and for an absent
+                    # id. Installed-ness is key membership; snapshot the value
+                    # separately so a null can be restored verbatim.
+                    if registry.is_installed(component.id):
+                        had_snapshot = True
+                        metadata = copy.deepcopy(registry.get(component.id))
                         backup_root = Path(
                             tempfile.mkdtemp(prefix="speckit-step-refresh-")
                         )
@@ -562,7 +563,7 @@ class _StepKindManager:
                     f"Failed to refresh step '{component.id}': {exc}"
                 ) from exc
 
-            if not_installed:
+            if not had_snapshot:
                 self.install(component)
                 return
 
@@ -606,9 +607,10 @@ class _StepKindManager:
                                 shutil.rmtree(step_dir)
                             if backup_dir.exists():
                                 shutil.copytree(backup_dir, step_dir)
-                            if metadata is not None:
-                                # Insert the snapshot verbatim. ``StepRegistry.add``
-                                # would rewrite ``installed_at`` and ``updated_at``.
+                            if had_snapshot:
+                                # Insert the snapshot verbatim, including JSON
+                                # null (``None``). ``StepRegistry.add`` would
+                                # rewrite ``installed_at`` and ``updated_at``.
                                 steps[component.id] = metadata
                                 current.data = document
                                 current.save()
