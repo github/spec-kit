@@ -146,7 +146,7 @@ YAML-native template scalars without putting them in JSON result records.
 
 Resume validates tree structure, root snapshot, and the legacy offset together,
 before any writes. The offset must be within the workflow and no later than the
-saved root index. Main-format checkpoints without a tree still adapt once;
+saved root index. Legacy checkpoints without a tree still adapt once;
 private, unreleased version-1 trees are rejected rather than silently interpreted
 as the new format.
 

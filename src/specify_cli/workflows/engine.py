@@ -776,8 +776,11 @@ class RunState:
                 self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
             except Exception as exc:
                 # Only write failures poison the instance. A graceful interrupt
-                # (KeyboardInterrupt) propagates unchanged so execute()/resume()
-                # pause the run, as on main; the pause re-saves from memory.
+                # (KeyboardInterrupt) propagates unchanged: during step
+                # execution, execute()/resume() pause the run and re-save from
+                # memory. The setup save before execution is outside that
+                # handler; an interrupt after it replaces state.json leaves the
+                # run `running`.
                 from ._execution import CheckpointError
 
                 self._checkpoint_failed = True

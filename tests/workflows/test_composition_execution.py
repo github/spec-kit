@@ -731,7 +731,7 @@ def test_interrupt_during_checkpoint_pauses_run(tmp_path, monkeypatch, probe, sc
     state = WorkflowEngine(tmp_path).execute(definition("parent", steps))
 
     # A graceful interrupt is not a checkpoint failure: it reaches the engine's
-    # pause path, as on main, even inside a called workflow.
+    # pause path, even inside a called workflow.
     assert fired
     assert state.status == RunStatus.PAUSED
     assert RunState.load(state.run_id, tmp_path).status == RunStatus.PAUSED

@@ -672,7 +672,7 @@ class Execution:
         if node["phase"] in {"ready", "blocked"}:
             impl = self.registry.get(kind)
             if impl is None:
-                # As on main: terminal, only step_failed, no projected result.
+                # Terminal: only step_failed, no projected result.
                 # The node keeps its result so resume can retry after reinstalling.
                 error = unknown_step_error(kind)
                 return MissingImplementation(error)
