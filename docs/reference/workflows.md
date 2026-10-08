@@ -715,6 +715,14 @@ not expression names. Fan-out item aliases are reporting-only: a `fan-in`
 `id`, whose ordered item results are available as
 `steps.<fan-out-id>.output.results`.
 
+> **Migration note:** a fan-out's output no longer includes `step_template`.
+> `steps.<fan-out-id>.output` and the fan-out's entry in a `fan-in`'s
+> `output.results` contain `items`, `max_concurrency`, `item_count`, and
+> `results`; the template is kept only in the private execution tree that runs
+> the items. An expression such as `{{ steps.<fan-out-id>.output.step_template }}`
+> now resolves to empty. Read the template from the fan-out's `step` in the
+> workflow definition instead.
+
 New runs persist selected branches, dynamic custom-step expansions, loop
 iterations, and fan-out items. Resume retains completed work without
 reevaluating already selected branches. Workflow targets and overlay-resolved

@@ -1069,6 +1069,52 @@ def test_resume_restores_completed_fan_out_item_aliases(tmp_path, monkeypatch, p
     ]
 
 
+def test_fan_out_template_is_private_to_the_execution_tree(tmp_path, probe):
+    template = {"id": "template", "type": "probe", "value": "{{ item }}"}
+    state = WorkflowEngine(tmp_path).execute(
+        definition(
+            "parent",
+            [
+                {"id": "fan", "type": "fan-out", "items": [1, 2], "step": template},
+                {"id": "wait", "type": "probe", "await": True},
+                {"id": "join", "type": "fan-in", "wait_for": ["fan"]},
+                {
+                    "id": "read",
+                    "type": "probe",
+                    "value": "{{ steps.fan.output.step_template }}",
+                },
+            ],
+            inputs={"approve": {"type": "boolean", "default": False}},
+        )
+    )
+    assert state.status == RunStatus.PAUSED
+    paused_output = RunState.load(state.run_id, tmp_path).step_results["fan"]["output"]
+
+    state = WorkflowEngine(tmp_path).resume(state.run_id, {"approve": True})
+
+    assert state.status == RunStatus.COMPLETED
+    # The template stays in the private execution source that drives the items.
+    node = state.execution["sequence"]["nodes"][0]
+    assert yaml.safe_load(node["template"]) == template
+    item_results = [{"value": 1}, {"value": 2}]
+    expected = {
+        "items": [1, 2],
+        "max_concurrency": 1,
+        "item_count": 2,
+        "results": item_results,
+    }
+    # It is published neither in the fan-out output (live, replayed, or
+    # persisted) nor in a fan-in aggregate, and expressions cannot read it.
+    for output in (
+        paused_output,
+        state.step_results["fan"]["output"],
+        RunState.load(state.run_id, tmp_path).step_results["fan"]["output"],
+    ):
+        assert output == expected
+    assert state.step_results["join"]["output"]["results"] == [expected]
+    assert state.step_results["read"]["output"]["value"] is None
+
+
 def test_replay_keeps_private_nested_fan_out_aliases_private(tmp_path, probe):
     state = WorkflowEngine(tmp_path).execute(
         definition(
