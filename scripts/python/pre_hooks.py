@@ -50,11 +50,11 @@ def resolve(event: str, project_root: Path) -> dict:
             for field in ("extension", "command"):
                 if field in entry and (not isinstance(entry[field], str) or not entry[field]):
                     raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
-            if hook_event != event or entry.get("enabled") is False or entry.get("condition"):
-                continue
             extension, command = entry.get("extension"), entry.get("command")
             if not extension or not command:
                 raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
+            if hook_event != event or entry.get("enabled") is False or entry.get("condition"):
+                continue
             priority = entry.get("priority", 10)
             try:
                 priority = int(priority) if not isinstance(priority, bool) else 10

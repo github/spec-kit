@@ -53,6 +53,10 @@ specify extension remove github
 
 This extension consumes the existing `before_taskstoissues` and `after_taskstoissues` hook points, which are read from `.specify/extensions.yml` at run time. The hook keys are unchanged from the core command, so hooks registered by other extensions — for example the `git` extension's auto-commit hooks — keep firing exactly as before.
 
+Installing or updating the extension also installs the selected shared pre/post
+hook dispatchers under `.specify/scripts/` if an older project lacks them.
+Unmodified managed copies are refreshed; customized scripts are preserved.
+
 ## Requirements
 
 - Spec Kit **0.12.17 or newer**. Extension-local `scripts/...` path rewriting arrived in

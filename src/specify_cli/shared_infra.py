@@ -468,6 +468,7 @@ def install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    hook_dispatchers_only: bool = False,
 ) -> bool:
     """Install shared scripts and templates into *project_path*.
 
@@ -479,7 +480,8 @@ def install_shared_infra(
     warning — the safe-destination check refuses to follow them so writes
     cannot escape the project root). ``refresh_hint`` is shown after the
     customization warning to tell the user which flag would overwrite their
-    customizations.
+    customizations. ``hook_dispatchers_only`` updates only the selected hook
+    resolvers without touching templates, gitignore, or unrelated scripts.
     """
     from .integrations.manifest import _sha256, _validate_rel_path
 
@@ -576,6 +578,11 @@ def install_shared_infra(
                 for src_path in variant_src.rglob("*"):
                     if not src_path.is_file():
                         continue
+                    if hook_dispatchers_only and src_path.name not in {
+                        "pre-hooks.sh", "post-hooks.sh", "pre-hooks.ps1",
+                        "post-hooks.ps1", "pre_hooks.py", "post_hooks.py",
+                    }:
+                        continue
                     # Python bytecode caches are local artifacts, not
                     # workflow scripts — never install them.
                     if "__pycache__" in src_path.parts:
@@ -635,7 +642,7 @@ def install_shared_infra(
                     )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
-    if templates_src.is_dir():
+    if not hook_dispatchers_only and templates_src.is_dir():
         dest_templates = project_path / ".specify" / "templates"
         if _ensure_or_bucket_dir(dest_templates):
             for src in templates_src.iterdir():
@@ -686,7 +693,7 @@ def install_shared_infra(
     # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
     # is therefore intentionally left in place by ``integration uninstall``.
     specify_dir = project_path / ".specify"
-    if _ensure_or_bucket_dir(specify_dir):
+    if not hook_dispatchers_only and _ensure_or_bucket_dir(specify_dir):
         gitignore_dst = specify_dir / ".gitignore"
         gitignore_rel = gitignore_dst.relative_to(project_path).as_posix()
         seen_rels.add(gitignore_rel)
@@ -765,7 +772,7 @@ def install_shared_infra(
     # deletion), scoped to the selected variants, and only for *managed* copies —
     # a user-customized file (hash diverges), a symlink, or a recovered entry is
     # preserved by ``_is_managed``.
-    if scanned_variant_dirs:
+    if scanned_variant_dirs and not hook_dispatchers_only:
         stale_removed: list[str] = []
         script_prefixes = tuple(
             f".specify/scripts/{variant_dir}/" for variant_dir in scanned_variant_dirs

@@ -42,6 +42,13 @@ _HOOK_COMMAND_NOTE = (
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
 
+_HOOK_INSTRUCTION_PATTERN = (
+    r"(?m)^([ \t]*)("
+    r"- For each executable hook, output the following[^\r\n]*"
+    r"|[^\r\n]*For each returned hook in order: invoke mandatory commands[^\r\n]*"
+    r")(\r\n|\n|$)"
+)
+
 _CORE_COMMAND_TEMPLATE_ORDER = (
     "analyze",
     "clarify",
@@ -1737,8 +1744,8 @@ class SkillsIntegration(IntegrationBase):
     ) -> str:
         """Insert a dot-to-hyphen note before each hook output instruction.
 
-        Targets the line ``- For each executable hook, output the following``
-        and inserts the note on the line before it, matching its indentation.
+        Targets legacy hook-output instructions and scripted hook-dispatch
+        instructions, matching their indentation.
         Skips individual instructions that already have the note immediately
         above them.
         """
@@ -1770,7 +1777,7 @@ class SkillsIntegration(IntegrationBase):
             )
 
         return re.sub(
-            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            _HOOK_INSTRUCTION_PATTERN,
             repl,
             content,
         )

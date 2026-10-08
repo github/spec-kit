@@ -93,6 +93,29 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         assert "replace dots (`.`) with hyphens (`-`)" in injected
         assert "- For each executable hook, output the following:" in injected
 
+    def test_junie_scripted_hook_instruction_injection(self):
+        junie = get_integration("junie")
+        instruction = (
+            "Run `.specify/scripts/bash/pre-hooks.sh plan` from the project root. "
+            "For each returned hook in order: invoke mandatory commands in this agent.\n"
+        )
+        injected = junie._inject_hook_command_note(instruction)
+        assert "`/speckit-git-commit`" in injected
+        assert injected.count("replace dots (`.`)") == 1
+        assert junie._inject_hook_command_note(injected) == injected
+
+    def test_junie_scripted_hook_note_not_suppressed_by_earlier_note(self):
+        junie = get_integration("junie")
+        first = junie._inject_hook_command_note(
+            "- For each executable hook, output the following:\n"
+        )
+        second = (
+            "Run `.specify/scripts/bash/post-hooks.sh plan` from the project root. "
+            "For each returned hook in order: invoke mandatory commands in this agent.\n"
+        )
+        injected = junie._inject_hook_command_note(first + second)
+        assert injected.count("replace dots (`.`)") == 2
+
     def test_junie_hook_instruction_injection_no_trailing_newline(self):
         """Note must not collapse onto the instruction line when the
         instruction is the final line with no trailing newline.
@@ -136,6 +159,8 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         specify_contents = specify_file.read_text(encoding="utf-8")
         assert "/speckit-plan" in specify_contents
         assert "/speckit.plan" not in specify_contents
+        assert specify_contents.count("replace dots (`.`) with hyphens (`-`)") == 2
+        assert "`/speckit-git-commit`" in specify_contents
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner

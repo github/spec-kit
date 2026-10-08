@@ -2556,6 +2556,48 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
+        needs_hook_dispatchers = False
+        for command in manifest.commands:
+            source_file = (source_dir / command["file"]).resolve()
+            if not source_file.is_relative_to(source_dir.resolve()) or not source_file.is_file():
+                continue
+            try:
+                command_source = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise ExtensionError(f"Cannot read extension command '{command['file']}': {exc}") from exc
+            needs_hook_dispatchers |= (
+                "{PRE_HOOK_SCRIPT}" in command_source or "{POST_HOOK_SCRIPT}" in command_source
+            )
+
+        if needs_hook_dispatchers:
+            from .. import _install_shared_infra
+            from ..integrations.base import get_invocation_prefix
+
+            options = active_options if isinstance(active_options, dict) else {}
+            script = options.get("script") or ("ps" if os.name == "nt" else "sh")
+            variant = {"sh": "bash", "ps": "powershell", "py": "python"}.get(script) if isinstance(script, str) else None
+            if variant is None:
+                raise ExtensionError(f"Unsupported hook dispatcher script type: {script}")
+            skills = is_ai_skills_enabled(options)
+            try:
+                _install_shared_infra(
+                    self.project_root,
+                    script,
+                    invoke_separator="-" if skills else ".",
+                    invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
+                    refresh_managed=True,
+                    hook_dispatchers_only=True,
+                )
+            except (OSError, ValueError) as exc:
+                raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
+            for phase in ("pre", "post"):
+                name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
+                dispatcher = self.project_root / ".specify" / "scripts" / variant / name
+                if dispatcher.is_symlink() or not dispatcher.is_file():
+                    raise ExtensionError(
+                        f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
+                    )
+
         # Remove existing installation AFTER all validations pass so that a
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).

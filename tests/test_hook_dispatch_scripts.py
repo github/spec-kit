@@ -129,6 +129,69 @@ def test_invalid_command_name_does_not_read_config(tmp_path, phase):
     code, data = run_hook(tmp_path, phase, "../../bad")
     assert code == 1
     assert "Invalid hook event" in data["error"]
+    assert data["event"] == f"{'before' if phase == 'pre' else 'after'}_../../bad"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_installed_mapping_metadata_does_not_hide_hooks(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    HookExecutor(tmp_path).save_project_config({
+        "installed": [{"id": "git", "version": "1.0.0"}, "agent-context"],
+        "hooks": {event: [{"extension": "git", "command": "speckit.git.commit"}]},
+    })
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path, phase)[1]
+    assert data["hooks"][0]["command"] == "speckit.git.commit"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_documented_indented_installed_mapping(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, (
+        'installed:\n  - id: jira\n    version: "1.0.0"  # Pin to specific version\n'
+        'hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n'
+    ))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"][0]["command"] == "speckit.git.commit"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_malformed_installed_mapping_rejected(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, (
+        "installed:\n- id: jira\n  version: [unfinished\n"
+        "hooks:\n  before_plan: []\n"
+    ))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("missing", ["extension", "command"])
+def test_non_target_event_requires_identifiers(tmp_path, variant, phase, missing):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    field = "command: speckit.git.commit" if missing == "extension" else "extension: git"
+    write_config(tmp_path, (
+        "hooks:\n"
+        f"  {'after' if phase == 'pre' else 'before'}_plan:\n"
+        f"    - {field}\n"
+    ))
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert "needs extension and command" in data["error"]
+    assert data["hooks"] == []
 
 
 def test_empty_condition_and_enabled_default_still_execute(tmp_path):

@@ -297,6 +297,78 @@ class TestExtensionInstall:
         for rel_path in SCRIPT_TWINS.values():
             assert (installed / rel_path).is_file(), f"Missing script: {rel_path}"
 
+    @pytest.mark.parametrize("variant,folder,extension", [
+        ("sh", "bash", "sh"),
+        ("ps", "powershell", "ps1"),
+        ("py", "python", "py"),
+    ])
+    def test_install_and_upgrade_restore_shared_hook_dispatchers(
+        self, tmp_path: Path, variant: str, folder: str, extension: str,
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": variant}), encoding="utf-8"
+        )
+        core = tmp_path / ".github/agents/speckit.taskstoissues.agent.md"
+        core.parent.mkdir(parents=True)
+        core.write_text("core taskstoissues\n", encoding="utf-8")
+        scripts = specify / "scripts" / folder
+        pre = scripts / (f"pre_hooks.{extension}" if variant == "py" else f"pre-hooks.{extension}")
+        post = scripts / (f"post_hooks.{extension}" if variant == "py" else f"post-hooks.{extension}")
+        assert not pre.exists() and not post.exists()
+
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert pre.is_file() and post.is_file()
+        command = tmp_path / ".github" / "agents" / f"{COMMAND_NAME}.agent.md"
+        assert f".specify/scripts/{folder}/{pre.name}" in command.read_text(encoding="utf-8")
+
+        pre.write_text(pre.read_text(encoding="utf-8") + "\n# customized\n", encoding="utf-8")
+        post.unlink()
+        manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION, force=True)
+        assert pre.read_text(encoding="utf-8").endswith("# customized\n")
+        assert post.is_file()
+        assert f".specify/scripts/{folder}/{post.name}" in command.read_text(encoding="utf-8")
+
+    def test_install_rejects_symlinked_hook_dispatcher(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionError, ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "sh"}), encoding="utf-8"
+        )
+        scripts = tmp_path / ".specify/scripts/bash"
+        scripts.mkdir(parents=True)
+        outside = tmp_path / "outside.sh"
+        outside.write_text("keep\n", encoding="utf-8")
+        try:
+            (scripts / "pre-hooks.sh").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        manager = ExtensionManager(tmp_path)
+        with pytest.raises(ExtensionError, match="missing hook dispatcher"):
+            manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert outside.read_text(encoding="utf-8") == "keep\n"
+        assert not manager.registry.is_installed("github")
+
+    def test_install_rejects_unsupported_hook_runtime_before_writing(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionError, ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "invalid"}), encoding="utf-8"
+        )
+        manager = ExtensionManager(tmp_path)
+        with pytest.raises(ExtensionError, match="Unsupported hook dispatcher script type"):
+            manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert not (specify / "scripts").exists()
+        assert not manager.registry.is_installed("github")
+
     def test_remove_uninstalls_cleanly(self, tmp_path: Path):
         from specify_cli.extensions import ExtensionManager
 

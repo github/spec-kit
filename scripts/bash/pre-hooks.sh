@@ -117,7 +117,6 @@ hook_field() {
             return
         fi
     fi
-    [[ $target == true ]] || return
     case $key in
         extension) HOOK_EXT[index]=$HOOK_SCALAR ;;
         command) HOOK_CMD[index]=$HOOK_SCALAR ;;
@@ -128,6 +127,18 @@ hook_field() {
         description) HOOK_DESCRIPTION[index]=$HOOK_SCALAR ;;
         prompt) HOOK_PROMPT[index]=$HOOK_SCALAR ;;
     esac
+}
+
+hook_installed_field() {
+    local field=$1 key raw
+    if [[ ! $field =~ ^([a-z_]+):([[:space:]]|$) ]]; then
+        HOOK_ERROR="Unsupported YAML installed entry"
+        return
+    fi
+    key=${BASH_REMATCH[1]}
+    raw=${field:${#key}+1}
+    if [[ $raw =~ ^(.*[\"\'])[[:space:]]+#.*$ ]]; then raw=${BASH_REMATCH[1]}; fi
+    hook_scalar "$raw"
 }
 
 hook_priority() {
@@ -145,13 +156,13 @@ hook_priority() {
 
 resolve_hooks() {
     local phase=$1 command=$2 event config line spaces indent text key value
-    local section="" target=false empty=false item_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
+    local section="" target=false empty=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
     local i n chosen first=true
     local -a HOOK_EXT HOOK_CMD HOOK_ENABLED HOOK_OPTIONAL HOOK_CONDITION
-    local -a HOOK_PRIORITY HOOK_PRIORITY_QUOTED HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED
+    local -a HOOK_PRIORITY HOOK_PRIORITY_QUOTED HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED HOOK_EVENTS HOOK_TARGETS
     event="${phase}_${command}"
     if [[ ! $event =~ ^(before|after)_[a-z][a-z0-9_]*$ ]]; then
-        hook_error "" "Invalid hook event: $event"
+        hook_error "$event" "Invalid hook event: $event"
         return 1
     fi
     config=.specify/extensions.yml
@@ -172,14 +183,21 @@ resolve_hooks() {
         spaces=${line%%[! ]*}
         indent=${#spaces}
         text=${line:indent}
-        if (( indent == 0 )); then
-            if [[ $section == installed && $text == '- '* && $text != '- ' ]]; then
+        if [[ $section == installed && $text == '- '* && ( $indent == 0 || $indent == 2 ) ]]; then
+            if [[ ${text:2} =~ ^[a-z_]+:([[:space:]]|$) ]]; then
+                installed_indent=$indent
+                hook_installed_field "${text:2}"
+            else
+                installed_indent=-1
                 hook_scalar "${text:2}"
-                [[ -n $HOOK_ERROR ]] && break
-                continue
             fi
+            [[ -n $HOOK_ERROR ]] && break
+            continue
+        fi
+        if (( indent == 0 )); then
             target=false
             item_indent=-1
+            installed_indent=-1
             if [[ $text == 'hooks:' || $text == 'hooks: {}' ]]; then
                 if [[ $seen_hooks == true ]]; then HOOK_ERROR="Duplicate hooks mapping"; break; fi
                 seen_hooks=true
@@ -198,6 +216,12 @@ resolve_hooks() {
             continue
         fi
         if [[ $section != hooks ]]; then
+            if [[ $section == installed && $installed_indent -ge 0 &&
+                  $indent -eq $((installed_indent+2)) ]]; then
+                hook_installed_field "$text"
+                [[ -n $HOOK_ERROR ]] && break
+                continue
+            fi
             if [[ $section != settings || $indent != 2 || ! $text =~ ^[a-z_]+:([[:space:]]|$) ]]; then
                 HOOK_ERROR="Unsupported YAML top-level layout"; break
             fi
@@ -226,12 +250,12 @@ resolve_hooks() {
         fi
         if [[ $text == '- '* && ( $indent == 2 || $indent == 4 ) && $empty == false ]]; then
             item_indent=$indent
-            if [[ $target == true ]]; then
-                index=$((index+1))
-                HOOK_ENABLED[index]=true
-                HOOK_OPTIONAL[index]=true
-                HOOK_PRIORITY[index]=10
-            fi
+            index=$((index+1))
+            HOOK_EVENTS[index]=$key
+            HOOK_TARGETS[index]=$target
+            HOOK_ENABLED[index]=true
+            HOOK_OPTIONAL[index]=true
+            HOOK_PRIORITY[index]=10
             hook_field "${text:2}"
         elif (( item_indent >= 0 && indent == item_indent + 2 )); then
             hook_field "$text"
@@ -243,10 +267,10 @@ resolve_hooks() {
     [[ $seen == true ]] || HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"
     if [[ -z $HOOK_ERROR ]]; then
         for ((i=1; i<=index; i++)); do
-            [[ ${HOOK_ENABLED[i]} == false || -n ${HOOK_CONDITION[i]} ]] && continue
             if [[ -z ${HOOK_EXT[i]} || -z ${HOOK_CMD[i]} ]]; then
-                HOOK_ERROR="hooks.$event needs extension and command"; break
+                HOOK_ERROR="hooks.${HOOK_EVENTS[i]} needs extension and command"; break
             fi
+            [[ ${HOOK_TARGETS[i]} != true || ${HOOK_ENABLED[i]} == false || -n ${HOOK_CONDITION[i]} ]] && continue
             hook_priority "${HOOK_PRIORITY[i]}" "${HOOK_PRIORITY_QUOTED[i]}"
             HOOK_RANKS[i]=$HOOK_RANK
         done

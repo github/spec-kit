@@ -46,6 +46,16 @@ function Add-HookField {
     if ($key -eq 'priority') { $Hook.priority_quoted = $parsed.Quoted }
 }
 
+function Test-InstalledField {
+    param([string]$Text)
+    if ($Text -notmatch '^([a-z_]+):(?:\s|$)(.*)$') {
+        throw "Unsupported YAML installed entry"
+    }
+    $raw = $Matches[2]
+    if ($raw -match '^(.*["''])\s+#.*$') { $raw = $Matches[1] }
+    $null = Convert-HookScalar $raw
+}
+
 function Test-HookTypedScalar {
     param([string]$Value)
     return $Value -match '^(true|false|yes|no|on|off)$' -or
@@ -78,6 +88,7 @@ function Resolve-HookConfig {
     $target = $false
     $empty = $false
     $itemIndent = -1
+    $installedIndent = -1
     $hook = $null
     foreach ($line in ($text -split '\r?\n')) {
         if ($line -match '^\s*(#|$)') { continue }
@@ -85,12 +96,19 @@ function Resolve-HookConfig {
         if ($line -notmatch '^( *)(.*)$') { throw "Unsupported YAML hook layout" }
         $indent = $Matches[1].Length
         $body = $Matches[2]
-        if ($indent -eq 0) {
-            if ($section -eq 'installed' -and $body -match '^- \S') {
+        if ($section -eq 'installed' -and $indent -in @(0, 2) -and $body -match '^- \S') {
+            if ($body.Substring(2) -match '^[a-z_]+:(?:\s|$)') {
+                $installedIndent = $indent
+                Test-InstalledField $body.Substring(2)
+            } else {
+                $installedIndent = -1
                 $null = Convert-HookScalar $body.Substring(2)
-                continue
             }
+            continue
+        }
+        if ($indent -eq 0) {
             $target = $false
+            $installedIndent = -1
             if ($body -in @('hooks:', 'hooks: {}')) {
                 if ($seenHooks) { throw "Duplicate hooks mapping" }
                 $seenHooks = $true
@@ -111,6 +129,11 @@ function Resolve-HookConfig {
             continue
         }
         if (-not $inHooks) {
+            if ($section -eq 'installed' -and $installedIndent -ge 0 -and
+                $indent -eq $installedIndent + 2) {
+                Test-InstalledField $body
+                continue
+            }
             if ($section -eq 'settings' -and $indent -eq 2 -and $body -match '^([a-z_]+):(?:\s|$)(.*)$') {
                 $null = Convert-HookScalar $Matches[2]
                 continue
@@ -133,8 +156,9 @@ function Resolve-HookConfig {
         }
         if ($indent -in @(2, 4) -and $body.StartsWith('- ') -and -not $empty) {
             $itemIndent = $indent
-            $hook = @{ enabled = 'true'; optional = 'true'; priority = '10'; priority_quoted = $false }
-            if ($target) { $hooks.Add($hook) }
+            $hook = @{ enabled = 'true'; optional = 'true'; priority = '10'; priority_quoted = $false
+                       target = $target; hook_event = $key }
+            $hooks.Add($hook)
             Add-HookField $hook $body.Substring(2) $Event
             continue
         }
@@ -147,10 +171,10 @@ function Resolve-HookConfig {
     $ordered = [Collections.Generic.List[hashtable]]::new()
     for ($i = 0; $i -lt $hooks.Count; $i++) {
         $hook = $hooks[$i]
-        if ($hook.enabled -eq 'false' -or $hook.condition) { continue }
         if (-not $hook.extension -or -not $hook.command) {
-            throw "hooks.$Event needs extension and command"
+            throw "hooks.$($hook.hook_event) needs extension and command"
         }
+        if (-not $hook.target -or $hook.enabled -eq 'false' -or $hook.condition) { continue }
         $ordered.Add(@{
             extension = $hook.extension
             command = $hook.command

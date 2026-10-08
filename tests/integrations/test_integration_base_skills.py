@@ -265,6 +265,10 @@ class SkillsIntegrationTests:
         content = specify_skill.read_text(encoding="utf-8")
         assert ".specify/scripts/bash/pre-hooks.sh specify" in content
         assert ".specify/scripts/bash/post-hooks.sh specify" in content
+        assert content.count("replace dots (`.`) with hyphens (`-`)") == 2
+        from specify_cli.integrations.base import get_invocation_prefix
+        prefix = get_invocation_prefix(self.KEY, True)
+        assert f"`{prefix}speckit-git-commit`" in content
 
     def test_hook_note_injected_for_each_instruction_independently(self):
         """Existing hook notes should not suppress later missing notes."""
