@@ -306,6 +306,117 @@ steps:
         finally:
             sys.modules.pop(module_name, None)
 
+    def test_update_refreshes_custom_steps_between_projects(
+        self, project_dir, monkeypatch
+    ):
+        """A later project update must replace, not retain, custom step types."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.workflows as workflows
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        project_a = project_dir
+        project_b = project_dir / "project-b"
+        (project_b / ".specify" / "workflows").mkdir(parents=True)
+        type_a = "project-a-step"
+        module_names = {self._custom_step_module_name(type_a)}
+        self._write_custom_step(project_a, type_a)
+        monkeypatch.setattr(workflows, "STEP_REGISTRY", dict(workflows.STEP_REGISTRY))
+
+        def workflow_data(workflow_id, version, step_type="shell"):
+            return (
+                self.WORKFLOW_YAML.format(version=version)
+                .replace('id: "align-wf"', f'id: "{workflow_id}"')
+                .replace("type: shell", f"type: {step_type}")
+                .encode()
+            )
+
+        updated_workflows = {
+            "project-a-workflow": workflow_data(
+                "project-a-workflow", "2.0.0", type_a
+            ),
+            "project-b-workflow": workflow_data(
+                "project-b-workflow", "2.0.0", type_a
+            ),
+        }
+
+        def install_initial_workflow(project_root, workflow_id):
+            registry = WorkflowRegistry(project_root)
+            registry.add(workflow_id, {
+                "name": workflow_id,
+                "version": "1.0.0",
+                "description": "custom-step refresh regression",
+                "source": "catalog",
+                "catalog_name": "test-catalog",
+                "url": f"https://example.com/{workflow_id}.yml",
+            })
+            workflow_dir = project_root / ".specify" / "workflows" / workflow_id
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "workflow.yml").write_bytes(
+                workflow_data(workflow_id, "1.0.0")
+            )
+
+        install_initial_workflow(project_a, "project-a-workflow")
+        install_initial_workflow(project_b, "project-b-workflow")
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, workflow_id, *args: {
+                "id": workflow_id,
+                "name": workflow_id,
+                "version": "2.0.0",
+                "url": f"https://example.com/{workflow_id}.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+
+        def response_for(url, **_kwargs):
+            workflow_id = Path(url).stem
+            return self._FakeResponse(updated_workflows[workflow_id], url)
+
+        try:
+            runner = CliRunner()
+            monkeypatch.chdir(project_a)
+            with patch(
+                "specify_cli.authentication.http.open_url", side_effect=response_for
+            ):
+                result_a = runner.invoke(app, ["workflow", "update"], input="y\n")
+            assert result_a.exit_code == 0, result_a.output
+            assert type_a in workflows.STEP_REGISTRY
+
+            monkeypatch.chdir(project_b)
+            workflow_file_b = (
+                project_b
+                / ".specify"
+                / "workflows"
+                / "project-b-workflow"
+                / "workflow.yml"
+            )
+            registry_b = WorkflowRegistry(project_b)
+            original_workflow_b = workflow_file_b.read_bytes()
+            original_registry_b = registry_b.registry_path.read_bytes()
+            original_metadata_b = dict(registry_b.get("project-b-workflow"))
+            with patch(
+                "specify_cli.authentication.http.open_url", side_effect=response_for
+            ):
+                result_b = runner.invoke(app, ["workflow", "update"], input="y\n")
+
+            assert result_b.exit_code != 0
+            assert f"invalid type '{type_a}'" in result_b.output
+            assert type_a not in workflows.STEP_REGISTRY
+            assert workflow_file_b.read_bytes() == original_workflow_b
+            assert registry_b.registry_path.read_bytes() == original_registry_b
+            assert (
+                WorkflowRegistry(project_b).get("project-b-workflow")
+                == original_metadata_b
+            )
+        finally:
+            for module_name in module_names:
+                sys.modules.pop(module_name, None)
+
     def test_update_rejects_unknown_step_without_changing_installed_workflow(
         self, project_dir, monkeypatch
     ):

@@ -969,11 +969,13 @@ class TestPresetCatalog:
         resp.__exit__.return_value = False
         return zip_bytes, resp
 
-    def test_fetch_single_catalog_rejects_oversized_body_without_cache(
-        self, project_dir, monkeypatch
+    @pytest.mark.parametrize("legacy", [False, True], ids=["stacked", "legacy"])
+    def test_catalog_rejects_oversized_body_without_cache(
+        self, project_dir, monkeypatch, legacy
     ):
         """Catalog bounds are enforced at the preset call site."""
         import specify_cli.presets as preset_module
+        from specify_cli.presets._catalog import PresetCatalogValidationError
         from unittest.mock import patch
 
         catalog = PresetCatalog(project_dir)
@@ -996,8 +998,14 @@ class TestPresetCatalog:
         )
 
         with patch.object(catalog, "_open_url", return_value=response):
-            with pytest.raises(PresetError, match="exceeds maximum size"):
-                catalog._fetch_single_catalog(entry, force_refresh=True)
+            with pytest.raises(
+                PresetCatalogValidationError, match="exceeds maximum size"
+            ):
+                if legacy:
+                    with patch.object(catalog, "get_catalog_url", return_value=entry.url):
+                        catalog.fetch_catalog(force_refresh=True)
+                else:
+                    catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert not catalog.cache_dir.exists() or not any(catalog.cache_dir.iterdir())
 

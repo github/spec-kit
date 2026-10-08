@@ -54,6 +54,19 @@ def _normalize_constraint(value: str) -> str:
         if not raw.strip():
             continue
         match = _SPECIFIER_CLAUSE.match(raw)
+        if match is None:
+            # ``_SPECIFIER_CLAUSE`` is anchored with ``^``/``$`` and ``.`` does
+            # not cross newlines, so a clause containing an EMBEDDED newline
+            # does not match at all and ``match.groups()`` raised a raw
+            # AttributeError -- escaping ``parse_constraint``'s contract to
+            # report bad input as a BundlerError. A YAML block literal is an
+            # ordinary way to reach this:
+            #     requires:
+            #       speckit_version: |
+            #         >=1.0.0
+            #         <2.0.0
+            # which loads as ">=1.0.0\n<2.0.0\n".
+            raise InvalidSpecifier(f"Invalid specifier: {raw!r}")
         operator, version = match.groups()
         clauses.append(f"{operator or ''}{_normalize_semver(version)}")
     return ",".join(clauses)
@@ -79,11 +92,24 @@ def satisfies(installed: str, constraint: str) -> bool:
     return spec.contains(version, prereleases=True)
 
 
+def same_version(actual: str, pinned: str) -> bool:
+    """Return True if *actual* is the exact version *pinned* names.
+
+    Compares parsed versions (``v1.0.0`` matches ``1.0.0``) and falls back to a
+    plain string comparison when either side does not parse.
+    """
+    try:
+        return parse_version(actual) == parse_version(pinned)
+    except BundlerError:
+        return str(actual).strip() == str(pinned).strip()
+
+
 _SEMVER_RE = re.compile(
     r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
     r"(?:-(?:(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
     r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
-    r"(?:\+(?:[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+    r"(?:\+(?:[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$",
+    flags=re.ASCII,
 )
 
 
@@ -96,4 +122,4 @@ def is_semver(value: str) -> bool:
     """
     text = str(value)
     core = text[1:] if text[:1] in ("v", "V") else text
-    return bool(_SEMVER_RE.match(core))
+    return bool(_SEMVER_RE.fullmatch(core))

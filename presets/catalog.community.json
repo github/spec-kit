@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-25T00:00:00Z",
+  "updated_at": "2026-10-07T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -460,14 +460,14 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.3.4",
+      "version": "0.3.7",
       "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.4.zip",
-      "sha256": "b08c1128756f7fc56de8deb98f9e1cb859b5f76063b39843e395aaed2b440214",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.7.zip",
+      "sha256": "fc20a010c2124977249f926677d1bb2b03b81e7cd2a549bc4c7489de837e1427",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.4/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.7/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -482,10 +482,10 @@
         "authoring",
         "governance",
         "requirements",
-        "migration"
+        "lifecycle"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-10-07T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
@@ -990,6 +990,35 @@
       "created_at": "2026-06-22T00:00:00Z",
       "updated_at": "2026-06-25T00:00:00Z"
     },
+    "software-humano": {
+      "name": "Software Humano",
+      "id": "software-humano",
+      "version": "2.0.3",
+      "description": "Compiles the requirements of the Software Humano manifesto into the eight core Spec Kit commands and into the spec, plan and tasks templates, quoting the manifesto's literal text rather than rephrasing it. Treats the cost a product transfers to the person — attention, learning, decisions they did not come to make — as something budgeted and verified.",
+      "author": "Damián Acuña",
+      "repository": "https://github.com/dacunao/software-humano-speckit",
+      "download_url": "https://github.com/dacunao/software-humano-speckit/releases/download/preset-software-humano-v2.0.3/Software_Humano_Preset_v2.0.3.zip",
+      "sha256": "c5e9725a8aea834329fe9d7f456c9f0baabedcedad3fb4c2645b83536899e069",
+      "homepage": "https://github.com/dacunao/software-humano-speckit",
+      "documentation": "https://github.com/dacunao/software-humano-speckit/blob/preset-software-humano-v2.0.3/tools/speckit/software-humano-spec-kit-preset-2.0.3/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0"
+      },
+      "provides": {
+        "templates": 4,
+        "commands": 8
+      },
+      "tags": [
+        "human-centered",
+        "jobs-to-be-done",
+        "job-stories",
+        "product-governance",
+        "sdd"
+      ],
+      "created_at": "2026-10-02T00:00:00Z",
+      "updated_at": "2026-10-02T00:00:00Z"
+    },
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
@@ -1020,17 +1049,20 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.5.2",
+      "version": "0.5.6",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-preset-0.5.2.zip",
-      "sha256": "9920daf8b7ebe2d5e0d5e723409719afeaaa7c59788a6f3ecda67e2f7543d0b9",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.6/specassay-preset-0.5.6.zip",
+      "sha256": "6f70580f9b349df8b850f31cf02601a24263b9faaa79c48b14a6d2ff50c1260d",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.14.0,<2.0.0"
+        "speckit_version": ">=0.14.0,<2.0.0",
+        "extensions": [
+          "specassay-check"
+        ]
       },
       "provides": {
         "templates": 3,
@@ -1043,7 +1075,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-09-24T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",

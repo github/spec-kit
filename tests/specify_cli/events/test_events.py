@@ -463,6 +463,49 @@ class TestClaudeJsonMerging:
         assert len(data["hooks"]["PreToolUse"]) == 1
         assert data["hooks"]["PreToolUse"][0]["matcher"] == "Bash"
 
+    def test_merge_keeps_non_ascii_user_settings_readable(self, tmp_path):
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+
+        config_path = tmp_path / ".claude/settings.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps({"env": {"GREETING": "Привіт — ¿qué tal? 日本語"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        events = {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        }
+        install_integration_events(integration, tmp_path, manifest, events)
+
+        text = config_path.read_text(encoding="utf-8")
+        assert "Привіт — ¿qué tal? 日本語" in text
+        assert json.loads(text)["env"]["GREETING"] == "Привіт — ¿qué tal? 日本語"
+
+    def test_merge_keeps_escaped_lone_surrogate_in_user_settings(self, tmp_path):
+        integration = ClaudeIntegration()
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        manifest.record_file = MagicMock()
+        manifest.record_existing = MagicMock()
+
+        config_path = tmp_path / ".claude/settings.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text('{"env": {"ODD": "\\ud800"}}', encoding="utf-8")
+
+        events = {
+            "pre_tool_use": [{"command": "speckit.tdd.validate"}],
+        }
+        install_integration_events(integration, tmp_path, manifest, events)
+
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        assert data["env"]["ODD"] == "\ud800"
+        assert "PreToolUse" in data["hooks"]
+
 
 # -- Copilot events JSON writing --------------------------------------------
 
@@ -2584,6 +2627,40 @@ class TestCollectExtensionEventsEnabledFlag:
 class TestRefreshIntegrationEvents:
     """#1: refresh_integration_events regenerates native config after
     extension state changes."""
+
+    @pytest.mark.parametrize("active_agent", ["generic", "claude"])
+    @pytest.mark.parametrize("invalid_state,detail", [
+        ("{", "decode"),
+        (json.dumps({"integration_state_schema": 999}), "unsupported schema 999"),
+    ])
+    def test_refresh_reports_invalid_state_without_changing_hooks(
+        self, tmp_path, invalid_state, detail, active_agent,
+    ):
+        from specify_cli import save_init_options
+        from specify_cli.events import EventRefreshError, refresh_integration_events
+        from typer import Exit
+
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path, version="test")
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.my-ext.check"}]},
+        )
+        config_path = tmp_path / ".claude/settings.json"
+        original = config_path.read_bytes()
+        save_init_options(tmp_path, {"ai": active_agent})
+        state_path = tmp_path / ".specify/integration.json"
+        state_path.write_text(invalid_state, encoding="utf-8")
+
+        if active_agent == "generic":
+            with pytest.raises(EventRefreshError, match=detail) as exc_info:
+                refresh_integration_events(tmp_path)
+            assert exc_info.value.failures[0][0] == ".specify/integration.json"
+        else:
+            with pytest.raises(Exit) as exc_info:
+                refresh_integration_events(tmp_path)
+            assert exc_info.value.exit_code == 1
+        assert config_path.read_bytes() == original
 
     def test_refresh_strips_removed_extension_events(self, tmp_path):
         from specify_cli.events import refresh_integration_events

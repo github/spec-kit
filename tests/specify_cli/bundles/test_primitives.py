@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
+from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.primitives import (
     _ExtensionKindManager,
     _PresetKindManager,
@@ -21,6 +21,9 @@ from specify_cli.bundles.primitives import (
     _WorkflowKindManager,
     primitive_manager,
 )
+from specify_cli.extensions import ExtensionRegistry
+from specify_cli.presets import PresetRegistry
+from specify_cli.workflows.catalog import StepRegistry, WorkflowRegistry
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
 
@@ -64,6 +67,22 @@ def test_offline_step_refuses_without_network(tmp_path: Path):
         manager.install(_component("steps"))
 
 
+def test_step_manager_delegates_catalog_install_from_bundle_root(tmp_path, monkeypatch):
+    import specify_cli
+
+    calls: list[tuple[str, Path]] = []
+
+    def _add(step_id: str) -> None:
+        calls.append((step_id, Path.cwd()))
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    manager = _StepKindManager(tmp_path, allow_network=True)
+
+    manager.install(_component("steps", "catalog-step"))
+
+    assert calls == [("catalog-step", tmp_path)]
+
+
 def test_default_installer_threads_allow_network(tmp_path: Path):
     installer = DefaultPrimitiveInstaller(allow_network=False)
     with pytest.raises(BundlerError, match="network access is disabled"):
@@ -82,6 +101,23 @@ def test_offline_refresh_explains_component_needs_network(tmp_path: Path, kind: 
     assert "install it first" not in message
 
 
+_REGISTRIES = {
+    "extensions": lambda root: ExtensionRegistry(root / ".specify" / "extensions"),
+    "presets": lambda root: PresetRegistry(root / ".specify" / "presets"),
+    "workflows": WorkflowRegistry,
+    "steps": StepRegistry,
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_REGISTRIES))
+def test_installed_version_reads_each_primitive_registry(tmp_path: Path, kind: str):
+    _REGISTRIES[kind](tmp_path).add("x", {"version": "0.9.0"})
+    installer = DefaultPrimitiveInstaller()
+
+    assert installer.installed_version(tmp_path, _component(kind)) == "0.9.0"
+    assert installer.installed_version(tmp_path, _component(kind, "missing")) is None
+
+
 def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     # A workflow that ships with Spec Kit must install even with --offline.
     import specify_cli
@@ -96,10 +132,14 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
         assets, "_locate_bundled_workflow", lambda wid: bundled
     )
     calls: list[tuple] = []
+
+    def _workflow_add(wid, dev=None, from_url=None):
+        calls.append((wid, dev, from_url))
+
     monkeypatch.setattr(
         specify_cli,
         "workflow_add",
-        lambda wid, dev=object(), from_url=object(): calls.append((wid, dev, from_url)),
+        _workflow_add,
     )
 
     manager = primitive_manager("workflows", tmp_path, allow_network=False)
@@ -180,7 +220,9 @@ def test_catalog_preset_install_and_refresh_forward_catalog_name(
             "_catalog_name": "bundle-preset-catalog",
         },
     )
-    monkeypatch.setattr(PresetCatalog, "download_pack", lambda _self, _id: archive)
+    monkeypatch.setattr(
+        PresetCatalog, "download_pack_info", lambda _self, _info: archive
+    )
 
     manager = primitive_manager("presets", tmp_path, allow_network=True)
     manager._manager = _FakeManager()
@@ -226,7 +268,7 @@ def test_catalog_extension_install_and_refresh_forward_catalog_and_scaffolding(
         },
     )
     monkeypatch.setattr(
-        ExtensionCatalog, "download_extension", lambda _self, _id: archive
+        ExtensionCatalog, "download_extension_info", lambda _self, _info: archive
     )
 
     manager = primitive_manager("extensions", tmp_path, allow_network=True)
@@ -371,7 +413,7 @@ def test_catalog_extension_install_scaffolds_config(tmp_path: Path, monkeypatch)
         lambda self, eid: {"id": eid, "_install_allowed": True},
     )
     monkeypatch.setattr(
-        ExtensionCatalog, "download_extension", lambda self, eid: zip_path
+        ExtensionCatalog, "download_extension_info", lambda self, info: zip_path
     )
 
     manager = primitive_manager("extensions", project, allow_network=True)
@@ -483,9 +525,9 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
 def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     """Regression: bundle update (refresh=True) of an already-installed extension
     must succeed and pass force=True to install_from_directory."""
+    import specify_cli._assets as assets
     from specify_cli.bundles.installer import install_bundle
     from specify_cli.bundles.manifest import BundleManifest
-    import specify_cli._assets as assets
     from specify_cli.extensions import ExtensionManager
 
     bundled = _write_manifest(tmp_path / "ext", "extension", "1.0.0")
@@ -612,3 +654,186 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     # A rollback must be a rollback: the entry comes back byte-for-byte, not
     # re-registered with fresh ``installed_at`` / ``updated_at`` stamps.
     assert restored.get("my-step") == seeded
+
+
+_HISTORICAL_SHA = "a" * 64
+
+
+def _versioned_entry(cid: str) -> dict:
+    """A catalog entry advertising 0.5.1 that keeps 0.4.12 under ``releases``."""
+    return {
+        "id": cid,
+        "name": cid,
+        "version": "0.5.1",
+        "download_url": f"https://example.com/{cid}/v0.5.1/{cid}.zip",
+        "sha256": "b" * 64,
+        "releases": {
+            "0.4.12": {
+                "download_url": f"https://example.com/{cid}/v0.4.12/{cid}.zip",
+                "sha256": _HISTORICAL_SHA,
+            }
+        },
+        "_install_allowed": True,
+        "_catalog_name": "bundle-catalog",
+    }
+
+
+def _patch_extension_catalog(monkeypatch, entry: dict, archive: Path, downloads: list):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda _id: None)
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info", lambda _self, _id: entry
+    )
+
+    def _download(_self, info):
+        downloads.append(info)
+        return archive
+
+    monkeypatch.setattr(ExtensionCatalog, "download_extension_info", _download)
+
+
+def _patch_preset_catalog(monkeypatch, entry: dict, archive: Path, downloads: list):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: None)
+    monkeypatch.setattr(PresetCatalog, "get_pack_info", lambda _self, _id: entry)
+
+    def _download(_self, info):
+        downloads.append(info)
+        return archive
+
+    monkeypatch.setattr(PresetCatalog, "download_pack_info", _download)
+
+
+def test_extension_pin_selects_historical_catalog_release(tmp_path: Path, monkeypatch):
+    """A pin older than the advertised release installs that exact release
+    (its own URL and digest) instead of refusing the install (#4712)."""
+    archive = tmp_path / "ext.zip"
+    archive.write_bytes(b"placeholder")
+    downloads: list = []
+    installs: list = []
+    _patch_extension_catalog(
+        monkeypatch, _versioned_entry("pinned-ext"), archive, downloads
+    )
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            installs.append(kwargs)
+            return SimpleNamespace(id="pinned-ext")
+
+        def scaffold_config(self, _extension_id):
+            pass
+
+    manager = primitive_manager("extensions", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    manager.install(ComponentRef(kind="extensions", id="pinned-ext", version="0.4.12"))
+
+    assert [d["version"] for d in downloads] == ["0.4.12"]
+    assert downloads[0]["download_url"].endswith("/v0.4.12/pinned-ext.zip")
+    assert downloads[0]["sha256"] == _HISTORICAL_SHA
+    assert installs[0]["expected_id"] == "pinned-ext"
+    assert installs[0]["expected_version"] == "0.4.12"
+    assert installs[0]["catalog_name"] == "bundle-catalog"
+
+
+def test_preset_pin_selects_historical_catalog_release(tmp_path: Path, monkeypatch):
+    archive = tmp_path / "preset.zip"
+    archive.write_bytes(b"placeholder")
+    downloads: list = []
+    installs: list = []
+    _patch_preset_catalog(
+        monkeypatch, _versioned_entry("pinned-preset"), archive, downloads
+    )
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            installs.append(kwargs)
+
+    manager = primitive_manager("presets", tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    manager.install(ComponentRef(kind="presets", id="pinned-preset", version="0.4.12"))
+
+    assert [d["version"] for d in downloads] == ["0.4.12"]
+    assert downloads[0]["download_url"].endswith("/v0.4.12/pinned-preset.zip")
+    assert downloads[0]["sha256"] == _HISTORICAL_SHA
+    assert installs[0]["expected_id"] == "pinned-preset"
+    assert installs[0]["expected_version"] == "0.4.12"
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_pin_missing_from_catalog_releases_refuses_before_download(
+    tmp_path: Path, monkeypatch, kind: str
+):
+    """A pin the winning catalog entry does not carry fails clearly, without
+    substituting the advertised release."""
+    archive = tmp_path / "a.zip"
+    downloads: list = []
+    patch = _patch_extension_catalog if kind == "extensions" else _patch_preset_catalog
+    patch(monkeypatch, _versioned_entry("c"), archive, downloads)
+
+    manager = primitive_manager(kind, tmp_path, allow_network=True)
+    with pytest.raises(
+        BundlerError,
+        match=r"pinned to version 0\.3\.0 .* no release for that version "
+        r"\(it advertises 0\.5\.1\)",
+    ):
+        manager.install(ComponentRef(kind=kind, id="c", version="0.3.0"))
+    assert downloads == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+def test_unpinned_component_installs_advertised_release_unverified(
+    tmp_path: Path, monkeypatch, kind: str
+):
+    archive = tmp_path / "a.zip"
+    archive.write_bytes(b"placeholder")
+    downloads: list = []
+    installs: list = []
+    patch = _patch_extension_catalog if kind == "extensions" else _patch_preset_catalog
+    patch(monkeypatch, _versioned_entry("c"), archive, downloads)
+
+    class _FakeManager:
+        def install_from_zip(self, *args, **kwargs):
+            installs.append(kwargs)
+            return SimpleNamespace(id="c")
+
+        def scaffold_config(self, _extension_id):
+            pass
+
+    manager = primitive_manager(kind, tmp_path, allow_network=True)
+    manager._manager = _FakeManager()
+    manager.install(ComponentRef(kind=kind, id="c"))
+
+    assert [d["version"] for d in downloads] == ["0.5.1"]
+    assert "expected_version" not in installs[0]
+
+
+def test_extension_pin_refuses_archive_declaring_another_version(
+    tmp_path: Path, monkeypatch
+):
+    """The selected release's archive must declare the pinned version: a
+    mislabeled historical asset is refused and nothing is installed."""
+    import zipfile
+
+    from specify_cli.extensions import ExtensionError
+
+    project = tmp_path / "project"
+    ext_source = tmp_path / "ext-source"
+    _write_extension_with_config(ext_source)  # declares my-ext 1.0.0
+    zip_path = tmp_path / "my-ext.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for f in ext_source.rglob("*"):
+            if f.is_file():
+                zf.write(f, f.relative_to(ext_source))
+
+    entry = _versioned_entry("my-ext")
+    _patch_extension_catalog(monkeypatch, entry, zip_path, [])
+
+    manager = primitive_manager("extensions", project, allow_network=True)
+    with pytest.raises(ExtensionError, match="0.4.12"):
+        manager.install(ComponentRef(kind="extensions", id="my-ext", version="0.4.12"))
+    assert not manager.is_installed(ComponentRef(kind="extensions", id="my-ext"))
+    assert not zip_path.exists()

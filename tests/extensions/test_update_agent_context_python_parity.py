@@ -459,13 +459,29 @@ def test_python_empty_config_matching_bash(tmp_path: Path) -> None:
     assert "context_files/context_file not set" in py.stderr
 
 
-@requires_posix_bash
-def test_python_self_seed_from_init_options_matching_bash(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "run_shell",
+    [
+        pytest.param(run_bash, id="bash", marks=requires_posix_bash),
+        pytest.param(
+            run_powershell,
+            id="powershell",
+            marks=pytest.mark.skipif(not POWERSHELL, reason="no PowerShell available"),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("integration", "context_file"),
+    [("claude", "CLAUDE.md"), ("mcode", "AGENTS.md")],
+)
+def test_python_self_seed_from_init_options_matching_shell(
+    tmp_path: Path, run_shell, integration: str, context_file: str
+) -> None:
     repo_a, repo_b = twin_projects(tmp_path)
     for repo in (repo_a, repo_b):
         add_plan(repo)
         (repo / ".specify" / "init-options.json").write_text(
-            json.dumps({"integration": "claude"}), encoding="utf-8"
+            json.dumps({"integration": integration}), encoding="utf-8"
         )
         shutil.copy(
             EXT_DIR / "agent-context-defaults.json",
@@ -476,11 +492,16 @@ def test_python_self_seed_from_init_options_matching_bash(tmp_path: Path) -> Non
             / "agent-context-defaults.json",
         )
 
-    bash = run_bash(repo_a)
+    shell = run_shell(repo_a)
     py = run_python(repo_b)
 
-    assert_parity(bash, py, repo_a, repo_b)
-    assert (repo_a / "CLAUDE.md").read_bytes() == (repo_b / "CLAUDE.md").read_bytes()
+    assert shell.returncode == py.returncode == 0, shell.stderr + py.stderr
+    if run_shell is run_bash:
+        assert_parity(shell, py, repo_a, repo_b)
+    content = (repo_b / context_file).read_bytes()
+    assert (repo_a / context_file).read_bytes() == content
+    assert b"<!-- SPECKIT START -->" in content
+    assert b"specs/001-demo/plan.md" in content
 
 
 @requires_posix_bash

@@ -1,0 +1,36 @@
+schema_version: "1.0"
+
+extension:
+  id: github
+  name: "GitHub Integration"
+  version: "1.0.1"
+  description: "GitHub platform integration for Spec Kit - create GitHub issues from a feature's task list"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  # 0.12.17 is the first release that both rewrites extension-local
+  # "scripts/..." paths (#3364) and resolves __SPECKIT_COMMAND_*__ tokens in
+  # auto-registered skills (#3544). Earlier versions cannot render this
+  # command correctly in every registerable layout.
+  speckit_version: ">=0.12.17"
+  tools:
+    - name: git
+      required: true
+      description: "Reads the origin remote to find the target GitHub repository"
+    - name: github-mcp-server
+      required: true
+      description: "Provides the list_issues and issue_write tools"
+      install_url: "https://github.com/github/github-mcp-server"
+
+provides:
+  commands:
+    - name: speckit.github.taskstoissues
+      file: commands/speckit.github.taskstoissues.md
+      description: "Convert tasks from tasks.md into dependency-ordered GitHub issues"
+
+tags:
+  - "github"
+  - "issues"
+  - "integration"
