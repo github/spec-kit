@@ -522,9 +522,11 @@ specify workflow catalog list
 # Add a custom catalog
 specify workflow catalog add https://example.com/catalog.json --name my-org
 
-# Remove a catalog
+# Remove a project catalog by its index in the priority-ordered list
 specify workflow catalog remove <index>
 ```
+
+Environment-provided sources cannot be removed this way; unset `SPECKIT_WORKFLOW_CATALOG_URL` to manage project sources.
 
 ## Creating a Workflow
 

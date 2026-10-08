@@ -34,6 +34,21 @@ def test_add_forwards_refresh_default_without_refreshing(project: Path):
         integration=None,
         offline=False,
         refresh=False,
+        version=None,
+    )
+
+
+def test_add_forwards_version(project: Path):
+    with patch("specify_cli.bundles.command_add.bundle_install") as install:
+        result = runner.invoke(app, ["bundle", "add", "demo", "--version", "1.1.0"])
+
+    assert result.exit_code == 0, result.output
+    install.assert_called_once_with(
+        bundle_id="demo",
+        integration=None,
+        offline=False,
+        refresh=False,
+        version="1.1.0",
     )
 
 

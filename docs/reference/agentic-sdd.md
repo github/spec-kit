@@ -30,7 +30,7 @@ skills by default.
 | `/speckit.tasks` | `speckit-tasks` | Break the plan into actionable tasks |
 | `/speckit.implement` | `speckit-implement` | Execute the tasks |
 | `/speckit.converge` | `speckit-converge` | Assess implementation against the artifacts and append remaining work |
-| `/speckit.taskstoissues` | `speckit-taskstoissues` | Optionally convert tasks into GitHub issues |
+| `/speckit.taskstoissues` | `speckit-taskstoissues` | **Deprecated core command**; use the `github` extension for GitHub issues |
 | `/speckit.clarify` | `speckit-clarify` | Resolve ambiguity before planning (optional quality gate; formerly `/quizme`) |
 | `/speckit.analyze` | `speckit-analyze` | Check artifact consistency after tasks and before implementation (optional quality gate) |
 | `/speckit.checklist` | `speckit-checklist` | Generate requirements-quality checklists (optional quality gate) |
@@ -158,13 +158,24 @@ It first prints a severity-graded findings summary, then resolves to one of two 
 - **Converged** — no gaps found. `tasks.md` is left byte-for-byte unchanged and you'll see a clean result like `✅ Converged — the implementation satisfies the spec, plan, and tasks.` You're done; proceed to review or open a PR.
 - **Tasks appended** — gaps found. Converge appends them as new tasks under a Convergence section in `tasks.md` and tells you how many. Run `/speckit.implement` again to complete them, then `/speckit.converge` once more. Each pass finds fewer items; repeat until it reports converged.
 
-## `/speckit.taskstoissues`
+## `/speckit.taskstoissues` (deprecated core command)
 
-Optionally converts an existing `tasks.md` into actionable GitHub issues. Run it
-after generating tasks when you want to track execution in GitHub:
+The core command is deprecated and will be removed in a future minor release.
+It warns when invoked, then continues its existing workflow without installing
+or enabling the extension automatically.
+
+The recommended extension command optionally converts an existing `tasks.md`
+into actionable GitHub issues. Install the extension from your project root:
+
+```bash
+specify extension add github
+```
+
+Then invoke it in your agent after generating tasks when you want to track
+execution in GitHub:
 
 ```text
-/speckit.taskstoissues
+/speckit.github.taskstoissues
 ```
 
 This command requires a GitHub `origin` remote and access to the GitHub MCP tools
@@ -173,4 +184,4 @@ identified by that remote and checks existing task IDs to avoid duplicates.
 It is not required to implement tasks or converge on a feature.
 
 > [!NOTE]
-> GitHub issue tracking is moving out of core into the bundled, opt-in [`github` extension](https://github.com/github/spec-kit/blob/main/extensions/github/README.md). `/speckit.taskstoissues` still works and is unchanged. Install its namespaced replacement with `specify extension add github`; the `generic` integration registers it under its configured command directory in commands or skills mode. See the [installation and migration notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
+> GitHub issue tracking uses the bundled, opt-in [`github` extension](https://github.com/github/spec-kit/blob/main/extensions/github/README.md). Its recommended command is `/speckit.github.taskstoissues` (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`); the deprecated core `/speckit.taskstoissues` remains available during migration. The `generic` integration registers the extension under its configured command directory in commands or skills mode. See the [installation and migration notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation) for all integration-specific invocation syntaxes.

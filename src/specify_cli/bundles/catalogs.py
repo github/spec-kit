@@ -6,12 +6,13 @@ sources.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from . import BundlerError
+from .manifest import _text
 from .yamlio import ensure_within, load_yaml
 
 CONFIG_FILENAME = "bundle-catalogs.yml"
@@ -70,8 +71,14 @@ class CatalogSource:
     def from_dict(cls, data: Any, scope: Scope) -> "CatalogSource":
         if not isinstance(data, dict):
             raise BundlerError("Each catalog source must be a mapping.")
-        source_id = str(data.get("id", "")).strip()
-        url = str(data.get("url", "")).strip()
+        # ``_text`` rather than ``str(...get(k, ""))``: the default only covers a
+        # *missing* key. A key present but null -- how YAML spells an empty field
+        # (``id:`` with nothing after it) -- yields ``None``, and ``str(None)``
+        # is the literal ``"None"``, which is truthy and so sailed straight past
+        # the required-field guards below: a source with ``id: null`` was
+        # accepted and registered under the name ``"None"``.
+        source_id = _text(data.get("id"))
+        url = _text(data.get("url"))
         if not source_id:
             raise BundlerError("A catalog source is missing its 'id'.")
         if not url:
@@ -158,12 +165,19 @@ class CatalogEntry:
     # Resolution provenance (filled in by the catalog stack at lookup time):
     source_id: str | None = None
     source_policy: InstallPolicy | None = None
+    # Preserve unknown additive catalog fields for release-history materialization
+    # without changing current-entry parsing.
+    raw: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @classmethod
     def from_dict(cls, data: Any) -> "CatalogEntry":
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
-        entry_id = str(data.get("id", "")).strip()
+        # ``_text`` here too: an ``id: null`` otherwise became the literal
+        # "None", which is truthy, so ``load_catalog_payload`` reported it as an
+        # id MISMATCH against the mapping key rather than the accurate
+        # missing-id error.
+        entry_id = _text(data.get("id"))
         # `or {}` would coerce a FALSY non-mapping (0, '', False, []) to {} before
         # the isinstance guard, silently accepting a corrupt catalog entry; only
         # an absent/None value means "not present".
@@ -185,14 +199,16 @@ class CatalogEntry:
             )
         return cls(
             id=entry_id,
-            name=str(data.get("name", "")).strip(),
-            version=str(data.get("version", "")).strip(),
-            role=str(data.get("role", "")).strip(),
-            description=str(data.get("description", "")).strip(),
-            author=str(data.get("author", "")).strip(),
-            license=str(data.get("license", "")).strip(),
-            download_url=str(data.get("download_url", "")).strip(),
-            requires_speckit_version=str(requires.get("speckit_version", "")).strip(),
+            # See the note in ``CatalogSource.from_dict``: an explicitly null
+            # field must read as empty, not as the literal string "None".
+            name=_text(data.get("name")),
+            version=_text(data.get("version")),
+            role=_text(data.get("role")),
+            description=_text(data.get("description")),
+            author=_text(data.get("author")),
+            license=_text(data.get("license")),
+            download_url=_text(data.get("download_url")),
+            requires_speckit_version=_text(requires.get("speckit_version")),
             sha256=(
                 None
                 if data.get("sha256") is None
@@ -202,17 +218,13 @@ class CatalogEntry:
             repository=(str(data["repository"]) if data.get("repository") else None),
             tags=_parse_tags(data.get("tags"), entry_id),
             verified=_parse_verified(data.get("verified", False), entry_id),
+            raw=dict(data),
         )
 
     def with_provenance(self, source: CatalogSource) -> "CatalogEntry":
-        return CatalogEntry(
-            id=self.id, name=self.name, version=self.version, role=self.role,
-            description=self.description, author=self.author, license=self.license,
-            download_url=self.download_url,
-            requires_speckit_version=self.requires_speckit_version,
-            sha256=self.sha256,
-            provides=self.provides, repository=self.repository, tags=self.tags,
-            verified=self.verified, source_id=source.id,
+        return replace(
+            self,
+            source_id=source.id,
             source_policy=source.install_policy,
         )
 
@@ -235,6 +247,9 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
     if not isinstance(bundles_raw, dict):
         raise BundlerError("Catalog payload is missing a 'bundles' object.")
     entries: dict[str, CatalogEntry] = {}
+    # Function-local import avoids the catalogs -> catalog_versions import cycle.
+    from .catalog_versions import _validated_releases
+
     for bundle_id, entry_raw in bundles_raw.items():
         key = str(bundle_id)
         entry = CatalogEntry.from_dict(entry_raw)
@@ -251,6 +266,7 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
                 f"Catalog entry id mismatch: key '{key}' != entry id "
                 f"'{entry.id}'."
             )
+        _validated_releases(entry)
         entries[key] = entry
     return entries
 

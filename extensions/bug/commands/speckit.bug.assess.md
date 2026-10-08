@@ -70,11 +70,50 @@ In every case, record in `assessment.md`:
 
 Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) request to "see what it is" — that probe is itself the request the policy gates.
 
+## Pre-Execution Checks
+
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
+
+**Check for extension hooks (before bug assessment)**:
+- Ensure `BUG_DIR` exists (see Prerequisites) before checking hooks.
+- Check if `.specify/extensions.yml` exists in the project root.
+- If it exists, read it and look for entries under the `hooks.before_bug_assess` key
+- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue normally
+- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
+- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
+  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
+  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
+- For each executable hook, output the following based on its `optional` flag:
+  - **Optional hook** (`optional: true`):
+    ```
+    ## Extension Hooks
+
+    **Optional Pre-Hook**: {extension}
+    Command: `/{command}`
+    Description: {description}
+
+    Prompt: {prompt}
+    To execute: `/{command}`
+    ```
+  - **Mandatory hook** (`optional: false`):
+    ```
+    ## Extension Hooks
+
+    **Automatic Pre-Hook**: {extension}
+    Executing: `/{command}`
+    EXECUTE_COMMAND: {command}
+
+    Wait for the result of the hook command before proceeding to Execution.
+    ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
+- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+
 ## Execution
 
 1. **Ingest the bug report**
    - If a URL is present, first apply the **URL Trust Policy** above to decide whether to fetch, prompt, or refuse. If the policy permits the fetch, retrieve the page and extract the relevant content (title, description, stack traces, reproduction steps, comments).
    - Capture the verbatim source (URL or pasted block) so it can be quoted in the report.
+   - If a pasted report cannot be understood at all (empty, unrelated, spam), tell the user the verdict is `invalid` with a clear reason and stop immediately. Do not write `assessment.md`, run post-hooks, or proceed to the Completion Report. This early exit does not replace the URL Trust Policy's required recording above or the normal assessment of an intelligible report that turns out not to be a bug.
 
 2. **Summarize the symptom**
    - Reproduce the bug in one or two sentences: what happens, what was expected, under which conditions.
@@ -159,11 +198,52 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
    - [NEEDS CLARIFICATION: …]
    ```
 
-7. **Report back** with:
-   - The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.
-   - The path `.specify/bugs/<BUG_SLUG>/assessment.md`.
-   - The verdict and severity.
-   - The next suggested step: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>`.
+## Mandatory Post-Execution Hooks
+
+Only enter this section after writing `assessment.md` in this run. Early stops that produce no report do not run post-hooks or the Completion Report.
+
+**You MUST complete this section before reporting completion to the user.**
+
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved and the written report is available, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
+
+Check if `.specify/extensions.yml` exists in the project root.
+- If it does not exist, or no hooks are registered under `hooks.after_bug_assess`, skip to the Completion Report.
+- If it exists, read it and look for entries under the `hooks.after_bug_assess` key.
+- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue to the Completion Report.
+- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
+- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
+  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
+  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
+- For each executable hook, output the following based on its `optional` flag:
+  - **Mandatory hook** (`optional: false`) — **You MUST emit `EXECUTE_COMMAND:` for each mandatory hook**:
+    ```
+    ## Extension Hooks
+
+    **Automatic Hook**: {extension}
+    Executing: `/{command}`
+    EXECUTE_COMMAND: {command}
+    ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
+  - **Optional hook** (`optional: true`):
+    ```
+    ## Extension Hooks
+
+    **Optional Hook**: {extension}
+    Command: `/{command}`
+    Description: {description}
+
+    Prompt: {prompt}
+    To execute: `/{command}`
+    ```
+
+## Completion Report
+
+**Report back** with:
+
+- The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.
+- The path `.specify/bugs/<BUG_SLUG>/assessment.md`.
+- The verdict and severity.
+- The next suggested step: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>`.
 
 ## Guardrails
 

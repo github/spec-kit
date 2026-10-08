@@ -451,9 +451,11 @@ Re-adding the same workflow or step catalog URL with the same name succeeds with
 
 ```bash
 specify workflow catalog remove <index>
+specify workflow step catalog remove <index>
 ```
 
-Removes a catalog by its index in the catalog list.
+Removes a project catalog by its index in the corresponding priority-ordered `catalog list`.
+Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` or `SPECKIT_STEP_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
 
 ### Catalog Resolution Order
 
@@ -593,6 +595,9 @@ my-step/
 ├── __init__.py     # required, at the package root
 └── helpers.py      # optional nested modules and data files
 ```
+
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
 
 `step.yml` declares the step's identity. `step.type_key` must exactly match the
 `<step_id>` passed on the command line — the ID is never inferred from package
