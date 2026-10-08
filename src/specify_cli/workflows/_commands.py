@@ -62,10 +62,10 @@ def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | N
     raise typer.Exit(1) from exc
 
 
-def _fail_workflow_io(
-    exc: OSError, *, json_output: bool, state: Any, resume: bool = False,
+def _fail_workflow_execution(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
 ):
-    """Report execution I/O failures with the actual, context-local run state."""
+    """Report execution failures with the actual, context-local run state."""
     if json_output:
         payload = _workflow_run_payload(state) if state is not None else {
             "run_id": None, "workflow_id": None,

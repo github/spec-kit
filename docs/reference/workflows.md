@@ -54,9 +54,11 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
 
-Adapter-load failures before run creation have no run ID. I/O failures during
-execution or resume instead report the actual run and workflow IDs with a
-failed JSON outcome; they are not classified as adapter-load failures. If
+Adapter-load failures before creating or loading run state use a pre-run
+failure envelope: a new run has no run ID, while resume retains the supplied
+run ID but has no workflow or step context. After run state exists, adapter
+failures from per-step reloads or verified lazy imports retain the actual run,
+workflow, and current-step fields, just like execution I/O failures. If
 saving state fails, the on-disk status may still reflect the last successful
 save rather than the reported I/O failure.
 

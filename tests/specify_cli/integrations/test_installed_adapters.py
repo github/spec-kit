@@ -3819,3 +3819,99 @@ def test_kimi_legacy_parent_removal_obeys_lifecycle_rollback(tmp_path, server, m
             assert (legacy / "notes.txt").read_text() == "preserve user notes"
         elif contents == "generated" and operation == "migrate":
             assert (project / ".kimi-code/skills/speckit-legacy/SKILL.md").is_file()
+
+
+@pytest.mark.parametrize("operation", ["run", "resume"])
+@pytest.mark.parametrize("failure", ["dispatch-reload", "lazy-import", "none"])
+@pytest.mark.parametrize("json_output", [False, True])
+def test_workflow_dispatch_adapter_failures_keep_persisted_context(
+    tmp_path, server, monkeypatch, operation, failure, json_output,
+):
+    from specify_cli.workflows import STEP_REGISTRY
+    from specify_cli.workflows.base import RunStatus, StepResult, StepStatus
+    from specify_cli.workflows.engine import RunState
+
+    mutation = (
+        '''        from pathlib import Path
+        Path(__file__).with_name("helper.py").write_text("VALUE = 'changed'\\n")
+'''
+        if failure == "lazy-import" else ""
+    )
+    body = '''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None, project_root=None):
+''' + mutation + '''        from .helper import VALUE
+        return ["sample-agent-process", "-p", prompt]
+'''
+    publish(server, code=implementation(body=body), members={
+        "helper.py": b"VALUE = 'original'\n",
+    })
+    project = catalog_project(tmp_path, server)
+    install(project)
+    helper = project / f".specify/integrations/packages/{KEY}/helper.py"
+    source = project / "sample-dispatch-workflow.yml"
+    source.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "sample-workflow", "name": "Sample Workflow", "version": "1.0.0"},
+        "steps": [
+            {"id": "sample-preparation", "type": "gate", "message": "Sample preparation", "options": ["approve", "reject"]},
+            {"id": "sample-dispatch", "type": "prompt", "integration": KEY, "prompt": "Sample prompt"},
+        ],
+    }))
+    if operation == "resume":
+        started = run(project, ["workflow", "run", str(source), "--json"])
+        assert started.exit_code == 0, started.output
+        initial = json.loads(started.stdout)
+        assert initial["status"] == "paused"
+        run_id = initial["run_id"]
+
+    def approve_preparation(config, context):
+        if failure == "dispatch-reload":
+            helper.write_text("VALUE = 'changed'\n")
+        return StepResult(status=StepStatus.COMPLETED)
+
+    monkeypatch.setattr(STEP_REGISTRY["gate"], "execute", approve_preparation)
+    original_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name, *args, **kwargs: "/sample-agent-process"
+        if name == "sample-agent-process" else original_which(name, *args, **kwargs),
+    )
+    processes = []
+
+    def process_double(argv, **kwargs):
+        assert failure == "none", "damaged adapters must fail before process execution"
+        processes.append(argv)
+        return SimpleNamespace(returncode=0, stdout="sample response", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", process_double)
+    arguments = ["workflow", operation, str(source) if operation == "run" else run_id]
+    if json_output:
+        arguments.append("--json")
+    result = run(project, arguments)
+    failed = failure != "none"
+    assert result.exit_code == (1 if failed else 0), result.output
+    states = list((project / ".specify/workflows/runs").glob("*/state.json"))
+    assert len(states) == 1
+    persisted = RunState.load(states[0].parent.name, project)
+    assert persisted.status == (RunStatus.FAILED if failed else RunStatus.COMPLETED)
+    assert persisted.current_step_id == "sample-dispatch"
+    assert persisted.current_step_index == 1
+    assert persisted.step_results["sample-preparation"]["status"] == "completed"
+    assert bool(processes) == (not failed)
+    if json_output:
+        payload = json.loads(result.stdout)
+        assert payload["run_id"] == persisted.run_id
+        assert payload["workflow_id"] == persisted.workflow_id == "sample-workflow"
+        assert payload["current_step_id"] == persisted.current_step_id
+        assert payload["current_step_index"] == persisted.current_step_index
+        assert payload["status"] == persisted.status.value
+        assert result.stderr == ""
+        if failed:
+            assert payload["error"] == persisted.error
+        else:
+            assert "error" not in payload
+    elif failed:
+        assert ("Workflow failed" if operation == "run" else "Resume failed") in result.output
+    if failed:
+        assert "modified" in persisted.error

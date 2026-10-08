@@ -91,16 +91,21 @@ def workflow_resume(
             state = engine.resume(run_id, inputs or None)
     except FileNotFoundError as exc:
         if engine._execution_state.get() is not None:
-            cli._fail_workflow_io(
+            cli._fail_workflow_execution(
                 exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
             )
         cli._fail_integration_load(
             FileNotFoundError(f"Run not found: {run_id}"), json_output=json_output, run_id=run_id,
         )
     except IntegrationInstallError as exc:
-        cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
+        execution_state = engine._execution_state.get()
+        if execution_state is None:
+            cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
+        cli._fail_workflow_execution(
+            exc, json_output=json_output, state=execution_state, resume=True,
+        )
     except OSError as exc:
-        cli._fail_workflow_io(
+        cli._fail_workflow_execution(
             exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
         )
     except ValueError as exc:
