@@ -23,11 +23,19 @@ function Convert-HookScalar {
 }
 
 function Add-HookField {
-    param([hashtable]$Hook, [string]$Text)
+    param([hashtable]$Hook, [string]$Text, [string]$Event)
     if ($Text -notmatch '^([a-z_]+):(?:\s|$)(.*)$') { throw "Unsupported YAML hook field" }
     $key = $Matches[1]
     $parsed = Convert-HookScalar $Matches[2]
     $value = $parsed.Value
+    if ($key -in @('extension', 'command') -and -not $parsed.Quoted -and (
+        -not $value -or $value -match '^(true|false|yes|no|on|off|null|~)$' -or
+        $value -match '^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$' -or
+        $value -match '^[0-9]+(:[0-9]+)+$' -or
+        $value -match '^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt ]|$)'
+    )) {
+        throw "hooks.$Event needs extension and command"
+    }
     if ($key -in @('enabled', 'optional') -and ($parsed.Quoted -or $value -notin @('true', 'false'))) {
         throw "$key must be a boolean"
     }
@@ -118,12 +126,12 @@ function Resolve-HookConfig {
             if ($target) {
                 $hook = @{ enabled = 'true'; optional = 'true'; priority = '10' }
                 $hooks.Add($hook)
-                Add-HookField $hook $body.Substring(2)
+                Add-HookField $hook $body.Substring(2) $Event
             }
             continue
         }
         if ($itemIndent -ge 0 -and $indent -eq $itemIndent + 2) {
-            if ($target) { Add-HookField $hook $body }
+            if ($target) { Add-HookField $hook $body $Event }
             continue
         }
         throw "Unsupported YAML hook layout"

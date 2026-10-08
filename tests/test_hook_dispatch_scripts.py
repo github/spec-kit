@@ -241,6 +241,60 @@ def test_canonical_cli_writer_keeps_multiline_prompt_on_one_yaml_line(tmp_path, 
     assert data["hooks"][0]["prompt"] == "first\nsecond"
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_canonical_backslash_escape_matches_python(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    prompt = "Path C:\\workspace\nkeep \\ literal"
+    HookExecutor(tmp_path).save_project_config({
+        "hooks": {event: [
+            {"extension": "git", "command": "speckit.git.commit", "prompt": prompt}
+        ]}
+    })
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path, phase)[1]
+    assert data["hooks"][0]["prompt"] == prompt
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("field,value", [
+    ("extension", "false"), ("command", "123"), ("extension", "yes"),
+    ("command", "0x10"), ("extension", "null"), ("command", "1.2"),
+    ("extension", "2026-10-08"), ("command", ".nan"),
+])
+def test_native_identifiers_reject_implicitly_typed_yaml(tmp_path, variant, phase, field, value):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(
+        tmp_path,
+        f"hooks:\n  {event}:\n    - extension: git\n"
+        f"      command: speckit.git.commit\n      {field}: {value}\n",
+    )
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert "needs extension and command" in data["error"]
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_quoted_numeric_identifier_remains_string(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: '123'\n      command: 'false'\n")
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path, phase)[1]
+
+
 @pytest.mark.parametrize("variant", ["sh", "ps"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
 def test_native_resolvers_do_not_invoke_python(tmp_path, variant, phase):

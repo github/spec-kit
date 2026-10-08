@@ -56,7 +56,7 @@ hook_scalar() {
                 r) HOOK_SCALAR+=$'\r' ;;
                 b) HOOK_SCALAR+=$'\b' ;;
                 f) HOOK_SCALAR+=$'\f' ;;
-                '"'|'\\') HOOK_SCALAR+=$escaped ;;
+                '"'|'\') HOOK_SCALAR+=$escaped ;;
                 *) HOOK_ERROR="Unsupported YAML escape"; return ;;
             esac
         done
@@ -82,6 +82,16 @@ hook_field() {
     raw=${field:${#key}+1}
     hook_scalar "$raw"
     [[ -n $HOOK_ERROR ]] && return
+    if [[ $key == extension || $key == command ]] && [[ $HOOK_QUOTED == false ]]; then
+        local lowered=${HOOK_SCALAR,,}
+        if [[ -z $HOOK_SCALAR || $lowered =~ ^(true|false|yes|no|on|off|null|~)$ ||
+              $HOOK_SCALAR =~ ^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$ ||
+              $HOOK_SCALAR =~ ^[0-9]+(:[0-9]+)+$ ||
+              $HOOK_SCALAR =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt\ ]|$) ]]; then
+            HOOK_ERROR="hooks.$event needs extension and command"
+            return
+        fi
+    fi
     if [[ $key == enabled || $key == optional ]]; then
         if [[ $HOOK_QUOTED == true || ( $HOOK_SCALAR != true && $HOOK_SCALAR != false ) ]]; then
             HOOK_ERROR="$key must be a boolean"

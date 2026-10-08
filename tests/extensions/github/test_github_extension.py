@@ -429,8 +429,15 @@ class TestScriptPathResolution:
         assert expected in content
         # The rendered path must resolve to a file the extension ships.
         assert (project / expected).is_file()
-        # And it must not have been rewritten into the core script tree.
-        assert ".specify/scripts/" not in content
+        # The extension's own script stays local; hook dispatchers are shared.
+        for phase in ("pre", "post"):
+            hook_path = {
+                "sh": f".specify/scripts/bash/{phase}-hooks.sh",
+                "ps": f".specify/scripts/powershell/{phase}-hooks.ps1",
+                "py": f".specify/scripts/python/{phase}_hooks.py",
+            }[variant]
+            assert hook_path in content
+            assert hook_path.replace(".specify/scripts/", ".specify/extensions/github/scripts/") not in content
 
     @pytest.mark.parametrize("agent", EXTENSION_REGISTRAR_AGENTS)
     def test_every_extension_registrar_integration_renders_the_command(
@@ -522,6 +529,9 @@ class TestScriptPathResolution:
         expected = f".specify/extensions/github/{SCRIPT_TWINS['sh']}"
         assert expected in content
         assert (project / expected).is_file()
+        for phase in ("pre", "post"):
+            assert f".specify/scripts/bash/{phase}-hooks.sh" in content
+            assert f".specify/extensions/github/scripts/bash/{phase}-hooks.sh" not in content
 
 
 # -- Behaviour parity with the core command -----------------------------------

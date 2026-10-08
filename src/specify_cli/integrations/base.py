@@ -796,12 +796,12 @@ class IntegrationBase(ABC):
         for phase, name in (("PRE", "pre"), ("POST", "post")):
             if variant == "py":
                 command = IntegrationBase.build_python_invocation(
-                    f"scripts/python/{name}_hooks.py", project_root
+                    f".specify/scripts/python/{name}_hooks.py", project_root
                 )
             elif variant == "ps":
-                command = f"scripts/powershell/{name}-hooks.ps1"
+                command = f".specify/scripts/powershell/{name}-hooks.ps1"
             else:
-                command = f"scripts/bash/{name}-hooks.sh"
+                command = f".specify/scripts/bash/{name}-hooks.sh"
             content = content.replace(f"{{{phase}_HOOK_SCRIPT}}", command)
         return content
 
