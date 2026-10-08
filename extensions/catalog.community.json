@@ -2373,6 +2373,14 @@
           {
             "name": "cmp",
             "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          },
+          {
+            "name": "shellcheck",
+            "required": false
           }
         ]
       },
