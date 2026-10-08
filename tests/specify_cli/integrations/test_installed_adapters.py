@@ -3865,12 +3865,12 @@ def test_workflow_dispatch_adapter_failures_keep_persisted_context(
         assert initial["status"] == "paused"
         run_id = initial["run_id"]
 
-    def approve_preparation(config, context):
+    def approve_preparation(_step, config, context):
         if failure == "dispatch-reload":
             helper.write_text("VALUE = 'changed'\n")
         return StepResult(status=StepStatus.COMPLETED)
 
-    monkeypatch.setattr(STEP_REGISTRY["gate"], "execute", approve_preparation)
+    monkeypatch.setattr(type(STEP_REGISTRY["gate"]), "execute", approve_preparation)
     original_which = shutil.which
     monkeypatch.setattr(
         shutil, "which",
