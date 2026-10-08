@@ -8436,6 +8436,87 @@ class TestRunState:
         assert loaded.inputs == {"name": "login"}
         assert loaded.step_results == state.step_results
 
+    def test_run_artifacts_keep_non_ascii_text_readable(self, project_dir):
+        """state.json, inputs.json and log.jsonl are human-auditable run
+        records, so non-ASCII text must be written as authored rather than
+        as ``\\uXXXX`` escapes (#4875)."""
+        from specify_cli.workflows.engine import RunState
+
+        text = "演示：完整闭环 — ¿aprobar? 日本語"
+        state = RunState(
+            run_id="non-ascii-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.inputs = {"spec": text}
+        state.step_results = {"gate": {"output": {"message": text}}}
+        state.save()
+        state.append_log({"event": "gate_message", "message": text})
+
+        for name in ("state.json", "inputs.json", "log.jsonl"):
+            raw = (state.runs_dir / name).read_text(encoding="utf-8")
+            assert text in raw, name
+            assert "\\u" not in raw, name
+
+        loaded = RunState.load("non-ascii-run", project_dir)
+        assert loaded.inputs == {"spec": text}
+        assert loaded.step_results == state.step_results
+        log_line = (state.runs_dir / "log.jsonl").read_text(encoding="utf-8")
+        assert json.loads(log_line)["message"] == text
+
+    def test_run_artifacts_round_trip_a_lone_surrogate(self, project_dir):
+        """A lone surrogate (e.g. an undecodable byte in a CLI argument) cannot
+        be encoded as UTF-8. It must still save, escaped, and load back intact
+        instead of crashing the run."""
+        from specify_cli.workflows.engine import RunState
+
+        value = "bad byte: \udc80"
+        state = RunState(
+            run_id="surrogate-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.inputs = {"spec": value}
+        state.save()
+        state.append_log({"event": "input", "value": value})
+
+        loaded = RunState.load("surrogate-run", project_dir)
+        assert loaded.inputs == {"spec": value}
+        log_line = (state.runs_dir / "log.jsonl").read_text(encoding="utf-8")
+        assert json.loads(log_line)["value"] == value
+
+    def test_workflow_snapshot_keeps_non_ascii_text_readable(self, project_dir):
+        """The workflow.yml copied into the run directory is the definition as
+        authored, so its non-ASCII text must not be escaped (#4875)."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        name = "Demo Hello Pipeline (教学演示版)"
+        wf_dir = project_dir / "non-ascii-snapshot"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text(
+            f"""
+schema_version: "1.0"
+workflow:
+  id: "non-ascii-snapshot"
+  name: "{name}"
+  version: "1.0.0"
+steps:
+  - id: noop
+    type: shell
+    run: "echo ok"
+""",
+            encoding="utf-8",
+        )
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        snapshot = state.runs_dir / "workflow.yml"
+        raw = snapshot.read_text(encoding="utf-8")
+        assert name in raw
+        assert "\\u" not in raw and "\\x" not in raw
+        assert yaml.safe_load(raw)["workflow"]["name"] == name
+
     @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
     def test_load_rejects_non_object_step_results(
         self, project_dir, invalid_step_results
