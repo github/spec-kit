@@ -76,7 +76,11 @@ body:
     id: download-url
     attributes:
       label: Download URL
-      description: URL to the versioned step package archive; GitHub-generated tag archives support `.zip` and `.tar.gz`, while named release assets may also use `.tgz`
+      description: >-
+        URL to the versioned step package archive; GitHub-generated tag archives support `.zip` and `.tar.gz`,
+        while named release assets may also use `.tgz`. The URL path must match `^[A-Za-z0-9._~+!/-]+$`;
+        percent escapes, spaces, query strings, fragments, and dot/traversal segments are rejected.
+        Tags have no slashes; `+` and `!` support PEP 440 local versions and epochs.
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/releases/download/v1.0.0/deploy-1.0.0.zip"
     validations:
       required: true
@@ -85,7 +89,10 @@ body:
     id: step-yml-url
     attributes:
       label: step.yml URL
-      description: Exact tag-pinned raw GitHub HTTPS URL used as the catalog `step_yml_url` (or `url`)
+      description: >-
+        Exact tag-pinned raw GitHub HTTPS URL used as the catalog `step_yml_url` (or `url`).
+        The file path within the tag must match `^[A-Za-z0-9._~/-]+$`, without percent escapes or spaces;
+        tags may additionally contain `+` and `!`.
       placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/step.yml"
     validations:
       required: true
@@ -94,7 +101,10 @@ body:
     id: init-url
     attributes:
       label: __init__.py URL
-      description: Exact tag-pinned raw GitHub HTTPS URL used as the catalog `init_url`
+      description: >-
+        Exact tag-pinned raw GitHub HTTPS URL used as the catalog `init_url`.
+        The file path within the tag must match `^[A-Za-z0-9._~/-]+$`, without percent escapes or spaces;
+        tags may additionally contain `+` and `!`.
       placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/__init__.py"
     validations:
       required: true
@@ -105,6 +115,8 @@ body:
       label: Extra File URLs
       description: >-
         JSON mapping of every additional package-relative file path to its exact tag-pinned raw GitHub HTTPS URL.
+        Package-relative keys and file paths within the tag must match `^[A-Za-z0-9._~/-]+$`;
+        percent escapes, spaces, query strings, and fragments are rejected. Tags may additionally contain `+` and `!`.
         Paths must use forward slashes, be relative and non-empty, contain no empty, `.` or `..` segments,
         and must not case-insensitively alias `step.yml` or `__init__.py`, another file, or a package directory.
         Case-insensitive aliases of `.git`, `__pycache__`, and `.DS_Store` are forbidden.

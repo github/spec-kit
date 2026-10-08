@@ -180,7 +180,10 @@ required check has completed and passed.
   Reject credentials, queries, fragments, traversal, percent escapes, and
   floating targets such as `releases/latest/` before fetching. Extract the exact
   tag from this URL. It must match Version under PEP 440, optionally with a `v`
-  or scoped prefix, and contain no slashes. Confirm a published, non-draft
+  or scoped prefix, including epoch versions such as `1!2.0`, and contain no
+  slashes. Require the archive URL path to match `^[A-Za-z0-9._~+!/-]+$`;
+  percent-escaped asset names (for example spaces encoded as `%20`) are not
+  accepted. Confirm a published, non-draft
   GitHub release exists for that exact tag and that the named release asset
   exists when the URL uses `releases/download`. The helper independently
   verifies that Download URL matches the submitted repository and derived tag.
@@ -257,7 +260,9 @@ must correspond to its package-relative key. Use tags without slashes so this
 check is unambiguous. Reject query strings, fragments, credentials, percent
 escapes, traversal segments, whitespace, control characters, and characters
 outside `^[A-Za-z0-9._~/-]+$` in the owner, repository, and file path. Tags may
-additionally contain `+` for PEP 440 local versions.
+additionally contain `+` for PEP 440 local versions and `!` for epochs; their
+alphabet is `^[A-Za-z0-9._~+!-]+$`. Package-relative keys and file paths remain
+limited to `^[A-Za-z0-9._~/-]+$`, with no percent escapes.
 Do not fetch invalid URLs or rewrite them to make them pass.
 
 Add `catalog_entry` (the constructed entry object without its outer Step ID key)

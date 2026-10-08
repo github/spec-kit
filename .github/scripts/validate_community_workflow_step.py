@@ -76,7 +76,7 @@ def validate_identity(data: dict[str, Any]) -> tuple[str, str, str]:
         parsed_version = Version(version)
     except InvalidVersion as exc:
         raise SubmissionMismatch(f"invalid PEP 440 Version: {version}") from exc
-    if not re.fullmatch(r"[A-Za-z0-9._~+-]+", tag):
+    if not re.fullmatch(r"[A-Za-z0-9._~+!-]+", tag):
         raise SubmissionMismatch("Release Tag must match Version and contain no slashes")
     candidates = [tag, *(tag[index + 1:] for index, char in enumerate(tag) if char == "-")]
     for candidate in candidates:
@@ -88,7 +88,7 @@ def validate_identity(data: dict[str, Any]) -> tuple[str, str, str]:
     else:
         raise SubmissionMismatch("Release Tag must match Version")
     download_url = field(data, "download_url")
-    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9._~+/-]+", download_url):
+    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9._~+!/-]+", download_url):
         raise SubmissionMismatch("Download URL contains invalid characters or is not a GitHub URL")
     download = urlsplit(download_url)
     release_path = f"/{match[1]}/{match[2]}/releases/download/{tag}/"
@@ -98,7 +98,7 @@ def validate_identity(data: dict[str, Any]) -> tuple[str, str, str]:
         or download.netloc != "github.com"
         or download.query
         or download.fragment
-        or not re.fullmatch(r"[A-Za-z0-9._~+/-]+", download.path)
+        or not re.fullmatch(r"[A-Za-z0-9._~+!/-]+", download.path)
         or any(part in (".", "..") for part in download.path.split("/"))
         or not (
             (

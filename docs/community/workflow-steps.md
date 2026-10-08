@@ -111,11 +111,20 @@ Use a versioned GitHub release URL for the archive, consistent with the other
 community submission forms. Versions must be PEP 440-compatible and match the
 manifest. The archive's release tag must identify that version, optionally
 with a `v` prefix or a scoped prefix, and must contain no slashes.
+Epoch versions such as `1!2.0` and local versions such as `2.0+cpu` are
+supported. Tag characters must match `^[A-Za-z0-9._~+!-]+$`.
 All catalog file URLs must use `raw.githubusercontent.com` in the submitted
 repository, pinned to that exact release tag and package directory. The
 required per-file SHA-256 mapping detects changed bytes even if a referenced
 tag is later moved. Do not submit branch URLs, `releases/latest` URLs, or other
 floating targets.
+
+The archive URL path must match `^[A-Za-z0-9._~+!/-]+$`. Package-relative
+file keys and file paths within the tag must match `^[A-Za-z0-9._~/-]+$`.
+Spaces, percent escapes (including `%20` in asset names), query strings,
+fragments, and empty/dot/traversal file-path segments are not accepted by
+community submission automation. Publish archives and package files with
+names in these alphabets rather than URL-encoding unsupported characters.
 
 GitHub-generated `archive/refs/tags/<tag>` archives support `.zip` and `.tar.gz`
 only. A `.tgz` archive must be a named `releases/download/<tag>/<asset>.tgz`

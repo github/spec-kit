@@ -221,6 +221,8 @@ def test_submission_accepts_installable_ids(verifier, file_submission, step_id):
     ("1.2.post1", "v1.2.post1"),
     ("1.2.dev1", "deploy-v1.2.dev1"),
     ("1.2+cpu", "v1.2+cpu"),
+    ("1!2.0", "v1!2.0"),
+    ("1!2.0+cpu", "deploy-v1!2.0+cpu"),
 ])
 def test_canonical_form_pep440_versions_are_supported(verifier, file_submission, version, tag):
     file_submission.update({
@@ -229,6 +231,29 @@ def test_canonical_form_pep440_versions_are_supported(verifier, file_submission,
         "download_url": f"https://github.com/example/steps/releases/download/{tag}/step-{version}.zip",
     })
     assert verifier.validate_identity(file_submission) == ("example", "steps", tag)
+
+
+@pytest.mark.parametrize("tag", ["1!2.0", "v1!2.0", "deploy-v1!2.0"])
+@pytest.mark.parametrize("route", ["releases/download", "archive/refs/tags"])
+def test_epoch_release_urls_and_catalog_files_are_supported(
+    verifier, file_submission, tag, route,
+):
+    file_submission["version"] = "1!2.0"
+    file_submission["release_tag"] = tag
+    suffix = "/step-1!2.0.zip" if route == "releases/download" else ".tar.gz"
+    file_submission["download_url"] = f"https://github.com/example/steps/{route}/{tag}{suffix}"
+    entry = file_submission["catalog_entry"]
+    for key in ("step_yml_url", "init_url"):
+        entry[key] = entry[key].replace("deploy-v1.2.3", tag)
+    assert verifier.validate_file(file_submission) == (
+        "__init__.py", entry["init_url"], entry["sha256"]["__init__.py"],
+    )
+
+
+def test_epoch_version_does_not_match_non_epoch_tag(verifier, file_submission):
+    file_submission["version"] = "1!1.2.3"
+    with pytest.raises(verifier.SubmissionMismatch, match="Release Tag must match Version"):
+        verifier.validate_identity(file_submission)
 
 
 @pytest.mark.parametrize("version", ["main", "not-a-version", "1..2", "1.2/3"])
