@@ -267,10 +267,13 @@ steps:
         })
         assert engine.execute(root, run_id="gate-retry").status.value == "paused"
 
-        def interrupt(config, context):
+        def interrupt(self, config, context):
             raise KeyboardInterrupt
 
-        monkeypatch.setattr(STEP_REGISTRY["gate"], "execute", interrupt)
+        # Patch the class, not the shared registry instance: undoing an
+        # instance patch leaves the bound method as an instance attribute,
+        # which shadows later class-level patches in other tests.
+        monkeypatch.setattr(type(STEP_REGISTRY["gate"]), "execute", interrupt)
         assert engine.resume("gate-retry").status.value == "paused"
 
         status = self._invoke(project_dir, ["workflow", "status", "gate-retry", "--json"])
