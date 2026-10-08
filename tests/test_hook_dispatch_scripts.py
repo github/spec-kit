@@ -295,6 +295,55 @@ def test_quoted_numeric_identifier_remains_string(tmp_path, variant, phase):
     assert data == run_hook(tmp_path, phase)[1]
 
 
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_system_bash_resolves_unquoted_identifiers(tmp_path, phase):
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n      command: speckit.git.commit\n")
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / "scripts/bash" / f"{phase}-hooks.sh"), "plan"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["hooks"][0]["command"] == "speckit.git.commit"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("value", ["false", "true", "0"])
+def test_non_string_condition_fails_consistently(tmp_path, variant, phase, value):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n"
+                           f"      command: speckit.git.commit\n      condition: {value}\n")
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert "condition must be a string or null" in data["error"]
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_quoted_condition_remains_a_string(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, "hooks:\n  before_plan:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      condition: 'false'\n")
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_null_condition_allows_hook(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, "hooks:\n  before_plan:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      condition: null\n")
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert len(data["hooks"]) == 1
+
+
 @pytest.mark.parametrize("variant", ["sh", "ps"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
 def test_native_resolvers_do_not_invoke_python(tmp_path, variant, phase):

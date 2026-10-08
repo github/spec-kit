@@ -5731,6 +5731,21 @@ class HookExecutor:
             encoding="utf-8",
         )
 
+    def migrate_project_config(self) -> None:
+        """Rewrite existing hook configuration for the native script resolvers."""
+        if self.config_file.is_symlink():
+            raise ValueError("Refusing to migrate symlinked .specify/extensions.yml")
+        if not self.config_file.exists():
+            return
+        try:
+            config = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"Could not read .specify/extensions.yml: {exc}") from exc
+        if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
+            raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
+        config.setdefault("hooks", {})
+        self.save_project_config(config)
+
     def register_extension(self, extension_id: str):
         """Add extension to the installed list in project config.
 

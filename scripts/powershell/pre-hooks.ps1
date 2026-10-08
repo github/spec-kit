@@ -28,13 +28,12 @@ function Add-HookField {
     $key = $Matches[1]
     $parsed = Convert-HookScalar $Matches[2]
     $value = $parsed.Value
-    if ($key -in @('extension', 'command') -and -not $parsed.Quoted -and (
-        -not $value -or $value -match '^(true|false|yes|no|on|off|null|~)$' -or
-        $value -match '^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$' -or
-        $value -match '^[0-9]+(:[0-9]+)+$' -or
-        $value -match '^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt ]|$)'
-    )) {
+    $typed = -not $parsed.Quoted -and (Test-HookTypedScalar $value)
+    if ($key -in @('extension', 'command') -and (-not $value -or $typed)) {
         throw "hooks.$Event needs extension and command"
+    }
+    if ($key -eq 'condition' -and $typed) {
+        throw "condition must be a string or null"
     }
     if ($key -in @('enabled', 'optional') -and ($parsed.Quoted -or $value -notin @('true', 'false'))) {
         throw "$key must be a boolean"
@@ -43,6 +42,14 @@ function Add-HookField {
         throw "$key must be a string"
     }
     $Hook[$key] = $value
+}
+
+function Test-HookTypedScalar {
+    param([string]$Value)
+    return $Value -match '^(true|false|yes|no|on|off)$' -or
+        $Value -match '^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$' -or
+        $Value -match '^[0-9]+(:[0-9]+)+$' -or
+        $Value -match '^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt ]|$)'
 }
 
 function Get-HookPriority {

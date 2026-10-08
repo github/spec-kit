@@ -171,7 +171,7 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
-    return _install_shared_infra_impl(
+    installed = _install_shared_infra_impl(
         project_path,
         script_type,
         version=get_speckit_version(),
@@ -184,6 +184,10 @@ def _install_shared_infra(
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
     )
+    from .extensions import HookExecutor
+
+    HookExecutor(project_path).migrate_project_config()
+    return installed
 
 
 def _install_shared_infra_or_exit(

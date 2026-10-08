@@ -72,6 +72,16 @@ hook_scalar() {
     HOOK_SCALAR=$raw
 }
 
+hook_typed_scalar() {
+    case $1 in
+        [Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]|[Oo][Nn]|[Oo][Ff][Ff])
+            return 0 ;;
+    esac
+    [[ $1 =~ ^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$ ||
+       $1 =~ ^[0-9]+(:[0-9]+)+$ ||
+       $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt\ ]|$) ]]
+}
+
 hook_field() {
     local field=$1 key raw
     if [[ ! $field =~ ^([a-z_]+):([[:space:]]|$) ]]; then
@@ -83,14 +93,15 @@ hook_field() {
     hook_scalar "$raw"
     [[ -n $HOOK_ERROR ]] && return
     if [[ $key == extension || $key == command ]] && [[ $HOOK_QUOTED == false ]]; then
-        local lowered=${HOOK_SCALAR,,}
-        if [[ -z $HOOK_SCALAR || $lowered =~ ^(true|false|yes|no|on|off|null|~)$ ||
-              $HOOK_SCALAR =~ ^[+-]?(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*(\.[0-9_]*)?([eE][+-]?[0-9]+)?|\.[0-9_]+([eE][+-]?[0-9]+)?|\.([iI][nN][fF]|[nN][aA][nN]))$ ||
-              $HOOK_SCALAR =~ ^[0-9]+(:[0-9]+)+$ ||
-              $HOOK_SCALAR =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}([Tt\ ]|$) ]]; then
+        if [[ -z $HOOK_SCALAR ]] || hook_typed_scalar "$HOOK_SCALAR"; then
             HOOK_ERROR="hooks.$event needs extension and command"
             return
         fi
+    fi
+    if [[ $key == condition && $HOOK_QUOTED == false && -n $HOOK_SCALAR ]] &&
+       hook_typed_scalar "$HOOK_SCALAR"; then
+        HOOK_ERROR="condition must be a string or null"
+        return
     fi
     if [[ $key == enabled || $key == optional ]]; then
         if [[ $HOOK_QUOTED == true || ( $HOOK_SCALAR != true && $HOOK_SCALAR != false ) ]]; then

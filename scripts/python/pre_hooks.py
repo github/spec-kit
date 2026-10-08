@@ -45,6 +45,8 @@ def resolve(event: str, project_root: Path) -> dict:
             raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].enabled must be a boolean")
         if "optional" in entry and not isinstance(entry["optional"], bool):
             raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].optional must be a boolean")
+        if entry.get("condition") is not None and not isinstance(entry["condition"], str):
+            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].condition must be a string or null")
         if entry.get("enabled") is False or entry.get("condition"):
             continue
         extension, command = entry.get("extension"), entry.get("command")
