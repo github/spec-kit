@@ -262,7 +262,7 @@ def ensure_constitution_from_template(
 
 
 def register(app: typer.Typer) -> None:
-    from .integrations._lifecycle import external_lifecycle, initial_directory_state, lifecycle_success
+    from .integrations._lifecycle import external_lifecycle, initial_directory_state, lifecycle_owns_rollback, lifecycle_success
 
     @app.command()
     @external_lifecycle("init")
@@ -889,6 +889,8 @@ def register(app: typer.Typer) -> None:
                                             catalog_name=pack_info.get("_catalog_name"),
                                         )
                                     except PresetError as preset_err:
+                                        if lifecycle_owns_rollback():
+                                            raise
                                         _print_cli_warning(
                                             "install",
                                             "preset",
@@ -903,6 +905,8 @@ def register(app: typer.Typer) -> None:
                                             except OSError:
                                                 pass
                     except Exception as preset_err:
+                        if lifecycle_owns_rollback():
+                            raise
                         _print_cli_warning(
                             "install",
                             "preset",
@@ -937,6 +941,8 @@ def register(app: typer.Typer) -> None:
                             tracker.complete(f"extension-{i}", status_msg)
                             any_extension_installed = True
                         except Exception as ext_err:
+                            if lifecycle_owns_rollback():
+                                raise
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
                             tracker.error(
                                 f"extension-{i}",

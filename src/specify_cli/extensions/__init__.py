@@ -2579,7 +2579,7 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
-        from ..integrations._file_changes import after_file_change, before_file_change
+        from ..integrations._file_changes import after_file_change, before_file_change, changing_file
 
         package_paths = (
             dest_dir, self.extensions_dir / ".backup" / manifest.id,
@@ -2598,13 +2598,17 @@ class ExtensionManager:
             backup_config_dir = self.extensions_dir / ".backup" / manifest.id
             # Check is_symlink first: is_dir() follows symlinks so a
             # symlink-to-directory would pass, but rmtree() raises on them.
-            if backup_config_dir.is_symlink():
-                backup_config_dir.unlink()
-            elif backup_config_dir.is_dir():
-                shutil.rmtree(backup_config_dir)
-            elif backup_config_dir.exists():
-                backup_config_dir.unlink()
-            did_remove = self.remove(manifest.id)
+            try:
+                if backup_config_dir.is_symlink():
+                    backup_config_dir.unlink()
+                elif backup_config_dir.is_dir():
+                    shutil.rmtree(backup_config_dir)
+                elif backup_config_dir.exists():
+                    backup_config_dir.unlink()
+                did_remove = self.remove(manifest.id)
+            finally:
+                after_file_change(dest_dir)
+                after_file_change(backup_config_dir)
 
         # Load and validate .extensionignore BEFORE reading/creating the rescue
         # staging directory (and thus before deleting dest_dir). The loader can
@@ -2971,11 +2975,13 @@ class ExtensionManager:
                 # proceeding destructively.
                 shutil.rmtree(rescue_staging_dir, ignore_errors=True)
                 raise
+            finally:
+                after_file_change(rescue_staging_dir)
+
+        after_file_change(rescue_staging_dir)
+        after_file_change(self.extensions_dir / ".backup" / manifest.id)
 
         # Install extension (dest_dir computed above during self-install guard)
-        if dest_dir.exists():
-            shutil.rmtree(dest_dir)
-
         def _restore_stranded_config_file(
             target: Path, content: bytes, preserved_mode: int
         ) -> None:
@@ -3021,23 +3027,25 @@ class ExtensionManager:
                     tmp_path.unlink()
                 raise
 
+        before_file_change(dest_dir, removal=True)
         try:
-            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
-        except BaseException:
-            # copytree failed — dest_dir may be absent or only partially
-            # created.  Write the rescued configs back now so they are not
-            # permanently lost even though the install did not complete.
-            if stranded_configs:
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                for filename, (content, mode) in stranded_configs.items():
-                    target = dest_dir / filename
-                    _restore_stranded_config_file(target, content, mode)
-            raise
-
-        # Restore stranded configs rescued before the rmtree above.
-        for filename, (content, mode) in stranded_configs.items():
-            target = dest_dir / filename
-            _restore_stranded_config_file(target, content, mode)
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir)
+            try:
+                shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+            except BaseException:
+                # Restore rescued configs before completing this package mutation.
+                if stranded_configs:
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    for filename, (content, mode) in stranded_configs.items():
+                        target = dest_dir / filename
+                        _restore_stranded_config_file(target, content, mode)
+                raise
+            for filename, (content, mode) in stranded_configs.items():
+                target = dest_dir / filename
+                _restore_stranded_config_file(target, content, mode)
+        finally:
+            after_file_change(dest_dir)
 
         # NOTE: the durable staging backup is intentionally NOT cleaned up
         # here.  Command/skill/hook registration and the final registry.add()
@@ -3152,7 +3160,8 @@ class ExtensionManager:
                                 or cfg_file.name.endswith("-config.local.yml")
                             )
                         ):
-                            shutil.copy2(cfg_file, dest_dir / cfg_file.name)
+                            with changing_file(dest_dir / cfg_file.name):
+                                shutil.copy2(cfg_file, dest_dir / cfg_file.name)
                 elif backup_config_dir.exists():
                     backup_config_dir.unlink()
 
@@ -3193,7 +3202,8 @@ class ExtensionManager:
                     except Exception as error:
                         rollback_errors.append(f"hooks: {error}")
                 try:
-                    rollback_generic_registration()
+                    with changing_file(dest_dir, removal=True):
+                        rollback_generic_registration()
                 except Exception as error:
                     rollback_errors.append(f"artifacts: {error}")
                 if rollback_errors:
@@ -3209,7 +3219,8 @@ class ExtensionManager:
                 # Retain the backup until registry commit so failed force
                 # reinstalls can still restore the user's configuration.
                 try:
-                    shutil.rmtree(backup_config_dir)
+                    with changing_file(backup_config_dir, removal=True):
+                        shutil.rmtree(backup_config_dir)
                 except OSError as exc:
                     from .. import _print_cli_warning
 
@@ -3229,9 +3240,10 @@ class ExtensionManager:
             # crash mid-cleanup cannot leave a staging dir that a retry would
             # wrongly trust as a complete durable backup.
             try:
-                rescue_complete_marker.unlink(missing_ok=True)
-                _fsync_directory(rescue_staging_dir)
-                shutil.rmtree(rescue_staging_dir)
+                with changing_file(rescue_staging_dir, removal=True):
+                    rescue_complete_marker.unlink(missing_ok=True)
+                    _fsync_directory(rescue_staging_dir)
+                    shutil.rmtree(rescue_staging_dir)
                 _fsync_directory(rescue_staging_dir.parent)
             except OSError:
                 pass  # Best-effort; install already committed to the registry.
@@ -3254,8 +3266,6 @@ class ExtensionManager:
         from .. import ensure_executable_scripts
         ensure_executable_scripts(self.project_root)
 
-        for package_path in package_paths:
-            after_file_change(package_path)
         return manifest
 
     def install_from_archive(

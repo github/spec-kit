@@ -255,7 +255,13 @@ transaction. Exceeding either limit fails before the affected write or removal.
 Preset and extension package installation/replacement, configuration rescue
 directories, and project extension configuration participate in the journal.
 Package replacements keep one bounded directory snapshot rather than duplicate
-snapshots for every generated descendant. Late external-init failures therefore
+snapshots for every generated descendant. Replacement observations complete at
+the actual copy/config-restore boundary, including failed copies, before command
+registration or registry commit. Later observed descendant writes update that
+directory's recorded identity without taking duplicate snapshots.
+External init aborts its transaction when a requested preset or extension install
+raises; built-in init without an external transaction retains its best-effort
+optional-install behavior. Late external-init failures therefore
 remove new packages and restore pre-existing package contents, not orphan sources
 after their registries and agent outputs have been rolled back.
 Failed setup or durable package commit restores those
@@ -344,6 +350,9 @@ After copying a project or changing users, review the adapter and run
 `specify integration upgrade <id> --force --trust-integration` using an
 install-enabled catalog to establish local consent. Forced uninstall can remove
 an untrusted or missing package without importing it.
+Forced recovery also accepts a recorded package leaf replaced by a regular file
+or a symlink: it unlinks that owned leaf without following it, while rejecting
+symlinked ancestors. Failed commits restore the original damaged leaf.
 When local ownership proof is unavailable, including copied projects or older
 grant-only trust stores, recovery preserves old generated files from cleanup and
 warns that manual cleanup may be needed. A newly trusted replacement still

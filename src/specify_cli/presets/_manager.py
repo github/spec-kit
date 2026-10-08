@@ -393,7 +393,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         self.check_compatibility(manifest, speckit_version)
 
-        from ..integrations._file_changes import after_file_change, before_file_change
+        from ..integrations._file_changes import after_file_change, before_file_change, changing_file
 
         dest_dir = self.presets_dir / manifest.id
         installed = self.registry.is_installed(manifest.id)
@@ -403,13 +403,14 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 f"Use 'specify preset remove {manifest.id}' first."
             )
         before_file_change(dest_dir, removal=True)
-        if installed:
-            self.remove(manifest.id)
-
-        if dest_dir.exists():
-            shutil.rmtree(dest_dir)
-
-        shutil.copytree(source_dir, dest_dir)
+        try:
+            if installed:
+                self.remove(manifest.id)
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir)
+            shutil.copytree(source_dir, dest_dir)
+        finally:
+            after_file_change(dest_dir)
 
         # Pre-register the preset so that composition resolution can see it
         # in the priority stack when resolving composed command content.
@@ -464,7 +465,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 )
             try:
                 if dest_dir.exists():
-                    shutil.rmtree(dest_dir)
+                    with changing_file(dest_dir, removal=True):
+                        shutil.rmtree(dest_dir)
             except OSError:
                 pass  # best-effort cleanup; don't mask the original error
             self.registry.remove(manifest.id)
@@ -498,7 +500,6 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         # previous install-time behavior for teams that want reviewed snapshots.
         self._seed_constitution_from_preset(manifest, dest_dir)
 
-        after_file_change(dest_dir)
         return manifest
 
     def _seed_constitution_from_preset(

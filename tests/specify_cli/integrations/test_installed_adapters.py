@@ -4441,3 +4441,199 @@ def test_external_init_package_directories_follow_late_commit_rollback(
         assert all(path.is_dir() for path in original_directories)
         assert "Recovery snapshots retained" not in result.output
         assert KEY not in read_records(project)
+
+
+@pytest.mark.parametrize("package_kind", ["preset", "extension"])
+@pytest.mark.parametrize("failure", ["registration", "registry", "copy"])
+@pytest.mark.parametrize("route,original", [
+    ("init", "absent"), ("init", "unregistered"),
+    ("manager", "new"), ("manager", "registered"),
+])
+def test_package_post_copy_failure_restores_original_state(
+    tmp_path, server, monkeypatch, package_kind, failure, route, original,
+):
+    from specify_cli._assets import get_speckit_version
+    from specify_cli.extensions import ExtensionManager, ExtensionRegistry
+    from specify_cli.integration_state import try_read_integration_json
+    from specify_cli.integrations._lifecycle import _transaction
+    from specify_cli.presets import PresetManager, PresetRegistry
+
+    publish(server)
+    project = tmp_path / "target" if route == "init" else catalog_project(tmp_path, server)
+    monkeypatch.setenv("SPECKIT_INTEGRATION_CATALOG_URL", f"{server.url}/catalog.json")
+    if route == "manager":
+        install(project)
+    source = tmp_path / "package-source"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands/sample.md").write_text(
+        "---\ndescription: Sample package\n---\nSample before core\n", encoding="utf-8",
+    )
+    (source / "package.txt").write_text("original bytes")
+    data = {
+        "schema_version": "1.0",
+        package_kind: {"id": "sample-failure", "name": "Sample Failure", "version": "1.0.0", "description": "Sample package"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": (
+            {"commands": [{"name": "speckit.sample-failure.boot", "file": "commands/sample.md"}]}
+            if package_kind == "extension" else
+            {"templates": [{"type": "command", "name": "speckit.specify", "file": "commands/sample.md", "strategy": "prepend"}]}
+        ),
+    }
+    (source / f"{package_kind}.yml").write_text(yaml.safe_dump(data))
+    manager_type = PresetManager if package_kind == "preset" else ExtensionManager
+    registry_type = PresetRegistry if package_kind == "preset" else ExtensionRegistry
+    destination = project / f".specify/{package_kind}s/sample-failure"
+    if original == "registered":
+        manager_type(project).install_from_directory(source, get_speckit_version())
+        (destination / "sample-failure-config.yml").write_text("user: original\n")
+    elif original == "unregistered":
+        destination.mkdir(parents=True)
+        (destination / "original.txt").write_text("original unregistered source")
+    (source / "package.txt").write_text("replacement bytes")
+    before = snapshot(project)
+    directories = {path for path in project.rglob("*") if path.is_dir()}
+    if failure == "copy":
+        original_copytree = shutil.copytree
+
+        def fail_partial_copy(src, dst, *args, **kwargs):
+            if Path(src) == source and Path(dst) == destination:
+                destination.mkdir(parents=True)
+                shutil.copy2(source / "package.txt", destination / "package.txt")
+                raise OSError("sample post-copy package failure")
+            return original_copytree(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "copytree", fail_partial_copy)
+    else:
+        method = (
+            "_register_commands" if package_kind == "preset" else "_register_extension_skills"
+        ) if failure == "registration" else "add"
+        owner = manager_type if failure == "registration" else registry_type
+        original_method = getattr(owner, method)
+
+        def fail_after_copy(self, *args, **kwargs):
+            assert (destination / "package.txt").read_text() == "replacement bytes"
+            if failure == "registration":
+                original_method(self, *args, **kwargs)
+            raise OSError("sample post-copy package failure")
+
+        monkeypatch.setattr(owner, method, fail_after_copy)
+    if route == "init":
+        result = run(tmp_path, [
+            "init", str(project), "--force", "--ignore-agent-tools",
+            "--integration", KEY, "--trust-integration", "--script", "py",
+            f"--{package_kind}", str(source),
+        ])
+        assert result.exit_code == 1, result.output
+        assert "sample post-copy package failure" in " ".join(result.output.split())
+        assert project.exists() == (original != "absent")
+        assert "Recovery snapshots retained" not in result.output
+    else:
+        state, error = try_read_integration_json(project)
+        assert error is None
+        with pytest.raises(OSError, match="sample post-copy package failure"):
+            with _transaction(project, KEY, state, read_records(project)):
+                manager_type(project).install_from_directory(source, get_speckit_version(), force=True)
+    assert snapshot(project) == before
+    assert all(path.is_dir() for path in directories)
+
+
+@pytest.mark.parametrize("operation", ["upgrade", "uninstall"])
+@pytest.mark.parametrize("leaf", ["file", "symlink", "dangling-symlink"])
+@pytest.mark.parametrize("fail_commit", [False, True])
+def test_forced_adapter_recovery_handles_owned_package_leaves_without_following(
+    tmp_path, server, monkeypatch, operation, leaf, fail_commit,
+):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    package = project / f".specify/integrations/packages/{KEY}"
+    shutil.rmtree(package)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "user.txt").write_text("outside user content")
+    target = outside if leaf == "symlink" else tmp_path / "missing-target"
+    if leaf == "file":
+        package.write_text("damaged package leaf")
+    else:
+        package.symlink_to(target, target_is_directory=True)
+    link_target = os.readlink(package) if leaf != "file" else None
+    outside_before = snapshot(outside)
+    before = snapshot(project)
+    if fail_commit:
+        def fail_records(root, records):
+            if operation == "upgrade":
+                assert package.is_dir() and not package.is_symlink()
+            else:
+                assert not package.exists() and not package.is_symlink()
+            raise OSError("sample package leaf commit failure")
+
+        monkeypatch.setattr(installer, "write_records", fail_records)
+    args = ["integration", operation, KEY, "--force"]
+    if operation == "upgrade":
+        args.append("--trust-integration")
+    result = run(project, args)
+    assert result.exit_code == (1 if fail_commit else 0), result.output
+    assert snapshot(outside) == outside_before
+    assert not (tmp_path / "missing-target").exists()
+    if fail_commit:
+        assert "sample package leaf commit failure" in " ".join(result.output.split())
+        assert snapshot(project) == before
+        assert package.is_symlink() == (leaf != "file")
+        if leaf != "file":
+            assert os.readlink(package) == link_target
+    elif operation == "upgrade":
+        assert load_installed_integrations(project) == [KEY]
+        assert package.is_dir() and not package.is_symlink()
+    else:
+        assert not package.exists() and not package.is_symlink()
+        assert KEY not in read_records(project)
+
+
+@pytest.mark.parametrize("package_kind", ["preset", "extension"])
+def test_builtin_init_keeps_optional_install_failures_best_effort(tmp_path, monkeypatch, package_kind):
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    source = tmp_path / "optional-source"
+    source.mkdir()
+    (source / f"{package_kind}.yml").write_text("schema_version: '1.0'\n")
+    manager_type = PresetManager if package_kind == "preset" else ExtensionManager
+    attempted = []
+
+    def fail_optional_install(*args, **kwargs):
+        attempted.append(True)
+        raise OSError("sample optional builtin install failure")
+
+    monkeypatch.setattr(manager_type, "install_from_directory", fail_optional_install)
+    project = tmp_path / "builtin-target"
+    result = run(tmp_path, [
+        "init", str(project), "--ignore-agent-tools", "--integration", "copilot",
+        "--script", "py", f"--{package_kind}", str(source),
+    ])
+    assert result.exit_code == 0, result.output
+    assert attempted == [True]
+    if package_kind == "preset":
+        assert "sample optional builtin install failure" in " ".join(result.output.split())
+    assert (project / ".github/skills/speckit-plan/SKILL.md").exists()
+
+
+@pytest.mark.parametrize("operation", ["upgrade", "uninstall"])
+def test_forced_package_recovery_still_rejects_symlinked_ancestors(tmp_path, server, operation):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    packages = project / ".specify/integrations/packages"
+    outside = tmp_path / "outside-packages"
+    packages.rename(outside)
+    packages.symlink_to(outside, target_is_directory=True)
+    before = snapshot(outside)
+    args = ["integration", operation, KEY, "--force"]
+    if operation == "upgrade":
+        args.append("--trust-integration")
+    result = run(project, args)
+    assert result.exit_code == 1, result.output
+    assert "symlinked" in result.output.lower()
+    assert packages.is_symlink()
+    assert snapshot(outside) == before

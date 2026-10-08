@@ -975,14 +975,16 @@ def persist_package(root: Path, key: str, package: Path, record: dict[str, Any])
     """Stage on the destination filesystem; caller owns lifecycle rollback."""
     base = safe_project_path(root, _PACKAGES)
     base.mkdir(parents=True, exist_ok=True)
-    destination = safe_project_path(root, f"{_PACKAGES}/{key}")
+    destination = safe_project_path(root, f"{_PACKAGES}/{key}", allow_leaf_symlink=True)
     with tempfile.TemporaryDirectory(dir=base, prefix=".install-") as temporary:
         staged = Path(temporary) / key
         shutil.copytree(package, staged, ignore=shutil.ignore_patterns("__pycache__"))
         if package_hashes(staged) != record["files"]:
             raise IntegrationInstallError("Integration package changed while staging")
-        before_file_change(destination)
-        if destination.exists():
+        before_file_change(destination, removal=True)
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+        elif destination.exists():
             shutil.rmtree(destination)
         os.replace(staged, destination)
         after_file_change(destination)
@@ -998,10 +1000,13 @@ def remove_package(root: Path, key: str) -> None:
     records = read_records(root)
     if key not in records:
         return
-    directory = safe_project_path(root, f"{_PACKAGES}/{key}")
+    directory = safe_project_path(root, f"{_PACKAGES}/{key}", allow_leaf_symlink=True)
     before_file_change(directory, removal=True)
     try:
-        shutil.rmtree(directory)
+        if directory.is_symlink() or directory.is_file():
+            directory.unlink()
+        else:
+            shutil.rmtree(directory)
     except FileNotFoundError:
         if directory.exists():
             raise

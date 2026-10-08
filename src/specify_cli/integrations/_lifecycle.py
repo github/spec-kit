@@ -84,6 +84,27 @@ def _entry_state(path: Path) -> tuple[int, ...]:
         entry.st_mtime_ns, entry.st_ctime_ns,
     )
 
+def _matches_directory_before_write(current: Any, expected: Any, parents: tuple[str, ...]) -> bool:
+    """Allow only new empty directories on the destination's parent chain."""
+    if current == expected:
+        return True
+    if (
+        not parents or current is None or expected is None
+        or current[0] != "directory" or expected[0] != "directory"
+    ):
+        return False
+    current_entries = dict(current[1])
+    expected_entries = dict(expected[1])
+    name = parents[0]
+    if name in current_entries and _matches_directory_before_write(
+        current_entries[name], expected_entries.get(name, ("directory", ())), parents[1:],
+    ):
+        if name in expected_entries:
+            current_entries[name] = expected_entries[name]
+        else:
+            del current_entries[name]
+    return current_entries == expected_entries
+
 
 def _initial_entries(paths: list[Path]) -> dict[Path, tuple[int, ...]]:
     """Census names and metadata without reading or copying file contents."""
@@ -178,10 +199,25 @@ class _FileJournal:
 
     def observe(self, path: Path, before: bool, removal: bool = False) -> None:
         path = self.safe_path(path, allow_leaf_symlink=not before or removal)
-        # A pending directory replacement snapshots the package as a unit.
-        # Its completion records descendant writes without duplicate snapshots.
-        if any(parent in self.pending for parent in path.parents):
-            return
+        for parent in path.parents:
+            if parent not in self.changes:
+                continue
+            if parent in self.pending:
+                return
+            saved, identity = self.changes[parent]
+            if identity is not None and identity[0] == "directory":
+                if before:
+                    if not _matches_directory_before_write(
+                        _file_identity(parent), identity, path.relative_to(parent).parts[:-1],
+                    ):
+                        raise installer.IntegrationInstallError(
+                            f"Integration output changed during the operation; refusing to overwrite {path}"
+                        )
+                    self.pending.add(path)
+                else:
+                    self.changes[parent] = (saved, _file_identity(parent))
+                    self.pending.discard(path)
+                return
         self._remember_parents(path)
         if (
             before and path in self.changes and path not in self.pending
@@ -226,7 +262,7 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     for path, (saved, written_identity) in reversed(tuple(journal.changes.items())):
         journal.safe_path(path)
         current_identity = _file_identity(path)
-        if path in journal.pending:
+        if path in journal.pending or any(path in pending.parents for pending in journal.pending):
             original_identity = _file_identity(saved) if saved is not None else None
             if current_identity != original_identity:
                 conflicts.append(path)
