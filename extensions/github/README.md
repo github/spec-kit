@@ -40,7 +40,7 @@ specify extension remove github
 | ------------------------------ | -------------------------------------------------------------------- |
 | `speckit.github.taskstoissues` | Recommended: convert tasks from `tasks.md` into dependency-ordered GitHub issues. |
 
-> NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for hyphen/skills integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex, ZCode, or Command Code in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
+> NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for slash-hyphen integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex, ZCode, or Command Code in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
 
 ### What the command does
 
@@ -101,3 +101,35 @@ available during this deprecation period until the removal stage.
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
 Apart from the core command's deprecation warning, conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
+
+### Presets and dependent extensions
+
+Before the core command is removed, audit references to `speckit.taskstoissues`
+in presets, extension prompts, workflow steps, handoffs, and project automation.
+For GitHub issue conversion, use the canonical `speckit.github.taskstoissues`
+command ID and render it with the agent-specific syntax under [Commands](#commands).
+Replace `__SPECKIT_COMMAND_TASKSTOISSUES__` cross-command references with
+`__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` where template rendering is supported.
+Document `specify extension add github` as a setup prerequisite; the deprecation
+warning does not install this dependency.
+
+If an extension proposal or external dependency declaration uses
+`requires.commands: [speckit.taskstoissues]`, update its target to
+`speckit.github.taskstoissues`. `requires.commands` is not an enforced dependency
+field in the current extension manifest API, so do not rely on that declaration
+to install or check the GitHub extension. Follow the supported requirements in
+the [extension API reference](../EXTENSION-API-REFERENCE.md#extension-manifest).
+
+Preset command overrides are separate from command references: an override of
+`speckit.taskstoissues` does not automatically customize the namespaced GitHub
+command. Review and port any needed customization, then verify the installed
+command in a sample project before retiring the old override. A preset that
+uses another issue tracker should retain its own provider-specific workflow
+rather than redirecting it to the GitHub command. Existing overrides may also
+hide the core deprecation warning, so communicate the migration to their users.
+
+Keep the `before_taskstoissues` and `after_taskstoissues` hook keys unchanged;
+both commands consume them. Only update a hook's command reference if it invokes
+the deprecated command. Do not invoke both core and replacement commands for
+the same conversion, since that also runs their hooks twice. Publish and test
+updated preset/extension versions before the later core-removal release.
