@@ -116,14 +116,40 @@ def test_tagged_license_rest_endpoint_is_reachable_through_enabled_tools():
     match = re.search(r'\\"network\\":(\{.*?\}),\\"apiProxy\\"', agent_run)
     assert match is not None
     network = json.loads(match[1].replace(r'\"', '"'))
-    assert "api.github.com" in network["allowDomains"]
+    assert isinstance(network["allowDomains"], list)
+    assert any(domain == "api.github.com" for domain in network["allowDomains"])
     assert network["isolation"] is True
     assert not any("*" in domain for domain in network["allowDomains"])
     assert not {"localhost", "127.0.0.1", "169.254.169.254"} & set(network["allowDomains"])
     domains = _workflow_step(
         compiled["jobs"]["agent"]["steps"], "Ingest agent output"
     )["env"]["GH_AW_ALLOWED_DOMAINS"].split(",")
-    assert "api.github.com" in domains
+    assert any(domain == "api.github.com" for domain in domains)
+
+
+@pytest.mark.parametrize("layer", ["firewall", "ingestion"])
+@pytest.mark.parametrize("lookalike", [
+    "api.github.com.attacker.example", "attacker-api.github.com",
+])
+def test_license_rest_host_requires_an_exact_domain_entry(monkeypatch, layer, lookalike):
+    module = sys.modules[__name__]
+    if layer == "firewall":
+        agent_run = _community_submission_agent_run("workflow-step")
+        monkeypatch.setattr(
+            module, "_community_submission_agent_run",
+            lambda _: agent_run.replace(r'\"api.github.com\"', rf'\"{lookalike}\"'),
+        )
+    else:
+        text, lock, source, compiled = _agentic_workflow("add-community-workflow-step")
+        env = _workflow_step(
+            compiled["jobs"]["agent"]["steps"], "Ingest agent output"
+        )["env"]
+        env["GH_AW_ALLOWED_DOMAINS"] = env["GH_AW_ALLOWED_DOMAINS"].replace(
+            "api.github.com", lookalike,
+        )
+        monkeypatch.setattr(module, "_agentic_workflow", lambda _: (text, lock, source, compiled))
+    with pytest.raises(AssertionError):
+        test_tagged_license_rest_endpoint_is_reachable_through_enabled_tools()
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
