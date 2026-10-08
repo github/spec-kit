@@ -12,6 +12,7 @@ engine:
   args:
     - --allow-url=https://github.com
     - --allow-url=https://raw.githubusercontent.com
+    - --allow-url=https://api.github.com
 
 tools:
   edit:
@@ -26,6 +27,7 @@ network:
     - defaults
     - github.com
     - raw.githubusercontent.com
+    - api.github.com
 
 permissions:
   contents: read
@@ -195,9 +197,18 @@ required check has completed and passed.
   A missing identifier or one absent from a successfully retrieved list is a
   submission defect. If the list cannot be retrieved, validation is Blocked;
   do not guess an identifier or silently substitute another license.
-- Read the submitted repository's license metadata at the exact release tag
-  using GitHub's `GET /repos/<owner>/<repo>/license?ref=<release-tag>` endpoint,
-  not default-branch metadata. Require its detected `license.spdx_id` to match
+- Use the enabled `web_fetch` tool to read the public JSON response from
+  `https://api.github.com/repos/<owner>/<repo>/license?ref=<release-tag>`.
+  Construct this URL only from the repository and exact release tag already
+  accepted by the identity helper, percent-encoding the tag as one query value
+  (including `+` in local-version tags). Do not fetch an arbitrary issue-provided
+  API URL, substitute default-branch metadata, or rely on a nonexistent GitHub
+  MCP license tool. The agent URL policy and firewall explicitly allow
+  `api.github.com`; this public read requires no token or new write permissions.
+  Require HTTP 200 and a complete readable JSON response before inspecting
+  `license.spdx_id`. Permission denials, rate limits, timeouts, service outages,
+  or unreadable/truncated responses are Blocked, not evidence of a mismatch.
+  Require its detected `license.spdx_id` to match
   the validated submitted identifier and confirm the corresponding license
   file exists at that release. A known different identifier or confirmed
   missing release license file is a submission defect.

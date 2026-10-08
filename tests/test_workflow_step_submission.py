@@ -18,6 +18,7 @@ from tests.test_github_workflows import (
     REPOSITORY_OWNED_DRAFT_PR_EXEMPTION,
     WORKFLOWS_DIR,
     _agentic_workflow,
+    _community_submission_agent_run,
     _safe_output_config,
     _workflow_step,
 )
@@ -94,6 +95,33 @@ def test_agent_cannot_add_success_label_before_publication(kind):
     )
     assert "validation-passed" not in config["allowed"]
     assert {"validation-failed", "needs-info"} <= set(config["allowed"])
+
+
+def test_tagged_license_rest_endpoint_is_reachable_through_enabled_tools():
+    _, _, source, compiled = _agentic_workflow("add-community-workflow-step")
+    assert source["engine"]["args"] == [
+        "--allow-url=https://github.com",
+        "--allow-url=https://raw.githubusercontent.com",
+        "--allow-url=https://api.github.com",
+    ]
+    assert source["network"]["allowed"] == [
+        "defaults", "github.com", "raw.githubusercontent.com", "api.github.com",
+    ]
+    assert "web-fetch" in source["tools"]
+    agent_run = _community_submission_agent_run("workflow-step")
+    assert "--allow-url=https://api.github.com" in agent_run
+    assert "--allow-tool web_fetch" in agent_run
+    match = re.search(r'\\"network\\":(\{.*?\}),\\"apiProxy\\"', agent_run)
+    assert match is not None
+    network = json.loads(match[1].replace(r'\"', '"'))
+    assert "api.github.com" in network["allowDomains"]
+    assert network["isolation"] is True
+    assert not any("*" in domain for domain in network["allowDomains"])
+    assert not {"localhost", "127.0.0.1", "169.254.169.254"} & set(network["allowDomains"])
+    domains = _workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Ingest agent output"
+    )["env"]["GH_AW_ALLOWED_DOMAINS"].split(",")
+    assert "api.github.com" in domains
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
