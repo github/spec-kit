@@ -217,7 +217,7 @@ def fetch_file(
         output.unlink(missing_ok=True)
         result = subprocess.run(
             [
-                "curl", "--proto", "=https", "--max-time", "60",
+                "curl", "--disable", "--proto", "=https", "--max-time", "60",
                 "--max-filesize", str(max(1, limit)), "--silent", "--show-error",
                 "--write-out", "%{http_code}", "--output", str(output), url,
             ],
@@ -227,7 +227,7 @@ def fetch_file(
         raise Blocked(f"cannot download {url}: {exc}") from exc
     status = result.stdout.strip()
     if status != "200" and re.fullmatch(r"[1-5]\d\d", status):
-        if status in ("403", "408", "429") or status.startswith("5"):
+        if status in ("403", "407", "408", "429") or status.startswith("5"):
             raise Blocked(f"HTTP {status} downloading {url}")
         raise SubmissionMismatch(f"expected HTTP 200, received {status!r} from {url}")
     if result.returncode == 63 and status == "200":

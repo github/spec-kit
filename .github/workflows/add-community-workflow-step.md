@@ -276,6 +276,8 @@ python3 .github/scripts/validate_community_workflow_step.py fetch --submission /
 
 The repository-owned helper validates identity, URL boundaries, paths, and
 digest shape before invoking curl with a direct argument list, never a shell.
+The first curl option is `--disable`, preventing user config files from
+adding URLs or enabling redirects/insecure TLS outside the validated arguments.
 It enforces the installer's limits of 512 entries (files and distinct package
 directories combined), 32 directory levels, and 50 MiB cumulative downloaded
 bytes. These limits are read from the repository-owned installer. File count
@@ -284,7 +286,8 @@ budget bounds each download.
 It does not follow redirects and only hashes downloaded bytes after curl exits
 zero and returns HTTP 200. It rejects submitted digest mismatches and files
 exceeding 10 MiB. Exit 1 is Failed; exit 2 is Blocked, including missing tools,
-timeouts, HTTP 403/408/429, and HTTP 5xx. Known HTTP status takes precedence
+timeouts, HTTP 403/407/408/429, and HTTP 5xx. HTTP 407 is a proxy-authentication
+environment blocker, not a submission defect. Known HTTP status takes precedence
 over curl's exit code: an oversized HTTP 503 error body remains Blocked even
 when curl exits 63. Only classify exit 63 as a size defect for HTTP 200.
 HTTP 404 and redirects are submission failures. Never treat a nonzero exit

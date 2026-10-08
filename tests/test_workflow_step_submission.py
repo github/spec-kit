@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -337,7 +339,7 @@ def test_file_fetch_passes_one_validated_url_argument_and_hashes_bytes(
         "sha256": hashlib.sha256(b"fixture bytes").hexdigest(),
     }
     assert calls == [([
-        "curl", "--proto", "=https", "--max-time", "60",
+        "curl", "--disable", "--proto", "=https", "--max-time", "60",
         "--max-filesize", "10485760", "--silent", "--show-error",
         "--write-out", "%{http_code}", "--output", str(output),
         file_submission["catalog_entry"]["init_url"],
@@ -401,7 +403,7 @@ def test_fetch_keeps_malicious_text_in_one_argument_even_if_validation_is_bypass
     result = verifier.fetch_file(file_submission, tmp_path / "download")
     args = json.loads(arguments.read_text())
     assert args[-1] == url
-    assert len(args) == 13
+    assert len(args) == 14
     assert result["sha256"] == expected
     assert not (tmp_path / "injected").exists()
 
@@ -433,10 +435,12 @@ def test_nested_binary_extra_file_is_hashed(verifier, file_submission, tmp_path,
     (0, "404", "SubmissionMismatch"),
     (0, "302", "SubmissionMismatch"),
     (0, "403", "Blocked"),
+    (0, "407", "Blocked"),
     (0, "408", "Blocked"),
     (0, "429", "Blocked"),
     (0, "503", "Blocked"),
     (63, "403", "Blocked"),
+    (63, "407", "Blocked"),
     (63, "408", "Blocked"),
     (63, "429", "Blocked"),
     (63, "503", "Blocked"),
@@ -466,6 +470,56 @@ def test_fetch_failures_prevent_hashing(
     if http not in ("000", "200"):
         assert "HTTP" in str(error.value)
         assert http in str(error.value)
+
+
+@pytest.mark.skipif(
+    shutil.which("curl") is None or sys.platform == "win32",
+    reason="requires real POSIX curl config discovery",
+)
+@pytest.mark.parametrize("config_source", ["HOME", "CURL_HOME"])
+def test_real_curl_ignores_hostile_user_configuration(
+    verifier, file_submission, tmp_path, monkeypatch, config_source,
+):
+    connections = []
+
+    class Proxy(BaseHTTPRequestHandler):
+        def do_CONNECT(self):
+            connections.append(self.path)
+            self.send_response(407)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Proxy) as proxy:
+        thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+        thread.start()
+        trace = tmp_path / "hostile-config-trace"
+        config_directory = tmp_path / "config"
+        config_directory.mkdir()
+        (config_directory / ".curlrc").write_text(
+            "insecure\nlocation\n"
+            f'trace-ascii = "{trace.as_posix()}"\n'
+            'url = "https://unvalidated.example/extra"\n',
+            encoding="utf-8",
+        )
+        home = tmp_path / "empty-home"
+        home.mkdir()
+        for key in ("CURL_HOME", "XDG_CONFIG_HOME", "ALL_PROXY", "all_proxy", "https_proxy"):
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv(config_source, str(config_directory))
+        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{proxy.server_port}")
+        monkeypatch.setenv("NO_PROXY", "")
+        monkeypatch.setenv("no_proxy", "")
+        try:
+            with pytest.raises(verifier.Blocked):
+                verifier.fetch_file(file_submission, tmp_path / "download")
+        finally:
+            proxy.shutdown()
+            thread.join(timeout=5)
+        assert not trace.exists(), "curl loaded the hostile user configuration"
+        assert connections == ["raw.githubusercontent.com:443"]
 
 
 def test_submitted_checksum_mismatch_fails(verifier, file_submission, tmp_path, monkeypatch):
