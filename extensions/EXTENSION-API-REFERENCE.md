@@ -641,7 +641,7 @@ Standard events (defined by core):
 Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected. Pre-hooks run after slug resolution and prerequisites; post-hooks run after the report is written and before completion is reported.
 
 - `before_bug_assess` - After the bug directory exists, before ingesting the report
-- `after_bug_assess` - After writing `assessment.md`
+- `after_bug_assess` - After writing `assessment.md`; not reached when an unintelligible report causes an early stop
 - `before_bug_fix` - Before applying the remediation
 - `after_bug_fix` - After writing `fix.md`
 - `before_bug_test` - Before running verification

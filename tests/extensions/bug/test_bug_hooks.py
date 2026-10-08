@@ -110,3 +110,19 @@ def test_bug_hook_event_names_are_accepted_and_registered(tmp_path, event):
     hooks = executor.get_hooks_for_event(event)
     assert len(hooks) == 1
     assert hooks[0]["command"] == command
+
+
+def test_assess_preserves_early_stop_for_unintelligible_reports():
+    """Pin the existing early-stop instruction, not runtime agent compliance."""
+    text = (EXT_DIR / "commands/speckit.bug.assess.md").read_text(encoding="utf-8")
+    guardrails = text.split("## Guardrails", 1)[1]
+    assert (
+        "If the bug report cannot be understood at all (empty, unrelated, spam), "
+        "set verdict to `invalid` with a clear reason and stop."
+    ) in guardrails
+    post_section = text.split("## Mandatory Post-Execution Hooks", 1)[1].split("## Completion Report", 1)[0]
+    assert "Only enter this section after writing `assessment.md` in this run." in post_section
+    assert "Early stops that produce no report do not run post-hooks or the Completion Report." in post_section
+    execution = text.split("## Execution", 1)[1].split("## Mandatory Post-Execution Hooks", 1)[0]
+    assert execution.index("stop immediately") < execution.index("2. **Summarize the symptom**")
+    assert "Do not write `assessment.md`, run post-hooks, or proceed to the Completion Report." in execution

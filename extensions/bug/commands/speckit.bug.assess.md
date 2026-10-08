@@ -113,6 +113,7 @@ By this point `BUG_SLUG` and `BUG_DIR` have been resolved, so a hook command run
 1. **Ingest the bug report**
    - If a URL is present, first apply the **URL Trust Policy** above to decide whether to fetch, prompt, or refuse. If the policy permits the fetch, retrieve the page and extract the relevant content (title, description, stack traces, reproduction steps, comments).
    - Capture the verbatim source (URL or pasted block) so it can be quoted in the report.
+   - If a pasted report cannot be understood at all (empty, unrelated, spam), tell the user the verdict is `invalid` with a clear reason and stop immediately. Do not write `assessment.md`, run post-hooks, or proceed to the Completion Report. This early exit does not replace the URL Trust Policy's required recording above or the normal assessment of an intelligible report that turns out not to be a bug.
 
 2. **Summarize the symptom**
    - Reproduce the bug in one or two sentences: what happens, what was expected, under which conditions.
@@ -199,6 +200,8 @@ By this point `BUG_SLUG` and `BUG_DIR` have been resolved, so a hook command run
 
 ## Mandatory Post-Execution Hooks
 
+Only enter this section after writing `assessment.md` in this run. Early stops that produce no report do not run post-hooks or the Completion Report.
+
 **You MUST complete this section before reporting completion to the user.**
 
 By this point `BUG_SLUG` and `BUG_DIR` have been resolved and the written report is available, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
@@ -247,4 +250,4 @@ Check if `.specify/extensions.yml` exists in the project root.
 - Never modify source files during assessment — this command only reads and writes inside `.specify/bugs/<slug>/`.
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
 - Never overwrite an existing `assessment.md` without confirmation.
-- If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason, still write `assessment.md`, run the Mandatory Post-Execution Hooks, and stop after the Completion Report.
+- If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.
