@@ -31,9 +31,13 @@ explicitly allow for installation.
 
 ## Available Step Types
 
-| Step type | Version | Maintainer | Description |
-| --- | --- | --- | --- |
-| [Decision](https://github.com/markuswondrak/spec-kit-decision-step) (`decision`) | 0.9.0 | [Markus Wondrak](https://github.com/markuswondrak) | Typed bounded choice, score, and noul decisions with native probabilities and score legends using Jev and Laya backends. |
+| Step type | Version | Description |
+| --- | --- | --- |
+| [Decision](https://github.com/markuswondrak/spec-kit-decision-step) (`decision`) | 0.9.0 | Typed bounded choice, score, and noul decisions with native probabilities and score legends using Jev and Laya backends. |
+
+Decision is maintained by [Markus Wondrak](https://github.com/markuswondrak).
+As in the other community submission tables, author metadata belongs in the
+catalog; it is not used as a substitute for maintainer attribution.
 
 Decision declares runtime compatibility with Spec Kit `>=0.11.0`; installing
 its [versioned release archive](https://github.com/markuswondrak/spec-kit-decision-step/releases/download/v0.9.0/decision-0.9.0.zip)
@@ -128,6 +132,13 @@ versioned-release and installation-test evidence, not an immutable content
 guarantee; the per-file digests protect the separate catalog-installation path.
 Automation downloads the complete declared file set in one pass to enforce
 the cumulative byte budget. It does not execute the archive or its contents.
+
+License must be one exact SPDX license identifier from the official license
+list, matching the repository license detected at the submitted release tag.
+An unknown identifier or known license mismatch fails validation. If release
+license detection is unavailable or inconclusive, validation is Blocked for
+maintainer clarification rather than guessing a license. This metadata check
+is not a legal opinion or code audit.
 
 ## Prepare a Submission
 

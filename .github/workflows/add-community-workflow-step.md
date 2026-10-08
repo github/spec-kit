@@ -185,6 +185,30 @@ required check has completed and passed.
   Archive installation/execution evidence is supplied by the author; do not
   install or execute the archive.
 
+### License metadata
+
+- Trim the submitted License value and require one exact, case-sensitive SPDX
+  license identifier from the `licenseId` fields in the official list at
+  `https://raw.githubusercontent.com/spdx/license-list-data/main/json/licenses.json`.
+  Do not accept a display name, invented identifier such as `custom`, SPDX
+  expression, or placeholder such as `NONE` or `NOASSERTION` as an identifier.
+  A missing identifier or one absent from a successfully retrieved list is a
+  submission defect. If the list cannot be retrieved, validation is Blocked;
+  do not guess an identifier or silently substitute another license.
+- Read the submitted repository's license metadata at the exact release tag
+  using GitHub's `GET /repos/<owner>/<repo>/license?ref=<release-tag>` endpoint,
+  not default-branch metadata. Require its detected `license.spdx_id` to match
+  the validated submitted identifier and confirm the corresponding license
+  file exists at that release. A known different identifier or confirmed
+  missing release license file is a submission defect.
+- If GitHub cannot identify the license (`NOASSERTION`, missing detection, or
+  unavailable metadata), classify correspondence as Blocked for maintainer
+  clarification, not Passed or an invented mismatch. Do not ask the author to
+  change a valid identifier solely because automatic detection is unavailable.
+- Record the identifier, release reference, and correspondence evidence in the
+  validation results before constructing the entry. This is license metadata
+  validation, not a legal opinion, code audit, or security endorsement.
+
 ### Catalog distribution
 
 The step catalog installs individual files. Its `download_url` is provenance
@@ -345,10 +369,13 @@ Sort entries by Step ID; use two-space JSON indentation and a trailing newline.
 Validate the complete JSON using repository-owned Python, without importing
 the submitted step.
 
-Add or update one row in the Available Step Types table, sorted by Step Type Name:
+Add or update one row in the Available Step Types table, sorted by Step Type Name.
+Like other community submission tables, this table does not conflate package
+authors with maintainers or collect a separate Maintainer field. Retain Author
+in the catalog and manifest correspondence checks only:
 
 ```text
-| [<Name>](<repository>) (`<step-id>`) | <version> | <author> | <Description> |
+| [<Name>](<repository>) (`<step-id>`) | <version> | <Description> |
 ```
 
 Collapse newlines and remove control characters from user display values.
@@ -356,7 +383,8 @@ Escape backslashes, pipes, backticks, Markdown formatting, brackets, and angle
 brackets; only the validated repository URL is used as a link destination.
 Do not replace surrounding guide content.
 Preserve the existing Decision listing and its compatibility/dependency notes
-when processing unrelated submissions. For an update to a listed step with
+and maintainer attribution in prose when processing unrelated submissions.
+Never replace maintainer attribution with the package Author. For an update to a listed step with
 version-specific notes, update those notes from validated release documentation.
 
 ## 5. Create one draft PR
