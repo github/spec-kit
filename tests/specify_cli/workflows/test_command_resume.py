@@ -309,8 +309,8 @@ steps:
         run_id = self._install_and_run_gated(runner, app, project_dir)
         state_path = project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
         data = json.loads(state_path.read_text(encoding="utf-8"))
-        data["installed_workflow_id"] = None
-        data.pop("installed_origin_tracked", None)
+        data.pop("installed_workflow_id", None)
+        data.pop("installed_registry_root", None)
         state_path.write_text(json.dumps(data), encoding="utf-8")
         monkeypatch.setattr(RunState, "save", lambda _: (_ for _ in ()).throw(CheckpointError("disk full")))
 
