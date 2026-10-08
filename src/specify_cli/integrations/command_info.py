@@ -133,8 +133,8 @@ def integration_info(
             if integration_id in BUILTIN_INTEGRATION_KEYS
             else packages[integration_id]
         )
-        name = cfg.get("name", integration_id)
-        console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id})")
+        name = _rich_escape(str(cfg.get("name", integration_id)))
+        console.print(f"\n[bold cyan]{name}[/bold cyan] ({safe_integration_id})")
         label = "Built-in integration" if integration_id in BUILTIN_INTEGRATION_KEYS else "Installed external integration"
         console.print(f"  [dim]{label} (not listed in catalog)[/dim]")
         if integration_id in packages:

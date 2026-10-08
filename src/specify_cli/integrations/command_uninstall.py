@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from .._utils import _display_project_path
@@ -118,7 +119,7 @@ def integration_uninstall(
         _clear_init_options_for_integration(project_root, key)
 
     name = (integration.config or {}).get("name", key) if integration else key
-    lifecycle_success(f"\n[green]✓[/green] Integration '{name}' uninstalled")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' uninstalled")
     if removed:
         console.print(f"  Removed {len(removed)} file(s)")
     if skipped:

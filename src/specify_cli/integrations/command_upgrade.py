@@ -5,6 +5,7 @@ import os
 from pathlib import PurePath
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from ..integration_runtime import (
@@ -357,4 +358,4 @@ def integration_upgrade(
         )
 
     name = (integration.config or {}).get("name", key)
-    lifecycle_success(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' upgraded successfully")

@@ -142,8 +142,10 @@ class SampleIntegration(SkillsIntegration):
 ```
 
 `config.name` must match the descriptor. An optional class `version` must match
-its version. `config` and `registrar_config` must provide the fields above;
-the registration directory must match `folder/commands_subdir`. Output paths
+its version. Display names are rendered as literal text in discovery and lifecycle output;
+brackets and Rich-like tags are valid name content, not console formatting.
+`config` and `registrar_config` must provide the fields above; the registration
+directory must match `folder/commands_subdir`. Output paths
 must be canonical, project-local, and outside `.git` and `.specify`.
 Registration extensions must be plain dotted filename suffixes (such as
 `.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
@@ -286,7 +288,10 @@ directories or writing. Manifest recording validates lexical paths before
 resolution, including project-local and dangling symlinks, so resolution cannot
 hide a link to an unrelated project file. Removing an owned leaf symlink unlinks
 the link itself without following its target; declared output directories cannot
-be symlinks.
+be symlinks. Manifest cleanup validates lexical ancestors before reading or
+deleting a tracked file and immediately before unlinking it, even without an
+active lifecycle journal. Unsafe paths are reported as preserved files rather
+than followed through a symlink.
 Cancelling initialization discards the prepared adapter without installing code
 or reporting success. Stable lifecycle locks are user-local and keyed by
 canonical project root, so cancellation does not create target lock scaffolding;

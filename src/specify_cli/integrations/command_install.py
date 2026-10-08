@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from ..integration_runtime import (
@@ -197,6 +198,6 @@ def integration_install(
         raise typer.Exit(1)
 
     name = (integration.config or {}).get("name", key)
-    lifecycle_success(f"\n[green]✓[/green] Integration '{name}' installed successfully")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' installed successfully")
     if default_key:
         console.print(f"[dim]Default integration remains:[/dim] [cyan]{default_key}[/cyan]")

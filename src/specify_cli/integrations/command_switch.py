@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from ..integration_runtime import invoke_prefix_for_integration as _invoke_prefix_for_integration, invoke_separator_for_integration as _invoke_separator_for_integration
@@ -369,4 +370,4 @@ def integration_switch(
     )
 
     name = (target_integration.config or {}).get("name", target)
-    lifecycle_success(f"\n[green]✓[/green] Switched to integration '{name}'")
+    lifecycle_success(f"\n[green]✓[/green] Switched to integration '{escape(str(name))}'")

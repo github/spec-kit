@@ -82,6 +82,20 @@ def _manifest_path_label(root: Path, path: Path) -> str:
     except ValueError:
         return path.as_posix()
 
+def _ensure_safe_manifest_removal(root: Path, path: Path) -> None:
+    """Check lexical containment and ancestors without following a leaf link."""
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise ValueError(f"Integration manifest removal escapes project root: {path}") from None
+    if ".." in relative.parts:
+        raise ValueError(f"Noncanonical integration manifest removal path: {relative}")
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"Refusing deletion through symlinked manifest directory: {current}")
+
 
 def _ensure_safe_manifest_directory(root: Path, directory: Path) -> None:
     """Create a manifest directory without following symlinked parents."""
@@ -380,12 +394,10 @@ class IntegrationManifest:
             # Use non-resolved path for deletion so symlinks themselves
             # are removed, not their targets.
             path = root / rel
-            # Validate containment lexically (without following symlinks)
-            # by collapsing .. segments via Path resolution on the string parts.
             try:
-                normed = Path(os.path.normpath(path))
-                normed.relative_to(root)
+                _ensure_safe_manifest_removal(root, path)
             except (ValueError, OSError):
+                skipped.append(path)
                 continue
             if not path.exists() and not path.is_symlink():
                 continue
@@ -416,8 +428,9 @@ class IntegrationManifest:
                         continue
             try:
                 before_file_change(path, removal=True)
+                _ensure_safe_manifest_removal(root, path)
                 path.unlink()
-            except OSError:
+            except (ValueError, OSError):
                 skipped.append(path)
                 continue
             removed.append(path)
@@ -426,19 +439,25 @@ class IntegrationManifest:
             parent = path.parent
             while parent != root:
                 try:
+                    _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()  # only succeeds if empty
-                except OSError:
+                except (ValueError, OSError):
                     break
                 parent = parent.parent
 
         # Remove the manifest file itself
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
-        if remove_manifest and manifest.exists():
+        if remove_manifest:
+            manifest_present = False
             try:
-                before_file_change(manifest, removal=True)
-                manifest.unlink()
-                after_file_change(manifest)
-            except OSError:
+                _ensure_safe_manifest_removal(root, manifest)
+                manifest_present = manifest.exists() or manifest.is_symlink()
+                if manifest_present:
+                    before_file_change(manifest, removal=True)
+                    _ensure_safe_manifest_removal(root, manifest)
+                    manifest.unlink()
+                    after_file_change(manifest)
+            except (ValueError, OSError):
                 # An undeletable manifest (read-only file, a directory left at
                 # the path, a Windows lock) must not abort the uninstall after
                 # the tracked files were already removed: the caller would lose
@@ -450,10 +469,11 @@ class IntegrationManifest:
                 # rmdir() raises and breaks immediately.
                 skipped.append(manifest)
             parent = manifest.parent
-            while parent != root:
+            while manifest_present and parent != root:
                 try:
+                    _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()
-                except OSError:
+                except (ValueError, OSError):
                     break
                 parent = parent.parent
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from .._console import console
@@ -70,7 +71,7 @@ def integration_list(
                 safe = "yes" if getattr(reg_integ, "multi_install_safe", False) else "no"
             table.add_row(
                 eid,
-                entry.get("name", eid),
+                escape(str(entry.get("name", eid))),
                 entry.get("version", ""),
                 cat_name,
                 status,
@@ -103,7 +104,7 @@ def integration_list(
             status = ""
         cli_req = "yes" if requires_cli else "no (IDE)"
         safe = "yes" if getattr(integration, "multi_install_safe", False) else "no"
-        table.add_row(key, name, status, cli_req, safe)
+        table.add_row(key, escape(str(name)), status, cli_req, safe)
 
     console.print(table)
 

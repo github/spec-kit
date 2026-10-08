@@ -251,6 +251,70 @@ class TestManifestCheckModified:
 
 
 class TestManifestUninstall:
+    @pytest.mark.parametrize("force", [False, True])
+    @pytest.mark.parametrize("outside", [False, True])
+    def test_uninstall_preserves_files_under_symlinked_ancestors(self, tmp_path, force, outside):
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.record_file("owned/file.txt", "matching content")
+        m.save()
+        (root / "owned/file.txt").unlink()
+        (root / "owned").rmdir()
+        target = (tmp_path if outside else root) / "user"
+        target.mkdir()
+        victim = target / "file.txt"
+        victim.write_text("matching content")
+        (root / "owned").symlink_to(target, target_is_directory=True)
+        removed, skipped = m.uninstall(force=force)
+        assert victim.read_text() == "matching content"
+        assert removed == []
+        assert skipped == [root / "owned/file.txt"]
+        assert (root / "owned").is_symlink()
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_rechecks_parent_after_observer(self, tmp_path, force):
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.record_file("owned/file.txt", "matching content")
+        victim_dir = tmp_path / "user"
+        victim_dir.mkdir()
+        victim = victim_dir / "file.txt"
+        victim.write_text("matching content")
+
+        def swap_parent(path, before, removal):
+            if path == root / "owned/file.txt" and before:
+                (root / "owned").rename(root / "original")
+                (root / "owned").symlink_to(victim_dir, target_is_directory=True)
+
+        token = file_change_observer.set(swap_parent)
+        try:
+            removed, skipped = m.uninstall(force=force)
+        finally:
+            file_change_observer.reset(token)
+        assert victim.read_text() == "matching content"
+        assert removed == []
+        assert skipped == [root / "owned/file.txt"]
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_uninstall_preserves_manifest_under_symlinked_parent(self, tmp_path, force):
+        root = tmp_path / "project"
+        root.mkdir()
+        m = IntegrationManifest("test", root)
+        m.save()
+        integrations = root / ".specify/integrations"
+        integrations.rename(tmp_path / "user-manifests")
+        integrations.symlink_to(tmp_path / "user-manifests", target_is_directory=True)
+        victim = tmp_path / "user-manifests/test.manifest.json"
+        before = victim.read_bytes()
+        removed, skipped = m.uninstall(force=force)
+        assert victim.read_bytes() == before
+        assert removed == []
+        assert skipped == [m.manifest_path]
+
     def test_removes_unmodified(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("d/f.txt", "content")

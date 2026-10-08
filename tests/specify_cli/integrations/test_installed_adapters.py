@@ -4229,3 +4229,64 @@ def test_invalid_local_recovery_ownership_modes_fail_explicitly(tmp_path, server
     assert result.exit_code == 1, result.output
     assert "ownership modes" in result.output
     assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("name", ["Sample Agent", "[/red]foo", "[red]Preview[/red]", "[link=https://example.com]Link[/link]"])
+@pytest.mark.parametrize("operation", ["install", "switch", "upgrade", "uninstall", "list", "list-catalog", "info-fallback"])
+def test_external_names_render_literally_without_breaking_committed_operations(tmp_path, server, monkeypatch, name, operation):
+    monkeypatch.setattr("specify_cli._console.console.width", 240)
+    metadata = descriptor()
+    metadata["integration"]["name"] = name
+    code = implementation().replace('"name": "Sample Agent"', f'"name": {name!r}')
+    publish(server, metadata=metadata, code=code)
+    project = catalog_project(tmp_path, server)
+    if operation not in {"install", "switch"}:
+        run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+        assert KEY in read_records(project)
+        assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+    arguments = {
+        "install": ["integration", "install", KEY, "--trust-integration", "--script", "py"],
+        "switch": ["integration", "switch", KEY, "--trust-integration", "--script", "py"],
+        "upgrade": ["integration", "upgrade", KEY, "--trust-integration"],
+        "uninstall": ["integration", "uninstall", KEY],
+        "list": ["integration", "list"],
+        "list-catalog": ["integration", "list", "--catalog"],
+        "info-fallback": ["integration", "info", KEY],
+    }[operation]
+    if operation == "info-fallback":
+        (server.root / "catalog.json").write_text(json.dumps({
+            "schema_version": "1.0", "integrations": {},
+        }))
+    result = run(project, arguments)
+    assert result.exit_code == 0, result.output
+    assert name in " ".join(result.output.split())
+    assert (KEY in read_records(project)) == (operation != "uninstall")
+    assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists() == (operation != "uninstall")
+
+
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("operation", ["uninstall", "upgrade"])
+def test_builtin_manifest_cleanup_does_not_follow_symlinked_stale_parent(tmp_path, server, force, operation):
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    project = catalog_project(tmp_path, server)
+    installed = run(project, ["integration", "install", "claude", "--script", "py"])
+    assert installed.exit_code == 0, installed.output
+    assert read_records(project) == {}
+    manifest = IntegrationManifest.load("claude", project)
+    path = manifest.record_file(".claude/skills/speckit-old/SKILL.md", "old generated content")
+    manifest.save()
+    path.unlink()
+    path.parent.rmdir()
+    user = tmp_path / "user"
+    user.mkdir()
+    victim = user / "SKILL.md"
+    victim.write_text("old generated content")
+    path.parent.symlink_to(user, target_is_directory=True)
+    result = run(project, ["integration", operation, "claude", *(["--force"] if force else [])])
+    assert result.exit_code == 0, result.output
+    assert victim.read_text() == "old generated content"
+    assert path.parent.is_symlink()
+    if operation == "upgrade":
+        assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+    assert read_records(project) == {}
