@@ -848,6 +848,40 @@ class TestIntegrationUpgradeDetailed:
         )
         assert not (prompts / "speckit.foo.bar-baz.md").exists()
 
+    @pytest.mark.parametrize(
+        "damage",
+        [[], "speckit.foo-bar.baz", {"kiro-cli": "speckit.foo-bar.baz"}, {"kiro-cli": [1]}],
+    )
+    def test_disabled_extension_with_unreadable_registration_keeps_its_prompt(
+        self, tmp_path, damage
+    ):
+        """A disabled extension's prompt stays on disk. When its registry
+        entry can't be read, its manifest still names the command, so another
+        extension that writes the same file is not registered over it
+        (#4797)."""
+        project = _init_project(tmp_path, "kiro-cli")
+        self._plant_extension(project, "foo-bar", [
+            {"name": "speckit.foo-bar.baz", "body": "BAR-BODY\n"},
+        ], enabled=False)
+        shared = project / ".kiro" / "prompts" / "speckit-foo-bar-baz.md"
+        body = b"---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
+        shared.write_bytes(body)
+        registry = project / ".specify" / "extensions" / ".registry"
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        data["extensions"]["foo-bar"]["registered_commands"] = damage
+        registry.write_text(json.dumps(data), encoding="utf-8")
+        self._plant_extension(project, "foo", [
+            {"name": "speckit.foo.bar-baz", "body": "FOO-BODY\n"},
+        ])
+
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        assert (
+            "speckit.foo.bar-baz (speckit-foo-bar-baz, also written by "
+            "extension 'foo-bar')"
+        ) in " ".join(result.output.split())
+        assert shared.read_bytes() == body
+
     def test_enabling_a_colliding_extension_keeps_the_migrated_prompt(
         self, tmp_path, monkeypatch
     ):

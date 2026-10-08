@@ -4175,7 +4175,8 @@ class ExtensionManager:
         Every extension claims the names already registered for the agent,
         because their files stay on disk, including names its manifest no
         longer declares. An enabled extension with a readable manifest also
-        claims every name it declares. A command, its own aliases, and a
+        claims every name it declares, and so does a disabled one whose
+        registered names can't be read. A command, its own aliases, and a
         registered name that writes the same file are one owner.
 
         Removal checks core files separately using the integration manifest
@@ -4202,10 +4203,16 @@ class ExtensionManager:
                 for name in [command["name"], *(command.get("aliases") or [])]:
                     primary_of[name] = command["name"]
             recorded = metadata.get("registered_commands")
-            names = self._valid_name_list(
-                recorded.get(agent_name) if isinstance(recorded, dict) else None
+            entry = recorded.get(agent_name) if isinstance(recorded, dict) else None
+            unreadable = (recorded is not None and not isinstance(recorded, dict)) or (
+                entry is not None
+                and (
+                    not isinstance(entry, list)
+                    or not all(isinstance(name, str) for name in entry)
+                )
             )
-            if manifest is not None and metadata.get("enabled", True):
+            names = self._valid_name_list(entry)
+            if manifest is not None and (metadata.get("enabled", True) or unreadable):
                 names = list(primary_of) + [n for n in names if n not in primary_of]
             primary_of_stem = {
                 os.path.normcase(
