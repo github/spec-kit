@@ -15,6 +15,8 @@ specify init [<project_name>]
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
+| `--dry-run`              | Preview planned initialization changes without writing to the target project |
+| `--json`                 | Emit the dry-run preview as a single JSON document; requires `--dry-run` |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |
 | `--preset <id>`          | Install a preset during initialization                                   |
 
@@ -44,6 +46,9 @@ specify init my-project --integration copilot --script ps
 
 # Install a preset during initialization
 specify init my-project --integration copilot --preset compliance
+
+# Preview planned changes as JSON without writing to the project
+specify init my-project --integration copilot --dry-run --json
 ```
 
 ### Environment Variables

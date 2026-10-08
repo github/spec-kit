@@ -11,7 +11,11 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._download_security import safe_extract_archive
-from .._init_options import is_ai_skills_enabled, resolve_active_agent_for_registration
+from .._init_options import (
+    MISSING_INIT_OPTIONS_FILE,
+    is_ai_skills_enabled,
+    resolve_active_agent_for_registration,
+)
 from .._utils import version_satisfies
 from ..extensions import REINSTALL_COMMAND, normalize_priority
 from ..shared_infra import (
@@ -356,6 +360,48 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         return unmet
 
+    def _validate_active_integration_outputs(
+        self, manifest: PresetManifest
+    ) -> None:
+        """Validate active-agent command destinations before preset writes."""
+        from ..agents import CommandRegistrar
+
+        command_names: list[str] = []
+        for template in manifest.templates:
+            if template.get("type") != "command":
+                continue
+            command_name = template.get("name")
+            if isinstance(command_name, str):
+                command_names.append(command_name)
+            aliases = template.get("aliases", [])
+            if isinstance(aliases, list):
+                command_names.extend(
+                    alias for alias in aliases if isinstance(alias, str)
+                )
+        registrar = CommandRegistrar()
+        resolved_agent = resolve_active_agent_for_registration(self.project_root)
+        if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+            agents: list[str] = []
+            for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+                detect_dir = agent_config.get("detect_dir")
+                if detect_dir:
+                    if (self.project_root / detect_dir).is_dir():
+                        agents.append(agent_name)
+                    continue
+                if registrar._resolve_agent_dir(
+                    agent_name, agent_config, self.project_root
+                ).is_dir():
+                    agents.append(agent_name)
+        elif isinstance(resolved_agent, str):
+            agents = [resolved_agent]
+        else:
+            agents = []
+
+        for agent_name in agents:
+            registrar.validate_integration_output_paths(
+                agent_name, command_names, self.project_root
+            )
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -388,6 +434,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         manifest = PresetManifest(manifest_path)
 
         self.check_compatibility(manifest, speckit_version)
+        self._validate_active_integration_outputs(manifest)
 
         if self.registry.is_installed(manifest.id):
             if not force:
@@ -771,6 +818,16 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 # Invalid manifest — skip alias extraction; primary command
                 # names from registered_commands are still unregistered.
                 pass
+
+        if _CommandRegistrarForScope is not None:
+            artifact_agents = set(registered_commands)
+            if isinstance(registered_skills, dict):
+                artifact_agents.update(registered_skills)
+            registrar = _CommandRegistrarForScope()
+            for agent_name in artifact_agents:
+                registrar.validate_integration_output_paths(
+                    agent_name, removed_cmd_names, self.project_root
+                )
 
         affected_skill_dirs: Dict[
             Path, tuple[Optional[str], List[str]]
