@@ -288,6 +288,11 @@ missing, modified, incompatible, or import-failing installed code using validate
 user-local registrar/path ownership metadata, rejecting edited project cleanup
 claims and overlap with another integration's root. Without local ownership
 proof, old-only generated files are preserved with a manual-cleanup warning.
+Shared event dispatchers and partially owned native settings are preserved
+during damaged-adapter fallback cleanup, even with `--force`. Recovery uses
+the user-local ownership modes, not editable project claims. Successful event
+refreshes keep that local record current; older records without modes preserve
+unproven files rather than risking user-data deletion.
 A trusted replacement can still overwrite files at its declared destination
 under `upgrade --force`. Recovery is reported explicitly and does not bypass source policy
 or the replacement package's trust decision. Failed lifecycle operations restore

@@ -168,7 +168,10 @@ host. Use the host's format bases rather than copied core templates.
 
 CLI adapters override `build_exec_args(prompt, *, model=None,
 output_json=True, integration_args=None, integration_options=None,
-project_root=None)` as appropriate. An adapter using only the host API and
+project_root=None)` as appropriate. Every explicitly declared host keyword
+parameter must have a default; accepting omitted keywords through `**kwargs`
+is also supported. Validation checks both prompt-only and complete host calls.
+An adapter using only the host API and
 standard library needs no pip installation or source-registry edit.
 Import-side-effect registration is rejected.
 
@@ -312,6 +315,15 @@ preserves generated files. Older hash-less ownership records remain supported
 when their package identity has a local grant.
 Ownership is replaced only after the durable package loads successfully, so a
 failed upgrade cannot replace the previous adapter's recovery authority.
+Generated-file manifests distinguish `whole`, `partial`, and `shared`
+ownership. The event dispatcher is shared; merged native event settings are
+partial. Trusted host event refreshes update only their touched ownership
+claims in the user-local record, and active lifecycle transactions defer those
+updates until their project writes commit. Editable project manifests cannot
+add unrelated cleanup authority or promote shared settings to whole-file
+ownership. Damaged fallback cleanup preserves shared and partial files,
+including with `--force`; manual event cleanup may be needed. Older local
+records without ownership modes conservatively preserve unproven files.
 Edited project configuration or forged manifest ownership is rejected, as is
 cleanup overlapping another integration's root. It reports this
 recovery explicitly and never bypasses catalog source policy or the replacement
@@ -335,8 +347,11 @@ See the [catalog contract](../integrations/README.md) and
 An installation records its files and SHA-256 hashes in
 `.specify/integrations/<key>.manifest.json`. Custom `setup()` code must track
 files it creates via the manifest (`record_file()` or the base class's
-write-and-record helpers). Do not track a pre-existing user file merely because
-you merged settings into it: unchanged tracked files are deleted on uninstall.
+write-and-record helpers). These APIs accept `ownership="whole"` (the default
+for generated files), `"partial"`, or `"shared"` where applicable; recording
+an existing file without a new mode retains its current mode. Do not claim
+whole-file ownership merely because you merged settings into a user file:
+partial and shared files are preserved by manifest-only uninstall.
 `teardown()` preserves modified tracked files by default; `--force` can remove
 them. Keep agent-specific settings and events consistent with that lifecycle.
 

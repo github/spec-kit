@@ -321,7 +321,8 @@ def _transaction(
             journal = _FileJournal(root, paths, backup, _initial_entries(paths), tuple(home_scopes))
             token = file_change_observer.set(journal.observe)
             try:
-                yield
+                with installer.event_recovery_transaction():
+                    yield
             except BaseException as operation_error:
                 try:
                     # Restoration itself must not add writes to the journal.
@@ -447,6 +448,25 @@ def external_lifecycle(operation: str):
                                 "preserving old generated files from cleanup. They may require manual cleanup. "
                                 "A trusted replacement can overwrite files at its declared destination."
                             )
+                        elif recovery_token is not None and recovery_binding is not None:
+                            from .manifest import IntegrationManifest
+
+                            path = root / ".specify/integrations" / f"{key}.manifest.json"
+                            if path.exists():
+                                manifest = IntegrationManifest.load(key, root)
+                                modes = recovery_binding.get("ownership_modes", {})
+                                preserved = []
+                                for relative in manifest.files:
+                                    mode = modes.get(relative, "shared")
+                                    manifest.set_ownership(relative, mode)
+                                    if mode != "whole":
+                                        preserved.append(relative)
+                                manifest.save()
+                                if preserved:
+                                    console.print(
+                                        "[yellow]Warning:[/yellow] Preserving shared, partial, or unproven "
+                                        f"file ownership: {escape(str(preserved))}. Manual event cleanup may be needed."
+                                    )
                         try:
                             result = handler(*args, **kwargs)
                         except typer.Exit as exc:

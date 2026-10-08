@@ -3365,6 +3365,7 @@ def test_trust_grant_respects_reader_limit_before_replacement(
             "files": record["files"],
             "registrar_config": record["registrar_config"],
             "paths": sorted(manifest.files),
+            "ownership_modes": manifest.ownership_modes,
         }
     content = json.dumps(expected, indent=2) + "\n"
     monkeypatch.setattr(installer, "_MAX_TRUST_STATE_BYTES", len(content.encode("utf-8")) + limit_offset, raising=False)
@@ -3398,6 +3399,7 @@ def test_install_trust_limit_failure_rolls_back_without_disabling_existing_adapt
         "files": record["files"],
         "registrar_config": record["registrar_config"],
         "paths": sorted(IntegrationManifest.load(KEY, first).files),
+        "ownership_modes": IntegrationManifest.load(KEY, first).ownership_modes,
     }
     limit = len((json.dumps(expected, indent=2) + "\n").encode("utf-8")) - 1
     monkeypatch.setattr(installer, "_MAX_TRUST_STATE_BYTES", limit, raising=False)
@@ -3915,3 +3917,315 @@ def test_workflow_dispatch_adapter_failures_keep_persisted_context(
         assert ("Workflow failed" if operation == "run" else "Resume failed") in result.output
     if failed:
         assert "modified" in persisted.error
+
+
+@pytest.mark.parametrize("parameter", ["model", "output_json", "integration_args", "integration_options", "project_root", "all"])
+def test_adapter_rejects_mandatory_host_execution_keywords(tmp_path, server, parameter):
+    defaults = {
+        "model": "None", "output_json": "True", "integration_args": "None",
+        "integration_options": "None", "project_root": "None",
+    }
+    arguments = ", ".join(
+        name if parameter in {name, "all"} else f"{name}={default}"
+        for name, default in defaults.items()
+    )
+    body = f'''
+    def build_exec_args(self, prompt, *, {arguments}):
+        return ["sample-agent-process", prompt]
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "host execution signature" in " ".join(result.output.split())
+    assert snapshot(project) == before
+    assert KEY not in read_records(project)
+
+
+@pytest.mark.parametrize("arguments", [
+    "model=None, output_json=True, integration_args=None, integration_options=None, project_root=None",
+    "**kwargs",
+    "model=None, **kwargs",
+    "**model",
+])
+def test_adapter_optional_execution_keywords_support_host_call_subsets(tmp_path, server, arguments):
+    body = f'''
+    def build_exec_args(self, prompt, *, {arguments}):
+        return ["sample-agent-process", prompt]
+'''
+    if arguments.startswith("**"):
+        body = body.replace("prompt, *, **", "prompt, **")
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    integration = INTEGRATION_REGISTRY[KEY]
+    assert integration.build_exec_args("sample") == ["sample-agent-process", "sample"]
+    assert integration.build_exec_args("sample", project_root=project) == ["sample-agent-process", "sample"]
+    assert integration.build_exec_args(
+        "sample", model=None, output_json=False, project_root=project,
+    ) == ["sample-agent-process", "sample"]
+
+
+@pytest.mark.parametrize("operation", ["install", "upgrade"])
+@pytest.mark.parametrize("failure", ["serialization", "partial-write", "newline-write"])
+def test_failed_package_registry_serialization_leaves_no_temporary_files(
+    tmp_path, server, monkeypatch, operation, failure,
+):
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    if operation == "upgrade":
+        install(project)
+        publish(server, version="2.0.0")
+    before = snapshot(project)
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+    original_dump = installer.json.dump
+
+    def fail_registry_dump(data, stream, *args, **kwargs):
+        if not isinstance(data, dict) or "packages" not in data:
+            return original_dump(data, stream, *args, **kwargs)
+        if failure == "serialization":
+            raise TypeError("sample registry serialization failure")
+        if failure == "partial-write":
+            stream.write('{"partial":')
+            raise OSError("sample registry write failure")
+        original_dump(data, stream, *args, **kwargs)
+
+        def fail_newline(*args, **kwargs):
+            raise OSError("sample registry newline failure")
+
+        stream.write = fail_newline
+
+    monkeypatch.setattr(installer.json, "dump", fail_registry_dump)
+    result = run(project, ["integration", operation, KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "sample registry" in " ".join(result.output.split())
+    assert snapshot(project) == before
+    assert all(path.is_dir() for path in original_directories)
+
+
+def event_recovery_project(
+    tmp_path, server, *, events_before=False, other=False, config_relative=".sample-agent/events.json",
+):
+    body = '''    CANONICAL_TO_NATIVE = {"session_start": "SampleStart"}
+    events_config_file = CONFIG_PATH
+    events_format = "json-nested"
+'''.replace("CONFIG_PATH", repr(config_relative))
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    if other:
+        result = run(project, ["integration", "install", "claude", "--script", "py"])
+        assert result.exit_code == 0, result.output
+    config = project / config_relative
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"userSetting": "preserve me"}))
+    extension = tmp_path / "sample-events"
+    extension.mkdir()
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "sample-events", "name": "Sample Events", "version": "1.0.0", "description": "Sample events"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": []},
+        "events": {"session_start": {"command": "speckit.sample.boot"}},
+    }))
+    if events_before:
+        added = run(project, ["extension", "add", "--dev", str(extension)])
+        assert added.exit_code == 0, added.output
+    install(project)
+    if not events_before:
+        added = run(project, ["extension", "add", "--dev", str(extension)])
+        assert added.exit_code == 0, added.output
+    return project
+
+
+@pytest.mark.parametrize("events_before", [False, True])
+@pytest.mark.parametrize("other", [False, True])
+@pytest.mark.parametrize("forge_project_modes", [False, True])
+@pytest.mark.parametrize("operation", ["uninstall", "upgrade"])
+def test_damaged_event_adapter_recovery_preserves_shared_and_user_files(
+    tmp_path, server, events_before, other, forge_project_modes, operation,
+):
+    project = event_recovery_project(tmp_path, server, events_before=events_before, other=other)
+    config = project / ".sample-agent/events.json"
+    dispatcher = project / ".specify/events.py"
+    config_bytes = config.read_bytes()
+    dispatcher_bytes = dispatcher.read_bytes()
+    if forge_project_modes:
+        path = project / f".specify/integrations/{KEY}.manifest.json"
+        data = json.loads(path.read_text())
+        data["ownership_modes"] = {
+            ".sample-agent/events.json": "whole", ".specify/events.py": "whole",
+        }
+        path.write_text(json.dumps(data))
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    arguments = ["integration", operation, KEY, "--force"]
+    if operation == "upgrade":
+        arguments.append("--trust-integration")
+    removed = run(project, arguments)
+    assert removed.exit_code == 0, removed.output
+    assert config.read_bytes() == config_bytes
+    assert dispatcher.read_bytes() == dispatcher_bytes
+    assert "shared" in removed.output.lower()
+    assert (KEY in read_records(project)) == (operation == "upgrade")
+    assert (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists() == (operation == "upgrade")
+    if other:
+        assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+
+
+def test_event_refresh_updates_local_recovery_paths_and_revokes_removed_claims(tmp_path, server):
+    from specify_cli.integrations import installer
+    from specify_cli.integrations.manifest import IntegrationManifest
+
+    project = event_recovery_project(tmp_path, server)
+    trust = installer._trust_store(project)
+    binding = json.loads(trust.read_text())["recovery"][installer._recovery_identity(project, KEY)]
+    manifest = IntegrationManifest.load(KEY, project)
+    assert set(manifest.files) <= set(binding["paths"])
+    assert binding["ownership_modes"][".specify/events.py"] == "shared"
+    assert binding["ownership_modes"][".sample-agent/events.json"] == "partial"
+    disabled = run(project, ["extension", "disable", "sample-events"])
+    assert disabled.exit_code == 0, disabled.output
+    binding = json.loads(trust.read_text())["recovery"][installer._recovery_identity(project, KEY)]
+    assert ".specify/events.py" not in binding["paths"]
+    assert ".sample-agent/events.json" not in binding["paths"]
+
+
+def test_event_refresh_cannot_launder_unowned_project_manifest_paths(tmp_path, server):
+    from specify_cli.integrations import installer
+
+    project = event_recovery_project(tmp_path, server)
+    trust = installer._trust_store(project)
+    before = trust.read_bytes()
+    user = project / "unowned-user.txt"
+    user.write_text("user content")
+    path = project / f".specify/integrations/{KEY}.manifest.json"
+    data = json.loads(path.read_text())
+    data["files"]["unowned-user.txt"] = hashlib.sha256(user.read_bytes()).hexdigest()
+    path.write_text(json.dumps(data))
+    result = run(project, ["extension", "disable", "sample-events"])
+    assert result.exit_code == 0, result.output
+    assert "event refresh failed" in " ".join(result.output.split())
+    assert "ownership" in result.output.lower()
+    assert trust.read_bytes() == before
+    assert user.read_text() == "user content"
+
+
+def test_recovery_without_ownership_modes_preserves_unproven_paths(tmp_path, server):
+    from specify_cli.integrations import installer
+
+    project = event_recovery_project(tmp_path, server, events_before=True)
+    trust = installer._trust_store(project)
+    data = json.loads(trust.read_text())
+    data["recovery"][installer._recovery_identity(project, KEY)].pop("ownership_modes", None)
+    trust.write_text(json.dumps(data))
+    core = project / ".sample-agent/skills/speckit-plan/SKILL.md"
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    removed = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert removed.exit_code == 0, removed.output
+    assert core.exists()
+    assert json.loads((project / ".sample-agent/events.json").read_text())["userSetting"] == "preserve me"
+    assert "unproven" in removed.output.lower()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_host_event_ownership_changes_commit_with_project_transaction(tmp_path, server, fail):
+    from specify_cli.events import refresh_integration_events
+    from specify_cli.extensions import ExtensionRegistry
+    from specify_cli.integration_state import try_read_integration_json
+    from specify_cli.integrations import installer
+    from specify_cli.integrations._lifecycle import _transaction
+
+    project = event_recovery_project(tmp_path, server)
+    trust = installer._trust_store(project)
+    trust_before = trust.read_bytes()
+    project_before = snapshot(project)
+    state, error = try_read_integration_json(project)
+    assert error is None
+
+    def change_events():
+        with _transaction(project, KEY, state, read_records(project)):
+            registry = ExtensionRegistry(project / ".specify/extensions")
+            registry.update("sample-events", {"enabled": False})
+            refresh_integration_events(project)
+            assert trust.read_bytes() == trust_before
+            if fail:
+                raise OSError("sample host transaction failure")
+
+    if fail:
+        with pytest.raises(OSError, match="sample host transaction failure"):
+            change_events()
+        assert trust.read_bytes() == trust_before
+        assert snapshot(project) == project_before
+    else:
+        change_events()
+        binding = json.loads(trust.read_text())["recovery"][installer._recovery_identity(project, KEY)]
+        assert ".specify/events.py" not in binding["paths"]
+        assert ".sample-agent/events.json" not in binding["paths"]
+
+
+def test_failed_local_ownership_commit_restores_project_event_changes(tmp_path, server, monkeypatch):
+    from specify_cli.events import refresh_integration_events
+    from specify_cli.extensions import ExtensionRegistry
+    from specify_cli.integration_state import try_read_integration_json
+    from specify_cli.integrations import installer
+    from specify_cli.integrations._lifecycle import _transaction
+
+    project = event_recovery_project(tmp_path, server)
+    trust = installer._trust_store(project)
+    trust_before = trust.read_bytes()
+    project_before = snapshot(project)
+    state, error = try_read_integration_json(project)
+    assert error is None
+
+    def fail_ownership_write(*args, **kwargs):
+        raise OSError("sample local ownership commit failed")
+
+    monkeypatch.setattr(installer, "_write_trust_state", fail_ownership_write)
+    with pytest.raises(OSError, match="sample local ownership commit failed"):
+        with _transaction(project, KEY, state, read_records(project)):
+            ExtensionRegistry(project / ".specify/extensions").update("sample-events", {"enabled": False})
+            refresh_integration_events(project)
+    assert trust.read_bytes() == trust_before
+    assert snapshot(project) == project_before
+
+
+def test_healthy_event_adapter_teardown_still_removes_only_managed_entries(tmp_path, server):
+    project = event_recovery_project(tmp_path, server)
+    result = run(project, ["integration", "uninstall", KEY])
+    assert result.exit_code == 0, result.output
+    data = json.loads((project / ".sample-agent/events.json").read_text())
+    assert data == {"userSetting": "preserve me"}
+    assert not (project / ".specify/events.py").exists()
+
+
+def test_preserved_event_settings_may_share_another_integration_root(tmp_path, server):
+    project = event_recovery_project(
+        tmp_path, server, other=True, config_relative=".claude/settings.json",
+    )
+    settings = project / ".claude/settings.json"
+    original = settings.read_bytes()
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    removed = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert removed.exit_code == 0, removed.output
+    assert settings.read_bytes() == original
+    assert (project / ".specify/events.py").exists()
+    assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+
+
+@pytest.mark.parametrize("modes", [None, [], {"unowned.txt": "whole"}, {".specify/events.py": "invalid"}])
+def test_invalid_local_recovery_ownership_modes_fail_explicitly(tmp_path, server, modes):
+    from specify_cli.integrations import installer
+
+    project = event_recovery_project(tmp_path, server, events_before=True)
+    trust = installer._trust_store(project)
+    data = json.loads(trust.read_text())
+    data["recovery"][installer._recovery_identity(project, KEY)]["ownership_modes"] = modes
+    trust.write_text(json.dumps(data))
+    (project / f".specify/integrations/packages/{KEY}/__init__.py").unlink()
+    before = snapshot(project)
+    result = run(project, ["integration", "uninstall", KEY, "--force"])
+    assert result.exit_code == 1, result.output
+    assert "ownership modes" in result.output
+    assert snapshot(project) == before

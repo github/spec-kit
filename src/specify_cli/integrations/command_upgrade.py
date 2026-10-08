@@ -302,6 +302,7 @@ def integration_upgrade(
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}
+        stale_manifest._ownership_modes = {k: old_manifest.ownership_modes[k] for k in stale_keys}
         # remove_manifest=False: this throwaway manifest shares ``key`` with the
         # real one just saved above (new_manifest.save()).  Letting uninstall()
         # delete ``{key}.manifest.json`` would wipe the freshly-written manifest

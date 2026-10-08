@@ -18,6 +18,13 @@ from typing import Any
 
 from ._file_changes import after_file_change, before_file_change
 
+OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
+
+
+def _validate_ownership_mode(mode: str) -> None:
+    if not isinstance(mode, str) or mode not in OWNERSHIP_MODES:
+        raise ValueError(f"Invalid manifest ownership mode: {mode!r}")
+
 
 def _sha256(path: Path) -> str:
     """Return the hex SHA-256 digest of *path*."""
@@ -148,6 +155,7 @@ class IntegrationManifest:
         )
         self.version = version
         self._files: dict[str, str] = {}  # rel_path → sha256 hex
+        self._ownership_modes: dict[str, str] = {}
         self._recovered_files: set[str] = set()
         self._installed_at: str = ""
 
@@ -160,7 +168,9 @@ class IntegrationManifest:
 
     # -- Recording files --------------------------------------------------
 
-    def record_file(self, rel_path: str | Path, content: bytes | str) -> Path:
+    def record_file(
+        self, rel_path: str | Path, content: bytes | str, *, ownership: str = "whole",
+    ) -> Path:
         """Write *content* to *rel_path* (relative to project root) and record its hash.
 
         Creates parent directories as needed.  Returns the absolute path
@@ -172,6 +182,7 @@ class IntegrationManifest:
         Raises ``ValueError`` if *rel_path* is noncanonical, symlinked, or
         resolves outside the project root.
         """
+        _validate_ownership_mode(ownership)
         rel = Path(rel_path)
         abs_path = _validate_record_path(rel, self.project_root)
         before_file_change(abs_path)
@@ -184,13 +195,16 @@ class IntegrationManifest:
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()
+        self._ownership_modes[normalized] = ownership
         # ``record_file`` writes *produced* content, so any prior
         # recovered marker for this path is no longer accurate.
         self._recovered_files.discard(normalized)
         after_file_change(abs_path)
         return abs_path
 
-    def record_existing(self, rel_path: str | Path, *, recovered: bool = False) -> None:
+    def record_existing(
+        self, rel_path: str | Path, *, recovered: bool = False, ownership: str | None = None,
+    ) -> None:
         """Record the hash of an already-existing regular file at *rel_path*.
 
         When ``recovered=True``, the path is also marked in the manifest's
@@ -213,6 +227,8 @@ class IntegrationManifest:
                 subclasses such as ``PermissionError``) in addition to
                 ``ValueError``.
         """
+        if ownership is not None:
+            _validate_ownership_mode(ownership)
         rel = Path(rel_path)
         abs_path = _validate_record_path(rel, self.project_root)
         if not abs_path.is_file():
@@ -221,6 +237,8 @@ class IntegrationManifest:
             )
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = _sha256(abs_path)
+        if ownership is not None:
+            self._ownership_modes[normalized] = ownership
         if recovered:
             self._recovered_files.add(normalized)
         else:
@@ -254,6 +272,7 @@ class IntegrationManifest:
         except ValueError:
             return False
         self._recovered_files.discard(normalized)
+        self._ownership_modes.pop(normalized, None)
         return self._files.pop(normalized, None) is not None
 
     # -- Querying ---------------------------------------------------------
@@ -262,6 +281,16 @@ class IntegrationManifest:
     def files(self) -> dict[str, str]:
         """Return a copy of the ``{rel_path: sha256}`` mapping."""
         return dict(self._files)
+
+    @property
+    def ownership_modes(self) -> dict[str, str]:
+        return {path: self._ownership_modes.get(path, "whole") for path in self._files}
+
+    def set_ownership(self, rel_path: str | Path, mode: str) -> None:
+        _validate_ownership_mode(mode)
+        relative = Path(rel_path).as_posix()
+        if relative in self._files:
+            self._ownership_modes[relative] = mode
 
     @property
     def recovered_files(self) -> set[str]:
@@ -360,6 +389,9 @@ class IntegrationManifest:
                 continue
             if not path.exists() and not path.is_symlink():
                 continue
+            if self._ownership_modes.get(rel, "whole") != "whole":
+                skipped.append(path)
+                continue
             # Skip directories — manifest only tracks files
             if not path.is_file() and not path.is_symlink():
                 skipped.append(path)
@@ -438,6 +470,10 @@ class IntegrationManifest:
             "installed_at": self._installed_at,
             "files": self._files,
             **(
+                {"ownership_modes": self._ownership_modes}
+                if self._ownership_modes else {}
+            ),
+            **(
                 {"recovered_files": sorted(self._recovered_files)}
                 if self._recovered_files
                 else {}
@@ -503,6 +539,14 @@ class IntegrationManifest:
         inst.version = data.get("version", "")
         inst._installed_at = data.get("installed_at", "")
         inst._files = files
+        ownership = data.get("ownership_modes", {})
+        if (
+            not isinstance(ownership, dict)
+            or not set(ownership) <= set(files)
+            or any(not isinstance(mode, str) or mode not in OWNERSHIP_MODES for mode in ownership.values())
+        ):
+            raise ValueError(f"Invalid integration manifest ownership modes at {path}")
+        inst._ownership_modes = dict(ownership)
 
         recovered = data.get("recovered_files", [])
         if not isinstance(recovered, list) or not all(

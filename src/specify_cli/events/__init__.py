@@ -1401,6 +1401,7 @@ def install_integration_events(
     manifest.record_file(
         str(dispatcher_path.relative_to(project_root)),
         dispatcher_path.read_bytes(),
+        ownership="shared",
     )
     created.append(dispatcher_path)
 
@@ -1411,6 +1412,7 @@ def install_integration_events(
         return created
 
     config_path = project_root / config_file
+    manifest.set_ownership(config_file, "partial")
 
     if fmt == "ts-plugin":
         # Opencode TS plugin custom merge
@@ -1435,8 +1437,7 @@ def install_integration_events(
         # user's untouched file.
         if _merge_opencode_plugin_ref(config_path, f"./{plugin_rel}"):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "copilot-json":
@@ -1475,8 +1476,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_copilot_json(config_path, copilot_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "toml":
@@ -1500,8 +1500,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on unreadable file).
         if _merge_toml_fragment(config_path, "\n".join(lines)):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "toml-vibe":
@@ -1549,8 +1548,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on unreadable file).
         if _merge_vibe_toml_fragment(config_path, "\n".join(lines)):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "json-flat":
@@ -1578,8 +1576,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_json_fragment(config_path, cursor_hooks, version=1):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "json-nested":
@@ -1615,8 +1612,7 @@ def install_integration_events(
         # S5: only track when the merge wrote (skips on JSONC/malformed).
         if _merge_json_fragment(config_path, nested_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     elif fmt == "json-root-nested":
@@ -1645,8 +1641,7 @@ def install_integration_events(
             ]
         if _merge_json_root(config_path, root_hooks):
             rel = str(config_path.relative_to(project_root))
-            if rel not in manifest.files:
-                manifest.record_existing(rel)
+            manifest.record_existing(rel, ownership="partial")
             created.append(config_path)
 
     return created
@@ -1888,8 +1883,15 @@ def _refresh_loaded_integration_events(project_root: Path) -> None:
             # install_integration_events handles both the populated case
             # (writes new config, stripping stale owned entries) and the empty
             # case (strips prior hooks for --events false / disabled override).
-            install_integration_events(integration, project_root, manifest, events_map)
+            written = install_integration_events(integration, project_root, manifest, events_map)
             manifest.save()
+            from ..integrations.installer import update_event_recovery_ownership
+
+            touched = {path.relative_to(project_root).as_posix() for path in written}
+            config = getattr(integration, "events_config_file", None)
+            if config and config in manifest.files:
+                touched.add(config)
+            update_event_recovery_ownership(project_root, key, manifest, touched)
         except Exception as exc:
             logger.warning("Failed to refresh events for '%s': %s", key, exc)
             failures.append((key, str(exc)))

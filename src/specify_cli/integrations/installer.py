@@ -19,9 +19,10 @@ import threading
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -44,6 +45,23 @@ from . import (
 )
 from ._file_changes import after_file_change, before_file_change
 from .base import IntegrationBase, resolve_registrar_config
+
+if TYPE_CHECKING:
+    from .manifest import IntegrationManifest
+
+
+@dataclass(frozen=True)
+class _EventRecoveryUpdate:
+    root: Path
+    key: str
+    paths: tuple[str, ...]
+    modes: dict[str, str]
+    touched: frozenset[str]
+
+
+_event_recovery_updates: ContextVar[list[_EventRecoveryUpdate] | None] = ContextVar(
+    "integration_event_recovery_updates", default=None,
+)
 
 _MODULE_PREFIX = "_speckit_installed_integration_"
 _loaded_identity: tuple[Any, ...] | None = None
@@ -292,15 +310,17 @@ def write_records(root: Path, records: dict[str, dict[str, Any]]) -> None:
         path.unlink(missing_ok=True)
         after_file_change(path)
         return
-    with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
-        temporary = Path(stream.name)
-        json.dump({"schema_version": "1.0", "packages": records}, stream, indent=2)
-        stream.write("\n")
+    temporary = None
     try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump({"schema_version": "1.0", "packages": records}, stream, indent=2)
+            stream.write("\n")
         os.replace(temporary, path)
         after_file_change(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _trust_store(root: Path) -> Path:
@@ -324,6 +344,8 @@ def _trust_identity(root: Path, key: str, hashes: dict[str, str]) -> str:
 
 
 def _read_trust_state(path: Path) -> dict[str, Any]:
+    from .manifest import OWNERSHIP_MODES
+
     try:
         with path.open("rb") as stream:
             content = stream.read(_MAX_TRUST_STATE_BYTES + 1)
@@ -364,6 +386,13 @@ def _read_trust_state(path: Path) -> dict[str, Any]:
             )
         ):
             raise IntegrationInstallError("Invalid integration local recovery package hashes")
+        modes = binding.get("ownership_modes", {})
+        if (
+            not isinstance(modes, dict)
+            or not set(modes) <= set(binding["paths"])
+            or any(not isinstance(mode, str) or mode not in OWNERSHIP_MODES for mode in modes.values())
+        ):
+            raise IntegrationInstallError("Invalid integration local recovery ownership modes")
     data["recovery"] = recovery
     return data
 
@@ -375,6 +404,22 @@ def _read_trust(path: Path) -> set[str]:
 def _recovery_identity(root: Path, key: str) -> str:
     value = json.dumps([os.path.normcase(str(root.resolve())), key])
     return hashlib.sha256(value.encode()).hexdigest()
+
+def _write_trust_state(path: Path, data: dict[str, Any]) -> None:
+    content = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+    if len(content) > _MAX_TRUST_STATE_BYTES:
+        raise IntegrationInstallError(
+            "Cannot write integration local trust state: trust registry exceeds size limit"
+        )
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, mode="wb", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _grant_trust(
@@ -391,33 +436,20 @@ def _grant_trust(
         identity = _trust_identity(root, key, record["files"])
         data["grants"] = sorted(set(data["grants"]) | {identity})
         if record_ownership:
+            manifest = IntegrationManifest.load(key, root)
             data["recovery"][_recovery_identity(root, key)] = {
                 "package": identity,
                 "files": dict(record["files"]),
                 "registrar_config": record["registrar_config"],
-                "paths": sorted(IntegrationManifest.load(key, root).files),
+                "paths": sorted(manifest.files),
+                "ownership_modes": manifest.ownership_modes,
             }
-        content = (json.dumps(data, indent=2) + "\n").encode("utf-8")
-        if len(content) > _MAX_TRUST_STATE_BYTES:
-            raise IntegrationInstallError(
-                "Cannot write integration local trust state: trust registry exceeds size limit"
-            )
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(dir=path.parent, mode="wb", delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(content)
-            os.replace(temporary, path)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        _write_trust_state(path, data)
 
 
-def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:
-    """Authorize cleanup from user-local ownership, never mutable project claims."""
-    from .manifest import IntegrationManifest
-
-    trust = _read_trust_state(_trust_store(root))
+def _recovery_binding(
+    root: Path, key: str, record: dict[str, Any], trust: dict[str, Any],
+) -> dict[str, Any] | None:
     binding = trust["recovery"].get(_recovery_identity(root, key))
     if binding is None:
         return None
@@ -429,6 +461,17 @@ def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str,
         raise IntegrationInstallError(f"Integration '{key}' recovery ownership metadata has been modified")
     config = binding["registrar_config"]
     _validate_registrar_config(key, config)
+    return binding
+
+
+def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Authorize cleanup from user-local ownership, never mutable project claims."""
+    from .manifest import IntegrationManifest
+
+    binding = _recovery_binding(root, key, record, _read_trust_state(_trust_store(root)))
+    if binding is None:
+        return None
+    config = binding["registrar_config"]
 
     def validate_cleanup(relative: str, *, leaf: bool = False) -> None:
         path = safe_project_path(root, relative, allow_leaf_symlink=leaf)
@@ -450,8 +493,86 @@ def recovery_metadata(root: Path, key: str, record: dict[str, Any]) -> dict[str,
         if not set(paths) <= set(binding["paths"]):
             raise IntegrationInstallError(f"Integration '{key}' manifest recovery ownership has been modified")
         for relative in paths:
-            validate_cleanup(relative, leaf=True)
+            safe_project_path(root, relative, allow_leaf_symlink=True)
+            if binding.get("ownership_modes", {}).get(relative) == "whole":
+                validate_cleanup(relative, leaf=True)
     return binding
+
+
+def update_event_recovery_ownership(
+    root: Path, key: str, manifest: IntegrationManifest, touched: set[str],
+) -> None:
+    """Advance only ownership touched by a verified host event refresh."""
+    from . import get_integration
+
+    root = root.resolve()
+    record = read_records(root).get(key)
+    integration = get_integration(key)
+    source = _source_packages.get(_namespace(integration)) if integration is not None else None
+    if record is None or source is None or source[1] != record["files"]:
+        return
+    update = _EventRecoveryUpdate(
+        root, key, tuple(manifest.files), manifest.ownership_modes, frozenset(touched),
+    )
+    pending = _event_recovery_updates.get()
+    if pending is not None:
+        pending.append(update)
+    else:
+        _commit_event_recovery_updates([update])
+
+
+def _commit_event_recovery_updates(updates: list[_EventRecoveryUpdate]) -> None:
+    if not updates:
+        return
+    from ..shared_infra import _exclusive_project_lock
+
+    path = _trust_store(updates[0].root)
+    with _exclusive_project_lock(path.parent.parent, ".integration-trust.lock", context="integration trust"):
+        data = _read_trust_state(path)
+        changed = False
+        for update in updates:
+            record = read_records(update.root).get(update.key)
+            if record is None:
+                continue
+            hashes = package_hashes(safe_project_path(update.root, f"{_PACKAGES}/{update.key}"))
+            if hashes != record["files"] or _trust_identity(update.root, update.key, hashes) not in data["grants"]:
+                raise IntegrationInstallError(f"Integration '{update.key}' event ownership requires its trusted package")
+            binding = _recovery_binding(update.root, update.key, record, data)
+            if binding is None:
+                continue
+            if binding["package"] != _trust_identity(update.root, update.key, hashes):
+                raise IntegrationInstallError(f"Integration '{update.key}' event recovery package identity differs")
+            if set(update.paths) - set(binding["paths"]) - update.touched:
+                raise IntegrationInstallError(f"Integration '{update.key}' manifest recovery ownership has been modified")
+            for relative in update.paths:
+                safe_project_path(update.root, relative, allow_leaf_symlink=True)
+            modes = {
+                relative: mode for relative, mode in binding.get("ownership_modes", {}).items()
+                if relative in update.paths
+            }
+            for relative in update.touched & set(update.paths):
+                modes[relative] = update.modes[relative]
+            data["recovery"][_recovery_identity(update.root, update.key)] = {
+                **binding, "paths": sorted(update.paths), "ownership_modes": modes,
+            }
+            changed = True
+        if changed:
+            _write_trust_state(path, data)
+
+
+@contextmanager
+def event_recovery_transaction():
+    """Commit host ownership updates only when project writes succeed."""
+    if _event_recovery_updates.get() is not None:
+        yield
+        return
+    updates: list[_EventRecoveryUpdate] = []
+    token = _event_recovery_updates.set(updates)
+    try:
+        yield
+        _commit_event_recovery_updates(updates)
+    finally:
+        _event_recovery_updates.reset(token)
 
 
 def _refresh_configs() -> None:
@@ -612,6 +733,7 @@ def _validate_implementation(
         ):
             raise IntegrationInstallError(f"Integration '{key}' build_exec_args must accept {parameter}")
     try:
+        signature.bind("Sample prompt")
         signature.bind("Sample prompt", **dict.fromkeys(execution_parameters))
     except TypeError as exc:
         raise IntegrationInstallError(

@@ -77,6 +77,39 @@ class TestManifestRecordFile:
         assert target.read_bytes() == b"replacement"
         assert m.files == {"target.txt": hashlib.sha256(b"replacement").hexdigest()}
 
+    @pytest.mark.parametrize("ownership", ["whole", "partial", "shared"])
+    def test_ownership_round_trip_and_forced_uninstall(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        path = m.record_file("generated.txt", "content", ownership=ownership)
+        m.record_existing("generated.txt")
+        m.save()
+        loaded = IntegrationManifest.load("test", tmp_path)
+        assert loaded.ownership_modes == {"generated.txt": ownership}
+        removed, skipped = loaded.uninstall(force=True)
+        assert path.exists() == (ownership != "whole")
+        assert removed == ([path] if ownership == "whole" else [])
+        assert skipped == ([] if ownership == "whole" else [path])
+
+    @pytest.mark.parametrize("ownership", ["unknown", False, [], None])
+    def test_invalid_record_ownership_fails_before_writing(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="ownership"):
+            m.record_file("generated.txt", "content", ownership=ownership)
+        assert not (tmp_path / "generated.txt").exists()
+
+    @pytest.mark.parametrize("ownership", [
+        {"generated.txt": "unknown"}, {"untracked.txt": "whole"}, [],
+    ])
+    def test_invalid_persisted_ownership_is_rejected(self, tmp_path, ownership):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("generated.txt", "content")
+        path = m.save()
+        data = json.loads(path.read_text())
+        data["ownership_modes"] = ownership
+        path.write_text(json.dumps(data))
+        with pytest.raises(ValueError, match="ownership"):
+            IntegrationManifest.load("test", tmp_path)
+
 
 class TestManifestRecordExistingErrors:
     """Error-case coverage for ``record_existing`` symlink + non-file guards.
