@@ -1,6 +1,6 @@
 """Exercise final resolved winners through the public extension add command."""
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
@@ -129,3 +129,103 @@ def test_add_materializes_resolved_winner_once(
         assert text.index("EXTENSION BODY") < text.index("SELECTOR AFTER")
         assert "{CORE_TEMPLATE}" not in text
     assert writes == [text]
+
+
+def test_override_staged_declaration_is_portable_on_windows(tmp_path, monkeypatch):
+    """Windows rendering of the staged override payload must stay portable.
+
+    ``relative_extension_path_violation`` rejects backslashes and
+    ``CommandRegistrar.register_commands`` *skips* a declaration whose ``file``
+    violates that policy, so building the staged reference with a native
+    ``str(Path)`` silently drops the command on Windows only — every platform
+    with ``os.sep == "/"`` keeps passing. Render the staged reference exactly as
+    Windows would (``PureWindowsPath``) and assert the artifact still lands.
+    """
+    root = project(tmp_path, monkeypatch, "gemini", False)
+    source = preset(
+        tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"
+    )
+    PresetManager(root).install_from_directory(source, "0.1.5")
+    override_path = root / ".specify" / "templates" / "overrides" / f"{COMMAND}.md"
+    override_path.parent.mkdir(parents=True)
+    override_path.write_text("---\ndescription: Local\n---\nPROJECT OVERRIDE\n")
+
+    real_relative_to = Path.relative_to
+
+    def windows_relative_to(self, *args, **kwargs):
+        result = real_relative_to(self, *args, **kwargs)
+        parts = result.parts
+        if parts and parts[0] == ".resolved":
+            # Exactly the string a native str(Path) yields on Windows.
+            return PureWindowsPath("/".join(parts))
+        return result
+
+    monkeypatch.setattr(Path, "relative_to", windows_relative_to)
+    ext_source = extension(tmp_path)
+    monkeypatch.setattr(
+        "specify_cli.extensions._commands._locate_bundled_extension",
+        lambda _: ext_source,
+    )
+
+    result = CliRunner().invoke(app, ["extension", "add", "provider"])
+
+    assert result.exit_code == 0, result.output
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    assert output.exists(), "staged override payload was dropped as unmaterialized"
+    text = output.read_text()
+    assert "PROJECT OVERRIDE" in text
+    assert "SELECTOR" not in text
+
+
+def test_override_staged_reference_passes_shared_path_policy(tmp_path, monkeypatch):
+    """Every declaration the installer hands to the registrar must be portable.
+
+    ``relative_extension_path_violation`` is the single path-safety policy
+    shared by manifest validation and the registrar's runtime guard, so a
+    ``file`` that fails it is skipped rather than materialized.
+    """
+    from specify_cli._utils import relative_extension_path_violation
+    from specify_cli.agents import CommandRegistrar
+
+    root = project(tmp_path, monkeypatch, "gemini", False)
+    source = preset(
+        tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"
+    )
+    PresetManager(root).install_from_directory(source, "0.1.5")
+    override_path = root / ".specify" / "templates" / "overrides" / f"{COMMAND}.md"
+    override_path.parent.mkdir(parents=True)
+    override_path.write_text("---\ndescription: Local\n---\nPROJECT OVERRIDE\n")
+
+    seen: list[str] = []
+    original = CommandRegistrar.register_commands
+
+    def capture(self, *args, **kwargs):
+        for candidate in list(args) + list(kwargs.values()):
+            if (
+                isinstance(candidate, list)
+                and candidate
+                and isinstance(candidate[0], dict)
+                and "name" in candidate[0]
+            ):
+                seen.extend(
+                    entry["file"]
+                    for entry in candidate
+                    if isinstance(entry.get("file"), str)
+                )
+                break
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(CommandRegistrar, "register_commands", capture)
+    ext_source = extension(tmp_path)
+    monkeypatch.setattr(
+        "specify_cli.extensions._commands._locate_bundled_extension",
+        lambda _: ext_source,
+    )
+
+    result = CliRunner().invoke(app, ["extension", "add", "provider"])
+
+    assert result.exit_code == 0, result.output
+    assert any(value.startswith(".resolved/") for value in seen), seen
+    for value in seen:
+        assert "\\" not in value, value
+        assert relative_extension_path_violation(value) is None, value

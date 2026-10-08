@@ -1547,66 +1547,121 @@ class ExtensionManager:
         """
         from ..presets import PresetManager
         from ..presets._resolver import PresetResolver
+        from ..presets._selectors import is_regex_selector
+
+        from ._commands import _snapshot_command_candidates
 
         manager = PresetManager(self.project_root)
         resolver = PresetResolver(self.project_root)
         remaining = []
         groups = {}
-        for command in manifest.commands:
-            layers = resolver.collect_all_layers(command["name"], "command")
-            winner = None
-            if layers and layers[0]["source"] == "project override":
+        declared = list(manifest.commands)
+        declared_names = {
+            command.get("name")
+            for command in declared
+            if isinstance(command.get("name"), str)
+        }
+        # The resolver also serves conventional extension command files
+        # (``commands/<concrete-name>.md`` and the namespace fallback) that no
+        # manifest entry names, and ``_snapshot_command_candidates`` already
+        # recognises them for rollback snapshots. Iterating only
+        # ``manifest.commands`` therefore left a preset selector that matches
+        # such a name unmaterialized until some later lifecycle refresh, so the
+        # candidate set is the union of declared and conventional names.
+        candidates = declared + [
+            {"name": name}
+            for name in sorted(_snapshot_command_candidates(self, manifest))
+            if name not in declared_names and not is_regex_selector(name)
+        ]
+
+        def _owning_preset_declaration(name, layers):
+            """Return ``(pack_id, declaration)`` for the preset owning the winner."""
+            for pack_id, _metadata in manager.registry.list_by_priority():
+                pack_dir = manager.presets_dir / pack_id
+                if not layers[0]["path"].is_relative_to(pack_dir):
+                    continue
+                preset_manifest = resolver._get_manifest(pack_dir)
+                if preset_manifest is None:
+                    return None, None
+                declarations = manager._expand_command_selectors(
+                    resolver,
+                    pack_dir,
+                    [t for t in preset_manifest.templates if t.get("type") == "command"],
+                )
+                declaration = next(
+                    (
+                        t
+                        for t in declarations
+                        if t["name"] == name and pack_dir / t["file"] == layers[0]["path"]
+                    ),
+                    None,
+                )
+                return pack_id, declaration
+            return None, None
+
+        for command in candidates:
+            name = command["name"]
+            is_declared = name in declared_names
+            layers = resolver.collect_all_layers(name, "command")
+            if not layers:
+                if is_declared:
+                    remaining.append(command)
+                continue
+            if layers[0]["source"] == "project override":
+                if not is_declared:
+                    # A convention-only candidate has no manifest entry to carry
+                    # a staged payload for, and the project override still wins
+                    # at resolution time, so there is nothing to publish here.
+                    continue
                 # Project overrides outrank presets as well as the newly
                 # eligible provider. Stage the resolved payload inside the
                 # provider so its normal registrars retain their active-agent,
                 # ownership and incremental rollback behavior without first
                 # publishing the raw extension command.
-                content = resolver.resolve_content(command["name"], "command")
+                content = resolver.resolve_content(name, "command")
                 if content is None:
                     raise ExtensionError(
-                        f"Winning project override for '{command['name']}' is unreadable"
+                        f"Winning project override for '{name}' is unreadable"
                     )
                 resolved_dir = extension_dir / ".resolved"
                 resolved_dir.mkdir(parents=True, exist_ok=True)
-                resolved_file = resolved_dir / f"{command['name']}.md"
+                resolved_file = resolved_dir / f"{name}.md"
                 resolved_file.write_text(content, encoding="utf-8")
                 remaining.append({
                     **command,
-                    "file": str(resolved_file.relative_to(extension_dir)),
+                    # The declaration ``file`` is a portable, extension-relative
+                    # path: ``relative_extension_path_violation`` (shared with
+                    # manifest validation and the registrar's runtime guard)
+                    # rejects any backslash, so a native ``str(Path)`` — which is
+                    # separator-dependent — drops this command on Windows only.
+                    "file": resolved_file.relative_to(extension_dir).as_posix(),
                 })
                 continue
-            if layers:
-                for pack_id, _metadata in manager.registry.list_by_priority():
-                    pack_dir = manager.presets_dir / pack_id
-                    if layers[0]["path"].is_relative_to(pack_dir):
-                        preset_manifest = resolver._get_manifest(pack_dir)
-                        if preset_manifest is None:
-                            break
-                        declarations = manager._expand_command_selectors(
-                            resolver, pack_dir,
-                            [t for t in preset_manifest.templates if t.get("type") == "command"],
-                        )
-                        winner = next(
-                            (t for t in declarations if t["name"] == command["name"]
-                             and pack_dir / t["file"] == layers[0]["path"]), None,
-                        )
-                        if winner is not None:
-                            groups.setdefault(pack_id, []).append({
-                                **winner,
-                                "aliases": list(dict.fromkeys(
-                                    winner.get("aliases", []) + command.get("aliases", [])
-                                )),
-                            })
-                        break
-            if winner is None:
-                remaining.append(command)
+            pack_id, declaration = _owning_preset_declaration(name, layers)
+            if declaration is None:
+                if is_declared:
+                    remaining.append(command)
+                continue
+            groups.setdefault(pack_id, []).append({
+                **declaration,
+                "aliases": list(dict.fromkeys(
+                    list(declaration.get("aliases", []))
+                    + list(command.get("aliases", []))
+                )),
+            })
 
         commands = {}
         skills = []
         # Share incremental command tracking with the outer install rollback;
         # snapshots also restore preset skill ownership and overwritten bytes.
         manager._preset_install_transaction = self._install_transaction_artifacts["commands"]
-        provider_names = set(self._collect_manifest_command_names(manifest))
+        # Provider ownership covers conventional command candidates as well, so
+        # a selector-materialized conventional command is recorded against this
+        # extension instead of losing its ownership record.
+        provider_names = _snapshot_command_candidates(self, manifest)
+        provider_skill_names = {
+            self._skill_name_for_command(name) for name in provider_names
+        }
         for pack_id, declarations in groups.items():
             pack_dir = manager.presets_dir / pack_id
             preset_manifest = resolver._get_manifest(pack_dir)
@@ -1621,9 +1676,7 @@ class ExtensionManager:
             for agent, names in written_commands.items():
                 commands.setdefault(agent, []).extend(n for n in names if n in provider_names)
             for names in written_skills.values():
-                skills.extend(n for n in names if n in {
-                    self._skill_name_for_command(c["name"]) for c in manifest.commands
-                })
+                skills.extend(n for n in names if n in provider_skill_names)
         return remaining, commands, list(dict.fromkeys(skills))
 
     def _register_commands_for_active_agent(
@@ -3484,7 +3537,27 @@ class ExtensionManager:
                 registration_manifest, dest_dir, link_outputs=link_commands
             )
             registered_skills.extend(winner_skills)
-            self._install_transaction_artifacts["commands"] = registered_commands
+            # The merged ledger is the rollback source of truth: it holds every
+            # output the callbacks recorded, which can exceed the registrar's
+            # (possibly empty or partial) return value after a handled error.
+            self._install_transaction_artifacts["commands"] = transaction_commands
+            # Registry ownership is that same union narrowed to the names this
+            # extension actually provides, so an alias the preset materialized
+            # for its own selector declaration is not misattributed to the
+            # extension while the extension's own recorded outputs are kept.
+            # NOTE: the loop variables are deliberately named ``agent_names``/
+            # ``candidate`` — ``names`` above is the generic command list that
+            # the generic artifact check below still reads.
+            from ._commands import _snapshot_command_candidates
+
+            provider_names = _snapshot_command_candidates(self, manifest)
+            committed_commands: dict[str, list[str]] = {}
+            for source in (registered_commands, transaction_commands):
+                for agent, agent_names in source.items():
+                    tracked = committed_commands.setdefault(agent, [])
+                    for candidate in agent_names:
+                        if candidate in provider_names and candidate not in tracked:
+                            tracked.append(candidate)
 
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
@@ -3546,7 +3619,10 @@ class ExtensionManager:
                 "manifest_hash": manifest.get_hash(),
                 "enabled": True,
                 "priority": priority,
-                "registered_commands": registered_commands,
+                # Ownership must reflect every output the callbacks recorded as
+                # written (not only the registrar's possibly partial totals),
+                # narrowed to the names this extension provides.
+                "registered_commands": committed_commands,
                 "registered_skills": registered_skills,
             }
             if generic_active:

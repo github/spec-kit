@@ -492,8 +492,11 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             registered_commands = self._register_commands(
                 manifest, dest_dir, command_templates=command_templates
             )
-            # Registration callbacks track partial writes during the helper;
-            # merge its complete return value into the same transaction record.
+            # Registration callbacks record each agent output as it is actually
+            # written, so the transaction ledger can be a strict superset of the
+            # registrar's return value (a handled OSError part-way through leaves
+            # a partial or empty mapping). Persist the merged ledger rather than
+            # the return value, or already-written outputs lose their ownership.
             for agent, commands in registered_commands.items():
                 tracked = transaction_commands.setdefault(agent, [])
                 for command in commands:
@@ -501,7 +504,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                         tracked.append(command)
             self.registry.update(
                 manifest.id,
-                {"registered_commands": registered_commands},
+                {"registered_commands": transaction_commands},
             )
 
             # Update corresponding skills when skills mode was previously used
@@ -509,10 +512,17 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             registered_skills = self._register_skills(
                 manifest, dest_dir, command_templates=command_templates
             )
+            # Skill registration records each written SKILL.md incrementally for
+            # the same reason; keep the ledger as the ownership source of truth.
+            for agent, names in registered_skills.items():
+                tracked = transaction_skills.setdefault(agent, [])
+                for name in names:
+                    if name not in tracked:
+                        tracked.append(name)
             self.registry.update(
                 manifest.id,
                 {
-                    "registered_skills": registered_skills,
+                    "registered_skills": transaction_skills,
                 },
             )
             command_templates = [

@@ -180,10 +180,18 @@ def _installed_command_presets_affecting_agent(
     project_root,
     agent_key: str,
 ) -> list[str]:
-    """Return installed presets with command artifacts registered for *agent_key*."""
+    """Return installed presets with command artifacts registered for *agent_key*.
+
+    ``include_disabled=True`` is deliberate: a failed ``preset disable`` keeps a
+    disabled registry entry carrying command provenance so its cleanup can be
+    retried, and those retained old-layout files are exactly what this guard
+    protects. Ownership is still decided per agent by the shared checks below,
+    so a disabled preset that was cleaned up cleanly (empty ownership) — or one
+    whose artifacts belong only to another agent — does not block a migration.
+    """
     return _installed_presets_affecting_agent(
         project_root,
         agent_key,
         include_skills=False,
-        include_disabled=False,
+        include_disabled=True,
     )

@@ -15,6 +15,7 @@ Covers the three correctness findings that are not test- or doc-only:
 
 from __future__ import annotations
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -24,6 +25,7 @@ from specify_cli.extensions._commands import _snapshot_command_candidates
 from specify_cli.presets import PresetManager
 from tests.specify_cli.presets.test_install_transaction import tree_state
 from tests.specify_cli.presets.test_selector_provider_lifecycle import (
+    ALIAS,
     COMMAND,
     extension,
     preset,
@@ -225,8 +227,282 @@ def test_enable_rollback_removes_selector_global_skill(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Phase 5: extension priority uses a strict transaction (MEDIUM)
+# Review round 4: conventional candidates, disable reconciliation, ownership
 # ---------------------------------------------------------------------------
+
+
+def _convention_only_extension(tmp_path, extension_id="provider"):
+    """Extension whose selected concrete command has no manifest entry."""
+    return _extension_source(
+        tmp_path,
+        extension_id,
+        f"speckit.{extension_id}.other",
+        "DECLARED BODY",
+        conventional_name=COMMAND,
+        conventional_body="EXTENSION BODY",
+    )
+
+
+def test_install_materializes_convention_only_selector_winner(tmp_path, monkeypatch):
+    """A fresh install must materialize a selector match for a conventional file.
+
+    The transactional installer used to iterate ``manifest.commands`` only, so an
+    extension whose command exists solely as ``commands/<concrete-name>.md`` left
+    the matching preset selector unmaterialized until some later lifecycle
+    refresh.
+    """
+    root = project(tmp_path, monkeypatch)
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"),
+        "0.1.5",
+        priority=5,
+    )
+
+    ExtensionManager(root).install_from_directory(
+        _convention_only_extension(tmp_path), "0.1.5"
+    )
+
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    assert output.exists(), "conventional selector winner was not materialized"
+    # The resolver winner (the replacing preset) is what reaches the agent.
+    assert "SELECTOR BODY" in output.read_text()
+    assert "EXTENSION BODY" not in output.read_text()
+    # Ownership is recorded against the extension for its conventional command.
+    metadata = ExtensionManager(root).registry.get("provider")
+    assert metadata is not None
+    assert COMMAND in metadata["registered_commands"]["gemini"]
+
+
+def test_install_materializes_convention_only_winner_for_skills(tmp_path, monkeypatch):
+    """The same conventional candidate must materialize in skills mode."""
+    root = project(tmp_path, monkeypatch, "copilot", True)
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"),
+        "0.1.5",
+        priority=5,
+    )
+
+    ExtensionManager(root).install_from_directory(
+        _convention_only_extension(tmp_path), "0.1.5"
+    )
+
+    skill = root / ".github" / "skills" / "speckit-provider-collect" / "SKILL.md"
+    assert skill.exists(), (
+        "conventional selector winner was not materialized as a skill"
+    )
+    assert "SELECTOR BODY" in skill.read_text()
+    metadata = ExtensionManager(root).registry.get("provider")
+    assert metadata is not None
+    assert "speckit-provider-collect" in metadata.get("registered_skills", [])
+
+
+def test_install_rollback_removes_convention_only_winner(tmp_path, monkeypatch):
+    """A later install failure must retire the newly materialized artifact."""
+    from specify_cli.extensions import ExtensionRegistry
+
+    root = project(tmp_path, monkeypatch)
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"),
+        "0.1.5",
+        priority=5,
+    )
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    assert not output.exists()
+
+    def fail_commit(self, *args, **kwargs):
+        raise OSError("registry commit failed")
+
+    monkeypatch.setattr(ExtensionRegistry, "add", fail_commit)
+
+    with pytest.raises(OSError, match="registry commit failed"):
+        ExtensionManager(root).install_from_directory(
+            _convention_only_extension(tmp_path), "0.1.5"
+        )
+
+    assert not output.exists(), "rollback left the materialized artifact behind"
+    assert not ExtensionManager(root).registry.is_installed("provider")
+
+
+def test_disable_selector_reconciliation_failure_rolls_back(tmp_path, monkeypatch):
+    """A failed selector reconciliation must abort the whole disable.
+
+    The refresh used to run best-effort after the disable committed and after
+    success was printed, which left a disabled extension whose preset-generated
+    artifacts still composed its layer — and a retry exited early as "already
+    disabled".
+    """
+    root = project(tmp_path, monkeypatch)
+    ExtensionManager(root).install_from_directory(extension(tmp_path), "0.1.5")
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"),
+        "0.1.5",
+        priority=5,
+    )
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    assert "SELECTOR BODY" in output.read_text()
+    before = tree_state(root)
+    registry_before = ExtensionManager(root).registry.get("provider")
+
+    original = PresetManager.register_enabled_presets_for_agent
+
+    def failing(self, agent_name, **kwargs):
+        if kwargs.get("strict"):
+            raise OSError("selector reconciliation failed")
+        return original(self, agent_name, **kwargs)
+
+    monkeypatch.setattr(PresetManager, "register_enabled_presets_for_agent", failing)
+
+    result = CliRunner().invoke(app, ["extension", "disable", "provider"])
+
+    assert result.exit_code != 0
+    assert "selector reconciliation failed" in (result.output + str(result.exception))
+    assert "disabled" not in result.output
+    metadata = ExtensionManager(root).registry.get("provider")
+    assert metadata is not None
+    assert metadata == registry_before
+    assert metadata["enabled"] is True
+    assert tree_state(root) == before
+
+    # The state is retryable: a later disable is not short-circuited.
+    monkeypatch.setattr(PresetManager, "register_enabled_presets_for_agent", original)
+    retry = CliRunner().invoke(app, ["extension", "disable", "provider"])
+    assert retry.exit_code == 0, retry.output
+    retried = ExtensionManager(root).registry.get("provider")
+    assert retried is not None
+    assert retried["enabled"] is False
+
+
+def test_disable_rollback_restores_artifacts_after_partial_reconciliation(
+    tmp_path, monkeypatch
+):
+    """Reconciliation that already changed artifacts must be rolled back byte-for-byte."""
+    root = project(tmp_path, monkeypatch)
+    ExtensionManager(root).install_from_directory(extension(tmp_path), "0.1.5")
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "selector", r"regex:speckit\.provider\..*", "SELECTOR BODY"),
+        "0.1.5",
+        priority=5,
+    )
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    before_bytes = output.read_bytes()
+    before = tree_state(root)
+
+    original = PresetManager.register_enabled_presets_for_agent
+
+    def reconcile_then_fail(self, agent_name, **kwargs):
+        written = original(self, agent_name, **kwargs)
+        if kwargs.get("strict"):
+            raise OSError("selector reconciliation failed after partial write")
+        return written
+
+    monkeypatch.setattr(
+        PresetManager, "register_enabled_presets_for_agent", reconcile_then_fail
+    )
+
+    result = CliRunner().invoke(app, ["extension", "disable", "provider"])
+
+    assert result.exit_code != 0
+    assert "after partial write" in (result.output + str(result.exception))
+    # The reconciliation retires the artifact (the provider is gone); rollback
+    # must restore the exact previous bytes and the extension's enabled state.
+    assert tree_state(root) == before
+    assert output.read_bytes() == before_bytes
+    metadata = ExtensionManager(root).registry.get("provider")
+    assert metadata is not None
+    assert metadata["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Review round 4: registry ownership must mirror the callback ledger
+# ---------------------------------------------------------------------------
+
+
+def test_install_keeps_callback_ownership_on_empty_registrar_return(
+    tmp_path, monkeypatch
+):
+    """A partial/empty registrar return must not drop already-written outputs."""
+    root = project(tmp_path, monkeypatch)
+    source = preset(tmp_path, "provider", COMMAND, "PROVIDER BODY")
+    original = PresetManager._register_commands
+
+    def partial(self, manifest, preset_dir, **kwargs):
+        written = original(self, manifest, preset_dir, **kwargs)
+        assert written, "fixture must perform a real registration write"
+        # Simulate the registrar's handled-error path: outputs were written and
+        # recorded by the callback, but only an empty mapping is returned.
+        return {}
+
+    monkeypatch.setattr(PresetManager, "_register_commands", partial)
+    # The post-registration reconciliation pass re-merges ownership for the
+    # names it rewrites, which would mask a registration-phase loss; isolate the
+    # phase whose callback ledger this test targets.
+    monkeypatch.setattr(
+        PresetManager, "_reconcile_composed_commands", lambda *args, **kwargs: set()
+    )
+
+    PresetManager(root).install_from_directory(source, "0.1.5")
+
+    output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
+    assert output.exists()
+    metadata = PresetManager(root).registry.get("provider")
+    assert metadata is not None
+    assert COMMAND in metadata["registered_commands"]["gemini"]
+
+
+def test_install_keeps_callback_skill_ownership_on_empty_registrar_return(
+    tmp_path, monkeypatch
+):
+    """The skill ledger must survive an empty/partial skill registrar return.
+
+    ``registered_skills`` is the ownership record that later cleanup resolves
+    from, so an exception after the skills were written (registrar returns an
+    empty mapping) must not erase provenance for the materialized SKILL.md.
+    """
+    root = project(tmp_path, monkeypatch, "copilot", True)
+    source = preset(tmp_path, "provider", COMMAND, "PROVIDER BODY")
+    original = PresetManager._register_skills
+
+    def partial(self, manifest, preset_dir, **kwargs):
+        written = original(self, manifest, preset_dir, **kwargs)
+        assert written, "fixture must perform a real skill registration write"
+        return {}
+
+    monkeypatch.setattr(PresetManager, "_register_skills", partial)
+    # The post-install skill reconciliation re-merges ownership for the names it
+    # rewrites, which would mask a registration-phase loss.
+    monkeypatch.setattr(
+        PresetManager, "_reconcile_skills", lambda *args, **kwargs: None
+    )
+
+    PresetManager(root).install_from_directory(source, "0.1.5")
+
+    skill = root / ".github" / "skills" / "speckit-provider-collect" / "SKILL.md"
+    assert skill.exists()
+    metadata = PresetManager(root).registry.get("provider")
+    assert metadata is not None
+    registered = metadata["registered_skills"]
+    if isinstance(registered, dict):
+        tracked = {name for names in registered.values() for name in names}
+    else:
+        tracked = set(registered)
+    assert "speckit-provider-collect" in tracked
+
+
+def test_install_ownership_matches_written_files(tmp_path, monkeypatch):
+    """A successful install tracks exactly the files that exist on disk."""
+    root = project(tmp_path, monkeypatch)
+    PresetManager(root).install_from_directory(
+        preset(tmp_path, "provider", COMMAND, "PROVIDER BODY", aliases=True), "0.1.5"
+    )
+
+    metadata = PresetManager(root).registry.get("provider")
+    assert metadata is not None
+    tracked = set(metadata["registered_commands"]["gemini"])
+    assert tracked == {COMMAND, ALIAS}
+    # Every tracked name has a real materialized artifact for the active agent.
+    commands_dir = root / ".gemini" / "commands"
+    for name in tracked:
+        assert (commands_dir / f"{name}.toml").exists(), name
 
 
 def _extension_source(

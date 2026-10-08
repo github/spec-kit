@@ -114,8 +114,13 @@ class TestIntegrationUpgradeLayout:
             "p4",
             "p7",
         ]
+        # The command-only wrapper includes disabled entries on purpose: p7 is
+        # disabled but still carries command provenance for bob, so its retained
+        # old-layout files must keep blocking the migration (and stay retryable).
+        # Presets with no ownership for this agent (p2/p5/p6) still do not block.
         assert _installed_command_presets_affecting_agent(project, "bob") == [
             "p1",
+            "p7",
         ]
         assert _installed_presets_affecting_agent(
             project, "bob", include_disabled=False
@@ -123,3 +128,67 @@ class TestIntegrationUpgradeLayout:
         assert _installed_presets_affecting_agent(
             project, "bob", include_disabled=True
         ) == ["p1", "p3", "p4", "p7"]
+
+    def test_command_guard_tracks_retained_disabled_provenance(self, tmp_path):
+        """A disabled preset blocks the legacy-root migration only while it owns files.
+
+        ``preset disable`` retires artifacts best-effort: a failed cleanup keeps
+        the registry entry disabled *with* its provenance so a retry can finish.
+        Those retained old-layout files are exactly what the guard protects, so
+        the guard must include disabled entries and let the per-agent ownership
+        checks decide — a cleanly disabled preset must not block a migration.
+        """
+        from specify_cli.integrations._command_upgrade_layout import (
+            _installed_command_presets_affecting_agent,
+        )
+
+        project = tmp_path / "proj"
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+        registry = presets_dir / ".registry"
+
+        def write(presets):
+            registry.write_text(json.dumps({"presets": presets}), encoding="utf-8")
+
+        # Enabled preset owning old-layout commands blocks (unchanged behavior).
+        write(
+            {
+                "active": {
+                    "enabled": True,
+                    "registered_commands": {"bob": ["speckit.plan"]},
+                }
+            }
+        )
+        assert _installed_command_presets_affecting_agent(project, "bob") == ["active"]
+
+        # Cleanly disabled preset (no remaining ownership) must not block.
+        write({"clean": {"enabled": False, "registered_commands": {}}})
+        assert _installed_command_presets_affecting_agent(project, "bob") == []
+
+        # Disabled preset with retained provenance for this agent blocks, and
+        # keeps blocking on a retry that has not finished cleaning up yet.
+        write(
+            {
+                "retained": {
+                    "enabled": False,
+                    "registered_commands": {"bob": ["speckit.plan"]},
+                }
+            }
+        )
+        assert _installed_command_presets_affecting_agent(project, "bob") == ["retained"]
+        assert _installed_command_presets_affecting_agent(project, "bob") == ["retained"]
+
+        # Retained provenance for a different agent does not block this agent.
+        write(
+            {
+                "other": {
+                    "enabled": False,
+                    "registered_commands": {"codex": ["speckit.plan"]},
+                }
+            }
+        )
+        assert _installed_command_presets_affecting_agent(project, "bob") == []
+
+        # Cleanup finally succeeded → the migration is unblocked.
+        write({"retained": {"enabled": False, "registered_commands": {}}})
+        assert _installed_command_presets_affecting_agent(project, "bob") == []

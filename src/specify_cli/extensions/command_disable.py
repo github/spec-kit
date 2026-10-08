@@ -107,6 +107,7 @@ def extension_disable(
     from .. import load_init_options
 
     agent = load_init_options(project_root).get("ai")
+    refresh_presets_after_commit = False
     if agent == "generic":
         from . import ExtensionError
 
@@ -116,11 +117,18 @@ def extension_disable(
             console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1) from exc
         _disable_hooks(hook_executor, extension_id)
+        # The generic integration publishes extension invocations only — it
+        # never registers preset command or skill overrides — so its selector
+        # refresh keeps the pre-existing best-effort contract.
+        refresh_presets_after_commit = True
     else:
         # Cleanup mutates several agents' artifacts, both registries, and the
-        # hook config. A failure part-way through must not leave the extension
-        # enabled with the earlier agents already stripped, so snapshot every
-        # touched destination first and restore it as a unit on error.
+        # hook config, and it changes which lower layer preset selectors can
+        # match. A failure part-way through must not leave the extension
+        # enabled with the earlier agents already stripped, nor disabled with
+        # artifacts still composed from its layer, so snapshot every touched
+        # destination first, reconcile selectors strictly inside the same
+        # transaction, and restore everything as a unit on error.
         import copy
 
         from ..presets import PresetManager
@@ -154,6 +162,13 @@ def extension_disable(
                 )
             manager.registry.update(extension_id, {"enabled": False})
             _disable_hooks(hook_executor, extension_id)
+            # Selector-backed outputs are part of this state change: reconcile
+            # strictly before committing so a failed reconciliation rolls the
+            # disable back instead of leaving a preset-generated command or
+            # skill composed from the now-ineligible provider layer.
+            _commands._refresh_presets_and_warn(
+                project_root, affected_commands, strict=True
+            )
         except BaseException as exc:
             manager.registry.data = registry_before
             try:
@@ -190,8 +205,8 @@ def extension_disable(
     )
 
     # #1: regenerate native event config so the disabled extension's events
-    # are stripped from installed integrations.
-    # Extension mutations may change the expansion set for preset regex
-    # selectors; re-register enabled presets after refreshing native events.
+    # are stripped from installed integrations. Preset selector reconciliation
+    # already ran inside the disable transaction above.
     _commands._refresh_events_and_warn(project_root)
-    _commands._refresh_presets_and_warn(project_root, affected_commands)
+    if refresh_presets_after_commit:
+        _commands._refresh_presets_and_warn(project_root, affected_commands)
