@@ -5,6 +5,7 @@ code. Only the repository-owned installer is loaded to reuse its ID validator.
 """
 
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -12,6 +13,7 @@ import re
 import subprocess
 import tempfile
 from functools import cache
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -26,6 +28,10 @@ class SubmissionMismatch(Exception):
 
 
 class Blocked(Exception):
+    pass
+
+
+class GeneratedError(Exception):
     pass
 
 
@@ -285,10 +291,172 @@ def fetch_package(data: dict[str, Any], manifest_output: Path) -> dict[str, Any]
     return {"sha256": hashes, "bytes": total}
 
 
+RELEASE_FIELDS = (
+    "url", "step_yml_url", "init_url", "extra_files", "sha256",
+    "requires", "provides", "download_url",
+)
+
+
+def check_existing_release(record: dict[str, Any]) -> None:
+    url = record.get("step_yml_url", record.get("url"))
+    init = record.get("init_url")
+    extra = record.get("extra_files", {})
+    if (
+        not isinstance(url, str) or not url.strip()
+        or (init is None and not url.endswith("step.yml"))
+        or (init is not None and (not isinstance(init, str) or not init.strip()))
+        or not isinstance(extra, dict)
+        or any(
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z0-9._~/-]+", name)
+            or any(part in ("", ".", "..") for part in name.split("/"))
+            or name.casefold() in ("step.yml", "__init__.py")
+            or not isinstance(value, str) or not value.strip()
+            for name, value in extra.items()
+        )
+    ):
+        raise Blocked("existing release has invalid file metadata; maintainer repair required")
+    hashes = record.get("sha256")
+    if (
+        not isinstance(hashes, dict)
+        or hashes.keys() != {"step.yml", "__init__.py", *extra}
+        or any(
+            not isinstance(value, str) or not re.fullmatch(r"[A-Fa-f0-9]{64}", value)
+            for value in hashes.values()
+        )
+    ):
+        raise Blocked("existing release needs complete SHA-256 digests; maintainer repair required")
+    if any(key in record and not isinstance(record[key], dict) for key in ("requires", "provides")):
+        raise Blocked("existing release has invalid requirements or provides metadata")
+
+
+def catalog_snapshot(
+    data: dict[str, Any], original: dict[str, Any], receipt: dict[str, Any],
+) -> dict[str, Any]:
+    files = validate_files(data)
+    expected_hashes = {name: digest for name, (_, digest) in files.items()}
+    byte_count = receipt.get("bytes")
+    if (
+        receipt.get("sha256") != expected_hashes
+        or not isinstance(byte_count, int) or isinstance(byte_count, bool)
+        or not 0 <= byte_count <= load_installer()._MAX_STEP_PACKAGE_BYTES
+    ):
+        raise Blocked("download receipt does not match the submitted complete file digests")
+    entries = original.get("steps")
+    if not isinstance(entries, dict):
+        raise Blocked("original catalog has no steps object")
+    step_id = data["step_id"]
+    submitted = data["catalog_entry"]
+    if submitted.get("id") != step_id or submitted.get("version") != data["version"]:
+        raise SubmissionMismatch("catalog ID/version must match the submission")
+    if submitted.get("verified") is not False:
+        raise SubmissionMismatch("community catalog verified must be false")
+    if "releases" in submitted or any(key.startswith("_") for key in submitted):
+        raise SubmissionMismatch("submitted entry must not supply history or internal fields")
+    previous = entries.get(step_id)
+    history = {}
+    entry = {}
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+    if step_id in entries:
+        if not isinstance(previous, dict) or not isinstance(previous.get("created_at"), str):
+            raise Blocked("existing entry lacks valid original metadata/created_at")
+        from packaging.version import InvalidVersion, Version
+
+        try:
+            old_version = Version(field(previous, "version"))
+        except (InvalidVersion, SubmissionMismatch) as exc:
+            raise Blocked(f"existing entry has invalid version: {exc}") from exc
+        new_version = Version(data["version"])
+        if new_version < old_version:
+            raise SubmissionMismatch("version downgrade is not allowed")
+        existing_history = previous.get("releases", {})
+        if not isinstance(existing_history, dict):
+            raise Blocked("existing releases must be an object")
+        seen = {old_version}
+        for version, record in existing_history.items():
+            if not isinstance(version, str) or not isinstance(record, dict):
+                raise Blocked("existing release history has invalid version/record")
+            try:
+                normalized = Version(version)
+            except InvalidVersion as exc:
+                raise Blocked(f"existing history has invalid version: {version}") from exc
+            if normalized in seen:
+                raise Blocked("existing release history contains equivalent duplicate versions")
+            seen.add(normalized)
+            if {"id", "version", "releases", "_catalog_name", "_install_allowed"} & record.keys():
+                raise Blocked("existing historical release contains reserved fields")
+            check_existing_release(record)
+        history = copy.deepcopy(existing_history)
+        if new_version == old_version:
+            if data.get("metadata_only") is not True:
+                raise SubmissionMismatch("same-version updates require an explicit metadata-only correction")
+            for key in ("step_yml_url", "init_url", "extra_files", "sha256", "download_url"):
+                default = {} if key == "extra_files" else None
+                old_value = previous.get(
+                    key, previous.get("url") if key == "step_yml_url" else default
+                )
+                if old_value != submitted.get(key, default):
+                    raise SubmissionMismatch("same-version repairs cannot replace file URLs or digests")
+        else:
+            if new_version in seen:
+                raise SubmissionMismatch("new version already exists in preserved history")
+            check_existing_release(previous)
+            history[previous["version"]] = {
+                key: copy.deepcopy(previous[key]) for key in RELEASE_FIELDS if key in previous
+            }
+        entry = {
+            key: copy.deepcopy(value) for key, value in previous.items()
+            if key not in (*RELEASE_FIELDS, "releases")
+        }
+    entry.update(copy.deepcopy(submitted))
+    entry["sha256"] = expected_hashes
+    entry["created_at"] = previous["created_at"] if previous is not None else timestamp
+    entry["updated_at"] = timestamp
+    if previous is not None and ("releases" in previous or history):
+        entry["releases"] = history
+    expected_catalog = copy.deepcopy(original)
+    expected_catalog["steps"][step_id] = entry
+    expected_catalog["steps"] = dict(sorted(expected_catalog["steps"].items()))
+    expected_catalog["updated_at"] = timestamp
+    return {"step_id": step_id, "expected_catalog": expected_catalog}
+
+
+def verify_generated_catalog(snapshot: dict[str, Any], catalog: dict[str, Any]) -> None:
+    expected = snapshot.get("expected_catalog")
+    if not isinstance(expected, dict) or not isinstance(expected.get("steps"), dict):
+        raise Blocked("catalog snapshot lacks expected catalog state")
+    if catalog != expected:
+        raise GeneratedError(
+            "generated catalog differs from validated snapshot; preserve current/history "
+            "digests, original metadata, unrelated entries, and timestamps"
+        )
+    if list(catalog["steps"]) != sorted(catalog["steps"]):
+        raise GeneratedError("generated catalog IDs must be sorted")
+
+
+def read_json(
+    path: Path, error_type: type[Exception] = Blocked,
+) -> dict[str, Any]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise Blocked(f"cannot read JSON evidence at {path}: {exc}") from exc
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise error_type(f"invalid JSON evidence at {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise error_type(f"JSON evidence must be an object: {path}")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("identity", "fetch"))
+    parser.add_argument("operation", choices=("identity", "fetch", "snapshot", "generated"))
     parser.add_argument("--submission", required=True, type=Path)
+    parser.add_argument("--catalog", type=Path, default=ROOT / "workflows/step-catalog.community.json")
+    parser.add_argument("--snapshot", type=Path, default=Path("/tmp/gh-aw/step-catalog-snapshot.json"))
+    parser.add_argument("--receipt", type=Path, default=Path("/tmp/gh-aw/step-downloads.json"))
     args = parser.parse_args()
     try:
         try:
@@ -304,14 +472,39 @@ def main() -> int:
         if args.operation == "identity":
             validate_identity(data)
             print("Identity validation passed")
+        elif args.operation == "fetch":
+            try:
+                args.receipt.unlink(missing_ok=True)
+                result = fetch_package(data, Path("/tmp/gh-aw/step-file.bin"))
+                args.receipt.write_text(json.dumps(result), encoding="utf-8")
+            except OSError as exc:
+                raise Blocked(f"cannot store download receipt: {exc}") from exc
+            print(json.dumps(result))
+        elif args.operation == "snapshot":
+            try:
+                args.snapshot.unlink(missing_ok=True)
+            except OSError as exc:
+                raise Blocked(f"cannot clear old catalog snapshot: {exc}") from exc
+            snapshot = catalog_snapshot(data, read_json(args.catalog), read_json(args.receipt))
+            try:
+                args.snapshot.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+            except OSError as exc:
+                raise Blocked(f"cannot store catalog snapshot: {exc}") from exc
+            print("Catalog snapshot created; history and download evidence validated")
         else:
-            print(json.dumps(fetch_package(data, Path("/tmp/gh-aw/step-file.bin"))))
+            verify_generated_catalog(
+                read_json(args.snapshot), read_json(args.catalog, GeneratedError),
+            )
+            print("Generated catalog matches validated snapshot")
     except SubmissionMismatch as exc:
         print(f"FAILED: {exc}")
         return 1
     except Blocked as exc:
         print(f"BLOCKED: {exc}")
         return 2
+    except GeneratedError as exc:
+        print(f"GENERATED ERROR: {exc}")
+        return 3
     return 0
 
 

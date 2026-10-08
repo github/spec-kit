@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import builtins
+import copy
 import re
 import shutil
 import subprocess
@@ -584,7 +585,219 @@ def test_workflow_invokes_the_tested_verifier_with_fixed_arguments():
         "--submission /tmp/gh-aw/step-submission.json",
         "python3 .github/scripts/validate_community_workflow_step.py fetch "
         "--submission /tmp/gh-aw/step-submission.json",
+        "python3 .github/scripts/validate_community_workflow_step.py snapshot "
+        "--submission /tmp/gh-aw/step-submission.json",
+        "python3 .github/scripts/validate_community_workflow_step.py generated "
+        "--submission /tmp/gh-aw/step-submission.json",
     ]
+
+
+@pytest.fixture
+def catalog_update(file_submission):
+    data = copy.deepcopy(file_submission)
+    entry = data["catalog_entry"]
+    entry.update({"id": data["step_id"], "version": data["version"], "verified": False})
+    previous = copy.deepcopy(entry)
+    previous.update({
+        "version": "1.1.0", "created_at": "2025-01-01T00:00:00Z",
+        "tags": ["retained"], "download_url": "https://example.com/1.1.0/package.zip",
+        "extra_files": {"old.py": "https://example.com/1.1.0/old.py"},
+    })
+    previous["sha256"]["old.py"] = "a" * 64
+    historical = {
+        key: copy.deepcopy(previous[key])
+        for key in ("step_yml_url", "init_url", "extra_files", "sha256", "download_url")
+    }
+    historical["download_url"] = "https://example.com/1.0.0/package.zip"
+    previous["releases"] = {"1.0.0": historical}
+    original = {
+        "schema_version": "1.0", "catalog_url": "https://example.com/catalog.json",
+        "updated_at": "2025-01-01T00:00:00Z",
+        "steps": {data["step_id"]: previous, "unrelated": {"retained": True}},
+    }
+    receipt = {"sha256": copy.deepcopy(entry["sha256"]), "bytes": 42}
+    return data, original, receipt
+
+
+def test_catalog_update_migrates_current_release_and_preserves_history(verifier, catalog_update):
+    data, original, receipt = catalog_update
+    before = copy.deepcopy(original)
+    snapshot = verifier.catalog_snapshot(data, original, receipt)
+    generated = snapshot["expected_catalog"]
+    verifier.verify_generated_catalog(snapshot, generated)
+    entry = generated["steps"][data["step_id"]]
+    previous = before["steps"][data["step_id"]]
+    assert entry["releases"]["1.0.0"] == previous["releases"]["1.0.0"]
+    assert entry["releases"]["1.1.0"] == {
+        key: previous[key] for key in verifier.RELEASE_FIELDS if key in previous
+    }
+    assert "id" not in entry["releases"]["1.1.0"]
+    assert "version" not in entry["releases"]["1.1.0"]
+    assert "old.py" not in entry.get("extra_files", {})
+    assert entry["created_at"] == previous["created_at"]
+    assert entry["tags"] == previous["tags"]
+    assert generated["steps"]["unrelated"] == before["steps"]["unrelated"]
+    assert generated["catalog_url"] == before["catalog_url"]
+    assert generated["schema_version"] == before["schema_version"]
+    assert original == before
+
+
+@pytest.mark.parametrize("release", ["current", "historical"])
+@pytest.mark.parametrize("bad_digest", [None, {}, {"step.yml": "bad"}])
+def test_missing_existing_release_digests_block_snapshot(
+    verifier, catalog_update, release, bad_digest,
+):
+    data, original, receipt = catalog_update
+    previous = original["steps"][data["step_id"]]
+    record = previous if release == "current" else previous["releases"]["1.0.0"]
+    record["sha256"] = bad_digest
+    with pytest.raises(verifier.Blocked, match="complete SHA-256"):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+@pytest.mark.parametrize("change", [
+    "omit_old_current", "drop_history", "alter_history_digest", "alter_created_at",
+    "alter_unrelated", "alter_catalog_url", "alter_current_digest",
+])
+def test_generated_catalog_mutations_prevent_publication(verifier, catalog_update, change):
+    data, original, receipt = catalog_update
+    snapshot = verifier.catalog_snapshot(data, original, receipt)
+    generated = copy.deepcopy(snapshot["expected_catalog"])
+    entry = generated["steps"][data["step_id"]]
+    if change == "omit_old_current":
+        del entry["releases"]["1.1.0"]
+    elif change == "drop_history":
+        del entry["releases"]["1.0.0"]
+    elif change == "alter_history_digest":
+        entry["releases"]["1.0.0"]["sha256"]["step.yml"] = "f" * 64
+    elif change == "alter_created_at":
+        entry["created_at"] = "changed"
+    elif change == "alter_unrelated":
+        generated["steps"]["unrelated"] = {}
+    elif change == "alter_catalog_url":
+        generated["catalog_url"] = "changed"
+    else:
+        entry["sha256"]["step.yml"] = "f" * 64
+    with pytest.raises(verifier.GeneratedError, match="differs from validated snapshot"):
+        verifier.verify_generated_catalog(snapshot, generated)
+
+
+def test_new_catalog_entry_gets_no_invented_history(verifier, catalog_update):
+    data, original, receipt = catalog_update
+    del original["steps"][data["step_id"]]
+    snapshot = verifier.catalog_snapshot(data, original, receipt)
+    entry = snapshot["expected_catalog"]["steps"][data["step_id"]]
+    assert "releases" not in entry
+    assert entry["created_at"] == entry["updated_at"]
+    verifier.verify_generated_catalog(snapshot, snapshot["expected_catalog"])
+
+
+@pytest.mark.parametrize("change", ["unapproved", "digest", "url", "approved"])
+def test_same_version_repairs_cannot_replace_content(verifier, catalog_update, change):
+    data, original, receipt = catalog_update
+    previous = original["steps"][data["step_id"]]
+    data["catalog_entry"] = {
+        key: copy.deepcopy(value) for key, value in previous.items() if key != "releases"
+    }
+    data["version"] = previous["version"]
+    data["release_tag"] = "v1.1.0"
+    data["download_url"] = "https://github.com/example/steps/releases/download/v1.1.0/step.zip"
+    # URL validation uses the new release metadata; keep original file metadata aligned.
+    base = "https://raw.githubusercontent.com/example/steps/v1.1.0/package/"
+    for record in (previous, data["catalog_entry"]):
+        record["step_yml_url"] = base + "step.yml"
+        record["init_url"] = base + "__init__.py"
+        record["extra_files"] = {"old.py": base + "old.py"}
+        record["download_url"] = data["download_url"]
+    if change != "unapproved":
+        data["metadata_only"] = True
+    if change == "digest":
+        data["catalog_entry"]["sha256"]["step.yml"] = "f" * 64
+    elif change == "url":
+        data["catalog_entry"]["download_url"] = data["download_url"] + "-different"
+    receipt["sha256"] = copy.deepcopy(data["catalog_entry"]["sha256"])
+    if change == "approved":
+        data["catalog_entry"]["description"] = "Corrected metadata"
+        snapshot = verifier.catalog_snapshot(data, original, receipt)
+        generated = snapshot["expected_catalog"]["steps"][data["step_id"]]
+        assert generated["releases"] == previous["releases"]
+        assert generated["description"] == "Corrected metadata"
+        assert generated["created_at"] == previous["created_at"]
+    else:
+        with pytest.raises(verifier.SubmissionMismatch, match="same-version"):
+            verifier.catalog_snapshot(data, original, receipt)
+
+
+def test_catalog_downgrade_is_a_submission_failure(verifier, catalog_update):
+    data, original, receipt = catalog_update
+    original["steps"][data["step_id"]]["version"] = "2.0.0"
+    with pytest.raises(verifier.SubmissionMismatch, match="downgrade"):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+@pytest.mark.parametrize("bad_receipt", [
+    {}, {"sha256": {}, "bytes": 42}, {"bytes": True},
+    {"bytes": -1}, {"bytes": 50 * 1024 * 1024 + 1},
+])
+def test_unproven_download_evidence_blocks_catalog_snapshot(
+    verifier, catalog_update, bad_receipt,
+):
+    data, original, receipt = catalog_update
+    receipt.update(bad_receipt)
+    if not bad_receipt:
+        receipt = {}
+    with pytest.raises(verifier.Blocked, match="download receipt"):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+def run_catalog_verifier(tmp_path, operation):
+    return subprocess.run(
+        [
+            sys.executable, str(REPO_ROOT / ".github/scripts/validate_community_workflow_step.py"),
+            operation, "--submission", str(tmp_path / "submission.json"),
+            "--catalog", str(tmp_path / "catalog.json"),
+            "--receipt", str(tmp_path / "receipt.json"),
+            "--snapshot", str(tmp_path / "snapshot.json"),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+
+
+@pytest.fixture
+def catalog_files(catalog_update, tmp_path):
+    data, original, receipt = catalog_update
+    for name, value in (("submission", data), ("catalog", original), ("receipt", receipt)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
+    return tmp_path
+
+
+def test_catalog_verifier_cli_success_and_generated_repair_exit(catalog_files):
+    paths = catalog_files
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = json.loads((paths / "snapshot.json").read_text())["expected_catalog"]
+    (paths / "catalog.json").write_text(json.dumps(expected))
+    result = run_catalog_verifier(paths, "generated")
+    assert result.returncode == 0, result.stdout + result.stderr
+    (paths / "catalog.json").write_text("{not valid JSON")
+    result = run_catalog_verifier(paths, "generated")
+    assert result.returncode == 3
+    assert result.stdout.startswith("GENERATED ERROR:")
+    assert not result.stderr
+
+
+def test_missing_history_digests_cli_blocks_and_discards_stale_snapshot(catalog_files):
+    paths = catalog_files
+    original = json.loads((paths / "catalog.json").read_text())
+    entry = original["steps"]["deploy-preview"]
+    del entry["releases"]["1.0.0"]["sha256"]
+    (paths / "catalog.json").write_text(json.dumps(original))
+    (paths / "snapshot.json").write_text('{"stale":true}')
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 2
+    assert result.stdout.startswith("BLOCKED:")
+    assert not result.stderr
+    assert not (paths / "snapshot.json").exists()
 
 
 def add_package_files(submission, paths):

@@ -37,7 +37,7 @@ FEATURE_ASSESS_LABELS = {
     "feature-kill",
     "feature-invalid",
 }
-COMMUNITY_SUBMISSION_WORKFLOWS = (
+ARCHIVE_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
         "bundle-submission",
@@ -58,6 +58,16 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "presets/catalog.community.json",
         "docs/community/presets.md",
         "Do not modify any other files",
+    ),
+)
+COMMUNITY_SUBMISSION_WORKFLOWS = (
+    *ARCHIVE_SUBMISSION_WORKFLOWS,
+    (
+        "workflow-step",
+        "workflow-step-submission",
+        "workflows/step-catalog.community.json",
+        "docs/community/workflow-steps.md",
+        "Edit only `workflows/step-catalog.community.json`",
     ),
 )
 REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
@@ -801,7 +811,7 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     }
     removable_labels = (
         ["validation-passed", "validation-failed", "needs-info"]
-        if kind == "bundle" else ["validation-passed", "validation-failed"]
+        if kind in ("bundle", "workflow-step") else ["validation-passed", "validation-failed"]
     )
     assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
         "remove-labels"
@@ -810,7 +820,11 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
     expected_labels = {
-        "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
+        "allowed": (
+            [label, "validation-failed", "needs-info"]
+            if kind == "workflow-step"
+            else [label, "validation-passed", "validation-failed", "needs-info"]
+        ),
         "max": 3,
     }
     assert outputs["add_labels"] == {**expected_labels, "issue_intent": False}
@@ -879,7 +893,7 @@ _CATALOG_DOWNLOAD_URL_CLAUSES = (
 
 def test_community_submission_workflows_require_tag_pinned_download_urls():
     """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -905,7 +919,7 @@ def test_community_submission_workflows_require_tag_pinned_download_urls():
             )
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_checksum_instructions_preserve_submitted_digest(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     parsing = source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0]
@@ -947,7 +961,7 @@ def test_community_checksum_instructions_preserve_submitted_digest(kind):
     assert "record its digest as `actual_sha256`" in comparison_prose
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_catalog_records_computed_checksum_only_after_validation(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     catalog = source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0]
@@ -963,7 +977,7 @@ def test_community_catalog_records_computed_checksum_only_after_validation(kind)
 
 
 @pytest.mark.skipif(shutil.which("sha256sum") is None, reason="sha256sum not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("case", ["matching", "mismatch", "malformed"])
 def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
@@ -1007,7 +1021,7 @@ def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path)
             assert result.stdout.strip() == f"{archive.name}: FAILED"
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_archive_permission_failures_are_not_submission_failures(kind):
     source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
     outcome = source_text.split("### Validation outcome\n", 1)[1].split(
@@ -1118,7 +1132,7 @@ def _community_submission_harness_command(workflow: str) -> str:
 
 def test_community_submission_archive_fetch_tool_is_allowed():
     """Archive checks must not require interactive tool or URL permission grants."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
         bash_tools = config["tools"]["bash"]
@@ -1151,7 +1165,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
         "release-assets.githubusercontent.com",
         "raw.githubusercontent.com",
     ]
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
 
@@ -1172,7 +1186,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
 
 
 def test_community_submission_archive_fetch_requires_direct_evidence():
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -1221,7 +1235,7 @@ _COMMUNITY_DOWNLOAD_URL_CASES = [
 ]
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize(("url", "allowed"), _COMMUNITY_DOWNLOAD_URL_CASES)
 def test_community_download_documented_character_allowlist(kind, url, allowed):
     """Exercise the documented regex, not an agent's adherence to the instructions."""
@@ -1240,7 +1254,7 @@ def test_community_download_documented_character_allowlist(kind, url, allowed):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("url", [url for url, _ in _COMMUNITY_DOWNLOAD_URL_CASES])
 def test_community_download_command_treats_url_file_as_data(kind, url, tmp_path):
     """Even data rejected by the documented allowlist cannot become shell syntax."""

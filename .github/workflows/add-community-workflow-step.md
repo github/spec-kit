@@ -296,6 +296,8 @@ mismatching submitted digest to make it pass.
 
 On exit zero, the helper prints the complete per-file `sha256` mapping and
 total `bytes` as JSON and leaves the manifest at `/tmp/gh-aw/step-file.bin`.
+It also stores the complete download receipt at `/tmp/gh-aw/step-downloads.json`;
+do not edit or reconstruct this receipt.
 Only use this complete-package success result; record the digests and inspect
 the retained manifest as data. A failed or blocked file prevents the entire
 package from passing.
@@ -355,6 +357,29 @@ a maintainer repair, not a submitter failure. Never invent historical hashes
 or discard history. Consult the repository-owned catalog contract in
 `src/specify_cli/workflows/step/catalog/_versions.py`.
 
+### Snapshot the validated catalog update
+
+Following the preset submission verifier's snapshot/generated-check pattern,
+run the repository-owned verifier against the original catalog before any
+catalog edits. Complete `catalog_entry` in the submission JSON with all validated
+metadata, including `id`, `version`, and `verified: false`. Set `metadata_only`
+to JSON `true` only when the author explicitly requests a same-version metadata
+correction; never infer that authorization from a validation failure.
+
+```bash
+python3 .github/scripts/validate_community_workflow_step.py snapshot --submission /tmp/gh-aw/step-submission.json
+```
+
+The verifier reads the original catalog and download receipt, validates version
+ordering and historical file digests, and writes the exact expected catalog to
+`/tmp/gh-aw/step-catalog-snapshot.json`. Existing history, original `created_at`,
+unrelated entries, schema/catalog URL, and optional discovery metadata are
+preserved. Current release-specific fields are replaced rather than inherited.
+For a version update, the prior current file metadata is migrated to history.
+Missing or malformed existing release digests are Blocked (exit 2); downgrade
+or unapproved/content-changing same-version updates fail (exit 1).
+Do not edit or regenerate the snapshot after catalog changes.
+
 ## 3. Apply exactly one outcome
 
 Use safe-output label arrays of plain strings, never suggestion-only objects.
@@ -387,7 +412,8 @@ described above. Set `verified: false`, set entry and top-level `updated_at`
 to today's UTC date at midnight, and set `created_at` only for new entries.
 Sort entries by Step ID; use two-space JSON indentation and a trailing newline.
 Validate the complete JSON using repository-owned Python, without importing
-the submitted step.
+the submitted step. Use the verifier's `expected_catalog` snapshot to perform
+the catalog update; do not recreate history or timestamps from memory.
 
 Add or update one row in the Available Step Types table, sorted by Step Type Name.
 Like other community submission tables, this table does not conflate package
@@ -406,6 +432,18 @@ Preserve the existing Decision listing and its compatibility/dependency notes
 and maintainer attribution in prose when processing unrelated submissions.
 Never replace maintainer attribution with the package Author. For an update to a listed step with
 version-specific notes, update those notes from validated release documentation.
+
+Before emitting a PR safe output, verify the generated catalog:
+
+```bash
+python3 .github/scripts/validate_community_workflow_step.py generated --submission /tmp/gh-aw/step-submission.json
+```
+
+Exit zero means the complete catalog matches the snapshot, including prior
+release migration and unchanged historical records. Exit 3 is an agent-generated
+catalog error: repair the catalog and rerun this check using the original
+snapshot, not a submitter failure. Exit 2 is Blocked. Never create a PR or
+report success while this check is incomplete or failing.
 
 ## 5. Create one draft PR
 

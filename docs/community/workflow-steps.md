@@ -184,3 +184,7 @@ successful publication of the draft catalog PR.
 New versions preserve existing catalog release history. Same-version metadata
 repairs must be identified explicitly and cannot replace file URLs or digests;
 publish a new version when package content changes.
+The repository-owned verifier snapshots the expected catalog before edits and
+checks the complete generated catalog before PR creation, including migration
+of the previous current release and preservation of history. Missing existing
+release digests block publication pending maintainer repair.
