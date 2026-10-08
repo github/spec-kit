@@ -397,18 +397,26 @@ class TestIntegrationUpgradeDetailed:
         assert (prompts / "speckit-plan.md").is_file()
         assert (prompts / "speckit-git-commit.md").is_file()
 
+    @pytest.mark.parametrize("empty_manifest", [False, True])
     def test_upgrade_refuses_kiro_prompt_rename_while_presets_are_installed(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, empty_manifest
     ):
         """A preset override shares its path with the command it overrides,
         and its rescaffold is best-effort. If the preset can't be
         re-registered, the rename would leave only the core prompt, so
         upgrade refuses before changing files, even with ``--force`` (#4797),
-        as for the Kilo command-root and command/skills layout migrations."""
+        as for the Kilo command-root and command/skills layout migrations.
+        An integration manifest with empty ``files`` doesn't show the rename,
+        but the dotted prompts still on disk do."""
         preset_src = _write_command_preset(tmp_path, "cmd-preset")
         project = _init_dotted_kiro_project(
             tmp_path, monkeypatch, ["preset", "add", "--dev", str(preset_src)]
         )
+        if empty_manifest:
+            manifest_path = project / ".specify/integrations/kiro-cli.manifest.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            manifest["files"] = {}
+            manifest_path.write_bytes(json.dumps(manifest).encode())
         prompts = project / ".kiro" / "prompts"
         before = {path.name: path.read_bytes() for path in prompts.iterdir()}
         assert b"Overridden plan content" in before["speckit.plan.md"]

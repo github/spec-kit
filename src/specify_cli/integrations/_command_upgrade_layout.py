@@ -96,6 +96,22 @@ def _command_file_names_changed(integration, old_files, new_files) -> bool:
     return bool(removed & added)
 
 
+def _command_files_on_disk(project_root, integration) -> set[str]:
+    """Return manifest keys for the entries directly in the command dir."""
+    commands_dir = (integration.registrar_config or {}).get("dir")
+    if not isinstance(commands_dir, str) or not commands_dir.strip():
+        return set()
+    try:
+        with os.scandir(Path(project_root) / commands_dir) as entries:
+            return {
+                (PurePath(commands_dir) / entry.name).as_posix()
+                for entry in entries
+                if not entry.is_dir(follow_symlinks=False)
+            }
+    except (FileNotFoundError, NotADirectoryError):
+        return set()
+
+
 class _ExtensionRegistryUnreadableError(Exception):
     """Raised when the extension registry can't show who owns a command file.
 

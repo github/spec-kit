@@ -17,6 +17,7 @@ from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
     _check_extension_command_claims,
     _command_file_names_changed,
+    _command_files_on_disk,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
@@ -202,6 +203,14 @@ def integration_upgrade(
     renamed = _command_file_names_changed(
         integration, old_manifest.files, planned_command_files
     )
+    if not renamed and key == "kiro-cli":
+        # The manifest may not show the rename (e.g. empty ``files``); the
+        # dotted core prompts still on disk do.
+        renamed = _command_file_names_changed(
+            integration,
+            _command_files_on_disk(project_root, integration) - planned_command_files,
+            planned_command_files,
+        )
     untracked = [rel for rel in planned_command_files if rel not in old_manifest.files]
     if renamed:
         try:
