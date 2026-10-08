@@ -89,8 +89,20 @@ def _validate_pinned_install_metadata(component: ComponentRef, selected: dict) -
             )
         return value
 
-    if component.kind == "extensions":
+    if component.kind in ("extensions", "presets"):
+        from ..shared_infra import _SHA256_HEX_RE
+
         require_url(selected.get("download_url"), "download URL")
+        digest = selected.get("sha256")
+        if digest is not None:
+            value = str(digest).strip()
+            if value[:7].lower() == "sha256:":
+                value = value[7:].strip()
+            if not _SHA256_HEX_RE.fullmatch(value.lower()):
+                raise BundlerError(
+                    f"{component.kind[:-1]} '{component.id}' has an invalid SHA-256 "
+                    f"digest for pinned version {component.version}."
+                )
         return
 
     if component.kind == "workflows":
@@ -153,7 +165,7 @@ def _catalog_has_release(component: ComponentRef, catalog) -> bool:
         or not _matches_pin(component, selected.get("version"))
     ):
         return False
-    if component.kind in ("extensions", "workflows", "steps"):
+    if component.kind in ("extensions", "presets", "workflows", "steps"):
         _validate_pinned_install_metadata(component, selected)
     return True
 

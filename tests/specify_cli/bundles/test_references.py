@@ -36,7 +36,7 @@ def _mock_catalog(monkeypatch, catalog_type, kind, component_id, record, *, name
 
 
 def _installable_current(kind: str) -> dict:
-    if kind == "extensions":
+    if kind in ("extensions", "presets"):
         return {
             "version": "1.0.0",
             "download_url": "https://example.com/release.zip",
@@ -197,7 +197,8 @@ def test_bundled_preset_pin_mismatch_is_definitive(
     )
     monkeypatch.setattr(assets, "_locate_bundled_preset", lambda _id: bundled)
     _mock_catalog(
-        monkeypatch, PresetCatalog, "presets", "requested", {"version": "2.0.0"}
+        monkeypatch, PresetCatalog, "presets", "requested",
+        {"version": "2.0.0", "download_url": "https://example.com/release.zip"}
     )
     warnings = []
     check = make_reference_checker(tmp_path, allow_network=allow_network, warnings=warnings)
@@ -594,6 +595,50 @@ def test_online_validation_accepts_safe_pinned_extension_url(
     assert check(_ref(
         "extensions", "valid-extension", "1.0.0" if historical else "2.0.0"
     )) is None
+    assert warnings == []
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"download_url": None},
+        {"download_url": "http://example.com/release.zip"},
+        {"sha256": "not-a-digest"},
+    ],
+)
+def test_online_validation_rejects_malformed_current_component_metadata(
+    tmp_path, monkeypatch, kind, change,
+):
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+
+    catalog = ExtensionCatalog if kind == "extensions" else PresetCatalog
+    _mock_catalog(
+        monkeypatch, catalog, kind, "malformed-current",
+        {**_installable_current(kind), **change},
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(_ref(kind, "malformed-current"))
+    assert problem is not None and "Catalog lookup failed" in problem
+    assert warnings == []
+
+
+@pytest.mark.parametrize("digest", [None, "a" * 64, "sha256:" + "A" * 64])
+def test_online_validation_accepts_current_preset_metadata(tmp_path, monkeypatch, digest):
+    from specify_cli.presets import PresetCatalog
+
+    record = _installable_current("presets")
+    record["sha256"] = digest
+    _mock_catalog(
+        monkeypatch, PresetCatalog, "presets", "valid-current", record,
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(_ref("presets", "valid-current")) is None
     assert warnings == []
 
 
