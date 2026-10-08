@@ -195,10 +195,6 @@ class JunieIntegration(MarkdownIntegration):
         ``post_process_command_content``) applies these transforms to
         extension/preset command files too, not just core commands.
         """
-        # FR-001: Detect $ARGUMENTS before transformation.
-        # Use a token-aware search and avoid matching escaped $$ARGUMENTS.
-        has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", content))
-
         # If it has frontmatter, we must isolate it to avoid transforming variables
         # inside the YAML header (e.g. key: $VAL should not become key: $$VAL).
         if content.startswith("---"):
@@ -210,6 +206,7 @@ class JunieIntegration(MarkdownIntegration):
             frontmatter_block = f"---{parts[1]}---"
             body = parts[2]
 
+            has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", body))
             updated_body = self._inject_hook_command_note(body)
             updated_body = self._rewrite_handoff_references(updated_body)
             updated_body = self._transform_body_variables(updated_body)
@@ -221,6 +218,7 @@ class JunieIntegration(MarkdownIntegration):
             )
 
         # No frontmatter case.
+        has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", content))
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
         # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence.

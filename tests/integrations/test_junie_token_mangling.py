@@ -64,6 +64,20 @@ def test_junie_frontmatter_preservation():
     # Body should still be transformed
     assert "body with $$HOME" in updated
 
+def test_junie_arguments_scope():
+    """Verify that $ARGUMENTS in frontmatter does not trigger allowPromptArgument."""
+    junie = get_integration("junie")
+
+    # Case 1: $ARGUMENTS in frontmatter only
+    content = "---\ndescription: Use $ARGUMENTS\n---\nbody"
+    updated = junie.post_process_command_content(content)
+    assert "allowPromptArgument: false" in updated
+
+    # Case 2: $ARGUMENTS in body only
+    content = "---\ndescription: none\n---\nRun $ARGUMENTS"
+    updated = junie.post_process_command_content(content)
+    assert "allowPromptArgument: true" in updated
+
 def test_transform_body_variables_direct():
     """Directly test _transform_body_variables with various tokens."""
     junie = get_integration("junie")
