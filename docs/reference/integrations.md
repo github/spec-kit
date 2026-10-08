@@ -165,6 +165,11 @@ See the [catalog schema](../../integrations/README.md#catalog-schema).
 Search advertises `specify integration install <id>` for install-enabled sources;
 discovery-only results do not advertise installation.
 
+`specify check` probes an external adapter's required descriptor tools rather
+than its catalog ID. With no required tools declared, CLI adapters are checked
+using their runtime executable; optional tools do not produce missing-tool
+errors. These checks do not run the executable or invoke generic version probes.
+
 A package contains root `integration.yml` and `__init__.py`, not a copied
 inventory of Spec Kit's commands. The host renders shared templates through the
 adapter and registers installed extension/preset contributions for the default

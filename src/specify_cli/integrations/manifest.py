@@ -50,6 +50,25 @@ def _validate_rel_path(rel: Path, root: Path) -> Path:
     return resolved
 
 
+def _validate_record_path(rel: Path, root: Path) -> Path:
+    """Reject noncanonical and symlinked lexical paths before resolution."""
+    if rel.is_absolute() or ".." in rel.parts:
+        _validate_rel_path(rel, root)
+        raise ValueError(
+            f"Manifest paths must be canonical; '..' segments are not "
+            f"allowed (got {rel})"
+        )
+    current = root
+    for part in rel.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(
+                f"Refusing to record symlinked manifest path: {rel} "
+                f"(symlinked at {current.relative_to(root).as_posix()})"
+            )
+    return _validate_rel_path(rel, root)
+
+
 def _manifest_path_label(root: Path, path: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
@@ -150,12 +169,14 @@ class IntegrationManifest:
         ``record_existing(recovered=True)``, the recovered marker is
         cleared because the bytes are now produced, not merely observed.
 
-        Raises ``ValueError`` if *rel_path* resolves outside the project root.
+        Raises ``ValueError`` if *rel_path* is noncanonical, symlinked, or
+        resolves outside the project root.
         """
         rel = Path(rel_path)
-        abs_path = _validate_rel_path(rel, self.project_root)
+        abs_path = _validate_record_path(rel, self.project_root)
         before_file_change(abs_path)
         abs_path.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_safe_manifest_destination(self.project_root, abs_path)
 
         if isinstance(content, str):
             content = content.encode("utf-8")
@@ -193,34 +214,7 @@ class IntegrationManifest:
                 ``ValueError``.
         """
         rel = Path(rel_path)
-        # Cheap lexical pre-check first so absolute / parent-traversal paths
-        # don't trigger a filesystem stat outside the project root before
-        # ``_validate_rel_path`` raises. ``_validate_rel_path`` produces the
-        # canonical error messages used elsewhere.
-        if rel.is_absolute() or ".." in rel.parts:
-            _validate_rel_path(rel, self.project_root)
-            # _validate_rel_path raised for any actually-escaping path. If we reach
-            # here the path normalizes inside root (e.g. ``dir/../file.txt``).
-            # Reject anyway: manifest keys must be canonical so ``check_modified``
-            # and ``uninstall`` cannot key the same file under two paths.
-            raise ValueError(
-                f"Manifest paths must be canonical; '..' segments are not "
-                f"allowed (got {rel})"
-            )
-        # Walk each path component before resolution so a symlinked ancestor
-        # (e.g. ``linked_dir/file.txt`` where ``linked_dir`` is a symlink)
-        # cannot be silently followed by ``_validate_rel_path().resolve()``
-        # down to a target outside the project root. ``_ensure_safe_manifest_directory``
-        # uses the same pattern.
-        _walk = self.project_root
-        for part in rel.parts:
-            _walk = _walk / part
-            if _walk.is_symlink():
-                raise ValueError(
-                    f"Refusing to record symlinked manifest path: {rel} "
-                    f"(symlinked at {_walk.relative_to(self.project_root).as_posix()})"
-                )
-        abs_path = _validate_rel_path(rel, self.project_root)
+        abs_path = _validate_record_path(rel, self.project_root)
         if not abs_path.is_file():
             raise ValueError(
                 f"Manifest path is not a regular file: {rel}"

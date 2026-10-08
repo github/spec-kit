@@ -3558,3 +3558,200 @@ def test_retained_registrar_rechecks_revoked_local_consent_before_rendering(tmp_
             "sample", source, project,
         )
     assert snapshot(project) == before
+
+
+@pytest.mark.parametrize("link_kind", ["leaf", "ancestor", "dangling-leaf"])
+def test_manifest_setup_rejects_project_local_symlink_targets(tmp_path, server, link_kind):
+    relative = (
+        ".sample-agent/skills/linked-dir/target.txt"
+        if link_kind == "ancestor" else ".sample-agent/skills/link.txt"
+    )
+    body = f'''    def setup(self, project_root, manifest, **kwargs):
+        manifest.record_file({relative!r}, "replacement")
+        return []
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    target_dir = project / "user"
+    target_dir.mkdir()
+    target = target_dir / "target.txt"
+    if link_kind != "dangling-leaf":
+        target.write_text("user content")
+    link = project / (
+        ".sample-agent/skills/linked-dir" if link_kind == "ancestor"
+        else ".sample-agent/skills/link.txt"
+    )
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target_dir if link_kind == "ancestor" else target, target_is_directory=link_kind == "ancestor")
+    before = snapshot(project)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "py"])
+    assert result.exit_code == 1, result.output
+    assert "symlinked" in result.output.lower()
+    assert snapshot(project) == before
+    assert link.is_symlink()
+    assert KEY not in read_records(project)
+
+
+@pytest.mark.parametrize("source", [
+    "descriptor", "runtime", "override", "interactive", "optional-only", "ide-descriptor",
+])
+@pytest.mark.parametrize("available", [False, True])
+def test_check_probes_external_adapter_tools_not_catalog_ids(tmp_path, server, monkeypatch, source, available):
+    metadata = descriptor()
+    if source in {"descriptor", "ide-descriptor"}:
+        metadata["requires"]["tools"] = [
+            {"name": "acme", "version": ">=1.0"},
+            {"name": "optional-helper", "required": False},
+        ]
+    elif source == "optional-only":
+        metadata["requires"]["tools"] = [{"name": "optional-helper", "required": False}]
+    body = '''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None, project_root=None):
+        return ["acme", "-p", prompt]
+'''
+    if source in {"descriptor", "ide-descriptor"}:
+        body = '''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None, project_root=None):
+        raise AssertionError("explicit tool requirements must not invoke the runtime builder")
+'''
+    if source == "override":
+        body = ""
+        monkeypatch.setenv("SPECKIT_INTEGRATION_SAMPLE_AGENT_EXECUTABLE", "acme")
+    elif source == "interactive":
+        body = '''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None, project_root=None):
+        return None
+'''
+        monkeypatch.setenv("SPECKIT_INTEGRATION_SAMPLE_AGENT_EXECUTABLE", "acme")
+    code = implementation(flavor="markdown", body=body)
+    if source != "ide-descriptor":
+        code = code.replace('"requires_cli": False', '"requires_cli": True')
+    publish(server, metadata=metadata, code=code)
+    monkeypatch.setattr(shutil, "which", lambda name, *args, **kwargs: "/sample/acme" if name == "acme" else None)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    probes = []
+
+    def which(name, *args, **kwargs):
+        probes.append(name)
+        return "/sample/acme" if name == "acme" and available else None
+
+    def no_process(*args, **kwargs):
+        raise AssertionError("tool checks must not execute processes")
+
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(subprocess, "run", no_process)
+    monkeypatch.setattr("specify_cli._utils.CLAUDE_LOCAL_PATH", tmp_path / "absent-claude")
+    monkeypatch.setattr("specify_cli._utils.CLAUDE_NPM_LOCAL_PATH", tmp_path / "absent-npm-claude")
+    result = run(project, ["check"])
+    assert result.exit_code == 0, result.output
+    assert "acme" in probes
+    assert KEY not in probes
+    assert "optional-helper" not in probes
+    assert "acme" in result.output
+    assert ("Tip: Install a coding agent" in result.output) == (not available)
+
+
+@pytest.mark.parametrize("missing", ["acme", "required-helper"])
+def test_check_reports_missing_external_auxiliary_requirements(tmp_path, server, monkeypatch, missing):
+    metadata = descriptor()
+    metadata["requires"]["tools"] = [
+        {"name": "acme"},
+        {"name": "required-helper", "required": True},
+        {"name": "acme"},
+        {"name": "optional-helper", "required": False},
+    ]
+    publish(server, metadata=metadata)
+    monkeypatch.setattr(shutil, "which", lambda name, *args, **kwargs: "/sample/tool")
+    project = catalog_project(tmp_path, server)
+    install(project)
+    probes = []
+
+    def which(name, *args, **kwargs):
+        probes.append(name)
+        return "/sample/tool" if name in {"acme", "required-helper"} and name != missing else None
+
+    monkeypatch.setattr(shutil, "which", which)
+    result = run(project, ["check"])
+    assert result.exit_code == 0, result.output
+    assert probes.count("acme") == 1
+    assert probes.count("required-helper") == 1
+    assert "optional-helper" not in probes
+    assert KEY not in probes
+    assert f"not found: {missing}" in result.output
+
+
+def test_check_skips_optional_tools_for_external_ide_adapter(tmp_path, server, monkeypatch):
+    metadata = descriptor()
+    metadata["requires"]["tools"] = [{"name": "optional-helper", "required": False}]
+    publish(server, metadata=metadata)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    probes = []
+
+    def which(name, *args, **kwargs):
+        probes.append(name)
+        return None
+
+    monkeypatch.setattr(shutil, "which", which)
+    result = run(project, ["check"])
+    assert result.exit_code == 0, result.output
+    assert KEY not in probes
+    assert "optional-helper" not in probes
+    assert "Sample Agent" in result.output
+    assert "IDE-based, no CLI check" in result.output
+
+
+@pytest.mark.parametrize("error_type", ["ValueError", "OSError", "NotImplementedError"])
+def test_check_external_executable_resolution_errors_are_explicit(tmp_path, server, monkeypatch, error_type):
+    body = f'''
+    def build_exec_args(self, prompt, *, model=None, output_json=True,
+                        integration_args=None, integration_options=None, project_root=None):
+        raise {error_type}("sample executable lookup failure [red]")
+'''
+    code = implementation(flavor="markdown", body=body).replace('"requires_cli": False', '"requires_cli": True')
+    publish(server, code=code)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    result = run(project, ["check"])
+    assert result.exit_code == 1, result.output
+    assert f"Cannot check integration '{KEY}'" in result.output
+    assert "sample executable lookup failure [red]" in " ".join(result.output.split())
+    assert "Specify CLI is ready to use" not in result.output
+
+
+def test_check_rejects_missing_external_requirements_before_tool_probes(tmp_path, server, monkeypatch):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    path = project / ".specify/integrations/packages.json"
+    data = json.loads(path.read_text())
+    data["packages"][KEY].pop("requires")
+    path.write_text(json.dumps(data))
+
+    def no_probe(*args, **kwargs):
+        raise AssertionError("invalid metadata must fail before tool checks")
+
+    monkeypatch.setattr(shutil, "which", no_probe)
+    result = run(project, ["check"])
+    assert result.exit_code == 1, result.output
+    assert "invalid package metadata: requires" in result.output
+
+
+def test_check_renders_external_adapter_names_as_literal_text(tmp_path, server, monkeypatch):
+    name = "Sample Agent [red]Preview[/red]"
+    metadata = descriptor()
+    metadata["integration"]["name"] = name
+    metadata["requires"]["tools"] = [{"name": "acme"}]
+    code = implementation().replace('"name": "Sample Agent"', f'"name": "{name}"')
+    publish(server, metadata=metadata, code=code)
+    monkeypatch.setattr(shutil, "which", lambda tool, *args, **kwargs: "/sample/acme" if tool == "acme" else None)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    result = run(project, ["check"])
+    assert result.exit_code == 0, result.output
+    assert name in result.output

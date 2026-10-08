@@ -106,10 +106,12 @@ When present in a descriptor or catalog entry, each must be a non-empty string.
 Their types are validated before importing package code and on installed reload.
 `requires.tools` is an optional list of mappings with a non-empty `name`,
 optional boolean `required` (default `true`), and optional PEP 440 `version`
-constraint. Installation checks required tools on PATH; tool version detection
-is adapter-specific, not a generic invocation of arbitrary `--version`
-commands. The Spec Kit constraint is parsed and enforced on install and load,
-including development versions. Legacy `provides.commands` and
+constraint. Installation and `specify check` probe required descriptor tools on
+PATH. If a CLI adapter declares no required tools, `specify check` probes its
+runtime executable rather than assuming its catalog ID is an executable.
+Tool version detection is adapter-specific, not a generic invocation of arbitrary
+`--version` commands. The Spec Kit constraint is parsed and enforced on install
+and load, including development versions. Legacy `provides.commands` and
 `provides.scripts` remain accepted and validated as optional metadata, but
 are neither required nor used to install core commands.
 
@@ -274,8 +276,11 @@ extension/preset rendering caches participate in the journal without becoming
 uninstall-owned files. Existing built-in home-scoped destinations are journaled
 only for participating built-ins; external adapters remain project-local.
 Host write helpers reject symlinked destinations and ancestors before creating
-directories or writing. Removing an owned leaf symlink unlinks the link itself
-without following its target; declared output directories cannot be symlinks.
+directories or writing. Manifest recording validates lexical paths before
+resolution, including project-local and dangling symlinks, so resolution cannot
+hide a link to an unrelated project file. Removing an owned leaf symlink unlinks
+the link itself without following its target; declared output directories cannot
+be symlinks.
 Cancelling initialization discards the prepared adapter without installing code
 or reporting success. Stable lifecycle locks are user-local and keyed by
 canonical project root, so cancellation does not create target lock scaffolding;

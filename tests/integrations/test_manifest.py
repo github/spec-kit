@@ -33,6 +33,50 @@ class TestManifestRecordFile:
         m.record_existing("existing.txt")
         assert m.files["existing.txt"] == _sha256(f)
 
+    @pytest.mark.parametrize("link_kind", ["leaf", "ancestor", "dangling-leaf", "dangling-ancestor"])
+    @pytest.mark.parametrize("content", ["replacement", b"replacement"])
+    def test_record_file_rejects_lexical_symlinks(self, tmp_path, link_kind, content):
+        target_dir = tmp_path / "user"
+        target_dir.mkdir()
+        target = target_dir / "target.txt"
+        if not link_kind.startswith("dangling"):
+            target.write_text("user content")
+        if link_kind.endswith("leaf"):
+            link = tmp_path / "link.txt"
+            relative = "link.txt"
+            link.symlink_to(target)
+        else:
+            link = tmp_path / "linked-dir"
+            relative = "linked-dir/target.txt"
+            link.symlink_to(target_dir if link_kind == "ancestor" else tmp_path / "missing-dir", target_is_directory=True)
+        before = target.read_bytes() if target.exists() else None
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="symlinked"):
+            m.record_file(relative, content)
+        assert m.files == {}
+        assert link.is_symlink()
+        assert (target.read_bytes() if target.exists() else None) == before
+        assert not (tmp_path / "missing-dir").exists()
+
+    def test_record_file_rejects_noncanonical_parent_segments(self, tmp_path):
+        (tmp_path / "nested").mkdir()
+        target = tmp_path / "safe.txt"
+        target.write_text("user content")
+        m = IntegrationManifest("test", tmp_path)
+        with pytest.raises(ValueError, match="canonical"):
+            m.record_file("nested/../safe.txt", "replacement")
+        assert target.read_text() == "user content"
+        assert m.files == {}
+
+    @pytest.mark.parametrize("content", ["replacement", b"replacement"])
+    def test_record_file_can_replace_a_regular_existing_file(self, tmp_path, content):
+        target = tmp_path / "target.txt"
+        target.write_text("original")
+        m = IntegrationManifest("test", tmp_path)
+        assert m.record_file("target.txt", content) == target
+        assert target.read_bytes() == b"replacement"
+        assert m.files == {"target.txt": hashlib.sha256(b"replacement").hexdigest()}
+
 
 class TestManifestRecordExistingErrors:
     """Error-case coverage for ``record_existing`` symlink + non-file guards.
