@@ -273,7 +273,7 @@ Spec Kit stores project-level extension registration and hook configuration in:
 .specify/extensions.yml
 ```
 
-The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
+The file contains installed extensions, global settings, and hooks that are resolved by pre/post scripts before or after Spec Kit commands.
 
 ```yaml
 installed:
@@ -315,17 +315,19 @@ Each hook entry supports the following fields:
 | `extension` | ID of the extension that registered the hook. |
 | `command` | Extension command associated with the hook. |
 | `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
-| `optional` | Whether the hook is optional. If `true`, the hook is presented with its `prompt` and can be skipped; if `false`, the hook is emitted as an automatic hook (includes `EXECUTE_COMMAND` markers). |
-| `priority` | Priority metadata for the hook. Registered hook entries use integer values >= 1; entries installed from manifests default to `10` when no priority is declared. Current command templates surface hooks in their configured YAML order and do not sort them by `priority`. |
+| `optional` | Whether the hook is optional. If `true`, the hook is presented with its `prompt` and can be skipped; if `false`, the agent invokes it and waits for completion. |
+| `priority` | Registered hook entries use integer values >= 1; entries installed from manifests default to `10` when no priority is declared. Core command dispatchers sort by ascending priority, preserving file order for ties. |
 | `prompt` | Message shown when asking whether to run an optional hook. |
 | `description` | Human-readable explanation of what the hook does. |
-| `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
+| `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Core command dispatchers preserve the existing prompt behavior: skip hooks with a non-empty condition rather than evaluating it. |
 
 Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
 
 Extension manifests reject invalid hook priorities during installation. For existing `.specify/extensions.yml` entries, `HookExecutor.get_hooks_for_event()` sorts with `normalize_priority()`: missing values, booleans, non-numeric values rejected by `int()`, and values less than `1` fall back to `10`; numeric strings and finite floats are coerced with `int()`, while non-finite floats are unsupported and may fail instead of falling back.
 
-`HookExecutor.get_hooks_for_event()` returns hooks ordered by `priority`, with lower values first. However, current command templates read hook lists directly and surface them in their configured YAML order rather than using priority ordering.
+Core commands run two hook dispatchers, one before and one after their main work, using the project's selected `sh`, `ps`, or `py` script type. Each variant resolves hooks independently and returns JSON containing the event and an ordered `hooks` array (`extension`, `command`, `optional`, `description`, `prompt`, `priority`). An absent configuration or event returns an empty array. An unreadable or invalid configuration returns an `error` and a nonzero exit code; agents must report that no hooks were checked, including mandatory hooks, and then continue the core command. The dispatchers determine the order but do not execute agent commands. The Python variant needs Python 3 with PyYAML when `.specify/extensions.yml` exists; Bash and PowerShell do not use Python or PyYAML.
+
+The native Bash and PowerShell resolvers support the CLI's pretty-printed `.specify/extensions.yml` layout: a `hooks:` mapping, event names indented two spaces, list items under each event, and single-line scalar fields (including quoted strings and common escapes). Other YAML constructs such as anchors, flow-style hook lists, and block scalars are not supported; these variants reject them explicitly rather than silently skipping hooks. The CLI writes hook configuration in this canonical layout without wrapping long scalar values. The Python variant accepts general YAML through PyYAML.
 
 ## FAQ
 

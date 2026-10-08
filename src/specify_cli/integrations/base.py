@@ -784,6 +784,28 @@ class IntegrationBase(ABC):
         return f"{interpreter} {script_command}"
 
     @staticmethod
+    def resolve_hook_script_refs(
+        content: str, script_type: str, project_root: Path | None = None
+    ) -> str:
+        """Replace hook script placeholders using the command's script variant."""
+        if "{PRE_HOOK_SCRIPT}" not in content and "{POST_HOOK_SCRIPT}" not in content:
+            return content
+        variant = script_type if script_type in ("sh", "ps", "py") else (
+            "ps" if os.name == "nt" else "sh"
+        )
+        for phase, name in (("PRE", "pre"), ("POST", "post")):
+            if variant == "py":
+                command = IntegrationBase.build_python_invocation(
+                    f"scripts/python/{name}_hooks.py", project_root
+                )
+            elif variant == "ps":
+                command = f"scripts/powershell/{name}-hooks.ps1"
+            else:
+                command = f"scripts/bash/{name}-hooks.sh"
+            content = content.replace(f"{{{phase}_HOOK_SCRIPT}}", command)
+        return content
+
+    @staticmethod
     def select_script_variant(
         requested: object, script_commands: dict[str, str]
     ) -> str:
@@ -895,6 +917,10 @@ class IntegrationBase(ABC):
                     script_command, project_root
                 )
             content = content.replace("{SCRIPT}", script_command)
+
+        content = IntegrationBase.resolve_hook_script_refs(
+            content, selected_script_type or script_type, project_root
+        )
 
         # 3. Strip scripts: section from frontmatter
         lines = content.splitlines(keepends=True)

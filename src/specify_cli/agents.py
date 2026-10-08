@@ -554,6 +554,13 @@ class CommandRegistrar:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
+        if "{PRE_HOOK_SCRIPT}" in body or "{POST_HOOK_SCRIPT}" in body:
+            from specify_cli.integrations.base import IntegrationBase
+
+            body = IntegrationBase.resolve_hook_script_refs(
+                body, script_variant or "", project_root
+            )
+
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
         return CommandRegistrar.rewrite_project_relative_paths(

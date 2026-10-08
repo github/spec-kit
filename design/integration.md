@@ -75,6 +75,15 @@ adding per-agent wrapper scripts. For `generic`, extension registration
 resolves the persisted `--commands-dir` rather than the static registry
 placeholder; `--skills` emits skills into that same directory.
 
+Core command templates also use `{PRE_HOOK_SCRIPT}` and `{POST_HOOK_SCRIPT}`.
+Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
+script; the shared-infrastructure installer includes the selected native
+pre/post entry points. Each variant resolves hooks in its own runtime, without
+depending on another variant. The resolver returns ordered hook metadata as
+JSON; agent commands themselves remain the responsibility of the agent. The
+command/skill registrar resolves these placeholders too when a preset wraps
+a core command.
+
 ## Ownership and lifecycle
 
 An installation records its files and SHA-256 hashes in

@@ -341,9 +341,8 @@ class TestAgyHookCommandNote:
         specify_skill = tmp_path / ".agents/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
-        assert "replace dots" in content, (
-            "speckit-specify should have dot-to-hyphen hook note"
-        )
+        assert ".specify/scripts/bash/pre-hooks.sh specify" in content
+        assert ".specify/scripts/bash/post-hooks.sh specify" in content
         rel_key = ".agents/skills/speckit-specify/SKILL.md"
         assert rel_key in m.files
         assert (

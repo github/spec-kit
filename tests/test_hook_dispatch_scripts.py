@@ -1,0 +1,313 @@
+"""Positive and negative coverage for pre/post extension hook resolution."""
+
+import json
+import shutil
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).parent.parent
+PYTHON = ROOT / "scripts" / "python"
+
+
+def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
+    scripts = {
+        "py": [sys.executable, str(PYTHON / f"{phase}_hooks.py")],
+        "sh": [str(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")],
+        "ps": ["pwsh", "-NoProfile", "-File", str(ROOT / "scripts" / "powershell" / f"{phase}-hooks.ps1")],
+    }
+    env = os.environ.copy()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    if extra_env:
+        env.update(extra_env)
+    result = subprocess.run(scripts[variant] + [name], cwd=tmp_path, env=env, capture_output=True, text=True)
+    return result.returncode, json.loads(result.stdout)
+
+
+def write_config(tmp_path, text):
+    path = tmp_path / ".specify" / "extensions.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+def test_absent_config_returns_empty(tmp_path, phase, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0
+    assert data == {"event": f"{'before' if phase == 'pre' else 'after'}_plan", "hooks": []}
+
+
+def test_hooks_sorted_and_filtered_with_stable_ties(tmp_path):
+    write_config(tmp_path, yaml.safe_dump({"hooks": {"before_plan": [
+        {"extension": "late", "command": "speckit.late.run", "priority": 20, "optional": False},
+        {"extension": "first", "command": "speckit.first.run", "priority": 5, "optional": False},
+        {"extension": "second", "command": "speckit.second.run", "priority": "5", "prompt": "Run second?"},
+        {"extension": "disabled", "command": "speckit.disabled.run", "enabled": False},
+        {"extension": "conditional", "command": "speckit.conditional.run", "condition": "env.CI is set"},
+        {"extension": "default", "command": "speckit.default.run"},
+    ]}}, sort_keys=False))
+    code, data = run_hook(tmp_path)
+    assert code == 0
+    assert [h["extension"] for h in data["hooks"]] == ["first", "second", "default", "late"]
+    assert [h["priority"] for h in data["hooks"]] == [5, 5, 10, 20]
+    assert data["hooks"][0]["optional"] is False
+    assert data["hooks"][1]["prompt"] == "Run second?"
+    assert data["hooks"][2]["optional"] is True
+    assert data["hooks"][2]["description"] == ""
+
+
+def test_post_rereads_config_and_only_returns_matching_event(tmp_path):
+    config = write_config(tmp_path, "hooks:\n  after_plan: []\n")
+    assert run_hook(tmp_path, "post")[1]["hooks"] == []
+    config.write_text("hooks:\n  after_plan:\n    - extension: git\n      command: speckit.git.commit\n", encoding="utf-8")
+    assert run_hook(tmp_path, "post")[1]["hooks"][0]["command"] == "speckit.git.commit"
+    assert run_hook(tmp_path, "pre")[1]["hooks"] == []
+
+
+@pytest.mark.parametrize("text,part", [
+    ("hooks: [wrong]", "hooks mapping"),
+    ("[]", "hooks mapping"),
+    ("hooks:\n  before_plan: wrong\n", "must be a list"),
+    ("hooks:\n  before_plan:\n    - wrong\n", "must be a mapping"),
+    ("hooks:\n  before_plan:\n    - extension: git\n", "needs extension and command"),
+    ("hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n      enabled: 'false'\n", "enabled must be a boolean"),
+    ("hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n      optional: 'false'\n", "optional must be a boolean"),
+    ("hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n      prompt: [not, text]\n", "prompt must be a string"),
+    ("hooks: [\n", "Could not read"),
+])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_invalid_config_reports_error(tmp_path, text, part, phase):
+    if phase == "post":
+        text = text.replace("before_plan", "after_plan")
+    write_config(tmp_path, text)
+    code, data = run_hook(tmp_path, phase)
+    assert code == 1
+    assert part in data["error"]
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("priority,expected", [
+    (False, 10), (0, 10), ("bad", 10), ("2", 2), (2.8, 2),
+])
+def test_legacy_priority_normalization(tmp_path, priority, expected):
+    write_config(tmp_path, yaml.safe_dump({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "priority": priority}
+    ]}}))
+    code, data = run_hook(tmp_path)
+    assert code == 0
+    assert data["hooks"][0]["priority"] == expected
+
+
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_invalid_command_name_does_not_read_config(tmp_path, phase):
+    write_config(tmp_path, "hooks: [\n")
+    code, data = run_hook(tmp_path, phase, "../../bad")
+    assert code == 1
+    assert "Invalid hook event" in data["error"]
+
+
+def test_empty_condition_and_enabled_default_still_execute(tmp_path):
+    write_config(tmp_path, "hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n      condition: ''\n")
+    assert len(run_hook(tmp_path)[1]["hooks"]) == 1
+
+
+def test_missing_yaml_dependency_is_reported_not_silently_skipped(tmp_path):
+    write_config(tmp_path, "hooks:\n  before_plan: []\n")
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(PYTHON / "pre_hooks.py"), "plan"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout) == {
+        "event": "before_plan", "hooks": [],
+        "error": "PyYAML is required to read .specify/extensions.yml",
+    }
+
+
+def test_no_yaml_dependency_needed_for_absent_config(tmp_path):
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(PYTHON / "pre_hooks.py"), "plan"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["hooks"] == []
+
+
+@pytest.mark.parametrize("priority", [float("inf"), float("-inf"), float("nan")])
+def test_nonfinite_priority_does_not_crash(tmp_path, priority):
+    write_config(tmp_path, yaml.safe_dump({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "priority": priority}
+    ]}}))
+    code, data = run_hook(tmp_path)
+    assert code == 0
+    assert data["hooks"][0]["priority"] == 10
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_initialized_project_installs_runnable_dispatchers(tmp_path, variant, monkeypatch):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--integration", "copilot",
+        "--integration-options", "--commands", "--script", variant,
+    ], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    if variant != "py":
+        assert not (project / ".specify/scripts/python/pre_hooks.py").exists()
+        assert not (project / ".specify/scripts/python/post_hooks.py").exists()
+    write_config(project, "hooks:\n  before_plan:\n    - extension: git\n      command: speckit.git.commit\n")
+    script_type = variant
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    scripts = {
+        "sh": [str(project / ".specify/scripts/bash/pre-hooks.sh")],
+        "ps": ["pwsh", "-NoProfile", "-File", str(project / ".specify/scripts/powershell/pre-hooks.ps1")],
+        "py": [sys.executable, str(project / ".specify/scripts/python/pre_hooks.py")],
+    }
+    env = os.environ.copy()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    run = subprocess.run(scripts[script_type] + ["plan"], cwd=project, env=env, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout)["hooks"][0]["command"] == "speckit.git.commit"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_shell_variants_match_python(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, f"hooks:\n  {'before' if phase == 'pre' else 'after'}_plan:\n    - extension: git\n      command: speckit.git.commit\n")
+    assert run_hook(tmp_path, phase, variant=variant) == run_hook(tmp_path, phase)
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_canonical_cli_output_has_identical_order_and_metadata(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    HookExecutor(tmp_path).save_project_config({
+        "installed": ["git", "agent-context"],
+        "settings": {"auto_execute_hooks": True},
+        "hooks": {
+            "before_tasks": [{"extension": "elsewhere", "command": "speckit.elsewhere.run"}],
+            event: [
+                {"extension": "late", "command": "speckit.late.run", "priority": 20,
+                 "prompt": "Don\'t commit: yet?", "description": 'Quote "tab\t' + "x" * 85},
+                {"extension": "first", "command": "speckit.first.run", "priority": 5,
+                 "optional": False, "condition": None},
+                {"extension": "second", "command": "speckit.second.run", "priority": 5},
+                {"extension": "disabled", "command": "speckit.disabled.run", "enabled": False},
+                {"extension": "condition", "command": "speckit.condition.run",
+                 "condition": "env.CI is set"},
+            ],
+        },
+    })
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path, phase)[1]
+    assert [item["extension"] for item in data["hooks"]] == ["first", "second", "late"]
+    assert data["hooks"][-1]["prompt"] == "Don't commit: yet?"
+    assert data["hooks"][-1]["description"] == 'Quote "tab\t' + "x" * 85
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_canonical_cli_writer_keeps_multiline_prompt_on_one_yaml_line(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "prompt": "first\nsecond"}
+    ]}})
+    config = (tmp_path / ".specify/extensions.yml").read_text(encoding="utf-8")
+    assert 'prompt: "first\\nsecond"' in config
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"][0]["prompt"] == "first\nsecond"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_native_resolvers_do_not_invoke_python(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    stub_dir = tmp_path / "stub-bin"
+    stub_dir.mkdir()
+    marker = tmp_path / "python-was-called"
+    for name in ("python", "python3", "py"):
+        stub = stub_dir / name
+        stub.write_text(f'#!/bin/sh\nprintf called >> "{marker}"\nexit 97\n', encoding="utf-8")
+        stub.chmod(0o755)
+    write_config(tmp_path, f"hooks:\n  {'before' if phase == 'pre' else 'after'}_plan:\n  - extension: git\n    command: speckit.git.commit\n")
+    code, data = run_hook(tmp_path, phase, variant=variant, extra_env={
+        "PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}",
+        "SPECKIT_PYTHON_EXECUTABLE": "python3",
+    })
+    assert code == 0
+    assert data["hooks"][0]["command"] == "speckit.git.commit"
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("text", [
+    "hooks:\n  before_plan: [wrong]\n",
+    "hooks:\n  before_plan:\n  - extension: git\n    command: speckit.git.commit\n    prompt: |\n      multiline\n",
+    "hooks:\n  before_plan:\n  - extension: git\n    command: speckit.git.commit\n    optional: 'false'\n",
+    "hooks: [\n",
+    "installed: [\nhooks: {}\n",
+    "settings:\n  auto_execute_hooks: [\nhooks: {}\n",
+    "installed:\n- 'unfinished\nhooks: {}\n",
+    "hooks: {}\nhooks: {}\n",
+    "hooks:\n  before_plan: []\n  before_plan: []\n",
+    "settings:\n  auto_execute_hooks: true\n  bad indentation: nope\nhooks: {}\n",
+])
+def test_native_parsers_reject_unsupported_or_invalid_yaml(tmp_path, variant, phase, text):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    if phase == "post":
+        text = text.replace("before_plan", "after_plan")
+    write_config(tmp_path, text)
+    code, data = run_hook(tmp_path, phase=phase, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps"])
+def test_native_invalid_event_is_valid_json(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    code, data = run_hook(tmp_path, variant=variant, name='bad"name')
+    assert code == 1
+    assert "Invalid hook event" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("priority,expected", [
+    ("5", 5), (False, 10), (0, 10), ("invalid", 10), (2.8, 2),
+])
+def test_priority_normalization_matches_across_runtimes(tmp_path, variant, priority, expected):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, yaml.safe_dump({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "priority": priority}
+    ]}}))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"][0]["priority"] == expected

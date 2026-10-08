@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -5713,10 +5714,19 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
+        class CanonicalHookDumper(yaml.SafeDumper):
+            pass
+
+        def represent_string(dumper: yaml.SafeDumper, value: str):
+            style = '"' if "\n" in value or "\r" in value else None
+            return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+        CanonicalHookDumper.add_representer(str, represent_string)
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         self.config_file.write_text(
             yaml.dump(
-                config, default_flow_style=False, sort_keys=False, allow_unicode=True
+                config, default_flow_style=False, sort_keys=False,
+                allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
             ),
             encoding="utf-8",
         )

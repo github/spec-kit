@@ -529,10 +529,10 @@ class TestScriptPathResolution:
 
 class TestCommandBody:
     def test_preserves_the_hook_contract(self):
-        """The hook keys are literal strings read out of extensions.yml."""
+        """The extension dispatches the same before/after events as core."""
         body = COMMAND_FILE.read_text(encoding="utf-8")
-        assert "hooks.before_taskstoissues" in body
-        assert "hooks.after_taskstoissues" in body
+        assert "{PRE_HOOK_SCRIPT} taskstoissues" in body
+        assert "{POST_HOOK_SCRIPT} taskstoissues" in body
 
     def test_git_extension_hooks_still_target_those_keys(self):
         """The live consumers of the hook contract keep firing."""
