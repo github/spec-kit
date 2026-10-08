@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent
 
+from ..artifacts._mcp import register as register_artifacts
 from ..mcp_version import register as register_version
 from .catalog import (
     CommandAdapterError,
@@ -37,8 +39,15 @@ def _tool_error(exc: CommandAdapterError) -> CallToolResult:
 def create_server(
     *,
     command_runner: CommandRunner = run_command,
+    launch_directory: Path | None = None,
 ) -> MCPServer:
-    """Create the experimental version-only MCP server."""
+    """Create the experimental local stdio MCP server."""
+    server_launch_directory = (
+        Path.cwd() if launch_directory is None else Path(launch_directory)
+    )
+    if not server_launch_directory.is_absolute():
+        raise ValueError("MCP server launch directory must be absolute")
+
     server = MCPServer(
         name="specify",
         title="Spec Kit CLI",
@@ -79,6 +88,7 @@ def create_server(
             return _tool_error(exc)
 
     register_version(server)
+    register_artifacts(server, launch_directory=server_launch_directory)
 
     return server
 

@@ -8,6 +8,9 @@ from rich.markup import escape as _escape_markup
 from .._console import console
 from ._catalog import PresetCatalogValidationError
 from ._catalog_versions import available_versions
+from .._installed_info_json import preset_info_item
+from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
+from .._project import resolve_specify_project_root
 from ._commands import preset_app
 
 
@@ -63,15 +66,30 @@ def _diagnostic_selector_matches(
     return sorted(matches)
 
 
-@preset_app.command("info")
+@preset_app.command("info", cls=InstalledListJSONCommand)
 def preset_info(
     preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
     versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output the installed preset as JSON"
+    ),
 ):
     """Show detailed information about a preset."""
     from .. import _require_specify_project
     from ..extensions import normalize_priority
     from . import PresetCatalog, PresetError, PresetManager
+
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables JSON output.
+    if json_output is True:
+        if versions is True:
+            emit_json_error(ValueError("--json cannot be combined with --versions"), exit_code=2)
+        try:
+            manager = PresetManager(resolve_specify_project_root())
+            emit_json(preset_info_item(manager.list_installed(), manager, preset_id))
+            return
+        except Exception as error:  # noqa: BLE001 - emit the JSON error contract
+            emit_json_error(error)
 
     project_root = _require_specify_project()
     safe_preset_id = _escape_markup(str(preset_id))

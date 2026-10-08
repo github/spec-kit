@@ -5,6 +5,7 @@ malicious manifest or artifact path cannot escape the project/bundle directory.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -168,6 +169,127 @@ def test_active_integration_still_reads_legacy_alias(tmp_path: Path):
 
     project = _write_marker(tmp_path, '{"integration": "copilot"}')
     assert active_integration(project) == "copilot"
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ("copilot", "copilot"),
+        ("  copilot  ", "copilot"),  # padded: previously returned verbatim
+        ("   ", None),  # whitespace-only: previously truthy
+        ("\t\n", None),
+        ("", None),
+        (None, None),
+        (5, None),
+    ],
+    ids=["plain", "padded", "spaces", "tabs", "empty", "null", "non_string"],
+)
+def test_active_integration_matches_the_canonical_key_reader(
+    tmp_path: Path, recorded, expected
+):
+    """`active_integration` must normalize the way the canonical reader does.
+
+    The canonical path -- `normalize_integration_state`, then
+    `default_integration_key` -- runs every candidate through
+    `clean_integration_key`, while this one only checked
+    `isinstance(value, str) and value`. A whitespace-only key
+    is truthy, so it was returned as a real integration *and* suppressed the
+    "not determinable" fallback; a padded key was returned verbatim and
+    matches no registered integration.
+    """
+    from specify_cli.bundles.project import active_integration
+
+    project = _write_marker(tmp_path, json.dumps({"default_integration": recorded}))
+    assert active_integration(project) == expected
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ({"default_integration": "   ", "integration": "copilot"}, "copilot"),
+        ({"default_integration": "\t\n", "integration": "  copilot  "}, "copilot"),
+        ({"default_integration": 5, "integration": "copilot"}, "copilot"),
+        ({"integration": "   ", "id": "claude"}, "claude"),
+        ({"default_integration": "   ", "integration": "   "}, None),
+        ({"default_integration": "cursor", "integration": "copilot"}, "cursor"),
+    ],
+    ids=[
+        "blank_default",
+        "blank_default_padded_legacy",
+        "non_string_default",
+        "blank_legacy_falls_to_id",
+        "all_blank",
+        "precedence_kept",
+    ],
+)
+def test_active_integration_cleans_each_candidate_before_selecting(
+    tmp_path: Path, recorded, expected
+):
+    """Each candidate must be cleaned before selection, not just the winner.
+
+    A raw `or` chain selects a whitespace-only `default_integration` (truthy)
+    and then normalizes it to None, losing the valid legacy key behind it --
+    while `normalize_integration_state` does
+    `clean_integration_key(default) or legacy_key` and falls through.
+    """
+    from specify_cli.bundles.project import active_integration
+
+    project = _write_marker(tmp_path, json.dumps(recorded))
+    assert active_integration(project) == expected
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ({"installed_integrations": ["claude", "copilot"]}, "claude"),
+        ({"installed_integrations": ["   ", "  claude  "]}, "claude"),
+        ({"installed_integrations": []}, None),
+        ({"installed_integrations": "claude"}, None),
+    ],
+    ids=["installed_only", "blank_first_entry", "empty_list", "non_list"],
+)
+def test_active_integration_resolves_installed_only_state(
+    tmp_path: Path, recorded, expected
+):
+    """Installed-only state resolves exactly as the canonical reader does
+    (``normalize_integration_state``, then ``default_integration_key``).
+
+    With ``installed_integrations`` populated but no default recorded,
+    ``normalize_integration_state`` promotes the first installed key to the
+    default. ``active_integration`` returned None instead -- "cannot be
+    determined" -- which lets an explicit ``--integration`` bypass the FR-019
+    integration-clash guard in ``bundle install`` / ``bundle update``.
+    """
+    from specify_cli.bundles.project import active_integration
+    from specify_cli.integration_state import (
+        default_integration_key,
+        normalize_integration_state,
+    )
+
+    project = _write_marker(tmp_path, json.dumps(recorded))
+    assert active_integration(project) == expected
+    assert expected == default_integration_key(normalize_integration_state(recorded))
+
+
+@pytest.mark.parametrize(
+    "recorded,expected",
+    [
+        ({"integration": "copilot", "installed_integrations": ["claude"]}, "copilot"),
+        ({"id": "cursor", "installed_integrations": ["claude"]}, "cursor"),
+    ],
+    ids=["recorded_default_wins", "legacy_id_still_wins"],
+)
+def test_active_integration_installed_fallback_is_checked_last(
+    tmp_path: Path, recorded, expected
+):
+    """The installed-only fallback must not change any marker that already
+    resolved: it is consulted only after every recorded field, so it can turn
+    a None into a key but never replace a key this function already returned.
+    """
+    from specify_cli.bundles.project import active_integration
+
+    project = _write_marker(tmp_path, json.dumps(recorded))
+    assert active_integration(project) == expected
 
 
 def test_read_catalog_config_refuses_symlinked_specify_escape(tmp_path: Path):
