@@ -340,6 +340,47 @@ extension files intact. The core `speckit.taskstoissues` command remains
 available; installing the GitHub extension adds the namespaced replacement
 without deprecating or removing the core command.
 
+### Oh My Pi runtime options
+
+The options above apply at install time. Oh My Pi (`omp`) additionally accepts
+per-step runtime configuration on workflow command steps (see
+[Per-Step Integration Configuration](workflows.md#per-step-integration-configuration)):
+
+| `integration_options` key | OMP flag     | Value                                                                                   |
+| ------------------------- | ------------ | --------------------------------------------------------------------------------------- |
+| `profile`                 | `--profile`  | Isolated OMP profile name                                                               |
+| `thinking`                | `--thinking` | One of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `auto`                |
+| `tools`                   | `--tools`    | Comma-separated list of tools to enable                                                 |
+
+```yaml
+- id: plan-with-omp
+  type: command
+  command: speckit.plan
+  integration: omp
+  integration_args:
+    - "--no-session"
+  integration_options:
+    profile: work
+    thinking: high
+    tools: "read,bash"
+  model: "gpt-5"
+```
+
+Option values must be non-empty strings; unknown keys and unsupported
+`thinking` values fail before OMP is launched. `integration_args` is passed
+through as raw OMP CLI flags and each value must be a non-empty string. Select
+the model with the step's top-level `model` field: `integration_options.model`
+and a `--model` flag in `integration_args` are both rejected.
+
+Arguments are passed to `omp --print` in this order, so later sources follow
+earlier ones on the command line:
+
+1. `SPECKIT_INTEGRATION_OMP_EXTRA_ARGS`
+2. `integration_args`
+3. `integration_options` flags
+4. `--model` from the step's `model` field
+5. `--mode json`, then the prompt
+
 ## Scaffold a New Integration
 
 ```bash

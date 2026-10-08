@@ -121,6 +121,23 @@ class TestOmpIntegration(MarkdownIntegrationTests):
                 integration_args=integration_args,
             )
 
+    @pytest.mark.parametrize(
+        "integration_args",
+        [["--model", "gpt-5"], ["--model=gpt-5"], ["--no-session", "--model", "gpt-5"]],
+    )
+    def test_integration_args_model_flag_is_rejected(self, integration_args):
+        with pytest.raises(ValueError, match="command-step 'model' field"):
+            get_integration(self.KEY).build_exec_args(
+                "prompt",
+                integration_args=integration_args,
+            )
+
+    def test_integration_args_allow_models_cycling_flag(self):
+        # `--models` only scopes Ctrl+P cycling; it does not select the model.
+        get_integration(self.KEY).validate_runtime_config(
+            ["--models", "claude-sonnet,gpt-5"], None
+        )
+
     def test_integration_options_model_is_rejected(self):
         with pytest.raises(ValueError, match="command-step 'model' field"):
             get_integration(self.KEY).build_exec_args(

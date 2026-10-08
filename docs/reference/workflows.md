@@ -821,6 +821,11 @@ or paused command is resumed, the complete dispatch configuration is re-resolved
 from the current inputs, so values supplied with `workflow resume --input` take
 effect consistently. A resume without updated inputs reproduces the same values.
 
+Oh My Pi (`omp`) also accepts per-step configuration: `integration_args` are
+passed through as raw CLI flags, and `profile`, `thinking`, and `tools` are
+accepted as named integration options. See
+[Oh My Pi runtime options](integrations.md#oh-my-pi-runtime-options).
+
 ## Expressions
 
 Steps can reference inputs and previous step outputs using `{{ expression }}` syntax:

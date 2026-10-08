@@ -75,6 +75,14 @@ class OmpIntegration(MarkdownIntegration):
             for value in integration_args or ()
         ):
             raise ValueError("OMP 'integration_args' values must be non-empty strings.")
+        if any(
+            value == "--model" or value.startswith("--model=")
+            for value in integration_args or ()
+        ):
+            raise ValueError(
+                "OMP model selection must use the command-step 'model' field, "
+                "not a '--model' flag in 'integration_args'."
+            )
 
         options = integration_options or {}
         if not all(isinstance(name, str) for name in options):
