@@ -4340,8 +4340,9 @@ def test_builtin_manifest_cleanup_does_not_follow_symlinked_stale_parent(tmp_pat
 @pytest.mark.parametrize("package_kind", ["preset", "extension", "both"])
 @pytest.mark.parametrize("original", ["absent", "existing", "existing-package"])
 @pytest.mark.parametrize("failure", ["registry", "ownership", "none"])
+@pytest.mark.parametrize("windows_encoding", [False, True])
 def test_external_init_package_directories_follow_late_commit_rollback(
-    tmp_path, server, monkeypatch, package_kind, original, failure,
+    tmp_path, server, monkeypatch, package_kind, original, failure, windows_encoding,
 ):
     from specify_cli.integrations import installer
 
@@ -4372,6 +4373,16 @@ def test_external_init_package_directories_follow_late_commit_rollback(
         "provides": {"commands": [{"name": "speckit.sample-init.boot", "file": "commands/boot.md"}]},
     }))
     project = tmp_path / "target"
+    if windows_encoding:
+        original_read_text = Path.read_text
+        target_skill = project / ".sample-agent/skills/speckit-specify/SKILL.md"
+
+        def read_with_windows_default(path, *args, **kwargs):
+            if path == target_skill and not args and kwargs.get("encoding") is None:
+                kwargs["encoding"] = "cp1252"
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", read_with_windows_default)
     if original != "absent":
         project.mkdir()
         (project / "notes.txt").write_text("unowned notes")
@@ -4386,7 +4397,9 @@ def test_external_init_package_directories_follow_late_commit_rollback(
     def verify_installed_packages():
         if package_kind in {"preset", "both"}:
             assert (project / ".specify/presets/sample-init/preset.yml").is_file()
-            assert "Sample preset before command" in (project / ".sample-agent/skills/speckit-specify/SKILL.md").read_text()
+            assert "Sample preset before command" in (
+                project / ".sample-agent/skills/speckit-specify/SKILL.md"
+            ).read_text(encoding="utf-8")
         if package_kind in {"extension", "both"}:
             assert (project / ".specify/extensions/sample-init/extension.yml").is_file()
             assert (project / ".sample-agent/skills/speckit-sample-init-boot/SKILL.md").is_file()
