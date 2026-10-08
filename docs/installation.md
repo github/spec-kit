@@ -147,14 +147,15 @@ After initialization, you should see the following commands available in your co
 - `/speckit.checklist` - Generate quality checklists
 - `/speckit.constitution` - Create or update project principles
 - `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues (moving to the bundled `github` extension as
+- `/speckit.taskstoissues` - Convert tasks to issues (deprecated; warns on invocation; moving to the bundled `github` extension as
   `/speckit.github.taskstoissues`; install it with `specify extension add github`)
 
 The `generic` integration also registers extension commands in its configured
 `--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`
 available there as a command file, or as `/speckit-github-taskstoissues` when
 `--skills` is enabled. The core `/speckit.taskstoissues` (or
-`/speckit-taskstoissues` with `--skills`) remains available.
+`/speckit-taskstoissues` with `--skills`) remains available during migration, warns on invocation,
+and will be removed in a future minor release.
 See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
 
 Scripts are installed into a variant subdirectory matching the chosen script type:

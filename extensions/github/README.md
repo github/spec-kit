@@ -24,7 +24,8 @@ The `generic` (bring your own agent) integration registers this command under
 its configured `--commands-dir` in both commands and skills layouts. Installing
 `github` creates `speckit.github.taskstoissues.md` in commands mode or
 `speckit-github-taskstoissues/SKILL.md` in skills mode. The core
-`speckit.taskstoissues` command remains available and unchanged. See
+`speckit.taskstoissues` command is deprecated but remains available during migration.
+Use this extension's recommended command instead. See
 [integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
 
 ## Removal
@@ -37,7 +38,7 @@ specify extension remove github
 
 | Command                        | Description                                                          |
 | ------------------------------ | -------------------------------------------------------------------- |
-| `speckit.github.taskstoissues` | Convert tasks from `tasks.md` into dependency-ordered GitHub issues. |
+| `speckit.github.taskstoissues` | Recommended: convert tasks from `tasks.md` into dependency-ordered GitHub issues. |
 
 > NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for hyphen/skills integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex, ZCode, or Command Code in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
 
@@ -81,9 +82,9 @@ Prerequisite errors name the Spec Kit command without assuming an integration's 
 
 Spec Kit is moving GitHub issue tracking out of core in three stages:
 
-1. **Now** — this extension is available, and the core `/speckit.taskstoissues` command remains available and unchanged. Nothing breaks if you do nothing.
-2. **Next** — the core command is deprecated once the replacement has been available for a release.
-3. **Later** — the core command is removed in a minor release.
+1. **Initial stage (completed)** — this extension shipped with the core `/speckit.taskstoissues` command still available.
+2. **Next (current stage)** — the replacement has been available for at least one release, so the core command is now deprecated. It displays a migration warning and continues its existing workflow. It does not install or enable the extension automatically or run the replacement command.
+3. **Later** — the core command will be removed in a future minor release.
 
 To migrate, install the extension and use the namespaced command instead:
 
@@ -93,10 +94,10 @@ specify extension add github
 
 The `generic` integration supports this migration in both commands and skills
 layouts under its configured `--commands-dir`. The core command remains
-available until a separate deprecation and removal decision.
+available during this deprecation period until the removal stage.
 
-| Before                    | After                             |
+| Deprecated core command   | Recommended extension command     |
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-Behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.
+Apart from the core command's deprecation warning, conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias, so the two commands coexist without shadowing each other while the core command still exists.

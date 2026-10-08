@@ -598,17 +598,24 @@ class TestCommandBody:
         # Four-digit and longer task IDs must still match.
         assert r"\bT\d{3,}\b" in body
 
-    def test_body_differs_from_core_only_in_the_script_invocation(self):
+    def test_body_differs_from_core_only_in_deprecation_and_script_invocation(self):
         """Behaviour parity, enforced as a diff rather than as spot checks.
 
-        Everything except the ``scripts:`` frontmatter and the two lines that
-        read the new ``TASKS`` value must match the core command verbatim, so
-        the two cannot silently drift while both exist.
+        Apart from core-only deprecation metadata and notice, everything except
+        the ``scripts:`` frontmatter and the two lines that read the new ``TASKS``
+        value must match verbatim, so the two cannot silently drift while both exist.
         """
         import difflib
 
-        core = CORE_COMMAND.read_text(encoding="utf-8").splitlines()
+        core_text = CORE_COMMAND.read_text(encoding="utf-8")
+        before_notice, notice_and_workflow = core_text.split("## Deprecation Notice\n", 1)
+        _, workflow = notice_and_workflow.split("## User Input", 1)
+        core = (before_notice + "## User Input" + workflow).splitlines()
         ext = COMMAND_FILE.read_text(encoding="utf-8").splitlines()
+        core_description = yaml.safe_load(core[1])["description"]
+        ext_description = yaml.safe_load(ext[1])["description"]
+        assert core_description == "Deprecated: " + ext_description
+        core[1] = ext[1]
         changed = [
             line
             for line in difflib.unified_diff(core, ext, n=0)
