@@ -970,11 +970,21 @@ def _rename_step_tree_ids(
     """
     new_step = dict(step)
     id_map: dict[str, str] = {}
-    orig_id = new_step.get("id") or default_id
+    raw_id = new_step.get("id")
+    orig_id = raw_id or default_id
     if isinstance(orig_id, str):
         new_id = f"{prefix}:{orig_id}:{suffix}"
         new_step["id"] = new_id
         id_map[new_id] = orig_id
+    elif raw_id is not None:
+        # A non-string id (e.g. ``id: [a]`` or ``id: 7``) is rejected by
+        # validation, but ``execute()`` accepts unvalidated definitions.
+        # Still give it a string runtime id -- as the pre-recursion
+        # f-string rename did for the immediate child -- so an unhashable
+        # id never reaches ``_record_result`` as a dict key, and a hashable
+        # one stays unique per iteration/item. No alias is recorded: no
+        # ``steps.<id>`` expression can reference a non-string id.
+        new_step["id"] = f"{prefix}:{raw_id}:{suffix}"
 
     # A while/do-while step re-namespaces its OWN 'steps' body per iteration
     # at runtime (see the while/do-while branch in _execute_steps), each
@@ -1084,6 +1094,22 @@ def _journal_reserved_write(
     """
     if journal is not None and orig_id not in journal:
         journal[orig_id] = steps.get(orig_id, _MISSING_STEP)
+
+
+def _restore_reserved_writes(
+    steps: dict[str, Any], journal: dict[str, Any] | None
+) -> None:
+    """Undo every write recorded in *journal* by ``_journal_reserved_write``,
+    restoring each id's pre-scope value in *steps* (or removing it when it
+    was absent), once the scope that owns *journal* -- a sequential fan-out
+    item or a top-level loop iteration -- finishes."""
+    if not journal:
+        return
+    for orig_id, val in journal.items():
+        if val is _MISSING_STEP:
+            steps.pop(orig_id, None)
+        else:
+            steps[orig_id] = val
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1646,25 +1672,50 @@ class WorkflowEngine:
                         # whole iteration finishes), so later steps in the
                         # same body and the loop condition see the latest
                         # values.
-                        for ns_idx, ns in enumerate(result.next_steps):
-                            ns_copy, id_map = _rename_step_tree_ids(
-                                ns, step_id, str(_loop_iter),
-                                default_id=f"step-{ns_idx}",
-                            )
-                            self._execute_steps(
-                                [ns_copy], context, state, registry,
-                                step_offset=-1, alias_map=id_map,
-                                alias_local_only=alias_local_only,
-                                alias_may_collide=alias_may_collide,
-                                alias_records=alias_records,
-                                restore_journal=restore_journal,
-                            )
-                            if state.status in (
-                                RunStatus.PAUSED,
-                                RunStatus.FAILED,
-                                RunStatus.ABORTED,
-                            ):
-                                return
+                        #
+                        # Outside any fan-out item (``alias_records is
+                        # None``) the iteration is its own transient alias
+                        # scope: a fan-out nested in the body whose template
+                        # id collides with a reserved workflow id publishes
+                        # its item-local value into this iteration's
+                        # accumulator/journal (see ``_run_fan_out``'s
+                        # ``parent_alias_records``), so a later sibling in
+                        # the SAME iteration resolves it -- exactly as inside
+                        # an enclosing fan-out item -- and the journal
+                        # restores the outside value once the iteration
+                        # ends. Inside a fan-out item the enclosing item's
+                        # own scope already does this, so reuse it.
+                        if alias_records is None:
+                            iter_records: dict[str, dict[str, Any]] | None = {}
+                            iter_journal: dict[str, Any] | None = {}
+                        else:
+                            iter_records = alias_records
+                            iter_journal = restore_journal
+                        try:
+                            for ns_idx, ns in enumerate(result.next_steps):
+                                ns_copy, id_map = _rename_step_tree_ids(
+                                    ns, step_id, str(_loop_iter),
+                                    default_id=f"step-{ns_idx}",
+                                )
+                                self._execute_steps(
+                                    [ns_copy], context, state, registry,
+                                    step_offset=-1, alias_map=id_map,
+                                    alias_local_only=alias_local_only,
+                                    alias_may_collide=alias_may_collide,
+                                    alias_records=iter_records,
+                                    restore_journal=iter_journal,
+                                )
+                                if state.status in (
+                                    RunStatus.PAUSED,
+                                    RunStatus.FAILED,
+                                    RunStatus.ABORTED,
+                                ):
+                                    return
+                        finally:
+                            if alias_records is None:
+                                _restore_reserved_writes(
+                                    context.steps, iter_journal
+                                )
                 else:
                     self._execute_steps(
                         result.next_steps, context, state, registry,
@@ -1905,12 +1956,7 @@ class WorkflowEngine:
                 )
             finally:
                 item_ctx.steps = original_steps
-                if restore_journal:
-                    for orig, val in restore_journal.items():
-                        if val is _MISSING_STEP:
-                            original_steps.pop(orig, None)
-                        else:
-                            original_steps[orig] = val
+                _restore_reserved_writes(original_steps, restore_journal)
             steps_view = item_steps if local_only else item_ctx.steps
             if local_only and original_steps is not state.step_results:
                 # Publish every namespaced (disjoint, per-item) result this

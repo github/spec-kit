@@ -8168,6 +8168,115 @@ steps:
         assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
         assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
 
+    @pytest.mark.parametrize("loop_type", ["while", "do-while"])
+    @pytest.mark.parametrize("inner_concurrency", [1, 2])
+    def test_reserved_alias_visible_to_sibling_in_top_level_loop_iteration(
+        self, project_dir, loop_type, inner_concurrency
+    ):
+        """A fan-out nested directly in a TOP-LEVEL while/do-while body whose
+        template id collides with a reserved workflow id (`leaf`) must expose
+        its item-local `leaf` to a later sibling in the same loop iteration,
+        then restore the outside `leaf` once the iteration ends.
+
+        Previously a top-level loop body had no alias scope of its own (only
+        a body nested inside a fan-out item did), so the nested fan-out
+        restored (sequential) or dropped (concurrent) its reserved alias
+        immediately and `inner_after` read the unrelated outside `leaf`
+        ("outside") instead of "q".
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "loop-reserved-alias"
+  name: "Loop Reserved Alias"
+  version: "1.0.0"
+steps:
+  - id: leaf
+    type: shell
+    run: "echo outside"
+  - id: loop
+    type: {loop_type}
+    condition: "true"
+    max_iterations: 1
+    steps:
+      - id: inner
+        type: fan-out
+        items: "{{{{ ['p', 'q'] }}}}"
+        max_concurrency: {inner_concurrency}
+        step:
+          id: leaf
+          type: shell
+          run: "echo {{{{ item }}}}"
+      - id: inner_after
+        type: shell
+        run: "echo {{{{ steps.leaf.output.stdout }}}}"
+  - id: after
+    type: shell
+    run: "echo {{{{ steps.leaf.output.stdout }}}}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["loop:inner_after:0"]["output"]["stdout"].strip() == "q"
+        assert state.step_results["inner_after"]["output"]["stdout"].strip() == "q"
+        # Once the iteration ends the outside result wins again, both in
+        # persisted state and for a step after the loop.
+        assert state.step_results["leaf"]["output"]["stdout"] == "outside\n"
+        assert state.step_results["after"]["output"]["stdout"].strip() == "outside"
+
+    @pytest.mark.parametrize("bad_id", [["a"], {"k": "v"}, 7])
+    @pytest.mark.parametrize("site", ["loop-child", "loop-grandchild", "fan-out-template", "fan-out-grandchild"])
+    def test_unvalidated_non_string_nested_id_does_not_crash(
+        self, project_dir, bad_id, site
+    ):
+        """``execute()`` does not validate, so a loop body / fan-out template
+        step (or a descendant of one) can carry a non-string id such as a
+        list. Namespacing must still give it a string runtime id: previously
+        a non-string id was left unchanged and an unhashable one reached
+        ``_record_result`` as a dict key, aborting the run with a raw
+        ``TypeError`` instead of completing.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        leaf = {"id": bad_id, "type": "shell", "run": "echo hi"}
+        if site.endswith("grandchild"):
+            nested = {"id": "wrap", "type": "if", "condition": "true", "then": [leaf]}
+        else:
+            nested = leaf
+        if site.startswith("loop"):
+            container = {
+                "id": "loop", "type": "while", "condition": "true",
+                "max_iterations": 1, "steps": [nested],
+            }
+        else:
+            container = {
+                "id": "fan", "type": "fan-out", "items": ["x", "y"],
+                "max_concurrency": 1, "step": nested,
+            }
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "bad-id", "name": "Bad Id", "version": "1.0.0"},
+            "steps": [container],
+        })
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED, state.error
+        assert all(isinstance(k, str) for k in state.step_results)
+        prefix = "loop:" if site.startswith("loop") else "fan:"
+        leaf_results = [
+            v for k, v in state.step_results.items()
+            if k.startswith(prefix) and str(bad_id) in k
+        ]
+        assert leaf_results
+        assert all(v["output"]["stdout"] == "hi\n" for v in leaf_results)
+
     @pytest.mark.parametrize("container", sorted(_NESTED_LEAF_CONTAINERS))
     def test_fan_out_namespaces_nested_descendant_steps(self, project_dir, container):
         """A step nested inside a fan-out template's `if`/`switch` branch
