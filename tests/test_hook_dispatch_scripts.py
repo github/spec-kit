@@ -394,7 +394,10 @@ def test_native_parsers_reject_unsupported_or_invalid_yaml(tmp_path, variant, ph
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
-@pytest.mark.parametrize("field", ["extension: 'unterminated", "optional: 'false'", "condition: false"])
+@pytest.mark.parametrize("field", [
+    "extension: 'unterminated", "extension: ''", 'command: ""',
+    "optional: 'false'", "condition: false",
+])
 def test_non_target_event_fields_are_validated(tmp_path, variant, phase, field):
     if variant == "ps" and not shutil.which("pwsh"):
         pytest.skip("PowerShell not installed")

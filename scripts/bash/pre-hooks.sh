@@ -92,8 +92,9 @@ hook_field() {
     raw=${field:${#key}+1}
     hook_scalar "$raw"
     [[ -n $HOOK_ERROR ]] && return
-    if [[ $key == extension || $key == command ]] && [[ $HOOK_QUOTED == false ]]; then
-        if [[ -z $HOOK_SCALAR ]] || hook_typed_scalar "$HOOK_SCALAR"; then
+    if [[ $key == extension || $key == command ]]; then
+        if [[ -z $HOOK_SCALAR ]] ||
+           { [[ $HOOK_QUOTED == false ]] && hook_typed_scalar "$HOOK_SCALAR"; }; then
             HOOK_ERROR="hooks.$event needs extension and command"
             return
         fi
