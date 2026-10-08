@@ -55,3 +55,7 @@ Validates the fix by re-running the reproduction and any added tests, then recor
 ```
 
 Output: `.specify/bugs/<slug>/test.md`.
+
+## Extension hooks
+
+Each bug command exposes `before_bug_<command>` and `after_bug_<command>` hooks for other extensions. Pre-hooks run after slug resolution and prerequisites; assessment creates the bug directory first. Post-hooks run after the report is written and before completion is reported. Pre-hooks see the resolved `BUG_SLUG` and `BUG_DIR`; post-hooks additionally see the written report. With no hooks registered, the workflow proceeds as before. See the [bug extension's hook events and configuration example](https://github.com/github/spec-kit/blob/main/extensions/bug/README.md#hooks).

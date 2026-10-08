@@ -77,4 +77,26 @@ specify extension enable bug
 
 ## Hooks
 
-This extension registers no hooks. The three commands are always invoked explicitly by the user.
+This extension registers no hooks of its own. The three commands are always invoked explicitly by the user, but expose lifecycle events for other extensions:
+
+| Command | Before event | After event |
+|---------|--------------|-------------|
+| `speckit.bug.assess` | `before_bug_assess` | `after_bug_assess` |
+| `speckit.bug.fix` | `before_bug_fix` | `after_bug_fix` |
+| `speckit.bug.test` | `before_bug_test` | `after_bug_test` |
+
+Pre-hooks run after slug resolution and prerequisites, before execution. For assessment, the bug directory already exists before the pre-hook runs. Post-hooks run after `assessment.md`, `fix.md`, or `test.md` is written and before reporting completion. Pre-hooks see the resolved `BUG_SLUG` and `BUG_DIR`; post-hooks additionally see the written report.
+
+For example, an installed intake extension can register a hook in `.specify/extensions.yml`:
+
+```yaml
+hooks:
+  before_bug_assess:
+    - extension: intake
+      command: speckit.intake.collect
+      enabled: true
+      optional: false
+      description: Collect evidence in the resolved bug directory
+```
+
+Mandatory hooks are invoked and awaited; optional hooks are presented for the user to run. Disabled hooks and hooks with non-empty conditions are skipped by the command templates. With no registered hooks, the workflow proceeds as before. See the [Extension API Reference](../EXTENSION-API-REFERENCE.md#hook-events) for the shared hook contract.
