@@ -558,6 +558,15 @@ def register(app: typer.Typer) -> None:
             )
             raise typer.Exit(1)
 
+        if selected_ai == "kiro-cli":
+            from .integrations._command_upgrade_layout import (
+                _check_extension_command_claims, _planned_command_files,
+            )
+
+            _check_extension_command_claims(
+                project_path, resolved_integration, _planned_command_files(resolved_integration)
+            )
+
         current_dir = Path.cwd()
 
         setup_lines = [

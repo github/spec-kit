@@ -145,7 +145,7 @@ def _extension_commands_at(project_root, integration, rel_paths) -> list[str]:
     found = []
     for ext_id, metadata in extensions.items():
         recorded = (
-            metadata.get("registered_commands", {})
+            metadata.get("registered_commands")
             if isinstance(metadata, dict)
             else None
         )
@@ -158,13 +158,50 @@ def _extension_commands_at(project_root, integration, rel_paths) -> list[str]:
             isinstance(name, str) for name in names
         ):
             raise _ExtensionRegistryUnreadableError(
-                f"extension '{ext_id}' registered_commands is malformed"
+                f"extension '{ext_id}' registered_commands is missing or malformed"
             )
         for name in names:
             rel = (PurePath(commands_dir) / f"{name}{suffix}").as_posix()
             if os.path.normcase(rel) in targets:
                 found.append(f"{ext_id} ({name})")
     return sorted(found)
+
+
+def _check_extension_command_claims(project_root, integration, planned_command_files) -> None:
+    """Refuse core writes at extension claims during upgrade and Kiro init (#4797)."""
+    import typer
+
+    from .._console import console
+    from ._helpers import _cli_error_detail
+
+    key = integration.key
+    try:
+        taken = _extension_commands_at(
+            project_root, integration, planned_command_files
+        )
+    except _ExtensionRegistryUnreadableError as exc:
+        console.print(
+            f"[red]Error:[/red] Cannot write '{key}' core command files: the "
+            "extension registry could not be read."
+        )
+        console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+        console.print(
+            "Writing them could replace an extension's files, so this is refused "
+            "before changing files. Fix or restore "
+            "[cyan].specify/extensions/.registry[/cyan] and retry."
+        )
+        raise typer.Exit(1)
+    if taken:
+        console.print(
+            f"[red]Error:[/red] Cannot write '{key}' core command files while "
+            "extension commands use a core command's file name: "
+            f"[bold]{', '.join(taken)}[/bold]."
+        )
+        console.print(
+            "Writing them would replace the extension's files, so this is refused "
+            "before changing files. Update or remove the extension(s), then retry."
+        )
+        raise typer.Exit(1)
 
 
 def _legacy_command_root_upgrade_pending(integration, old_manifest) -> bool:

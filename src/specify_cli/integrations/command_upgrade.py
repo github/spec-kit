@@ -14,10 +14,9 @@ from ..integration_runtime import (
 )
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
-    _ExtensionRegistryUnreadableError,
     _PresetRegistryUnreadableError,
+    _check_extension_command_claims,
     _command_file_names_changed,
-    _extension_commands_at,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
@@ -200,9 +199,11 @@ def integration_upgrade(
     # new file would replace the override. Refuse before any mutation, as for
     # the layout changes above.
     planned_command_files = _planned_command_files(integration)
-    if _command_file_names_changed(
+    renamed = _command_file_names_changed(
         integration, old_manifest.files, planned_command_files
-    ):
+    )
+    untracked = [rel for rel in planned_command_files if rel not in old_manifest.files]
+    if renamed:
         try:
             affected_presets = _installed_command_presets_affecting_agent(
                 project_root,
@@ -238,49 +239,15 @@ def integration_upgrade(
                 f"  [cyan]specify preset add <id>[/cyan]"
             )
             raise typer.Exit(1)
-        # Extension commands were written under their own names, and Spec
-        # Kit 1.0.7 and earlier accepted an alias such as ``speckit-plan``,
-        # whose file is where the renamed core command goes. Writing the core
-        # file would replace the extension's (or write through its dev-mode
-        # symlink into the extension directory).
-        try:
-            taken = _extension_commands_at(
-                project_root, integration, planned_command_files
-            )
-        except _ExtensionRegistryUnreadableError as exc:
-            console.print(
-                f"[red]Error:[/red] Cannot rename '{key}' command files: the "
-                "extension registry could not be read to verify which "
-                "extension commands use the new file names."
-            )
-            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
-            console.print(
-                "The upgrade could write a core command over an extension's "
-                "file, so it is refused before changing files. Fix or restore "
-                "[cyan].specify/extensions/.registry[/cyan] and retry."
-            )
-            raise typer.Exit(1)
-        if taken:
-            console.print(
-                f"[red]Error:[/red] Cannot rename '{key}' command files while "
-                "extension commands use the new file name of a core command: "
-                f"[bold]{', '.join(taken)}[/bold]."
-            )
-            console.print(
-                "The upgrade would write a core command over the extension's "
-                "file, so it is refused before changing files. Update or "
-                "remove the extension(s), then run the upgrade again."
-            )
-            raise typer.Exit(1)
+    # Kiro CLI's manifest may not show the rename (e.g. empty files), so its
+    # untracked core files get the same checks.
+    if renamed or (key == "kiro-cli" and untracked):
+        _check_extension_command_claims(project_root, integration, planned_command_files if renamed else untracked)
         # Any other file already at a new core name is tracked by nothing,
         # e.g. a prompt the user wrote because Kiro ignored the dotted names,
         # so ownership can't be verified. Replace it only with --force, and
         # never write through a symlink to wherever it points.
-        occupied = sorted(
-            rel for rel in planned_command_files
-            if rel not in old_manifest.files
-            and os.path.lexists(project_root / rel)
-        )
+        occupied = sorted(rel for rel in untracked if os.path.lexists(project_root / rel))
         linked = [rel for rel in occupied if (project_root / rel).is_symlink()]
         if linked or (occupied and not force):
             console.print(

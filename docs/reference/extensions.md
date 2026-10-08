@@ -58,12 +58,14 @@ specify extension remove <name>
 
 Removes an installed extension. Configuration files are backed up by default; use `--keep-config` to leave them in place or `--force` to skip the confirmation.
 
-For older Kiro CLI or Qoder CLI extensions whose names collide after hyphenation,
-removal preserves a shared migrated prompt or skill unless its source marker
-identifies the removed extension as the owner. The same check applies to the
-extension's legacy commands and to any file at a core command's name. Installed
-core commands are always preserved, also when an integration is switched or
-uninstalled.
+For Kiro CLI and Qoder CLI, removal deletes an extension's prompt or skill, its
+legacy commands, and any file at a core command's name only when the file's
+generated marker names that extension: `metadata.source` in a skill, and in a
+prompt its first `<!-- Extension: <id> -->` line, or `metadata.source` in its
+frontmatter when it has no such line. An extension prompt, skill or
+legacy command without that marker is kept, with a warning. Extension cleanup
+never removes installed core commands, including the cleanup that
+`specify integration switch` runs.
 
 ## List Installed Extensions
 

@@ -61,6 +61,23 @@ def _write_command_preset(tmp_path, preset_id):
     return preset_src
 
 
+def _write_command_extension(tmp_path, aliases=()):
+    import yaml
+
+    source = tmp_path / "audit-source"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands/run.md").write_bytes(b"---\ndescription: Audit\n---\nAUDIT-BODY\n")
+    (source / "extension.yml").write_bytes(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {"id": "audit", "name": "Audit", "version": "1.0.0", "description": "Test"},
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"commands": [{
+            "name": "speckit.audit.run", "file": "commands/run.md", "aliases": list(aliases),
+        }]},
+    }).encode())
+    return source
+
+
 def _init_dotted_kiro_project(tmp_path, monkeypatch, *commands):
     """Init a Kiro project and run ``commands`` with the old dotted prompt names."""
     from specify_cli.agents import CommandRegistrar
@@ -73,7 +90,7 @@ def _init_dotted_kiro_project(tmp_path, monkeypatch, *commands):
             KiroCliIntegration, "command_filename",
             MarkdownIntegration.command_filename,
         )
-        m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name")
+        m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name", raising=False)
         project = _init_project(tmp_path, "kiro-cli")
         for args in commands:
             result = _run_in_project(project, args)
@@ -635,6 +652,8 @@ class TestIntegrationUpgradeDetailed:
         prompts = project / ".kiro" / "prompts"
         assert (prompts / "speckit-git-feature.md").is_file()
         assert (prompts / "speckit-plan.md").is_file()
+        assert not (prompts / "speckit-git-commit.md").exists()
+        assert not (prompts / "speckit-git-c.md").exists()
 
     @pytest.mark.parametrize(
         ("agent", "output"),
@@ -671,6 +690,642 @@ class TestIntegrationUpgradeDetailed:
         result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
         assert result.exit_code == 0, result.output
         assert shared.read_bytes() == before
+
+    @pytest.mark.parametrize("operation", ["remove", "switch", "upgrade"])
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("body", [b"USER\n", b"<!-- Extension: other -->\n", b"\xff"])
+    def test_legacy_extension_cleanup_respects_ownership_and_replacements(
+        self, tmp_path, operation, agent, body
+    ):
+        project = _init_project(tmp_path, agent)
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, result.output
+        directory = ".kiro/prompts" if agent == "kiro-cli" else ".qoder/commands"
+        legacy = project / directory / "speckit.git.commit.md"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_bytes(body)
+        args = (
+            ["extension", "remove", "git", "--force"] if operation == "remove"
+            else ["integration", "switch", "claude"] if operation == "switch"
+            else ["integration", "upgrade", agent]
+        )
+        result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        assert legacy.read_bytes() == body
+        assert "Preserving the legacy file" in result.output
+        if operation == "switch":
+            from specify_cli.extensions import ExtensionManager
+
+            tracked = ExtensionManager(project).registry.get("git")["registered_commands"]
+            assert "speckit.git.commit" in tracked[agent]
+            legacy.write_bytes(b"<!-- Extension: git -->\nRestored ownership\n")
+            result = _run_in_project(project, ["extension", "remove", "git", "--force"])
+            assert result.exit_code == 0, result.output
+            assert not legacy.exists()
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("commands_only", [False, True])
+    def test_integration_cleanup_retires_owned_legacy_extension_commands(
+        self, tmp_path, agent, commands_only
+    ):
+        project = _init_project(tmp_path, agent)
+        # A pre-existing collision keeps both owners in the legacy layout.
+        for ext_id, name in [("foo", "speckit.foo.bar-baz"), ("foo-bar", "speckit.foo-bar.baz")]:
+            self._plant_extension(project, ext_id, [{"name": name, "body": "BODY\n"}], agent=agent)
+        directory = ".kiro/prompts" if agent == "kiro-cli" else ".qoder/commands"
+        legacy = project / directory / "speckit.foo.bar-baz.md"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_bytes(b"<!-- Extension: foo -->\nFOO\n")
+        if commands_only:
+            from specify_cli.extensions import ExtensionManager
+
+            manager = ExtensionManager(project)
+            manager.unregister_agent_artifacts(agent, commands_only=True)
+            assert legacy.exists()
+            assert agent in manager.registry.get("foo")["registered_commands"]
+            assert manager.remove("foo")
+            assert not legacy.exists()
+            return
+        result = _run_in_project(project, ["integration", "switch", "claude"])
+        assert result.exit_code == 0, result.output
+        assert not legacy.exists()
+        from specify_cli.extensions import ExtensionManager
+
+        assert agent not in ExtensionManager(project).registry.get("foo")["registered_commands"]
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("operation", ["use", "upgrade", "remove"])
+    @pytest.mark.parametrize("readable_manifest", [True, False])
+    @pytest.mark.parametrize("damage", ["entry", "null-agent", "missing"])
+    def test_malformed_owner_cannot_lose_shared_extension_file(
+        self, tmp_path, agent, operation, readable_manifest, damage
+    ):
+        project = _init_project(tmp_path, agent)
+        self._plant_extension(project, "foo-bar", [{
+            "name": "speckit.foo-bar.baz", "body": "BAR\n", "aliases": ["speckit-foo-bar-baz"],
+        }], agent=agent)
+        result = _run_in_project(project, ["integration", "use", agent])
+        assert result.exit_code == 0, result.output
+        output = (
+            ".kiro/prompts/speckit-foo-bar-baz.md" if agent == "kiro-cli"
+            else ".qoder/skills/speckit-foo-bar-baz/SKILL.md"
+        )
+        shared = project / output
+        before = shared.read_bytes()
+        self._plant_extension(project, "foo", [{
+            "name": "speckit.foo.bar-baz", "body": "FOO\n",
+        }], agent=agent)
+        registry_path = project / ".specify/extensions/.registry"
+        registry = json.loads(registry_path.read_bytes())
+        registry["extensions"]["foo-bar"] = (
+            "damaged" if damage == "entry"
+            else {"enabled": False, "registered_commands": {agent: None}}
+        )
+        if damage == "missing":
+            del registry["extensions"]["foo-bar"]["registered_commands"]
+        registry_path.write_bytes(json.dumps(registry).encode())
+        if not readable_manifest:
+            (project / ".specify/extensions/foo-bar/extension.yml").write_bytes(b"invalid: [")
+        args = (
+            ["extension", "remove", "foo", "--force"] if operation == "remove"
+            else ["integration", operation, agent]
+        )
+        result = _run_in_project(project, args)
+        assert shared.read_bytes() == before
+        assert result.exit_code == 0, result.output
+        if operation == "remove":
+            del registry["extensions"]["foo"]
+            assert json.loads(registry_path.read_bytes()) == registry
+        elif not readable_manifest:
+            assert "foo-bar" in result.output
+            assert "Fix or restore .specify/extensions/.registry" in _normalize_cli_output(result.output)
+            assert json.loads(registry_path.read_bytes()) == registry
+
+    @pytest.mark.parametrize("operation", ["use", "upgrade", "switch", "reinstall", "update"])
+    @pytest.mark.parametrize("linked", [False, True])
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    def test_migration_preserves_unowned_destination(self, tmp_path, monkeypatch, operation, linked, agent):
+        import yaml
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
+
+        source = _write_command_extension(tmp_path)
+        if agent == "kiro-cli":
+            project = _init_dotted_kiro_project(
+                tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)]
+            )
+            destination = project / ".kiro/prompts/speckit-audit-run.md"
+        else:
+            project = _init_project(tmp_path, agent)
+            assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+            destination = project / ".qoder/skills/speckit-audit-run/SKILL.md"
+            legacy = project / ".qoder/commands/speckit.audit.run.md"
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_bytes(destination.read_bytes())
+            destination.unlink()
+        target = project / "user-prompt.md"
+        before = b"USER WORKAROUND PROMPT\n"
+        if linked:
+            target.write_bytes(before)
+            try:
+                destination.symlink_to(target)
+            except OSError:
+                pytest.skip("Symlinks are unavailable")
+        else:
+            destination.write_bytes(before)
+        if operation == "switch":
+            assert _run_in_project(project, ["integration", "install", "claude"]).exit_code == 0
+            assert _run_in_project(project, ["integration", "use", "claude"]).exit_code == 0
+        tracked = ExtensionManager(project).registry.get("audit")["registered_commands"][agent]
+        if operation == "update":
+            monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+                "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+            })
+            monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+            monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+            manifest = yaml.safe_load((source / "extension.yml").read_bytes())
+            manifest["extension"]["version"] = "2.0.0"
+            (source / "extension.yml").write_bytes(yaml.safe_dump(manifest).encode())
+            from contextlib import chdir
+
+            with chdir(project):
+                result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        else:
+            args = ["extension", "add", "--dev", str(source), "--force"] if operation == "reinstall" else ["integration", operation, agent]
+            result = _run_in_project(project, args)
+        assert destination.read_bytes() == before
+        if linked:
+            assert destination.is_symlink() and target.read_bytes() == before
+        assert "Move or remove" in _normalize_cli_output(result.output)
+        assert destination.relative_to(project).as_posix() in _normalize_cli_output(result.output)
+        assert ExtensionManager(project).registry.get("audit")["registered_commands"][agent] == tracked
+
+    @pytest.mark.parametrize("alias", ["speckit-plan", "plan"])
+    @pytest.mark.parametrize("linked", [False, True])
+    @pytest.mark.parametrize("core_manifest,operation", [
+        (state, "init") for state in ("readable", "missing", "unreadable", "empty")
+    ] + [("empty", "upgrade")])
+    def test_kiro_reinit_preserves_legacy_alias(self, tmp_path, monkeypatch, alias, linked, core_manifest, operation):
+        from specify_cli.extensions import ExtensionManager
+
+        source = _write_command_extension(tmp_path, aliases=[alias])
+        with monkeypatch.context() as patch:
+            patch.setattr(ExtensionManager, "_validate_install_conflicts", lambda *args: None)
+            project = _init_dotted_kiro_project(
+                tmp_path, patch, ["extension", "add", "--dev", str(source)]
+            )
+        path = project / ".kiro/prompts" / f"{alias}.md"
+        before = path.read_bytes()
+        if linked:
+            target = project / ".specify/extensions/audit/alias-cache.md"
+            target.write_bytes(before)
+            path.unlink()
+            try:
+                path.symlink_to(target)
+            except OSError:
+                pytest.skip("Symlinks are unavailable")
+        manifest_path = project / ".specify/integrations/kiro-cli.manifest.json"
+        if core_manifest == "missing":
+            manifest_path.unlink()
+        elif core_manifest == "unreadable":
+            manifest_path.write_bytes(b"invalid: [")
+        elif core_manifest == "empty":
+            manifest = json.loads(manifest_path.read_bytes())
+            manifest["files"] = {}
+            manifest_path.write_bytes(json.dumps(manifest).encode())
+        snapshot = {p: p.read_bytes() for root in (project / ".specify", project / ".kiro") for p in root.rglob("*") if p.is_file()}
+        args = (["integration", "upgrade", "kiro-cli"] if operation == "upgrade" else
+                ["init", "--here", "--integration", "kiro-cli", "--script", "sh", "--ignore-agent-tools", "--force"])
+        result = _run_in_project(project, args)
+        assert path.read_bytes() == before
+        if linked:
+            assert path.is_symlink() and target.read_bytes() == before
+        if alias == "speckit-plan":
+            assert result.exit_code == 1, result.output
+            assert {p: p.read_bytes() for p in snapshot} == snapshot
+        else:
+            assert result.exit_code == 0, result.output
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("legacy", [False, True])
+    @pytest.mark.parametrize("content", [None, b"USER FILE\n", b"\xff"])
+    def test_manifest_rename_retires_owned_output(self, tmp_path, monkeypatch, agent, legacy, content):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+        from specify_cli.extensions import ExtensionManager
+
+        source = _write_command_extension(tmp_path)
+        if legacy and agent == "kiro-cli":
+            project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+            old = project / ".kiro/prompts/speckit.audit.run.md"
+        else:
+            project = _init_project(tmp_path, agent)
+            assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+            assert _run_in_project(project, ["integration", "use", agent]).exit_code == 0
+            registrar = CommandRegistrar(project)
+            config = registrar.AGENT_CONFIGS[agent]
+            stem = registrar._compute_output_name(agent, "speckit.audit.run", config)
+            old = project / config["dir"] / f"{stem}{config['extension']}"
+            if legacy:
+                flat = project / ".qoder/commands/speckit.audit.run.md"
+                flat.parent.mkdir(parents=True)
+                flat.write_bytes(old.read_bytes())
+                old.unlink()
+                old = flat
+        if content is not None:
+            old.unlink()
+            old.write_bytes(content)
+        path = project / ".specify/extensions/audit/extension.yml"
+        manifest = yaml.safe_load(path.read_bytes())
+        manifest["provides"]["commands"][0]["name"] = "speckit.audit.renamed"
+        path.write_bytes(yaml.safe_dump(manifest).encode())
+        assert _run_in_project(project, ["integration", "use", agent]).exit_code == 0
+        if content is None:
+            assert not old.exists() and not old.is_symlink()
+        else:
+            assert old.read_bytes() == content
+            assert "speckit.audit.run" in ExtensionManager(project).registry.get("audit")["registered_commands"][agent]
+        result = _run_in_project(project, ["extension", "remove", "audit", "--force"])
+        assert result.exit_code == 0, result.output
+        if content is not None:
+            assert old.read_bytes() == content
+            assert "Preserving" in result.output
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("operation", ["remove", "switch"])
+    @pytest.mark.parametrize("readable_manifest", [True, False])
+    @pytest.mark.parametrize("damage", ["per-agent", None, [], "speckit.audit.run", "missing", "empty", "stale"])
+    def test_malformed_cleanup_recovers_names_or_keeps_tracking(self, tmp_path, agent, operation, readable_manifest, damage):
+        from specify_cli.agents import CommandRegistrar
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, agent)
+        source = _write_command_extension(tmp_path, aliases=["audit-extra"] if damage in ("missing", "empty") else [])
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        assert _run_in_project(project, ["integration", "use", agent]).exit_code == 0
+        registrar = CommandRegistrar(project)
+        config = registrar.AGENT_CONFIGS[agent]
+        def output(name):
+            return project / config["dir"] / f"{registrar._compute_output_name(agent, name, config)}{config['extension']}"
+        owned, unrelated = output("speckit.audit.run"), output("audit-extra" if damage in ("missing", "empty") else "s")
+        owned_body = owned.read_bytes()
+        unrelated.parent.mkdir(parents=True, exist_ok=True)
+        unrelated.unlink(missing_ok=True)
+        unrelated.write_bytes(b"USER\n")
+        manager = ExtensionManager(project)
+        recorded = {agent: "speckit.audit.run"} if damage == "per-agent" else damage
+        if damage == "stale":
+            import yaml
+
+            manifest_path = project / ".specify/extensions/audit/extension.yml"
+            manifest = yaml.safe_load(manifest_path.read_bytes())
+            manifest["provides"]["commands"][0]["name"] = "speckit.audit.renamed"
+            manifest_path.write_bytes(yaml.safe_dump(manifest).encode())
+            recorded = {agent: ["speckit.audit.run", 1]}
+        manager.registry.update("audit", {"registered_commands": recorded})
+        if damage in ("missing", "empty"):
+            registry = project / ".specify/extensions/.registry"
+            data = json.loads(registry.read_bytes())
+            if damage == "missing":
+                del data["extensions"]["audit"]["registered_commands"]
+            else:
+                data["extensions"]["audit"] = {}
+            registry.write_bytes(json.dumps(data).encode())
+        if not readable_manifest:
+            (project / ".specify/extensions/audit/extension.yml").write_bytes(b"invalid: [")
+        args = ["extension", "remove", "audit", "--force"] if operation == "remove" else ["integration", "switch", "claude"]
+        result = _run_in_project(project, args)
+        assert unrelated.read_bytes() == b"USER\n"
+        if readable_manifest:
+            assert result.exit_code == 0, result.output
+            assert not owned.exists()
+            if operation == "switch" and damage in ("missing", "empty"):
+                tracked = ExtensionManager(project).registry.get("audit")["registered_commands"]
+                assert {"speckit.audit.run", "audit-extra"} <= set(tracked[agent])
+                unrelated.write_bytes(owned_body)
+                assert _run_in_project(project, ["extension", "remove", "audit", "--force"]).exit_code == 0
+                assert not unrelated.exists()
+        else:
+            assert os.path.lexists(owned)
+            metadata = ExtensionManager(project).registry.get("audit")
+            if operation == "remove":
+                assert result.exit_code == 0, result.output
+                assert metadata is None
+            elif damage in ("missing", "empty"):
+                assert "registered_commands" not in metadata
+            else:
+                assert metadata["registered_commands"] == recorded
+            assert "Neither its manifest nor its registered commands can be read." in _normalize_cli_output(result.output)
+            assert f"Keeping its command files for {agent}." in _normalize_cli_output(result.output)
+
+    @pytest.mark.parametrize("target_agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("damage", ["missing", "null-agent"])
+    def test_refresh_recovers_unknown_tracking_before_removal(self, tmp_path, target_agent, damage):
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, "kiro-cli")
+        assert _run_in_project(project, ["extension", "add", "git"]).exit_code == 0
+        prompt = next((project / ".kiro/prompts").glob("*git*commit.md"))
+        before = prompt.read_bytes()
+        if target_agent == "kiro-cli":
+            (project / ".specify/extensions/git/commands/speckit.git.commit.md").unlink()
+        else:
+            assert _run_in_project(project, ["integration", "install", target_agent]).exit_code == 0
+        registry = project / ".specify/extensions/.registry"
+        data = json.loads(registry.read_bytes())
+        if damage == "missing":
+            del data["extensions"]["git"]["registered_commands"]
+        else:
+            data["extensions"]["git"]["registered_commands"] = {"kiro-cli": None}
+        registry.write_bytes(json.dumps(data).encode())
+        result = _run_in_project(project, ["integration", "use", target_agent])
+        assert result.exit_code == 0, result.output
+        assert prompt.read_bytes() == before
+        tracked = ExtensionManager(project).registry.get("git")["registered_commands"]
+        assert "speckit.git.commit" in tracked["kiro-cli"]
+        assert _run_in_project(project, ["extension", "remove", "git", "--force"]).exit_code == 0
+        assert not prompt.exists()
+
+    @pytest.mark.parametrize("tracking", ["valid", "missing", "null-agent"])
+    def test_failed_update_restores_qoder_legacy_commands(self, tmp_path, monkeypatch, tracking):
+        import yaml
+        from contextlib import chdir
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
+
+        project = _init_project(tmp_path, "qodercli")
+        source = _write_command_extension(tmp_path)
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        legacy = project / ".qoder/commands/speckit.audit.run.md"
+        legacy.parent.mkdir(parents=True)
+        body = b"<!-- Extension: audit -->\nLOCAL LEGACY EDIT\n"
+        legacy.write_bytes(body)
+        (project / ".qoder/skills/speckit-audit-run/SKILL.md").unlink()
+        registry = project / ".specify/extensions/.registry"
+        data = json.loads(registry.read_bytes())
+        if tracking == "missing":
+            del data["extensions"]["audit"]["registered_commands"]
+        elif tracking == "null-agent":
+            data["extensions"]["audit"]["registered_commands"] = {"qodercli": None}
+        registry.write_bytes(json.dumps(data).encode())
+        monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+            "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+        })
+        monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+        monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+        manifest_path = source / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_bytes())
+        manifest["extension"]["version"] = "2.0.0"
+        manifest_path.write_bytes(yaml.safe_dump(manifest).encode())
+        def fail_install(*args, **kwargs):
+            raise RuntimeError("Injected install failure")
+        monkeypatch.setattr(ExtensionManager, "install_from_zip", fail_install)
+        with chdir(project):
+            result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        assert result.exit_code == 1, result.output
+        assert "Injected install failure" in result.output
+        assert legacy.read_bytes() == body
+        assert json.loads(registry.read_bytes()) == data
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("operation", ["use", "upgrade"])
+    @pytest.mark.parametrize("missing_source", [False, True])
+    def test_dropped_alias_keeps_declared_command_output(self, tmp_path, agent, operation, missing_source):
+        import yaml
+        from specify_cli.agents import CommandRegistrar
+
+        project = _init_project(tmp_path, agent)
+        source = _write_command_extension(tmp_path, aliases=["audit-run"])
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        assert _run_in_project(project, ["integration", "use", agent]).exit_code == 0
+        registrar = CommandRegistrar(project)
+        config = registrar.AGENT_CONFIGS[agent]
+        stem = registrar._compute_output_name(agent, "speckit.audit.run", config)
+        path = project / config["dir"] / f"{stem}{config['extension']}"
+        before = path.read_bytes()
+        manifest_path = project / ".specify/extensions/audit/extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_bytes())
+        manifest["provides"]["commands"][0]["aliases"] = []
+        manifest_path.write_bytes(yaml.safe_dump(manifest).encode())
+        if missing_source:
+            (manifest_path.parent / "commands/run.md").unlink()
+        result = _run_in_project(project, ["integration", operation, agent])
+        assert result.exit_code == 0, result.output
+        assert path.is_file()
+        assert path.read_bytes() == before if missing_source else b"AUDIT-BODY" in path.read_bytes()
+
+    @pytest.mark.parametrize("missing_source", [False, True])
+    def test_dropped_legacy_alias_stays_tracked_for_removal(self, tmp_path, monkeypatch, missing_source):
+        import yaml
+        from specify_cli.extensions import ExtensionManager
+
+        source = _write_command_extension(tmp_path, aliases=["audit-run"])
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+        alias = project / ".kiro/prompts/audit-run.md"
+        assert alias.is_file()
+        path = project / ".specify/extensions/audit/extension.yml"
+        manifest = yaml.safe_load(path.read_bytes())
+        manifest["provides"]["commands"][0]["aliases"] = []
+        path.write_bytes(yaml.safe_dump(manifest).encode())
+        if missing_source:
+            (path.parent / "commands/run.md").unlink()
+        assert _run_in_project(project, ["integration", "use", "kiro-cli"]).exit_code == 0
+        assert "audit-run" in ExtensionManager(project).registry.get("audit")["registered_commands"]["kiro-cli"]
+        assert _run_in_project(project, ["extension", "remove", "audit", "--force"]).exit_code == 0
+        assert not os.path.lexists(alias)
+
+    @pytest.mark.parametrize("operation", ["use", "upgrade", "reinstall", "update", "remove"])
+    def test_template_metadata_does_not_hide_generated_owner(self, tmp_path, monkeypatch, operation):
+        from specify_cli.extensions import ExtensionCatalog
+        from specify_cli.agents import CommandRegistrar
+        from contextlib import chdir
+
+        project = _init_project(tmp_path, "kiro-cli")
+        source = _write_command_extension(tmp_path)
+        (source / "commands/run.md").write_bytes(
+            b"---\ndescription: Audit\nmetadata: {source: upstream-template}\n---\nAUDIT-BODY\n"
+        )
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        registrar = CommandRegistrar(project)
+        config = registrar.AGENT_CONFIGS["kiro-cli"]
+        stem = registrar._compute_output_name("kiro-cli", "speckit.audit.run", config)
+        path = project / config["dir"] / f"{stem}{config['extension']}"
+        assert path.is_file()
+        if operation == "update":
+            manifest_path = source / "extension.yml"
+            manifest_path.write_bytes(manifest_path.read_bytes().replace(b"version: 1.0.0", b"version: 2.0.0"))
+            monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+                "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+            })
+            monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+            monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+            with chdir(project):
+                result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        else:
+            args = (["extension", "remove", "audit", "--force"] if operation == "remove" else
+                    ["extension", "add", "--dev", str(source), "--force"] if operation == "reinstall" else
+                    ["integration", operation, "kiro-cli"])
+            result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        assert "not marked as owned" not in _normalize_cli_output(result.output)
+        if operation == "remove":
+            assert not os.path.lexists(path)
+        else:
+            assert b"AUDIT-BODY" in path.read_bytes()
+
+    @pytest.mark.parametrize("agent,source_metadata", [
+        ("kiro-cli", "foo:upstream-template"), ("kiro-cli", "extension:foo"), ("qodercli", None),
+    ])
+    def test_generated_owner_overrules_other_formats_marker(self, tmp_path, monkeypatch, agent, source_metadata):
+        import yaml
+        from specify_cli.extensions import ExtensionManager
+
+        sources = []
+        for extension_id, command in (("foo", "speckit.foo.bar-baz"), ("foo-bar", "speckit.foo-bar.baz")):
+            source = _write_command_extension(tmp_path / extension_id)
+            path = source / "extension.yml"
+            manifest = yaml.safe_load(path.read_bytes())
+            manifest["extension"]["id"] = extension_id
+            manifest["provides"]["commands"][0]["name"] = command
+            if extension_id == "foo-bar":
+                manifest["provides"]["commands"][0]["aliases"] = ["speckit-foo-bar-baz"] if agent == "kiro-cli" else []
+                frontmatter = {"description": "Borrowed template", "metadata": {"source": source_metadata}}
+                (source / "commands/run.md").write_bytes(
+                    ("---\n" + yaml.safe_dump(frontmatter) + "---\nSURVIVOR\n<!-- Extension: foo -->\n").encode()
+                )
+            path.write_bytes(yaml.safe_dump(manifest).encode())
+            sources.append(source)
+        with monkeypatch.context() as patch:
+            patch.setattr(ExtensionManager, "_validate_install_conflicts", lambda *args: None)
+            commands = [["extension", "add", "--dev", str(source)] for source in sources]
+            if agent == "kiro-cli":
+                project = _init_dotted_kiro_project(tmp_path, patch, *commands)
+            else:
+                project = _init_project(tmp_path, agent)
+                for args in commands:
+                    assert _run_in_project(project, args).exit_code == 0
+        path = project / (".kiro/prompts/speckit-foo-bar-baz.md" if agent == "kiro-cli" else
+                          ".qoder/skills/speckit-foo-bar-baz/SKILL.md")
+        before = path.read_bytes()
+        assert b"SURVIVOR" in before
+        result = _run_in_project(project, ["extension", "remove", "foo", "--force"])
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == before
+        assert ExtensionManager(project).registry.get("foo-bar")["enabled"]
+
+    @pytest.mark.parametrize("readable_preset", [True, False])
+    @pytest.mark.parametrize("operation", ["use", "upgrade", "reinstall", "update"])
+    def test_pending_migration_preserves_preset_override(self, tmp_path, monkeypatch, operation, readable_preset):
+        import yaml
+        from contextlib import chdir
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
+
+        source = _write_command_extension(tmp_path)
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+        assert _run_in_project(project, ["extension", "disable", "audit"]).exit_code == 0
+        assert _run_in_project(project, ["integration", "upgrade", "kiro-cli"]).exit_code == 0
+        preset = _write_command_preset(tmp_path, "audit-preset")
+        preset_path = preset / "preset.yml"
+        data = yaml.safe_load(preset_path.read_bytes())
+        data["provides"]["templates"][0]["name"] = "speckit.audit.run"
+        preset_path.write_bytes(yaml.safe_dump(data).encode())
+        assert _run_in_project(project, ["preset", "add", "--dev", str(preset)]).exit_code == 0
+        destination = project / ".kiro/prompts/speckit-audit-run.md"
+        before = destination.read_bytes()
+        legacy = project / ".kiro/prompts/speckit.audit.run.md"
+        old_content = legacy.read_bytes()
+        tracked = ExtensionManager(project).registry.get("audit")["registered_commands"]
+        if not readable_preset:
+            (project / ".specify/presets/audit-preset/preset.yml").write_bytes(b"invalid: [")
+        assert _run_in_project(project, ["extension", "enable", "audit"]).exit_code == 0
+        if operation == "update":
+            monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+                "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+            })
+            monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+            monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+            manifest_path = source / "extension.yml"
+            manifest = yaml.safe_load(manifest_path.read_bytes())
+            manifest["extension"]["version"] = "2.0.0"
+            manifest_path.write_bytes(yaml.safe_dump(manifest).encode())
+            with chdir(project):
+                result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        else:
+            args = (["extension", "add", "--dev", str(source), "--force"] if operation == "reinstall" else
+                    ["integration", operation, "kiro-cli"] + (["--force"] if operation == "upgrade" else []))
+            result = _run_in_project(project, args)
+        assert result.exit_code == (1 if operation in ("reinstall", "update") else 0), result.output
+        assert "Move or remove" in _normalize_cli_output(result.output)
+        assert destination.read_bytes() == before
+        assert legacy.read_bytes() == old_content
+        assert ExtensionManager(project).registry.get("audit")["registered_commands"] == tracked
+
+    @pytest.mark.parametrize("alias", ["SKILL", "ordinary-alias"])
+    @pytest.mark.parametrize("operation", ["remove", "switch", "use", "upgrade"])
+    def test_flat_alias_uses_command_ownership_regardless_of_basename(self, tmp_path, monkeypatch, alias, operation):
+        source = _write_command_extension(tmp_path, aliases=[alias])
+        project = _init_dotted_kiro_project(
+            tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)], ["integration", "use", "kiro-cli"]
+        )
+        legacy = project / ".kiro/prompts" / f"{alias}.md"
+        assert b"<!-- Extension: audit -->" in legacy.read_bytes()
+        if operation == "remove":
+            args = ["extension", "remove", "audit", "--force"]
+        elif operation == "switch":
+            args = ["integration", "switch", "claude"]
+        else:
+            args = ["integration", operation, "kiro-cli"]
+        result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        if operation in ("use", "upgrade"):
+            assert _run_in_project(project, ["extension", "remove", "audit", "--force"]).exit_code == 0
+        assert not os.path.lexists(legacy)
+
+    @pytest.mark.parametrize("operation", ["reinstall", "update"])
+    @pytest.mark.parametrize("destination_kind", ["file", "symlink", "absent"])
+    def test_package_rename_preserves_pending_destination(self, tmp_path, monkeypatch, operation, destination_kind):
+        import yaml
+        from contextlib import chdir
+        from specify_cli.extensions import ExtensionCatalog
+
+        source = _write_command_extension(tmp_path)
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+        destination = project / ".kiro/prompts/speckit-audit-run.md"
+        target = project / "user-workaround.md"
+        before = b"USER WORKAROUND\n"
+        if destination_kind == "file":
+            destination.write_bytes(before)
+        elif destination_kind == "symlink":
+            target.write_bytes(before)
+            try:
+                destination.symlink_to(target)
+            except OSError:
+                pytest.skip("Symlinks are unavailable")
+        path = source / "extension.yml"
+        manifest = yaml.safe_load(path.read_bytes())
+        manifest["provides"]["commands"][0].update(name="speckit.audit.other", aliases=["audit-run"])
+        manifest["extension"]["version"] = "2.0.0"
+        path.write_bytes(yaml.safe_dump(manifest).encode())
+        if operation == "update":
+            monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+                "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+            })
+            monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+            monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+            with chdir(project):
+                result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        else:
+            result = _run_in_project(project, ["extension", "add", "--dev", str(source), "--force"])
+        if destination_kind == "absent":
+            assert result.exit_code == 0, result.output
+            from specify_cli.agents import CommandRegistrar
+
+            registrar = CommandRegistrar(project)
+            config = registrar.AGENT_CONFIGS["kiro-cli"]
+            stem = registrar._compute_output_name("kiro-cli", "audit-run", config)
+            assert b"AUDIT-BODY" in (project / config["dir"] / f"{stem}{config['extension']}").read_bytes()
+        else:
+            assert destination.read_bytes() == before
+            if destination_kind == "symlink":
+                assert destination.is_symlink() and target.read_bytes() == before
 
     def _plant_extension(
         self,
@@ -736,9 +1391,9 @@ class TestIntegrationUpgradeDetailed:
             tmp_path, monkeypatch, ["extension", "add", "git"]
         )
         prompts = project / ".kiro" / "prompts"
-        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
-        bar_body = "---\ndescription: Bar\n---\n\nBAR-BODY\n"
-        other_body = "---\ndescription: Other\n---\n\nOTHER-BODY\n"
+        foo_body = "---\ndescription: Foo\n---\n\n<!-- Extension: foo -->\nFOO-BODY\n"
+        bar_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
+        other_body = "---\ndescription: Other\n---\n\n<!-- Extension: foo -->\nOTHER-BODY\n"
         self._plant_extension(project, "foo", [
             {"name": "speckit.foo.bar-baz", "body": foo_body},
             {"name": "speckit.foo.other", "body": other_body},
@@ -810,8 +1465,8 @@ class TestIntegrationUpgradeDetailed:
         first one delete that file, so both stay as they were (#4797)."""
         project = _init_dotted_kiro_project(tmp_path, monkeypatch)
         prompts = project / ".kiro" / "prompts"
-        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
-        bar_body = "---\ndescription: Bar\n---\n\nBAR-BODY\n"
+        foo_body = "---\ndescription: Foo\n---\n\n<!-- Extension: foo -->\nFOO-BODY\n"
+        bar_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
         self._plant_extension(project, "foo", [
             {"name": "speckit.foo.bar-baz", "body": foo_body},
         ])
@@ -850,7 +1505,7 @@ class TestIntegrationUpgradeDetailed:
 
     @pytest.mark.parametrize(
         "damage",
-        [[], "speckit.foo-bar.baz", {"kiro-cli": "speckit.foo-bar.baz"}, {"kiro-cli": [1]}],
+        [[], "speckit.foo-bar.baz", {"kiro-cli": "speckit.foo-bar.baz"}, {"kiro-cli": [1]}, "missing"],
     )
     def test_disabled_extension_with_unreadable_registration_keeps_its_prompt(
         self, tmp_path, damage
@@ -867,9 +1522,12 @@ class TestIntegrationUpgradeDetailed:
         body = b"---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
         shared.write_bytes(body)
         registry = project / ".specify" / "extensions" / ".registry"
-        data = json.loads(registry.read_text(encoding="utf-8"))
-        data["extensions"]["foo-bar"]["registered_commands"] = damage
-        registry.write_text(json.dumps(data), encoding="utf-8")
+        data = json.loads(registry.read_bytes())
+        if damage == "missing":
+            del data["extensions"]["foo-bar"]["registered_commands"]
+        else:
+            data["extensions"]["foo-bar"]["registered_commands"] = damage
+        registry.write_bytes(json.dumps(data).encode())
         self._plant_extension(project, "foo", [
             {"name": "speckit.foo.bar-baz", "body": "FOO-BODY\n"},
         ])
@@ -892,8 +1550,8 @@ class TestIntegrationUpgradeDetailed:
         deletes its own prompt, and the other one moves on the next pass."""
         project = _init_dotted_kiro_project(tmp_path, monkeypatch)
         prompts = project / ".kiro" / "prompts"
-        foo_body = "---\ndescription: Foo\n---\n\nFOO-BODY\n"
-        bar_body = "---\ndescription: Bar\n---\n\nBAR-BODY\n"
+        foo_body = "---\ndescription: Foo\n---\n\n<!-- Extension: foo -->\nFOO-BODY\n"
+        bar_body = "---\ndescription: Bar\n---\n\n<!-- Extension: foo-bar -->\nBAR-BODY\n"
         self._plant_extension(project, "foo", [
             {"name": "speckit.foo.bar-baz", "body": foo_body},
         ])
@@ -941,7 +1599,7 @@ class TestIntegrationUpgradeDetailed:
         prompt while deleting the extension's own files (#4797)."""
         project = _init_dotted_kiro_project(tmp_path, monkeypatch)
         prompts = project / ".kiro" / "prompts"
-        body = "---\ndescription: Old\n---\n\nOLD-BODY\n"
+        body = "---\ndescription: Old\n---\n\n<!-- Extension: old -->\nOLD-BODY\n"
         self._plant_extension(project, "old", [
             {"name": "speckit.old.plan", "body": body, "aliases": ["plan"]},
         ])
@@ -993,7 +1651,7 @@ class TestIntegrationUpgradeDetailed:
     def test_integration_cleanup_preserves_modified_core_with_old_alias(
         self, tmp_path, monkeypatch, operation
     ):
-        """Extension cleanup must keep a core prompt preserved by teardown (#4797)."""
+        """Switch tests extension cleanup; uninstall tests only manifest teardown (#4797)."""
         project = _init_dotted_kiro_project(tmp_path, monkeypatch)
         self._plant_extension(project, "old", [{
             "name": "speckit.old.plan", "aliases": ["plan"], "body": "OLD-BODY\n",
@@ -1132,7 +1790,7 @@ class TestIntegrationUpgradeDetailed:
 
     @pytest.mark.parametrize(
         "corruption",
-        ["registry", "entry", "registered_commands", "agent_entry", "agent_item"],
+        ["registry", "entry", "registered_commands", "agent_entry", "agent_item", "missing"],
     )
     def test_upgrade_refuses_kiro_prompt_rename_while_extension_registry_is_unreadable(
         self, tmp_path, monkeypatch, corruption
@@ -1160,9 +1818,11 @@ class TestIntegrationUpgradeDetailed:
                 entry["registered_commands"] = "kiro-cli"
             elif corruption == "agent_entry":
                 entry["registered_commands"] = {"kiro-cli": "speckit-plan"}
+            elif corruption == "missing":
+                del entry["registered_commands"]
             else:
                 entry["registered_commands"] = {"kiro-cli": [1, 2]}
-            registry.write_text(json.dumps(data), encoding="utf-8")
+            registry.write_bytes(json.dumps(data).encode())
         manifest = project / ".specify" / "integrations" / "kiro-cli.manifest.json"
         before = {path.name: path.read_bytes() for path in prompts.iterdir()}
         manifest_before = manifest.read_bytes()
@@ -1180,6 +1840,37 @@ class TestIntegrationUpgradeDetailed:
                 path.name: path.read_bytes() for path in prompts.iterdir()
             } == before
             assert manifest.read_bytes() == manifest_before
+
+    @pytest.mark.parametrize("linked", [False, True])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_kiro_upgrade_checks_untracked_core_destinations(self, tmp_path, monkeypatch, linked, force):
+        """An empty core manifest cannot bypass destination protection (#4797)."""
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        manifest_path = project / ".specify/integrations/kiro-cli.manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["files"] = {}
+        manifest_path.write_bytes(json.dumps(manifest).encode())
+        destination = project / ".kiro/prompts/speckit-plan.md"
+        body = b"USER PLAN\n"
+        target = project / "user-plan.md"
+        if linked:
+            target.write_bytes(body)
+            try:
+                destination.symlink_to(target)
+            except OSError:
+                pytest.skip("Symlinks are unavailable")
+        else:
+            destination.write_bytes(body)
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"] + (["--force"] if force else []))
+        if force and not linked:
+            assert result.exit_code == 0, result.output
+            assert destination.read_bytes() != body
+        else:
+            assert result.exit_code == 1, result.output
+            assert ".kiro/prompts/speckit-plan.md" in result.output
+            assert destination.read_bytes() == body
+            if linked:
+                assert destination.is_symlink() and target.read_bytes() == body
 
     @pytest.mark.parametrize("kind", ["file", "symlink"])
     def test_upgrade_replaces_a_kiro_prompt_it_did_not_install_only_with_force(

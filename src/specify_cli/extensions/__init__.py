@@ -1323,6 +1323,52 @@ class ExtensionManager:
                 + "\n- ".join(collisions)
             )
 
+        from .._init_options import MISSING_INIT_OPTIONS_FILE, resolve_active_agent_for_registration
+        from ..integrations import INTEGRATION_REGISTRY
+
+        active_agent = resolve_active_agent_for_registration(self.project_root)
+        agents = INTEGRATION_REGISTRY if active_agent is MISSING_INIT_OPTIONS_FILE else [active_agent]
+        for agent in agents:
+            if agent:
+                self._validate_command_destinations(manifest, agent)
+
+    def _validate_command_destinations(self, manifest: ExtensionManifest, agent_name: str) -> None:
+        """Protect occupied destinations while a flat-command rename is pending (#4797)."""
+        from ..agents import CommandRegistrar
+        from ..integrations import get_integration
+
+        integration = get_integration(agent_name)
+        legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
+        if not legacy_dir:
+            return
+        registrar = CommandRegistrar(self.project_root)
+        config = registrar.AGENT_CONFIGS[agent_name]
+        names = self._collect_manifest_command_names(manifest)
+        recorded = (self.registry.get(manifest.id) or {}).get("registered_commands", {})
+        tracked = self._valid_name_list(recorded.get(agent_name)) if isinstance(recorded, dict) else []
+        legacy_by_stem: Dict[str, List[Path]] = {}
+        for name in list(names) + tracked:
+            stem = os.path.normcase(registrar._compute_output_name(agent_name, name, config))
+            legacy_by_stem.setdefault(stem, []).append(self.project_root / legacy_dir / f"{name}{integration.legacy_flat_command_extension}")
+        for name in names:
+            stem = registrar._compute_output_name(agent_name, name, config)
+            path = self.project_root / config["dir"] / f"{stem}{config['extension']}"
+            if not os.path.lexists(path) or not any(
+                os.path.lexists(legacy) and not registrar._same_lexical_path(legacy, path)
+                for legacy in legacy_by_stem[os.path.normcase(stem)]
+            ):
+                continue
+            try:
+                if self._command_file_owned_by_extension(path, manifest.id, skill=config["extension"] == "/SKILL.md"):
+                    continue
+            except (OSError, ValueError):
+                pass
+            raise ValidationError(
+                f"Cannot register extension '{manifest.id}': {path.relative_to(self.project_root)} is not marked as owned "
+                "by this extension. Move or remove it and retry; none of this extension's "
+                "files were written or retired."
+            )
+
     @staticmethod
     def _load_extensionignore(
         source_dir: Path,
@@ -3578,8 +3624,8 @@ class ExtensionManager:
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
-        registered_commands = (
-            metadata.get("registered_commands", {}) if metadata else {}
+        registered_commands = self._recover_registered_commands(
+            extension_id, metadata.get("registered_commands") if metadata is not None else {}
         )
         raw_skills = metadata.get("registered_skills", []) if metadata else []
         # Normalize: must be a list of plain strings to avoid corrupted-registry errors
@@ -3591,33 +3637,9 @@ class ExtensionManager:
         extension_dir = self.extensions_dir / extension_id
 
         # Unregister commands from all AI agents
-        if registered_commands:
-            safe_commands = dict(registered_commands)
-            if "generic" in safe_commands:
-                safe_commands.pop("generic")
-            if safe_commands:
-                preserved = {
-                    agent_name: self._preserved_command_files(
-                        extension_id, agent_name
-                    )
-                    for agent_name in safe_commands
-                }
-                CommandRegistrar().unregister_commands(
-                    safe_commands,
-                    self.project_root,
-                    preserved_output_names=preserved,
-                )
-                # Registration leaves an extension's old flat files in place
-                # when it skips the extension, and they live outside the
-                # registrar's directory for Qoder (#4797).
-                for agent_name, command_names in safe_commands.items():
-                    self._retire_legacy_flat_extension_commands(
-                        agent_name,
-                        self._valid_name_list(command_names),
-                        extension_id,
-                        require_replacement=False,
-                        preserved_output_names=preserved[agent_name],
-                    )
+        for agent_name, command_names in registered_commands.items():
+            if agent_name != "generic":
+                self._unregister_extension_commands(extension_id, agent_name, command_names)
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
@@ -3772,6 +3794,24 @@ class ExtensionManager:
             return []
         return [item for item in value if isinstance(item, str)]
 
+    def _recover_registered_commands(self, extension_id: str, recorded: Any) -> Dict[str, Any]:
+        """Recover unknown legacy command tracking without losing cleanup names (#4797)."""
+        from ..integrations import INTEGRATION_REGISTRY
+
+        commands = copy.deepcopy(recorded) if isinstance(recorded, dict) else {}
+        for key, integration in INTEGRATION_REGISTRY.items():
+            if getattr(integration, "legacy_flat_command_dir", None) and (
+                not isinstance(recorded, dict)
+                or (key in recorded and recorded[key] != self._valid_name_list(recorded[key]))
+            ):
+                manifest = self.get_extension(extension_id)
+                valid = self._valid_name_list(commands.get(key))
+                commands[key] = (
+                    valid + [name for name in self._collect_manifest_command_names(manifest) if name not in valid]
+                    if manifest is not None else None
+                )
+        return commands
+
     def unregister_agent_artifacts(
         self,
         agent_name: str,
@@ -3821,29 +3861,29 @@ class ExtensionManager:
                 )
             updates: Dict[str, Any] = {}
 
-            registered_commands = metadata.get("registered_commands", {})
-            if (
-                isinstance(registered_commands, dict)
-                and agent_name in registered_commands
+            registered_commands = metadata.get("registered_commands")
+            readable_commands = isinstance(registered_commands, dict)
+            if (readable_commands and agent_name in registered_commands) or (
+                not readable_commands and self._core_command_files(agent_name)
             ):
-                command_names = self._valid_name_list(
-                    registered_commands.get(agent_name)
-                )
+                command_names = registered_commands.get(agent_name) if readable_commands else None
                 if agent_name == "generic":
                     command_names = self._generic_owned_names(
-                        metadata, command_names, skills=False, extension_id=ext_id
+                        metadata, self._valid_name_list(command_names), skills=False, extension_id=ext_id
                     )
-                if command_names:
-                    registrar.unregister_commands(
-                        {agent_name: command_names}, self.project_root,
-                        preserved_output_names={
-                            agent_name: self._preserved_command_files(ext_id, agent_name)
-                        },
-                    )
+                remaining = self._unregister_extension_commands(
+                    ext_id, agent_name, command_names, retire_legacy=not commands_only
+                )
 
-                new_registered = copy.deepcopy(registered_commands)
-                new_registered.pop(agent_name, None)
-                updates["registered_commands"] = new_registered
+                if remaining is None:
+                    continue
+                if readable_commands:
+                    new_registered = copy.deepcopy(registered_commands)
+                    if remaining:
+                        new_registered[agent_name] = remaining
+                    else:
+                        new_registered.pop(agent_name, None)
+                    updates["registered_commands"] = new_registered
 
             registered_skills = self._valid_name_list(
                 metadata.get("registered_skills", [])
@@ -3907,6 +3947,56 @@ class ExtensionManager:
 
             if updates:
                 self.registry.update(ext_id, updates)
+
+    def _unregister_extension_commands(
+        self, extension_id: str, agent_name: str, command_names: Any,
+        *, retire_legacy: bool = True,
+    ) -> Optional[List[str]]:
+        """Retire owned commands and keep names whose files remain (#4797, #2948)."""
+        from ..integrations import get_integration
+
+        integration = get_integration(agent_name)
+        legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
+        if legacy_dir and command_names != self._valid_name_list(command_names):
+            manifest = self.get_extension(extension_id)
+            if manifest is None:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "clean up commands for", "extension", extension_id,
+                    ExtensionError("Neither its manifest nor its registered commands can be read."),
+                    continuing=f"Keeping its command files for {agent_name}.",
+                )
+                return None
+            valid = self._valid_name_list(command_names)
+            command_names = valid + [name for name in self._collect_manifest_command_names(manifest) if name not in valid]
+        command_names = self._valid_name_list(command_names)
+        preserved = self._preserved_command_files(extension_id, agent_name, command_names)
+        registrar = CommandRegistrar(self.project_root)
+        registrar.unregister_commands(
+            {agent_name: command_names}, self.project_root,
+            preserved_output_names={agent_name: preserved},
+        )
+        if retire_legacy:
+            self._retire_legacy_flat_extension_commands(
+                agent_name, command_names, extension_id,
+                require_replacement=False, preserved_output_names=preserved,
+            )
+        if not legacy_dir:
+            return []
+        config = registrar.AGENT_CONFIGS[agent_name]
+        remaining = []
+        for name in command_names:
+            if not registrar._registrar._is_safe_command_name(name):
+                continue
+            stem = registrar._registrar._compute_output_name(agent_name, name, config)
+            paths = (
+                self.project_root / config["dir"] / f"{stem}{config['extension']}",
+                self.project_root / legacy_dir / f"{name}{integration.legacy_flat_command_extension}",
+            )
+            if any(os.path.lexists(path) for path in paths):
+                remaining.append(name)
+        return remaining
 
     def _retire_legacy_flat_extension_commands(
         self,
@@ -4007,24 +4097,23 @@ class ExtensionManager:
             if registrar._same_lexical_path(legacy_file, replacement):
                 continue
             if legacy_file.is_symlink() or legacy_file.is_file():
-                if not require_replacement:
-                    try:
-                        if not self._command_file_owned_by_extension(legacy_file, extension_id):
-                            raise ExtensionError(
-                                f"Not marked as owned by extension '{extension_id}'"
-                            )
-                    except (OSError, ValueError, ExtensionError) as exc:
-                        _print_cli_warning(
-                            "verify ownership of", "legacy command file", str(legacy_file), exc,
-                            continuing="Preserving the legacy file.",
+                try:
+                    if not self._command_file_owned_by_extension(legacy_file, extension_id, skill=False):
+                        raise ExtensionError(
+                            f"Not marked as owned by extension '{extension_id}'"
                         )
-                        continue
+                except (OSError, ValueError, ExtensionError) as exc:
+                    _print_cli_warning(
+                        "verify ownership of", "legacy command file", str(legacy_file), exc,
+                        continuing="Preserving the legacy file.",
+                    )
+                    continue
                 legacy_file.unlink()
                 removed.append(legacy_file)
 
         return removed
 
-    def _command_file_owned_by_extension(self, path: Path, extension_id: str) -> bool:
+    def _command_file_owned_by_extension(self, path: Path, extension_id: str, *, skill: bool) -> bool:
         """Read the generated ownership marker, ignoring later quoted markers (#4797)."""
         from ..agents import CommandRegistrar
         from ..shared_infra import _validate_safe_shared_directory
@@ -4032,33 +4121,27 @@ class ExtensionManager:
         _validate_safe_shared_directory(self.project_root, path.parent)
         CommandRegistrar._ensure_inside(path.resolve(), self.project_root.resolve())
         content = path.read_text(encoding="utf-8")
-        if path.name == "SKILL.md":
-            frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
-            metadata = frontmatter.get("metadata")
-            source = metadata.get("source") if isinstance(metadata, dict) else None
-            return isinstance(source, str) and (
-                source == f"extension:{extension_id}"
-                or source.startswith(f"{extension_id}:")
-            )
         marker = next((
             line for line in content.splitlines()
             if line.startswith("<!-- Extension: ") and line.endswith(" -->")
         ), None)
-        return marker == f"<!-- Extension: {extension_id} -->"
+        if not skill and marker is not None:
+            return marker == f"<!-- Extension: {extension_id} -->"
+        frontmatter, _ = CommandRegistrar.parse_frontmatter(content)
+        metadata = frontmatter.get("metadata")
+        source = metadata.get("source") if isinstance(metadata, dict) else None
+        return isinstance(source, str) and (source == f"extension:{extension_id}" or source.startswith(f"{extension_id}:"))
 
     def _preserved_command_files(
-        self, extension_id: str, agent_name: str
+        self, extension_id: str, agent_name: str, command_names: List[str]
     ) -> Set[str]:
-        """Keep core and shared migrated outputs unless ownership is proven (#4797)."""
+        """Keep migrated outputs unless their provenance proves ownership (#4797)."""
         from .. import _print_cli_warning
         from ..agents import CommandRegistrar
 
         preserved = self._core_command_files(agent_name, installed_only=True)
         core = self._core_command_files(agent_name)
-        shared = self._shared_command_files(
-            agent_name, include_core=False
-        ).get(extension_id, {})
-        if not core and not shared:
+        if not core:
             return preserved
 
         registrar = CommandRegistrar(self.project_root)
@@ -4066,11 +4149,11 @@ class ExtensionManager:
         for stem in core - preserved:
             path = self.project_root / config["dir"] / f"{stem}{config['extension']}"
             try:
-                if not self._command_file_owned_by_extension(path, extension_id):
+                if not self._command_file_owned_by_extension(path, extension_id, skill=config["extension"] == "/SKILL.md"):
                     preserved.add(stem)
             except (OSError, ValueError):
                 preserved.add(stem)
-        for name in shared:
+        for name in command_names:
             stem = registrar._compute_output_name(agent_name, name, config)
             if stem in preserved:
                 continue
@@ -4078,7 +4161,7 @@ class ExtensionManager:
             if not path.exists() and not path.is_symlink():
                 continue
             try:
-                owned = self._command_file_owned_by_extension(path, extension_id)
+                owned = self._command_file_owned_by_extension(path, extension_id, skill=config["extension"] == "/SKILL.md")
             except (OSError, ValueError) as exc:
                 preserved.add(stem)
                 _print_cli_warning(
@@ -4194,25 +4277,32 @@ class ExtensionManager:
             os.path.normcase(stem): {("", stem)} for stem in core_files
         } if include_core else {}
         claims: List[tuple[str, str, str, str]] = []
-        for ext_id, metadata in self.registry.list().items():
-            if not isinstance(metadata, dict):
-                continue
+        if self.registry.is_corrupt():
+            raise ExtensionError(
+                "Cannot check extension command ownership: the registry is unreadable. "
+                "Fix or restore .specify/extensions/.registry and retry."
+            )
+        for ext_id in self.registry.keys():
+            metadata = self.registry.get(ext_id)
             manifest = self.get_extension(ext_id)
             primary_of: Dict[str, str] = {}
             for command in manifest.commands if manifest is not None else []:
                 for name in [command["name"], *(command.get("aliases") or [])]:
                     primary_of[name] = command["name"]
-            recorded = metadata.get("registered_commands")
-            entry = recorded.get(agent_name) if isinstance(recorded, dict) else None
-            unreadable = (recorded is not None and not isinstance(recorded, dict)) or (
-                entry is not None
-                and (
-                    not isinstance(entry, list)
-                    or not all(isinstance(name, str) for name in entry)
-                )
+            recorded = metadata.get("registered_commands") if metadata is not None else None
+            entry = recorded.get(agent_name, []) if isinstance(recorded, dict) else None
+            unreadable = not isinstance(recorded, dict) or (
+                not isinstance(entry, list)
+                or not all(isinstance(name, str) for name in entry)
             )
+            if manifest is None and unreadable:
+                raise ExtensionError(
+                    f"Cannot check command ownership for extension '{ext_id}': "
+                    "its manifest and registered commands cannot be read. "
+                    "Fix or restore .specify/extensions/.registry and retry."
+                )
             names = self._valid_name_list(entry)
-            if manifest is not None and (metadata.get("enabled", True) or unreadable):
+            if manifest is not None and (unreadable or metadata.get("enabled", True)):
                 names = list(primary_of) + [n for n in names if n not in primary_of]
             primary_of_stem = {
                 os.path.normcase(
@@ -4290,14 +4380,25 @@ class ExtensionManager:
             agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
         # Registration below changes no claim this reads (#4797).
-        shared_files = (
-            self._shared_command_files(agent_name)
-            if agent_config and not skills_mode_active
-            else {}
-        )
+        try:
+            shared_files = (
+                self._shared_command_files(agent_name)
+                if agent_config and not skills_mode_active else {}
+            )
+        except ExtensionError as exc:
+            from .. import _print_cli_warning
+
+            _print_cli_warning(
+                "register extension artifacts for", "integration", agent_name, exc,
+                continuing="Preserving extension files and registry tracking.",
+            )
+            return
         # Only agents whose removal checks who owns a shared file keep a
         # registered name this pass did not write (see below).
         keep_unwritten = bool(self._core_command_files(agent_name))
+
+        def output_stem(name):
+            return os.path.normcase(registrar._registrar._compute_output_name(agent_name, name, agent_config))
 
         for ext_id, metadata in self.registry.list().items():
             if not metadata.get("enabled", True):
@@ -4346,6 +4447,16 @@ class ExtensionManager:
                             "extension so that only one command writes "
                             "each file."
                         )
+                    self._validate_command_destinations(manifest, agent_name)
+                    registered_commands = metadata.get("registered_commands")
+                    new_registered = self._recover_registered_commands(ext_id, registered_commands)
+                    previous = self._valid_name_list(new_registered.get(agent_name))
+                    declared_stems = {output_stem(name) for name in self._collect_manifest_command_names(manifest)} if keep_unwritten else set()
+                    remaining_commands = []
+                    if keep_unwritten:
+                        remaining_commands = self._unregister_extension_commands(
+                            ext_id, agent_name, [name for name in previous if output_stem(name) not in declared_stems]
+                        ) or []
                     registered = registrar.register_commands_for_agent(
                         agent_name, manifest, ext_dir, self.project_root
                     )
@@ -4357,10 +4468,6 @@ class ExtensionManager:
                             registered,
                             skills=False,
                         )
-                    registered_commands = metadata.get("registered_commands", {})
-                    if not isinstance(registered_commands, dict):
-                        registered_commands = {}
-                    new_registered = copy.deepcopy(registered_commands)
                     # register_commands skips a missing source and returns
                     # only the names it wrote; it does not raise. Replacing
                     # the agent's list with that return value (or dropping
@@ -4368,35 +4475,20 @@ class ExtensionManager:
                     # that is still on disk, and extension removal then
                     # cannot delete it. Keep a previously registered name
                     # when this pass did not write it and the manifest
-                    # still declares it. A name that was never registered
-                    # is not added. A name the manifest no longer declares
-                    # is not kept: removal deletes the formatted path, and
-                    # another extension may now own that file. Retirement
-                    # below still runs only for names written this pass,
+                    # still declares its output. This also keeps a dropped
+                    # alias's legacy file tracked for removal (#4797).
+                    # Unknown tracking is recovered from the manifest. An
+                    # output the manifest no longer declares is retired
+                    # above using provenance checks; survivors stay tracked.
+                    # Retirement below still runs only for names written this pass,
                     # and only once that pass's replacement file exists
                     # (#4797, #2948). Other agents drop an unwritten name
                     # as before: an older pair of extensions can share its
                     # file, and their removal doesn't check the owner.
-                    declared_names: Set[str] = set()
-                    for command in manifest.commands:
-                        if not isinstance(command, dict):
-                            continue
-                        primary_name = command.get("name")
-                        if isinstance(primary_name, str):
-                            declared_names.add(primary_name)
-                        aliases = command.get("aliases") or []
-                        if isinstance(aliases, list):
-                            declared_names.update(
-                                alias for alias in aliases
-                                if isinstance(alias, str)
-                            )
-                    previous = self._valid_name_list(
-                        new_registered.get(agent_name)
-                    )
                     kept = [
                         name for name in previous
-                        if name in registered
-                        or (keep_unwritten and name in declared_names)
+                        if name in registered or name in remaining_commands
+                        or (keep_unwritten and output_stem(name) in declared_stems)
                     ]
                     merged = kept + [
                         name for name in registered if name not in kept
@@ -4609,8 +4701,8 @@ class ExtensionManager:
                                         metadata, fully_replaced, skills=False,
                                         extension_id=ext_id,
                                     )
-                                registrar.unregister_commands(
-                                    {agent_name: fully_replaced}, self.project_root
+                                remaining = self._unregister_extension_commands(
+                                    ext_id, agent_name, fully_replaced
                                 )
                                 registered_commands = metadata.get(
                                     "registered_commands", {}
@@ -4621,7 +4713,7 @@ class ExtensionManager:
                                     new_registered = copy.deepcopy(registered_commands)
                                     remaining_commands = [
                                         c for c in new_registered[agent_name]
-                                        if c not in fully_replaced
+                                        if c not in fully_replaced or c in remaining
                                     ]
                                     if remaining_commands:
                                         new_registered[agent_name] = remaining_commands
@@ -4873,6 +4965,7 @@ class CommandRegistrar:
             registered_commands,
             project_root,
             preserved_output_names=preserved_output_names,
+            preserve_legacy_flat_commands=True,
         )
 
     def register_commands_for_claude(

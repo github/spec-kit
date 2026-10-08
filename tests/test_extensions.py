@@ -3434,6 +3434,43 @@ class TestExtensionManager:
         assert not manager.registry.is_installed("test-ext")
         assert not ext_dir.exists()
 
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("damaged", [None, [], "speckit.test-ext.hello"])
+    def test_scoped_cleanup_preserves_malformed_aggregate_tracking(self, extension_dir, project_dir, agent, damaged):
+        from specify_cli.agents import CommandRegistrar as AgentRegistrar
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        manager.register_enabled_extensions_for_agent(agent)
+        registrar = AgentRegistrar(project_dir)
+        config = registrar.AGENT_CONFIGS[agent]
+        stem = registrar._compute_output_name(agent, "speckit.test-ext.hello", config)
+        path = project_dir / config["dir"] / f"{stem}{config['extension']}"
+        assert path.is_file()
+        manager.registry.update("test-ext", {"registered_commands": damaged})
+        manager.unregister_agent_artifacts(agent)
+        assert not os.path.lexists(path)
+        assert manager.registry.get("test-ext")["registered_commands"] == damaged
+
+    @pytest.mark.parametrize("operation", ["remove", "unregister"])
+    def test_malformed_command_names_never_delete_individual_characters(self, extension_dir, project_dir, operation):
+        from specify_cli.agents import CommandRegistrar as AgentRegistrar
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        registrar = AgentRegistrar(project_dir)
+        config = registrar.AGENT_CONFIGS["gemini"]
+        stem = registrar._compute_output_name("gemini", "s", config)
+        path = project_dir / config["dir"] / f"{stem}{config['extension']}"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"USER FILE\n")
+        manager.registry.update("test-ext", {"registered_commands": {"gemini": "speckit.test-ext.hello"}})
+        if operation == "remove":
+            assert manager.remove("test-ext")
+        else:
+            manager.unregister_agent_artifacts("gemini")
+        assert path.read_bytes() == b"USER FILE\n"
+
     def test_remove_nonexistent(self, project_dir):
         """Test removing non-existent extension."""
         manager = ExtensionManager(project_dir)

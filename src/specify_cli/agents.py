@@ -1356,6 +1356,8 @@ class CommandRegistrar:
         registered_commands: Dict[str, List[str]],
         project_root: Path,
         preserved_output_names: Dict[str, set[str]] | None = None,
+        *,
+        preserve_legacy_flat_commands: bool = False,
     ) -> None:
         """Remove previously registered command files from agent directories.
 
@@ -1369,6 +1371,9 @@ class CommandRegistrar:
         shared migrated files not owned by the extension being removed.
         Protection applies to both formatted and raw command names.
 
+        Extension callers preserve legacy flat names for ownership-checked
+        retirement by their manager (#4797); preset cleanup is unchanged.
+
         Args:
             registered_commands: Dict mapping agent names to command name lists
             project_root: Path to project root
@@ -1380,6 +1385,11 @@ class CommandRegistrar:
                 continue
 
             agent_config = self.AGENT_CONFIGS[agent_name]
+            from .integrations import get_integration
+
+            preserve_raw = preserve_legacy_flat_commands and bool(
+                getattr(get_integration(agent_name), "legacy_flat_command_dir", None)
+            )
             commands_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
@@ -1408,6 +1418,7 @@ class CommandRegistrar:
                     names_to_clean.append(output_name)
                 if (
                     output_name != cmd_name
+                    and not preserve_raw
                     and os.path.normcase(cmd_name) not in preserved
                     and self._is_safe_command_name(cmd_name)
                 ):
