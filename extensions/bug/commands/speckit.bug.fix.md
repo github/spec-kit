@@ -39,7 +39,7 @@ Once resolved, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`, and brie
 
 ## Pre-Execution Checks
 
-The resolved `BUG_SLUG` and `BUG_DIR` are available to hooks from the command context.
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
 
 **Check for extension hooks (before bug fixing)**:
 - Check if `.specify/extensions.yml` exists in the project root.
@@ -140,7 +140,7 @@ The resolved `BUG_SLUG` and `BUG_DIR` are available to hooks from the command co
 
 **You MUST complete this section before reporting completion to the user.**
 
-The resolved `BUG_SLUG` and `BUG_DIR` and the written report are available to hooks from the command context.
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved and the written report is available, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_bug_fix`, skip to the Completion Report.
@@ -175,9 +175,10 @@ Check if `.specify/extensions.yml` exists in the project root.
 ## Completion Report
 
 **Report back** with:
-   - The slug and `BUG_DIR/fix.md` path.
-   - The status (`applied`, `partial`, `not-applied`).
-   - The next suggested step: `__SPECKIT_COMMAND_BUG_TEST__ slug=<BUG_SLUG>`.
+
+- The slug and `BUG_DIR/fix.md` path.
+- The status (`applied`, `partial`, `not-applied`).
+- The next suggested step: `__SPECKIT_COMMAND_BUG_TEST__ slug=<BUG_SLUG>`.
 
 ## Guardrails
 

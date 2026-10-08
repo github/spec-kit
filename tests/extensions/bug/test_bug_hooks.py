@@ -92,16 +92,21 @@ def test_hook_events_documented(path):
         assert event in text
 
 
-def test_bug_hook_name_validates_and_registers(tmp_path):
+@pytest.mark.parametrize("event", EVENTS)
+def test_bug_hook_event_names_are_accepted_and_registered(tmp_path, event):
+    """Pin acceptance and registration of all six bug hook event names.
+
+    Manifest validation has no event-name allow-list today. This guard passes
+    on main, is not regression evidence, and never invokes a hook.
+    """
     data = yaml.safe_load((EXT_DIR / "extension.yml").read_text(encoding="utf-8"))
-    # A valid existing command reference is sufficient to exercise registration;
-    # this supporting plumbing test never invokes the hook.
-    data["hooks"] = {"before_bug_assess": {"command": "speckit.bug.assess", "optional": False}}
+    command = f"speckit.bug.{event.rsplit('_', 1)[1]}"
+    data["hooks"] = {event: {"command": command, "optional": False}}
     path = tmp_path / "extension.yml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
     manifest = ExtensionManifest(path)
     executor = HookExecutor(tmp_path)
     executor.register_hooks(manifest)
-    hooks = executor.get_hooks_for_event("before_bug_assess")
+    hooks = executor.get_hooks_for_event(event)
     assert len(hooks) == 1
-    assert hooks[0]["command"] == "speckit.bug.assess"
+    assert hooks[0]["command"] == command

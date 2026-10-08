@@ -85,7 +85,7 @@ This extension registers no hooks of its own. The three commands are always invo
 | `speckit.bug.fix` | `before_bug_fix` | `after_bug_fix` |
 | `speckit.bug.test` | `before_bug_test` | `after_bug_test` |
 
-Pre-hooks run after slug resolution and prerequisites, before execution. For assessment, the bug directory already exists before the pre-hook runs. Post-hooks run after `assessment.md`, `fix.md`, or `test.md` is written and before reporting completion. Pre-hooks see the resolved `BUG_SLUG` and `BUG_DIR`; post-hooks additionally see the written report.
+Pre-hooks run after slug resolution and prerequisites, before execution. For assessment, the bug directory already exists before the pre-hook runs. Post-hooks run after `assessment.md`, `fix.md`, or `test.md` is written and before reporting completion. Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected.
 
 For example, an installed intake extension can register a hook in `.specify/extensions.yml`:
 

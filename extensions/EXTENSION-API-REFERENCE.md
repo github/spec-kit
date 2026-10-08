@@ -638,7 +638,7 @@ Standard events (defined by core):
 
 #### Bundled `bug` extension events (available when the extension is installed)
 
-Pre-hooks see the resolved `BUG_SLUG` and `BUG_DIR`; post-hooks additionally see the written report. Pre-hooks run after slug resolution and prerequisites; post-hooks run after the report is written and before completion is reported.
+Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected. Pre-hooks run after slug resolution and prerequisites; post-hooks run after the report is written and before completion is reported.
 
 - `before_bug_assess` - After the bug directory exists, before ingesting the report
 - `after_bug_assess` - After writing `assessment.md`

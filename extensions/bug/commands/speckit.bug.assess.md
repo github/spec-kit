@@ -72,7 +72,7 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
 
 ## Pre-Execution Checks
 
-The resolved `BUG_SLUG` and `BUG_DIR` are available to hooks from the command context.
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
 
 **Check for extension hooks (before bug assessment)**:
 - Ensure `BUG_DIR` exists (see Prerequisites) before checking hooks.
@@ -201,7 +201,7 @@ The resolved `BUG_SLUG` and `BUG_DIR` are available to hooks from the command co
 
 **You MUST complete this section before reporting completion to the user.**
 
-The resolved `BUG_SLUG` and `BUG_DIR` and the written report are available to hooks from the command context.
+By this point `BUG_SLUG` and `BUG_DIR` have been resolved and the written report is available, so a hook command run in this session can reuse them from the conversation; nothing is passed to it automatically.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_bug_assess`, skip to the Completion Report.
@@ -236,14 +236,15 @@ Check if `.specify/extensions.yml` exists in the project root.
 ## Completion Report
 
 **Report back** with:
-   - The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.
-   - The path `.specify/bugs/<BUG_SLUG>/assessment.md`.
-   - The verdict and severity.
-   - The next suggested step: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>`.
+
+- The slug used and whether it was user-provided, asked-for, or auto-generated. State it on its own line (e.g. `Slug: <BUG_SLUG>`) so it is easy to spot — downstream commands in the same session may reuse it from context without re-prompting.
+- The path `.specify/bugs/<BUG_SLUG>/assessment.md`.
+- The verdict and severity.
+- The next suggested step: `__SPECKIT_COMMAND_BUG_FIX__ slug=<BUG_SLUG>`.
 
 ## Guardrails
 
 - Never modify source files during assessment — this command only reads and writes inside `.specify/bugs/<slug>/`.
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
 - Never overwrite an existing `assessment.md` without confirmation.
-- If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.
+- If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason, still write `assessment.md`, run the Mandatory Post-Execution Hooks, and stop after the Completion Report.
