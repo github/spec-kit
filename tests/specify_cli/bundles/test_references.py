@@ -1219,6 +1219,49 @@ def test_bundle_rejects_malformed_higher_source_before_lower_match(
     assert warnings == []
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
+def test_bundle_rejects_conflicting_declared_catalog_id(tmp_path, monkeypatch, kind):
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+    from specify_cli.workflows.catalog import StepCatalog, WorkflowCatalog
+
+    catalog = {
+        "extensions": ExtensionCatalog,
+        "presets": PresetCatalog,
+        "workflows": WorkflowCatalog,
+        "steps": StepCatalog,
+    }[kind]
+    _mock_catalog(
+        monkeypatch, catalog, kind, "requested",
+        {**_installable_current(kind), "id": "other"},
+    )
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    problem = check(ComponentRef(
+        kind=kind, id="requested", version="1.0.0", source="trusted"
+    ))
+    assert problem is not None and "other" in problem and "requested" in problem
+    assert warnings == []
+
+
+@pytest.mark.parametrize("declared_id", ["requested", None])
+def test_bundle_accepts_matching_or_omitted_catalog_id(tmp_path, monkeypatch, declared_id):
+    from specify_cli.extensions import ExtensionCatalog
+
+    record = _installable_current("extensions")
+    if declared_id is not None:
+        record["id"] = declared_id
+    _mock_catalog(monkeypatch, ExtensionCatalog, "extensions", "requested", record)
+    warnings = []
+    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+
+    assert check(ComponentRef(
+        kind="extensions", id="requested", version="1.0.0", source="trusted"
+    )) is None
+    assert warnings == []
+
+
 @pytest.mark.parametrize("kind", ["workflows", "steps"])
 @pytest.mark.parametrize("duplicate_id", ["requested", "other"])
 def test_bundle_rejects_duplicate_list_ids_before_lower_source(

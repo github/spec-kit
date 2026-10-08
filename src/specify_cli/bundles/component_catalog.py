@@ -51,6 +51,11 @@ def _matching_entry(entries: dict | list, component: ComponentRef, url: str) -> 
                 f"Invalid {component.kind[:-1]} catalog entry for '{component.id}' "
                 f"from {url}: expected an object."
             )
+        if "id" in found and found["id"] != component.id:
+            raise BundlerError(
+                f"Invalid {component.kind[:-1]} catalog entry for '{component.id}' "
+                f"from {url}: declared ID {found['id']!r} does not match the catalog key."
+            )
         return {**found, "id": component.id}
 
     seen: set[str] = set()

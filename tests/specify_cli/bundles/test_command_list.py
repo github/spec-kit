@@ -5,8 +5,8 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
-import yaml  # noqa: F401
 import pytest
+import yaml  # noqa: F401
 from typer.testing import CliRunner
 
 from specify_cli import app
