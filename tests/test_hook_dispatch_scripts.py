@@ -5,13 +5,28 @@ import shutil
 import os
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
 import yaml
+from tests.conftest import _has_working_bash
 
 ROOT = Path(__file__).parent.parent
 PYTHON = ROOT / "scripts" / "python"
+
+
+@lru_cache(maxsize=1)
+def _bash_available():
+    return _has_working_bash()
+
+
+def bash_script(path):
+    if os.name == "nt":
+        if not _bash_available():
+            pytest.skip("working Git Bash not available on Windows")
+        return ["bash", str(path)]
+    return [str(path)]
 
 
 def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
@@ -20,6 +35,8 @@ def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
         "sh": [str(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")],
         "ps": ["pwsh", "-NoProfile", "-File", str(ROOT / "scripts" / "powershell" / f"{phase}-hooks.ps1")],
     }
+    if variant == "sh":
+        scripts["sh"] = bash_script(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")
     env = os.environ.copy()
     env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
     if extra_env:
@@ -176,6 +193,8 @@ def test_initialized_project_installs_runnable_dispatchers(tmp_path, variant, mo
         "ps": ["pwsh", "-NoProfile", "-File", str(project / ".specify/scripts/powershell/pre-hooks.ps1")],
         "py": [sys.executable, str(project / ".specify/scripts/python/pre_hooks.py")],
     }
+    if variant == "sh":
+        scripts["sh"] = bash_script(project / ".specify/scripts/bash/pre-hooks.sh")
     env = os.environ.copy()
     env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
     run = subprocess.run(scripts[script_type] + ["plan"], cwd=project, env=env, capture_output=True, text=True)
@@ -297,6 +316,8 @@ def test_quoted_numeric_identifier_remains_string(tmp_path, variant, phase):
 
 @pytest.mark.parametrize("phase", ["pre", "post"])
 def test_system_bash_resolves_unquoted_identifiers(tmp_path, phase):
+    if os.name == "nt":
+        pytest.skip("system /bin/bash is only available on POSIX")
     event = f"{'before' if phase == 'pre' else 'after'}_plan"
     write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n      command: speckit.git.commit\n")
     result = subprocess.run(

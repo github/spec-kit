@@ -56,6 +56,12 @@ class TestIntegrationUpgradeDetailed:
             "ps": ["pwsh", "-NoProfile", "-File",
                    str(project / ".specify/scripts/powershell/pre-hooks.ps1")],
         }[variant]
+        if variant == "sh" and os.name == "nt":
+            from tests.conftest import _has_working_bash
+
+            if not _has_working_bash():
+                pytest.skip("working Git Bash not available on Windows")
+            command[0] = "bash"
         if variant == "ps" and not shutil.which("pwsh"):
             pytest.skip("PowerShell not installed")
         run = subprocess.run(command + ["plan"], cwd=project, capture_output=True, text=True)
