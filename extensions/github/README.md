@@ -86,6 +86,18 @@ Spec Kit is moving GitHub issue tracking out of core in three stages:
 2. **Next (current stage)** — the replacement has been available for at least one release, so the core command is now deprecated. It displays a migration warning and continues its existing workflow. It does not install or enable the extension automatically or run the replacement command.
 3. **Later** — the core command will be removed in a future minor release.
 
+For existing projects, upgrading the CLI alone does not refresh the generated
+core command files. After upgrading the CLI, run this from the project root:
+
+```bash
+specify integration upgrade <key>
+```
+
+Replace `<key>` with the installed integration key, or omit it to upgrade the
+default integration. This refreshes the core command with the deprecation
+warning. If locally modified files block the upgrade, inspect those changes
+before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
+
 To migrate, install the extension and use the namespaced command instead:
 
 ```bash
