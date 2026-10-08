@@ -24,12 +24,13 @@ Bundles compose extensions, presets, workflows, and steps into role or team stac
 
 [Browse community bundles →](bundles.md)
 
-## Workflow Steps
+## Workflow step types
 
-Custom step types add executable behavior to Spec Kit workflows. The community
-catalog is discovery-only; vet a step's source before installing or running it.
+Workflow step types add reusable executable behavior that workflows can select
+with `type:`. The community catalog is discovery-only; vet a step's source
+before installing or running it.
 
-[Browse community workflow steps →](workflow-steps.md)
+[Submit a community workflow step type →](workflow-steps.md)
 
 ## Walkthroughs
 
@@ -48,6 +49,6 @@ Community projects that extend, visualize, or build on Spec Kit — including VS
 To publish your own work, follow the
 [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md),
 the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md),
-the [Community Bundles guide](bundles.md),
-or the [Community Workflow Steps guide](workflow-steps.md). For help choosing a component type,
-see [Customize Spec Kit](../guides/customization.md).
+the [Community Bundles guide](bundles.md), or the
+[Community Workflow Step Types guide](workflow-steps.md). For help choosing a
+component type, see [Customize Spec Kit](../guides/customization.md).

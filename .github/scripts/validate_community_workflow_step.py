@@ -15,6 +15,7 @@ from functools import cache
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -67,12 +68,50 @@ def validate_identity(data: dict[str, Any]) -> tuple[str, str, str]:
         raise SubmissionMismatch("invalid GitHub Repository URL")
     version = field(data, "version")
     tag = field(data, "release_tag")
-    if (
-        not re.fullmatch(r"\d+\.\d+\.\d+", version)
-        or not re.fullmatch(r"[A-Za-z0-9._~-]+", tag)
-        or not re.fullmatch(rf"(?:v?{re.escape(version)}|.+-v?{re.escape(version)})", tag)
-    ):
+    try:
+        from packaging.version import InvalidVersion, Version
+    except ImportError as exc:
+        raise Blocked(f"cannot validate release versions: {exc}") from exc
+    try:
+        parsed_version = Version(version)
+    except InvalidVersion as exc:
+        raise SubmissionMismatch(f"invalid PEP 440 Version: {version}") from exc
+    if not re.fullmatch(r"[A-Za-z0-9._~+-]+", tag):
         raise SubmissionMismatch("Release Tag must match Version and contain no slashes")
+    candidates = [tag, *(tag[index + 1:] for index, char in enumerate(tag) if char == "-")]
+    for candidate in candidates:
+        try:
+            if Version(candidate) == parsed_version:
+                break
+        except InvalidVersion:
+            continue
+    else:
+        raise SubmissionMismatch("Release Tag must match Version")
+    download_url = field(data, "download_url")
+    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9._~+/-]+", download_url):
+        raise SubmissionMismatch("Download URL contains invalid characters or is not a GitHub URL")
+    download = urlsplit(download_url)
+    release_path = f"/{match[1]}/{match[2]}/releases/download/{tag}/"
+    archive_path = f"/{match[1]}/{match[2]}/archive/refs/tags/{tag}"
+    if (
+        download.scheme != "https"
+        or download.netloc != "github.com"
+        or download.query
+        or download.fragment
+        or not re.fullmatch(r"[A-Za-z0-9._~+/-]+", download.path)
+        or any(part in (".", "..") for part in download.path.split("/"))
+        or not (
+            (
+                download.path.startswith(release_path)
+                and "/" not in download.path[len(release_path):]
+                and download.path.endswith((".zip", ".tar.gz", ".tgz"))
+            )
+            or download.path in {
+                archive_path + suffix for suffix in (".zip", ".tar.gz", ".tgz")
+            }
+        )
+    ):
+        raise SubmissionMismatch("Download URL must pin an archive in the submitted repository and release")
     return match[1], match[2], tag
 
 
@@ -103,11 +142,14 @@ def validate_files(data: dict[str, Any]) -> dict[str, tuple[str, str]]:
     extra = entry.get("extra_files", {})
     if not isinstance(extra, dict):
         raise SubmissionMismatch("extra_files must be an object")
+    forbidden = {"", ".", ".."} | {
+        name.casefold() for name in load_installer().EXCLUDE_NAMES
+    }
     for name, url in extra.items():
         if (
             not isinstance(name, str)
             or not re.fullmatch(r"[A-Za-z0-9._~/-]+", name)
-            or any(part in ("", ".", "..", ".git", "__pycache__", ".DS_Store")
+            or any(part.casefold() in forbidden
                    for part in name.split("/"))
             or name.casefold() in ("step.yml", "__init__.py")
         ):

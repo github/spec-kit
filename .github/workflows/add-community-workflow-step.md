@@ -42,7 +42,7 @@ steps:
       python-version: "3.13"
   - name: Install metadata parser
     continue-on-error: true
-    run: python3 -m pip install 'PyYAML==6.0.3'
+    run: python3 -m pip install 'PyYAML==6.0.3' 'packaging==26.3'
 
 safe-outputs:
   noop:
@@ -65,7 +65,7 @@ safe-outputs:
   add-comment:
     max: 2
   add-labels:
-    allowed: [workflow-step-submission, validation-passed, validation-failed, needs-info]
+    allowed: [workflow-step-submission, validation-failed, needs-info]
     max: 3
     issue-intent: false
   remove-labels:
@@ -108,25 +108,36 @@ Read values below GitHub issue-form headings:
 
 | Field | Form ID |
 |-------|---------|
-| Step ID | `step-id` |
-| Step Name | `step-name` |
+| Step Type ID | `step-id` |
+| Step Type Name | `step-name` |
 | Version | `version` |
 | Description | `description` |
 | Author | `author` |
 | Repository URL | `repository` |
-| Release Tag | `release-tag` |
+| Download URL | `download-url` |
+| step.yml URL | `step-yml-url` |
+| __init__.py URL | `init-url` |
+| Extra File URLs | `extra-files` |
+| Per-file SHA-256 Digests | `file-sha256` |
 | Documentation URL | `documentation` |
 | License | `license` |
-| Required Spec Kit Version | `speckit-version` |
-| Dependencies | `dependencies` |
-| Tags | `tags` |
-| Proposed Catalog Entry | `catalog-entry` |
+| Spec Kit Compatibility | `speckit-compatibility` |
+| Runtime and Tool Dependencies | `runtime-dependencies` |
+| Number of Provided Step Types | `step-type-count` |
+| Step Type Provided | `step-types-provided` |
+| Changelog URL | `changelog` |
 | Testing Details | `testing-details` |
-| Example Usage | `example-usage` |
+| Required Attestations | `attestations` |
+| Additional Context | `additional-context` |
+| AI Disclosure | `ai-disclosure` |
 
-All fields are required. Empty values and `_No response_` are missing fields.
-Strip the form's Markdown code fence before parsing Proposed Catalog Entry as
-JSON; require exactly one object keyed by the submitted Step ID.
+Changelog URL is optional for an initial release; require it for version updates.
+Additional Context is optional. All other fields are required; AI Disclosure may
+be `N/A`. Empty values and `_No response_` are missing fields.
+Strip Markdown code fences before parsing Extra File URLs and Per-file SHA-256
+Digests as JSON objects. The extra-file object may be `{}`. Construct the catalog
+entry from these canonical fields; do not require a duplicate Proposed Catalog
+Entry or copy arbitrary JSON keys from Additional Context.
 
 ## 2. Validate every required check
 
@@ -143,7 +154,8 @@ required check has completed and passed.
   rejects Windows device names such as `con`, `aux`, `com1`, and `lpt1`.
   Use the edit tool to write `/tmp/gh-aw/step-submission.json` as a JSON object
   containing the form values under `step_id`, `repository`, `version`, and
-  `release_tag`. Run this fixed command, never interpolating issue text into
+  `download_url`. Derive `release_tag` from the tag-pinned Download URL described
+  below and include it in this JSON object. Run this fixed command, never interpolating issue text into
   shell commands:
 
   ```bash
@@ -151,40 +163,54 @@ required check has completed and passed.
   ```
 
   Exit 1 is a submission defect; exit 2 is an environment blocker. A missing
-  YAML parser or failed setup is Blocked, not a successful identity check.
-- Version must be `X.Y.Z` with digits only, no `v` prefix.
-- Description must be nonempty and under 200 characters.
-- Require 2-5 distinct lowercase tags.
+  YAML/version parser or failed setup is Blocked, not a successful identity check.
+- Version must be valid PEP 440, as required by the canonical form. Use
+  `packaging.version.Version` for release matching and version ordering.
+- Description must be nonempty.
 - Repository URL must be exactly `https://github.com/<owner>/<repo>` (an
   optional trailing slash is allowed), with no credentials, query or fragment.
   Confirm the repository is public and has an open source license file.
-- Release Tag must be `X.Y.Z`, `vX.Y.Z`, or a scoped tag ending in
-  `-X.Y.Z` or `-vX.Y.Z`, matching the submitted version. Reject floating refs
-  such as `main`, `HEAD`, and `latest`. Confirm a published, non-draft GitHub
-  release exists for that exact tag.
+- Download URL must be a GitHub archive in the submitted repository:
+  `releases/download/<tag>/<asset>.zip` (also `.tar.gz` or `.tgz`) or
+  `archive/refs/tags/<tag>.zip` (also `.tar.gz` or `.tgz`).
+  Reject credentials, queries, fragments, traversal, percent escapes, and
+  floating targets such as `releases/latest/` before fetching. Extract the exact
+  tag from this URL. It must match Version under PEP 440, optionally with a `v`
+  or scoped prefix, and contain no slashes. Confirm a published, non-draft
+  GitHub release exists for that exact tag and that the named release asset
+  exists when the URL uses `releases/download`. The helper independently
+  verifies that Download URL matches the submitted repository and derived tag.
+  Archive installation/execution evidence is supplied by the author; do not
+  install or execute the archive.
 
 ### Catalog distribution
 
-The step catalog installs individual files, not an archive `download_url`.
-Require the proposed entry to include:
+The step catalog installs individual files. Its `download_url` is provenance
+for the author's direct-archive installation test, not a catalog fetch target.
+Construct the entry from the canonical form:
 
 - `id`, `name`, `version`, `description`, `author`, `repository`,
-  `documentation`, `license`, and `tags`, matching the form.
-- `requires.speckit_version`, matching Required Spec Kit Version.
+  `documentation`, `license`, and `download_url`, matching the form. Include
+  `changelog` when supplied. Preserve existing optional discovery metadata
+  such as `tags` unless the issue explicitly requests a correction.
+- `requires.speckit_version`, matching Spec Kit Compatibility. This is advisory
+  metadata; the current installer does not enforce it.
 - `step_yml_url`, ending in `/step.yml`, and an explicit `init_url`, ending
   in `/__init__.py`.
 - Optional `extra_files`, an object mapping package-relative paths to URLs.
   Reject absolute paths, backslashes, empty or dot path segments, traversal,
   case-insensitive aliases of `step.yml` or `__init__.py`, duplicate file paths
   and file/directory collisions after component-wise `casefold()`, and paths
-  containing `.git`, `__pycache__`, or `.DS_Store`.
+  containing case-insensitive aliases of `.git`, `__pycache__`, or `.DS_Store`.
 - `sha256`, an object containing exactly `step.yml`, `__init__.py`, and every
   `extra_files` key, each with a 64-hex-character digest.
 - `verified: false`. Never set this to true.
 
-Reject proposed `releases`, internal fields such as `_install_allowed`, and
-archive fields such as `download_url`. Historical releases are managed from
-the existing catalog, not supplied by the submitter.
+Do not copy author-supplied `releases` or internal fields such as
+`_install_allowed` from Additional Context. Historical releases are managed
+from the existing catalog, not supplied by the submitter. Number of Provided
+Step Types must be `1`, and Step Type Provided must name the submitted type key;
+rely on Required Attestations for the matching Python class, without code review.
 
 Before fetching any file URL, require it to match
 `https://raw.githubusercontent.com/<owner>/<repo>/<release-tag>/<path>`
@@ -193,10 +219,11 @@ directory for the manifest, initializer, and extras; each extra's URL path
 must correspond to its package-relative key. Use tags without slashes so this
 check is unambiguous. Reject query strings, fragments, credentials, percent
 escapes, traversal segments, whitespace, control characters, and characters
-outside `^[A-Za-z0-9._~/-]+$` in the owner, repository, tag, and file path.
+outside `^[A-Za-z0-9._~/-]+$` in the owner, repository, and file path. Tags may
+additionally contain `+` for PEP 440 local versions.
 Do not fetch invalid URLs or rewrite them to make them pass.
 
-Add `catalog_entry` (the proposed entry object without its outer Step ID key)
+Add `catalog_entry` (the constructed entry object without its outer Step ID key)
 to `/tmp/gh-aw/step-submission.json`. All submitted values remain JSON data,
 never shell syntax. Run this fixed command unchanged once for the complete
 package, not separately for selected files:
@@ -232,8 +259,8 @@ Release metadata is not a substitute for downloading every file.
 Parse the downloaded `step.yml` as data using `yaml.safe_load`, never unsafe
 YAML loading. Require a mapping with a `step` mapping; `step.type_key`,
 `step.name`, `step.version`, `step.author`, and `step.description` must match
-the form. If the manifest includes `requires.speckit_version`, it must match
-the form. The helper requires both `step.yml` and `__init__.py` to be nonempty;
+the form. Compatibility, license, and provenance are catalog/intake fields,
+not required `step.yml` fields. The helper requires both `step.yml` and `__init__.py` to be nonempty;
 do not inspect or review the initializer's implementation. Extra files may be
 binary; hash their exact bytes.
 
@@ -243,7 +270,9 @@ Restrict Documentation URL to a README.md in the submitted GitHub repository,
 using `github.com/<owner>/<repo>/blob/<ref>/<path>`,
 `github.com/<owner>/<repo>/raw/<ref>/<path>`, or
 `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. Strip query and
-fragment before fetching; convert GitHub `/blob/` to `/raw/` for Markdown.
+fragment before fetching; require the reference to match the release tag and
+convert GitHub `/blob/` to `/raw/` for Markdown. Validate a supplied Changelog
+URL against the same repository and release tag before fetching it.
 Do not fetch other hosts or repositories.
 
 Require that README to explain this step's purpose, configuration, dependencies,
@@ -253,10 +282,11 @@ and setup, and to include a valid `specify workflow step add <step-id> --from
 Documentation must explain that the built-in community catalog is
 discovery-only, not an install-allowed source.
 
-Require every Testing Checklist and Submission Requirements checkbox to be
-checked. Testing Details must describe clean-project installation, the Spec Kit
+Require every Required Attestations checkbox to be checked. Testing Details
+must describe clean-project installation from the exact Download URL, the Spec Kit
 version tested, successful execution, and an invalid-input or failure case.
-Example Usage and Dependencies must agree with the README. Check completeness
+Runtime and Tool Dependencies and Step Type Provided must agree with the README.
+Check completeness
 of author evidence, not the submitted code's correctness.
 
 ### Existing entries
@@ -268,7 +298,7 @@ Preserve unrelated entries, top-level schema and catalog URL, original
 `created_at`, and existing `releases`.
 
 For a version update, move the prior current release's `step_yml_url` (or
-`url`), `init_url`, `extra_files`, `sha256`, `requires`, and `provides`, when
+`url`), `init_url`, `extra_files`, `sha256`, `requires`, `provides`, and `download_url`, when
 present, into `releases[<old-version>]`. Do not copy `id`, `version`, or
 `releases` into a historical record. Each historical release needs its own
 complete digests; if the old entry lacks them, validation is blocked pending
@@ -310,16 +340,19 @@ Sort entries by Step ID; use two-space JSON indentation and a trailing newline.
 Validate the complete JSON using repository-owned Python, without importing
 the submitted step.
 
-Add or update one documentation table row, sorted by Step Name:
+Add or update one row in the Available Step Types table, sorted by Step Type Name:
 
 ```text
-| <Name> | `<step-id>` | <Description> | [<repo-name>](<repository>) |
+| [<Name>](<repository>) (`<step-id>`) | <version> | <author> | <Description> |
 ```
 
 Collapse newlines and remove control characters from user display values.
 Escape backslashes, pipes, backticks, Markdown formatting, brackets, and angle
 brackets; only the validated repository URL is used as a link destination.
 Do not replace surrounding guide content.
+Preserve the existing Decision listing and its compatibility/dependency notes
+when processing unrelated submissions. For an update to a listed step with
+version-specific notes, update those notes from validated release documentation.
 
 ## 5. Create one draft PR
 

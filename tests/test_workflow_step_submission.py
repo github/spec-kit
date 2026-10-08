@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import builtins
 import re
 import shutil
 import subprocess
@@ -28,15 +29,17 @@ def test_step_submission_form_and_compiled_workflow_contract():
     )
     text, compiled_text, source, compiled = _agentic_workflow("add-community-workflow-step")
     assert form["title"].startswith("[Workflow Step]:")
-    assert form["labels"] == ["enhancement", "needs-triage"]
+    assert form["labels"] == ["triage-must-have"]
     assert "workflow-step-submission" in form["body"][0]["attributes"]["value"]
     assert (source.get("on") or source[True]) == {
         "issues": {"types": ["labeled"], "names": ["workflow-step-submission"]},
         "skip-bots": ["github-actions", "copilot", "dependabot"],
     }
     for field in form["body"]:
-        if field["type"] in ("input", "textarea"):
-            assert field["validations"]["required"] is True
+        if field["type"] in ("input", "textarea", "dropdown"):
+            assert bool(field.get("validations", {}).get("required")) == (
+                field["id"] not in {"changelog", "additional-context"}
+            )
             assert f'`{field["id"]}`' in text
         elif field["type"] == "checkboxes":
             assert all(item["required"] for item in field["attributes"]["options"])
@@ -61,6 +64,9 @@ def test_step_submission_form_and_compiled_workflow_contract():
     assert outputs["create_pull_request"]["draft"] is True
     assert outputs["create_pull_request"]["max"] == 1
     assert outputs["add_labels"]["issue_intent"] is False
+    assert outputs["add_labels"]["allowed"] == [
+        "workflow-step-submission", "validation-failed", "needs-info",
+    ]
     assert outputs["remove_labels"]["allowed"] == [
         "validation-passed", "validation-failed", "needs-info",
     ]
@@ -77,6 +83,17 @@ def test_step_submission_form_and_compiled_workflow_contract():
     assert compiled["jobs"]["safe_outputs"]["outputs"]["created_pr_number"] == (
         "${{ steps.process_safe_outputs.outputs.created_pr_number }}"
     )
+
+
+@pytest.mark.parametrize("kind", ["source", "compiled"])
+def test_agent_cannot_add_success_label_before_publication(kind):
+    _, _, source, compiled = _agentic_workflow("add-community-workflow-step")
+    config = (
+        source["safe-outputs"]["add-labels"]
+        if kind == "source" else _safe_output_config(compiled)["add_labels"]
+    )
+    assert "validation-passed" not in config["allowed"]
+    assert {"validation-failed", "needs-info"} <= set(config["allowed"])
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
@@ -139,6 +156,7 @@ def file_submission():
         "repository": "https://github.com/example/steps",
         "version": "1.2.3",
         "release_tag": "deploy-v1.2.3",
+        "download_url": "https://github.com/example/steps/releases/download/deploy-v1.2.3/deploy-preview-1.2.3.zip",
         "file": "__init__.py",
         "catalog_entry": {
             "step_yml_url": base + "step.yml",
@@ -167,6 +185,80 @@ def test_submission_accepts_installable_ids(verifier, file_submission, step_id):
     assert verifier.validate_identity(file_submission) == (
         "example", "steps", "deploy-v1.2.3",
     )
+
+
+@pytest.mark.parametrize(("version", "tag"), [
+    ("1.2", "v1.2"),
+    ("1.2rc1", "deploy-v1.2rc1"),
+    ("1.2.post1", "v1.2.post1"),
+    ("1.2.dev1", "deploy-v1.2.dev1"),
+    ("1.2+cpu", "v1.2+cpu"),
+])
+def test_canonical_form_pep440_versions_are_supported(verifier, file_submission, version, tag):
+    file_submission.update({
+        "version": version,
+        "release_tag": tag,
+        "download_url": f"https://github.com/example/steps/releases/download/{tag}/step-{version}.zip",
+    })
+    assert verifier.validate_identity(file_submission) == ("example", "steps", tag)
+
+
+@pytest.mark.parametrize("version", ["main", "not-a-version", "1..2", "1.2/3"])
+def test_invalid_pep440_versions_are_rejected(verifier, file_submission, version):
+    file_submission["version"] = version
+    with pytest.raises(verifier.SubmissionMismatch, match="invalid PEP 440"):
+        verifier.validate_identity(file_submission)
+
+
+@pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
+@pytest.mark.parametrize("route", ["releases/download/deploy-v1.2.3/package", "archive/refs/tags/deploy-v1.2.3"])
+def test_canonical_archive_formats_are_supported(verifier, file_submission, suffix, route):
+    file_submission["download_url"] = "https://github.com/example/steps/" + route + suffix
+    assert verifier.validate_identity(file_submission) == ("example", "steps", "deploy-v1.2.3")
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil.example/steps/releases/download/deploy-v1.2.3/step.zip",
+    "https://github.com/other/steps/releases/download/deploy-v1.2.3/step.zip",
+    "https://github.com/example/steps/releases/download/v1.2.4/step.zip",
+    "https://github.com/example/steps/releases/latest/step.zip",
+    "https://github.com/example/steps/releases/download/deploy-v1.2.3/step.zip?x=1",
+    "https://github.com/example/steps/releases/download/deploy-v1.2.3/step.zip#x",
+    "https://github.com/example/steps/releases/download/deploy-v1.2.3/../step.zip",
+    "https://github.com/example/steps/releases/download/deploy-v1.2.3/step%20name.zip",
+    "https://github.com/example/steps/releases/download/deploy-v1.2.3/step.zip\n",
+    "https://[invalid/step.zip",
+])
+def test_invalid_canonical_download_urls_prevent_file_fetch(
+    verifier, file_submission, url, tmp_path, monkeypatch,
+):
+    file_submission["download_url"] = url
+
+    def unexpected_fetch(*args, **kwargs):
+        pytest.fail("Invalid archive provenance reached a file fetch")
+
+    monkeypatch.setattr(verifier.subprocess, "run", unexpected_fetch)
+    with pytest.raises(verifier.SubmissionMismatch):
+        verifier.fetch_file(file_submission, tmp_path / "download")
+
+
+def test_canonical_download_url_is_required(verifier, file_submission):
+    del file_submission["download_url"]
+    with pytest.raises(verifier.SubmissionMismatch, match="download_url"):
+        verifier.validate_identity(file_submission)
+
+
+def test_missing_version_parser_is_blocked(verifier, file_submission, monkeypatch):
+    real_import = builtins.__import__
+
+    def missing_packaging(name, *args, **kwargs):
+        if name == "packaging.version":
+            raise ModuleNotFoundError("No module named packaging.version")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_packaging)
+    with pytest.raises(verifier.Blocked, match="packaging.version"):
+        verifier.validate_identity(file_submission)
 
 
 def test_file_fetch_passes_one_validated_url_argument_and_hashes_bytes(
@@ -405,6 +497,8 @@ def test_package_limit_preflight_accepts_exact_installer_boundaries(
     ["Foo.py", "foo.py"], ["Folder/Foo.py", "folder/foo.py"],
     ["folder/Child", "FOLDER/child/module.py"],
     ["STEP.YML/module.py"], ["__INIT__.PY/module.py"],
+    [".GIT/config"], ["nested/.Git/config"],
+    ["__PYCACHE__/x.py"], ["nested/.ds_store"],
 ])
 def test_package_path_guards_reject_before_fetch(
     verifier, file_submission, paths, tmp_path, monkeypatch,

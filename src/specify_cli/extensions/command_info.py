@@ -8,16 +8,34 @@ from __future__ import annotations
 import typer
 from rich.markup import escape as _escape_markup
 
+from .._installed_info_json import extension_info_item
+from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
+from .._project import resolve_specify_project_root
 from . import _commands
 
 
-@_commands.extension_app.command("info")
+@_commands.extension_app.command("info", cls=InstalledListJSONCommand)
 def extension_info(
     extension: str = typer.Argument(help="Extension ID or name"),
     versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output the installed extension as JSON"
+    ),
 ):
     """Show detailed information about an extension."""
     from . import ExtensionCatalog, ExtensionManager, ExtensionError, normalize_priority
+
+    # Direct compatibility callers receive Typer's OptionInfo default rather
+    # than a parsed bool; only the CLI's explicit True enables these views.
+    if json_output is True:
+        if versions is True:
+            emit_json_error(ValueError("--json cannot be combined with --versions"), exit_code=2)
+        try:
+            manager = ExtensionManager(resolve_specify_project_root())
+            emit_json(extension_info_item(manager.list_installed(), manager, extension))
+            return
+        except Exception as error:  # noqa: BLE001 - emit the JSON error contract
+            emit_json_error(error)
 
     project_root = _commands._require_specify_project()
     catalog = ExtensionCatalog(project_root)

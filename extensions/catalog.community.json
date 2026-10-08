@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-05T00:00:00Z",
+  "updated_at": "2026-10-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -712,6 +712,56 @@
       "created_at": "2026-08-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
     },
+    "attacktree": {
+      "name": "AttackTree — Attack Tree Modeling & Control Simulation",
+      "id": "attacktree",
+      "description": "Attack trees with attacker profiles, AND/OR path simulation, control roadmaps, and control-to-test traceability",
+      "author": "hupe1980",
+      "version": "0.1.0",
+      "download_url": "https://github.com/hupe1980/spec-kit-attacktree/archive/refs/tags/v0.1.0.zip",
+      "sha256": "84e53a92be77ba387b851c39da621223e3a98927f392af3cdcec2828367cfd3e",
+      "repository": "https://github.com/hupe1980/spec-kit-attacktree",
+      "homepage": "https://hupe1980.github.io/spec-kit-attacktree/",
+      "documentation": "https://hupe1980.github.io/spec-kit-attacktree/docs/",
+      "changelog": "https://github.com/hupe1980/spec-kit-attacktree/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "python + pyyaml (or uv instead)",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv (instead of python + pyyaml)",
+            "required": false
+          },
+          {
+            "name": "jsonschema (python package, full schema validation)",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "security",
+        "attack-trees",
+        "threat-modeling",
+        "risk-simulation",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-06T00:00:00Z",
+      "updated_at": "2026-10-06T00:00:00Z"
+    },
     "axi": {
       "name": "Axi Extension",
       "id": "axi",
@@ -1355,14 +1405,15 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, living specs, and composable commands you can customize with hooks and recipes.",
+      "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.20.2",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.20.2/companion-0.20.2.zip",
+      "version": "0.24.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
+      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
       "repository": "https://github.com/alfredoperez/speckit-companion",
-      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
-      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
-      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
+      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
+      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
+      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -1376,8 +1427,8 @@
         ]
       },
       "provides": {
-        "commands": 18,
-        "hooks": 4
+        "commands": 23,
+        "hooks": 6
       },
       "tags": [
         "vscode",
@@ -1390,7 +1441,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -5226,9 +5277,9 @@
       "id": "specassay-check",
       "description": "Gate 2 refuses silent gaps and emits a trace-manifest (`trace-manifest.json`).",
       "author": "Rik Dryfoos",
-      "version": "0.5.2",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-check-0.5.2.zip",
-      "sha256": "f481c6794d0cffc6d532721c1acc378287ba291b3e74dbe1e54eef083d1e7a20",
+      "version": "0.5.6",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.6/specassay-check-0.5.6.zip",
+      "sha256": "1f7112e2e550aacc7dd466cc83b315c0d846f318a611fb93c394bde46cea355b",
       "repository": "https://github.com/rdryfoos/specassay",
       "homepage": "https://www.specassay.com",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/extensions/specassay-check/README.md",
@@ -5241,6 +5292,7 @@
         "tools": [
           {
             "name": "bash",
+            "version": ">=3.2",
             "required": true
           },
           {
@@ -5265,7 +5317,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
-      "updated_at": "2026-09-24T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "specjudge": {
       "name": "SpecJudge — right-size the model before you implement",
