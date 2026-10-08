@@ -504,9 +504,9 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
         raise ArtifactInfoKindError(request.kind)
     if not isinstance(request.identifier, str) or not request.identifier:
         raise ArtifactInfoIdentifierError(request.identifier)
+    _validate_identifier(request.identifier, request.kind)
     if not (project_directory / ".specify").is_dir():
         raise ArtifactInfoProjectError(project_directory)
-    _validate_identifier(request.identifier, request.kind)
 
     try:
         payload = ArtifactCatalog(project_directory).get_artifact_info(

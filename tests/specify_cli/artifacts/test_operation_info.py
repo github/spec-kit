@@ -340,6 +340,21 @@ def test_info_rejects_non_project_before_catalog_lookup(
     catalog.assert_not_called()
 
 
+def test_info_rejects_malformed_identifier_before_project_validation(
+    non_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    catalog = Mock(side_effect=AssertionError("catalog reached"))
+    monkeypatch.setattr(_operation_info, "ArtifactCatalog", catalog)
+
+    with pytest.raises(ArtifactInfoIdentifierError) as exc_info:
+        get_artifact_info(ArtifactInfoRequest(non_project, "unknown-prefix:name"))
+
+    assert exc_info.value.code == "invalid_artifact_identifier"
+    assert exc_info.value.details == {"identifier": "unknown-prefix:name"}
+    catalog.assert_not_called()
+
+
 def test_info_rejects_invalid_semantic_kind(spec_kit_project: Path):
     with pytest.raises(ArtifactInfoKindError) as exc_info:
         get_artifact_info(
