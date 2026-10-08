@@ -8,6 +8,7 @@ from typing import Literal
 
 from mcp.server import MCPServer
 
+from ._operation_info import ARTIFACT_INFO_OPERATION
 from ._operation_list import ARTIFACT_LIST_OPERATION
 from .mcp_list import register as register_list
 
@@ -51,16 +52,16 @@ ARTIFACT_TOOLS = (
         network_access=ARTIFACT_LIST_OPERATION.network_access,
     ),
     ArtifactToolInventory(
-        operation_id="artifact.info",
+        operation_id=ARTIFACT_INFO_OPERATION.operation_id,
         cli_path="specify artifact info",
         mcp_tool_name="specify_artifact_info",
-        contract_version=None,
+        contract_version=ARTIFACT_INFO_OPERATION.contract_version,
         disposition="unavailable",
         disposition_reason=(
-            "The artifact.info CLI leaf does not yet have a shared typed operation."
+            "The artifact.info shared operation does not yet have an MCP adapter."
         ),
-        capabilities=frozenset({"local-read"}),
-        network_access="none",
+        capabilities=ARTIFACT_INFO_OPERATION.capabilities,
+        network_access=ARTIFACT_INFO_OPERATION.network_access,
     ),
     ArtifactToolInventory(
         operation_id="artifact.lookup",

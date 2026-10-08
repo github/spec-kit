@@ -20,6 +20,8 @@ from ._identifiers import (
     IdentifierComponentError,
     derive_hook_public_id,
     derive_public_id,
+    parse_hook_artifact_name,
+    validate_component,
 )
 from .models import HookStackEntry, StackLayer
 
@@ -449,8 +451,42 @@ def _convert_catalog_result(
     )
 
 
+def _validate_identifier(identifier: str, kind: ArtifactKind | None) -> None:
+    if kind == "hook":
+        if identifier.startswith("hook:"):
+            try:
+                parse_hook_artifact_name(identifier.removeprefix("hook:"))
+            except IdentifierComponentError:
+                pass
+            else:
+                return
+        try:
+            parse_hook_artifact_name(identifier)
+        except IdentifierComponentError as exc:
+            raise ArtifactInfoIdentifierError(identifier) from exc
+        return
+
+    if ":" not in identifier:
+        return
+
+    prefix, _, bare = identifier.partition(":")
+    if prefix in ("command", "template", "script"):
+        try:
+            validate_component(bare, f"{prefix} name")
+        except IdentifierComponentError as exc:
+            raise ArtifactInfoIdentifierError(identifier) from exc
+        return
+    if prefix == "hook":
+        try:
+            parse_hook_artifact_name(bare)
+        except IdentifierComponentError as exc:
+            raise ArtifactInfoIdentifierError(identifier) from exc
+        return
+    raise ArtifactInfoIdentifierError(identifier)
+
+
 def _requests_hook(identifier: str, kind: ArtifactKind | None) -> bool:
-    return kind == "hook" or identifier.startswith("hook:")
+    return kind == "hook" or (kind is None and identifier.startswith("hook:"))
 
 
 def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
@@ -470,6 +506,7 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
         raise ArtifactInfoIdentifierError(request.identifier)
     if not (project_directory / ".specify").is_dir():
         raise ArtifactInfoProjectError(project_directory)
+    _validate_identifier(request.identifier, request.kind)
 
     try:
         payload = ArtifactCatalog(project_directory).get_artifact_info(
@@ -481,8 +518,6 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
     except AmbiguousArtifactError as exc:
         raise ArtifactInfoAmbiguousError(request.identifier, exc.message) from exc
     except ArtifactNotFoundError as exc:
-        if isinstance(exc.__cause__, IdentifierComponentError):
-            raise ArtifactInfoIdentifierError(request.identifier) from exc
         if _requests_hook(request.identifier, request.kind):
             raise ArtifactInfoHookNotFoundError(request.identifier) from exc
         raise ArtifactInfoNotFoundError(request.identifier) from exc

@@ -394,21 +394,83 @@ def test_info_maps_unknown_hook(spec_kit_project: Path):
     assert exc_info.value.message == "unknown artifact hook:nope:missing.cmd"
 
 
+def test_explicit_named_kind_wins_over_conflicting_hook_shorthand(
+    spec_kit_project: Path,
+):
+    with pytest.raises(ArtifactInfoNotFoundError) as exc_info:
+        get_artifact_info(
+            ArtifactInfoRequest(
+                spec_kit_project,
+                "hook:nope:missing.cmd",
+                kind="command",
+            )
+        )
+
+    assert exc_info.value.code == "unknown_artifact"
+    assert exc_info.value.message == "unknown artifact hook:nope:missing.cmd"
+
+
+def test_explicit_hook_kind_preserves_event_command_identifier(
+    spec_kit_project: Path,
+):
+    with pytest.raises(ArtifactInfoHookNotFoundError) as exc_info:
+        get_artifact_info(
+            ArtifactInfoRequest(
+                spec_kit_project,
+                "unknown-prefix:name",
+                kind="hook",
+            )
+        )
+
+    assert exc_info.value.code == "unknown_hook"
+
+
+def test_explicit_hook_kind_accepts_public_hook_identifier(
+    spec_kit_project: Path,
+):
+    install_extension_with_hooks(
+        spec_kit_project,
+        "quality",
+        hooks={"before_specify": [{"command": "speckit.quality.check"}]},
+    )
+
+    result = get_artifact_info(
+        ArtifactInfoRequest(
+            spec_kit_project,
+            "hook:before_specify:speckit.quality.check",
+            kind="hook",
+        )
+    )
+
+    assert result.artifact.kind == "hook"
+    assert result.artifact.id == "hook:before_specify:speckit.quality.check"
+
+
 @pytest.mark.parametrize(
-    "identifier",
+    ("identifier", "kind"),
     [
-        "hook:event:bad%escape",
-        "hook:event:%FF",
-        "hook:event",
-        "",
+        ("hook:event:bad%escape", None),
+        ("hook:event:%FF", None),
+        ("hook:event", None),
+        ("unknown-prefix:name", None),
+        ("command:bad:name", None),
+        ("hook:event:bad%escape", "hook"),
+        ("", None),
     ],
 )
 def test_info_maps_malformed_identifiers(
     spec_kit_project: Path,
     identifier: str,
+    kind: str | None,
 ):
     with pytest.raises(ArtifactInfoIdentifierError) as exc_info:
-        get_artifact_info(ArtifactInfoRequest(spec_kit_project, identifier))
+        get_artifact_info(
+            ArtifactInfoRequest(
+                spec_kit_project,
+                identifier,
+                kind=kind,  # type: ignore[arg-type]
+            )
+        )
 
     assert exc_info.value.code == "invalid_artifact_identifier"
     assert exc_info.value.message == f"unknown artifact {identifier}"
