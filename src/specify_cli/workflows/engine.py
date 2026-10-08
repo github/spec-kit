@@ -790,8 +790,12 @@ class RunState:
             dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
         )
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            # Keep non-ASCII text readable in these human-auditable records;
+            # backslashreplace writes a lone surrogate as its JSON \u escape.
+            with os.fdopen(
+                fd, "w", encoding="utf-8", errors="backslashreplace"
+            ) as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp, path)
         except BaseException:
             try:
@@ -952,8 +956,13 @@ class RunState:
                 raise CheckpointError("A previous checkpoint failed; reload the run")
             with self._log_lock:
                 self.log_entries.append(entry)
-                with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
-                    f.write(json.dumps(entry) + "\n")
+                with open(
+                    runs_dir / "log.jsonl",
+                    "a",
+                    encoding="utf-8",
+                    errors="backslashreplace",
+                ) as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1087,7 +1096,7 @@ class WorkflowEngine:
         workflow_copy = run_dir / "workflow.yml"
         import yaml
         with open(workflow_copy, "w", encoding="utf-8") as f:
-            yaml.safe_dump(definition.data, f, sort_keys=False)
+            yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
