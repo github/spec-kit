@@ -147,7 +147,7 @@ After initialization, you should see the following commands available in your co
 - `/speckit.checklist` - Generate quality checklists
 - `/speckit.constitution` - Create or update project principles
 - `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
-- `/speckit.taskstoissues` - Convert tasks to issues (deprecated; warns on invocation; moving to the bundled `github` extension as
+- `/speckit.taskstoissues` - Convert tasks to issues (deprecated; warns on invocation; replaced by the bundled `github` extension's
   `/speckit.github.taskstoissues`; install it with `specify extension add github`)
 
 The `generic` integration also registers extension commands in its configured

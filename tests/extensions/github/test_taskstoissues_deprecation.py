@@ -18,7 +18,7 @@ def test_core_deprecation_warning_and_continuation():
     notice = text.split("## Deprecation Notice\n", 1)[1].split("## User Input", 1)[0]
     assert text.index("## Deprecation Notice") < text.index("## User Input") < text.index("## Pre-Execution Checks")
     for phrase in (
-        "MUST display the following concise warning before doing anything else",
+        "MUST display the following concise warning first",
         "`__SPECKIT_COMMAND_TASKSTOISSUES__` is deprecated",
         "will be removed in a future minor release",
         "bundled `github` extension",
@@ -95,4 +95,5 @@ def test_rendered_core_warning_uses_integration_invocations(
     assert f"invoke `{replacement_invocation}`" in notice
     assert "__SPECKIT_COMMAND_" not in notice
     assert "specify extension add github" in notice
-    assert not (tmp_path / ".specify/extensions/github").exists()
+    assert "Continue with the existing workflow unchanged" in notice
+    assert "Do not install or enable the extension automatically" in notice

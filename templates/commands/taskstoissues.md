@@ -9,7 +9,7 @@ scripts:
 
 ## Deprecation Notice
 
-You **MUST display the following concise warning before doing anything else**, including considering user input or running pre-execution checks:
+You **MUST display the following concise warning first**, as the first step of this command and before the User Input and Pre-Execution Checks sections below:
 
 > ⚠️ `__SPECKIT_COMMAND_TASKSTOISSUES__` is deprecated and will be removed in a future minor release. Use the bundled `github` extension instead: run `specify extension add github`, then invoke `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__`.
 
