@@ -203,15 +203,15 @@ def integration_upgrade(
     renamed = _command_file_names_changed(
         integration, old_manifest.files, planned_command_files
     )
+    untracked = [rel for rel in planned_command_files if rel not in old_manifest.files]
     if not renamed and key == "kiro-cli":
-        # The manifest may not show the rename (e.g. empty ``files``); the
-        # dotted core prompts still on disk do.
+        # The manifest may not show the rename (e.g. empty ``files``); a dotted
+        # core prompt on disk does, until the manifest tracks its replacement.
         renamed = _command_file_names_changed(
             integration,
             _command_files_on_disk(project_root, integration) - planned_command_files,
-            planned_command_files,
+            untracked,
         )
-    untracked = [rel for rel in planned_command_files if rel not in old_manifest.files]
     if renamed:
         try:
             affected_presets = _installed_command_presets_affecting_agent(

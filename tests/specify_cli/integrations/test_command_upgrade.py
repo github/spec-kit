@@ -433,6 +433,33 @@ class TestIntegrationUpgradeDetailed:
         assert "cmd-preset" in result.output
         assert {path.name: path.read_bytes() for path in prompts.iterdir()} == before
 
+    def test_kiro_upgrade_after_migration_ignores_leftover_dotted_prompts(
+        self, tmp_path, monkeypatch
+    ):
+        """An upgrade from an empty integration manifest can't retire the
+        untracked dotted core prompts. Once the manifest tracks their
+        replacements, those leftovers no longer make the rename pending, so a
+        preset installed afterwards doesn't block later upgrades (#4797)."""
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch)
+        manifest_path = project / ".specify/integrations/kiro-cli.manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["files"] = {}
+        manifest_path.write_bytes(json.dumps(manifest).encode())
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli"])
+        assert result.exit_code == 0, result.output
+        prompts = project / ".kiro" / "prompts"
+        assert (prompts / "speckit.plan.md").is_file()
+
+        preset_src = _write_command_preset(tmp_path, "cmd-preset")
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, result.output
+        # --force: the preset's override changed the tracked speckit-plan.md.
+        result = _run_in_project(project, ["integration", "upgrade", "kiro-cli", "--force"])
+        assert result.exit_code == 0, result.output
+        assert "Overridden plan content" in (prompts / "speckit-plan.md").read_text(
+            encoding="utf-8"
+        )
+
     def test_upgrade_keeps_dotted_kiro_prompts_when_reregistration_fails(
         self, tmp_path, monkeypatch
     ):
