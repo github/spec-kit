@@ -3,55 +3,52 @@
 from __future__ import annotations
 
 import json
-import platform
 
 import typer
 from rich.panel import Panel
 from rich.table import Table
 
+from . import _operation_version
 from ._console import console, show_banner
+from ._operation_version import (
+    VersionResult,
+    _feature_capabilities,
+    _openssl_version,
+    collect_version_result,
+)
+
+platform = _operation_version.platform
 
 _INTERNAL_ERROR_MESSAGE = "Unable to collect version information."
 
 
-def _feature_capabilities() -> dict[str, bool]:
-    """Return stable local CLI capability flags for humans and agents."""
-    return {
-        "controlled_multi_install_integrations": True,
-        "integration_use_command": True,
-        "multi_install_safe_registry_metadata": True,
-        "integration_upgrade_command": True,
-        "self_check_command": True,
-        "workflow_catalog": True,
-        "bundled_templates": True,
-    }
-
-
-def _openssl_version() -> str | None:
-    """Return the loaded OpenSSL version, or None when unavailable."""
-    try:
-        import ssl
-    except ImportError:
-        return None
-
-    value = getattr(ssl, "OPENSSL_VERSION", None)
-    return value if isinstance(value, str) and value else None
-
-
 def _json_result(cli_version: str) -> dict[str, object]:
     """Collect the complete machine-readable version result."""
+    result = collect_version_result(
+        cli_version_getter=lambda: cli_version,
+        openssl_version_getter=_openssl_version,
+        feature_capabilities_getter=_feature_capabilities,
+    )
+    return _result_payload(result)
+
+
+def _result_payload(result: VersionResult) -> dict[str, object]:
+    """Map a complete operation result to the established CLI JSON shape."""
+    if result.runtime is None or result.system is None:
+        raise ValueError("Complete version information is required.")
+
     return {
-        "cli_version": cli_version,
+        "cli_version": result.cli_version,
         "runtime": {
-            "python": platform.python_version(),
-            "openssl": _openssl_version(),
+            "python": result.runtime.python,
+            "openssl": result.runtime.openssl,
         },
         "system": {
-            "platform": platform.system(),
-            "architecture": platform.machine(),
-            "os_version": platform.version(),
+            "platform": result.system.platform,
+            "architecture": result.system.architecture,
+            "os_version": result.system.os_version,
         },
-        "features": _feature_capabilities(),
+        "features": result.features,
     }
 
 
@@ -77,7 +74,12 @@ def version(
 
     if json_output:
         try:
-            payload = _json_result(get_speckit_version())
+            result = collect_version_result(
+                cli_version_getter=get_speckit_version,
+                openssl_version_getter=_openssl_version,
+                feature_capabilities_getter=_feature_capabilities,
+            )
+            payload = _result_payload(result)
             rendered = _serialize_json(payload)
         except Exception:  # noqa: BLE001
             # JSON mode must normalize every unexpected command failure.
@@ -94,16 +96,27 @@ def version(
         typer.echo(rendered)
         return
 
-    cli_version = get_speckit_version()
     if features:
-        capabilities = _feature_capabilities()
-        console.print(f"Spec Kit CLI: {cli_version}")
+        result = collect_version_result(
+            include_environment=False,
+            cli_version_getter=get_speckit_version,
+            feature_capabilities_getter=_feature_capabilities,
+        )
+        console.print(f"Spec Kit CLI: {result.cli_version}")
         console.print()
         console.print("Features:")
-        for key, enabled in capabilities.items():
+        for key, enabled in result.features.items():
             label = key.replace("_", " ")
             console.print(f"- {label}: {'yes' if enabled else 'no'}")
         return
+
+    result = collect_version_result(
+        cli_version_getter=get_speckit_version,
+        openssl_version_getter=_openssl_version,
+        feature_capabilities_getter=_feature_capabilities,
+    )
+    if result.runtime is None or result.system is None:
+        raise RuntimeError("Complete version information is required.")
 
     show_banner()
 
@@ -111,17 +124,17 @@ def version(
     info_table.add_column("Key", style="cyan", justify="right")
     info_table.add_column("Value", style="white")
 
-    info_table.add_row("CLI Version", cli_version)
+    info_table.add_row("CLI Version", result.cli_version)
     info_table.add_row("", "")
-    info_table.add_row("Python", platform.python_version())
-    info_table.add_row("Platform", platform.system())
-    info_table.add_row("Architecture", platform.machine())
-    info_table.add_row("OS Version", platform.version())
+    info_table.add_row("Python", result.runtime.python)
+    info_table.add_row("Platform", result.system.platform)
+    info_table.add_row("Architecture", result.system.architecture)
+    info_table.add_row("OS Version", result.system.os_version)
     # The OpenSSL runtime the interpreter actually loaded. HTTPS failure
     # reports (#4433) hinge on which OpenSSL is in play, and on Windows it is
     # not obvious from the outside, so surface it here. An interpreter built
     # without the ssl extension skips the row rather than failing the command.
-    openssl_version = _openssl_version()
+    openssl_version = result.runtime.openssl
     if openssl_version:
         info_table.add_row("OpenSSL", openssl_version)
 

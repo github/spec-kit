@@ -117,8 +117,18 @@ def load_json(path: Path) -> Any:
 
 def loads_json(text: str, *, origin: str = "<string>") -> Any:
     """Parse JSON from a string (used for catalog payloads fetched as text)."""
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise BundlerError(
+                    f"Invalid JSON from {origin}: duplicate key '{key}'."
+                )
+            result[key] = value
+        return result
+
     try:
-        return json.loads(text)
+        return json.loads(text, object_pairs_hook=unique_object)
     except json.JSONDecodeError as exc:
         raise BundlerError(f"Invalid JSON from {origin}: {exc}") from exc
 

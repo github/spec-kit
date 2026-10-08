@@ -57,6 +57,27 @@ Here are a few things you can do that will increase the likelihood of your pull 
 
 Accounts with three open pull requests may continue submitting changes, but additional submissions may be placed behind contributions from other authors in the review queue. Coding agents must follow the [agent-authored PR rules](#agent-authored-git-and-review-activity) before opening another pull request.
 
+### Integration pull requests
+
+Follow the [integration delivery boundary](design/integration.md#integration-delivery-boundary)
+when adding or updating an integration. Keep integration-specific behavior in
+its package; registry wiring, catalog metadata, integration-specific tests,
+documentation, and agent-specific devcontainer tooling may accompany it in the
+same PR, even though those files live outside the integration package.
+
+If the integration requires changes to shared runtime behavior, integration
+base classes, rendering, lifecycle management, CLI behavior, or core templates
+or scripts, submit **at least two PRs**: one for the prerequisite shared behavior
+and one for the integration. The prerequisite PR must justify the shared change
+independently under the [evidence gate](#evidence-gate) and follow
+[Testing deterministic behavior](#testing-deterministic-behavior), including
+regression evidence for bug fixes. It must work and be testable without the new
+integration; moving an agent-specific workaround into core does not justify it.
+
+Identify the prerequisite PRs in the integration PR and merge them before
+merging the integration PR. Changes outside the integration package that only
+wire up or document the integration do not, by themselves, require a split.
+
 ### Evidence gate
 
 A contribution is evaluated on the evidence it carries, not on how plausible its reasoning sounds. The same bar applies to everyone — human and AI-assisted contributions are judged identically.

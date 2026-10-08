@@ -353,6 +353,15 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        indexed_entries = self._parse_catalog_config(data, config_path)
+        if indexed_entries is None:
+            return None
+        return [entry for _, entry in indexed_entries]
+
+    def _parse_catalog_config(
+        self, data: Any, config_path: Path
+    ) -> list[tuple[int, WorkflowCatalogEntry]] | None:
+        """Validate and order sources, retaining their original YAML positions."""
         # An empty document (or explicit ``null``) parses to None -> this config
         # layer contributes nothing, so ``get_active_catalogs`` moves on to the
         # next layer (this loader serves both the project and user configs;
@@ -388,7 +397,7 @@ class WorkflowCatalog:
             # is valid — fall back to built-in defaults.
             return None
 
-        entries: list[WorkflowCatalogEntry] = []
+        entries: list[tuple[int, WorkflowCatalogEntry]] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise WorkflowValidationError(
@@ -428,15 +437,18 @@ class WorkflowCatalog:
             else:
                 install_allowed = bool(raw_install)
             entries.append(
-                WorkflowCatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
+                (
+                    idx,
+                    WorkflowCatalogEntry(
+                        url=url,
+                        name=str(item.get("name", f"catalog-{idx + 1}")),
+                        priority=priority,
+                        install_allowed=install_allowed,
+                        description=str(item.get("description", "")),
+                    ),
                 )
             )
-        entries.sort(key=lambda e: e.priority)
+        entries.sort(key=lambda item: item[1].priority)
         if not entries:
             raise WorkflowValidationError(
                 f"Catalog config {config_path} contains {len(catalogs_data)} "
@@ -825,7 +837,12 @@ class WorkflowCatalog:
         return "added"
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by index (0-based). Returns the removed name."""
+        """Remove a project source by its index in the active catalog list."""
+        if os.environ.get("SPECKIT_WORKFLOW_CATALOG_URL", "").strip():
+            raise WorkflowValidationError(
+                "The active catalog comes from SPECKIT_WORKFLOW_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
         if not config_path.exists():
             raise WorkflowValidationError("No catalog config file found.")
@@ -836,25 +853,15 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if data is None:
-            data = {}
-        elif not isinstance(data, dict):
+        entries = self._parse_catalog_config(data, config_path) or []
+
+        if index < 0 or index >= len(entries):
             raise WorkflowValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
-            )
-        catalogs = data.get("catalogs", [])
-        if not isinstance(catalogs, list):
-            raise WorkflowValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog index {index} out of range (0-{len(entries) - 1})."
             )
 
-        if index < 0 or index >= len(catalogs):
-            raise WorkflowValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
-            )
-
-        removed = catalogs.pop(index)
-        data["catalogs"] = catalogs
+        source_index, entry = entries[index]
+        data["catalogs"].pop(source_index)
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
@@ -864,6 +871,4 @@ class WorkflowCatalog:
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
 
-        if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+        return entry.name

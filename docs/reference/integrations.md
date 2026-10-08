@@ -452,9 +452,14 @@ Once `generic` is the active integration, `specify extension add` registers
 extension commands in its configured `--commands-dir` (as command files or
 skills according to `--skills`). `specify extension remove` removes unchanged
 extension-owned artifacts while leaving core commands, user files, and edited
-extension files intact. The core `speckit.taskstoissues` command remains
-available; installing the GitHub extension adds the namespaced replacement
-without deprecating or removing the core command.
+extension files intact. The deprecated core `speckit.taskstoissues` command
+remains available, warns on invocation, and will be removed in a future minor
+release. To migrate, run `specify extension add github` and use the recommended
+`/speckit.github.taskstoissues` command for dot-command integrations. Slash-hyphen
+integrations use `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code
+skills use `$speckit-github-taskstoissues`; Kimi uses
+`/skill:speckit-github-taskstoissues`. The core command continues its existing
+workflow and does not install or enable the extension automatically.
 
 ## Scaffold a New Integration
 
