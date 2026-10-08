@@ -105,7 +105,7 @@ under the run lock. Callers cannot supply a destination phase.
 
 | Operation | Meaning |
 |-----------|---------|
-| `begin` | Mark this occurrence active and checkpoint before `step_started` or its callback; a failed checkpoint leaves no start event |
+| `begin` | Mark this occurrence active and checkpoint before `step_started` or its callback; a failed checkpoint leaves no start event. A blocked workflow call drops its previous attempt's result |
 | `expand` / `bind` | Freeze children and their source before child execution |
 | `rebind` / `iterate` | Persist updated binding or the next loop occurrence |
 | `outputs` | Children finished; declared workflow outputs remain to finalize |
@@ -124,6 +124,11 @@ Status reporting uses a bound call's recorded result when available. If an
 interruption or exception leaves the active call unfinished without a result,
 its scope inherits the run's paused or failed status; completed calls keep
 their own recorded status.
+A call's recorded result summarizes its previous attempt, so `begin` on a
+blocked call drops `result`, `outcome`, and `error`: a bound call continues at
+`children`, and a call whose binding failed returns to `ready` and binds again.
+A leaf step's record describes that same step, such as a pending gate's prompt,
+and remains until `finish` replaces it.
 
 `notify()` emits events and callbacks only after the corresponding checkpoint.
 Persistence is mandatory lifecycle behavior, not a listener. Existing container

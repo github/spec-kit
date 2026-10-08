@@ -227,6 +227,66 @@ steps:
         assert "child: failed" in human.stdout
         assert "child: paused" not in human.stdout
 
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_interrupted_resumed_gate_keeps_its_prompt_in_status(
+        self, project_dir, monkeypatch, nested
+    ):
+        # A leaf step's record describes that same step, so re-entering a
+        # pending gate must not discard its prompt; only call summaries reset.
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        gate = {
+            "id": "review", "type": "gate", "message": "Approve?",
+            "options": ["approve", "reject"], "verdict_input": "verdict",
+        }
+        inputs = {"verdict": {"type": "string", "default": ""}}
+        steps = [gate]
+        if nested:
+            child_dir = project_dir / ".specify" / "workflows" / "child"
+            child_dir.mkdir(parents=True)
+            (child_dir / "workflow.yml").write_text(
+                json.dumps({
+                    "workflow": {"id": "child", "name": "Child"},
+                    "inputs": inputs,
+                    "steps": [gate],
+                }),
+                encoding="utf-8",
+            )
+            WorkflowRegistry(project_dir).add("child", {"enabled": True})
+            steps = [{
+                "id": "call", "type": "workflow", "workflow": "child",
+                "input": {"verdict": "{{ inputs.verdict }}"},
+            }]
+        engine = WorkflowEngine(project_dir)
+        root = WorkflowDefinition({
+            "workflow": {"id": "parent", "name": "Parent"},
+            "inputs": inputs,
+            "steps": steps,
+        })
+        assert engine.execute(root, run_id="gate-retry").status.value == "paused"
+
+        def interrupt(config, context):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(STEP_REGISTRY["gate"], "execute", interrupt)
+        assert engine.resume("gate-retry").status.value == "paused"
+
+        status = self._invoke(project_dir, ["workflow", "status", "gate-retry", "--json"])
+        assert status.exit_code == 0, status.output
+        payload = json.loads(status.stdout)
+        expected = {
+            "step_id": "review", "message": "Approve?",
+            "options": ["approve", "reject"], "choice": None,
+        }
+        if nested:
+            expected["scope_path"] = ["call"]
+            assert payload["workflow_scopes"] == [
+                {"scope_path": ["call"], "workflow_id": "child", "status": "paused"}
+            ]
+        assert payload["gate"] == expected
+
 
 
 class TestWorkflowCliAlignment:

@@ -1710,6 +1710,74 @@ def test_resumed_call_discards_status_of_previous_attempt(
 
 
 @pytest.mark.parametrize(
+    "failure, expected",
+    [(RuntimeError, RunStatus.FAILED), (KeyboardInterrupt, RunStatus.PAUSED)],
+)
+def test_retried_unbound_call_discards_status_of_failed_binding(
+    tmp_path, monkeypatch, probe, failure, expected
+):
+    from specify_cli.workflows._execution import scope_summaries
+
+    explode = {"enabled": True}
+
+    class Explode(StepBase):
+        type_key = "explode"
+
+        def execute(self, config, context):
+            if explode["enabled"]:
+                raise failure("boom")
+            return StepResult(StepStatus.COMPLETED)
+
+    monkeypatch.setitem(STEP_REGISTRY, "explode", Explode())
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", [call()]))
+    run_id = state.run_id
+    node = state.execution["sequence"]["nodes"][0]
+    assert state.status == RunStatus.FAILED
+    assert node["phase"] == "blocked"
+    assert node["result"]["output"]["status"] == "failed"
+    assert "binding" not in node
+
+    # The target becomes available; the retry binds and its child then halts.
+    install(tmp_path, definition("child", [{"id": "work", "type": "explode"}]))
+    if failure is RuntimeError:
+        with pytest.raises(RuntimeError, match="boom"):
+            engine.resume(run_id)
+    else:
+        engine.resume(run_id)
+
+    state = RunState.load(run_id, tmp_path)
+    node = state.execution["sequence"]["nodes"][0]
+    assert state.status == expected
+    assert scope_summaries(state.execution, state.status.value) == [
+        {"scope_path": ["call"], "workflow_id": "child", "status": expected.value}
+    ]
+    assert node["phase"] == "children"
+    assert node["binding"]["workflow"] == "child"
+    assert not {"result", "outcome", "error"} & node.keys()
+
+    explode["enabled"] = False
+    state = engine.resume(run_id)
+    assert state.status == RunStatus.COMPLETED
+    assert state.step_results["call"]["output"]["status"] == "completed"
+
+
+def test_retried_unbound_call_that_fails_again_records_new_failure(tmp_path, probe):
+    engine = WorkflowEngine(tmp_path)
+    state = engine.execute(definition("parent", [call()]))
+    assert state.status == RunStatus.FAILED
+
+    state = engine.resume(state.run_id)
+
+    node = state.execution["sequence"]["nodes"][0]
+    assert state.status == RunStatus.FAILED
+    assert node["phase"] == "blocked"
+    assert "binding" not in node
+    assert node["result"]["output"]["status"] == "failed"
+    assert not probe
+
+
+@pytest.mark.parametrize(
     "template, expected_event, status",
     [
         ({"status": "failed"}, "step_failed", RunStatus.FAILED),

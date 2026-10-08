@@ -475,12 +475,21 @@ class Execution:
                 )
             if operation == "begin":
                 candidate["active"] = True
-                if node["phase"] == "blocked" and candidate.get("binding"):
-                    # A resumed call's recorded status summarized its previous
-                    # attempt; its children now hold the authoritative progress.
+                if (
+                    node["phase"] == "blocked"
+                    and occurrence.config.get("type") == "workflow"
+                ):
+                    # A call's recorded result summarizes its previous attempt
+                    # and is stale once the call is re-entered, whether or not
+                    # that attempt bound it: a bound call continues at its
+                    # children, an unbound call binds again from ready. A leaf
+                    # step's record describes that same step (for example a
+                    # pending gate's prompt) and stays until finish replaces it.
                     for key in ("result", "outcome", "error"):
                         candidate.pop(key, None)
-                    candidate["phase"] = "children"
+                    candidate["phase"] = (
+                        "children" if candidate.get("binding") else "ready"
+                    )
             elif operation in {"finish", "settle", "leave"}:
                 candidate["active"] = False
             previous = node.get("children", [])
