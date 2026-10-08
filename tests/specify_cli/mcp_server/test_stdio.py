@@ -35,9 +35,16 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
                     listed = await session.call_tool("specify_list_commands", {})
                     version = await session.call_tool("specify_version", {})
                     artifacts = await session.call_tool("specify_artifact_list", {})
+                    artifact = await session.call_tool(
+                        "specify_artifact_info",
+                        {"identifier": "command:speckit.plan"},
+                    )
                     artifact_failure = await session.call_tool(
-                        "specify_artifact_list",
-                        {"project_directory": str(repo_root / "tests")},
+                        "specify_artifact_info",
+                        {
+                            "identifier": "missing",
+                            "project_directory": str(repo_root),
+                        },
                     )
                     ran = await session.call_tool(
                         "specify_run_command",
@@ -57,6 +64,7 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
             "specify_run_command",
             "specify_version",
             "specify_artifact_list",
+            "specify_artifact_info",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
         assert set(version.structured_content) == {
@@ -71,12 +79,16 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
         assert artifacts.structured_content["rows"]
         assert artifacts.structured_content["next_cursor"] is None
         assert artifacts.structured_content["truncated"] is False
+        assert artifact.is_error is False
+        assert artifact.structured_content["id"] == "command:speckit.plan"
+        assert artifact.structured_content["kind"] == "command"
+        assert artifact.structured_content["stack"]
         assert artifact_failure.is_error is True
         assert artifact_failure.structured_content == {
             "error": {
-                "code": "not_a_spec_kit_project",
-                "message": "not a Spec Kit project: no .specify/ directory found",
-                "details": {"project_directory": str(repo_root / "tests")},
+                "code": "unknown_artifact",
+                "message": "unknown artifact missing",
+                "details": {"identifier": "missing"},
                 "retryable": False,
             }
         }

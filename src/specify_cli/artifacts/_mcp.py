@@ -10,6 +10,7 @@ from mcp.server import MCPServer
 
 from ._operation_info import ARTIFACT_INFO_OPERATION
 from ._operation_list import ARTIFACT_LIST_OPERATION
+from .mcp_info import register as register_info
 from .mcp_list import register as register_list
 
 ArtifactOperationId = Literal["artifact.list", "artifact.info", "artifact.lookup"]
@@ -56,10 +57,8 @@ ARTIFACT_TOOLS = (
         cli_path="specify artifact info",
         mcp_tool_name="specify_artifact_info",
         contract_version=ARTIFACT_INFO_OPERATION.contract_version,
-        disposition="unavailable",
-        disposition_reason=(
-            "The artifact.info shared operation does not yet have an MCP adapter."
-        ),
+        disposition="available",
+        disposition_reason=None,
         capabilities=ARTIFACT_INFO_OPERATION.capabilities,
         network_access=ARTIFACT_INFO_OPERATION.network_access,
     ),
@@ -90,4 +89,10 @@ def register(server: MCPServer, *, launch_directory: Path) -> None:
         server,
         launch_directory=launch_directory,
         tool_name=list_tool.mcp_tool_name,
+    )
+    info_tool = available[ARTIFACT_INFO_OPERATION.operation_id]
+    register_info(
+        server,
+        launch_directory=launch_directory,
+        tool_name=info_tool.mcp_tool_name,
     )
