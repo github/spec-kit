@@ -327,8 +327,9 @@ configuration, dependencies, setup, outputs, failure behavior, and side effects,
 and to include a valid `specify workflow step add <step-id> --from
 <archive-url>` or `--dev <directory>` command and workflow YAML with
 `type: <step-id>`. A bare `step.yml` URL is not an installable archive.
-Documentation must explain that the built-in community catalog is
-discovery-only, not an install-allowed source.
+The built-in community catalog remains discovery-only, as explained in Spec
+Kit's own community guide. Do not require the submitted document to repeat
+that policy or fail otherwise complete usage documentation for omitting it.
 
 Require every Required Attestations checkbox to be checked. Testing Details
 must describe clean-project installation from the exact Download URL, the Spec Kit
