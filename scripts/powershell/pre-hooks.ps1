@@ -38,10 +38,12 @@ function Add-HookField {
     if ($key -in @('enabled', 'optional') -and ($parsed.Quoted -or $value -notin @('true', 'false'))) {
         throw "$key must be a boolean"
     }
-    if ($key -in @('prompt', 'description') -and -not $parsed.Quoted -and $value -match '^(true|false|[0-9]+)$') {
+    if ($key -in @('prompt', 'description') -and -not $parsed.Quoted -and
+        (Test-HookTypedScalar $value)) {
         throw "$key must be a string"
     }
     $Hook[$key] = $value
+    if ($key -eq 'priority') { $Hook.priority_quoted = $parsed.Quoted }
 }
 
 function Test-HookTypedScalar {
@@ -53,12 +55,13 @@ function Test-HookTypedScalar {
 }
 
 function Get-HookPriority {
-    param([string]$Raw)
+    param([string]$Raw, [bool]$Quoted)
     if ($Raw -notmatch '^[+-]?[0-9]+(\.[0-9]+)?$') { return 10 }
+    if ($Quoted -and $Raw.Contains('.')) { return 10 }
     $number = 0.0
     if (-not [double]::TryParse($Raw, [Globalization.NumberStyles]::Float,
             [Globalization.CultureInfo]::InvariantCulture, [ref]$number)) { return 10 }
-    if ($number -lt 1 -or $number -gt [int]::MaxValue) { return 10 }
+    if ($number -lt 1 -or [Math]::Truncate($number) -gt [int]::MaxValue) { return 10 }
     return [int][Math]::Truncate($number)
 }
 
@@ -130,15 +133,13 @@ function Resolve-HookConfig {
         }
         if ($indent -in @(2, 4) -and $body.StartsWith('- ') -and -not $empty) {
             $itemIndent = $indent
-            if ($target) {
-                $hook = @{ enabled = 'true'; optional = 'true'; priority = '10' }
-                $hooks.Add($hook)
-                Add-HookField $hook $body.Substring(2) $Event
-            }
+            $hook = @{ enabled = 'true'; optional = 'true'; priority = '10'; priority_quoted = $false }
+            if ($target) { $hooks.Add($hook) }
+            Add-HookField $hook $body.Substring(2) $Event
             continue
         }
         if ($itemIndent -ge 0 -and $indent -eq $itemIndent + 2) {
-            if ($target) { Add-HookField $hook $body $Event }
+            Add-HookField $hook $body $Event
             continue
         }
         throw "Unsupported YAML hook layout"
@@ -156,7 +157,7 @@ function Resolve-HookConfig {
             optional = $hook.optional -eq 'true'
             description = if ($hook.description) { $hook.description } else { '' }
             prompt = if ($hook.prompt) { $hook.prompt } else { '' }
-            priority = Get-HookPriority $hook.priority
+            priority = Get-HookPriority $hook.priority $hook.priority_quoted
             index = $i
         })
     }

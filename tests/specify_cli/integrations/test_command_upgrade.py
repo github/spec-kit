@@ -86,6 +86,22 @@ class TestIntegrationUpgradeDetailed:
         assert "Refusing to migrate symlinked" in result.output
         assert external.read_text(encoding="utf-8") == legacy
 
+    def test_hook_config_migration_rejects_symlinked_parent(self, tmp_path):
+        from specify_cli.extensions import HookExecutor
+
+        project = tmp_path / "project"
+        project.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        config = external / "extensions.yml"
+        legacy = "hooks:\n  before_plan: []\n"
+        config.write_text(legacy, encoding="utf-8")
+        (project / ".specify").symlink_to(external, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="symlinked"):
+            HookExecutor(project).migrate_project_config()
+        assert config.read_text(encoding="utf-8") == legacy
+
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         _write_invalid_manifest(project, "claude")

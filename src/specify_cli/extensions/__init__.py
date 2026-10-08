@@ -5733,7 +5733,7 @@ class HookExecutor:
 
     def migrate_project_config(self) -> None:
         """Rewrite existing hook configuration for the native script resolvers."""
-        if self.config_file.is_symlink():
+        if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
             raise ValueError("Refusing to migrate symlinked .specify/extensions.yml")
         if not self.config_file.exists():
             return

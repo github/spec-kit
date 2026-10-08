@@ -392,6 +392,21 @@ def test_native_parsers_reject_unsupported_or_invalid_yaml(tmp_path, variant, ph
     assert data["error"]
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("field", ["extension: 'unterminated", "optional: 'false'", "condition: false"])
+def test_non_target_event_fields_are_validated(tmp_path, variant, phase, field):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_tasks"
+    write_config(tmp_path, f"hooks:\n  {event}:\n    - extension: git\n"
+                           f"      command: speckit.git.commit\n      {field}\n")
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert data["error"]
+
+
 @pytest.mark.parametrize("variant", ["sh", "ps"])
 def test_native_invalid_event_is_valid_json(tmp_path, variant):
     if variant == "ps" and not shutil.which("pwsh"):
@@ -414,3 +429,28 @@ def test_priority_normalization_matches_across_runtimes(tmp_path, variant, prior
     code, data = run_hook(tmp_path, variant=variant)
     assert code == 0
     assert data["hooks"][0]["priority"] == expected
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("priority,expected", [
+    (2147483647, 2147483647),
+    (2147483648, 10),
+    (2147483647.9, 2147483647),
+    (10**16, 10),
+    ("00000000000000000005", 5),
+    ("2.8", 10),
+])
+def test_priority_range_and_coercion_parity(tmp_path, variant, priority, expected):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, yaml.safe_dump({"hooks": {"before_plan": [
+        {"extension": "high", "command": "speckit.high.run", "priority": priority},
+        {"extension": "default", "command": "speckit.default.run"},
+    ]}}, sort_keys=False))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert [hook["extension"] for hook in data["hooks"]] == (
+        ["default", "high"] if expected > 10 else ["high", "default"]
+    )
+    assert next(hook for hook in data["hooks"] if hook["extension"] == "high")["priority"] == expected

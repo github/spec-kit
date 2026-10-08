@@ -110,32 +110,36 @@ hook_field() {
         fi
     fi
     if [[ $key == description || $key == prompt ]]; then
-        if [[ $HOOK_QUOTED == false && $HOOK_SCALAR =~ ^(true|false|[0-9]+)$ ]]; then
+        if [[ $HOOK_QUOTED == false && -n $HOOK_SCALAR ]] &&
+           hook_typed_scalar "$HOOK_SCALAR"; then
             HOOK_ERROR="$key must be a string"
             return
         fi
     fi
+    [[ $target == true ]] || return
     case $key in
         extension) HOOK_EXT[index]=$HOOK_SCALAR ;;
         command) HOOK_CMD[index]=$HOOK_SCALAR ;;
         enabled) HOOK_ENABLED[index]=$HOOK_SCALAR ;;
         optional) HOOK_OPTIONAL[index]=$HOOK_SCALAR ;;
         condition) HOOK_CONDITION[index]=$HOOK_SCALAR ;;
-        priority) HOOK_PRIORITY[index]=$HOOK_SCALAR ;;
+        priority) HOOK_PRIORITY[index]=$HOOK_SCALAR; HOOK_PRIORITY_QUOTED[index]=$HOOK_QUOTED ;;
         description) HOOK_DESCRIPTION[index]=$HOOK_SCALAR ;;
         prompt) HOOK_PROMPT[index]=$HOOK_SCALAR ;;
     esac
 }
 
 hook_priority() {
-    local raw=$1 whole
+    local raw=$1 quoted=$2 whole
     HOOK_RANK=10
     [[ $raw =~ ^\+?[0-9]+(\.[0-9]+)?$ ]] || return
+    [[ $quoted == true && $raw == *.* ]] && return
     whole=${raw%%.*}
     whole=${whole#+}
-    (( ${#whole} <= 15 )) || return
+    while [[ $whole == 0* && ${#whole} -gt 1 ]]; do whole=${whole#0}; done
+    (( ${#whole} <= 10 )) || return
     HOOK_RANK=$((10#$whole))
-    (( HOOK_RANK >= 1 )) || HOOK_RANK=10
+    (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
 }
 
 resolve_hooks() {
@@ -143,7 +147,7 @@ resolve_hooks() {
     local section="" target=false empty=false item_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
     local i n chosen first=true
     local -a HOOK_EXT HOOK_CMD HOOK_ENABLED HOOK_OPTIONAL HOOK_CONDITION
-    local -a HOOK_PRIORITY HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED
+    local -a HOOK_PRIORITY HOOK_PRIORITY_QUOTED HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED
     event="${phase}_${command}"
     if [[ ! $event =~ ^(before|after)_[a-z][a-z0-9_]*$ ]]; then
         hook_error "" "Invalid hook event: $event"
@@ -226,10 +230,10 @@ resolve_hooks() {
                 HOOK_ENABLED[index]=true
                 HOOK_OPTIONAL[index]=true
                 HOOK_PRIORITY[index]=10
-                hook_field "${text:2}"
             fi
+            hook_field "${text:2}"
         elif (( item_indent >= 0 && indent == item_indent + 2 )); then
-            if [[ $target == true ]]; then hook_field "$text"; fi
+            hook_field "$text"
         else
             HOOK_ERROR="Unsupported YAML hook layout"
         fi
@@ -242,7 +246,7 @@ resolve_hooks() {
             if [[ -z ${HOOK_EXT[i]} || -z ${HOOK_CMD[i]} ]]; then
                 HOOK_ERROR="hooks.$event needs extension and command"; break
             fi
-            hook_priority "${HOOK_PRIORITY[i]}"
+            hook_priority "${HOOK_PRIORITY[i]}" "${HOOK_PRIORITY_QUOTED[i]}"
             HOOK_RANKS[i]=$HOOK_RANK
         done
     fi

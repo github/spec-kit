@@ -33,43 +33,43 @@ def resolve(event: str, project_root: Path) -> dict:
     if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
         raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
 
-    entries = config.get("hooks", {}).get(event, [])
-    if not isinstance(entries, list):
-        raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event} must be a list")
-
     hooks = []
-    for index, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}] must be a mapping")
-        if "enabled" in entry and not isinstance(entry["enabled"], bool):
-            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].enabled must be a boolean")
-        if "optional" in entry and not isinstance(entry["optional"], bool):
-            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].optional must be a boolean")
-        if entry.get("condition") is not None and not isinstance(entry["condition"], str):
-            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].condition must be a string or null")
-        if entry.get("enabled") is False or entry.get("condition"):
-            continue
-        extension, command = entry.get("extension"), entry.get("command")
-        if not isinstance(extension, str) or not extension or not isinstance(command, str) or not command:
-            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}] needs extension and command")
-        for field in ("description", "prompt"):
-            if entry.get(field) is not None and not isinstance(entry[field], str):
-                raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event}[{index}].{field} must be a string")
-        priority = entry.get("priority", 10)
-        try:
-            priority = int(priority) if not isinstance(priority, bool) else 10
-        except (TypeError, ValueError, OverflowError):
-            priority = 10
-        if priority < 1:
-            priority = 10
-        hooks.append({
-            "extension": extension,
-            "command": command,
-            "optional": entry.get("optional", True),
-            "description": entry.get("description") or "",
-            "prompt": entry.get("prompt") or "",
-            "priority": priority,
-        })
+    for hook_event, entries in config.get("hooks", {}).items():
+        if not isinstance(entries, list):
+            raise ValueError(f"Invalid .specify/extensions.yml: hooks.{hook_event} must be a list")
+        for index, entry in enumerate(entries):
+            label = f"hooks.{hook_event}[{index}]"
+            if not isinstance(entry, dict):
+                raise ValueError(f"Invalid .specify/extensions.yml: {label} must be a mapping")
+            for field in ("enabled", "optional"):
+                if field in entry and not isinstance(entry[field], bool):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a boolean")
+            for field in ("condition", "description", "prompt"):
+                if entry.get(field) is not None and not isinstance(entry[field], str):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a string or null")
+            for field in ("extension", "command"):
+                if field in entry and (not isinstance(entry[field], str) or not entry[field]):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
+            if hook_event != event or entry.get("enabled") is False or entry.get("condition"):
+                continue
+            extension, command = entry.get("extension"), entry.get("command")
+            if not extension or not command:
+                raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
+            priority = entry.get("priority", 10)
+            try:
+                priority = int(priority) if not isinstance(priority, bool) else 10
+            except (TypeError, ValueError, OverflowError):
+                priority = 10
+            if priority < 1 or priority > 2147483647:
+                priority = 10
+            hooks.append({
+                "extension": extension,
+                "command": command,
+                "optional": entry.get("optional", True),
+                "description": entry.get("description") or "",
+                "prompt": entry.get("prompt") or "",
+                "priority": priority,
+            })
     hooks.sort(key=lambda hook: hook["priority"])
     return {"event": event, "hooks": hooks}
 
