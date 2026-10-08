@@ -3329,10 +3329,22 @@ def test_failed_setup_restores_completed_writes_and_original_directories(tmp_pat
 
 @pytest.mark.parametrize("record_ownership", [False, True])
 @pytest.mark.parametrize("limit_offset", [-1, 0, 1])
-def test_trust_grant_respects_reader_limit_before_replacement(tmp_path, server, monkeypatch, record_ownership, limit_offset):
+@pytest.mark.parametrize("windows_newlines", [False, True])
+def test_trust_grant_respects_reader_limit_before_replacement(
+    tmp_path, server, monkeypatch, record_ownership, limit_offset, windows_newlines,
+):
     from specify_cli.integrations import installer
     from specify_cli.integrations.manifest import IntegrationManifest
 
+    if windows_newlines:
+        original_temporary_file = installer.tempfile.NamedTemporaryFile
+
+        def windows_temporary_file(*args, **kwargs):
+            if "b" not in kwargs.get("mode", "w+b") and "newline" not in kwargs:
+                kwargs["newline"] = "\r\n"
+            return original_temporary_file(*args, **kwargs)
+
+        monkeypatch.setattr(installer.tempfile, "NamedTemporaryFile", windows_temporary_file)
     publish(server)
     first = catalog_project(tmp_path, server)
     install(first)
@@ -3362,8 +3374,8 @@ def test_trust_grant_respects_reader_limit_before_replacement(tmp_path, server, 
         assert trust.read_bytes() == original
     else:
         installer._grant_trust(second, KEY, record, record_ownership=record_ownership)
-        assert trust.read_text() == content
         assert identity in installer._read_trust(trust)
+        assert trust.read_bytes() == content.encode("utf-8")
     assert load_installed_integrations(first) == [KEY]
     assert set(trust.parent.iterdir()) == original_trust_paths
 
@@ -3755,3 +3767,55 @@ def test_check_renders_external_adapter_names_as_literal_text(tmp_path, server, 
     result = run(project, ["check"])
     assert result.exit_code == 0, result.output
     assert name in result.output
+
+
+@pytest.mark.parametrize("operation", ["migrate", "uninstall"])
+@pytest.mark.parametrize("contents", ["empty", "user", "generated"])
+@pytest.mark.parametrize("fail", [False, True])
+def test_kimi_legacy_parent_removal_obeys_lifecycle_rollback(tmp_path, server, monkeypatch, operation, contents, fail):
+    from specify_cli.integrations import command_install, command_uninstall
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    if operation == "uninstall":
+        result = run(project, ["integration", "install", "kimi", "--force", "--script", "py"])
+        assert result.exit_code == 0, result.output
+    legacy = project / ".kimi/skills"
+    legacy.mkdir(parents=True)
+    if contents == "user":
+        (legacy / "notes.txt").write_text("preserve user notes")
+    elif contents == "generated":
+        skill = legacy / "speckit-legacy/SKILL.md"
+        skill.parent.mkdir()
+        skill.write_text(
+            "---\nname: speckit-legacy\nmetadata:\n"
+            "  author: github-spec-kit\n"
+            "  source: templates/commands/legacy.md\n---\nLegacy skill\n"
+        )
+    original_directories = {path for path in project.rglob("*") if path.is_dir()}
+    before = snapshot(project)
+    if fail:
+        def fail_after_cleanup(*args, **kwargs):
+            assert legacy.exists() == (contents == "user")
+            raise OSError("sample failure after legacy cleanup")
+
+        module = command_install if operation == "migrate" else command_uninstall
+        monkeypatch.setattr(module, "_write_integration_json", fail_after_cleanup)
+    arguments = (
+        ["integration", "install", "kimi", "--force", "--script", "py", "--integration-options=--migrate-legacy"]
+        if operation == "migrate" else ["integration", "uninstall", "kimi"]
+    )
+    result = run(project, arguments)
+    if fail:
+        assert result.exit_code == 1, result.output
+        assert "sample failure after legacy cleanup" in " ".join(result.output.split())
+        assert snapshot(project) == before
+        assert all(path.is_dir() for path in original_directories)
+    else:
+        assert result.exit_code == 0, result.output
+        assert legacy.exists() == (contents == "user")
+        if contents == "user":
+            assert (legacy / "notes.txt").read_text() == "preserve user notes"
+        elif contents == "generated" and operation == "migrate":
+            assert (project / ".kimi-code/skills/speckit-legacy/SKILL.md").is_file()

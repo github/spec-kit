@@ -397,14 +397,14 @@ def _grant_trust(
                 "registrar_config": record["registrar_config"],
                 "paths": sorted(IntegrationManifest.load(key, root).files),
             }
-        content = json.dumps(data, indent=2) + "\n"
-        if len(content.encode("utf-8")) > _MAX_TRUST_STATE_BYTES:
+        content = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+        if len(content) > _MAX_TRUST_STATE_BYTES:
             raise IntegrationInstallError(
                 "Cannot write integration local trust state: trust registry exceeds size limit"
             )
         temporary = None
         try:
-            with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
+            with tempfile.NamedTemporaryFile(dir=path.parent, mode="wb", delete=False) as stream:
                 temporary = Path(stream.name)
                 stream.write(content)
             os.replace(temporary, path)

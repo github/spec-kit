@@ -200,7 +200,8 @@ a new local decision; a legacy project `trusted` field grants no authority.
 Consent is checked before every load, including configuration-cache reuse.
 The trust reader and writer share a 1 MiB byte limit. An update that would
 exceed it fails before replacement, leaving the previous grants and recovery
-records readable; existing grants are never evicted implicitly.
+records readable; existing grants are never evicted implicitly. The writer
+persists the exact measured UTF-8 bytes, without platform newline translation.
 Only recorded, locally trusted packages are loaded, and hash/descriptor
 validation precedes import. Missing, modified,
 incompatible, or unimportable implementations produce explicit errors.
@@ -255,6 +256,8 @@ This preserves pending-file conflicts and the original directory inventory.
 Rollback removes newly created empty parent directories only until the first
 pre-existing parent;
 original empty directories are preserved in project and built-in home scopes.
+This includes empty Kimi legacy directories removed during migration or teardown;
+non-empty legacy directories are not snapshotted merely for parent cleanup.
 This also applies when an adapter records an already-written file.
 Custom writes to existing files must use `IntegrationManifest.record_file()`
 or the host's before-write primitives, such as

@@ -154,12 +154,20 @@ class KimiIntegration(SkillsIntegration):
                     except OSError:
                         skipped.append(legacy_dir)
 
-            try:
-                old_skills_dir.rmdir()
-            except OSError:
-                pass
+            _remove_empty_legacy_directory(old_skills_dir)
 
         return removed, skipped
+
+
+def _remove_empty_legacy_directory(path: Path) -> None:
+    from .._file_changes import changing_file
+
+    try:
+        if not any(path.iterdir()):
+            with changing_file(path, removal=True):
+                path.rmdir()
+    except OSError:
+        pass
 
 
 def _has_symlinked_component(path: Path, project_root: Path) -> bool:
@@ -293,10 +301,7 @@ def _migrate_legacy_kimi_skills_dir(
             pass
 
     # Remove the legacy skills directory if it is now empty.
-    try:
-        old_skills_dir.rmdir()
-    except OSError:
-        pass
+    _remove_empty_legacy_directory(old_skills_dir)
 
     return (migrated_count, removed_count)
 
