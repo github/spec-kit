@@ -2565,7 +2565,12 @@ class ExtensionManager:
                     "Cannot register generic extension commands: existing invocation "
                     f"artifact or directory '{target}' cannot be replaced safely"
                 )
-        self._validate_active_integration_outputs(manifest)
+        # Validate only destinations this invocation can actually write. With
+        # both command registration and skills mode disabled, an unsafe or
+        # unavailable agent output is unrelated to installing the extension's
+        # project-local files and must not make that install fail.
+        if register_commands or self._get_skills_dir(create=False) is not None:
+            self._validate_active_integration_outputs(manifest)
 
         # Refuse to install an extension from its own install destination — with
         # --force this would delete the source before copying it (issue #2990).

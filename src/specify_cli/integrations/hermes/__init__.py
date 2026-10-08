@@ -86,9 +86,95 @@ class HermesIntegration(SkillsIntegration):
         """Return ``~/.hermes/skills/`` — the global skills directory."""
         return Path.home() / ".hermes" / "skills"
 
+    @staticmethod
+    def _is_managed_dev_output_symlink(path: Path, project_root: Path) -> bool:
+        """Return whether *path* is an owned extension dev-output symlink.
+
+        Extension ``--dev`` installs render into a cache below the installed
+        extension and expose the result through a symlink in Hermes' global
+        skills directory.  That leaf symlink is safe to replace or unlink, but
+        only when its resolved target has the exact managed cache shape.  The
+        caller still validates every parent component separately.
+        """
+        if not path.is_symlink():
+            return False
+
+        extensions_dir = project_root / ".specify" / "extensions"
+        if _has_symlinked_component(extensions_dir, project_root):
+            return False
+
+        try:
+            extensions_root = extensions_dir.resolve(strict=False)
+            target = path.resolve(strict=False)
+            relative = target.relative_to(extensions_root)
+            output_relative = path.relative_to(
+                HermesIntegration._hermes_home_skills_dir()
+            )
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+        parts = relative.parts
+        if (
+            len(parts) < 5
+            or parts[1] != ".specify-dev"
+            or parts[-1] != "SKILL.md"
+            or output_relative.name != "SKILL.md"
+            or any(part in {"", ".", ".."} for part in output_relative.parts)
+        ):
+            return False
+        if parts[2] == "extension-skills":
+            cached_output = Path(*parts[3:])
+        elif parts[2] == "agent-commands" and len(parts) >= 6 and parts[3] == "hermes":
+            cached_output = Path(*parts[4:])
+        else:
+            return False
+        if cached_output != output_relative:
+            return False
+
+        extension_dir = extensions_root / parts[0]
+        manifest_path = extension_dir / "extension.yml"
+        if _has_symlinked_component(manifest_path, extensions_root):
+            return False
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            return False
+        if not isinstance(manifest, dict):
+            return False
+        extension = manifest.get("extension")
+        provides = manifest.get("provides")
+        if not isinstance(extension, dict) or extension.get("id") != parts[0]:
+            return False
+        commands = provides.get("commands") if isinstance(provides, dict) else None
+        if not isinstance(commands, list):
+            return False
+
+        declared_names: list[str] = []
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+            name = command.get("name")
+            if isinstance(name, str):
+                declared_names.append(name)
+            aliases = command.get("aliases")
+            if isinstance(aliases, list):
+                declared_names.extend(alias for alias in aliases if isinstance(alias, str))
+
+        def _skill_name(command_name: str) -> str:
+            short_name = command_name.removeprefix("speckit.")
+            return f"speckit-{short_name.replace('.', '-')}"
+
+        output_name = output_relative.parent.as_posix()
+        return output_name in {_skill_name(name) for name in declared_names}
+
     def validate_output_path(self, path: Path, project_root: Path) -> None:
         """Reject global registrar outputs that traverse symlinks or junctions."""
-        if _has_symlinked_component(path, Path.home()):
+        path_to_validate = (
+            path.parent
+            if self._is_managed_dev_output_symlink(path, project_root)
+            else path
+        )
+        if _has_symlinked_component(path_to_validate, Path.home()):
             raise IntegrationOutputPathError(
                 f"Hermes destination {path} contains a symlinked path component; "
                 "refusing to write through it."

@@ -1116,6 +1116,7 @@ def _preview_init(
     json_output: bool,
 ) -> None:
     """Run the canonical initializer in staging and report its file plan."""
+    target_existed = project_path.exists()
     payload: dict[str, Any] = {
         "dry_run": True,
         "target": str(project_path),
@@ -1238,20 +1239,21 @@ def _preview_init(
             check=False,
             env=env,
         )
-        if result.returncode:
-            payload["error"] = _preview_child_failure_message(result)
-        elif any(
+        quarantine_changed = any(
             _snapshot_tree_entries(
                 _quarantine_root(staged_root if scope == "project" else staged_home)
             )
             != before
             for scope, before in quarantine_states.items()
-        ):
+        )
+        if quarantine_changed:
             payload["error"] = (
-                "staged initialization attempted to write through an external "
-                "symlink"
+                "staged initialization attempted to write through an external symlink"
             )
-        else:
+        elif result.returncode:
+            payload["error"] = _preview_child_failure_message(result)
+
+        if not quarantine_changed:
             staged_project_files = _snapshot_files(staged_root)
             registry_sources = _preview_registry_sources(staged_root)
             project_ownership = dict(initial_project_ownership)
@@ -1265,14 +1267,21 @@ def _preview_init(
                     staged_root, registry_sources, set(staged_project_files)
                 )
             )
-            payload["actions"] = _build_preview_actions(
-                initial_project_files,
-                staged_root,
-                ownership=project_ownership,
-                default_ownership=("integration", selected_integration),
-                directory_conflict=gate == "force_required",
-                staged_files=staged_project_files,
+            project_writes_are_retained = not (
+                result.returncode and not here and not target_existed
             )
+            if project_writes_are_retained:
+                payload["actions"] = _build_preview_actions(
+                    initial_project_files,
+                    staged_root,
+                    ownership=project_ownership,
+                    default_ownership=("integration", selected_integration),
+                    directory_conflict=gate == "force_required",
+                    staged_files=staged_project_files,
+                )
+                payload["actions"] = _merge_recorded_plan_actions(
+                    payload["actions"], plan_path
+                )
             staged_home_files = _snapshot_files(staged_home)
             home_ownership = dict(initial_home_ownership)
             home_ownership.update(registry_home_ownership)
@@ -1291,9 +1300,6 @@ def _preview_init(
                     directory_conflict=False,
                     staged_files=staged_home_files,
                 )
-            )
-            payload["actions"] = _merge_recorded_plan_actions(
-                payload["actions"], plan_path
             )
         payload["failures"] = _recorded_plan_failures(plan_path)
 
@@ -1865,7 +1871,7 @@ def register(app: typer.Typer) -> None:
                 )
                 raise typer.Exit(1)
             selected_ai = integration
-        elif not _prompts_allowed(non_interactive):
+        elif (dry_run and json_output) or not _prompts_allowed(non_interactive):
             default_integration = resolve_default_init_integration()
             if not (dry_run and json_output):
                 console.print(
@@ -1964,7 +1970,7 @@ def register(app: typer.Typer) -> None:
         else:
             default_script = "ps" if os.name == "nt" else "sh"
 
-            if _prompts_allowed(non_interactive):
+            if _prompts_allowed(non_interactive) and not (dry_run and json_output):
                 selected_script = select_with_arrows(
                     SCRIPT_TYPE_CHOICES,
                     "Choose script type (or press Enter)",
@@ -2350,6 +2356,8 @@ def register(app: typer.Typer) -> None:
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):
+                if not here and project_path.exists() and not dir_existed_before:
+                    shutil.rmtree(project_path)
                 raise
             except Exception as e:
                 tracker.error("final", str(e))

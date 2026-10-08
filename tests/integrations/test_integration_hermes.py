@@ -11,6 +11,7 @@ non-destructive to a developer's real Hermes installation.
 """
 
 import json
+import os
 import shutil
 import stat
 from pathlib import Path
@@ -138,6 +139,90 @@ class TestHermesIntegration(SkillsIntegrationTests):
 
         assert list(external.iterdir()) == []
         assert not (home / ".hermes").exists()
+
+    def test_output_guard_rejects_mismatched_managed_dev_link(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        project = tmp_path / "project"
+        cache_file = (
+            project
+            / ".specify"
+            / "extensions"
+            / "example"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-other"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text(
+            "---\nmetadata:\n  source: extension:example\n---\n",
+            encoding="utf-8",
+        )
+        (cache_file.parents[3] / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "extension": {"id": "example"},
+                    "provides": {
+                        "commands": [{"name": "speckit.other", "file": "other.md"}]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        skill_file = (
+            home / ".hermes" / "skills" / "speckit-expected" / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        try:
+            skill_file.symlink_to(cache_file)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        from specify_cli.integrations.base import IntegrationOutputPathError
+
+        with pytest.raises(IntegrationOutputPathError):
+            get_integration(self.KEY).validate_output_path(skill_file, project)
+
+    def test_output_guard_rejects_managed_link_through_symlinked_extensions_root(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        external_extensions = tmp_path / "external-extensions"
+        cache_file = (
+            external_extensions
+            / "example"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-expected"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text(
+            "---\nmetadata:\n  source: extension:example\n---\n",
+            encoding="utf-8",
+        )
+        try:
+            (project / ".specify" / "extensions").symlink_to(
+                external_extensions, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+        skill_file = (
+            home / ".hermes" / "skills" / "speckit-expected" / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        skill_file.symlink_to(cache_file)
+
+        from specify_cli.integrations.base import IntegrationOutputPathError
+
+        with pytest.raises(IntegrationOutputPathError):
+            get_integration(self.KEY).validate_output_path(skill_file, project)
 
     # -- Override shared tests that assume project-local skills ------------
 
@@ -381,6 +466,137 @@ class TestHermesIntegration(SkillsIntegrationTests):
         failures = json.loads(preview.output)["failures"]
         assert any("symlinked path component" in failure["error"] for failure in failures)
         assert external_skill.read_text(encoding="utf-8") == "external\n"
+
+    def test_dev_extension_install_reinstall_and_remove_manage_owned_symlinks(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        (project / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "hermes", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+        (project / ".hermes" / "skills").mkdir(parents=True)
+
+        from specify_cli.extensions import ExtensionManager
+
+        extension = tmp_path / "extension-source"
+        shutil.copytree(
+            Path(__file__).parents[2] / "extensions" / "template", extension
+        )
+        extension_manifest = yaml.safe_load(
+            (extension / "extension.yml").read_text(encoding="utf-8")
+        )
+        extension_manifest["provides"]["commands"][0]["aliases"].append(
+            "group/run"
+        )
+        (extension / "extension.yml").write_text(
+            yaml.safe_dump(extension_manifest), encoding="utf-8"
+        )
+        skill_file = (
+            home
+            / ".hermes"
+            / "skills"
+            / "speckit-my-extension-example"
+            / "SKILL.md"
+        )
+        nested_alias_file = (
+            home / ".hermes" / "skills" / "speckit-group" / "run" / "SKILL.md"
+        )
+
+        # Reproduce the partial state left by the original failure: command
+        # registration published a dev symlink, then extension-skill
+        # registration rejected that same link before registry.add(). A plain
+        # retry must recover this unregistered install rather than requiring
+        # manual cleanup.
+        orphaned_install = project / ".specify" / "extensions" / "my-extension"
+        shutil.copytree(extension, orphaned_install)
+        orphaned_cache = (
+            orphaned_install
+            / ".specify-dev"
+            / "agent-commands"
+            / "hermes"
+            / "speckit-my-extension-example"
+            / "SKILL.md"
+        )
+        orphaned_cache.parent.mkdir(parents=True)
+        orphaned_cache.write_text(
+            "---\nmetadata:\n  source: extension:my-extension\n---\n"
+            "orphaned dev output\n",
+            encoding="utf-8",
+        )
+        skill_file.parent.mkdir(parents=True)
+        try:
+            skill_file.symlink_to(
+                Path(os.path.relpath(orphaned_cache, skill_file.parent))
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        manager = ExtensionManager(project)
+        manager.install_from_directory(extension, "0.3.0", link_commands=True)
+
+        assert manager.registry.is_installed("my-extension")
+        assert skill_file.is_symlink()
+        assert skill_file.resolve().is_file()
+        assert nested_alias_file.is_symlink()
+
+        manager.install_from_directory(
+            extension, "0.3.0", link_commands=True, force=True
+        )
+        assert skill_file.is_symlink()
+        assert nested_alias_file.is_symlink()
+
+        assert manager.remove("my-extension") is True
+        assert not skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert not nested_alias_file.exists()
+        assert not nested_alias_file.is_symlink()
+
+        manager.install_from_directory(extension, "0.3.0", link_commands=True)
+        assert skill_file.is_symlink()
+        assert manager.remove("my-extension") is True
+        assert not skill_file.exists()
+        assert not skill_file.is_symlink()
+
+    def test_install_without_outputs_skips_unused_hermes_preflight(
+        self, tmp_path, monkeypatch
+    ):
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        (project / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "hermes", "ai_skills": False, "script": "sh"}),
+            encoding="utf-8",
+        )
+        (project / ".hermes" / "skills").mkdir(parents=True)
+
+        external = tmp_path / "external-skills"
+        external.mkdir()
+        global_skills = home / ".hermes" / "skills"
+        global_skills.parent.mkdir(parents=True)
+        try:
+            global_skills.symlink_to(external, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks are not available")
+
+        from specify_cli.extensions import ExtensionManager
+
+        extension = Path(__file__).parents[2] / "extensions" / "template"
+        manager = ExtensionManager(project)
+        manager.install_from_directory(extension, "0.3.0", register_commands=False)
+
+        assert manager.registry.is_installed("my-extension")
+        assert list(external.iterdir()) == []
 
     def test_extension_alias_is_preflighted_before_any_install_write(
         self, tmp_path, monkeypatch

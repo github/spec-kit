@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -21,6 +22,7 @@ from specify_cli._utils import (
 from specify_cli.command_init import (
     _is_within_root,
     _normalize_fs_path,
+    _preview_init,
     _preview_child_failure_message,
     _preview_content_ownership,
     _preview_home_seed_paths,
@@ -449,6 +451,206 @@ def test_dry_run_json_is_pure_json_without_explicit_integration(tmp_path: Path) 
     assert payload["dry_run"] is True
     assert payload["actions"]
     assert "Non-interactive session detected" not in result.output
+    assert not target.exists()
+
+
+def test_dry_run_json_uses_defaults_without_tty_prompts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "tty-json-preview"
+    monkeypatch.setattr("specify_cli.command_init._prompts_allowed", lambda _: True)
+
+    def fail_if_prompted(*_args: object, **_kwargs: object) -> str:
+        raise AssertionError("JSON dry-run must not open an interactive selector")
+
+    monkeypatch.setattr("specify_cli.command_init.select_with_arrows", fail_if_prompted)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--dry-run",
+            "--json",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["dry_run"] is True
+    assert payload["actions"]
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("use_here", [False, True], ids=["named-target", "here"])
+def test_failed_dry_run_reports_partial_writes_retained_by_real_init(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, use_here: bool
+) -> None:
+    target = tmp_path / "existing-failed-preview"
+    target.mkdir()
+    (target / ".specify").write_text("blocks shared infrastructure\n", encoding="utf-8")
+    arguments = [
+        "init",
+        "--dry-run",
+        "--json",
+        "--integration",
+        "copilot",
+        "--script",
+        "sh",
+        "--ignore-agent-tools",
+    ]
+    if use_here:
+        monkeypatch.chdir(target)
+        arguments.append("--here")
+    else:
+        arguments.extend([str(target), "--force"])
+
+    result = CliRunner().invoke(app, arguments, catch_exceptions=False)
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["error"]
+    assert {action["path"] for action in payload["actions"]} >= {
+        ".github/skills/speckit-plan/SKILL.md"
+    }
+    assert (target / ".specify").is_file()
+
+
+def test_failed_dry_run_hides_project_writes_cleaned_for_new_named_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "new-failed-preview"
+
+    def fail_after_project_write(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        staged_target = Path(command[command.index("--script") + 2])
+        artifact = staged_target / ".github" / "skills" / "partial" / "SKILL.md"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("partial\n", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="Initialization failed: injected failure\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "specify_cli.command_init.subprocess.run", fail_after_project_write
+    )
+
+    with pytest.raises(typer.Exit):
+        _preview_init(
+            project_path=target,
+            gate="none",
+            force=False,
+            here=False,
+            script_type="sh",
+            selected_integration="copilot",
+            ignore_agent_tools=True,
+            preset=None,
+            integration_options=None,
+            extensions=None,
+            trust_extension_urls=False,
+            json_output=True,
+        )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] == "injected failure"
+    assert payload["actions"] == []
+    assert not target.exists()
+
+
+def test_failed_dry_run_rejects_writes_through_quarantined_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "existing-quarantine-failure"
+    target.mkdir()
+
+    def fail_after_quarantine_write(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        staged_target = Path(command[command.index("--script") + 2])
+        artifact = staged_target / ".github" / "skills" / "partial" / "SKILL.md"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("partial\n", encoding="utf-8")
+        quarantine_write = (
+            staged_target.parent
+            / "project-quarantine"
+            / ".github"
+            / "skills"
+            / "escaped"
+            / "SKILL.md"
+        )
+        quarantine_write.parent.mkdir(parents=True)
+        quarantine_write.write_text("escaped\n", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="Initialization failed: injected failure\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "specify_cli.command_init.subprocess.run", fail_after_quarantine_write
+    )
+
+    with pytest.raises(typer.Exit):
+        _preview_init(
+            project_path=target,
+            gate="force_required",
+            force=True,
+            here=False,
+            script_type="sh",
+            selected_integration="copilot",
+            ignore_agent_tools=True,
+            preset=None,
+            integration_options=None,
+            extensions=None,
+            trust_extension_urls=False,
+            json_output=True,
+        )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] == (
+        "staged initialization attempted to write through an external symlink"
+    )
+    assert payload["actions"] == []
+    assert list(target.iterdir()) == []
+
+
+def test_real_init_cleans_new_named_target_after_typer_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "new-target-typer-exit"
+
+    def fail_shared_infra(*_args: object, **_kwargs: object) -> bool:
+        raise OSError("injected shared infrastructure failure")
+
+    monkeypatch.setattr("specify_cli._install_shared_infra", fail_shared_infra)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "init",
+            str(target),
+            "--integration",
+            "copilot",
+            "--script",
+            "sh",
+            "--ignore-agent-tools",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "injected shared infrastructure failure" in " ".join(result.output.split())
     assert not target.exists()
 
 
