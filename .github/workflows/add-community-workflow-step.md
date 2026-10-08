@@ -214,8 +214,11 @@ budget bounds each download.
 It does not follow redirects and only hashes downloaded bytes after curl exits
 zero and returns HTTP 200. It rejects submitted digest mismatches and files
 exceeding 10 MiB. Exit 1 is Failed; exit 2 is Blocked, including missing tools,
-timeouts, HTTP 403/429, and HTTP 5xx. HTTP 404 and redirects are submission
-failures. Never treat a nonzero exit as a passed download or replace a
+timeouts, HTTP 403/408/429, and HTTP 5xx. Known HTTP status takes precedence
+over curl's exit code: an oversized HTTP 503 error body remains Blocked even
+when curl exits 63. Only classify exit 63 as a size defect for HTTP 200.
+HTTP 404 and redirects are submission failures. Never treat a nonzero exit
+as a passed download or replace a
 mismatching submitted digest to make it pass.
 
 On exit zero, the helper prints the complete per-file `sha256` mapping and

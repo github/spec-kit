@@ -283,11 +283,22 @@ def test_nested_binary_extra_file_is_hashed(verifier, file_submission, tmp_path,
     (0, "404", "SubmissionMismatch"),
     (0, "302", "SubmissionMismatch"),
     (0, "403", "Blocked"),
+    (0, "408", "Blocked"),
     (0, "429", "Blocked"),
     (0, "503", "Blocked"),
+    (63, "403", "Blocked"),
+    (63, "408", "Blocked"),
+    (63, "429", "Blocked"),
+    (63, "503", "Blocked"),
+    (63, "404", "SubmissionMismatch"),
+    (63, "302", "SubmissionMismatch"),
+    (63, "000", "Blocked"),
+    (28, "200", "Blocked"),
 ])
+@pytest.mark.parametrize("remaining_bytes", [None, 1])
 def test_fetch_failures_prevent_hashing(
     verifier, file_submission, tmp_path, monkeypatch, status, http, error_type,
+    remaining_bytes,
 ):
     output = tmp_path / "download"
     output.write_bytes(b"stale successful download")
@@ -300,8 +311,11 @@ def test_fetch_failures_prevent_hashing(
         pytest.fail("Failed download reached hashing")
 
     monkeypatch.setattr(verifier.hashlib, "sha256", unexpected_hash)
-    with pytest.raises(getattr(verifier, error_type)):
-        verifier.fetch_file(file_submission, output)
+    with pytest.raises(getattr(verifier, error_type)) as error:
+        verifier.fetch_file(file_submission, output, remaining_bytes=remaining_bytes)
+    if http not in ("000", "200"):
+        assert "HTTP" in str(error.value)
+        assert http in str(error.value)
 
 
 def test_submitted_checksum_mismatch_fails(verifier, file_submission, tmp_path, monkeypatch):

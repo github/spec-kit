@@ -174,17 +174,19 @@ def fetch_file(
         )
     except OSError as exc:
         raise Blocked(f"cannot download {url}: {exc}") from exc
-    if result.returncode == 63:
+    status = result.stdout.strip()
+    if status != "200" and re.fullmatch(r"[1-5]\d\d", status):
+        if status in ("403", "408", "429") or status.startswith("5"):
+            raise Blocked(f"HTTP {status} downloading {url}")
+        raise SubmissionMismatch(f"expected HTTP 200, received {status!r} from {url}")
+    if result.returncode == 63 and status == "200":
         raise size_error()
     if result.returncode:
         raise Blocked(
             f"curl exited {result.returncode} for {url}: {result.stderr.strip()}"
         )
-    status = result.stdout.strip()
     if status != "200":
-        if status in ("403", "429") or re.fullmatch(r"5\d\d", status):
-            raise Blocked(f"HTTP {status} downloading {url}")
-        raise SubmissionMismatch(f"expected HTTP 200, received {status!r} from {url}")
+        raise Blocked(f"curl returned no valid HTTP status ({status!r}) for {url}")
     try:
         if output.stat().st_size > limit:
             raise size_error()
