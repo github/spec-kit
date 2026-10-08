@@ -172,7 +172,9 @@ required check has completed and passed.
   Confirm the repository is public and has an open source license file.
 - Download URL must be a GitHub archive in the submitted repository:
   `releases/download/<tag>/<asset>.zip` (also `.tar.gz` or `.tgz`) or
-  `archive/refs/tags/<tag>.zip` (also `.tar.gz` or `.tgz`).
+  `archive/refs/tags/<tag>.zip` (also `.tar.gz`, never `.tgz`).
+  GitHub-generated tag archives do not support `.tgz`; that suffix is only
+  accepted for named `releases/download` assets.
   Reject credentials, queries, fragments, traversal, percent escapes, and
   floating targets such as `releases/latest/` before fetching. Extract the exact
   tag from this URL. It must match Version under PEP 440, optionally with a `v`
@@ -266,7 +268,9 @@ binary; hash their exact bytes.
 
 ### Documentation and author evidence
 
-Restrict Documentation URL to a README.md in the submitted GitHub repository,
+Restrict Documentation URL to a tag-pinned Markdown file (`.md`,
+case-insensitive) in the submitted GitHub repository. It need not be named
+`README.md`; a file such as `docs/deploy.md` is equally valid. Accept only HTTPS,
 using `github.com/<owner>/<repo>/blob/<ref>/<path>`,
 `github.com/<owner>/<repo>/raw/<ref>/<path>`, or
 `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. Strip query and
@@ -275,8 +279,9 @@ convert GitHub `/blob/` to `/raw/` for Markdown. Validate a supplied Changelog
 URL against the same repository and release tag before fetching it.
 Do not fetch other hosts or repositories.
 
-Require that README to explain this step's purpose, configuration, dependencies,
-and setup, and to include a valid `specify workflow step add <step-id> --from
+Require the linked Markdown document to explain this step's purpose,
+configuration, dependencies, setup, outputs, failure behavior, and side effects,
+and to include a valid `specify workflow step add <step-id> --from
 <archive-url>` or `--dev <directory>` command and workflow YAML with
 `type: <step-id>`. A bare `step.yml` URL is not an installable archive.
 Documentation must explain that the built-in community catalog is
@@ -285,7 +290,7 @@ discovery-only, not an install-allowed source.
 Require every Required Attestations checkbox to be checked. Testing Details
 must describe clean-project installation from the exact Download URL, the Spec Kit
 version tested, successful execution, and an invalid-input or failure case.
-Runtime and Tool Dependencies and Step Type Provided must agree with the README.
+Runtime and Tool Dependencies and Step Type Provided must agree with that document.
 Check completeness
 of author evidence, not the submitted code's correctness.
 

@@ -76,7 +76,7 @@ body:
     id: download-url
     attributes:
       label: Download URL
-      description: URL to the versioned `.zip`, `.tar.gz`, or `.tgz` step package archive for this release
+      description: URL to the versioned step package archive; GitHub-generated tag archives support `.zip` and `.tar.gz`, while named release assets may also use `.tgz`
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/releases/download/v1.0.0/deploy-1.0.0.zip"
     validations:
       required: true
@@ -185,7 +185,7 @@ body:
     id: documentation
     attributes:
       label: Documentation URL
-      description: Tag-pinned documentation covering configuration, outputs, failure behavior, side effects, and an example workflow
+      description: Tag-pinned Markdown documentation (`.md`) covering configuration, outputs, failure behavior, side effects, and an example workflow; README.md is not required
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/blob/v1.0.0/README.md"
     validations:
       required: true

@@ -212,9 +212,13 @@ def test_invalid_pep440_versions_are_rejected(verifier, file_submission, version
 
 @pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tgz"])
 @pytest.mark.parametrize("route", ["releases/download/deploy-v1.2.3/package", "archive/refs/tags/deploy-v1.2.3"])
-def test_canonical_archive_formats_are_supported(verifier, file_submission, suffix, route):
+def test_canonical_archive_formats_match_github_routes(verifier, file_submission, suffix, route):
     file_submission["download_url"] = "https://github.com/example/steps/" + route + suffix
-    assert verifier.validate_identity(file_submission) == ("example", "steps", "deploy-v1.2.3")
+    if route.startswith("archive/") and suffix == ".tgz":
+        with pytest.raises(verifier.SubmissionMismatch, match="Download URL"):
+            verifier.validate_identity(file_submission)
+    else:
+        assert verifier.validate_identity(file_submission) == ("example", "steps", "deploy-v1.2.3")
 
 
 @pytest.mark.parametrize("url", [
@@ -227,6 +231,7 @@ def test_canonical_archive_formats_are_supported(verifier, file_submission, suff
     "https://github.com/example/steps/releases/download/deploy-v1.2.3/../step.zip",
     "https://github.com/example/steps/releases/download/deploy-v1.2.3/step%20name.zip",
     "https://github.com/example/steps/releases/download/deploy-v1.2.3/step.zip\n",
+    "https://github.com/example/steps/archive/refs/tags/deploy-v1.2.3.tgz",
     "https://[invalid/step.zip",
 ])
 def test_invalid_canonical_download_urls_prevent_file_fetch(

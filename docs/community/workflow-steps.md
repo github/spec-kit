@@ -113,6 +113,15 @@ required per-file SHA-256 mapping detects changed bytes even if a referenced
 tag is later moved. Do not submit branch URLs, `releases/latest` URLs, or other
 floating targets.
 
+GitHub-generated `archive/refs/tags/<tag>` archives support `.zip` and `.tar.gz`
+only. A `.tgz` archive must be a named `releases/download/<tag>/<asset>.tgz`
+release asset, not a generated tag archive.
+
+Documentation may be any tag-pinned Markdown file (`.md`, case-insensitive)
+in the submitted GitHub repository, including `docs/deploy.md`; it need not be
+named `README.md`. It must explain installation, configuration, dependencies,
+outputs, failure behavior, side effects, and example workflow usage.
+
 The direct `--from` archive installer does not currently accept or verify an
 archive digest. The submitted Download URL and Testing Details fields provide
 versioned-release and installation-test evidence, not an immutable content
@@ -126,8 +135,8 @@ the cumulative byte budget. It does not execute the archive or its contents.
    documentation, and changelog where applicable.
 2. Test valid and invalid configuration, `StepStatus`, outputs, errors, and any
    relevant resume, nested-step, or concurrent execution behavior.
-3. Publish a versioned release archive (`.zip`, `.tar.gz`, or `.tgz`) and test
-   it:
+3. Publish a versioned release archive (`.zip`, `.tar.gz`, or a named `.tgz`
+   release asset) and test it:
 
    ```bash
    specify workflow step add my-step \

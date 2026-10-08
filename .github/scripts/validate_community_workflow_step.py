@@ -107,7 +107,7 @@ def validate_identity(data: dict[str, Any]) -> tuple[str, str, str]:
                 and download.path.endswith((".zip", ".tar.gz", ".tgz"))
             )
             or download.path in {
-                archive_path + suffix for suffix in (".zip", ".tar.gz", ".tgz")
+                archive_path + suffix for suffix in (".zip", ".tar.gz")
             }
         )
     ):
