@@ -224,7 +224,7 @@ class JunieIntegration(MarkdownIntegration):
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
         # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence.
-        # This will prepends frontmatter if none exists.
+        # This will prepend frontmatter if none exists.
         updated = self._inject_allow_prompt_argument(updated, allow_prompt=has_arguments)
         updated = self._transform_body_variables(updated)
         return updated
