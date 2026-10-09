@@ -255,9 +255,9 @@ def integration_switch(
 
     # The forced refresh above may have just overwritten
     # .specify/scripts/bash/<name>.sh with the bundled core, clobbering any
-    # generated continuation dispatcher for a script an already-enabled
-    # preset provides. Restore those dispatchers now: this call happens
-    # before _set_default_integration below, whose own reconciliation
+    # generated launcher chain for a script an already-enabled preset
+    # provides. Restore those chains now: this call happens before
+    # _set_default_integration below, whose own reconciliation
     # (_helpers.py) is gated on refresh_templates_force and would not fire
     # here since this phase's force comes from --refresh-shared-infra, not
     # from that helper's own parameter.
@@ -272,7 +272,7 @@ def integration_switch(
                 "integration switch --refresh-shared-infra",
                 str(project_root),
                 exc,
-                continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
             )
 
     # Phase 2: Install target integration

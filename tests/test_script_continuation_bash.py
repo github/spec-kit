@@ -1,17 +1,15 @@
-"""End-to-end bash test for the script continuation dispatcher (#4551).
+"""End-to-end bash test for the materialized script launcher chain (#4551).
 
-Proves the runtime chain actually executes correctly, not just that the
-resolver computes the right file list: installs two "wrap" script
+Proves the materialized chain actually executes correctly, not just that
+the resolver computes the right file list: installs two "wrap" script
 presets over a core script, invokes the *canonical* materialized script
 exactly as a coding agent would (via its fixed frontmatter path), and
 checks the process actually ran outer-before -> inner-before -> core ->
 inner-after -> outer-after, with args and exit status propagated.
 """
 
-import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -23,22 +21,6 @@ from tests.conftest import requires_bash
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-
-# The `specify` console script must be resolvable from the bash
-# subprocess's PATH, since the dispatcher shells out to `specify preset
-# script-chain`. Resolve it relative to the running interpreter rather
-# than assuming a particular PATH setup, so this works the same way in a
-# venv, in CI, or via `pip install -e .` locally.
-_BIN_DIR = str(Path(sys.executable).parent)
-
-
-def _clean_env() -> dict:
-    env = os.environ.copy()
-    for key in list(env):
-        if key.startswith("SPECIFY_"):
-            env.pop(key)
-    env["PATH"] = _BIN_DIR + os.pathsep + env.get("PATH", "")
-    return env
 
 
 @pytest.fixture
@@ -97,7 +79,7 @@ def _install_wrap_layer(
 
 
 @requires_bash
-def test_two_layer_continuation_runs_in_priority_order(
+def test_two_layer_chain_runs_in_priority_order(
     project_dir: Path, tmp_path: Path
 ) -> None:
     core_script = project_dir / ".specify" / "templates" / "scripts" / "chained.sh"
@@ -112,7 +94,7 @@ def test_two_layer_continuation_runs_in_priority_order(
     _install_wrap_layer(project_dir, temp_dir, "inner-pack", 5, "chained", "inner")
 
     canonical = project_dir / ".specify" / "scripts" / "bash" / "chained.sh"
-    assert canonical.is_file(), "install should have written the dispatcher stub"
+    assert canonical.is_file(), "install should have written the launcher chain"
 
     result = subprocess.run(
         ["bash", str(canonical), "arg1", "arg2"],
@@ -120,7 +102,6 @@ def test_two_layer_continuation_runs_in_priority_order(
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     lines = [line for line in result.stdout.splitlines() if line.strip()]
@@ -134,12 +115,13 @@ def test_two_layer_continuation_runs_in_priority_order(
 
 
 @requires_bash
-def test_priority_change_takes_effect_without_reinstall(
+def test_priority_change_requires_explicit_reconcile_to_take_effect(
     project_dir: Path, tmp_path: Path
 ) -> None:
-    """The whole point of the continuation model (#4551): swapping
-    priority must change execution order on the *next invocation*,
-    without touching the canonical file at all."""
+    """Unlike the old runtime-resolution design, the chain is materialized
+    to disk: updating the registry alone does not change execution order
+    until something re-materializes it (mirroring how `specify preset
+    set-priority` now calls `reconcile_scripts_for_preset`, #4551)."""
     core_script = project_dir / ".specify" / "templates" / "scripts" / "reorder.sh"
     core_script.write_text('#!/usr/bin/env bash\necho "core"\n')
 
@@ -154,9 +136,22 @@ def test_priority_change_takes_effect_without_reinstall(
     manager = PresetManager(project_dir)
     manager.registry.update("layer-a", {"priority": 20})
 
-    # The dispatcher file itself must be byte-for-byte unchanged —
-    # reordering must not require rewriting it.
+    # Updating the registry alone must not change the materialized chain.
     assert canonical.read_bytes() == before_bytes
+    result = subprocess.run(
+        ["bash", str(canonical)],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    assert lines == ["a-before ", "b-before ", "core", "b-after", "a-after"]
+
+    # Re-materializing (what `set-priority` now does) must change both the
+    # on-disk chain and the next invocation's order.
+    manager._reconcile_script_chain("reorder")
+    assert canonical.read_bytes() != before_bytes
 
     result = subprocess.run(
         ["bash", str(canonical)],
@@ -164,7 +159,6 @@ def test_priority_change_takes_effect_without_reinstall(
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     lines = [line for line in result.stdout.splitlines() if line.strip()]
@@ -189,6 +183,5 @@ def test_nonzero_exit_status_propagates_through_the_chain(
         capture_output=True,
         text=True,
         check=False,
-        env=_clean_env(),
     )
     assert result.returncode == 7

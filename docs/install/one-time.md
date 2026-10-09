@@ -29,10 +29,5 @@ If you plan to use Spec Kit regularly, a persistent installation is recommended:
 - Tool stays installed and available in PATH
 - No re-download on every invocation
 - Better tool management with `uv tool list`, `uv tool upgrade`, `uv tool uninstall`
-- Required for [presets](../community/presets.md) that provide a **script** template: the generated
-  script resolves its composition by invoking `specify` at run time, so it needs the CLI (or an
-  importable `specify_cli`) to still be present after `init` finishes. The `uvx` flow above discards
-  its environment as soon as the command exits, so a script-providing preset installed this way will
-  fail the first time its script runs. Use a persistent installation if you plan to use such a preset.
 
 See the main [Installation Guide](../installation.md) for persistent installation instructions.

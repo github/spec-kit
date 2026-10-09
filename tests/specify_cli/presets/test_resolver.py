@@ -1764,10 +1764,12 @@ class TestCollectAllLayers:
 class TestResolveScriptChain:
     """Test PresetResolver.resolve_script_chain() (#4551).
 
-    Unlike resolve_content(), which splices script content together
-    ahead of time, this returns the ordered *files* a runtime
-    continuation dispatcher walks hop by hop, so priority/enablement
-    changes take effect without re-splicing.
+    Unlike resolve_content(), which splices script content together ahead
+    of time, this returns the ordered *files* that PresetManager's
+    materializer (_reconcile_script_chain) walks to write a fixed-path
+    generated launcher per layer -- this resolver call itself is unchanged
+    by the materialization pivot; only when it's invoked (at reconcile
+    time, not script-invocation time) and what consumes its output did.
     """
 
     def test_missing_script_returns_empty(self, project_dir):
@@ -1861,9 +1863,9 @@ class TestResolveScriptChain:
         self, project_dir, temp_dir, valid_pack_data
     ):
         """Changing priority alone (no reinstall) must reorder the next
-        resolve_script_chain() call — this is the property the runtime
-        dispatcher relies on to avoid re-materializing on every
-        enable/disable/set-priority change."""
+        resolve_script_chain() call — this is the property
+        PresetManager.reconcile_scripts_for_preset() relies on when
+        set-priority re-materializes the chain afterward."""
         core_script = (
             project_dir / ".specify" / "templates" / "scripts" / "reorder-me.sh"
         )

@@ -823,11 +823,11 @@ def register(app: typer.Typer) -> None:
 
                 # install_shared_infra above may have just overwritten
                 # .specify/scripts/bash/<name>.sh with the bundled core,
-                # clobbering any generated continuation dispatcher for a
-                # script an already-enabled preset provides (e.g. on
+                # clobbering any generated launcher chain for a script an
+                # already-enabled preset provides (e.g. on
                 # `specify init --force` against an existing project).
-                # Restore those dispatchers before any *new* --preset
-                # install below runs its own reconciliation.
+                # Restore those chains before any *new* --preset install
+                # below runs its own reconciliation.
                 try:
                     from .presets import PresetManager as _ExistingPresetManager
 
@@ -838,7 +838,7 @@ def register(app: typer.Typer) -> None:
                         "init",
                         str(project_path),
                         exc,
-                        continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                        continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
                     )
 
                 if preset:

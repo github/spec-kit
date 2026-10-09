@@ -218,8 +218,8 @@ def integration_upgrade(
 
     # _install_shared_infra_or_exit above may have just overwritten
     # .specify/scripts/bash/<name>.sh with the bundled core when force=True,
-    # clobbering any generated continuation dispatcher for a script an
-    # already-enabled preset provides. Restore those dispatchers now,
+    # clobbering any generated launcher chain for a script an
+    # already-enabled preset provides. Restore those chains now,
     # mirroring the same call in command_init.py.
     if force:
         try:
@@ -234,7 +234,7 @@ def integration_upgrade(
                 "integration upgrade",
                 str(project_root),
                 exc,
-                continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
             )
 
     # Phase 1: Install new files (overwrites existing; old-only files remain)

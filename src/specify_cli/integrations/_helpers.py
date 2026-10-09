@@ -348,9 +348,9 @@ def _set_default_integration(
         # _install_shared_infra above may have just overwritten
         # .specify/scripts/bash/<name>.sh with the bundled core when
         # refresh_templates_force is True, clobbering any generated
-        # continuation dispatcher for a script an already-enabled preset
-        # provides. Restore those dispatchers now, mirroring the same call
-        # in command_init.py and command_upgrade.py.
+        # launcher chain for a script an already-enabled preset provides.
+        # Restore those chains now, mirroring the same call in
+        # command_init.py and command_upgrade.py.
         if refresh_templates_force:
             try:
                 from ..presets import PresetManager as _ExistingPresetManager
@@ -364,7 +364,7 @@ def _set_default_integration(
                     "integration use/switch",
                     str(project_root),
                     exc,
-                    continuing="Run 'specify preset script-chain <name>' to diagnose.",
+                    continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
                 )
 
     _write_integration_json(project_root, key, installed_keys, settings)

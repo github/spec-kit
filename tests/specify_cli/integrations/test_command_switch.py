@@ -96,12 +96,12 @@ class TestIntegrationSwitch:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
-    def test_switch_same_force_restores_script_preset_dispatcher(self, tmp_path):
+    def test_switch_same_force_restores_script_preset_launcher(self, tmp_path):
         """``integration switch <same> --force`` refreshes shared infra
         (including ``.specify/scripts/bash/<name>.sh``) from the bundled
-        core, clobbering a generated continuation dispatcher for an
-        already-enabled script preset. The switch must reconcile script
-        chains afterward so the preset's script keeps working."""
+        core, clobbering a generated launcher chain for an already-enabled
+        script preset. The switch must reconcile script chains afterward
+        so the preset's script keeps working."""
         from tests.specify_cli.presets._helpers import create_pack
         from specify_cli.presets import PresetManager
 
@@ -133,9 +133,11 @@ class TestIntegrationSwitch:
         PresetManager(project).install_from_directory(pack_dir, "0.1.5")
 
         canonical = project / ".specify" / "scripts" / "bash" / "switch-me.sh"
-        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
-            encoding="utf-8"
+        provenance = (
+            project / ".specify" / "scripts" / "bash" / "switch-me.speckit-generated"
         )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+        assert provenance.is_file()
 
         old_cwd = os.getcwd()
         try:
@@ -148,18 +150,16 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
-        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
-            encoding="utf-8"
-        )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
 
-    def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_dispatcher(
+    def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_launcher(
         self, tmp_path
     ):
         """``integration switch <different-target> --refresh-shared-infra``
         forces its own shared-infra refresh in phase 1 (before phase 2 ever
         calls ``_set_default_integration``), clobbering a generated
-        continuation dispatcher the same way the same-target case does. The
-        switch must reconcile script chains for this path too, not just for
+        launcher chain the same way the same-target case does. The switch
+        must reconcile script chains for this path too, not just for
         switching to the already-default integration."""
         from tests.specify_cli.presets._helpers import create_pack
         from specify_cli.presets import PresetManager
@@ -192,9 +192,7 @@ class TestIntegrationSwitch:
         PresetManager(project).install_from_directory(pack_dir, "0.1.5")
 
         canonical = project / ".specify" / "scripts" / "bash" / "switch-target-me.sh"
-        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
-            encoding="utf-8"
-        )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
 
         old_cwd = os.getcwd()
         try:
@@ -208,9 +206,7 @@ class TestIntegrationSwitch:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
-        assert "speckit-generated: script continuation dispatcher" in canonical.read_text(
-            encoding="utf-8"
-        )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
 
     def test_switch_installed_target_rejects_integration_options(self, tmp_path):
         project = _init_project(tmp_path, "claude")
