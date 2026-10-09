@@ -138,10 +138,11 @@ class FileHelper:
         self, path: Path | str, *, allow_missing: bool = False, follow_leaf: bool = True
     ) -> Path:
         original = Path(path)
-        if ".." in original.parts:
+        parts = self._parts(original)
+        if ".." in parts:
             raise PathEscapeError(f"Parent traversal is not an operation path: {original}")
         return self._walk(
-            self._parts(original), allow_missing=allow_missing, follow_leaf=follow_leaf
+            parts, allow_missing=allow_missing, follow_leaf=follow_leaf
         )
 
     @staticmethod

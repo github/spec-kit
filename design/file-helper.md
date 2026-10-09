@@ -31,7 +31,12 @@ files.delete("generated", recursive=True)
 Each helper has a frozen root and `allow_symlinks` setting. Relative operation
 paths are root-relative. Absolute paths must be beneath the supplied root or
 its canonical equivalent. User operation paths containing `..` are rejected
-rather than normalized before inspection. Link targets may contain `..`, but
+in their root-relative suffix rather than normalized before inspection. A
+caller-established root spelling may itself contain `..`; absolute operation
+paths derived from that exact supplied root prefix are supported. Only that
+trusted prefix is removed before checking operation components, without
+lexically collapsing the root or ignoring traversal in the remaining suffix.
+Link targets may contain `..`, but
 are walked component by component and may not leave the root, even temporarily.
 Windows rooted-but-not-absolute paths (`/outside/file`, `\outside\file`) and
 drive-relative paths (`C:outside/file`, `C:`) are rejected for both operation

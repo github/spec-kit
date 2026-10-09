@@ -301,6 +301,80 @@ def test_trusted_root_alias_and_os_ancestors_are_not_rejected(root, link, allow)
         assert files.read_text(root / "file") == "works"
 
 
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("relative_root", [False, True])
+def test_operations_derived_from_trusted_parent_traversal_root(root, monkeypatch, allow, relative_root):
+    anchor = root.parent / "anchor"
+    anchor.mkdir()
+    if relative_root:
+        monkeypatch.chdir(anchor)
+        supplied = Path("../project")
+    else:
+        supplied = anchor / ".." / root.name
+    files = FileHelper(supplied, allow_symlinks=allow)
+    assert ".." in files.root.parts
+    directory = files.root / "created"
+    files.mkdir(directory)
+    files.create_text(directory / "file", "old")
+    assert files.read_text(directory / "file") == "old"
+    files.write_text(directory / "file", "new")
+    assert (root / "created/file").read_text() == "new"
+    assert files.read_text(root.resolve() / "created/file") == "new"
+    files.delete(directory / "file")
+    files.write_bytes(directory / "new", b"new")
+    files.delete(directory, recursive=True)
+    assert not (root / "created").exists()
+    with pytest.raises(FileHelperError, match="established root"):
+        files.delete(files.root, recursive=True)
+    assert root.is_dir()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("relative_root", [False, True])
+def test_trusted_parent_traversal_root_does_not_permit_operation_suffix_traversal(
+    root, monkeypatch, allow, relative_root
+):
+    anchor = root.parent / "anchor"
+    anchor.mkdir()
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "keep").write_bytes(b"keep")
+    if relative_root:
+        monkeypatch.chdir(anchor)
+        supplied = Path("../project")
+    else:
+        supplied = anchor / ".." / root.name
+    files = FileHelper(supplied, allow_symlinks=allow)
+    for path in (files.root / "../outside/keep", Path("../outside/keep"),
+                 files.root / "inside/../../outside/keep"):
+        for operation in (
+            lambda: files.read_bytes(path),
+            lambda: files.write_bytes(path, b"bad"),
+            lambda: files.create_bytes(path, b"bad"),
+            lambda: files.mkdir(path, parents=True),
+            lambda: files.delete(path),
+        ):
+            with pytest.raises(PathEscapeError, match="Parent traversal"):
+                operation()
+    assert (outside / "keep").read_bytes() == b"keep"
+    assert list(root.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink/parent traversal semantics required")
+@pytest.mark.parametrize("allow", [False, True])
+def test_trusted_root_parent_traversal_is_not_lexically_collapsed(root, link, allow):
+    container = root.parent / "different/container"
+    container.mkdir(parents=True)
+    selected = root.parent / "different/project"
+    selected.mkdir()
+    alias = link(root.parent / "root-entry", container)
+    files = FileHelper(alias / "../project", allow_symlinks=allow)
+    files.create_text(files.root / "file", "selected")
+    assert (selected / "file").read_text() == "selected"
+    assert list(root.iterdir()) == []
+    assert alias.is_symlink()
+
+
 @pytest.mark.parametrize("path", ["../escape", "inside/../escape"])
 def test_operation_parent_traversal_is_rejected(root, path):
     with pytest.raises(PathEscapeError):
