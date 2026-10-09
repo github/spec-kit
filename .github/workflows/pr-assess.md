@@ -45,10 +45,11 @@ safe-outputs:
     allowed: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
     max: 1
     issue-intent: false
-  remove-labels:
+  replace-label:
     target: triggering
-    allowed: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
-    max: 2
+    allowed-add: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
+    allowed-remove: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
+    max: 1
 ---
 
 # Assess PR Description Alignment
@@ -166,10 +167,19 @@ examined.
 If any value changed, or the final read fails, use **inconclusive** and explain
 that the assessed inputs could not be confirmed.
 
+Use the existing outcome labels from the final PR read to determine the label
+action below before composing the report. If existing outcome labels cannot be
+read, do not queue a label mutation; explain that label application is blocked
+because the existing outcome labels could not be confirmed.
+
 Use `add_comment` to queue **one** assessment report on the triggering PR before
 queuing label changes. Begin with
 `**PR description assessment: <aligned | needs-update | inconclusive>.**`
 followed by exactly one concise rationale sentence.
+
+Every completed assessment must queue a **new standalone comment**, including
+when the sole outcome already matches. Do not refer to earlier assessments or
+use `still needs-update` phrasing.
 
 Follow it with one compact reviewed-files line. For complete coverage, use:
 `Reviewed all <changed files> files at <linked short assessed revision>.`
@@ -181,7 +191,8 @@ the missing evidence in the inconclusive rationale. Do not link `unknown`.
 
 Use these verdict-specific forms:
 
-- **aligned:** Stop after the reviewed-files line. Do not add a findings table or
+- **aligned:** Stop after the reviewed-files line, except for any blocked label
+  application explanation required below. Do not add a findings table or
   suggested-update section.
 - **needs-update:** After the reviewed-files line, include only evidenced material
   omissions or contradictions in this compact two-column table. Do not include
@@ -194,7 +205,9 @@ Use these verdict-specific forms:
   ```
 
   Then add `**Suggested update:**` with a short human reviewer note describing
-  the observable impact and the smallest description correction. Do not use
+  the observable impact and the smallest description correction.
+  Suggest changes to the PR description only. Do not suggest changing code to match the description.
+  Do not use
   changelog or tool directives such as `state explicitly`, `remove`, or `qualify`.
 - **inconclusive:** Explain the missing, unresolved, or unavailable evidence in
   the rationale. Use the same compact two-column table to retain established
@@ -207,18 +220,33 @@ findings or coverage gaps. If the report cannot represent the assessment fully,
 use inconclusive and explain why. Preserve the harness's generated-by footer.
 
 Applying the outcome label is your responsibility, not a recommendation for a
-maintainer. Use `remove_labels` to remove any existing outcome labels other than
-the selected verdict (up to two labels), then `add_labels` with exactly one
-**plain string**:
+maintainer. Map the description verdict to its outcome label:
 
 - aligned: `pr-description-aligned`
 - needs-update: `pr-description-needs-update`
 - inconclusive: `pr-description-inconclusive`
 
+Consider only these three labels when choosing the action:
+
+- **No existing outcome:** Use `add_labels` with exactly one **plain string**
+  containing the selected outcome label.
+- **Exactly one different outcome:** Use `replace_label` with `label_to_remove`
+  set to the existing outcome and `label_to_add` set to the selected outcome.
+  Queue one replacement, not separate removal and addition.
+- **Matching sole outcome:** Do not queue any label mutation. Still queue the
+  new standalone assessment comment.
+- **Multiple existing outcomes:** Do not queue any label mutation or attempt
+  partial cleanup. Assess the actual description normally and append one concise
+  sentence after the verdict-specific report explaining that label application
+  is blocked by inconsistent existing outcome labels, naming those labels.
+  Do not change the description verdict to inconclusive solely because labels
+  conflict.
+
 Never emit label objects with `suggest: true` or suggestion-only output.
 Do not remove `pr-assess`, unrelated labels, or earlier assessment comments.
-Only change labels on the triggering PR. A failed run does not refresh an earlier
-verdict; labels describe the last completed assessment.
+Only change labels on the triggering PR. Label replacement and comment delivery
+are separate operations; do not claim a failed workflow run necessarily
+preserves the previous verdict or delivers the comment.
 
 ## Guardrails
 

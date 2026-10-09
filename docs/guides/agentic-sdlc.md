@@ -151,7 +151,13 @@ still run deterministically.
 by applying `pr-assess` to a PR. It compares the description with the cumulative
 diff, reports material omissions or contradictions, and applies one
 `pr-description-aligned`, `pr-description-needs-update`, or
-`pr-description-inconclusive` label. It reads repository and fork changes
+`pr-description-inconclusive` label. A changed verdict replaces the sole existing
+outcome in one label operation; a matching verdict leaves labels unchanged.
+Multiple existing outcomes block label application, not description assessment:
+the report explains the inconsistent label state without changing labels.
+Every completed assessment posts a new standalone comment. Label application
+and comment delivery are separate operations, not a workflow-wide transaction.
+It reads repository and fork changes
 without executing contributor code. A mislabeled issue or closed PR receives
 an explanatory comment, not a verdict. Reassessment is manual: remove and re-add
 the trigger label. This checks description alignment, not author intent or

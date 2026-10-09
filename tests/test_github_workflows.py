@@ -1707,23 +1707,27 @@ def test_pr_assess_outputs_are_bounded_to_the_triggering_item():
     _, _, source, compiled = _agentic_workflow("pr-assess")
     outputs = _safe_output_config(compiled)
     assert set(source["safe-outputs"]) == {
-        "add-comment", "add-labels", "remove-labels", "noop"
+        "add-comment", "add-labels", "replace-label", "noop"
     }
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {
         "target": "triggering", "max": 1
     }
-    for name, max_labels in (("add_labels", 1), ("remove_labels", 2)):
+    for name, max_labels in (("add_labels", 1), ("replace_label", 1)):
         assert outputs[name]["target"] == "triggering"
         assert outputs[name]["max"] == max_labels
-        assert set(outputs[name]["allowed"]) == PR_ASSESS_LABELS
-        assert "pr-assess" not in outputs[name]["allowed"]
+        for allowed in (("allowed",) if name == "add_labels" else (
+            "allowed_add", "allowed_remove"
+        )):
+            assert set(outputs[name][allowed]) == PR_ASSESS_LABELS
+            assert "pr-assess" not in outputs[name][allowed]
         assert not {"target_repo", "allowed_repos"} & outputs[name].keys()
     assert outputs["add_labels"]["issue_intent"] is False
     agent_config = json.loads(_workflow_step(
         compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
     )["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
-    for name in ("add_comment", "add_labels", "remove_labels"):
+    for name in ("add_comment", "add_labels", "replace_label"):
         assert agent_config[name] == outputs[name]
+    assert "remove_labels" not in outputs
     assert not {
         "create_issue", "create_pull_request", "update_pull_request",
         "close_issue", "close_pull_request", "create_pull_request_review",
@@ -1735,27 +1739,53 @@ def test_pr_assess_outputs_are_bounded_to_the_triggering_item():
     assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
 
 
-@pytest.mark.parametrize("verdict", sorted(PR_ASSESS_LABELS))
-def test_pr_assess_allows_removing_both_stale_outcome_labels(verdict):
-    _, _, source, compiled = _agentic_workflow("pr-assess")
+def test_pr_assess_replaces_one_outcome_without_partial_cleanup():
+    source_text, _, source, compiled = _agentic_workflow("pr-assess")
     agent_steps = compiled["jobs"]["agent"]["steps"]
     agent_config = json.loads(_workflow_step(
         agent_steps, "Generate Safe Outputs Config"
     )["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
-    stale_labels = PR_ASSESS_LABELS - {verdict}
-    for removal in (
-        source["safe-outputs"]["remove-labels"],
-        agent_config["remove_labels"],
-        _safe_output_config(compiled)["remove_labels"],
+    for replacement in (
+        source["safe-outputs"]["replace-label"],
+        agent_config["replace_label"],
+        _safe_output_config(compiled)["replace_label"],
     ):
-        assert stale_labels <= set(removal["allowed"])
-        assert removal["max"] >= len(stale_labels)
+        assert replacement["max"] == 1
+        for key in ("allowed-add", "allowed-remove") if "allowed-add" in replacement else (
+            "allowed_add", "allowed_remove"
+        ):
+            assert set(replacement[key]) == PR_ASSESS_LABELS
     tools_meta = json.loads(_workflow_step(
         agent_steps, "Generate Safe Outputs Tools"
     )["env"]["GH_AW_TOOLS_META_JSON"])
-    assert "Maximum 2 label(s) can be removed." in (
-        tools_meta["description_suffixes"]["remove_labels"]
-    )
+    assert "replace_label" in tools_meta["description_suffixes"]
+    assert "remove_labels" not in tools_meta["description_suffixes"]
+    text = " ".join(source_text.split())
+    for clause in (
+        "**No existing outcome:**",
+        "`add_labels` with exactly one **plain string**",
+        "**Exactly one different outcome:**",
+        "`replace_label` with `label_to_remove`",
+        "`label_to_add`",
+        "**Matching sole outcome:** Do not queue any label mutation.",
+        "**Multiple existing outcomes:** Do not queue any label mutation",
+        "label application is blocked by inconsistent existing outcome labels",
+        "Do not change the description verdict to inconclusive solely because labels conflict.",
+        "If existing outcome labels cannot be read, do not queue a label mutation",
+        "Label replacement and comment delivery are separate operations",
+    ):
+        assert clause in text
+    assert "Use `remove_labels`" not in text
+    assert "A failed run does not refresh an earlier verdict" not in text
+
+
+def test_pr_assess_reruns_require_a_new_standalone_comment_even_without_label_changes():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    assert "Every completed assessment must queue a **new standalone comment**" in text
+    assert "including when the sole outcome already matches" in text
+    assert "Do not refer to earlier assessments or use `still needs-update` phrasing." in text
+    assert "append one concise sentence after the verdict-specific report" in text
 
 
 def test_pr_assess_misuse_branches_require_a_comment_without_verdict_labels():
@@ -1852,6 +1882,10 @@ def test_pr_assess_public_report_contract_prioritizes_human_readability():
     assert "revision-linked evidence for every row" in needs_update
     assert "**Suggested update:**" in needs_update
     assert "short human reviewer note describing the observable impact" in needs_update
+    assert (
+        "Suggest changes to the PR description only. "
+        "Do not suggest changing code to match the description."
+    ) in needs_update
     assert "Do not use changelog or tool directives" in needs_update
     for directive in ("state explicitly", "remove", "qualify"):
         assert f"`{directive}`" in needs_update
