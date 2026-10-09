@@ -2,9 +2,23 @@
 
 from dataclasses import dataclass, field
 import os
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
 import stat
 import tempfile
+from typing import TypeVar
+
+
+_PathType = TypeVar("_PathType", bound=PurePath)
+
+
+def _strip_extended_length_prefix(path: _PathType) -> _PathType:
+    """Normalize Windows extended drive/UNC spellings for comparison only."""
+    raw = str(path)
+    if raw.startswith("\\\\?\\UNC\\"):
+        return type(path)("\\\\" + raw[len("\\\\?\\UNC\\"):])
+    if raw.startswith("\\\\?\\"):
+        return type(path)(raw[len("\\\\?\\"):])
+    return path
 
 
 class FileHelperError(ValueError):
@@ -44,16 +58,21 @@ class FileHelper:
         object.__setattr__(self, "_canonical_root", canonical)
 
     def _parts(self, path: PurePath) -> tuple[str, ...]:
+        original = path
+        if isinstance(path, PureWindowsPath):
+            path = _strip_extended_length_prefix(path)
         if not path.is_absolute():
-            if path.anchor:
-                raise PathEscapeError(f"Rooted-relative or drive-relative path is not permitted: {path}")
+            if original.anchor or path.anchor:
+                raise PathEscapeError(f"Rooted-relative, drive-relative, or device path is not permitted: {original}")
             return path.parts
         for root in (self.root, self._canonical_root):
+            if isinstance(root, PureWindowsPath):
+                root = _strip_extended_length_prefix(root)
             try:
                 return path.relative_to(root).parts
             except ValueError:
                 continue
-        raise PathEscapeError(f"Path is outside root {self.root}: {path}")
+        raise PathEscapeError(f"Path is outside root {self.root}: {original}")
 
     @staticmethod
     def _entry_mode(path: Path) -> int:

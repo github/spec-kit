@@ -546,6 +546,101 @@ def test_windows_absolute_forms_outside_declared_roots_rejected_portably(spellin
         FileHelper._parts(boundary, PureWindowsPath(spelling))
 
 
+@pytest.mark.parametrize("unc", [False, True])
+@pytest.mark.parametrize("root_extended", [False, True])
+@pytest.mark.parametrize("target_extended", [False, True])
+def test_windows_extended_contained_targets_match_roots_portably(
+    unc, root_extended, target_extended
+):
+    plain = r"\\server\share\project" if unc else r"D:\project"
+    extended = r"\\?\UNC\server\share\project" if unc else r"\\?\D:\project"
+    root_path = PureWindowsPath(extended if root_extended else plain)
+    target = PureWindowsPath(extended if target_extended else plain) / "inside/file"
+    boundary = SimpleNamespace(root=root_path, _canonical_root=root_path)
+    assert FileHelper._parts(boundary, target) == ("inside", "file")
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        r"\\?\D:\project2\file",
+        r"\\?\D:\outside\file",
+        r"\\?\C:\project\file",
+        r"\\?\UNC\server\share\project2\file",
+        r"\\?\UNC\other\share\project\file",
+        r"\\?\GLOBALROOT\Device\HarddiskVolume1\file",
+        r"\\?\C:relative\file",
+    ],
+)
+def test_windows_extended_external_or_unsupported_targets_rejected_portably(spelling):
+    boundary = SimpleNamespace(
+        root=PureWindowsPath("D:/project"),
+        _canonical_root=PureWindowsPath(r"\\server\share\project"),
+    )
+    with pytest.raises(PathEscapeError):
+        FileHelper._parts(boundary, PureWindowsPath(spelling))
+
+
+def test_windows_extended_comparison_preserves_accessed_hierarchy_portably():
+    boundary = SimpleNamespace(
+        root=PureWindowsPath("D:/project"),
+        _canonical_root=PureWindowsPath("D:/project"),
+    )
+    assert FileHelper._parts(
+        boundary, PureWindowsPath(r"\\?\D:\project\linked\..\file")
+    ) == ("linked", "..", "file")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX literal backslash filename semantics required")
+def test_posix_windows_like_filenames_are_not_reinterpreted(root, link):
+    name = r"\\?\D:\literal"
+    files = FileHelper(root, allow_symlinks=True)
+    files.create_text(name, "old")
+    files.symlink(name, "alias")
+    assert files.read_text("alias") == "old"
+    files.write_text("alias", "new")
+    assert (root / name).read_text() == "new"
+    assert (root / "alias").is_symlink()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Native Windows symlink semantics required")
+@pytest.mark.parametrize("root_extended", [False, True])
+@pytest.mark.parametrize("external", [False, True])
+def test_native_windows_extended_symlink_read_update_and_creation(
+    root, link, root_extended, external
+):
+    target = root.parent / "outside" if external else root / "target"
+    target.write_text("old")
+
+    def extended(path):
+        raw = str(path)
+        return "\\\\?\\UNC\\" + raw[2:] if raw.startswith("\\\\") else "\\\\?\\" + raw
+
+    alias = link(root / "alias", extended(target))
+    original_target = os.readlink(alias)
+    files = FileHelper(Path(extended(root)) if root_extended else root, allow_symlinks=True)
+    if external:
+        with pytest.raises(PathEscapeError):
+            files.read_text("alias")
+        with pytest.raises(PathEscapeError):
+            files.write_text("alias", "bad")
+        with pytest.raises(PathEscapeError):
+            files.symlink(extended(target), "new")
+        assert target.read_text() == "old"
+        assert not os.path.lexists(root / "new")
+    else:
+        assert files.read_text("alias") == "old"
+        files.write_text("alias", "new")
+        assert target.read_text() == "new"
+        assert alias.is_symlink()
+        assert os.readlink(alias) == original_target
+        files.symlink(extended(target), "created")
+        assert files.read_text("created") == "new"
+    files.delete("alias")
+    assert not os.path.lexists(alias)
+    assert target.exists()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows path semantics required")
 @pytest.mark.parametrize("spelling", ["/outside/file", r"\outside\file", "C:outside/file", "C:"])
 @pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "write_bytes", "mkdir", "delete"])

@@ -37,6 +37,13 @@ Windows rooted-but-not-absolute paths (`/outside/file`, `\outside\file`) and
 drive-relative paths (`C:outside/file`, `C:`) are rejected for both operation
 paths and link targets. They are not root-relative: joining them can reset the
 root or drive. Fully absolute paths still require scoped root matching.
+For Windows containment comparisons, extended-length drive and UNC spellings
+(`\\?\D:\project\file`, `\\?\UNC\server\share\project\file`) are compared with
+their ordinary equivalents on both the target and root sides. This does not
+resolve links or collapse `..`: accessed hierarchy evidence is retained for
+the component walk. External targets, ambiguous rooted-relative paths, and
+unsupported device namespaces are still rejected. POSIX filenames are not
+reinterpreted as Windows path spellings.
 
 The caller must establish a trusted, existing directory root. Its alias is
 resolved once, including OS and worktree aliases; the root itself and OS
