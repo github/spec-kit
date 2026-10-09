@@ -24,6 +24,67 @@ class TestIntegrationInfo(IntegrationCatalogCliTestBase):
         assert "stellar-agent" in result.output
         assert "v1.3.0" in result.output
 
+    def test_info_versions_lists_current_and_history_without_install_hint(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[{
+            **self.FAKE_INTEGRATIONS[0],
+            "releases": {
+                "1.0.0": {"description": "Original"},
+                "1.5.0": {"description": "Previous"},
+            },
+        }])
+        result = self._invoke(["integration", "info", "acme-coder", "--versions"], project)
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert "2.0.0 (current)" in output
+        assert output.index("1.5.0") < output.index("1.0.0")
+        assert "Discovery only" in output
+        assert "install acme-coder" not in output
+
+    def test_info_versions_legacy_and_not_found(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch)
+        result = self._invoke(["integration", "info", "stellar-agent", "--versions"], project)
+        assert result.exit_code == 0, result.output
+        assert "1.3.0 (current)" in _normalize_cli_output(result.output)
+
+        result = self._invoke(["integration", "info", "absent", "--versions"], project)
+        assert result.exit_code == 1
+        assert "No catalog versions found" in result.output
+
+    def test_info_versions_requires_catalog_even_for_builtin(self, tmp_path, monkeypatch):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(monkeypatch, integrations=[])
+        result = self._invoke(["integration", "info", "copilot", "--versions"], project)
+        assert result.exit_code == 1
+        assert "No catalog versions found" in result.output
+
+    def test_info_versions_catalog_failure_is_not_success(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import IntegrationCatalog, IntegrationCatalogError
+
+        project = self._make_project(tmp_path)
+
+        def fail_lookup(self, integration_id, version=None):
+            raise IntegrationCatalogError("catalog offline")
+
+        monkeypatch.setattr(IntegrationCatalog, "get_integration_info", fail_lookup)
+        result = self._invoke(["integration", "info", "copilot", "--versions"], project)
+        assert result.exit_code == 1
+        assert "catalog offline" in result.output
+
+    def test_info_versions_without_advertised_version_is_error(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        self._patch_catalog(
+            monkeypatch, integrations=[{"id": "sample", "name": "Sample Agent"}]
+        )
+        result = self._invoke(["integration", "info", "sample", "--versions"], project)
+        assert result.exit_code == 1
+        assert "No catalog versions advertised" in result.output
+
     def test_info_not_found(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)

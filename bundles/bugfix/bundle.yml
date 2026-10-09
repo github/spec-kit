@@ -3,7 +3,7 @@ schema_version: "1.0"
 bundle:
   id: "bugfix"
   name: "Guided Bug Fix"
-  version: "1.0.0"
+  version: "1.0.1"
   role: "developer"
   description: "Orchestrated bug triage: assess a bug report, review the assessment behind a human gate, apply the fix, and verify it with tests."
   author: "GitHub"
@@ -17,7 +17,7 @@ requires:
 provides:
   extensions:
     - id: "bug"
-      version: "1.0.0"
+      version: "1.0.1"
   workflows:
     - id: "bugfix"
       version: "1.0.0"

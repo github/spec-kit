@@ -65,20 +65,28 @@ specify init my-project --integration copilot --preset compliance
 ## Naming Features with the Helper Scripts
 
 When calling the bundled `create-new-feature` helper scripts directly, generated
-names retain only ASCII letters and digits. A description entirely in a non-Latin
-script, or made only of punctuation, can therefore produce an empty suffix such
-as `001-`. The scripts warn on stderr when this happens, including during a dry
-run; JSON output remains parseable.
+names retain Unicode letters and decimal digits in UTF-8, so a description such as
+`添加用户` produces `001-添加用户`. Descriptions made only of punctuation can still
+produce an empty suffix such as `001-`; the scripts warn on stderr when this
+happens, including during a dry run. JSON output remains parseable.
 
-Keep the original description and supply a readable ASCII short name:
+To choose a different name, keep the original description and supply a short name:
 
 ```bash
-bash .specify/scripts/bash/create-new-feature.sh --json --short-name user-auth "添加用户"
+bash .specify/scripts/bash/create-new-feature.sh --json --short-name 用户管理 "添加用户"
 ```
 
 The Python helper also accepts `--short-name`; the PowerShell helper uses
 `-ShortName`. A supplied short name is cleaned by the same rules, so it must
-contain at least one ASCII letter or digit.
+contain at least one letter or digit. For non-ASCII names, the Bash helper needs
+an installed UTF-8 locale and a Python 3 interpreter for Unicode classification.
+ASCII input, including tabs and newlines, is sanitized without either requirement.
+If `LC_ALL` is non-empty, Bash uses that locale rather than selecting another:
+Unicode names fail with an error if the selected locale is not usable for UTF-8
+names. With `LC_ALL` unset or empty, Bash selects an installed UTF-8 locale even
+when `LANG` or `LC_CTYPE` names a non-UTF-8 locale.
+ASCII capitals are lowercased; non-ASCII letter casing is preserved across the
+script variants.
 
 ## Check Installed Tools
 
@@ -102,11 +110,20 @@ To inspect local CLI capabilities without checking the network:
 
 ```bash
 specify version --features
-specify version --features --json
 ```
 
-The JSON form is intended for scripts and coding agents that need to choose a
-workflow based on the installed CLI's supported features.
+To print complete version, runtime, system, and feature information as JSON,
+use:
+
+```bash
+specify version --json
+```
+
+Combining `--features` and `--json` emits the same complete JSON output;
+`--features` does not filter the result in JSON mode. If OpenSSL information
+is unavailable, `runtime.openssl` is `null`.
+Successful JSON output is written only to stdout. Failures leave stdout empty
+and write one sanitized JSON error object to stderr.
 
 A quick version check is also available via:
 
@@ -114,3 +131,14 @@ A quick version check is also available via:
 specify --version
 specify -V
 ```
+
+## Experimental MCP Server
+
+```bash
+specify mcp
+```
+
+Starts the experimental stdio-only MCP server. The initial server exposes only
+the stable `version` JSON command through generic list, describe, and run tools.
+See the [MCP Server reference](mcp.md) for the tool names, result contract, and
+current limitations.

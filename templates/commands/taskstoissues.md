@@ -1,11 +1,19 @@
 ---
-description: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts.
+description: "Deprecated: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts."
 tools: ['github/github-mcp-server/list_issues', 'github/github-mcp-server/issue_write']
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
   py: scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
 ---
+
+## Deprecation Notice
+
+You **MUST display the following concise warning first**, as the first step of this command and before the User Input and Pre-Execution Checks sections below:
+
+> ⚠️ `__SPECKIT_COMMAND_TASKSTOISSUES__` is deprecated and will be removed in a future minor release. Use the bundled `github` extension instead: run `specify extension add github`, then invoke `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__`.
+
+Continue with the existing workflow unchanged. Do not install or enable the extension automatically, do not stop, and do not run the replacement command.
 
 ## User Input
 

@@ -451,9 +451,11 @@ Re-adding the same workflow or step catalog URL with the same name succeeds with
 
 ```bash
 specify workflow catalog remove <index>
+specify workflow step catalog remove <index>
 ```
 
-Removes a catalog by its index in the catalog list.
+Removes a project catalog by its index in the corresponding priority-ordered `catalog list`.
+Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` or `SPECKIT_STEP_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
 
 ### Catalog Resolution Order
 
@@ -582,6 +584,205 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
+### Custom step packages
+
+Custom step types are installed with `specify workflow step`. A step is a
+directory package containing metadata and executable Python:
+
+```text
+my-step/
+├── step.yml        # required, at the package root
+├── __init__.py     # required, at the package root
+└── helpers.py      # optional nested modules and data files
+```
+
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
+
+`step.yml` declares the step's identity. `step.type_key` must exactly match the
+`<step_id>` passed on the command line — the ID is never inferred from package
+content:
+
+```yaml
+step:
+  type_key: my-step
+  name: My Step
+  version: 0.1.0
+  author: you
+  description: What this step does
+```
+
+`__init__.py` must define a `StepBase` subclass whose `type_key` matches:
+
+```python
+from specify_cli.workflows.base import StepBase, StepResult
+
+
+class MyStep(StepBase):
+    type_key = "my-step"
+
+    def execute(self, config, context):
+        return StepResult(output={"ok": True})
+```
+
+#### Install from a local directory
+
+```bash
+specify workflow step add my-step --dev /path/to/my-step
+```
+
+`--dev` takes a **directory** (not an archive, not a bare `step.yml`) that is a
+complete package. This needs no catalog, server, or network, which makes it the
+supported local-authoring loop:
+
+```bash
+specify workflow step add my-step --dev ./my-step
+specify workflow step list
+specify workflow step info my-step
+# edit ./my-step, then replace the installed copy:
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step remove my-step
+```
+
+#### Install from an archive URL
+
+```bash
+specify workflow step add my-step --from https://example.com/my-step.zip
+```
+
+`--from` accepts a `.zip`, `.tar.gz`, or `.tgz` archive (a bare `step.yml`
+URL is **not** a package). The archive may place `step.yml` and `__init__.py`
+at its root or under exactly one top-level directory; unrelated top-level
+siblings are rejected. Because a step package contains executable Python, a
+direct URL install shows a default-deny trust confirmation before any network
+request; declining cancels with no request and no error. HTTPS is required
+(HTTP is permitted only for loopback hosts), redirects must remain secure, and
+downloads are size-bounded.
+
+#### Install from the catalog
+
+```bash
+specify workflow step add my-step
+```
+
+Catalog installs resolve individual file URLs from the active step catalogs and
+then go through the same validation and commit path as `--dev` and `--from`.
+Discovery-only catalogs cannot be installed from.
+
+##### Catalog release history
+
+`specify workflow step info <id> --versions` lists the current and historical
+releases in the winning catalog. `specify workflow step add <id> --version <v>`
+selects the exact catalog release; without `--version`, `add` installs the
+advertised current release. The requested version never falls back to a
+lower-priority catalog, and discovery-only sources remain non-installable.
+`--version` cannot be combined with direct `--dev` or `--from` installs.
+
+Existing single-version catalog entries continue to work. Keep the current
+release's `version`, `step_yml_url` (or `url`), `init_url`, and optional files
+at the top level. An optional `releases` mapping adds historical versions:
+
+```json
+{
+  "steps": {
+    "my-step": {
+      "version": "2.0",
+      "step_yml_url": "https://example.com/my-step/2.0/step.yml",
+      "releases": {
+        "1.0": {
+          "step_yml_url": "https://example.com/my-step/1.0/step.yml",
+          "init_url": "https://example.com/my-step/1.0/__init__.py",
+          "extra_files": {"helper.py": "https://example.com/my-step/1.0/helper.py"},
+          "sha256": {
+            "step.yml": "<64 hex digits>",
+            "__init__.py": "<64 hex digits>",
+            "helper.py": "<64 hex digits>"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Each historical release must supply its own step URL and SHA-256 digest for
+every downloaded file. `init_url` can be omitted when derived from a
+`step_yml_url` ending in `step.yml`. To select the current version explicitly,
+its top-level entry must likewise supply the per-file `sha256` mapping.
+Release-specific files and requirements are not inherited from the current
+release. Repeated or malformed versions are rejected; equivalent PEP 440
+spellings such as `v1.0` and `1.0` select the same advertised release. The
+downloaded `step.yml` must declare the selected step ID and version. An
+unqualified legacy catalog install does not require digests or a step version.
+Only one version of each step ID can be installed at a time; use `--force` to
+replace a previous installation after reviewing the selected package.
+
+#### Replacement and force
+
+```bash
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step add my-step --from https://example.com/my-step.zip --force
+```
+
+`--force` first stages and validates the replacement before touching the
+existing installation, and can replace both a registered install and a leftover
+unregistered directory. Validation and staging failures leave the previous
+package untouched. If removing the old directory fails, the replacement is not
+published. If publishing the replacement or updating the registry fails after
+the old directory has been removed, the installation may be left incomplete:
+rerun the command with the original source and `--force` to reinstall. No
+automatic rollback is attempted.
+
+#### Package validation
+
+Every source is validated identically before anything is committed:
+
+- `step.yml` and `__init__.py` must be regular, non-symlink files at the package
+  root.
+- The package tree is copied recursively (relative imports, nested helper
+  modules, and data files are supported). A symlinked package root, any
+  descendant symlink, and any filesystem object that is not a regular file or
+  directory are rejected.
+- `.git`, `__pycache__`, and `.DS_Store` entries are skipped without being
+  inspected: they are not copied, excluded directories are not entered, and
+  they do not count toward any limit.
+- The installed-package policy permits at most **512 retained entries** (files
+  and directories combined), at most **32 levels** of directory nesting, and
+  **50 MiB** of retained content.
+- Archive URLs also pass transport/extraction safety limits before package
+  validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
+  10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
+- Installation validates and copies the package but does **not** import or
+  execute `__init__.py`. Installed custom step modules are loaded during startup
+  of `workflow add`, `workflow run`, and `workflow resume`, before any particular
+  custom step necessarily executes.
+
+> **Security note:** Loading a custom step runs its Python with **your**
+> privileges. Only install and retain step packages from sources you trust.
+
+#### Listing, running, and removing
+
+Installed custom steps appear in `specify workflow step list` and are loaded
+automatically by `workflow add`, `workflow run`, and `workflow resume`. Remove
+one with:
+
+```bash
+specify workflow step remove my-step
+```
+
+#### Registry provenance
+
+Each installed step records only the *kind* of its source — `catalog`
+(optionally with the catalog name), `local`, or `url`. Local paths and source
+URLs are never persisted. `specify workflow step info <id>` shows the source.
+
+#### Bundle-local limitation
+
+A bundle's `provides.steps` still resolves only through the active step
+catalogs. Bundle-local `steps/<id>/` payloads and relative
+`provides.steps[].source` overrides are **not** resolved in this release, so
+such steps are not installable offline. See the [Bundles reference](bundles.md).
+
 ### Per-Step Integration Configuration
 
 Command steps may pass structured runtime configuration to integrations that
@@ -632,7 +833,34 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `context.run_id`               | Current workflow run ID              |
 | `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
-Available filters: `default`, `join`, `contains`, `map`, `from_json`.
+Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+| Filter   | Example                                    | Behavior                                                                                        |
+| -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `default`| `{{ val \| default('fb') }}`               | Fallback for `None` or an empty string                                                                  |
+| `join`   | `{{ list \| join(', ') }}`                 | Join list elements into a string                                                                   |
+| `contains`| `{{ text \| contains('sub') }}`           | Substring or membership check                                                                      |
+| `map`    | `{{ list \| map('attr') }}`                | Extract an attribute from each item                                                                |
+| `from_json`| `{{ out \| from_json }}`                 | Parse a JSON string into a typed value                                                             |
+| `to_json`| `{{ obj \| to_json }}`                     | Serialize a value to a JSON string — the inverse of `from_json`; mapping keys must be strings |
+| `upper`  | `{{ text \| upper }}`                      | Uppercase a string                                                                                 |
+| `lower`  | `{{ text \| lower }}`                      | Lowercase a string                                                                                 |
+| `split`  | `{{ csv \| split(',') }}`                  | Split a string on a separator into a list of strings                                               |
+| `length` | `{{ items \| length }}`                    | Number of elements in a list, or characters in a string                                            |
+
+`default` falls back only for `None` and the empty string. Other falsy values — `0`, `false`, `[]`, `{}` — are passed through unchanged, so `{{ count | default(10) }}` still yields `0` for a zero count. Falsy is not the same as empty here.
+
+Notes on the newer filters:
+
+- **Types are validated, not coerced.** `upper` and `lower` accept strings only, `split` requires both a string value and a non-empty string separator, and `length` accepts lists and strings but rejects mappings. Anything else raises a `ValueError` naming the problem. Coercion is deliberately not performed: a type mismatch nearly always means the workflow is wired to the wrong variable, and a coerced result would hide that. A filter given the wrong number of arguments (`| upper('x')`, `| split` with no separator, `| split(',', 1)`) is reported as a known filter misused, which is distinct from an entirely unknown filter name: a call carrying more than one argument falls through to that same unsupported-form error rather than being evaluated as a single expression. The older filters (`join`, `map`, `contains`) are more permissive and unchanged: `join` stringifies unsupported values and `map`/`contains` return fallbacks rather than raising.
+- **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
+- **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
+- **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
+- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+
+  ```yaml
+  condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
+  ```
 
 Example:
 
@@ -640,6 +868,8 @@ Example:
 condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
+tag_count: "{{ inputs.tags | split(',') | length }}"
+shell_flag: "{{ inputs.branch | upper }}"
 ```
 
 ### Interpolation and shell safety
