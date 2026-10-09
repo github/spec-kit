@@ -639,7 +639,13 @@ requires exactly one intact, previously marked comment authored by the
 verified account/bot. It writes only the original artifact bytes, excluding
 the maintainer-action footer and marker, to a *new* relative file under the
 project root. Missing parent directories are created inside the project
-after the comment is verified; symlinks and overwrites are refused.
+after the comment is verified; symlinks and overwrites are refused. Run and
+step IDs are hashed in the marker so workflow-valid IDs (including dots)
+remain valid. Foreign-authored comments are ignored before parsing markers;
+malformed markers from the verified author fail explicitly. This implementation
+does not provide handle-anchored writes on Windows, so `fetch-artifact` fails
+closed there rather than writing outside the project.
+
 `checkout-pr` fetches GitHub's `pull/<number>/head` ref, verifies its SHA
 matches the API's PR head, and checks out that commit detached. Local changes
 that prevent checkout cause the step to fail.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -96,6 +97,64 @@ def test_comment_retry_is_idempotent_and_changed_content_fails(context, api):
     assert changed.status == StepStatus.FAILED
     assert "differs" in changed.error
     assert len(comments) == 1
+
+
+def test_valid_punctuated_step_id_posts_and_retries(context, api):
+    comments, _ = api
+    definition = config(id="publish.plan", body="Plan")
+    assert get_step_type("github").validate(definition) == []
+    step = get_step_type("github")
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    assert len(comments) == 1
+    workflow = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: punctuated-step
+  name: Punctuated step
+  version: "1.0.0"
+steps:
+  - id: publish.plan
+    type: github
+    operation: comment
+    target: issue
+    number: 12
+    body: Plan
+""")
+    engine = WorkflowEngine(Path(context.project_root))
+    assert engine.validate(workflow) == []
+    assert engine.execute(workflow, run_id="new-run").status == RunStatus.COMPLETED
+    assert len(comments) == 2
+
+
+def test_foreign_markers_cannot_block_post_or_fetch(context, api):
+    comments, _ = api
+    step = get_step_type("github")
+    definition = config(body="Original", artifact="report")
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    comments.append({"id": 2, "body": "Bad\n\n<!-- speckit-github:v2",
+                     "user": {"login": "stranger"}})
+    comments.append({"id": 3, "body": comments[0]["body"],
+                     "user": {"login": "stranger"}})
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    result = step.execute({"id": "fetch", "operation": "fetch-artifact",
+                           "target": "issue", "number": 12, "artifact": "report",
+                           "write_to": "result.md"}, context)
+    assert result.status == StepStatus.COMPLETED, result.error
+    assert (Path(context.project_root) / "result.md").read_text() == "Original"
+    assert len(comments) == 3
+
+
+def test_only_foreign_marker_is_not_a_trusted_artifact(context, api):
+    comments, _ = api
+    step = get_step_type("github")
+    assert step.execute(config(body="Original", artifact="report"), context).status == StepStatus.COMPLETED
+    comments[0]["user"] = {"login": "stranger"}
+    result = step.execute({"id": "fetch", "operation": "fetch-artifact",
+                           "target": "issue", "number": 12, "artifact": "report",
+                           "write_to": "result.md"}, context)
+    assert result.status == StepStatus.FAILED
+    assert "found 0" in result.error
 
 
 def test_comment_files_and_fetch_artifact(context, api):
@@ -276,7 +335,7 @@ def test_pull_request_comment_uses_issue_comment_endpoint(context, api):
 
 @pytest.mark.parametrize("change,expected", [
     (lambda comments: comments[0].update(body=comments[0]["body"].replace("First", "Altered")), "digest"),
-    (lambda comments: comments[0].update(user={"login": "someone-else"}), "not posted"),
+    (lambda comments: comments[0].update(user={"login": "someone-else"}), "found 0"),
     (lambda comments: comments.append(dict(comments[0], id=2)), "found 2"),
 ])
 def test_fetch_rejects_untrusted_or_ambiguous(context, api, change, expected):
@@ -316,6 +375,14 @@ def test_fetch_rejects_symlinked_missing_parent_and_existing_destination(context
         assert result.status == StepStatus.FAILED
     assert (root / "existing.md").read_text() == "keep"
     assert not (tmp_path.parent / "new").exists()
+
+
+def test_windows_write_fails_closed_before_creating_directories(context, monkeypatch):
+    root = Path(context.project_root)
+    monkeypatch.setattr(github, "os", SimpleNamespace(name="nt"))
+    with pytest.raises(ValueError, match="unsupported"):
+        github._write_artifact(root, root / "new" / "report.md", "report")
+    assert not (root / "new").exists()
 
 
 def test_bad_identifiers_and_missing_artifact_fail_without_post(context, api):

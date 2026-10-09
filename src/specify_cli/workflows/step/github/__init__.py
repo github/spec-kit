@@ -20,7 +20,7 @@ _ORIGIN = re.compile(
 )
 _MARKER = re.compile(
     r"<!-- speckit-github:v2 artifact=([A-Za-z0-9_-]+) "
-    r"run=([A-Za-z0-9_-]+) step=([A-Za-z0-9_-]+) "
+    r"run=([a-f0-9]{64}) step=([a-f0-9]{64}) "
     r"bytes=([0-9]+) sha256=([a-f0-9]{64}) -->\Z"
 )
 _MARKER_PREFIX = "<!-- speckit-github:"
@@ -82,14 +82,13 @@ def _project_path(root: Path, value: str, *, writing: bool) -> Path:
 
 def _write_artifact(root: Path, destination: Path, body: str) -> None:
     """Create a new file through directory handles; refuse symlinked parents."""
-    data = body.encode("utf-8")
-    if os.name == "nt":
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        _project_path(root, str(destination.relative_to(root)), writing=True)
-        with destination.open("xb") as stream:
-            stream.write(data)
-        return
+    if (os.name == "nt" or not hasattr(os, "O_DIRECTORY")
+            or not hasattr(os, "O_NOFOLLOW")
+            or os.open not in os.supports_dir_fd
+            or os.mkdir not in os.supports_dir_fd):
+        raise ValueError("Safe artifact writes are unsupported on this platform")
 
+    data = body.encode("utf-8")
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     directory = os.open(root, flags)
     try:
@@ -337,18 +336,16 @@ class GitHubStep(StepBase):
                 f"\n\nPossible labels: {proposed}"
             )
         artifact = config.get("artifact", "-")
-        run_id = _string(context.run_id, "run_id")
-        step_id = _string(config["id"], "id")
-        if not all(_IDENTIFIER.fullmatch(value) for value in (run_id, step_id)) or (
-            artifact != "-" and not _IDENTIFIER.fullmatch(artifact)
-        ):
-            raise ValueError("Artifact, run ID, and step ID must be safe identifiers")
+        run_id = hashlib.sha256(_string(context.run_id, "run_id").encode("utf-8")).hexdigest()
+        step_id = hashlib.sha256(_string(config["id"], "id").encode("utf-8")).hexdigest()
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         marked_body = (f"{body}\n\n<!-- speckit-github:v2 artifact={artifact} "
                        f"run={run_id} step={step_id} bytes={artifact_bytes} sha256={digest} -->")
         viewer = self._viewer(root, repo)
         existing = []
         for comment in _comments(root, issue_url):
+            if _author(comment) != viewer:
+                continue
             marked = _marked(comment)
             if marked and marked[2:4] == (run_id, step_id):
                 existing.append((comment, marked))
@@ -356,9 +353,9 @@ class GitHubStep(StepBase):
             raise ValueError("Multiple comments exist for this run and step")
         if existing:
             comment, marked = existing[0]
-            if marked[0] != body or marked[1] != artifact or _author(comment) != viewer:
+            if marked[0] != body or marked[1] != artifact:
                 raise ValueError(
-                    "Existing run/step comment differs or is not owned by the authenticated user"
+                    "Existing run/step comment differs from current content or artifact"
                 )
             comment_id = comment.get("id")
         else:
@@ -380,6 +377,8 @@ class GitHubStep(StepBase):
         viewer = self._viewer(root, repo)
         matches = []
         for comment in _comments(root, issue_url):
+            if _author(comment) != viewer:
+                continue
             marked = _marked(comment)
             if marked and marked[1] == config["artifact"]:
                 matches.append((comment, marked[4]))
@@ -389,8 +388,6 @@ class GitHubStep(StepBase):
                 f"found {len(matches)}"
             )
         comment, body = matches[0]
-        if _author(comment) != viewer:
-            raise ValueError("GitHub artifact was not posted by the authenticated user")
         comment_id = comment.get("id")
         if not isinstance(comment_id, int) or isinstance(comment_id, bool) or comment_id <= 0:
             raise ValueError("GitHub artifact has no valid comment ID")
