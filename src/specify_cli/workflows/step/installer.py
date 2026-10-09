@@ -164,6 +164,21 @@ def resolve_steps_base_dir(project_root: Path) -> Path:
     return steps_base_dir
 
 
+def _load_step_registry(project_root: Path):
+    """Load the step registry, mapping read failures onto ``StepInstallError``.
+
+    ``StepRegistry`` raises ``OSError`` for a symlinked or corrupted registry
+    file, while callers of this module only handle ``StepInstallError``, so
+    translate the error instead of letting it escape as a traceback.
+    """
+    from .catalog import StepRegistry
+
+    try:
+        return StepRegistry(project_root)
+    except OSError as exc:
+        raise StepInstallError(str(exc)) from exc
+
+
 def _resolve_step_dir(steps_base_dir: Path, step_id: str) -> Path:
     """Return the canonical destination directory for ``step_id``."""
     step_dir = steps_base_dir / step_id
@@ -474,14 +489,12 @@ def check_installable(project_root: Path, step_id: str, *, force: bool = False) 
     uses this to reject before a download; :func:`install_step_package`
     re-runs the same checks as defense-in-depth.
     """
-    from .catalog import StepRegistry
-
     validate_step_id(step_id)
     steps_base_dir = resolve_steps_base_dir(project_root)
     step_dir = _resolve_step_dir(steps_base_dir, step_id)
     _reject_unsafe_destination(step_dir)
     _reject_builtin_collision(step_id)
-    registry = StepRegistry(project_root)
+    registry = _load_step_registry(project_root)
     _check_duplicate(registry, step_id, step_dir, force=force)
     return step_dir
 
@@ -742,8 +755,6 @@ def install_step_package(
     ``source`` is exactly ``"catalog"``, ``"local"``, or ``"url"``. Returns the
     registry entry that was persisted.
     """
-    from .catalog import StepRegistry
-
     package_dir = Path(package_dir)
     if package_dir.is_symlink():
         raise StepInstallError(
@@ -774,7 +785,7 @@ def install_step_package(
         )
 
     _reject_builtin_collision(step_id)
-    registry = StepRegistry(project_root)
+    registry = _load_step_registry(project_root)
     _check_duplicate(registry, step_id, step_dir, force=force)
 
     # Validate source and all caller-controlled metadata before creating any
@@ -821,7 +832,7 @@ def install_step_package(
             step_dir = _resolve_step_dir(locked_base_dir, step_id)
             _reject_unsafe_destination(step_dir)
             _reject_builtin_collision(step_id)
-            registry = StepRegistry(project_root)
+            registry = _load_step_registry(project_root)
             _check_duplicate(registry, step_id, step_dir, force=force)
             _replace_install(
                 step_dir,

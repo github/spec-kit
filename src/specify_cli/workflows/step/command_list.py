@@ -10,15 +10,15 @@ from . import step_app
 def workflow_step_list():
     """List installed step types (built-in and custom)."""
     from .. import STEP_REGISTRY
-    from .catalog import StepRegistry
+    from . import _helpers as step_helpers
 
     project_root = cli._require_specify_project()
     specify_dir = project_root / ".specify"
 
-    # Read installed custom steps from registry only — no dynamic imports
+    # Read installed custom steps from registry only �?" no dynamic imports
     installed: dict = {}
     if specify_dir.exists():
-        registry = StepRegistry(project_root)
+        registry = step_helpers._load_step_registry_or_exit(project_root)
         installed = registry.list()
 
     cli.console.print("\n[bold cyan]Installed Step Types:[/bold cyan]\n")
