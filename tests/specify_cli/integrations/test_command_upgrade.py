@@ -80,21 +80,26 @@ def _write_command_extension(tmp_path, aliases=()):
 
 def _init_dotted_kiro_project(tmp_path, monkeypatch, *commands):
     """Init a Kiro project and run ``commands`` with the old dotted prompt names."""
-    from specify_cli.agents import CommandRegistrar
     from specify_cli.integrations.base import MarkdownIntegration
+    from specify_cli.integrations.installer import unload_installed_integrations
     from specify_cli.integrations.kiro_cli import KiroCliIntegration
 
-    CommandRegistrar._ensure_configs()
-    with monkeypatch.context() as m:
-        m.setattr(
-            KiroCliIntegration, "command_filename",
-            MarkdownIntegration.command_filename,
-        )
-        m.delitem(CommandRegistrar.AGENT_CONFIGS["kiro-cli"], "format_name", raising=False)
-        project = _init_project(tmp_path, "kiro-cli")
-        for args in commands:
-            result = _run_in_project(project, args)
-            assert result.exit_code == 0, result.output
+    try:
+        with monkeypatch.context() as m:
+            m.setattr(
+                KiroCliIntegration, "command_filename",
+                MarkdownIntegration.command_filename,
+            )
+            m.delitem(KiroCliIntegration.registrar_config, "format_name")
+            unload_installed_integrations()
+            project = _init_project(tmp_path, "kiro-cli")
+            assert (project / ".kiro/prompts/speckit.plan.md").is_file()
+            assert not (project / ".kiro/prompts/speckit-plan.md").exists()
+            for args in commands:
+                result = _run_in_project(project, args)
+                assert result.exit_code == 0, result.output
+    finally:
+        unload_installed_integrations()
     return project
 
 
