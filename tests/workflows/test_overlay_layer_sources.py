@@ -85,6 +85,50 @@ class TestProjectOverlaySourceManifestShape:
         )
 
 
+class TestProjectOverlaySourceExtensionMatching:
+    """Overlay file extensions are matched case-insensitively."""
+
+    @pytest.mark.parametrize(
+        "filename", ["upper.YML", "mixed.Yaml", "shouty.YAML", "title.Yml"]
+    )
+    def test_uppercase_extension_is_collected(
+        self, project_dir: Path, filename: str
+    ) -> None:
+        """A hand-placed `<id>.YML` must not be silently ignored.
+
+        `collect` matched `path.suffix` verbatim against `(".yml", ".yaml")`,
+        so an overlay whose extension differed only in case was skipped with
+        nothing reported — the author's overlay simply never applied. Every
+        other YAML discovery path in the package lowercases before matching.
+        """
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        (ov_dir / filename).write_text(
+            yaml.safe_dump(
+                {
+                    "id": "lint",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        layers = ProjectOverlaySource(project_dir).collect("wf")
+
+        assert [layer.content.id for layer in layers] == ["lint"]
+
+    def test_non_yaml_extensions_are_still_skipped(self, project_dir: Path) -> None:
+        """Broadening case must not broaden which extensions are accepted."""
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("notes.txt", "backup.yml.bak", "README.md", "data.json"):
+            (ov_dir / name).write_text("id: lint\n", encoding="utf-8")
+
+        assert ProjectOverlaySource(project_dir).collect("wf") == []
+
+
 class TestProjectOverlaySourceFileReadErrors:
     """File-read errors must be wrapped in OverlayLoadError, not leaked as raw tracebacks."""
 
