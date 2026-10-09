@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-08T00:00:00Z",
+  "updated_at": "2026-10-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -49,9 +49,9 @@
       "id": "aee",
       "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
       "author": "ElectroHire",
-      "version": "1.0.1",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.1.zip",
-      "sha256": "691d860ffade54e2fb5dd17f34cc72784ad65ca23ff61281313bb4366d46d47b",
+      "version": "1.2.0",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.2.0.zip",
+      "sha256": "74b5c99c547540acd191c1a0acc4b9c404cd8a25e36f0684f676d2aac2fd3cf5",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -69,7 +69,7 @@
           },
           {
             "name": "aee",
-            "version": ">=1.0.2,<2",
+            "version": ">=1.4.0,<2",
             "required": true
           },
           {
@@ -80,7 +80,7 @@
         ]
       },
       "provides": {
-        "commands": 6,
+        "commands": 9,
         "hooks": 5
       },
       "tags": [
@@ -94,7 +94,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
