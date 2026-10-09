@@ -49,6 +49,7 @@ def _register_builtin_steps() -> None:
     from .step.fan_in import FanInStep
     from .step.fan_out import FanOutStep
     from .step.gate import GateStep
+    from .step.github import GitHubStep
     from .step.workflow import WorkflowStep
     from .step.if_then import IfThenStep
     from .step.init import InitStep
@@ -63,6 +64,7 @@ def _register_builtin_steps() -> None:
     _register_step(FanInStep())
     _register_step(FanOutStep())
     _register_step(GateStep())
+    _register_step(GitHubStep())
     _register_step(WorkflowStep())
     _register_step(IfThenStep())
     _register_step(InitStep())
