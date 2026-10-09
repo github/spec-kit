@@ -700,8 +700,11 @@ the child's private inputs, step records, or logs.
 
 An initial binding or output-finalization contract failure can be handled with
 `continue_on_error`. A failure while rebinding an incomplete call during
-`workflow resume --input` is different: it propagates, leaves the call and its
-child subtree unchanged, and can be retried with corrected root inputs.
+`workflow resume --input` is different: it propagates. For a previously bound
+call, resume discards the prior `result`, `outcome`, and `error` while
+preserving its binding and child subtree, so it can be retried with corrected
+root inputs. A call whose initial binding failed returns to `ready` and retries
+target resolution and binding.
 
 ### Execution identity and resume
 
