@@ -694,7 +694,10 @@ class PresetResolver:
         """Collect all layers in the priority stack for a template.
 
         Returns layers from highest priority (checked first) to lowest priority.
-        Each layer is a dict with 'path', 'source', and 'strategy' keys.
+        Each layer is a dict with 'path', 'source', and 'strategy' keys; preset
+        layers additionally carry 'declaration', the manifest name that matched
+        the requested resource (a ``regex:`` selector or an exact name), so
+        diagnostics can attribute a contributing layer to its declaration.
 
         Args:
             template_name: Template name (e.g., "spec-template")
@@ -803,6 +806,17 @@ class PresetResolver:
                             "path": candidate,
                             "source": f"{pack_id} v{version}",
                             "strategy": strategy,
+                            # Attribution for diagnostics: the manifest
+                            # declaration that produced this concrete layer. A
+                            # ``regex:`` value identifies the selector that
+                            # matched the requested name; an exact declaration
+                            # keeps its literal name. Extension, override, and
+                            # core layers have no declaration.
+                            "declaration": (
+                                layer_entry.get("name")
+                                if isinstance(layer_entry, dict)
+                                else None
+                            ),
                         }
                     )
 

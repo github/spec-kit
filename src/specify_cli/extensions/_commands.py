@@ -113,6 +113,29 @@ def _capture_preset_command_names(project_root: Path) -> set[str]:
     )
 
 
+def _conventional_command_names(root: Path) -> set[str]:
+    """Concrete command names *root* provides through conventional files.
+
+    The resolver honours ``commands/<name>.md`` and the namespace fallback
+    ``commands/<name without the speckit. prefix>.md`` (plus
+    ``templates/commands/``), so those names are real lower-layer resources even
+    though no manifest entry declares them. A raw ``regex:...`` file name is a
+    selector, never a concrete resource, and is skipped. Shared by rollback
+    snapshot seeding and selector expansion so both agree with the resolver.
+    """
+    names: set[str] = set()
+    for subdir in ("commands", "templates/commands"):
+        candidate_dir = root / subdir
+        if not candidate_dir.is_dir():
+            continue
+        for path in candidate_dir.glob("*.md"):
+            stem = path.stem
+            if not stem or stem.startswith("regex:"):
+                continue
+            names.add(stem if stem.startswith("speckit.") else f"speckit.{stem}")
+    return names
+
+
 def _snapshot_command_candidates(manager, manifest) -> set[str]:
     """Concrete command names an extension can provide, declared or conventional.
 
@@ -126,16 +149,7 @@ def _snapshot_command_candidates(manager, manifest) -> set[str]:
     selector, never a concrete resource, and is skipped.
     """
     names = set(manager._collect_manifest_command_names(manifest))
-    extension_dir = manager.extensions_dir / manifest.id
-    for subdir in ("commands", "templates/commands"):
-        candidate_dir = extension_dir / subdir
-        if not candidate_dir.is_dir():
-            continue
-        for path in candidate_dir.glob("*.md"):
-            stem = path.stem
-            if not stem or stem.startswith("regex:"):
-                continue
-            names.add(stem if stem.startswith("speckit.") else f"speckit.{stem}")
+    names |= _conventional_command_names(manager.extensions_dir / manifest.id)
     return names
 
 

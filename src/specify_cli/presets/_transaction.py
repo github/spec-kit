@@ -9,9 +9,19 @@ class _ArtifactSnapshot:
     """Back up exact artifact trees, including absent paths and symlinks."""
 
     def __init__(self):
-        self._temp = tempfile.TemporaryDirectory(prefix="preset-transaction-")
+        # ``ignore_cleanup_errors`` matters on Windows: a locked backup file
+        # would otherwise make ``close()`` raise from a ``finally`` and replace
+        # the operation's own exception with a cleanup error.
+        self._temp = tempfile.TemporaryDirectory(
+            prefix="preset-transaction-", ignore_cleanup_errors=True
+        )
         self._paths = {}
         self._absent_parents = set()
+        # Directory-link type per captured symlink: Windows needs
+        # ``target_is_directory`` to recreate a directory link (and to create
+        # the backup link itself when the target is a directory).
+        self._symlink_is_dir = {}
+        self.retained_path = None
 
     def capture(self, path):
         path = Path(path)
@@ -23,12 +33,34 @@ class _ArtifactSnapshot:
             return
         backup = Path(self._temp.name) / str(len(self._paths))
         if path.is_symlink():
-            backup.symlink_to(path.readlink())
+            is_dir = path.is_dir()
+            self._symlink_is_dir[path] = is_dir
+            backup.symlink_to(path.readlink(), target_is_directory=is_dir)
         elif path.is_dir():
             shutil.copytree(path, backup, symlinks=True)
         elif path.exists():
             shutil.copy2(path, backup)
         self._paths[path] = backup
+
+    def retain(self):
+        """Keep the backups for manual recovery after a failed restore.
+
+        Without this a failed restore would delete the live artifact *and* its
+        only backup, leaving the user nothing to recover from. Cleanup is
+        disarmed by moving the directory aside; the caller is told the path.
+        """
+        if self.retained_path is not None:
+            return self.retained_path
+        source = Path(self._temp.name)
+        if not source.exists():
+            return None
+        retained = source.with_name(f"{source.name}-retained")
+        try:
+            source.rename(retained)
+        except OSError:
+            return None
+        self.retained_path = retained
+        return retained
 
     def restore(self):
         errors = []
@@ -40,7 +72,12 @@ class _ArtifactSnapshot:
                     shutil.rmtree(path)
                 if backup.is_symlink():
                     path.parent.mkdir(parents=True, exist_ok=True)
-                    path.symlink_to(backup.readlink())
+                    path.symlink_to(
+                        backup.readlink(),
+                        target_is_directory=self._symlink_is_dir.get(
+                            path, backup.is_dir()
+                        ),
+                    )
                 elif backup.is_dir():
                     shutil.copytree(backup, path, symlinks=True)
                 elif backup.exists():
@@ -57,9 +94,18 @@ class _ArtifactSnapshot:
                 except OSError as exc:
                     errors.append(f"{parent}: {exc}")
         if errors:
-            raise OSError("Could not restore preset artifacts: " + "; ".join(errors))
+            # Retain the backups *before* raising: the failed paths may no
+            # longer exist, so their backup copies are the only recovery source.
+            retained = self.retain()
+            detail = f" (retained backups: {retained})" if retained else ""
+            raise OSError(
+                "Could not restore preset artifacts: " + "; ".join(errors) + detail
+            )
 
     def close(self):
+        # A retained snapshot has already been moved aside: cleanup must not
+        # remove the recovery copies. Cleanup itself is best-effort (see
+        # ``ignore_cleanup_errors``) so it never masks the active exception.
         self._temp.cleanup()
 
 

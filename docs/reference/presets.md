@@ -151,7 +151,7 @@ keep their exit code (normally 2), as with `list --json`.
 specify preset resolve <name>
 ```
 
-Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file.
+Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file. When a layer was contributed by a `regex:` selector, the trace names the declaration that matched the requested name.
 
 ## Enable / Disable a Preset
 
@@ -345,6 +345,7 @@ Zero-match and invalid patterns are handled as follows:
 
 - A `regex:` selector that currently matches no lower-layer resource contributes nothing. Installing such a preset emits a warning; it does **not** fail the installation.
 - `specify preset info` lists each selector's current concrete matches nested beneath the declaration, or `No current matches` when there are none.
+- `specify preset resolve <name>` attributes the layers it traces back to the declaration that matched, for example `sel-pack v1.0.0 → …/spec-template.md (via regex:^spec-.*$)`, so a selector-driven resolution is visible in the stack trace and not only in `preset info`.
 - An invalid regular expression is rejected during manifest validation, so a preset with a malformed pattern fails to install with a clear validation error rather than at resolution time.
 
 The resolution stack, from highest to lowest precedence:

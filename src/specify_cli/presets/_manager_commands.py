@@ -337,8 +337,24 @@ class _PresetCommandMethods:
         try:
             from ..artifacts.catalog import ArtifactCatalog
             from ..extensions import CORE_COMMAND_NAMES
+            from ..extensions._commands import _conventional_command_names
 
             candidates = ArtifactCatalog(self.project_root).list_artifacts()
+            # The resolver also serves conventional command files, including the
+            # namespace fallback ``commands/<name without the speckit.>.md`` and
+            # ``templates/commands/``, which the artifact inventory reports under
+            # a different name. A selector that matches such a concrete name must
+            # still expand; ``_command_name_has_lower_layer`` below keeps only
+            # names an actual lower layer provides.
+            conventional: set[str] = set()
+            for preset_id in lower_preset_ids:
+                conventional |= _conventional_command_names(
+                    resolver.presets_dir / preset_id
+                )
+            for ext_id in lower_extension_ids:
+                conventional |= _conventional_command_names(
+                    resolver.extensions_dir / ext_id
+                )
         except Exception as exc:
             raise PresetValidationError(
                 f"Could not enumerate concrete commands for preset selector: {exc}"
@@ -350,6 +366,7 @@ class _PresetCommandMethods:
             and isinstance(artifact.name, str)
             and not is_regex_selector(artifact.name)
         }
+        concrete_candidates |= conventional
         concrete_candidates.update(f"speckit.{name}" for name in CORE_COMMAND_NAMES)
         concrete_names = sorted(
             {

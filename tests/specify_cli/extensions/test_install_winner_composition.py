@@ -51,14 +51,16 @@ def test_add_materializes_resolved_winner_once(
     )
     source = preset(tmp_path, "selector", r"regex:speckit\.provider\..*", body)
     manifest_path = source / "preset.yml"
-    manifest = yaml.safe_load(manifest_path.read_text())
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     manifest["provides"]["templates"][0]["strategy"] = strategy
-    manifest_path.write_text(yaml.safe_dump(manifest))
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
     PresetManager(root).install_from_directory(source, "0.1.5")
     if override:
         override_path = root / ".specify/templates/overrides" / f"{COMMAND}.md"
         override_path.parent.mkdir(parents=True)
-        override_path.write_text("---\ndescription: Local\n---\nPROJECT OVERRIDE\n")
+        override_path.write_text(
+            "---\ndescription: Local\n---\nPROJECT OVERRIDE\n", encoding="utf-8"
+        )
     writes = []
     original_write = Path.write_text
     original_shared_write = shared_infra._write_shared_text
@@ -112,7 +114,7 @@ def test_add_materializes_resolved_winner_once(
         assert len(writes) == 1
         return
     assert result.exit_code == 0, result.output
-    text = output.read_text()
+    text = output.read_text(encoding="utf-8")
     if override:
         assert "PROJECT OVERRIDE" in text
         assert "SELECTOR" not in text
@@ -172,7 +174,7 @@ def test_override_staged_declaration_is_portable_on_windows(tmp_path, monkeypatc
     assert result.exit_code == 0, result.output
     output = root / ".gemini" / "commands" / f"{COMMAND}.toml"
     assert output.exists(), "staged override payload was dropped as unmaterialized"
-    text = output.read_text()
+    text = output.read_text(encoding="utf-8")
     assert "PROJECT OVERRIDE" in text
     assert "SELECTOR" not in text
 

@@ -2672,6 +2672,7 @@ class ExtensionManager:
         )
         from ..presets import PresetManager
         from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+        from ._commands import _conventional_command_names
 
         artifact_snapshot = _ArtifactSnapshot()
         try:
@@ -2684,7 +2685,14 @@ class ExtensionManager:
             ):
                 _capture_preset_artifacts(
                     preset_manager, artifact_snapshot,
-                    extra_commands=self._collect_manifest_command_names(manifest),
+                    # The extension is not copied into ``extensions_dir`` yet, so
+                    # conventional candidates must come from the staging source
+                    # directory; otherwise a selector-generated global skill for a
+                    # convention-only command is outside the rollback snapshot.
+                    extra_commands=(
+                        set(self._collect_manifest_command_names(manifest))
+                        | _conventional_command_names(source_dir)
+                    ),
                 )
             elif resolve_active_agent_for_registration(self.project_root) not in {None, "generic"}:
                 # No preset winners: preserve the registrar's established

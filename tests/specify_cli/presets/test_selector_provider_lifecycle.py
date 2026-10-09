@@ -605,3 +605,85 @@ def test_extension_selector_install_rolls_back_exact_outputs(
         else output.parent.parent / "speckit-provider-quick/SKILL.md"
     )
     assert not alias.exists()
+
+
+def namespace_fallback_extension(tmp_path, extension_id="target", body="TARGET BODY"):
+    """Extension whose only extra concrete command comes from a conventional file.
+
+    Primary extension command names are namespace-validated
+    (``speckit.<extension-id>.<command>``), so a parallel concrete command is
+    contributed through the documented conventional lookup
+    ``commands/<name without the speckit. prefix>.md``: the resolver serves the
+    stem as ``speckit.<stem>`` even though no manifest entry names it. Its
+    declared command is a different name, so the file above is the only source
+    of ``speckit.<extension_id>.collect``.
+    """
+    source = tmp_path / f"{extension_id}-source"
+    (source / "commands").mkdir(parents=True)
+    (source / "commands" / "body.md").write_text(
+        f"---\ndescription: {extension_id}\n---\nDECLARED BODY\n", encoding="utf-8"
+    )
+    (source / "commands" / f"{extension_id}.collect.md").write_text(
+        f"---\ndescription: {extension_id}\n---\n{body}\n", encoding="utf-8"
+    )
+    (source / "extension.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "extension": {
+                    "id": extension_id,
+                    "name": extension_id,
+                    "version": "1.0.0",
+                    "description": "Test",
+                    "author": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "commands": [
+                        {
+                            "name": f"speckit.{extension_id}.other",
+                            "file": "commands/body.md",
+                            "description": "Test",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return source
+
+
+def test_selector_expands_namespace_fallback_conventional_command(
+    tmp_path, monkeypatch
+):
+    """A selector must expand a convention-only command the resolver serves.
+
+    The extension declares ``speckit.target.other``; ``speckit.target.collect``
+    exists only as ``commands/target.collect.md``, which the resolver exposes
+    through its namespace fallback. Installing the matching selector preset must
+    therefore materialize that concrete command instead of expanding to nothing.
+    """
+    root = project(tmp_path, monkeypatch, "gemini", False)
+    ExtensionManager(root).install_from_directory(
+        namespace_fallback_extension(tmp_path), "0.1.5"
+    )
+    output = root / ".gemini" / "commands" / "speckit.target.collect.toml"
+    assert not output.exists()
+
+    PresetManager(root).install_from_directory(
+        preset(
+            tmp_path,
+            "selector",
+            r"regex:^speckit\.target\.collect$",
+            "SELECTOR BODY",
+            strategy="append",
+        ),
+        "0.1.5",
+        priority=5,
+    )
+
+    assert output.exists(), "selector did not expand the namespace-fallback command"
+    text = output.read_text(encoding="utf-8")
+    assert "SELECTOR BODY" in text
+    assert "TARGET BODY" in text
