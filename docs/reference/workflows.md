@@ -596,8 +596,8 @@ In GitHub Actions, a repository-scoped `GITHUB_TOKEN` is supported: when
 verifies that the active credential is an installation token restricted to
 that repository, then checks the author against `github-actions[bot]`.
 User tokens (including user tokens used inside Actions) use `GET /user` for
-author verification instead. Other app installation tokens are not accepted
-as the Actions bot identity.
+author verification instead. A non-Actions app token cannot post as
+`github-actions[bot]`; an unexpected post author fails the step.
 
 ```yaml
 - id: publish-plan
