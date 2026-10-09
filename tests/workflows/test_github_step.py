@@ -215,8 +215,12 @@ def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
     [
         "https://github.com/owner/repo.git",
         "https://github.com/owner/repo",
+        "https://GitHub.COM/owner/repo.git",
         "git@github.com:owner/repo.git",
         "git@github.com:owner/repo",
+        "git@GITHUB.com:owner/repo.git",
+        "ssh://git@github.com/owner/repo.git",
+        "ssh://git@GITHUB.COM/owner/repo",
     ],
 )
 def test_github_origin_derives_repository_and_api_url(context, monkeypatch, origin):
@@ -235,10 +239,18 @@ def test_github_origin_derives_repository_and_api_url(context, monkeypatch, orig
     assert calls == [(["git", "remote", "get-url", "origin"], root)]
 
 
-def test_origin_must_be_github_dot_com(context, monkeypatch):
-    monkeypatch.setattr(
-        github, "_run", lambda args, root, **kwargs: "https://evil.example/o/r.git"
-    )
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://evil.example/o/r.git",
+        "https://github.com.evil.example/o/r.git",
+        "ssh://git@github.com.evil.example/o/r.git",
+        "ssh://other@github.com/o/r.git",
+        "git@github.com.evil.example:o/r.git",
+    ],
+)
+def test_origin_must_be_github_dot_com(context, monkeypatch, origin):
+    monkeypatch.setattr(github, "_run", lambda args, root, **kwargs: origin)
     with pytest.raises(ValueError, match="github.com origin"):
         github._identity(Path(context.project_root))
 

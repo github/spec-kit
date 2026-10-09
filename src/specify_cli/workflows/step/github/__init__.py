@@ -13,7 +13,9 @@ from specify_cli.workflows.expressions import evaluate_expression
 
 _NUMBER = re.compile(r"[1-9][0-9]*\Z")
 _ORIGIN = re.compile(
-    r"(?:https://github\.com/|git@github\.com:)([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?\Z"
+    r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+    r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?\Z",
+    re.IGNORECASE,
 )
 
 

@@ -586,7 +586,10 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 ### GitHub step
 
 `type: github` uses the installed `gh` CLI and its active authentication for a
-repository whose `origin` points to `github.com`. The active token needs
+repository whose `origin` points to `github.com` via HTTPS, SCP-style SSH, or
+`ssh://git@github.com/`. The origin URL identifies the repository; label
+requests go to its `api.github.com` REST endpoint, not to the Git remote URL.
+The active token needs
 permission to read the issue or pull request and to write its labels (for
 example, `issues: write` for issues or `pull-requests: write` for PRs when
 using `GITHUB_TOKEN` in Actions). The step uses only the existing token: it
