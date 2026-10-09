@@ -1,8 +1,8 @@
 # GitHub Integration Extension
 
-This bundled, **opt-in** extension owns Spec Kit's GitHub *agent command* functionality. Today it provides one command, `speckit.github.taskstoissues`, which turns a feature's `tasks.md` into dependency-ordered GitHub issues. The separate built-in [`github` workflow step](../../docs/reference/workflows.md#github-step) adds an explicitly configured issue or pull-request label: registering the step does not install this extension or invoke the step automatically. A workflow must explicitly select `type: github` to run it.
+This bundled, **opt-in** extension is the home for Spec Kit's GitHub *platform* functionality. Today it provides one command, `speckit.github.taskstoissues`, which turns a feature's `tasks.md` into dependency-ordered GitHub issues.
 
-> NOTE: `git` and `github` are deliberately separate domains. The [`git` extension](../git/README.md) owns local version-control workflow (feature branches, commits, remote detection); this extension owns its GitHub agent command, not the workflow engine's built-in step.
+> NOTE: `git` and `github` are deliberately separate domains. The [`git` extension](../git/README.md) owns local version-control workflow (feature branches, commits, remote detection); this extension owns interactions with the GitHub platform itself.
 
 ## Why an extension?
 
