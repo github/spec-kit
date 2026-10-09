@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -18,9 +19,9 @@ _ORIGIN = re.compile(
     r"(?:https://github\.com/|git@github\.com:)([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?\Z"
 )
 _MARKER = re.compile(
-    r"<!-- speckit-github:v1 artifact=([A-Za-z0-9_-]+) "
+    r"<!-- speckit-github:v2 artifact=([A-Za-z0-9_-]+) "
     r"run=([A-Za-z0-9_-]+) step=([A-Za-z0-9_-]+) "
-    r"sha256=([a-f0-9]{64}) -->\Z"
+    r"bytes=([0-9]+) sha256=([a-f0-9]{64}) -->\Z"
 )
 _MARKER_PREFIX = "<!-- speckit-github:"
 
@@ -74,11 +75,46 @@ def _project_path(root: Path, value: str, *, writing: bool) -> Path:
     if writing:
         if candidate.exists():
             raise ValueError(f"Destination already exists: {value!r}")
-        if not candidate.parent.is_dir():
-            raise ValueError(f"Destination directory does not exist: {value!r}")
     elif not candidate.is_file():
         raise ValueError(f"File does not exist: {value!r}")
     return candidate
+
+
+def _write_artifact(root: Path, destination: Path, body: str) -> None:
+    """Create a new file through directory handles; refuse symlinked parents."""
+    data = body.encode("utf-8")
+    if os.name == "nt":
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _project_path(root, str(destination.relative_to(root)), writing=True)
+        with destination.open("xb") as stream:
+            stream.write(data)
+        return
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory = os.open(root, flags)
+    try:
+        for part in destination.relative_to(root).parts[:-1]:
+            try:
+                child = os.open(part, flags, dir_fd=directory)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(part, dir_fd=directory)
+                except FileExistsError:
+                    pass
+                child = os.open(part, flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        name = destination.name
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=directory)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+        except OSError:
+            os.unlink(name, dir_fd=directory)
+            raise
+    finally:
+        os.close(directory)
 
 
 def _resolved(value: Any, context: StepContext) -> Any:
@@ -129,9 +165,17 @@ def _marked(comment: dict[str, Any]) -> tuple[str, str, str, str, str] | None:
         return None
     body, sep, marker = text.rpartition("\n\n")
     match = _MARKER.fullmatch(marker) if sep else None
-    if not match or hashlib.sha256(body.encode("utf-8")).hexdigest() != match[4]:
+    encoded = body.encode("utf-8")
+    if not match or hashlib.sha256(encoded).hexdigest() != match[5]:
         raise ValueError("GitHub artifact has an invalid marker or content digest")
-    return body, match[1], match[2], match[3], match[4]
+    artifact_bytes = int(match[4])
+    if artifact_bytes > len(encoded):
+        raise ValueError("GitHub artifact has an invalid byte length")
+    try:
+        artifact = encoded[:artifact_bytes].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("GitHub artifact has an invalid UTF-8 boundary") from exc
+    return body, match[1], match[2], match[3], artifact
 
 
 def _author(comment: dict[str, Any]) -> str | None:
@@ -230,12 +274,34 @@ class GitHubStep(StepBase):
             issue_url = f"{url}/issues/{number}"
             if operation == "comment":
                 return self._comment(config, context, root, repo, issue_url, number)
-            return self._fetch(config, context, root, issue_url)
+            return self._fetch(config, context, root, repo, issue_url)
         except (ValueError, OSError, UnicodeError) as exc:
             return StepResult(status=StepStatus.FAILED, error=f"GitHub step: {exc}")
 
     @staticmethod
-    def _viewer(root: Path) -> str:
+    def _viewer(root: Path, repo: str) -> str:
+        if (os.environ.get("GITHUB_ACTIONS") == "true"
+                and os.environ.get("GITHUB_REPOSITORY", "").lower() == repo.lower()):
+            try:
+                installation = _api(
+                    root, "https://api.github.com/installation/repositories"
+                )
+            except ValueError:
+                # A user token used inside Actions does not have this installation
+                # endpoint. It must identify itself through /user instead.
+                pass
+            else:
+                repositories = installation.get("repositories") if isinstance(installation, dict) else None
+                if (not isinstance(repositories, list)
+                        or installation.get("total_count") != 1
+                        or len(repositories) != 1
+                        or not isinstance(repositories[0], dict)
+                        or not isinstance(repositories[0].get("full_name"), str)
+                        or repositories[0]["full_name"].lower() != repo.lower()):
+                    raise ValueError(
+                        "Actions installation token must be scoped to this repository only"
+                    )
+                return "github-actions[bot]"
         user = _api(root, "https://api.github.com/user")
         if not isinstance(user, dict):
             raise ValueError("GitHub returned an invalid authenticated user")
@@ -248,15 +314,16 @@ class GitHubStep(StepBase):
         elif "body_file" in config:
             source = _string(_resolved(config["body_file"], context), "body_file")
             path = _project_path(root, source, writing=False)
-            body = path.read_text(encoding="utf-8")
+            body = path.read_bytes().decode("utf-8")
         else:
             paths = [
                 _project_path(root, _string(_resolved(p, context), "body_files entry"), writing=False)
                 for p in config["body_files"]
             ]
-            body = "\n\n".join(path.read_text(encoding="utf-8") for path in paths)
+            body = "\n\n".join(path.read_bytes().decode("utf-8") for path in paths)
         if not body.strip():
             raise ValueError("Comment body must not be empty")
+        artifact_bytes = len(body.encode("utf-8"))
         action = config.get("maintainer_action")
         if action is not None:
             summary = _string(_resolved(action["summary"], context), "maintainer_action.summary")
@@ -277,9 +344,9 @@ class GitHubStep(StepBase):
         ):
             raise ValueError("Artifact, run ID, and step ID must be safe identifiers")
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        marked_body = (f"{body}\n\n<!-- speckit-github:v1 artifact={artifact} "
-                       f"run={run_id} step={step_id} sha256={digest} -->")
-        viewer = self._viewer(root)
+        marked_body = (f"{body}\n\n<!-- speckit-github:v2 artifact={artifact} "
+                       f"run={run_id} step={step_id} bytes={artifact_bytes} sha256={digest} -->")
+        viewer = self._viewer(root, repo)
         existing = []
         for comment in _comments(root, issue_url):
             marked = _marked(comment)
@@ -298,6 +365,8 @@ class GitHubStep(StepBase):
             posted = _api(root, f"{issue_url}/comments", method="POST", data={"body": marked_body})
             if not isinstance(posted, dict):
                 raise ValueError("GitHub returned an invalid posted comment")
+            if _author(posted) != viewer:
+                raise ValueError("Posted comment author does not match the authenticated identity")
             comment_id = posted.get("id")
         if not isinstance(comment_id, int) or isinstance(comment_id, bool) or comment_id <= 0:
             raise ValueError("GitHub comment has no valid ID")
@@ -305,15 +374,15 @@ class GitHubStep(StepBase):
                                   "artifact": artifact if artifact != "-" else None})
 
     def _fetch(self, config: dict[str, Any], context: StepContext, root: Path,
-               issue_url: str) -> StepResult:
+               repo: str, issue_url: str) -> StepResult:
         name = _string(_resolved(config["write_to"], context), "write_to")
         destination = _project_path(root, name, writing=True)
-        viewer = self._viewer(root)
+        viewer = self._viewer(root, repo)
         matches = []
         for comment in _comments(root, issue_url):
             marked = _marked(comment)
             if marked and marked[1] == config["artifact"]:
-                matches.append((comment, marked[0]))
+                matches.append((comment, marked[4]))
         if len(matches) != 1:
             raise ValueError(
                 f"Expected exactly one trusted artifact {config['artifact']!r}; "
@@ -326,8 +395,7 @@ class GitHubStep(StepBase):
         if not isinstance(comment_id, int) or isinstance(comment_id, bool) or comment_id <= 0:
             raise ValueError("GitHub artifact has no valid comment ID")
         try:
-            with destination.open("x", encoding="utf-8") as stream:
-                stream.write(body)
+            _write_artifact(root, destination, body)
         except FileExistsError as exc:
             raise ValueError(f"Destination already exists: {destination}") from exc
         except OSError as exc:

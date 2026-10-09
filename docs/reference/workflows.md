@@ -591,6 +591,13 @@ for PRs/issues, and issue-comment write access only for `comment`. The step
 does not request or elevate permissions. It does not interpret issue/comment
 contents as workflow instructions or apply labels. GitHub operations require
 network access; tests should mock the API rather than post live comments.
+In GitHub Actions, a repository-scoped `GITHUB_TOKEN` is supported: when
+`GITHUB_ACTIONS=true` and `GITHUB_REPOSITORY` matches `origin`, the step
+verifies that the active credential is an installation token restricted to
+that repository, then checks the author against `github-actions[bot]`.
+User tokens (including user tokens used inside Actions) use `GET /user` for
+author verification instead. Other app installation tokens are not accepted
+as the Actions bot identity.
 
 ```yaml
 - id: publish-plan
@@ -628,9 +635,11 @@ comment; it never changes GitHub labels. The posted comment includes a
 digest-bearing marker tying it to the workflow run and step. Re-running the
 same step in the same run reuses an identical comment rather than posting a
 duplicate; changed content or a changed author fails instead. `fetch-artifact`
-requires exactly one intact, previously marked comment authored by the active
-GitHub account. It writes only to a *new* relative file under the project
-root, with an existing directory; symlinks and overwrites are refused.
+requires exactly one intact, previously marked comment authored by the
+verified account/bot. It writes only the original artifact bytes, excluding
+the maintainer-action footer and marker, to a *new* relative file under the
+project root. Missing parent directories are created inside the project
+after the comment is verified; symlinks and overwrites are refused.
 `checkout-pr` fetches GitHub's `pull/<number>/head` ref, verifies its SHA
 matches the API's PR head, and checks out that commit detached. Local changes
 that prevent checkout cause the step to fail.

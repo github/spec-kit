@@ -119,6 +119,120 @@ def test_comment_files_and_fetch_artifact(context, api):
     assert (root / "result.md").read_text() == "First\n\nSecond"
 
 
+def test_fetch_creates_fresh_nested_parent_and_restores_only_artifact(context, api):
+    root = Path(context.project_root)
+    artifact = "# Assessment\r\n\r\nCafé\r\n\r\n### Maintainer action (proposal only)\r\nLiteral artifact text.\r\n"
+    (root / "assessment.md").write_bytes(artifact.encode("utf-8"))
+    step = get_step_type("github")
+    definition = config(body_file="assessment.md", artifact="assessment",
+                        maintainer_action={"summary": "Please review before proceeding.",
+                                           "possible_labels": ["ready"]})
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    destination = root / ".specify" / "bugs" / "fresh-label" / "assessment.md"
+    assert not destination.parent.exists()
+    result = step.execute({"id": "rehydrate", "type": "github", "operation": "fetch-artifact",
+                           "target": "issue", "number": 12, "artifact": "assessment",
+                           "write_to": ".specify/bugs/fresh-label/assessment.md"}, context)
+    assert result.status == StepStatus.COMPLETED, result.error
+    assert destination.read_bytes() == artifact.encode("utf-8")
+    assert "Please review before proceeding" not in destination.read_text(encoding="utf-8")
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+
+
+def test_actions_installation_token_verifies_bot_author(context, api, monkeypatch):
+    comments, _ = api
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    original_api = github._api
+
+    def actions_api(root, endpoint, **kwargs):
+        if endpoint.endswith("/installation/repositories"):
+            return {"total_count": 1, "repositories": [{"full_name": "owner/repo"}]}
+        if endpoint.endswith("/user"):
+            raise AssertionError("Actions installation tokens do not need /user")
+        result = original_api(root, endpoint, **kwargs)
+        if kwargs.get("method") == "POST":
+            result["user"] = {"login": "github-actions[bot]"}
+        return result
+
+    monkeypatch.setattr(github, "_api", actions_api)
+    step = get_step_type("github")
+    definition = config(body="Artifact", artifact="report")
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    assert step.execute(definition, context).status == StepStatus.COMPLETED
+    result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
+                           "number": 12, "artifact": "report", "write_to": "new/fix.md"}, context)
+    assert result.status == StepStatus.COMPLETED, result.error
+    assert (Path(context.project_root) / "new" / "fix.md").read_bytes() == b"Artifact"
+    assert len(comments) == 1
+
+
+@pytest.mark.parametrize("installation", [
+    {"total_count": 1, "repositories": [{"full_name": "elsewhere/repo"}]},
+    {"total_count": 2, "repositories": [{"full_name": "owner/repo"}]},
+    {"total_count": 1, "repositories": [{"full_name": 42}]},
+])
+def test_actions_rejects_untrusted_installation(context, api, monkeypatch, installation):
+    comments, _ = api
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    original_api = github._api
+    monkeypatch.setattr(
+        github, "_api",
+        lambda root, endpoint, **kwargs: installation
+        if endpoint.endswith("/installation/repositories")
+        else original_api(root, endpoint, **kwargs),
+    )
+    result = get_step_type("github").execute(config(body="text"), context)
+    assert result.status == StepStatus.FAILED
+    assert "scoped to this repository" in result.error
+    assert not comments
+
+
+def test_actions_user_token_uses_user_identity(context, api, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    original_api = github._api
+
+    def user_token(root, endpoint, **kwargs):
+        if endpoint.endswith("/installation/repositories"):
+            raise ValueError("Installation endpoint unavailable to user token")
+        return original_api(root, endpoint, **kwargs)
+
+    monkeypatch.setattr(github, "_api", user_token)
+    assert get_step_type("github").execute(config(body="text"), context).status == StepStatus.COMPLETED
+
+
+def test_actions_rejects_comment_from_wrong_bot(context, api, monkeypatch):
+    comments, _ = api
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    original_api = github._api
+    monkeypatch.setattr(
+        github, "_api",
+        lambda root, endpoint, **kwargs: (
+            {"total_count": 1, "repositories": [{"full_name": "owner/repo"}]}
+            if endpoint.endswith("/installation/repositories")
+            else original_api(root, endpoint, **kwargs)
+        ),
+    )
+    result = get_step_type("github").execute(config(body="text"), context)
+    assert result.status == StepStatus.FAILED
+    assert "author does not match" in result.error
+    assert len(comments) == 1  # The server posted, but success is not reported.
+
+
+def test_fetch_does_not_create_directories_for_untrusted_artifact(context, api):
+    step = get_step_type("github")
+    root = Path(context.project_root)
+    result = step.execute({"id": "rehydrate", "operation": "fetch-artifact",
+                           "target": "issue", "number": 12, "artifact": "missing",
+                           "write_to": ".specify/bugs/fresh-label/fix.md"}, context)
+    assert result.status == StepStatus.FAILED
+    assert "found 0" in result.error
+    assert not (root / ".specify").exists()
+
+
 def test_engine_executes_github_yaml_without_shell(context, api):
     comments, _ = api
     definition = WorkflowDefinition.from_string("""
@@ -178,7 +292,7 @@ def test_fetch_rejects_untrusted_or_ambiguous(context, api, change, expected):
     assert not (Path(context.project_root) / "result.md").exists()
 
 
-@pytest.mark.parametrize("name", ["../elsewhere", "/tmp/elsewhere", "absent/result.md", "link/result.md"])
+@pytest.mark.parametrize("name", ["../elsewhere", "/tmp/elsewhere", "link/result.md"])
 def test_fetch_rejects_unsafe_destinations(context, api, name, tmp_path):
     root = Path(context.project_root)
     (root / "link").symlink_to(tmp_path.parent, target_is_directory=True)
@@ -187,6 +301,21 @@ def test_fetch_rejects_unsafe_destinations(context, api, name, tmp_path):
     result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
                            "number": 12, "artifact": "report", "write_to": name}, context)
     assert result.status == StepStatus.FAILED
+
+
+def test_fetch_rejects_symlinked_missing_parent_and_existing_destination(context, api, tmp_path):
+    root = Path(context.project_root)
+    (root / ".specify").mkdir()
+    (root / ".specify" / "bugs").symlink_to(tmp_path.parent, target_is_directory=True)
+    (root / "existing.md").write_text("keep", encoding="utf-8")
+    step = get_step_type("github")
+    assert step.execute(config(body="original", artifact="report"), context).status == StepStatus.COMPLETED
+    for name in (".specify/bugs/new/fix.md", "existing.md"):
+        result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
+                               "number": 12, "artifact": "report", "write_to": name}, context)
+        assert result.status == StepStatus.FAILED
+    assert (root / "existing.md").read_text() == "keep"
+    assert not (tmp_path.parent / "new").exists()
 
 
 def test_bad_identifiers_and_missing_artifact_fail_without_post(context, api):
