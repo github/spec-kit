@@ -12,11 +12,7 @@ from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepSt
 from specify_cli.workflows.expressions import evaluate_expression
 
 _NUMBER = re.compile(r"[1-9][0-9]*\Z")
-_ORIGIN = re.compile(
-    r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
-    r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?\Z",
-    re.IGNORECASE,
-)
+_REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 
 
 def _run(args: list[str], root: Path, *, input_text: str | None = None) -> str:
@@ -69,6 +65,16 @@ def _number(value: Any) -> int:
     return int(value)
 
 
+def _repository(value: Any) -> str:
+    if (
+        not isinstance(value, str)
+        or not _REPOSITORY.fullmatch(value)
+        or any(part in (".", "..") for part in value.split("/"))
+    ):
+        raise ValueError("'repository' must be a GitHub owner/repo name")
+    return value
+
+
 def _label(value: Any) -> str:
     if (
         not isinstance(value, str)
@@ -91,15 +97,6 @@ def _label_names(value: Any) -> set[str]:
     return {entry["name"].casefold() for entry in value}
 
 
-def _identity(root: Path) -> tuple[str, str]:
-    origin = _run(["git", "remote", "get-url", "origin"], root)
-    match = _ORIGIN.fullmatch(origin)
-    if not match:
-        raise ValueError("GitHub step requires a github.com origin remote")
-    repository = f"{match[1]}/{match[2]}"
-    return repository, f"https://api.github.com/repos/{repository}"
-
-
 class GitHubStep(StepBase):
     """Add only the label explicitly specified by a workflow author."""
 
@@ -116,6 +113,7 @@ class GitHubStep(StepBase):
             "type",
             "operation",
             "target",
+            "repository",
             "number",
             "label",
             "continue_on_error",
@@ -126,6 +124,15 @@ class GitHubStep(StepBase):
         elif not (isinstance(config["number"], str) and "{{" in config["number"]):
             try:
                 _number(config["number"])
+            except ValueError as exc:
+                errors.append(str(exc))
+        if "repository" not in config:
+            errors.append("GitHub step requires 'repository'.")
+        elif not (
+            isinstance(config["repository"], str) and "{{" in config["repository"]
+        ):
+            try:
+                _repository(config["repository"])
             except ValueError as exc:
                 errors.append(str(exc))
         if "label" not in config:
@@ -144,10 +151,9 @@ class GitHubStep(StepBase):
                 raise ValueError("; ".join(errors))
             number = _number(_resolved(config["number"], context))
             label = _label(_resolved(config["label"], context))
-            if not context.project_root:
-                raise ValueError("GitHub step requires a project root")
-            root = Path(context.project_root).resolve()
-            repository, url = _identity(root)
+            repository = _repository(_resolved(config["repository"], context))
+            root = Path(context.project_root or ".").resolve()
+            url = f"https://api.github.com/repos/{repository}"
             target = config["target"]
             kind = "pulls" if target == "pull_request" else "issues"
             resource = _api(root, f"{url}/{kind}/{number}")

@@ -39,11 +39,6 @@ def api(monkeypatch):
         raise AssertionError(f"Unexpected API call: {endpoint}")
 
     monkeypatch.setattr(github, "_api", fake_api)
-    monkeypatch.setattr(
-        github,
-        "_identity",
-        lambda root: ("owner/repo", "https://api.github.com/repos/owner/repo"),
-    )
     return stored, calls
 
 
@@ -52,6 +47,7 @@ def config(**overrides):
         "id": "label",
         "type": "github",
         "operation": "add-label",
+        "repository": "owner/repo",
         "target": "issue",
         "number": "{{ inputs.number }}",
         "label": "ready-for-review",
@@ -86,6 +82,7 @@ def test_issue_label_added_once_and_retry_skips_write(context, api):
     }
     assert retry.output == {**first.output, "added": False}
     assert labels == ["ready-for-review"]
+    assert calls[0][1] == "https://api.github.com/repos/owner/repo/issues/12"
     assert len([method for method, _, _ in calls if method == "POST"]) == 1
 
 
@@ -106,6 +103,82 @@ def test_existing_label_is_case_insensitive_and_skips_post(context, api):
     assert result.status == StepStatus.COMPLETED
     assert result.output["added"] is False
     assert len(calls) == 1
+
+
+def test_repository_expression_selects_api_target_without_git_origin(context, api):
+    labels, calls = api
+    context.inputs["repository"] = "other/project"
+    context.project_root = None
+    result = get_step_type("github").execute(
+        config(repository="{{ inputs.repository }}"), context
+    )
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["repository"] == "other/project"
+    assert labels == ["ready-for-review"]
+    assert [endpoint for _, endpoint, _ in calls] == [
+        "https://api.github.com/repos/other/project/issues/12",
+        "https://api.github.com/repos/other/project/issues/12/labels",
+    ]
+
+
+def test_api_requests_need_no_git_remote(context, monkeypatch):
+    calls = []
+
+    def fake_run(args, root, *, input_text=None):
+        assert args[:2] == ["gh", "api"]
+        calls.append((args, input_text))
+        if args[2:4] == ["--method", "GET"]:
+            return '{"number": 12, "labels": []}'
+        return '[{"name": "ready-for-review"}]'
+
+    monkeypatch.setattr(github, "_run", fake_run)
+    result = get_step_type("github").execute(config(), context)
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["added"] is True
+    assert calls[0][0][-1] == "https://api.github.com/repos/owner/repo/issues/12"
+    assert calls[1][0][4] == "https://api.github.com/repos/owner/repo/issues/12/labels"
+    assert json.loads(calls[1][1]) == {"labels": ["ready-for-review"]}
+
+
+@pytest.mark.parametrize(
+    "repository",
+    [
+        None,
+        "",
+        " ",
+        "owner",
+        "owner/",
+        "/repo",
+        "owner/repo/extra",
+        "owner/..",
+        "./repo",
+        "owner/repo?x=1",
+        "https://github.com/owner/repo",
+        "git@github.com:owner/repo",
+        "owner/repo\nx",
+        ["owner", "repo"],
+    ],
+)
+def test_invalid_repository_fails_before_any_api_call(context, api, repository):
+    _, calls = api
+    step = get_step_type("github")
+    assert step.validate(config(repository=repository))
+    result = step.execute(config(repository=repository), context)
+    assert result.status == StepStatus.FAILED
+    assert "repository" in result.error
+    assert calls == []
+
+
+def test_invalid_resolved_repository_fails_before_api_call(context, api):
+    _, calls = api
+    context.inputs["repository"] = "other/repo/extra"
+    step = get_step_type("github")
+    definition = config(repository="{{ inputs.repository }}")
+    assert step.validate(definition) == []
+    result = step.execute(definition, context)
+    assert result.status == StepStatus.FAILED
+    assert "repository" in result.error
+    assert calls == []
 
 
 @pytest.mark.parametrize("number", [0, -1, True, None, "1; echo bad", ""])
@@ -136,6 +209,7 @@ def test_missing_fields_and_unsupported_operations_fail(context, api):
         config(operation="comment"),
         {key: value for key, value in config().items() if key != "label"},
         {key: value for key, value in config().items() if key != "number"},
+        {key: value for key, value in config().items() if key != "repository"},
         config(body="unexpected"),
     ):
         assert step.validate(broken)
@@ -210,51 +284,6 @@ def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
     assert "ready" not in observed[0][0]
 
 
-@pytest.mark.parametrize(
-    "origin",
-    [
-        "https://github.com/owner/repo.git",
-        "https://github.com/owner/repo",
-        "https://GitHub.COM/owner/repo.git",
-        "git@github.com:owner/repo.git",
-        "git@github.com:owner/repo",
-        "git@GITHUB.com:owner/repo.git",
-        "ssh://git@github.com/owner/repo.git",
-        "ssh://git@GITHUB.COM/owner/repo",
-    ],
-)
-def test_github_origin_derives_repository_and_api_url(context, monkeypatch, origin):
-    root = Path(context.project_root)
-    calls = []
-
-    def fake_run(args, cwd, *, input_text=None):
-        calls.append((args, cwd))
-        return origin
-
-    monkeypatch.setattr(github, "_run", fake_run)
-    assert github._identity(root) == (
-        "owner/repo",
-        "https://api.github.com/repos/owner/repo",
-    )
-    assert calls == [(["git", "remote", "get-url", "origin"], root)]
-
-
-@pytest.mark.parametrize(
-    "origin",
-    [
-        "https://evil.example/o/r.git",
-        "https://github.com.evil.example/o/r.git",
-        "ssh://git@github.com.evil.example/o/r.git",
-        "ssh://other@github.com/o/r.git",
-        "git@github.com.evil.example:o/r.git",
-    ],
-)
-def test_origin_must_be_github_dot_com(context, monkeypatch, origin):
-    monkeypatch.setattr(github, "_run", lambda args, root, **kwargs: origin)
-    with pytest.raises(ValueError, match="github.com origin"):
-        github._identity(Path(context.project_root))
-
-
 def test_engine_executes_label_yaml_and_fan_out_with_retries(context, api):
     labels, calls = api
     workflow = WorkflowDefinition.from_string("""
@@ -272,6 +301,7 @@ steps:
       id: add-label
       type: github
       operation: add-label
+      repository: owner/repo
       target: issue
       number: 12
       label: "{{ item }}"
