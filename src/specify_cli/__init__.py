@@ -33,6 +33,7 @@ from pathlib import Path
 
 import typer
 from rich.align import Align
+from rich.markup import escape as _escape_markup
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -289,7 +290,10 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
         return project_path / registration_directory(project_path).relative_to(
             project_path.resolve()
         )
-    agent_config = AGENT_CONFIG.get(selected_ai, {})
+    from .integrations import get_integration
+
+    integration = get_integration(selected_ai)
+    agent_config = (integration.config or {}) if integration is not None else {}
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
         return project_path / agent_folder.rstrip("/") / "skills"
@@ -438,7 +442,7 @@ from .integrations._helpers import (  # noqa: E402
 from ._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: E402
 
 
-def _require_specify_project() -> Path:
+def _require_specify_project(*, load_integrations: bool = False) -> Path:
     """Return the project root if it is a spec-kit project, else exit.
 
     Honors the ``SPECIFY_INIT_DIR`` override (same validation rules as the shell
@@ -450,10 +454,16 @@ def _require_specify_project() -> Path:
     the current directory, as before.
     """
     override = _resolve_init_dir_override()
-    if override is not None:
-        return override
-    project_root = Path.cwd()
+    project_root = override if override is not None else Path.cwd()
     if (project_root / ".specify").is_dir():
+        if load_integrations:
+            from .integrations.installer import IntegrationInstallError, load_installed_integrations
+
+            try:
+                load_installed_integrations(project_root)
+            except (IntegrationInstallError, OSError) as exc:
+                err_console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1) from exc
         return project_root
     err_console.print("[red]Error:[/red] Not a Spec Kit project (no .specify/ directory)")
     err_console.print(

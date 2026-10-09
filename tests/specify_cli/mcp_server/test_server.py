@@ -32,6 +32,7 @@ def test_tool_discovery_exposes_first_class_and_transitional_tools(tmp_path):
         "specify_run_command",
         "specify_version",
         "specify_artifact_list",
+        "specify_artifact_info",
     ]
     schemas = {tool.name: tool.input_schema for tool in tools}
     assert schemas["specify_list_commands"]["properties"] == {}
@@ -43,6 +44,13 @@ def test_tool_discovery_exposes_first_class_and_transitional_tools(tmp_path):
         "limit",
         "cursor",
     }
+    assert schemas["specify_artifact_info"]["additionalProperties"] is False
+    assert set(schemas["specify_artifact_info"]["properties"]) == {
+        "identifier",
+        "kind",
+        "project_directory",
+    }
+    assert schemas["specify_artifact_info"]["required"] == ["identifier"]
     for name in ("specify_describe_command", "specify_run_command"):
         assert schemas[name]["required"] == ["command"]
         assert schemas[name]["properties"]["command"]["type"] == "string"

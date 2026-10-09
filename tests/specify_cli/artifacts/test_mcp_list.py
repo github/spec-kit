@@ -854,19 +854,24 @@ def test_artifact_inventory_matches_cli_leaves_and_operation_contract(
     assert list_tool.network_access == ARTIFACT_LIST_OPERATION.network_access
     assert list_tool.mcp_tool_name in registered_tool_names
 
+    available = [
+        item for item in _mcp.ARTIFACT_TOOLS if item.disposition == "available"
+    ]
+    assert {item.operation_id for item in available} == {
+        "artifact.list",
+        "artifact.info",
+    }
+    assert all(item.disposition_reason is None for item in available)
+    assert all(item.mcp_tool_name in registered_tool_names for item in available)
+
     unavailable = [
         item for item in _mcp.ARTIFACT_TOOLS if item.disposition == "unavailable"
     ]
-    assert {item.operation_id for item in unavailable} == {
-        "artifact.info",
-        "artifact.lookup",
-    }
+    assert {item.operation_id for item in unavailable} == {"artifact.lookup"}
     assert all(item.disposition_reason for item in unavailable)
     assert all(item.mcp_tool_name not in registered_tool_names for item in unavailable)
 
-    info_tool = next(
-        item for item in unavailable if item.operation_id == "artifact.info"
-    )
+    info_tool = next(item for item in available if item.operation_id == "artifact.info")
     assert info_tool.contract_version == (
         _operation_info.ARTIFACT_INFO_OPERATION.contract_version
     )
@@ -876,9 +881,7 @@ def test_artifact_inventory_matches_cli_leaves_and_operation_contract(
     assert info_tool.network_access == (
         _operation_info.ARTIFACT_INFO_OPERATION.network_access
     )
-    assert info_tool.disposition_reason == (
-        "The artifact.info shared operation does not yet have an MCP adapter."
-    )
+    assert info_tool.disposition_reason is None
 
     lookup_tool = next(
         item for item in unavailable if item.operation_id == "artifact.lookup"

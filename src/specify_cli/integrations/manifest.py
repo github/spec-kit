@@ -16,6 +16,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ._file_changes import after_file_change, before_file_change
+
+OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
+
+
+def _validate_ownership_mode(mode: str) -> None:
+    if not isinstance(mode, str) or mode not in OWNERSHIP_MODES:
+        raise ValueError(f"Invalid manifest ownership mode: {mode!r}")
+
 
 def _sha256(path: Path) -> str:
     """Return the hex SHA-256 digest of *path*."""
@@ -48,11 +57,44 @@ def _validate_rel_path(rel: Path, root: Path) -> Path:
     return resolved
 
 
+def _validate_record_path(rel: Path, root: Path) -> Path:
+    """Reject noncanonical and symlinked lexical paths before resolution."""
+    if rel.is_absolute() or ".." in rel.parts:
+        _validate_rel_path(rel, root)
+        raise ValueError(
+            f"Manifest paths must be canonical; '..' segments are not "
+            f"allowed (got {rel})"
+        )
+    current = root
+    for part in rel.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(
+                f"Refusing to record symlinked manifest path: {rel} "
+                f"(symlinked at {current.relative_to(root).as_posix()})"
+            )
+    return _validate_rel_path(rel, root)
+
+
 def _manifest_path_label(root: Path, path: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
+
+def _ensure_safe_manifest_removal(root: Path, path: Path) -> None:
+    """Check lexical containment and ancestors without following a leaf link."""
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise ValueError(f"Integration manifest removal escapes project root: {path}") from None
+    if ".." in relative.parts:
+        raise ValueError(f"Noncanonical integration manifest removal path: {relative}")
+    current = root
+    for part in relative.parts[:-1]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"Refusing deletion through symlinked manifest directory: {current}")
 
 
 def _ensure_safe_manifest_directory(root: Path, directory: Path) -> None:
@@ -127,6 +169,7 @@ class IntegrationManifest:
         )
         self.version = version
         self._files: dict[str, str] = {}  # rel_path → sha256 hex
+        self._ownership_modes: dict[str, str] = {}
         self._recovered_files: set[str] = set()
         self._installed_at: str = ""
 
@@ -139,7 +182,9 @@ class IntegrationManifest:
 
     # -- Recording files --------------------------------------------------
 
-    def record_file(self, rel_path: str | Path, content: bytes | str) -> Path:
+    def record_file(
+        self, rel_path: str | Path, content: bytes | str, *, ownership: str = "whole",
+    ) -> Path:
         """Write *content* to *rel_path* (relative to project root) and record its hash.
 
         Creates parent directories as needed.  Returns the absolute path
@@ -148,11 +193,15 @@ class IntegrationManifest:
         ``record_existing(recovered=True)``, the recovered marker is
         cleared because the bytes are now produced, not merely observed.
 
-        Raises ``ValueError`` if *rel_path* resolves outside the project root.
+        Raises ``ValueError`` if *rel_path* is noncanonical, symlinked, or
+        resolves outside the project root.
         """
+        _validate_ownership_mode(ownership)
         rel = Path(rel_path)
-        abs_path = _validate_rel_path(rel, self.project_root)
+        abs_path = _validate_record_path(rel, self.project_root)
+        before_file_change(abs_path)
         abs_path.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_safe_manifest_destination(self.project_root, abs_path)
 
         if isinstance(content, str):
             content = content.encode("utf-8")
@@ -160,12 +209,16 @@ class IntegrationManifest:
 
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = hashlib.sha256(content).hexdigest()
+        self._ownership_modes[normalized] = ownership
         # ``record_file`` writes *produced* content, so any prior
         # recovered marker for this path is no longer accurate.
         self._recovered_files.discard(normalized)
+        after_file_change(abs_path)
         return abs_path
 
-    def record_existing(self, rel_path: str | Path, *, recovered: bool = False) -> None:
+    def record_existing(
+        self, rel_path: str | Path, *, recovered: bool = False, ownership: str | None = None,
+    ) -> None:
         """Record the hash of an already-existing regular file at *rel_path*.
 
         When ``recovered=True``, the path is also marked in the manifest's
@@ -188,41 +241,18 @@ class IntegrationManifest:
                 subclasses such as ``PermissionError``) in addition to
                 ``ValueError``.
         """
+        if ownership is not None:
+            _validate_ownership_mode(ownership)
         rel = Path(rel_path)
-        # Cheap lexical pre-check first so absolute / parent-traversal paths
-        # don't trigger a filesystem stat outside the project root before
-        # ``_validate_rel_path`` raises. ``_validate_rel_path`` produces the
-        # canonical error messages used elsewhere.
-        if rel.is_absolute() or ".." in rel.parts:
-            _validate_rel_path(rel, self.project_root)
-            # _validate_rel_path raised for any actually-escaping path. If we reach
-            # here the path normalizes inside root (e.g. ``dir/../file.txt``).
-            # Reject anyway: manifest keys must be canonical so ``check_modified``
-            # and ``uninstall`` cannot key the same file under two paths.
-            raise ValueError(
-                f"Manifest paths must be canonical; '..' segments are not "
-                f"allowed (got {rel})"
-            )
-        # Walk each path component before resolution so a symlinked ancestor
-        # (e.g. ``linked_dir/file.txt`` where ``linked_dir`` is a symlink)
-        # cannot be silently followed by ``_validate_rel_path().resolve()``
-        # down to a target outside the project root. ``_ensure_safe_manifest_directory``
-        # uses the same pattern.
-        _walk = self.project_root
-        for part in rel.parts:
-            _walk = _walk / part
-            if _walk.is_symlink():
-                raise ValueError(
-                    f"Refusing to record symlinked manifest path: {rel} "
-                    f"(symlinked at {_walk.relative_to(self.project_root).as_posix()})"
-                )
-        abs_path = _validate_rel_path(rel, self.project_root)
+        abs_path = _validate_record_path(rel, self.project_root)
         if not abs_path.is_file():
             raise ValueError(
                 f"Manifest path is not a regular file: {rel}"
             )
         normalized = abs_path.relative_to(self.project_root).as_posix()
         self._files[normalized] = _sha256(abs_path)
+        if ownership is not None:
+            self._ownership_modes[normalized] = ownership
         if recovered:
             self._recovered_files.add(normalized)
         else:
@@ -231,6 +261,8 @@ class IntegrationManifest:
             # recovered marker so future is_recovered() queries reflect the
             # transition. ``discard`` is a no-op when the key is absent.
             self._recovered_files.discard(normalized)
+        if not recovered:
+            after_file_change(abs_path)
 
     def remove(self, rel_path: str | Path) -> bool:
         """Drop *rel_path* from the tracked file set and any recovered marker.
@@ -254,6 +286,7 @@ class IntegrationManifest:
         except ValueError:
             return False
         self._recovered_files.discard(normalized)
+        self._ownership_modes.pop(normalized, None)
         return self._files.pop(normalized, None) is not None
 
     # -- Querying ---------------------------------------------------------
@@ -262,6 +295,16 @@ class IntegrationManifest:
     def files(self) -> dict[str, str]:
         """Return a copy of the ``{rel_path: sha256}`` mapping."""
         return dict(self._files)
+
+    @property
+    def ownership_modes(self) -> dict[str, str]:
+        return {path: self._ownership_modes.get(path, "whole") for path in self._files}
+
+    def set_ownership(self, rel_path: str | Path, mode: str) -> None:
+        _validate_ownership_mode(mode)
+        relative = Path(rel_path).as_posix()
+        if relative in self._files:
+            self._ownership_modes[relative] = mode
 
     @property
     def recovered_files(self) -> set[str]:
@@ -351,14 +394,15 @@ class IntegrationManifest:
             # Use non-resolved path for deletion so symlinks themselves
             # are removed, not their targets.
             path = root / rel
-            # Validate containment lexically (without following symlinks)
-            # by collapsing .. segments via Path resolution on the string parts.
             try:
-                normed = Path(os.path.normpath(path))
-                normed.relative_to(root)
+                _ensure_safe_manifest_removal(root, path)
             except (ValueError, OSError):
+                skipped.append(path)
                 continue
             if not path.exists() and not path.is_symlink():
+                continue
+            if self._ownership_modes.get(rel, "whole") != "whole":
+                skipped.append(path)
                 continue
             # Skip directories — manifest only tracks files
             if not path.is_file() and not path.is_symlink():
@@ -383,26 +427,37 @@ class IntegrationManifest:
                         skipped.append(path)
                         continue
             try:
+                before_file_change(path, removal=True)
+                _ensure_safe_manifest_removal(root, path)
                 path.unlink()
-            except OSError:
+            except (ValueError, OSError):
                 skipped.append(path)
                 continue
             removed.append(path)
+            after_file_change(path)
             # Clean up empty parent directories up to project root
             parent = path.parent
             while parent != root:
                 try:
+                    _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()  # only succeeds if empty
-                except OSError:
+                except (ValueError, OSError):
                     break
                 parent = parent.parent
 
         # Remove the manifest file itself
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
-        if remove_manifest and manifest.exists():
+        if remove_manifest:
+            manifest_present = False
             try:
-                manifest.unlink()
-            except OSError:
+                _ensure_safe_manifest_removal(root, manifest)
+                manifest_present = manifest.exists() or manifest.is_symlink()
+                if manifest_present:
+                    before_file_change(manifest, removal=True)
+                    _ensure_safe_manifest_removal(root, manifest)
+                    manifest.unlink()
+                    after_file_change(manifest)
+            except (ValueError, OSError):
                 # An undeletable manifest (read-only file, a directory left at
                 # the path, a Windows lock) must not abort the uninstall after
                 # the tracked files were already removed: the caller would lose
@@ -414,10 +469,11 @@ class IntegrationManifest:
                 # rmdir() raises and breaks immediately.
                 skipped.append(manifest)
             parent = manifest.parent
-            while parent != root:
+            while manifest_present and parent != root:
                 try:
+                    _ensure_safe_manifest_removal(root, parent)
                     parent.rmdir()
-                except OSError:
+                except (ValueError, OSError):
                     break
                 parent = parent.parent
 
@@ -434,6 +490,10 @@ class IntegrationManifest:
             "installed_at": self._installed_at,
             "files": self._files,
             **(
+                {"ownership_modes": self._ownership_modes}
+                if self._ownership_modes else {}
+            ),
+            **(
                 {"recovered_files": sorted(self._recovered_files)}
                 if self._recovered_files
                 else {}
@@ -441,6 +501,7 @@ class IntegrationManifest:
         }
         path = self.manifest_path
         content = json.dumps(data, indent=2) + "\n"
+        before_file_change(path)
         _ensure_safe_manifest_destination(self.project_root, path)
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         temp_path = Path(temp_name)
@@ -450,6 +511,7 @@ class IntegrationManifest:
             temp_path.chmod(0o644)
             _ensure_safe_manifest_destination(self.project_root, path)
             os.replace(temp_path, path)
+            after_file_change(path)
         finally:
             temp_path.unlink(missing_ok=True)
         return path
@@ -497,6 +559,14 @@ class IntegrationManifest:
         inst.version = data.get("version", "")
         inst._installed_at = data.get("installed_at", "")
         inst._files = files
+        ownership = data.get("ownership_modes", {})
+        if (
+            not isinstance(ownership, dict)
+            or not set(ownership) <= set(files)
+            or any(not isinstance(mode, str) or mode not in OWNERSHIP_MODES for mode in ownership.values())
+        ):
+            raise ValueError(f"Invalid integration manifest ownership modes at {path}")
+        inst._ownership_modes = dict(ownership)
 
         recovered = data.get("recovered_files", [])
         if not isinstance(recovered, list) or not all(

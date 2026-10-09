@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from specify_cli.integrations.installer import project_dispatch
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
@@ -181,6 +182,7 @@ class PromptStep(StepBase):
         return None
 
     @staticmethod
+    @project_dispatch
     def _try_dispatch(
         prompt: str,
         integration_key: str | None,
