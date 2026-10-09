@@ -70,6 +70,48 @@ class TestPresetResolve:
         manager.install_from_directory(src, "9.9.9", priority)
         return manager
 
+    def _install_script(
+        self,
+        temp_dir,
+        project_dir,
+        content,
+        *,
+        strategy="replace",
+        pack_id="script-pack",
+        priority=10,
+    ):
+        """Install a manifest-declared JavaScript script artifact."""
+        src = temp_dir / f"src-{pack_id}"
+        (src / "adapters").mkdir(parents=True)
+        (src / "adapters" / "page-adapter.mjs").write_text(content)
+        (src / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": pack_id,
+                        "name": pack_id,
+                        "version": "1.0.0",
+                        "description": "JavaScript script fixture",
+                    },
+                    "requires": {"speckit_version": ">=0.0.1"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "script",
+                                "name": "designer-page-adapter",
+                                "file": "adapters/page-adapter.mjs",
+                                "strategy": strategy,
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(src, "9.9.9", priority)
+        return manager
+
     def _invoke(self, project_dir, args):
         from unittest.mock import patch
 
@@ -105,6 +147,111 @@ class TestPresetResolve:
 
         assert result.exit_code == 0, (result.output, result.exception)
         assert "constitution.md" in "".join(strip_ansi(result.output).split())
+
+    def test_resolve_script_kind_finds_manifest_declared_module(
+        self, temp_dir, project_dir
+    ):
+        self._install_script(temp_dir, project_dir, "export default 'adapter';\n")
+
+        default_result = self._invoke(
+            project_dir, ["preset", "resolve", "designer-page-adapter"]
+        )
+        assert default_result.exit_code == 0
+        assert "not found" in strip_ansi(default_result.output)
+
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "designer-page-adapter", "--kind", "script"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = "".join(strip_ansi(result.output).split())
+        expected_path = (
+            project_dir / ".specify/presets/script-pack/adapters/page-adapter.mjs"
+        )
+        assert str(expected_path) in output
+
+    def test_resolve_materializes_composed_script_at_requested_path(
+        self, temp_dir, project_dir
+    ):
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "import './helper.mjs';\n$CORE_SCRIPT\n",
+            strategy="wrap",
+            pack_id="wrapper-pack",
+            priority=5,
+        )
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "export default 'base';\n",
+            pack_id="base-pack",
+            priority=10,
+        )
+        output_path = project_dir / "generated" / "adapter.mjs"
+
+        result = self._invoke(
+            project_dir,
+            [
+                "preset",
+                "resolve",
+                "designer-page-adapter",
+                "--kind",
+                "script",
+                "--output",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert output_path.read_text() == (
+            "import './helper.mjs';\nexport default 'base';\n\n"
+        )
+        assert str(output_path.resolve()) in "".join(strip_ansi(result.output).split())
+
+    def test_resolve_script_composition_without_output_explains_materialization(
+        self, temp_dir, project_dir
+    ):
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "$CORE_SCRIPT\n",
+            strategy="wrap",
+            pack_id="wrapper-pack",
+            priority=5,
+        )
+        self._install_script(
+            temp_dir,
+            project_dir,
+            "export default 'base';\n",
+            pack_id="base-pack",
+            priority=10,
+        )
+
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "designer-page-adapter", "--kind", "script"],
+        )
+
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = strip_ansi(result.output)
+        assert "Use--outputPATH" in "".join(output.split())
+        compact_output = "".join(output.split())
+        assert (
+            "Relativeimportsintheoutputresolvefromthatfile'sdirectory" in compact_output
+        )
+
+    def test_resolve_output_requires_script_kind(self, project_dir):
+        result = self._invoke(
+            project_dir,
+            ["preset", "resolve", "spec-template", "--output", "out.mjs"],
+        )
+
+        assert result.exit_code == 1
+        assert "--output can only be used with --kind script" in strip_ansi(
+            result.output
+        )
 
     def test_resolve_rejects_empty_command_segments(self, project_dir):
         """Dotted command identifiers cannot contain empty path-like segments."""
