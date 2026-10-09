@@ -365,6 +365,14 @@ catalog edits. Complete `catalog_entry` in the submission JSON with all validate
 metadata, including `id`, `version`, and `verified: false`. Set `metadata_only`
 to JSON `true` only when the author explicitly requests a same-version metadata
 correction; never infer that authorization from a validation failure.
+Capture the form metadata independently at the top level of the submission
+JSON: `step_name`, `description`, `author`, `documentation`, `license`, and
+`speckit_compatibility`, in addition to the existing `step_id`, `repository`,
+`version`, `download_url`, and derived `release_tag`. Include top-level
+`changelog` only when supplied. Do not reconstruct these canonical values from
+`catalog_entry`: the verifier compares that constructed entry against the
+independently captured form values, including archive/repository provenance
+and `requires.speckit_version`, before certifying a snapshot.
 
 ```bash
 python3 .github/scripts/validate_community_workflow_step.py snapshot --submission /tmp/gh-aw/step-submission.json

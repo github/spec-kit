@@ -362,6 +362,31 @@ def catalog_snapshot(
     submitted = data["catalog_entry"]
     if submitted.get("id") != step_id or submitted.get("version") != data["version"]:
         raise SubmissionMismatch("catalog ID/version must match the submission")
+    canonical_fields = {
+        "name": "step_name",
+        "description": "description",
+        "author": "author",
+        "repository": "repository",
+        "download_url": "download_url",
+        "documentation": "documentation",
+        "license": "license",
+    }
+    for key, form_key in canonical_fields.items():
+        expected = field(data, form_key)
+        actual = field(submitted, key)
+        if not expected.strip() or not actual.strip() or actual != expected:
+            raise SubmissionMismatch(f"catalog {key} must match the canonical form value")
+    compatibility = field(data, "speckit_compatibility")
+    requires = submitted.get("requires")
+    if (
+        not compatibility.strip()
+        or not isinstance(requires, dict)
+        or requires.get("speckit_version") != compatibility
+    ):
+        raise SubmissionMismatch("catalog requires.speckit_version must match Spec Kit Compatibility")
+    if "changelog" in data or "changelog" in submitted:
+        if field(submitted, "changelog") != field(data, "changelog"):
+            raise SubmissionMismatch("catalog changelog must match the canonical form value")
     if submitted.get("verified") is not False:
         raise SubmissionMismatch("community catalog verified must be false")
     if "releases" in submitted or any(key.startswith("_") for key in submitted):

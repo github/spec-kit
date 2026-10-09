@@ -597,6 +597,18 @@ def catalog_update(file_submission):
     data = copy.deepcopy(file_submission)
     entry = data["catalog_entry"]
     entry.update({"id": data["step_id"], "version": data["version"], "verified": False})
+    entry.update({
+        "name": "Deploy Preview", "description": "Deploy a preview",
+        "author": "Example authors", "repository": data["repository"],
+        "download_url": data["download_url"],
+        "documentation": "https://github.com/example/steps/blob/deploy-v1.2.3/docs/usage.md",
+        "license": "MIT", "requires": {"speckit_version": ">=1.1.0"},
+    })
+    data.update({
+        "step_name": entry["name"], "description": entry["description"],
+        "author": entry["author"], "documentation": entry["documentation"],
+        "license": entry["license"], "speckit_compatibility": entry["requires"]["speckit_version"],
+    })
     previous = copy.deepcopy(entry)
     previous.update({
         "version": "1.1.0", "created_at": "2025-01-01T00:00:00Z",
@@ -617,6 +629,75 @@ def catalog_update(file_submission):
     }
     receipt = {"sha256": copy.deepcopy(entry["sha256"]), "bytes": 42}
     return data, original, receipt
+
+
+@pytest.mark.parametrize("key", [
+    "name", "description", "author", "repository", "download_url", "documentation", "license",
+])
+@pytest.mark.parametrize("bad_value", [None, "", "   ", 42, "incorrect copied value"])
+def test_snapshot_rejects_missing_invalid_or_mismatched_metadata(
+    verifier, catalog_update, key, bad_value,
+):
+    data, original, receipt = catalog_update
+    if bad_value is None:
+        del data["catalog_entry"][key]
+    else:
+        data["catalog_entry"][key] = bad_value
+    with pytest.raises(verifier.SubmissionMismatch, match=key):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+@pytest.mark.parametrize("requires", [
+    None, [], {}, {"speckit_version": ""}, {"speckit_version": 42},
+    {"speckit_version": ">=2.0"},
+])
+def test_snapshot_rejects_missing_or_mismatched_compatibility(verifier, catalog_update, requires):
+    data, original, receipt = catalog_update
+    data["catalog_entry"]["requires"] = requires
+    with pytest.raises(verifier.SubmissionMismatch, match="requires"):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+@pytest.mark.parametrize("key", [
+    "step_name", "description", "author", "documentation", "license", "speckit_compatibility",
+])
+def test_snapshot_requires_independent_canonical_form_values(verifier, catalog_update, key):
+    data, original, receipt = catalog_update
+    del data[key]
+    with pytest.raises(verifier.SubmissionMismatch, match=key):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+def test_snapshot_preserves_matching_optional_changelog(verifier, catalog_update):
+    data, original, receipt = catalog_update
+    data["changelog"] = "https://github.com/example/steps/blob/deploy-v1.2.3/CHANGELOG.md"
+    data["catalog_entry"]["changelog"] = data["changelog"]
+    snapshot = verifier.catalog_snapshot(data, original, receipt)
+    assert snapshot["expected_catalog"]["steps"][data["step_id"]]["changelog"] == data["changelog"]
+
+
+@pytest.mark.parametrize("bad_value", [None, "", "different"])
+def test_snapshot_rejects_omitted_or_changed_optional_changelog(
+    verifier, catalog_update, bad_value,
+):
+    data, original, receipt = catalog_update
+    data["changelog"] = "https://github.com/example/steps/blob/deploy-v1.2.3/CHANGELOG.md"
+    if bad_value is not None:
+        data["catalog_entry"]["changelog"] = bad_value
+    with pytest.raises(verifier.SubmissionMismatch, match="changelog"):
+        verifier.catalog_snapshot(data, original, receipt)
+
+
+def test_incomplete_metadata_cli_cannot_create_snapshot(catalog_files):
+    paths = catalog_files
+    data = json.loads((paths / "submission.json").read_text())
+    del data["catalog_entry"]["download_url"]
+    (paths / "submission.json").write_text(json.dumps(data))
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 1
+    assert "download_url" in result.stdout
+    assert not result.stderr
+    assert not (paths / "snapshot.json").exists()
 
 
 def test_catalog_update_migrates_current_release_and_preserves_history(verifier, catalog_update):
@@ -714,10 +795,12 @@ def test_same_version_repairs_cannot_replace_content(verifier, catalog_update, c
     if change == "digest":
         data["catalog_entry"]["sha256"]["step.yml"] = "f" * 64
     elif change == "url":
-        data["catalog_entry"]["download_url"] = data["download_url"] + "-different"
+        data["download_url"] = data["download_url"].replace("step.zip", "different.zip")
+        data["catalog_entry"]["download_url"] = data["download_url"]
     receipt["sha256"] = copy.deepcopy(data["catalog_entry"]["sha256"])
     if change == "approved":
         data["catalog_entry"]["description"] = "Corrected metadata"
+        data["description"] = "Corrected metadata"
         snapshot = verifier.catalog_snapshot(data, original, receipt)
         generated = snapshot["expected_catalog"]["steps"][data["step_id"]]
         assert generated["releases"] == previous["releases"]
