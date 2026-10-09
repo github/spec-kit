@@ -1176,9 +1176,9 @@ class ExtensionManager:
         """Return registered command and alias names for installed extensions.
 
         Besides its manifest's names, an extension contributes the names the
-        registry tracks for it. Their command files stay on disk while its
-        manifest can't be read, or no longer declares them, until it is
-        registered again or removed, and removal deletes them (#4797).
+        registry tracks for it. Their files may outlive a changed or unreadable
+        manifest. Kiro CLI/Qoder cleanup preserves files whose ownership is
+        unproven (#4797).
         """
         installed_names: Dict[str, str] = {}
 
@@ -3996,6 +3996,7 @@ class ExtensionManager:
     def _unregister_extension_commands(
         self, extension_id: str, agent_name: str, command_names: Any,
         *, retire_legacy: bool = True,
+        preserved_output_names: Optional[Set[str]] = None,
     ) -> Optional[List[str]]:
         """Retire owned commands and keep names whose files remain (#4797, #2948)."""
         from ..integrations import get_integration
@@ -4016,7 +4017,8 @@ class ExtensionManager:
             valid = self._valid_name_list(command_names)
             command_names = valid + [name for name in self._collect_manifest_command_names(manifest) if name not in valid]
         command_names = self._valid_name_list(command_names)
-        preserved = self._preserved_command_files(extension_id, agent_name, command_names)
+        preserved_output_names = {os.path.normcase(name) for name in (preserved_output_names or set())}
+        preserved = self._preserved_command_files(extension_id, agent_name, command_names) | preserved_output_names
         registrar = CommandRegistrar(self.project_root)
         registrar.unregister_commands(
             {agent_name: command_names}, self.project_root,
@@ -4039,6 +4041,10 @@ class ExtensionManager:
                 self.project_root / config["dir"] / f"{stem}{config['extension']}",
                 self.project_root / legacy_dir / f"{name}{integration.legacy_flat_command_extension}",
             )
+            # A surviving command owns the shared output; only a separate
+            # legacy file can keep this dropped alias tracked (#4797).
+            if os.path.normcase(stem) in preserved_output_names:
+                paths = tuple(path for path in paths if not registrar._registrar._same_lexical_path(path, paths[0]))
             if any(os.path.lexists(path) for path in paths):
                 remaining.append(name)
         return remaining
@@ -4425,7 +4431,7 @@ class ExtensionManager:
 
             agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
-        # Registration below changes no claim this reads (#4797).
+        # Snapshot claims before registration and stale-name retirement (#4797).
         try:
             shared_files = (
                 self._shared_command_files(agent_name)
@@ -4497,7 +4503,8 @@ class ExtensionManager:
                     registered_commands = metadata.get("registered_commands")
                     new_registered = self._recover_registered_commands(ext_id, registered_commands)
                     previous = self._valid_name_list(new_registered.get(agent_name))
-                    declared_stems = {output_stem(name) for name in self._collect_manifest_command_names(manifest)} if keep_unwritten else set()
+                    declared_names = self._collect_manifest_command_names(manifest) if keep_unwritten else {}
+                    declared_stems = {output_stem(name) for name in declared_names}
                     remaining_commands = []
                     if keep_unwritten:
                         remaining_commands = self._unregister_extension_commands(
@@ -4514,27 +4521,29 @@ class ExtensionManager:
                             registered,
                             skills=False,
                         )
-                    # register_commands skips a missing source and returns
-                    # only the names it wrote; it does not raise. Replacing
-                    # the agent's list with that return value (or dropping
-                    # the entry when nothing was written) untracks a prompt
-                    # that is still on disk, and extension removal then
-                    # cannot delete it. Keep a previously registered name
-                    # when this pass did not write it and the manifest
-                    # still declares its output. This also keeps a dropped
-                    # alias's legacy file tracked for removal (#4797).
-                    # Unknown tracking is recovered from the manifest. An
-                    # output the manifest no longer declares is retired
-                    # above using provenance checks; survivors stay tracked.
-                    # Retirement below still runs only for names written this pass,
-                    # and only once that pass's replacement file exists
-                    # (#4797, #2948). Other agents drop an unwritten name
-                    # as before: an older pair of extensions can share its
-                    # file, and their removal doesn't check the owner.
+                    stale_aliases = []
+                    if keep_unwritten:
+                        replaced_stems = {output_stem(name) for name in registered}
+                        stale_aliases = [
+                            name for name in previous
+                            if name not in declared_names and output_stem(name) in replaced_stems
+                        ]
+                        if stale_aliases:
+                            remaining_commands += self._unregister_extension_commands(
+                                ext_id, agent_name, stale_aliases,
+                                preserved_output_names=declared_stems,
+                            ) or []
+                    # Missing sources are skipped, so keep unwritten names
+                    # whose outputs are still declared. Retire a dropped
+                    # alias only after its shared replacement was written,
+                    # preserving that output and tracking any unproven raw
+                    # file left behind (#4797, #2948). Other agents still
+                    # drop unwritten names: their removal doesn't check
+                    # who owns a shared file.
                     kept = [
                         name for name in previous
                         if name in registered or name in remaining_commands
-                        or (keep_unwritten and output_stem(name) in declared_stems)
+                        or (keep_unwritten and output_stem(name) in declared_stems and name not in stale_aliases)
                     ]
                     merged = kept + [
                         name for name in registered if name not in kept

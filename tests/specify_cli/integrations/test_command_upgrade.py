@@ -1152,25 +1152,85 @@ class TestIntegrationUpgradeDetailed:
         assert path.is_file()
         assert path.read_bytes() == before if missing_source else b"AUDIT-BODY" in path.read_bytes()
 
-    @pytest.mark.parametrize("missing_source", [False, True])
-    def test_dropped_legacy_alias_stays_tracked_for_removal(self, tmp_path, monkeypatch, missing_source):
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("operation,kept", [
+        ("use", None), ("upgrade", None), ("switch", None), ("reinstall", None), ("update", None),
+        ("use", "unmarked"), ("use", "other-owner"), ("use", "missing-source"),
+    ])
+    def test_dropped_legacy_alias_is_retired_on_registration(self, tmp_path, monkeypatch, agent, operation, kept):
         import yaml
-        from specify_cli.extensions import ExtensionManager
+        from contextlib import chdir
+        from specify_cli.extensions import ExtensionCatalog, ExtensionManager
 
         source = _write_command_extension(tmp_path, aliases=["audit-run"])
-        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
-        alias = project / ".kiro/prompts/audit-run.md"
-        assert alias.is_file()
-        path = project / ".specify/extensions/audit/extension.yml"
+        if agent == "kiro-cli":
+            project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+            alias = project / ".kiro/prompts/audit-run.md"
+            output = project / ".kiro/prompts/speckit-audit-run.md"
+        else:
+            project = _init_project(tmp_path, agent)
+            assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+            output = project / ".qoder/skills/speckit-audit-run/SKILL.md"
+            alias = project / ".qoder/commands/audit-run.md"
+            alias.parent.mkdir(parents=True)
+            alias.write_bytes(b"---\ndescription: Audit\n---\n\n<!-- Extension: audit -->\nAUDIT-BODY\n")
+            (alias.parent / "speckit.audit.run.md").write_bytes(alias.read_bytes())
+            output.unlink()
+        original_alias = alias.read_bytes()
+        assert b"<!-- Extension: audit -->" in original_alias
+        assert not output.exists()
+        if operation == "switch":
+            assert _run_in_project(project, ["integration", "install", "claude"]).exit_code == 0
+            assert _run_in_project(project, ["integration", "use", "claude"]).exit_code == 0
+        extension_dir = source if operation in ("reinstall", "update") else project / ".specify/extensions/audit"
+        path = extension_dir / "extension.yml"
         manifest = yaml.safe_load(path.read_bytes())
         manifest["provides"]["commands"][0]["aliases"] = []
+        manifest["extension"]["version"] = "2.0.0"
         path.write_bytes(yaml.safe_dump(manifest).encode())
-        if missing_source:
-            (path.parent / "commands/run.md").unlink()
-        assert _run_in_project(project, ["integration", "use", "kiro-cli"]).exit_code == 0
-        assert "audit-run" in ExtensionManager(project).registry.get("audit")["registered_commands"]["kiro-cli"]
-        assert _run_in_project(project, ["extension", "remove", "audit", "--force"]).exit_code == 0
+        command_source = extension_dir / "commands/run.md"
+        updated = command_source.read_bytes().replace(b"AUDIT-BODY", b"UPDATED-PRIMARY")
+        command_source.write_bytes(updated)
+        if kept == "missing-source":
+            command_source.unlink()
+        elif kept == "unmarked":
+            alias.unlink()
+            alias.write_bytes(b"USER ALIAS\n")
+        elif kept == "other-owner":
+            alias.unlink()
+            alias.write_bytes(b"<!-- Extension: other -->\n" + original_alias)
+        before = alias.read_bytes()
+        if operation == "update":
+            monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda *args: {
+                "id": "audit", "name": "Audit", "version": "2.0.0", "bundled": True, "_install_allowed": True,
+            })
+            monkeypatch.setattr("specify_cli._locate_bundled_extension", lambda key: source)
+            monkeypatch.setattr(ExtensionCatalog, "download_extension", lambda *args: pytest.fail("Unexpected download"))
+            with chdir(project):
+                result = runner.invoke(app, ["extension", "update", "audit"], input="y\n", catch_exceptions=False)
+        else:
+            args = (["extension", "add", "--dev", str(source), "--force"] if operation == "reinstall" else
+                    ["integration", operation, agent])
+            result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        if kept:
+            assert alias.read_bytes() == before
+            tracked = ExtensionManager(project).registry.get("audit")["registered_commands"][agent]
+            assert {"audit-run", "speckit.audit.run"} <= set(tracked)
+            if kept != "missing-source":
+                assert b"UPDATED-PRIMARY" in output.read_bytes()
+            # Retry once ownership and the replacement source are available.
+            alias.write_bytes(original_alias)
+            command_source.write_bytes(updated)
+            result = _run_in_project(project, ["integration", "use", agent])
+            assert result.exit_code == 0, result.output
         assert not os.path.lexists(alias)
+        assert b"UPDATED-PRIMARY" in output.read_bytes()
+        tracked = ExtensionManager(project).registry.get("audit")["registered_commands"][agent]
+        assert "audit-run" not in tracked
+        assert "speckit.audit.run" in tracked
+        assert _run_in_project(project, ["extension", "remove", "audit", "--force"]).exit_code == 0
+        assert not os.path.lexists(output)
 
     @pytest.mark.parametrize("operation", ["use", "upgrade", "reinstall", "update", "remove"])
     def test_template_metadata_does_not_hide_generated_owner(self, tmp_path, monkeypatch, operation):
