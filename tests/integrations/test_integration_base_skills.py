@@ -256,19 +256,19 @@ class SkillsIntegrationTests:
             )
 
     def test_hook_sections_explain_dotted_command_conversion(self, tmp_path):
-        """Generated skills with hook sections must explain dotted command conversion."""
+        """Generated skills delegate hook selection to the shared scripts."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         specify_skill = i.skills_dest(tmp_path) / "speckit-specify" / "SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
-        assert "replace dots" in content, (
-            "speckit-specify should explain dotted hook command conversion"
-        )
-        assert content.count("replace dots") == content.count(
-            "- For each executable hook, output the following"
-        )
+        assert ".specify/scripts/bash/pre-hooks.sh specify" in content
+        assert ".specify/scripts/bash/post-hooks.sh specify" in content
+        assert content.count("replace dots (`.`) with hyphens (`-`)") == 2
+        from specify_cli.integrations.base import get_invocation_prefix
+        prefix = get_invocation_prefix(self.KEY, True)
+        assert f"`{prefix}speckit-git-commit`" in content
 
     def test_hook_note_injected_for_each_instruction_independently(self):
         """Existing hook notes should not suppress later missing notes."""
@@ -507,6 +507,10 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/setup-plan.ps1",
                 ".specify/scripts/powershell/setup-tasks.ps1",
             ]
+        files += [
+            f".specify/scripts/{'bash' if script_variant == 'sh' else 'powershell'}/{phase}-hooks.{'sh' if script_variant == 'sh' else 'ps1'}"
+            for phase in ("pre", "post")
+        ]
         # Templates
         files += [
             ".specify/templates/checklist-template.md",

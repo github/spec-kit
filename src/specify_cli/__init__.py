@@ -140,6 +140,7 @@ def _install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    hook_dispatchers_only: bool = False,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -162,6 +163,9 @@ def _install_shared_infra(
       treated as user customizations and preserved with a warning.
     * Default — only add missing files; existing ones are skipped.
 
+    * ``hook_dispatchers_only=True`` — update only pre/post hook resolvers,
+      leaving unrelated shared infrastructure unchanged.
+
     *refresh_hint* — caller-supplied rich-text fragment shown after the
     "Preserved customized files" warning to tell the user which flag/command
     they should re-run with to overwrite their customizations. Each caller
@@ -172,7 +176,7 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
-    return _install_shared_infra_impl(
+    installed = _install_shared_infra_impl(
         project_path,
         script_type,
         version=get_speckit_version(),
@@ -184,7 +188,12 @@ def _install_shared_infra(
         invoke_prefix=invoke_prefix,
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
+        hook_dispatchers_only=hook_dispatchers_only,
     )
+    from .extensions import HookExecutor
+
+    HookExecutor(project_path).migrate_project_config()
+    return installed
 
 
 def _install_shared_infra_or_exit(

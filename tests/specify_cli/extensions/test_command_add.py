@@ -38,6 +38,191 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    def test_add_git_materializes_hook_projection(self, project_dir):
+        git_source = Path(__file__).parents[3] / "extensions" / "git"
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(git_source), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 0, result.output
+        cache = project_dir / ".specify" / "hook-dispatch"
+        assert (cache / "source.yml").read_bytes() == (
+            project_dir / ".specify" / "extensions.yml"
+        ).read_bytes()
+        projected = json.loads((cache / "before_plan.json").read_text(encoding="utf-8"))
+        assert projected["event"] == "before_plan"
+        assert [hook["extension"] for hook in projected["hooks"]] == ["git"]
+
+    @pytest.mark.parametrize("preferred,available", [
+        ("sh", "py"), ("py", "sh"), ("sh", "ps"),
+    ])
+    def test_add_installs_dispatchers_for_selected_command_variant(
+        self, extension_dir, project_dir, preferred, available
+    ):
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": preferred}), encoding="utf-8"
+        )
+        (project_dir / ".github/agents").mkdir(parents=True)
+        (extension_dir / "commands/hello.md").write_text(
+            "---\n"
+            "description: Test variant fallback\n"
+            "scripts:\n"
+            f"  {available}: .specify/scripts/{available}/some-script {{ARGS}}\n"
+            "---\n\n"
+            "{PRE_HOOK_SCRIPT}\n"
+            "{POST_HOOK_SCRIPT}\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code == 0, result.output
+        directory = {"sh": "bash", "ps": "powershell", "py": "python"}[available]
+        suffix = {"sh": "-hooks.sh", "ps": "-hooks.ps1", "py": "_hooks.py"}[available]
+        rendered = (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").read_text(
+            encoding="utf-8"
+        )
+        for phase in ("pre", "post"):
+            relative = f".specify/scripts/{directory}/{phase}{suffix}"
+            assert relative in rendered
+            assert (project_dir / relative).is_file()
+
+    def test_add_installs_dispatchers_for_multiple_command_variants(
+        self, extension_dir, project_dir
+    ):
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "sh"}), encoding="utf-8"
+        )
+        (project_dir / ".github/agents").mkdir(parents=True)
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["provides"]["commands"].append({
+            "name": "speckit.test-ext.other",
+            "file": "commands/other.md",
+            "description": "Second command",
+        })
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+        for name, variant in (("hello", "py"), ("other", "ps")):
+            (extension_dir / f"commands/{name}.md").write_text(
+                f"---\nscripts:\n  {variant}: run {{ARGS}}\n---\n\n"
+                "{PRE_HOOK_SCRIPT}\n{POST_HOOK_SCRIPT}\n", encoding="utf-8"
+            )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code == 0, result.output
+        for name, variant, directory, suffix in (
+            ("hello", "py", "python", "_hooks.py"),
+            ("other", "ps", "powershell", "-hooks.ps1"),
+        ):
+            rendered = (project_dir / f".github/agents/speckit.test-ext.{name}.agent.md").read_text(
+                encoding="utf-8"
+            )
+            for phase in ("pre", "post"):
+                relative = f".specify/scripts/{directory}/{phase}{suffix}"
+                assert relative in rendered
+                assert (project_dir / relative).is_file()
+
+    def test_add_rejects_unrunnable_hook_variant_before_install(
+        self, extension_dir, project_dir
+    ):
+        (project_dir / ".specify/init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "sh"}), encoding="utf-8"
+        )
+        (extension_dir / "commands/hello.md").write_text(
+            "---\nscripts:\n  unsupported: run\n---\n\n{PRE_HOOK_SCRIPT}\n",
+            encoding="utf-8",
+        )
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code != 0
+        assert "No runnable script variant" in result.output
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+
+    @pytest.mark.parametrize("existing", [
+        "hooks: [broken]\n",
+        "hooks:\n  before_plan:\n    - extension: orphan\n",
+    ])
+    def test_add_git_rejects_invalid_existing_hooks(self, project_dir, existing):
+        git_source = Path(__file__).parents[3] / "extensions" / "git"
+        config = project_dir / ".specify" / "extensions.yml"
+        config.write_text(existing, encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(git_source), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code != 0
+        assert "invalid hooks" in result.output.lower()
+        assert config.read_text(encoding="utf-8") == existing
+        assert not ExtensionManager(project_dir).registry.is_installed("git")
+
+    @pytest.mark.parametrize("invalid", [
+        {"optional": "false"},
+        {"condition": False},
+        {"prompt": False},
+        {"description": False},
+        {"enabled": "true"},
+        {"prompt": "invalid\0prompt"},
+    ])
+    def test_add_rejects_invalid_manifest_hooks_before_install(
+        self, extension_dir, project_dir, invalid
+    ):
+        from specify_cli.extensions import HookExecutor
+
+        executor = HookExecutor(project_dir)
+        executor.save_project_config({"hooks": {"before_plan": [
+            {"extension": "existing", "command": "speckit.existing.run"},
+        ]}})
+        existing = executor.config_file.read_bytes()
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"]["after_tasks"].update(invalid)
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code != 0
+        assert executor.config_file.read_bytes() == existing
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
+        assert json.loads(
+            (project_dir / ".specify/hook-dispatch/before_plan.json").read_text(encoding="utf-8")
+        )["hooks"][0]["extension"] == "existing"
+
+    def test_add_rejects_invalid_manifest_hook_event_before_install(
+        self, extension_dir, project_dir
+    ):
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"]["invalid-event"] = payload["hooks"].pop("after_tasks")
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code != 0
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

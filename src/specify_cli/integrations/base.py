@@ -42,6 +42,13 @@ _HOOK_COMMAND_NOTE = (
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
 
+_HOOK_INSTRUCTION_PATTERN = (
+    r"(?m)^([ \t]*)("
+    r"- For each executable hook, output the following[^\r\n]*"
+    r"|[^\r\n]*For each returned hook in order: invoke mandatory commands[^\r\n]*"
+    r")(\r\n|\n|$)"
+)
+
 _CORE_COMMAND_TEMPLATE_ORDER = (
     "analyze",
     "clarify",
@@ -804,6 +811,28 @@ class IntegrationBase(ABC):
         return f"{interpreter} {script_command}"
 
     @staticmethod
+    def resolve_hook_script_refs(
+        content: str, script_type: str, project_root: Path | None = None
+    ) -> str:
+        """Replace hook script placeholders using the command's script variant."""
+        if "{PRE_HOOK_SCRIPT}" not in content and "{POST_HOOK_SCRIPT}" not in content:
+            return content
+        variant = script_type if script_type in ("sh", "ps", "py") else (
+            "ps" if os.name == "nt" else "sh"
+        )
+        for phase, name in (("PRE", "pre"), ("POST", "post")):
+            if variant == "py":
+                command = IntegrationBase.build_python_invocation(
+                    f".specify/scripts/python/{name}_hooks.py", project_root
+                )
+            elif variant == "ps":
+                command = f".specify/scripts/powershell/{name}-hooks.ps1"
+            else:
+                command = f".specify/scripts/bash/{name}-hooks.sh"
+            content = content.replace(f"{{{phase}_HOOK_SCRIPT}}", command)
+        return content
+
+    @staticmethod
     def select_script_variant(
         requested: object, script_commands: dict[str, str]
     ) -> str:
@@ -915,6 +944,10 @@ class IntegrationBase(ABC):
                     script_command, project_root
                 )
             content = content.replace("{SCRIPT}", script_command)
+
+        content = IntegrationBase.resolve_hook_script_refs(
+            content, selected_script_type or script_type, project_root
+        )
 
         # 3. Strip scripts: section from frontmatter
         lines = content.splitlines(keepends=True)
@@ -1731,8 +1764,8 @@ class SkillsIntegration(IntegrationBase):
     ) -> str:
         """Insert a dot-to-hyphen note before each hook output instruction.
 
-        Targets the line ``- For each executable hook, output the following``
-        and inserts the note on the line before it, matching its indentation.
+        Targets legacy hook-output instructions and scripted hook-dispatch
+        instructions, matching their indentation.
         Skips individual instructions that already have the note immediately
         above them.
         """
@@ -1764,7 +1797,7 @@ class SkillsIntegration(IntegrationBase):
             )
 
         return re.sub(
-            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            _HOOK_INSTRUCTION_PATTERN,
             repl,
             content,
         )

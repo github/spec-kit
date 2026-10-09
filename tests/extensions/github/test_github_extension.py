@@ -40,10 +40,9 @@ CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
-INSTALL_SPECKIT_VERSION = "1.0.12"
-# The floor exists because auto-registered skills did not resolve command
-# reference tokens until 0.12.17 (#3544).
-MIN_SPECKIT_VERSION = "0.12.17"
+INSTALL_SPECKIT_VERSION = "1.1.3.dev0"
+# Hook placeholders and dispatcher installation first ship with this CLI release.
+MIN_SPECKIT_VERSION = "1.1.3.dev0"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -158,7 +157,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.2"
+        assert m.version == "1.0.3"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_command_files_exist(self):
@@ -194,6 +193,8 @@ class TestManifest:
         but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
         tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
         accept the extension but leak a raw command token in skills mode.
+        Hook placeholders and dispatcher installation require 1.1.3 or later;
+        1.1.2 still accepts the extension but cannot run its hook commands.
         """
         from packaging.specifiers import SpecifierSet
 
@@ -201,6 +202,7 @@ class TestManifest:
         spec = SpecifierSet(floor)
         assert "0.12.5" not in spec, floor
         assert "0.12.16" not in spec, floor
+        assert "1.1.2" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor
@@ -296,6 +298,78 @@ class TestExtensionInstall:
         assert (installed / "commands" / f"{COMMAND_NAME}.md").is_file()
         for rel_path in SCRIPT_TWINS.values():
             assert (installed / rel_path).is_file(), f"Missing script: {rel_path}"
+
+    @pytest.mark.parametrize("variant,folder,extension", [
+        ("sh", "bash", "sh"),
+        ("ps", "powershell", "ps1"),
+        ("py", "python", "py"),
+    ])
+    def test_install_and_upgrade_restore_shared_hook_dispatchers(
+        self, tmp_path: Path, variant: str, folder: str, extension: str,
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": variant}), encoding="utf-8"
+        )
+        core = tmp_path / ".github/agents/speckit.taskstoissues.agent.md"
+        core.parent.mkdir(parents=True)
+        core.write_text("core taskstoissues\n", encoding="utf-8")
+        scripts = specify / "scripts" / folder
+        pre = scripts / (f"pre_hooks.{extension}" if variant == "py" else f"pre-hooks.{extension}")
+        post = scripts / (f"post_hooks.{extension}" if variant == "py" else f"post-hooks.{extension}")
+        assert not pre.exists() and not post.exists()
+
+        manager = ExtensionManager(tmp_path)
+        manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert pre.is_file() and post.is_file()
+        command = tmp_path / ".github" / "agents" / f"{COMMAND_NAME}.agent.md"
+        assert f".specify/scripts/{folder}/{pre.name}" in command.read_text(encoding="utf-8")
+
+        pre.write_text(pre.read_text(encoding="utf-8") + "\n# customized\n", encoding="utf-8")
+        post.unlink()
+        manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION, force=True)
+        assert pre.read_text(encoding="utf-8").endswith("# customized\n")
+        assert post.is_file()
+        assert f".specify/scripts/{folder}/{post.name}" in command.read_text(encoding="utf-8")
+
+    def test_install_rejects_symlinked_hook_dispatcher(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionError, ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "sh"}), encoding="utf-8"
+        )
+        scripts = tmp_path / ".specify/scripts/bash"
+        scripts.mkdir(parents=True)
+        outside = tmp_path / "outside.sh"
+        outside.write_text("keep\n", encoding="utf-8")
+        try:
+            (scripts / "pre-hooks.sh").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        manager = ExtensionManager(tmp_path)
+        with pytest.raises(ExtensionError, match="missing hook dispatcher"):
+            manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert outside.read_text(encoding="utf-8") == "keep\n"
+        assert not manager.registry.is_installed("github")
+
+    def test_install_rejects_unsupported_hook_runtime_before_writing(self, tmp_path: Path):
+        from specify_cli.extensions import ExtensionError, ExtensionManager
+
+        specify = tmp_path / ".specify"
+        specify.mkdir()
+        (specify / "init-options.json").write_text(
+            json.dumps({"ai": "copilot", "script": "invalid"}), encoding="utf-8"
+        )
+        manager = ExtensionManager(tmp_path)
+        with pytest.raises(ExtensionError, match="Unsupported hook dispatcher script type"):
+            manager.install_from_directory(EXT_DIR, INSTALL_SPECKIT_VERSION)
+        assert not (specify / "scripts").exists()
+        assert not manager.registry.is_installed("github")
 
     def test_remove_uninstalls_cleanly(self, tmp_path: Path):
         from specify_cli.extensions import ExtensionManager
@@ -429,8 +503,15 @@ class TestScriptPathResolution:
         assert expected in content
         # The rendered path must resolve to a file the extension ships.
         assert (project / expected).is_file()
-        # And it must not have been rewritten into the core script tree.
-        assert ".specify/scripts/" not in content
+        # The extension's own script stays local; hook dispatchers are shared.
+        for phase in ("pre", "post"):
+            hook_path = {
+                "sh": f".specify/scripts/bash/{phase}-hooks.sh",
+                "ps": f".specify/scripts/powershell/{phase}-hooks.ps1",
+                "py": f".specify/scripts/python/{phase}_hooks.py",
+            }[variant]
+            assert hook_path in content
+            assert hook_path.replace(".specify/scripts/", ".specify/extensions/github/scripts/") not in content
 
     @pytest.mark.parametrize("agent", EXTENSION_REGISTRAR_AGENTS)
     def test_every_extension_registrar_integration_renders_the_command(
@@ -522,6 +603,9 @@ class TestScriptPathResolution:
         expected = f".specify/extensions/github/{SCRIPT_TWINS['sh']}"
         assert expected in content
         assert (project / expected).is_file()
+        for phase in ("pre", "post"):
+            assert f".specify/scripts/bash/{phase}-hooks.sh" in content
+            assert f".specify/extensions/github/scripts/bash/{phase}-hooks.sh" not in content
 
 
 # -- Behaviour parity with the core command -----------------------------------
@@ -529,10 +613,10 @@ class TestScriptPathResolution:
 
 class TestCommandBody:
     def test_preserves_the_hook_contract(self):
-        """The hook keys are literal strings read out of extensions.yml."""
+        """The extension dispatches the same before/after events as core."""
         body = COMMAND_FILE.read_text(encoding="utf-8")
-        assert "hooks.before_taskstoissues" in body
-        assert "hooks.after_taskstoissues" in body
+        assert "{PRE_HOOK_SCRIPT} taskstoissues" in body
+        assert "{POST_HOOK_SCRIPT} taskstoissues" in body
 
     def test_git_extension_hooks_still_target_those_keys(self):
         """The live consumers of the hook contract keep firing."""

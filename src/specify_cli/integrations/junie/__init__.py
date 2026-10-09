@@ -1,6 +1,6 @@
 """Junie integration (JetBrains)."""
 
-from ..base import MarkdownIntegration
+from ..base import MarkdownIntegration, _HOOK_INSTRUCTION_PATTERN
 from ..manifest import IntegrationManifest
 
 
@@ -94,16 +94,15 @@ class JunieIntegration(MarkdownIntegration):
     def _inject_hook_command_note(content: str) -> str:
         """Insert a dot-to-hyphen note before each hook output instruction.
 
-        Targets the line ``- For each executable hook, output the following``
-        and inserts the note on the line before it, matching its indentation.
+        Targets legacy and scripted hook instructions, matching indentation.
         Skips if the note is already present.
         """
-        if "replace dots" in content:
-            return content
-
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
+            previous_lines = content[:m.start()].splitlines()
+            if previous_lines and previous_lines[-1] == indent + _HOOK_COMMAND_NOTE.rstrip("\n"):
+                return m.group(0)
             # ``eol`` is empty when the regex matched via ``$`` because the
             # instruction was the final line of a file with no trailing
             # newline. Default to ``\n`` so the note never collapses onto
@@ -119,7 +118,7 @@ class JunieIntegration(MarkdownIntegration):
             )
 
         return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            _HOOK_INSTRUCTION_PATTERN,
             repl,
             content,
         )

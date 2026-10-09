@@ -663,26 +663,27 @@ hooks:
       condition: null
 ```
 
-### Hook Message Format
+### Core Command Hook Dispatch
 
-```markdown
-## Extension Hooks
+Core commands call a pre-hook script before their main work and a post-hook script afterward. The scripts return one JSON result for each event:
 
-**Optional Hook**: {extension}
-Command: `/{command}`
-Description: {description}
-
-Prompt: {prompt}
-To execute: `/{command}`
+```json
+{
+  "event": "after_tasks",
+  "hooks": [
+    {
+      "extension": "jira",
+      "command": "speckit.jira.specstoissues",
+      "optional": true,
+      "priority": 10,
+      "prompt": "Create Jira issues from tasks?",
+      "description": "Create issues"
+    }
+  ]
+}
 ```
 
-Or for mandatory hooks:
-
-```markdown
-**Automatic Hook**: {extension}
-Executing: `/{command}`
-EXECUTE_COMMAND: {command}
-```
+Enabled, unconditional hooks are returned in ascending priority order (ties retain configuration order). The agent invokes mandatory commands and offers optional commands without automatically running them. Conditions remain unsupported in core-command dispatch and hooks with non-empty conditions are skipped. Invalid or unreadable configuration produces a nonzero exit and JSON with an `error` and empty `hooks` array; the agent reports that no hooks were checked.
 
 ---
 

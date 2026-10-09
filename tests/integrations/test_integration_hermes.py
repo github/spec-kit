@@ -203,12 +203,8 @@ class TestHermesIntegration(SkillsIntegrationTests):
         specify_skill = home / ".hermes" / "skills" / "speckit-specify" / "SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
-        assert "replace dots" in content, (
-            "speckit-specify should explain dotted hook command conversion"
-        )
-        assert content.count("replace dots") == content.count(
-            "- For each executable hook, output the following"
-        )
+        assert ".specify/scripts/bash/pre-hooks.sh specify" in content
+        assert ".specify/scripts/bash/post-hooks.sh specify" in content
 
     def test_complete_file_inventory_sh(self, tmp_path, monkeypatch):
         """Override: Hermes init produces no local SKILL.md files,

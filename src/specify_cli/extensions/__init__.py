@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -432,10 +433,22 @@ class ExtensionManifest:
                             f"Invalid hook '{hook_name}': "
                             "expected a mapping or list of mappings"
                         )
-                    if not entry.get("command"):
+                    if not isinstance(entry.get("command"), str) or not entry["command"]:
                         raise ValidationError(
                             f"Hook '{hook_name}' missing required 'command' field"
                         )
+                    for field in ("enabled", "optional"):
+                        if field in entry and not isinstance(entry[field], bool):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid '{field}': must be a boolean"
+                            )
+                    for field in ("condition", "description", "prompt"):
+                        if entry.get(field) is not None and not isinstance(entry[field], str):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid '{field}': must be a string or null"
+                            )
+                    if any(isinstance(value, str) and "\0" in value for value in entry.values()):
+                        raise ValidationError(f"Hook '{hook_name}' contains a NUL character")
                     if "priority" in entry:
                         priority = entry["priority"]
                         if not isinstance(priority, int) or isinstance(priority, bool):
@@ -2461,6 +2474,11 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
+        for event in manifest.hooks:
+            if not isinstance(event, str) or not re.fullmatch(
+                r"(before|after)_[a-z][a-z0-9_]*", event
+            ):
+                raise ValidationError(f"Invalid hook event for hook projection: {event}")
 
         # Check compatibility
         self.check_compatibility(manifest, speckit_version)
@@ -2579,6 +2597,73 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
+        from ..integrations.base import IntegrationBase
+
+        requested_script = (
+            active_options.get("script") if isinstance(active_options, dict) else None
+        ) or ("ps" if os.name == "nt" else "sh")
+        hook_variants: set[str] = set()
+        for command in manifest.commands:
+            source_file = (source_dir / command["file"]).resolve()
+            if not source_file.is_relative_to(source_dir.resolve()) or not source_file.is_file():
+                continue
+            try:
+                command_source = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise ExtensionError(f"Cannot read extension command '{command['file']}': {exc}") from exc
+            if "{PRE_HOOK_SCRIPT}" not in command_source and "{POST_HOOK_SCRIPT}" not in command_source:
+                continue
+            if requested_script not in ("sh", "ps", "py"):
+                raise ExtensionError(
+                    f"Unsupported hook dispatcher script type: {requested_script}"
+                )
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(command_source)
+            scripts = frontmatter.get("scripts") or {}
+            if not isinstance(scripts, dict):
+                scripts = {}
+            try:
+                selected = (
+                    IntegrationBase.select_script_variant(requested_script, scripts)
+                    if scripts else requested_script
+                )
+            except ValueError as exc:
+                raise ExtensionError(f"Cannot select hook dispatcher: {exc}") from exc
+            if selected not in ("sh", "ps", "py"):
+                raise ExtensionError(f"Unsupported hook dispatcher script type: {selected}")
+            hook_variants.add(selected)
+
+        if not hook_variants:
+            try:
+                HookExecutor(self.project_root).migrate_project_config()
+            except (OSError, ValueError) as exc:
+                raise ExtensionError(f"Cannot install extension with invalid hooks: {exc}") from exc
+
+        if hook_variants:
+            from .. import _install_shared_infra
+            from ..integrations.base import get_invocation_prefix
+
+            options = active_options if isinstance(active_options, dict) else {}
+            skills = is_ai_skills_enabled(options)
+            for script in sorted(hook_variants):
+                try:
+                    _install_shared_infra(
+                        self.project_root,
+                        script,
+                        invoke_separator="-" if skills else ".",
+                        invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
+                        refresh_managed=True,
+                        hook_dispatchers_only=True,
+                    )
+                except (OSError, ValueError) as exc:
+                    raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
+                variant = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
+                for phase in ("pre", "post"):
+                    name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
+                    dispatcher = self.project_root / ".specify" / "scripts" / variant / name
+                    if dispatcher.is_symlink() or not dispatcher.is_file():
+                        raise ExtensionError(
+                            f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
+                        )
         from ..integrations._file_changes import after_file_change, before_file_change, changing_file
 
         package_paths = (
@@ -5759,16 +5844,120 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
-        from ..integrations._file_changes import write_text
+        class CanonicalHookDumper(yaml.SafeDumper):
+            pass
 
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        write_text(
-            self.config_file,
-            yaml.dump(
-                config, default_flow_style=False, sort_keys=False, allow_unicode=True
-            ),
-            encoding="utf-8",
+        def represent_string(dumper: yaml.SafeDumper, value: str):
+            if "\0" in value:
+                raise ValueError("Cannot serialize NUL in native extension hook configuration")
+            style = '"' if any(char in value for char in "\n\r\x85\u2028\u2029{}[]") else None
+            return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+        CanonicalHookDumper.add_representer(str, represent_string)
+        from ..integrations._file_changes import changing_file, unlink, write_bytes, write_text
+
+        hooks = config.get("hooks", {})
+        if not isinstance(hooks, dict):
+            raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
+        projected: dict[str, bytes] = {}
+        for event, entries in hooks.items():
+            if not isinstance(event, str) or not re.fullmatch(r"(before|after)_[a-z][a-z0-9_]*", event):
+                raise ValueError(f"Invalid hook event: {event}")
+            if not isinstance(entries, list):
+                raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event} must be a list")
+            selected = []
+            for index, entry in enumerate(entries):
+                label = f"hooks.{event}[{index}]"
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label} must be a mapping")
+                if any(isinstance(value, str) and "\0" in value for value in entry.values()):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label} contains a NUL character")
+                for field in ("enabled", "optional"):
+                    if field in entry and not isinstance(entry[field], bool):
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a boolean")
+                for field in ("condition", "description", "prompt"):
+                    if entry.get(field) is not None and not isinstance(entry[field], str):
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a string or null")
+                for field in ("extension", "command"):
+                    if not isinstance(entry.get(field), str) or not entry[field]:
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
+                if entry.get("enabled", True) is False or entry.get("condition"):
+                    continue
+                priority = entry.get("priority", DEFAULT_HOOK_PRIORITY)
+                try:
+                    priority = int(priority) if not isinstance(priority, bool) else DEFAULT_HOOK_PRIORITY
+                except (TypeError, ValueError, OverflowError):
+                    priority = DEFAULT_HOOK_PRIORITY
+                if not 1 <= priority <= 2147483647:
+                    priority = DEFAULT_HOOK_PRIORITY
+                selected.append({
+                    "extension": entry["extension"], "command": entry["command"],
+                    "optional": entry.get("optional", True),
+                    "description": entry.get("description") or "",
+                    "prompt": entry.get("prompt") or "", "priority": priority,
+                })
+            selected.sort(key=lambda hook: hook["priority"])
+            projected[event] = (
+                json.dumps(
+                    {"event": event, "hooks": selected}, ensure_ascii=True,
+                    separators=(",", ":"),
+                ) + "\n"
+            ).encode("utf-8")
+
+        rendered = "# Hook projection: .specify/hook-dispatch\n" + yaml.dump(
+            config, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
         )
+        from ..shared_infra import _exclusive_project_lock
+
+        lock = self.config_file.parent / ".hook-dispatch.lock"
+        with changing_file(lock):
+            with _exclusive_project_lock(self.project_root, lock.name, context="hook dispatch"):
+                if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
+                    raise ValueError("Refusing to save symlinked .specify/extensions.yml")
+                cache = self.config_file.parent / "hook-dispatch"
+                if cache.is_symlink():
+                    raise ValueError("Refusing to write symlinked hook dispatch cache")
+                if not cache.exists():
+                    with changing_file(cache):
+                        cache.mkdir(parents=True)
+                for path in cache.iterdir():
+                    if path.is_symlink():
+                        raise ValueError("Refusing to write symlinked hook dispatch cache entry")
+                snapshot = cache / "source.yml"
+                unlink(snapshot, missing_ok=True)
+                for pattern in ("*.json", "*.sha256"):
+                    for path in cache.glob(pattern):
+                        unlink(path)
+                for event, payload in projected.items():
+                    write_bytes(cache / f"{event}.json", payload)
+                    write_bytes(
+                        cache / f"{event}.sha256",
+                        (hashlib.sha256(payload).hexdigest() + "\n").encode("ascii"),
+                    )
+                events_payload = "".join(f"{event}\n" for event in projected).encode("utf-8")
+                write_bytes(cache / "events.txt", events_payload)
+                write_bytes(
+                    cache / "events.txt.sha256",
+                    (hashlib.sha256(events_payload).hexdigest() + "\n").encode("ascii"),
+                )
+                write_text(self.config_file, rendered, encoding="utf-8")
+                write_bytes(snapshot, self.config_file.read_bytes())
+
+    def migrate_project_config(self) -> None:
+        """Validate and project existing hook configuration during project refresh."""
+        if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
+            raise ValueError("Refusing to migrate symlinked .specify/extensions.yml")
+        if not self.config_file.exists():
+            return
+        try:
+            config = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"Could not read .specify/extensions.yml: {exc}") from exc
+        if not isinstance(config, dict) or not isinstance(config.get("hooks", {}), dict):
+            raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
+        config.setdefault("hooks", {})
+        self.save_project_config(config)
 
     def register_extension(self, extension_id: str):
         """Add extension to the installed list in project config.
