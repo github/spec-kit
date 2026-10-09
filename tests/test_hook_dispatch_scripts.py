@@ -117,6 +117,26 @@ def test_invalid_config_reports_error(tmp_path, text, part, phase):
     assert data["hooks"] == []
 
 
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("invalid_event", ["invalid_event", "before_Bad"])
+def test_legacy_rejects_invalid_event_even_when_other_hooks_are_valid(
+    tmp_path, variant, phase, invalid_event
+):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    requested = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, yaml.safe_dump({"hooks": {
+        requested: [{"extension": "git", "command": "speckit.git.commit"}],
+        invalid_event: [],
+    }}, sort_keys=False))
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "hook event" in data["error"]
+
+
 @pytest.mark.parametrize("priority,expected", [
     (False, 10), (0, 10), ("bad", 10), ("2", 2), (2.8, 2),
 ])

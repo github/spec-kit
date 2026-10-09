@@ -80,8 +80,9 @@ placeholder; `--skills` emits skills into that same directory.
 
 Core command templates also use `{PRE_HOOK_SCRIPT}` and `{POST_HOOK_SCRIPT}`.
 Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
-script; the shared-infrastructure installer includes the selected native
-pre/post entry points. The CLI validates hook configuration on write and
+script; extension installation provisions the native pre/post entry points
+for each hook-bearing command's selected variant, including fallback variants
+when the project preference is unavailable. The CLI validates hook configuration on write and
 materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
 CLI writers serialize publication, and each variant checks the snapshot,
 event-index digest, and generated response digest before returning hooks. Each

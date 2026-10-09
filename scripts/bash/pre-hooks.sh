@@ -417,8 +417,11 @@ resolve_hooks() {
             [[ -n $HOOK_ERROR ]] && break
             continue
         fi
-        if (( indent == 2 )) && [[ $text =~ ^([a-z][a-z0-9_]*):([[:space:]]|$) ]]; then
+        if (( indent == 2 )) && [[ $text != '- '* && $text =~ ^([^:]+):([[:space:]]|$) ]]; then
             key=${BASH_REMATCH[1]}
+            if [[ ! $key =~ ^(before|after)_[a-z][a-z0-9_]*$ ]]; then
+                HOOK_ERROR="Invalid hook event: $key"; break
+            fi
             value=${text:${#key}+1}
             while [[ $value == ' '* ]]; do value=${value# }; done
             target=false

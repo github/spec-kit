@@ -2597,7 +2597,12 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
-        needs_hook_dispatchers = False
+        from ..integrations.base import IntegrationBase
+
+        requested_script = (
+            active_options.get("script") if isinstance(active_options, dict) else None
+        ) or ("ps" if os.name == "nt" else "sh")
+        hook_variants: set[str] = set()
         for command in manifest.commands:
             source_file = (source_dir / command["file"]).resolve()
             if not source_file.is_relative_to(source_dir.resolve()) or not source_file.is_file():
@@ -2606,44 +2611,59 @@ class ExtensionManager:
                 command_source = source_file.read_text(encoding="utf-8")
             except (OSError, UnicodeError) as exc:
                 raise ExtensionError(f"Cannot read extension command '{command['file']}': {exc}") from exc
-            needs_hook_dispatchers |= (
-                "{PRE_HOOK_SCRIPT}" in command_source or "{POST_HOOK_SCRIPT}" in command_source
-            )
+            if "{PRE_HOOK_SCRIPT}" not in command_source and "{POST_HOOK_SCRIPT}" not in command_source:
+                continue
+            if requested_script not in ("sh", "ps", "py"):
+                raise ExtensionError(
+                    f"Unsupported hook dispatcher script type: {requested_script}"
+                )
+            frontmatter, _ = CommandRegistrar.parse_frontmatter(command_source)
+            scripts = frontmatter.get("scripts") or {}
+            if not isinstance(scripts, dict):
+                scripts = {}
+            try:
+                selected = (
+                    IntegrationBase.select_script_variant(requested_script, scripts)
+                    if scripts else requested_script
+                )
+            except ValueError as exc:
+                raise ExtensionError(f"Cannot select hook dispatcher: {exc}") from exc
+            if selected not in ("sh", "ps", "py"):
+                raise ExtensionError(f"Unsupported hook dispatcher script type: {selected}")
+            hook_variants.add(selected)
 
-        if not needs_hook_dispatchers:
+        if not hook_variants:
             try:
                 HookExecutor(self.project_root).migrate_project_config()
             except (OSError, ValueError) as exc:
                 raise ExtensionError(f"Cannot install extension with invalid hooks: {exc}") from exc
 
-        if needs_hook_dispatchers:
+        if hook_variants:
             from .. import _install_shared_infra
             from ..integrations.base import get_invocation_prefix
 
             options = active_options if isinstance(active_options, dict) else {}
-            script = options.get("script") or ("ps" if os.name == "nt" else "sh")
-            variant = {"sh": "bash", "ps": "powershell", "py": "python"}.get(script) if isinstance(script, str) else None
-            if variant is None:
-                raise ExtensionError(f"Unsupported hook dispatcher script type: {script}")
             skills = is_ai_skills_enabled(options)
-            try:
-                _install_shared_infra(
-                    self.project_root,
-                    script,
-                    invoke_separator="-" if skills else ".",
-                    invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
-                    refresh_managed=True,
-                    hook_dispatchers_only=True,
-                )
-            except (OSError, ValueError) as exc:
-                raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
-            for phase in ("pre", "post"):
-                name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
-                dispatcher = self.project_root / ".specify" / "scripts" / variant / name
-                if dispatcher.is_symlink() or not dispatcher.is_file():
-                    raise ExtensionError(
-                        f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
+            for script in sorted(hook_variants):
+                try:
+                    _install_shared_infra(
+                        self.project_root,
+                        script,
+                        invoke_separator="-" if skills else ".",
+                        invoke_prefix=get_invocation_prefix(options.get("ai"), skills),
+                        refresh_managed=True,
+                        hook_dispatchers_only=True,
                     )
+                except (OSError, ValueError) as exc:
+                    raise ExtensionError(f"Cannot install hook dispatchers: {exc}") from exc
+                variant = {"sh": "bash", "ps": "powershell", "py": "python"}[script]
+                for phase in ("pre", "post"):
+                    name = f"{phase}_hooks.py" if script == "py" else f"{phase}-hooks.{script if script == 'sh' else 'ps1'}"
+                    dispatcher = self.project_root / ".specify" / "scripts" / variant / name
+                    if dispatcher.is_symlink() or not dispatcher.is_file():
+                        raise ExtensionError(
+                            f"Cannot register extension commands: missing hook dispatcher '{dispatcher}'"
+                        )
         from ..integrations._file_changes import after_file_change, before_file_change, changing_file
 
         package_paths = (

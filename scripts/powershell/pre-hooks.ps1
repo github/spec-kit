@@ -204,9 +204,13 @@ function Resolve-HookConfig {
             throw "Unsupported YAML top-level layout"
         }
         if ($hooksEmpty) { throw "Unsupported YAML hook layout" }
-        if ($indent -eq 2 -and $body -match '^([a-z][a-z0-9_]*):(?:\s|$)(.*)$') {
+        if ($indent -eq 2 -and -not $body.StartsWith('- ') -and
+            $body -match '^([^:]+):(?:\s|$)(.*)$') {
             $key = $Matches[1]
             $value = $Matches[2].Trim()
+            if ($key -cnotmatch '^(before|after)_[a-z][a-z0-9_]*$') {
+                throw "Invalid hook event: $key"
+            }
             $target = $key -eq $Event
             if ($target) {
                 if ($seenEvent) { throw "Duplicate hook event" }
@@ -259,7 +263,7 @@ function Invoke-HookResolver {
     param([string]$Phase, [string]$Command)
     $event = "${Phase}_${Command}"
     try {
-        if ($event -notmatch '^(before|after)_[a-z][a-z0-9_]*$') {
+        if ($event -cnotmatch '^(before|after)_[a-z][a-z0-9_]*$') {
             throw "Invalid hook event: $event"
         }
         $config = Join-Path (Get-Location) '.specify/extensions.yml'

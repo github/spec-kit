@@ -83,6 +83,8 @@ def resolve(event: str, project_root: Path) -> dict:
 
     hooks = []
     for hook_event, entries in config.get("hooks", {}).items():
+        if not isinstance(hook_event, str) or not _EVENT.fullmatch(hook_event):
+            raise ValueError(f"Invalid hook event: {hook_event}")
         if not isinstance(entries, list):
             raise ValueError(f"Invalid .specify/extensions.yml: hooks.{hook_event} must be a list")
         for index, entry in enumerate(entries):
