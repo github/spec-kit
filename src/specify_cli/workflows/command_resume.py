@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from . import _commands as cli
 from . import _command_resume_state as resume_state
+from . import _commands as cli
 
 
 @cli.workflow_app.command("resume")
@@ -19,13 +19,19 @@ def workflow_resume(
     ),
 ):
     """Resume a paused or failed workflow run."""
+    from ..integrations.installer import IntegrationInstallError
     from . import load_custom_steps
     from ._execution import CheckpointError
     from .engine import RunState, WorkflowEngine
 
-    project_root = cli._require_specify_project()
-    load_custom_steps(project_root)
-    engine = WorkflowEngine(project_root)
+    project_root = cli._require_specify_project(load_integrations=False)
+    try:
+        with cli._stdout_to_stderr_when(json_output):
+            load_custom_steps(project_root)
+            engine = WorkflowEngine(project_root)
+            engine._load_integrations()
+    except (IntegrationInstallError, OSError) as exc:
+        cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
     if not json_output:
         # Escape the literal bracket (\[) so Rich renders `[<step id>]` instead
         # of parsing it as a style tag named after the step id -- which it
@@ -84,9 +90,25 @@ def workflow_resume(
     try:
         with cli._stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
-    except FileNotFoundError:
-        err.print(f"[red]Error:[/red] Run not found: {run_id}")
-        raise cli.typer.Exit(1)
+    except FileNotFoundError as exc:
+        if engine._execution_state.get() is not None:
+            cli._fail_workflow_execution(
+                exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+            )
+        cli._fail_integration_load(
+            FileNotFoundError(f"Run not found: {run_id}"), json_output=json_output, run_id=run_id,
+        )
+    except IntegrationInstallError as exc:
+        execution_state = engine._execution_state.get()
+        if execution_state is None:
+            cli._fail_integration_load(exc, json_output=json_output, run_id=run_id)
+        cli._fail_workflow_execution(
+            exc, json_output=json_output, state=execution_state, resume=True,
+        )
+    except OSError as exc:
+        cli._fail_workflow_execution(
+            exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+        )
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)

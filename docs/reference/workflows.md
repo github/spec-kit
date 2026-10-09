@@ -54,6 +54,14 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
 
+Adapter-load failures before creating or loading run state use a pre-run
+failure envelope: a new run has no run ID, while resume retains the supplied
+run ID but has no workflow or step context. After run state exists, adapter
+failures from per-step reloads or verified lazy imports retain the actual run,
+workflow, and current-step fields, just like execution I/O failures. If
+saving state fails, the on-disk status may still reflect the last successful
+save rather than the reported I/O failure.
+
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow
@@ -845,6 +853,11 @@ specify workflow step add my-step
 Catalog installs resolve individual file URLs from the active step catalogs and
 then go through the same validation and commit path as `--dev` and `--from`.
 Discovery-only catalogs cannot be installed from.
+
+To submit a custom step type to the discovery-only community catalog, follow
+[Community Workflow Steps](../community/workflow-steps.md). Submissions use
+tag-pinned individual file URLs and per-file digests; maintainers validate
+metadata and distribution evidence, not submitted code.
 
 ##### Catalog release history
 

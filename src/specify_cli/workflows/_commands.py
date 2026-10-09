@@ -46,6 +46,39 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | None = None):
+    """Surface adapter failures before a workflow run state can be created."""
+    if json_output:
+        _emit_workflow_json({
+            "run_id": run_id,
+            "workflow_id": None,
+            "status": "failed",
+            "current_step_id": None,
+            "current_step_index": None,
+            "error": str(exc),
+        })
+    else:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+    raise typer.Exit(1) from exc
+
+
+def _fail_workflow_execution(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
+):
+    """Report execution failures with the actual, context-local run state."""
+    if json_output:
+        payload = _workflow_run_payload(state) if state is not None else {
+            "run_id": None, "workflow_id": None,
+            "current_step_id": None, "current_step_index": None,
+        }
+        payload.update(status="failed", error=str(exc))
+        _emit_workflow_json(payload)
+    else:
+        label = "Resume failed" if resume else "Workflow failed"
+        console.print(f"[red]{label}:[/red] {_escape_markup(str(exc))}")
+    raise typer.Exit(1) from exc
+
+
 def _open_workflow_registry(project_root: Path, out=None):
     """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
 

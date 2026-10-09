@@ -143,11 +143,14 @@ For further reading on the thinking behind this gate, see [one maintainer's pers
 
 ### Community catalog submissions
 
-To add or update a community extension, preset, or bundle in the catalog, **open an
-`[Extension]` / `[Preset]` / `[Bundle]` submission issue** — do not edit
-`extensions/catalog.community.json` (or the preset/bundle catalogs) directly in a pull
-request. The submission issue triggers an automated workflow that validates the release,
-verifies the pinned `download_url` and digests, and generates the catalog PR for you.
+To add or update a community extension, preset, bundle, or workflow step in the catalog, **open an
+`[Extension]` / `[Preset]` / `[Bundle]` / `[Workflow Step]` submission issue** — do not edit
+`extensions/catalog.community.json` (or the preset/bundle/step catalogs) directly in a pull
+request. Opening the form applies the `triage-must-have` intake verdict but does
+not start validation. During triage, a maintainer applies the component's submission
+label (`workflow-step-submission` for workflow steps) to start the automated workflow.
+It validates release metadata, pinned download URLs, and digests; successful
+validation proposes a draft catalog PR for maintainer review.
 A hand-edited catalog PR bypasses that validation and will be closed with a pointer back
 to the issue flow.
 
@@ -155,6 +158,23 @@ This applies to **new entries, version updates, and repairs alike** — a versio
 fix to a broken entry is still an update and needs the same validation. Always pin
 `download_url` to a release tag (e.g. `.../releases/download/<tag>/...` or
 `.../archive/refs/tags/<tag>.zip`); never use `releases/latest/`.
+Workflow-step submissions still require a pinned archive `download_url` as release
+provenance and evidence for the author's direct-archive installation test. Catalog
+installation uses separate tag-pinned individual file URLs and per-file digests;
+see [Community Workflow Step Types](docs/community/workflow-steps.md).
+
+### External agent adapters
+
+External integrations adapt the host's commands and extension/preset
+contributions; they do not redistribute a core command inventory. Publish a
+standalone package with root `integration.yml` and `__init__.py`, then advertise
+its pinned archive URL and preferably its SHA-256 in a catalog. Registering a
+catalog only enables discovery/download; importing executable adapter code
+requires the user's trust decision and an install-enabled source. Follow the
+[integration API and lifecycle design](design/integration.md#external-adapter-package-contract)
+and [integration catalog contribution guide](integrations/CONTRIBUTING.md).
+Add public-path positive and negative tests rather than injecting test classes
+directly into the registry; include fresh-process loading and rollback evidence.
 
 ### Branch naming
 
