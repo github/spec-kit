@@ -79,13 +79,14 @@ When a `gate` step pauses execution, the engine persists `current_step_index` an
 
 ## Step Types
 
-The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
+The engine ships with 13 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
 | `command` | `CommandStep` | Invoke an installed Spec Kit command via integration CLI | No |
 | `prompt` | `PromptStep` | Send an arbitrary inline prompt to integration CLI | No |
 | `shell` | `ShellStep` | Run a shell command, capture output | No |
+| `github` | `GitHubStep` | GitHub comments, artifacts, and PR checkout | No |
 | `init` | `InitStep` | Bootstrap a project (equivalent to `specify init`) | No |
 | `slot` | `SlotStep` | Named workflow slot; skipped when unfilled | No |
 | `gate` | `GateStep` | Interactive human review/approval | No (pauses in CI) |

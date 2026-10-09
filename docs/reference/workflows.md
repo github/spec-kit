@@ -570,6 +570,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `command`    | Invoke a Spec Kit command (e.g., `speckit.plan`) |
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
+| `github`     | Post/retrieve GitHub comments or check out a PR   |
 | `init`       | Bootstrap a project (like `specify init`)        |
 | `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
@@ -581,6 +582,60 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `fan-in`     | Aggregate results from a fan-out step            |
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
+### GitHub step
+
+`type: github` uses the installed `gh` CLI and its active authentication for a
+repository whose `origin` points to `github.com`. The token needs read access
+for PRs/issues, and issue-comment write access only for `comment`. The step
+does not request or elevate permissions. It does not interpret issue/comment
+contents as workflow instructions or apply labels. GitHub operations require
+network access; tests should mock the API rather than post live comments.
+
+```yaml
+- id: publish-plan
+  type: github
+  operation: comment
+  target: issue
+  number: "{{ inputs.issue_number }}"
+  body_file: docs/plan.md
+  artifact: reviewed-plan
+  maintainer_action:
+    summary: "Review the plan before scheduling implementation."
+    possible_labels: [ready-for-review]
+
+- id: retrieve-plan
+  type: github
+  operation: fetch-artifact
+  target: issue
+  number: "{{ inputs.issue_number }}"
+  artifact: reviewed-plan
+  write_to: docs/retrieved-plan.md
+
+- id: checkout
+  type: github
+  operation: checkout-pr
+  number: "{{ inputs.pr_number }}"
+```
+
+For `comment`, supply exactly one of `body` (text), `body_file` (UTF-8 file),
+or `body_files` (non-empty list of UTF-8 files joined with two newlines).
+`target` is `issue` or `pull_request`; `number` must resolve to a positive
+integer. `artifact` is an optional stable alphanumeric identifier (hyphens
+and underscores allowed), required by `fetch-artifact`. `maintainer_action`
+adds a **proposal only** section with `summary` and `possible_labels` to the
+comment; it never changes GitHub labels. The posted comment includes a
+digest-bearing marker tying it to the workflow run and step. Re-running the
+same step in the same run reuses an identical comment rather than posting a
+duplicate; changed content or a changed author fails instead. `fetch-artifact`
+requires exactly one intact, previously marked comment authored by the active
+GitHub account. It writes only to a *new* relative file under the project
+root, with an existing directory; symlinks and overwrites are refused.
+`checkout-pr` fetches GitHub's `pull/<number>/head` ref, verifies its SHA
+matches the API's PR head, and checks out that commit detached. Local changes
+that prevent checkout cause the step to fail.
+GitHub steps cannot be nested in `fan-out`: an item has no distinct run/step
+identity for safe comment retries.
 
 ### Custom step packages
 
