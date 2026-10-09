@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-02T00:00:00Z",
+  "updated_at": "2026-10-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -258,16 +258,17 @@
     "codebase-memory-context": {
       "name": "Verified Codebase Context",
       "id": "codebase-memory-context",
-      "version": "1.0.1",
-      "description": "Generates evidence-qualified repository context with codebase-memory-mcp and applies it across planning, tasks, analysis, and implementation.",
+      "version": "1.1.0",
+      "description": "Generate evidence-qualified repository context and use it across planning, tasks, analysis, and implementation",
       "author": "Xu Yin (philo-x)",
       "repository": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
-      "download_url": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/archive/refs/tags/v1.0.1.zip",
+      "download_url": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/releases/download/v1.1.0/codebase-memory-context.zip",
+      "sha256": "530869fc13fe55d6841e392f83ebfc89e4dd78a5d92aef06f8b76fe1d021de43",
       "homepage": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
-      "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.0.1/README.md",
+      "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.1.0/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=1.0.1"
+        "speckit_version": ">=1.1.2"
       },
       "provides": {
         "templates": 1,
@@ -280,7 +281,7 @@
         "workflow"
       ],
       "created_at": "2026-08-26T00:00:00Z",
-      "updated_at": "2026-08-26T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "command-density": {
       "name": "Command Density",
@@ -460,14 +461,14 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.3.5",
+      "version": "0.3.7",
       "description": "Governs traceable intake CRUD, language-aware requirements collections, bounded public HTTPS sources, and explicitly approved single or series authoring.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.5.zip",
-      "sha256": "972b6106e9c0ecd95a90dc6bdb175e97a5cc5ef16261b84e56beca2928fa7ba8",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.3.7.zip",
+      "sha256": "fc20a010c2124977249f926677d1bb2b03b81e7cd2a549bc4c7489de837e1427",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.5/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.3.7/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -482,22 +483,22 @@
         "authoring",
         "governance",
         "requirements",
-        "migration"
+        "lifecycle"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-09-28T00:00:00Z"
+      "updated_at": "2026-10-07T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.3.zip",
-      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.4.zip",
+      "sha256": "c4a21c4a99ba6eed0df3028bc1ee19158f1274d9e440f433c504877c997ed816",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -515,19 +516,19 @@
         "quality-gate"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-09-25T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
       "id": "intake-sequencing-governance",
-      "version": "0.2.6",
+      "version": "0.2.8",
       "description": "Manages language-aware intake-series order, typed dependencies, lifecycle, and authority-neutral next-candidate selection.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.6.zip",
-      "sha256": "d800feee907971beca4e151a75a4e4eeb9179c5772017e72cebb581022282ad6",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/archive/refs/tags/v0.2.8.zip",
+      "sha256": "07dbd79f76927136494fe0742b0e8044d7cb2625c9d5d8f61fbe05b1e8d980ac",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.6/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-sequencing-governance/blob/v0.2.8/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -545,7 +546,7 @@
         "lifecycle"
       ],
       "created_at": "2026-07-27T00:00:00Z",
-      "updated_at": "2026-09-25T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "inventory-alignment": {
       "name": "Inventory Alignment",
@@ -754,6 +755,35 @@
       "created_at": "2026-09-23T00:00:00Z",
       "updated_at": "2026-09-23T00:00:00Z"
     },
+    "openproject": {
+      "name": "OpenProject Work Packages",
+      "id": "openproject",
+      "version": "1.0.0",
+      "description": "Overrides speckit.taskstoissues to create OpenProject work packages (phases, tasks, relations) via an OpenProject MCP server instead of GitHub Issues",
+      "author": "Daniel Ring",
+      "repository": "https://github.com/Nachklang-io/speckit-openproject",
+      "download_url": "https://github.com/Nachklang-io/speckit-openproject/releases/download/preset-v1.0.0/openproject-preset-1.0.0.zip",
+      "sha256": "e645436e32c5a9b5a5c00d00e293bce9bb8afaf2df1dac5a859d00434e59cc84",
+      "homepage": "https://github.com/Nachklang-io/speckit-openproject",
+      "documentation": "https://github.com/Nachklang-io/speckit-openproject/blob/preset-v1.0.0/preset/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=1.1.0"
+      },
+      "provides": {
+        "templates": 0,
+        "commands": 1
+      },
+      "tags": [
+        "openproject",
+        "issue-tracking",
+        "project-management",
+        "mcp",
+        "preset"
+      ],
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-09T00:00:00Z"
+    },
     "openup-governance": {
       "name": "OpenUP Governance",
       "id": "openup-governance",
@@ -938,30 +968,31 @@
     "security-governance": {
       "name": "Security Governance",
       "id": "security-governance",
-      "version": "0.6.2",
-      "description": "Adds memory-safe-language and secure-coding governance, exact-head security evidence, ASVS, supply-chain transparency, EU regulatory screening, and provider-neutral model routing.",
+      "version": "0.7.1",
+      "description": "Adds secure coding, memory-safe-language guidance, security-gate and supply-chain evidence, and scoped GDPR, NIS2, CRA, EU AI Act, and DORA screening to Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.6.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.7.1.zip",
+      "sha256": "c85a4b924e741a3981dc369adc6233b6f323013fb1d46735555038d322cda18a",
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.6.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.7.1/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 15,
+        "templates": 19,
         "commands": 3
       },
       "tags": [
         "security",
         "governance",
-        "secure-coding",
-        "supply-chain",
-        "model-routing"
+        "ssdf",
+        "sbom",
+        "regulatory"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-08-10T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "sicario-core": {
       "name": "SicarioSpec Core",
@@ -1049,17 +1080,20 @@
     "specassay": {
       "name": "SpecAssay",
       "id": "specassay",
-      "version": "0.5.2",
+      "version": "0.5.6",
       "description": "Appends durable-ID, Carries, and SpecAssay vocabulary onto Spec Kit spec, tasks, and constitution templates.",
       "author": "Rik Dryfoos",
       "repository": "https://github.com/rdryfoos/specassay",
-      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.2/specassay-preset-0.5.2.zip",
-      "sha256": "9920daf8b7ebe2d5e0d5e723409719afeaaa7c59788a6f3ecda67e2f7543d0b9",
+      "download_url": "https://github.com/rdryfoos/specassay/releases/download/v0.5.6/specassay-preset-0.5.6.zip",
+      "sha256": "6f70580f9b349df8b850f31cf02601a24263b9faaa79c48b14a6d2ff50c1260d",
       "homepage": "https://github.com/rdryfoos/specassay",
       "documentation": "https://github.com/rdryfoos/specassay/blob/main/presets/specassay/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.14.0,<2.0.0"
+        "speckit_version": ">=0.14.0,<2.0.0",
+        "extensions": [
+          "specassay-check"
+        ]
       },
       "provides": {
         "templates": 3,
@@ -1072,7 +1106,7 @@
         "sdd"
       ],
       "created_at": "2026-08-14T00:00:00Z",
-      "updated_at": "2026-09-24T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "test-first-governance": {
       "name": "Test-First Governance",

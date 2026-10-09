@@ -1700,7 +1700,8 @@ class TestVersionedStepAdd:
         elif corrupt == "url":
             entry["releases"]["1.0"]["init_url"] = "http://evil.example/__init__.py"
         monkeypatch.setattr(
-            StepCatalog, "_get_merged_steps", lambda self: {"deploy": entry}
+            StepCatalog, "_get_merged_steps",
+            lambda self, *, step_id=None: {"deploy": entry}
         )
         requested = []
 
@@ -1755,6 +1756,48 @@ class TestVersionedStepAdd:
         assert (
             project_dir / ".specify/workflows/steps/deploy/helper.py"
         ).read_bytes() == b"# helper\n"
+
+    def test_preselected_step_installs_without_reloading_catalog(
+        self, project_dir, monkeypatch,
+    ):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepRegistry
+        from specify_cli.workflows.step.command_add import _install_preselected_step
+
+        requested = self._setup(project_dir, monkeypatch)
+        selected = StepCatalog(project_dir).get_step_info("deploy", version="1.0")
+        monkeypatch.setattr(
+            StepCatalog, "get_step_info",
+            lambda *args, **kwargs: pytest.fail("catalog was re-resolved"),
+        )
+        monkeypatch.chdir(project_dir)
+        _install_preselected_step("deploy", version="1.0", selected_info=selected)
+
+        assert requested == [
+            f"https://example.com/old/{name}"
+            for name in ("step.yml", "__init__.py", "helper.py")
+        ]
+        assert StepRegistry(project_dir).get("deploy")["version"] == "1.0"
+
+    def test_preselected_step_rejects_bad_digest_without_reloading_catalog(
+        self, project_dir, monkeypatch,
+    ):
+        from specify_cli.workflows.step.catalog import StepCatalog, StepRegistry
+        from specify_cli.workflows.step.command_add import _install_preselected_step
+        from specify_cli.workflows.step.installer import StepInstallError
+
+        self._setup(project_dir, monkeypatch, corrupt="checksum")
+        selected = StepCatalog(project_dir).get_step_info("deploy", version="1.0")
+        monkeypatch.setattr(
+            StepCatalog, "get_step_info",
+            lambda *args, **kwargs: pytest.fail("catalog was re-resolved"),
+        )
+        monkeypatch.chdir(project_dir)
+
+        with pytest.raises(StepInstallError, match="checksum mismatch"):
+            _install_preselected_step(
+                "deploy", version="1.0", selected_info=selected,
+            )
+        assert not StepRegistry(project_dir).is_installed("deploy")
 
     @pytest.mark.parametrize(
         ("corrupt", "error"),

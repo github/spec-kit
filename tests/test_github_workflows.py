@@ -37,7 +37,7 @@ FEATURE_ASSESS_LABELS = {
     "feature-kill",
     "feature-invalid",
 }
-COMMUNITY_SUBMISSION_WORKFLOWS = (
+ARCHIVE_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
         "bundle-submission",
@@ -58,6 +58,16 @@ COMMUNITY_SUBMISSION_WORKFLOWS = (
         "presets/catalog.community.json",
         "docs/community/presets.md",
         "Do not modify any other files",
+    ),
+)
+COMMUNITY_SUBMISSION_WORKFLOWS = (
+    *ARCHIVE_SUBMISSION_WORKFLOWS,
+    (
+        "workflow-step",
+        "workflow-step-submission",
+        "workflows/step-catalog.community.json",
+        "docs/community/workflow-steps.md",
+        "Edit only `workflows/step-catalog.community.json`",
     ),
 )
 REPOSITORY_OWNED_DRAFT_PR_EXEMPTION = (
@@ -150,11 +160,11 @@ def _safe_output_config(compiled: dict) -> dict:
     return json.loads(step["env"]["GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG"])
 
 
-def _bundle_success_label_step() -> dict:
-    _, _, source, _ = _agentic_workflow("add-community-bundle")
+def _bundle_success_label_step(kind="bundle") -> dict:
+    _, _, source, _ = _agentic_workflow(f"add-community-{kind}")
     return _workflow_step(
         source["jobs"]["conclusion"]["pre-steps"],
-        "Mark bundle submission passed after PR creation",
+        f"Mark {'bundle' if kind == 'bundle' else 'step'} submission passed after PR creation",
     )
 
 
@@ -175,8 +185,8 @@ def test_bundle_success_labels_run_after_successful_pr_publication():
     assert compiled["jobs"]["agent"]["permissions"]["issues"] == "read"
 
 
-def _run_bundle_success_labels(result, pr_number, labels, fail_api=""):
-    step = _bundle_success_label_step()
+def _run_bundle_success_labels(result, pr_number, labels, fail_api="", kind="bundle"):
+    step = _bundle_success_label_step(kind)
     harness = r"""
 const fs = require('node:fs');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -220,13 +230,15 @@ const shouldRun = new Function('needs', `return ${input.condition}`)(needs);
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("labels", [
     ["bundle-submission", "validation-failed"],
     ["bundle-submission", "validation-failed", "needs-info", "triaged"],
     ["bundle-submission", "validation-passed"],
 ])
-def test_bundle_success_labels_correct_omitted_agent_updates(labels):
-    result = _run_bundle_success_labels("success", "37", labels)
+def test_bundle_success_labels_correct_omitted_agent_updates(labels, kind):
+    labels = [f"{kind}-submission" if label == "bundle-submission" else label for label in labels]
+    result = _run_bundle_success_labels("success", "37", labels, kind=kind)
     assert result["error"] is None
     assert result["labels"] == sorted(
         (set(labels) - {"validation-failed", "needs-info"}) | {"validation-passed"}
@@ -240,21 +252,23 @@ def test_bundle_success_labels_correct_omitted_agent_updates(labels):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize(("status", "pr_number"), [
     ("success", ""), ("failure", ""), ("failure", "37"),
     ("cancelled", "37"), ("skipped", ""),
 ])
-def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number):
-    labels = ["bundle-submission", "validation-failed"]
-    result = _run_bundle_success_labels(status, pr_number, labels)
+def test_bundle_success_labels_do_not_run_without_successful_publication(status, pr_number, kind):
+    labels = [f"{kind}-submission", "validation-failed"]
+    result = _run_bundle_success_labels(status, pr_number, labels, kind=kind)
     assert result == {"labels": sorted(labels), "calls": [], "error": None}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize("kind", ["bundle", "workflow-step"])
 @pytest.mark.parametrize("fail_api", ["listLabelsOnIssue", "removeLabel", "addLabels"])
-def test_bundle_success_labels_surface_api_errors(fail_api):
+def test_bundle_success_labels_surface_api_errors(fail_api, kind):
     result = _run_bundle_success_labels(
-        "success", "37", ["bundle-submission", "validation-failed"], fail_api
+        "success", "37", [f"{kind}-submission", "validation-failed"], fail_api, kind
     )
     assert result["error"] == f"API failure: {fail_api}"
     assert result["calls"][-1]["api"] == fail_api
@@ -495,6 +509,186 @@ def test_community_submission_automation_is_wired_to_allowed_files():
         assert label in assignment_text
 
 
+def test_extension_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    extension_form = yaml.safe_load(
+        (forms_dir / "extension_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert extension_form["labels"] == ["triage-must-have"]
+    assert "extension-submission" not in extension_form["labels"]
+
+
+def test_preset_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    preset_form = yaml.safe_load(
+        (forms_dir / "preset_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert preset_form["labels"] == ["triage-must-have"]
+    assert "preset-submission" not in preset_form["labels"]
+
+
+def test_bundle_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert bundle_form["labels"] == ["triage-must-have"]
+    assert "bundle-submission" not in bundle_form["labels"]
+
+
+def test_workflow_step_submission_form_applies_only_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+
+    assert workflow_step_form["labels"] == ["triage-must-have"]
+    assert not {
+        "enhancement",
+        "needs-triage",
+        "workflow-step-submission",
+        "validation-passed",
+        "validation-failed",
+    } & set(workflow_step_form["labels"])
+
+
+def test_workflow_step_submission_form_has_valid_complete_field_contract():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    fields = [item for item in workflow_step_form["body"] if "id" in item]
+    field_ids = [field["id"] for field in fields]
+
+    assert len(field_ids) == len(set(field_ids))
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]+", field_id) for field_id in field_ids)
+    assert set(field_ids) == {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "changelog",
+        "testing-details",
+        "attestations",
+        "additional-context",
+        "ai-disclosure",
+    }
+    required_ids = {
+        "step-id",
+        "step-name",
+        "version",
+        "description",
+        "author",
+        "repository",
+        "download-url",
+        "step-yml-url",
+        "init-url",
+        "extra-files",
+        "file-sha256",
+        "license",
+        "speckit-compatibility",
+        "runtime-dependencies",
+        "step-type-count",
+        "step-types-provided",
+        "documentation",
+        "testing-details",
+        "ai-disclosure",
+    }
+    assert {
+        field["id"]
+        for field in fields
+        if field.get("validations", {}).get("required") is True
+    } == required_ids
+    field_by_id = {field["id"]: field for field in fields}
+    assert field_by_id["step-type-count"][
+        "attributes"
+    ]["options"] == ["1"]
+    assert all(
+        option["required"] is True
+        for option in field_by_id["attestations"]["attributes"]["options"]
+    )
+    bundle_form = yaml.safe_load(
+        (forms_dir / "bundle_submission.yml").read_text(encoding="utf-8")
+    )
+    bundle_fields = {
+        item["id"]: item for item in bundle_form["body"] if "id" in item
+    }
+    assert field_by_id["download-url"]["attributes"]["label"] == (
+        bundle_fields["download-url"]["attributes"]["label"]
+    )
+    download_description = field_by_id["download-url"]["attributes"]["description"]
+    assert "versioned" in download_description
+    assert "immutable" not in download_description
+    assert "immutable" not in yaml.safe_dump(workflow_step_form).lower()
+    extra_files_description = field_by_id["extra-files"]["attributes"]["description"]
+    assert "forward slashes" in extra_files_description
+    assert "relative and non-empty" in extra_files_description
+    assert "no empty, `.` or `..` segments" in extra_files_description
+    assert "case-insensitively alias `step.yml` or `__init__.py`" in (
+        extra_files_description
+    )
+    feature_form = yaml.safe_load(
+        (forms_dir / "feature_request.yml").read_text(encoding="utf-8")
+    )
+    feature_fields = {
+        item["id"]: item for item in feature_form["body"] if "id" in item
+    }
+    assert field_by_id["ai-disclosure"] == feature_fields["ai-disclosure"]
+
+
+def test_workflow_step_submission_form_documents_maintainer_triggered_validation():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    workflow_step_form = yaml.safe_load(
+        (forms_dir / "workflow_step_submission.yml").read_text(encoding="utf-8")
+    )
+    introduction = workflow_step_form["body"][0]["attributes"]["value"]
+
+    assert "Opening the form alone does not start validation" in introduction
+    assert "A maintainer applies `workflow-step-submission`" in introduction
+    assert "draft catalog pull request for maintainer review" in introduction
+    assert "only the `triage-must-have` intake verdict" in introduction
+
+
+def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
+    forms_dir = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+    automatic_intake_forms = {
+        "bundle_submission.yml",
+        "extension_submission.yml",
+        "preset_submission.yml",
+        "workflow_step_submission.yml",
+    }
+    other_forms = sorted(
+        path
+        for path in forms_dir.glob("*.yml")
+        if path.name != "config.yml" and path.name not in automatic_intake_forms
+    )
+
+    assert [path.name for path in other_forms] == [
+        "agent_request.yml",
+        "bug_report.yml",
+        "feature_request.yml",
+    ]
+    for form_path in other_forms:
+        form = yaml.safe_load(form_path.read_text(encoding="utf-8"))
+        assert "triage-must-have" not in form["labels"]
+
+
 @pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
 def test_community_upgrade_uses_established_runtime_defaults(kind):
     _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")
@@ -617,7 +811,7 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     }
     removable_labels = (
         ["validation-passed", "validation-failed", "needs-info"]
-        if kind == "bundle" else ["validation-passed", "validation-failed"]
+        if kind in ("bundle", "workflow-step") else ["validation-passed", "validation-failed"]
     )
     assert outputs["remove_labels"]["allowed"] == source["safe-outputs"][
         "remove-labels"
@@ -626,7 +820,11 @@ def test_community_upgrade_preserves_scoped_draft_pr_contract(
     assert set(source["safe-outputs"]) == expected_source_outputs
     assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {"max": 2}
     expected_labels = {
-        "allowed": [label, "validation-passed", "validation-failed", "needs-info"],
+        "allowed": (
+            [label, "validation-failed", "needs-info"]
+            if kind == "workflow-step"
+            else [label, "validation-passed", "validation-failed", "needs-info"]
+        ),
         "max": 3,
     }
     assert outputs["add_labels"] == {**expected_labels, "issue_intent": False}
@@ -695,7 +893,7 @@ _CATALOG_DOWNLOAD_URL_CLAUSES = (
 
 def test_community_submission_workflows_require_tag_pinned_download_urls():
     """Catalog agents must reject floating releases/latest URLs (issue #4185)."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -721,7 +919,7 @@ def test_community_submission_workflows_require_tag_pinned_download_urls():
             )
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_checksum_instructions_preserve_submitted_digest(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     parsing = source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0]
@@ -763,7 +961,7 @@ def test_community_checksum_instructions_preserve_submitted_digest(kind):
     assert "record its digest as `actual_sha256`" in comparison_prose
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_catalog_records_computed_checksum_only_after_validation(kind):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
     catalog = source_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0]
@@ -779,7 +977,7 @@ def test_community_catalog_records_computed_checksum_only_after_validation(kind)
 
 
 @pytest.mark.skipif(shutil.which("sha256sum") is None, reason="sha256sum not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("case", ["matching", "mismatch", "malformed"])
 def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path):
     source_text, _, _, _ = _agentic_workflow(f"add-community-{kind}")
@@ -823,7 +1021,7 @@ def test_community_checksum_command_rejects_invalid_digest(kind, case, tmp_path)
             assert result.stdout.strip() == f"{archive.name}: FAILED"
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 def test_community_archive_permission_failures_are_not_submission_failures(kind):
     source_text, _, source, compiled = _agentic_workflow(f"add-community-{kind}")
     outcome = source_text.split("### Validation outcome\n", 1)[1].split(
@@ -934,7 +1132,7 @@ def _community_submission_harness_command(workflow: str) -> str:
 
 def test_community_submission_archive_fetch_tool_is_allowed():
     """Archive checks must not require interactive tool or URL permission grants."""
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
         bash_tools = config["tools"]["bash"]
@@ -967,7 +1165,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
         "release-assets.githubusercontent.com",
         "raw.githubusercontent.com",
     ]
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source = WORKFLOWS_DIR / f"add-community-{workflow}.md"
         config = _frontmatter(source.read_text(encoding="utf-8"))
 
@@ -988,7 +1186,7 @@ def test_community_submission_archive_redirect_hosts_are_allowed():
 
 
 def test_community_submission_archive_fetch_requires_direct_evidence():
-    for workflow, *_ in COMMUNITY_SUBMISSION_WORKFLOWS:
+    for workflow, *_ in ARCHIVE_SUBMISSION_WORKFLOWS:
         source_text = (WORKFLOWS_DIR / f"add-community-{workflow}.md").read_text(
             encoding="utf-8"
         )
@@ -1037,7 +1235,7 @@ _COMMUNITY_DOWNLOAD_URL_CASES = [
 ]
 
 
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize(("url", "allowed"), _COMMUNITY_DOWNLOAD_URL_CASES)
 def test_community_download_documented_character_allowlist(kind, url, allowed):
     """Exercise the documented regex, not an agent's adherence to the instructions."""
@@ -1056,7 +1254,7 @@ def test_community_download_documented_character_allowlist(kind, url, allowed):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-@pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
 @pytest.mark.parametrize("url", [url for url, _ in _COMMUNITY_DOWNLOAD_URL_CASES])
 def test_community_download_command_treats_url_file_as_data(kind, url, tmp_path):
     """Even data rejected by the documented allowlist cannot become shell syntax."""

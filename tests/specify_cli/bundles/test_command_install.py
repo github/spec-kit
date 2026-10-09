@@ -148,6 +148,49 @@ def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
     assert "discovery-only" in result.output
 
 
+@pytest.mark.parametrize("command", ["install", "add"])
+@pytest.mark.parametrize("source_kind", ["directory", "manifest", "broken-zip"])
+def test_version_rejects_local_bundle_source_before_reading(
+    tmp_path: Path, monkeypatch, command: str, source_kind: str
+):
+    workdir = tmp_path / "outside-project"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    if source_kind == "directory":
+        source = tmp_path / "broken-bundle"
+        source.mkdir()
+    elif source_kind == "manifest":
+        source = tmp_path / "bundle.yml"
+        source.write_text("bundle: [not, a, mapping", encoding="utf-8")
+    else:
+        source = tmp_path / "broken.zip"
+        source.write_bytes(b"not a zip archive")
+
+    with patch("specify_cli.bundles.command_install._run_init") as run_init:
+        result = runner.invoke(
+            app, ["bundle", command, str(source), "--version", "1.0.0", "--offline"]
+        )
+
+    assert result.exit_code == 1
+    assert "--version requires a catalog bundle ID" in result.output
+    run_init.assert_not_called()
+    assert not (workdir / ".specify").exists()
+
+
+def test_version_rejects_blank_and_refresh_before_resolution(project: Path):
+    blank = runner.invoke(
+        app, ["bundle", "install", "history", "--version", " ", "--offline"]
+    )
+    refresh = runner.invoke(
+        app, ["bundle", "install", "history", "--version", "1.0.0", "--refresh", "--offline"]
+    )
+
+    assert blank.exit_code == 1
+    assert "--version must not be blank" in blank.output
+    assert refresh.exit_code == 1
+    assert "--version cannot be used with --refresh" in refresh.output
+
+
 def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
     # An initialized project's recorded active integration is authoritative:
     # passing --integration must not let a differently-pinned bundle install.
@@ -409,7 +452,8 @@ def test_local_refresh_catalog_extension_requires_network(
     version = "1.0.0"
     downloads = []
 
-    def download_extension(self, extension_id):
+    def download_extension_info(self, info):
+        extension_id = info["id"]
         downloads.append((extension_id, version))
         artifact = tmp_path / "extension.zip"
         extension = {
@@ -436,10 +480,15 @@ def test_local_refresh_catalog_extension_requires_network(
 
     monkeypatch.setattr(
         ExtensionCatalog,
-        "get_extension_info",
-        lambda self, cid: {"id": cid, "version": version, "_install_allowed": True},
+        "_fetch_single_catalog",
+        lambda self, entry, force_refresh=False: {
+            "schema_version": "1.0",
+            "extensions": {"catalog-ext": {"version": version}},
+        },
     )
-    monkeypatch.setattr(ExtensionCatalog, "download_extension", download_extension)
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", download_extension_info
+    )
     data = valid_manifest_dict(
         provides={"extensions": [{"id": "catalog-ext", "version": version}]}
     )

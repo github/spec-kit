@@ -220,7 +220,8 @@ not the repository's GitHub Actions workflows.
 &#9733; Beyond core feature delivery, agentic community-submission workflows for
 [extensions](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-extension.md),
 [presets](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-preset.md),
-and [bundles](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-bundle.md)
+[bundles](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-bundle.md),
+and [workflow steps](https://github.com/github/spec-kit/blob/main/.github/workflows/add-community-workflow-step.md)
 validate submission metadata and propose catalog changes in draft PRs for
 maintainer review.
 

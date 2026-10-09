@@ -5,6 +5,7 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
+import pytest
 import yaml  # noqa: F401
 from typer.testing import CliRunner
 
@@ -65,6 +66,40 @@ def test_list_escapes_markup_in_records(project: Path):
     assert "demo[/red]id" in output
     assert "1.0.0[/bold]" in output
     assert "2026-01-01T00:00:00Z[/dim]" in output
+
+
+@pytest.mark.parametrize(
+    ("contributed", "required", "expected_count"),
+    [
+        ([], [{"kind": "extensions", "id": "first"}, {"kind": "steps", "id": "second"}], 2),
+        ([{"kind": "extensions", "id": "first"}], None, 1),
+    ],
+)
+def test_list_counts_required_components(
+    project: Path, contributed, required, expected_count
+):
+    record = {
+        "bundle_id": "demo",
+        "version": "1.0.0",
+        "installed_at": "2026-01-01T00:00:00Z",
+        "contributed_components": contributed,
+    }
+    if required is not None:
+        record["required_components"] = required
+    (project / ".specify" / "bundle-records.json").write_text(
+        json.dumps({"schema_version": "1.0", "bundles": [record]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "list"])
+    assert result.exit_code == 0, result.output
+    assert f"({expected_count} components," in strip_ansi(result.output)
+
+    json_result = runner.invoke(app, ["bundle", "list", "--json"])
+    assert json_result.exit_code == 0, json_result.output
+    parsed = json.loads(json_result.stdout)[0]
+    assert len(parsed["required_components"]) == expected_count
+    assert len(parsed["contributed_components"]) == len(contributed)
 
 
 def test_override_redirects_bundle_commands(tmp_path, monkeypatch):

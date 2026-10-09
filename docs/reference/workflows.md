@@ -54,6 +54,14 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
 
+Adapter-load failures before creating or loading run state use a pre-run
+failure envelope: a new run has no run ID, while resume retains the supplied
+run ID but has no workflow or step context. After run state exists, adapter
+failures from per-step reloads or verified lazy imports retain the actual run,
+workflow, and current-step fields, just like execution I/O failures. If
+saving state fails, the on-disk status may still reflect the last successful
+save rather than the reported I/O failure.
+
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow
@@ -67,9 +75,17 @@ specify workflow resume <run_id>
 | `-i` / `--input`    | Updated input values as `key=value` (repeatable)         |
 | `--json`            | Emit the resume outcome as a single JSON object          |
 
-Resumes a paused or failed workflow run from the exact step where it stopped. Useful after responding to a gate step or fixing an issue that caused a failure.
+Resumes a paused or failed workflow run from its persisted execution state. A
+`running` run is not resumable. Resume replays completed work into its
+expression contexts without running step implementations again, then continues
+at the unfinished occurrence. This lets a run continue with information that
+only became available after it paused, or with a corrected value after a
+failure.
 
-Supplied `--input` values are merged over the run's stored inputs and re-validated against the workflow's input types, then the blocked step is re-run with the updated values. This lets a run continue with information that only became available after it paused, or with a corrected value after a failure:
+Supplied `--input` values are merged over the run's stored root inputs and
+re-validated against the workflow's input types. Unknown root input names are
+ignored. Updated values affect only unfinished work; completed steps and calls
+are not reinterpreted or repeated:
 
 ```bash
 specify workflow resume <run_id> --input cmd="exit 0"
@@ -451,9 +467,11 @@ Re-adding the same workflow or step catalog URL with the same name succeeds with
 
 ```bash
 specify workflow catalog remove <index>
+specify workflow step catalog remove <index>
 ```
 
-Removes a catalog by its index in the catalog list.
+Removes a project catalog by its index in the corresponding priority-ordered `catalog list`.
+Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` or `SPECKIT_STEP_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
 
 ### Catalog Resolution Order
 
@@ -580,6 +598,175 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `do-while`   | Execute at least once, then loop on condition    |
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
+| `workflow`   | Call an installed workflow with private inputs and declared outputs |
+
+### Workflow composition
+
+A `workflow` step executes an installed, enabled workflow in the current project
+as a private scope of the same run. Targets can be literal IDs or expressions;
+the resolved string must match the ID exactly, including case and whitespace.
+
+```yaml
+inputs:
+  target: {type: string, required: true}
+  report: {type: string, required: true}
+steps:
+  - id: investigate
+    type: workflow
+    workflow: "{{ inputs.target }}"
+    input:
+      report: "{{ inputs.report }}"
+```
+
+The included workflow sees only declared inputs passed through `input` and its
+own step results. It does not inherit the caller's `inputs`, step results,
+fan-out `item`/`fan_in` values, or workflow defaults. Unknown input names,
+missing required values, and invalid types/enums fail the call. Existing child
+defaults and `integration: auto` resolution apply. Values cross back only
+through explicit declarations:
+
+```yaml
+outputs:
+  report:
+    value: "{{ steps.analyze.output.stdout }}"
+```
+
+The caller reads `{{ steps.investigate.output.report }}`. Output includes
+`workflow` and `status`; failures include `error` when the failed operation
+reported one, and an abort includes `aborted: true`. These names and
+`integration`, `model`, `options`, and `input` are reserved. Returned values
+must be JSON-safe. Private inputs, step records, and logs are not part of the
+return value. No separate child run is created.
+
+`continue_on_error: true` on a workflow call handles a returned child failure
+and call-boundary contract failures, such as an unavailable target, invalid
+mapped input, cycle, depth limit, or invalid declared output. It does not catch
+step exceptions, expression errors (including `from_json` errors in `input:` or
+`outputs:`), interruptions, or checkpoint failures; those propagate exactly as
+they do at the root. An unavailable step implementation is terminal where the
+step occurs; at a workflow call it is a reported child failure, whether it is
+detected while binding the target or later. Pauses and explicit aborts always
+stop execution.
+
+Nested composition is allowed, but repeated workflow IDs on the active call
+path are cycles. Diamonds are allowed. The maximum included depth is 16, with
+the root at depth zero.
+
+### Calling a Child Gate
+
+Only root-declared inputs can be supplied to `workflow resume --input`. Map a
+root input through each workflow boundary when a child gate uses it as a
+`verdict_input`:
+
+```yaml
+# Parent workflow
+inputs:
+  approval:
+    type: string
+    default: ""
+steps:
+  - id: review-release
+    type: workflow
+    workflow: release-notes
+    input:
+      approval: "{{ inputs.approval }}"
+```
+
+```yaml
+# Installed release-notes workflow
+inputs:
+  approval:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Approve the release notes?"
+    options: [approve, reject]
+    verdict_input: approval
+```
+
+The initial run pauses if `approval` is empty. Its structured status identifies
+the nested gate and its enclosing call with `gate.scope_path`. Resume the root
+run, not the child, to continue it:
+
+```bash
+specify workflow status <run-id> --json
+specify workflow resume <run-id> --input approval=approve
+```
+
+A gate with `verdict_input` is not supported inside a fan-out item, including
+through one or more workflow calls. The `inside_fan_out` runtime condition is
+preserved across workflow boundaries.
+
+### Defaults and Errors at the Call Boundary
+
+Parent `integration`, `model`, and `options` defaults apply only to steps in
+the parent workflow. A child uses its own defaults or automatic resolution. To
+make a value common to both, declare it as a child input and map it explicitly.
+The call result intentionally has an empty `input` field and does not expose
+the child's private inputs, step records, or logs.
+
+An initial binding or output-finalization contract failure can be handled with
+`continue_on_error`. A failure while rebinding an incomplete call during
+`workflow resume --input` is different: it propagates. For a previously bound
+call, resume discards the prior `result`, `outcome`, and `error` while
+preserving its binding and child subtree, so it can be retried with corrected
+root inputs. A call whose initial binding failed returns to `ready` and retries
+target resolution and binding.
+
+### Execution identity and resume
+
+Each step occurrence owns a record in a persisted execution tree. An authored
+step ID is a local expression alias, not a global execution ID. Fan-out items
+have independent alias contexts and ordered item results. Public reporting uses
+qualified occurrence IDs where needed, for example `fan:template:0` for a
+fan-out item and `loop:step:1` for a later loop iteration. Qualified IDs are
+not expression names. Fan-out item aliases are reporting-only: a `fan-in`
+`wait_for` references declared step IDs, in particular the fan-out step's own
+`id`, whose ordered item results are available as
+`steps.<fan-out-id>.output.results`.
+
+> **Migration note:** a fan-out's output no longer includes `step_template`.
+> `steps.<fan-out-id>.output` and the fan-out's entry in a `fan-in`'s
+> `output.results` contain `items`, `max_concurrency`, `item_count`, and
+> `results`; the template is kept only in the private execution tree that runs
+> the items. An expression such as `{{ steps.<fan-out-id>.output.step_template }}`
+> now resolves to empty. Read the template from the fan-out's `step` in the
+> workflow definition instead.
+
+New runs persist selected branches, dynamic custom-step expansions, loop
+iterations, and fan-out items. Resume retains completed work without
+reevaluating already selected branches. Workflow targets and overlay-resolved
+definitions remain bound even if installations change. An unbound call still
+checks that its target is installed and enabled when execution reaches it.
+
+Ordinary resume retains bound inputs. Explicit `--input` rebinds reached,
+incomplete calls through their original mappings: newly mapped values override
+the prior binding, while values not mapped again retain their bound values.
+Completed calls retain their results. Failed output evaluation retries only
+finalization, without repeating completed child commands.
+
+Snapshots are stored as YAML strings inside the private JSON execution tree,
+preserving YAML scalar types. Inputs and results remain JSON values. The
+snapshot freezes workflow definitions and expansions, not files under
+`context.workflow_dir` or step implementations; missing resources can still
+cause ordinary step failures. Legacy runs without a tree enter through their
+saved root index, then use tree-backed resume. Resume is available only for
+runs in the `paused` or `failed` state.
+
+`current_step_index` is the root-sequence index; `current_step_id` is a
+compatibility occurrence-ID view updated as steps are entered. It is not an
+exact active-step set: during parallel fan-out it may name an item that has
+already completed. Qualified values include `fan:item:0` for a fan-out item
+and `loop:body:1` for a later loop iteration.
+Inside a workflow call, IDs are relative to the called workflow. Structured
+run/status output includes `workflow_scopes`
+summaries when calls exist and reports an active nested gate with its
+`scope_path`. Private log events add `workflow_id` and `execution_path` to the
+qualified `step_id`. A step emits completion after its checkpoint; containers
+emit before their children, while replayed completed occurrences emit no step
+events.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
@@ -628,6 +815,9 @@ my-step/
 ├── __init__.py     # required, at the package root
 └── helpers.py      # optional nested modules and data files
 ```
+
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
 
 `step.yml` declares the step's identity. `step.type_key` must exactly match the
 `<step_id>` passed on the command line — the ID is never inferred from package
@@ -698,6 +888,11 @@ specify workflow step add my-step
 Catalog installs resolve individual file URLs from the active step catalogs and
 then go through the same validation and commit path as `--dev` and `--from`.
 Discovery-only catalogs cannot be installed from.
+
+To submit a custom step type to the discovery-only community catalog, follow
+[Community Workflow Steps](../community/workflow-steps.md). Submissions use
+tag-pinned individual file URLs and per-file digests; maintainers validate
+metadata and distribution evidence, not submitted code.
 
 ##### Catalog release history
 
@@ -952,7 +1147,9 @@ Each workflow run persists its state at `.specify/workflows/runs/<run_id>/`:
 - `inputs.json` — resolved input values
 - `log.jsonl` — step-by-step execution log
 
-This enables `specify workflow resume` to continue from the exact step where a run was paused (e.g., at a gate) or failed.
+This enables `specify workflow resume` to replay completed occurrences and
+continue at the unfinished occurrence where a run paused (for example, at a
+gate) or failed.
 
 ### Gate Verdict Inputs
 

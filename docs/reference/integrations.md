@@ -77,11 +77,12 @@ specify integration list
 
 | Option      | Description                                                                                                             |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `--catalog` | Also browse the catalog (built-in **and** community). Community integrations that are not built in are only shown here.  |
+| `--catalog` | Also browse the catalog, including external integrations not installed in this project. |
 
-Shows the built-in integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
+Shows built-in and trusted installed external integrations, which one is
+currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
-The list also shows whether each built-in integration is declared multi-install safe.
+The list also shows whether each integration is declared multi-install safe.
 
 ## Search Available Integrations
 
@@ -100,9 +101,13 @@ Searches the active catalog stack for integrations matching the query. Without a
 
 ```bash
 specify integration info <integration_id>
+specify integration info <integration_id> --versions
 ```
 
 Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
+`--versions` lists the advertised current and historical versions from the
+winning catalog, with the current release first and older releases in descending
+version order. Discovery-only sources are labeled as such.
 
 ## Install an Integration
 
@@ -115,14 +120,97 @@ specify integration install <key>
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--force`                | Opt in to installing alongside integrations that are not declared multi-install safe |
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
+| `--trust-integration` | After reviewing the code, pre-authorize an external adapter's Python execution without the interactive trust prompt |
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
+
+**Catalog history is metadata only.** `integration install` still resolves
+registered built-in implementations directly, or the current external adapter
+release from an install-enabled catalog, not historical catalog records.
+There is no `integration install --version`. The default community catalog
+remains discovery-only.
 
 Installing an additional integration does not change the default integration. Use `specify integration use <key>` to change the default.
 
 Installed extensions and presets are not registered for a non-default integration at install time — they follow the currently active (default) integration only. `specify integration use <key>` (or `switch <key>`) is what rescaffolds them for the newly active integration.
 
 > **Note:** All integration management commands require a project already initialized with `specify init`. To start a new project with a specific agent, use `specify init <project> --integration <key>` instead.
+
+### Catalog-installed external adapters
+
+Register a reviewed catalog in the initialized project, then install its adapter:
+
+```bash
+specify integration catalog add https://example.com/catalog.json --name samples
+specify integration install sample-agent
+specify integration use sample-agent
+```
+
+Installation prompts for trust **before** downloading/importing Python. For
+automation, explicitly authorize code you have reviewed:
+
+```bash
+specify integration install sample-agent --trust-integration
+specify integration upgrade sample-agent --trust-integration
+```
+
+The source must have `install_allowed: true`. The default community catalog is
+discovery-only; neither `--force` nor the trust flag bypasses that policy.
+Catalog listing/search/info do not import catalog code. Required external entry
+fields are a map key matching the descriptor ID, name, version, description,
+and an archive `download_url`; an optional explicit `id` must match the map key;
+an archive `sha256` digest is recommended. Downloads support ZIP, tar.gz, and tgz,
+HTTPS or loopback HTTP, and the existing authenticated GitHub asset flow.
+See the [catalog schema](../../integrations/README.md#catalog-schema).
+Search advertises `specify integration install <id>` for install-enabled sources;
+discovery-only results do not advertise installation.
+
+`specify check` probes an external adapter's required descriptor tools rather
+than its catalog ID. With no required tools declared, CLI adapters are checked
+using their runtime executable; optional tools do not produce missing-tool
+errors. These checks do not run the executable or invoke generic version probes.
+
+A package contains root `integration.yml` and `__init__.py`, not a copied
+inventory of Spec Kit's commands. The host renders shared templates through the
+adapter and registers installed extension/preset contributions for the default
+integration. Code persists under `.specify/integrations/packages/<id>/`,
+separately from generated agent files and their manifests. New CLI processes
+load the trusted package without consulting the catalog. Missing, modified, or
+incompatible code is an error, not a silent fallback. Upgrade installs the
+catalog's current adapter version; uninstall removes its persisted code while
+preserving modified generated files by default.
+Metadata-only `workflow status` and `workflow info` remain available without
+loading adapter code, including when an installed adapter is damaged. Workflow
+execution and resume still report adapter-loading failures explicitly.
+
+Execution consent is stored in `~/.specify/integration-trust.json`, bound to
+the canonical project root, integration ID, and complete verified package
+digest. It is checked before loading, even when adapter configuration is
+cached. A project's `packages.json` is provenance, not permission; copying
+it cannot transfer consent. The managed `.specify/.gitignore` excludes
+`integrations/packages/` and `integrations/packages.json`.
+Trust-registry updates that would exceed the 1 MiB read limit fail explicitly
+before replacing the existing store; previously granted packages remain usable.
+After copying a project or changing users, review the adapter and reauthorize
+from an install-enabled catalog:
+
+```bash
+specify integration upgrade sample-agent --force --trust-integration
+```
+
+Forced uninstall also works when package code is untrusted or its entire
+directory is missing; it does not import that code.
+
+For initialization, a project/user catalog or `SPECKIT_INTEGRATION_CATALOG_URL`
+can supply an external adapter:
+
+```bash
+specify init my-project --integration sample-agent --trust-integration
+```
+
+Review the [external adapter API](../../design/integration.md#external-adapter-package-contract)
+before publishing a package. No pip installation or source-registry edit is
+needed for adapters using the host API and standard library.
 
 **Version note:** Controlled multi-install support was introduced in Spec Kit 0.8.5. If `specify integration install <key>` says another integration is already installed and only suggests `switch` or `uninstall`, check your local CLI with `specify version` and upgrade it. Running a one-shot command such as `uvx --from git+https://github.com/github/spec-kit.git specify ...` uses a temporary copy for that command only; it does not update the persistent `specify` executable on your `PATH`.
 
@@ -182,12 +270,46 @@ specify integration upgrade [<key>]
 | `--force`                | Overwrite files even if they have been modified                          |
 | `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--integration-options`  | Options for the integration                                              |
+| `--trust-integration`    | Authorize downloading/importing the reviewed replacement external adapter |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
 
 Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration. A non-default upgrade still refreshes that integration's core commands, but does not re-register its extension or preset layers — `use`/`switch` that integration afterward to rescaffold them.
 
+If the generated-file manifest is missing, upgrade reports that there is nothing
+to upgrade and leaves the installed adapter package, generated files, and local
+recovery ownership unchanged, including with `--force`. Replacement code is
+persisted only after the upgrade regenerates the managed files successfully.
+
 If an upgrade would change an integration between command and skills layouts while preset artifacts are registered for it, the upgrade is rejected before changing files. Remove the affected presets, run the layout-changing upgrade, then reinstall them.
+
+For external adapters, `upgrade --force` and `uninstall --force` can also recover
+missing, modified, incompatible, or import-failing installed code using validated
+user-local registrar/path ownership metadata, rejecting edited project cleanup
+claims and overlap with another integration's root. Without local ownership
+proof, old-only generated files are preserved with a manual-cleanup warning.
+Shared event dispatchers and partially owned native settings are preserved
+during damaged-adapter fallback cleanup, even with `--force`. Recovery uses
+the user-local ownership modes, not editable project claims. Successful event
+refreshes keep that local record current; older records without modes preserve
+unproven files rather than risking user-data deletion.
+A trusted replacement can still overwrite files at its declared destination
+under `upgrade --force`. Recovery is reported explicitly and does not bypass source policy
+or the replacement package's trust decision. Failed lifecycle operations restore
+only operation-owned changes. Independent workflow progress and unowned user
+files are preserved; conflicting concurrent managed-file edits are reported with
+retained recovery snapshots.
+Rollback snapshots are lazy and bounded to 128 MiB of file content and 4,096
+entries per operation; an oversized snapshot refuses the affected mutation.
+No-op operations do not copy agent directories or the installed package store.
+Custom adapters must journal writes to existing files through the host's
+before-write helpers or `IntegrationManifest.record_file()`. Recording a new
+or unchanged file afterward remains supported; an unobserved overwrite is
+reported as unrecoverable rather than deleting the resulting file.
+Host writes reject symlinked destinations and ancestors before writing; forced
+removal of an owned leaf symlink unlinks only the link. Concurrent workflow
+dispatch pins the requested project's adapter and verified imports until the
+dispatch finishes, without serializing independent agent processes.
 
 ## Report Integration Status
 
@@ -213,6 +335,10 @@ list, or records no installed integrations.
 ## Catalog Management
 
 Integration catalogs control where the discovery commands (`search` and `info`) look for integrations. Catalogs are checked in priority order.
+
+Catalog management, `integration list --catalog`, and `integration info` do not
+execute adapter code. Ordinary integration listing, setup, selection, status,
+registration, and workflow dispatch load trusted installed implementations.
 
 ### List Catalogs
 
@@ -253,6 +379,56 @@ Catalogs are resolved in this order (first match wins):
 3. **User config** — `~/.specify/integration-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
 
+### Historical Integration Metadata
+
+An integration entry may retain the existing top-level fields for its advertised
+current release and add a `releases` mapping of historical version to metadata.
+Single-version entries remain valid without a `releases` key. For example:
+
+```json
+{
+  "schema_version": "1.0",
+  "integrations": {
+    "my-agent": {
+      "id": "my-agent",
+      "name": "My Agent",
+      "author": "example",
+      "version": "2.0.0",
+      "description": "Current release",
+      "repository": "https://example.com/my-agent/current",
+      "releases": {
+        "1.0.0": {
+          "description": "Historical release",
+          "repository": "https://example.com/my-agent/v1",
+          "requires": {"speckit_version": ">=0.7"}
+        }
+      }
+    }
+  }
+}
+```
+
+The top-level fields retain their original meaning for older clients and for
+unqualified `search`, `info`, `list --catalog`, and `install` commands. Historical
+records may contain `name`, `description`, `author`, `repository`, `license`,
+`tags` (a list of strings), and `requires` (a mapping). Shared identity, name,
+author, and source policy are retained; current-only metadata such as
+description, repository, tags, and requirements is **not** inherited by an
+older release unless explicitly supplied in its record. Release records cannot
+override `id`, `version`, `releases`, or source policy, and cannot advertise
+download URLs or archives.
+
+For programmatic metadata lookup,
+`IntegrationCatalog.get_integration_info(id, version="1.0.0")` selects the
+exact historical record from the winning source, or returns `None` if that
+version is missing. `get_integration_versions(id)` returns the versions
+advertised by that same source. PEP 440-equivalent spellings (such as `v1.0`
+and `1.0.0`) match the same release while retaining its catalog spelling.
+The current release must not be repeated in `releases`; malformed records and
+duplicate equivalent versions are rejected. An absent version never falls
+through to a lower-priority source or silently selects current. These lookups
+do not install an integration.
+
 ## Integration-Specific Options
 
 Some integrations accept additional options via `--integration-options`:
@@ -276,9 +452,14 @@ Once `generic` is the active integration, `specify extension add` registers
 extension commands in its configured `--commands-dir` (as command files or
 skills according to `--skills`). `specify extension remove` removes unchanged
 extension-owned artifacts while leaving core commands, user files, and edited
-extension files intact. The core `speckit.taskstoissues` command remains
-available; installing the GitHub extension adds the namespaced replacement
-without deprecating or removing the core command.
+extension files intact. The deprecated core `speckit.taskstoissues` command
+remains available, warns on invocation, and will be removed in a future minor
+release. To migrate, run `specify extension add github` and use the recommended
+`/speckit.github.taskstoissues` command for dot-command integrations. Slash-hyphen
+integrations use `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code
+skills use `$speckit-github-taskstoissues`; Kimi uses
+`/skill:speckit-github-taskstoissues`. The core command continues its existing
+workflow and does not install or enable the extension automatically.
 
 ## Scaffold a New Integration
 

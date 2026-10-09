@@ -43,7 +43,9 @@ Community integrations are contributed by external developers and listed in `int
 
 ### Prerequisites
 
-1. **Working external integration** — distributed from its own repository; a community catalog listing alone does not make it installable through `specify integration install`
+1. **Working external integration** — distribute a standalone ZIP or tar.gz
+   with root `integration.yml` and `__init__.py`; a discovery-only community
+   listing does not grant installation permission
 2. **Public repository** — hosted on GitHub or similar
 3. **`integration.yml` descriptor** — valid descriptor file (see below)
 4. **Documentation** — README with usage instructions
@@ -56,38 +58,54 @@ Every community integration must include an `integration.yml`:
 ```yaml
 schema_version: "1.0"
 integration:
-  id: "my-agent"
-  name: "My Agent"
+  id: "sample-agent"
+  name: "Sample Agent"
   version: "1.0.0"
-  description: "Integration for My Agent"
+  description: "Adapter for Sample Agent"
   author: "your-name"
-  repository: "https://github.com/your-name/speckit-my-agent"
+  repository: "https://github.com/your-name/speckit-sample-agent"
   license: "MIT"
 requires:
-  speckit_version: ">=0.6.0"
+  speckit_version: ">=1.1.2.dev0"
   tools:
-    - name: "my-agent"
-      version: ">=1.0.0"
+    - name: "sample-agent"
       required: true
-provides:
-  commands:
-    - name: "speckit.specify"
-      file: "templates/speckit.specify.md"
-  scripts:
-    - update-context.sh
 ```
+
+The root module exports exactly one adapter subclass, whose `key` and
+`config.name` match the descriptor. Prefer `SkillsIntegration`,
+`MarkdownIntegration`, `TomlIntegration`, or `YamlIntegration` to render the
+host templates. Do not duplicate or enumerate Spec Kit's core commands.
+Additional relative-import helper modules are allowed; external packages using
+only the host API and standard library require neither pip installation nor
+changes to the source registry. See the complete
+[external adapter contract](../design/integration.md#external-adapter-package-contract).
 
 ### Descriptor Validation Rules
 
 | Field | Rule |
 |-------|------|
 | `schema_version` | Must be `"1.0"` |
-| `integration.id` | Lowercase alphanumeric + hyphens (`^[a-z0-9-]+$`) |
+| `integration.id` | External package IDs start with a lowercase letter/digit, then lowercase alphanumeric + hyphens (`^[a-z0-9][a-z0-9-]*$`); built-in and Windows device names are reserved |
 | `integration.version` | Valid PEP 440 version (parsed with `packaging.version.Version()`) |
-| `requires.speckit_version` | Required field; specify a version constraint such as `>=0.6.0` (current validation checks presence only) |
-| `provides` | Must include at least one command or script |
+| `requires.speckit_version` | Required valid PEP 440 constraint, enforced during install and load |
+| `requires.tools` | Optional list; required executables are checked on PATH; version detection belongs to the adapter |
+| `provides` | Optional legacy metadata; an adapter need not provide commands or scripts |
 | `provides.commands[].name` | String identifier |
 | `provides.commands[].file` | Relative path to template file |
+
+Publish a pinned archive `download_url`, preferably with a hexadecimal archive
+`sha256` digest. The catalog's ID/name/version/description and any optional
+descriptor metadata or requirements must match `integration.yml`.
+Never rely on importing a catalog to register your class: discovery does not
+execute code. Installation from an install-enabled source requires an explicit
+trust decision before import. Catalog maintainers review listing metadata, not
+adapter implementations; users must vet the code.
+Consent is user-local in `~/.specify/integration-trust.json`, bound to the
+canonical project root, adapter ID, and verified package digest. Do not ship a
+trust registry or rely on project metadata to authorize execution. A copied
+project must reauthorize through a reviewed, install-enabled catalog using
+`specify integration upgrade sample-agent --force --trust-integration`.
 
 ### Submitting to the Community Catalog
 
@@ -98,13 +116,14 @@ provides:
    {
      "schema_version": "1.0",
      "integrations": {
-       "my-agent": {
-         "id": "my-agent",
-         "name": "My Agent",
+       "sample-agent": {
+         "id": "sample-agent",
+         "name": "Sample Agent",
          "version": "1.0.0",
-         "description": "Integration for My Agent",
+         "description": "Adapter for Sample Agent",
          "author": "your-name",
-         "repository": "https://github.com/your-name/speckit-my-agent",
+         "repository": "https://github.com/your-name/speckit-sample-agent",
+         "download_url": "https://github.com/your-name/speckit-sample-agent/releases/download/v1.0.0/sample-agent.zip",
          "tags": ["cli"]
        }
      }
@@ -121,7 +140,7 @@ provides:
 To update your integration version in the catalog:
 
 1. Release a new version of your integration
-2. Open a PR updating the `version` field in `catalog.community.json`
+2. Open a PR updating the version, pinned archive URL, and digest (if provided)
 3. Ensure backward compatibility or document breaking changes
 
 ## Upgrade Workflow
@@ -139,4 +158,34 @@ specify integration upgrade
 
 # Force upgrade (overwrites modified files)
 specify integration upgrade --force
+
+# Upgrade a reviewed external adapter without a trust prompt
+specify integration upgrade sample-agent --trust-integration
 ```
+
+Test your package through the public path: register a local loopback test
+catalog, install its neutral adapter, start a fresh CLI process, register
+extension/preset contributions, and exercise command/prompt workflow dispatch
+with a harmless process double. Include failures for invalid metadata/classes,
+trust denial, unsafe archives, setup errors, and upgrades/uninstall. Keep
+package code separate from generated-file manifests and verify rollback and
+modified-file preservation.
+
+Use manifest/base-class write helpers so failed lifecycle operations can restore
+only the files your adapter changed. Legacy `record_existing()` writes are
+covered within the adapter's declared output root; writes elsewhere must use
+`record_file()` or host write helpers. Do not claim unrelated user files. Test
+metadata-only commands without import side effects, forced recovery of damaged
+installed packages, and rollback that preserves independent workflow progress
+and concurrent user edits.
+Host helpers reject symlinked write destinations; owned leaf links may be
+unlinked without following them. Exercise overlapping project dispatch and lazy
+relative imports: the host pins the correct adapter for each dispatch without
+serializing independent agent processes. Forced recovery uses user-local
+registrar/path ownership, not editable project metadata. Without that proof,
+old-only artifacts are preserved with an explicit manual-cleanup warning.
+Validate optional legacy destinations as canonical project-relative paths; they
+cannot use reserved roots, symlinked directories, or home-relative syntax.
+Primary and legacy output overlap is checked case-insensitively on all platforms.
+For event-capable adapters, test event-only extension add/remove and enable/disable
+in fresh CLI processes, including explicit errors when installed code cannot load.
