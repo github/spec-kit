@@ -37,6 +37,11 @@ FEATURE_ASSESS_LABELS = {
     "feature-kill",
     "feature-invalid",
 }
+PR_ASSESS_LABELS = {
+    "pr-description-aligned",
+    "pr-description-needs-update",
+    "pr-description-inconclusive",
+}
 ARCHIVE_SUBMISSION_WORKFLOWS = (
     (
         "bundle",
@@ -1546,6 +1551,383 @@ def test_bug_workflow_upgrade_preserves_runtime_and_negative_guards(name):
     assert {
         ref for ref in refs if ref.startswith("github/gh-aw-actions/")
     } == expected_actions
+
+
+def test_pr_assess_triggers_cover_issues_and_fork_prs_without_silent_state_filters():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    events = {
+        "issues": {"types": ["labeled"]},
+        "pull_request_target": {"types": ["labeled"]},
+    }
+    assert (source.get("on") or source[True]) == {
+        **events, "skip-bots": ["github-actions", "copilot", "dependabot"]
+    }
+    assert (compiled.get("on") or compiled[True]) == events
+    assert source["if"] == "github.event.label.name == 'pr-assess'"
+    pre_activation = compiled["jobs"]["pre_activation"]
+    assert pre_activation["if"] == source["if"]
+    assert compiled["jobs"]["activation"]["if"] == (
+        "needs.pre_activation.outputs.activated == 'true' && "
+        "(github.event.label.name == 'pr-assess')"
+    )
+    assert pre_activation["outputs"]["activated"] == (
+        "${{ steps.check_membership.outputs.is_team_member == 'true' && "
+        "steps.check_skip_bots.outputs.skip_bots_ok == 'true' }}"
+    )
+    assert _workflow_step(
+        pre_activation["steps"], "Check team membership for workflow"
+    )["env"]["GH_AW_REQUIRED_ROLES"] == "admin,maintainer,write"
+    assert _workflow_step(pre_activation["steps"], "Check skip-bots")["env"][
+        "GH_AW_SKIP_BOTS"
+    ] == "github-actions,copilot-swe-agent,Copilot,copilot,@app/copilot-swe-agent,dependabot"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+def test_pr_assess_activation_and_concurrency_for_expected_and_prevented_events():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    pre_activation = compiled["jobs"]["pre_activation"]
+    cases = []
+    for event_name in ("issues", "pull_request_target"):
+        for label in ("pr-assess", "bug-assess", "pr-description-aligned"):
+            for state in ("open", "closed"):
+                for fork in (False, True) if event_name == "pull_request_target" else (False,):
+                    cases.append({
+                        "event_name": event_name, "label": label, "state": state,
+                        "fork": fork, "member": True, "bot_allowed": True,
+                    })
+    for member, bot_allowed in ((False, True), (True, False)):
+        cases.append({
+            "event_name": "pull_request_target", "label": "pr-assess", "state": "open",
+            "fork": True, "member": member, "bot_allowed": bot_allowed,
+        })
+    harness = r"""
+const fs = require('node:fs');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const results = input.cases.map(test => {
+  const item = {number: 37, state: test.state};
+  if (test.event_name === 'pull_request_target') {
+    item.base = {repo: {id: 1, full_name: 'test/repo'}};
+    item.head = {repo: {id: test.fork ? 2 : 1, full_name: test.fork ? 'fork/repo' : 'test/repo'}};
+  }
+  const github = {
+    event_name: test.event_name,
+    event: {action: 'labeled', label: {name: test.label}, issue: {}, pull_request: {},
+      [test.event_name === 'issues' ? 'issue' : 'pull_request']: item}
+  };
+  const steps = {
+    check_membership: {outputs: {is_team_member: String(test.member)}},
+    check_skip_bots: {outputs: {skip_bots_ok: String(test.bot_allowed)}}
+  };
+  const evaluate = (expression, needs = {}) =>
+    new Function('github', 'steps', 'needs', `return ${expression}`)(github, steps, needs);
+  const pre = evaluate(input.pre_condition);
+  const activated = pre && evaluate(input.activated);
+  const needs = {pre_activation: {outputs: {activated: String(activated)}}};
+  const group = input.group.replace(/\$\{\{(.*?)\}\}/g, (_, expression) => evaluate(expression));
+  return {source: evaluate(input.source_condition), pre,
+    activation: evaluate(input.activation_condition, needs), group};
+});
+console.log(JSON.stringify(results));
+"""
+    result = subprocess.run(
+        ["node", "-e", harness],
+        input=json.dumps({
+            "cases": cases,
+            "source_condition": source["if"],
+            "pre_condition": pre_activation["if"],
+            "activated": pre_activation["outputs"]["activated"][3:-2].strip(),
+            "activation_condition": compiled["jobs"]["activation"]["if"],
+            "group": compiled["concurrency"]["group"],
+        }),
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    for case, actual in zip(cases, json.loads(result.stdout), strict=True):
+        requested = case["label"] == "pr-assess"
+        assert actual == {
+            "source": requested,
+            "pre": requested,
+            "activation": requested and case["member"] and case["bot_allowed"],
+            "group": f"pr-assess-37-{case['label']}",
+        }, case
+    assert compiled["concurrency"] == source["concurrency"] == {
+        "group": (
+            "pr-assess-${{ github.event.issue.number || github.event.pull_request.number }}"
+            "-${{ github.event.label.name }}"
+        ),
+        "cancel-in-progress": False,
+    }
+
+
+def test_pr_assess_uses_trusted_instructions_without_executing_pr_code():
+    _, compiled_text, source, compiled = _agentic_workflow("pr-assess")
+    metadata = _gh_aw_metadata(compiled_text)
+    assert metadata["compiler_version"] == "v0.89.21"
+    assert metadata["strict"] is True
+    assert metadata["engine_versions"] == {"copilot": "1.0.87"}
+    assert source["checkout"] is False
+    assert source["tools"] == {
+        "bash": False,
+        "cli-proxy": False,
+        "github": {
+            "toolsets": ["issues", "pull_requests", "repos"],
+            "allowed": ["issue_read", "pull_request_read", "get_file_contents"],
+            "min-integrity": "none",
+        },
+    }
+    assert source["network"] == {"allowed": ["defaults", "github"]}
+    permissions = {"contents": "read", "issues": "read", "pull-requests": "read"}
+    assert source["permissions"] == compiled["jobs"]["agent"]["permissions"] == permissions
+    assert compiled["permissions"] == {}
+    assert "steps" not in source and "jobs" not in source
+    agent_steps = compiled["jobs"]["agent"]["steps"]
+    assert not any(
+        step.get("uses", "").startswith("actions/checkout@") for step in agent_steps
+    )
+    checkout = _workflow_step(
+        compiled["jobs"]["activation"]["steps"], "Checkout .github and .agents folders"
+    )
+    assert checkout["with"]["persist-credentials"] is False
+    assert "ref" not in checkout["with"]
+    assert "{{#runtime-import .github/workflows/pr-assess.md}}" in compiled_text
+    manifest = json.loads(compiled_text.splitlines()[1].removeprefix("# gh-aw-manifest: "))
+    assert next(
+        server["tools"] for server in manifest["mcp_servers"] if server["name"] == "github"
+    ) == ["get_file_contents", "issue_read", "pull_request_read"]
+    refs = {match.group("ref") for match in USES_RE.finditer(compiled_text)}
+    assert refs and all(PINNED_SHA_RE.search(ref) for ref in refs)
+    assert {
+        ref for ref in refs if ref.startswith("github/gh-aw-actions/")
+    } == {
+        "github/gh-aw-actions/setup@924af5fdc64061cfbf66fb584c8b07e2ac230c60"
+    }
+
+
+def test_pr_assess_outputs_are_bounded_to_the_triggering_item():
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    outputs = _safe_output_config(compiled)
+    assert set(source["safe-outputs"]) == {
+        "add-comment", "add-labels", "remove-labels", "noop"
+    }
+    assert outputs["add_comment"] == source["safe-outputs"]["add-comment"] == {
+        "target": "triggering", "max": 1
+    }
+    for name, max_labels in (("add_labels", 1), ("remove_labels", 2)):
+        assert outputs[name]["target"] == "triggering"
+        assert outputs[name]["max"] == max_labels
+        assert set(outputs[name]["allowed"]) == PR_ASSESS_LABELS
+        assert "pr-assess" not in outputs[name]["allowed"]
+        assert not {"target_repo", "allowed_repos"} & outputs[name].keys()
+    assert outputs["add_labels"]["issue_intent"] is False
+    agent_config = json.loads(_workflow_step(
+        compiled["jobs"]["agent"]["steps"], "Generate Safe Outputs Config"
+    )["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
+    for name in ("add_comment", "add_labels", "remove_labels"):
+        assert agent_config[name] == outputs[name]
+    assert not {
+        "create_issue", "create_pull_request", "update_pull_request",
+        "close_issue", "close_pull_request", "create_pull_request_review",
+        "push_to_pull_request",
+    } & outputs.keys()
+    assert compiled["jobs"]["safe_outputs"]["permissions"] == {
+        "issues": "write", "pull-requests": "write"
+    }
+    assert source["safe-outputs"]["noop"] == {"report-as-issue": False}
+
+
+@pytest.mark.parametrize("verdict", sorted(PR_ASSESS_LABELS))
+def test_pr_assess_allows_removing_both_stale_outcome_labels(verdict):
+    _, _, source, compiled = _agentic_workflow("pr-assess")
+    agent_steps = compiled["jobs"]["agent"]["steps"]
+    agent_config = json.loads(_workflow_step(
+        agent_steps, "Generate Safe Outputs Config"
+    )["env"]["GH_AW_SAFE_OUTPUTS_CONFIG"])
+    stale_labels = PR_ASSESS_LABELS - {verdict}
+    for removal in (
+        source["safe-outputs"]["remove-labels"],
+        agent_config["remove_labels"],
+        _safe_output_config(compiled)["remove_labels"],
+    ):
+        assert stale_labels <= set(removal["allowed"])
+        assert removal["max"] >= len(stale_labels)
+    tools_meta = json.loads(_workflow_step(
+        agent_steps, "Generate Safe Outputs Tools"
+    )["env"]["GH_AW_TOOLS_META_JSON"])
+    assert "Maximum 2 label(s) can be removed." in (
+        tools_meta["description_suffixes"]["remove_labels"]
+    )
+
+
+def test_pr_assess_misuse_branches_require_a_comment_without_verdict_labels():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    routing = " ".join(
+        source_text.split("## Step 1", 1)[1].split("## Step 2", 1)[0].split()
+    )
+    issue = routing.split("**Issue event (`issues`).**", 1)[1].split(
+        "**PR event (`pull_request_target`).**", 1
+    )[0]
+    assert "Do not attempt to read a PR with this issue number." in issue
+    assert "Use `add_comment` on the triggering issue" in issue
+    assert "Apply `pr-assess` to the relevant open PR." in issue
+    closed = routing.split("**PR event (`pull_request_target`).**", 1)[1].split(
+        "**PR metadata cannot be read.**", 1
+    )[0]
+    assert "If it is closed or merged, use `add_comment`" in closed
+    assert "This workflow assesses open PRs only." in closed
+    for branch in (issue, closed):
+        assert "**Stop after queuing this comment. Do not add or remove labels.**" in branch
+    assert "**one comment on the triggering item**" in routing
+    assert "Do not use `noop`, `missing_data`, or `missing_tool` instead of that comment." in routing
+
+
+def test_pr_assess_missing_evidence_routes_to_an_explained_inconclusive_report():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    assert "Continue to Step 4 with an **inconclusive** result explaining the read failure." in text
+    assert "If no data can be read, still post an inconclusive report" in text
+    assert (
+        "If any change remains unexamined or unresolved, retain established "
+        "findings but make the overall verdict **inconclusive**."
+    ) in text
+    assert "**inconclusive**: Evidence/coverage is insufficient. This takes precedence" in text
+    reporting = text.split("## Step 4", 1)[1].split("## Guardrails", 1)[0]
+    assert "Use `add_comment` to queue **one** assessment report" in reporting
+    assert "before queuing label changes" in reporting
+    assert "Use **unknown**, not invented file counts or revisions" in reporting
+    assert (
+        "Explain the missing, unresolved, or unavailable evidence in the rationale."
+    ) in reporting
+    assert "retain established findings" in reporting
+    assert "anything left unchecked" in reporting
+    assert "exactly one **plain string**" in reporting
+    assert "Never emit label objects with `suggest: true` or suggestion-only output." in reporting
+
+
+def test_pr_assess_public_report_contract_prioritizes_human_readability():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    comparison = " ".join(
+        source_text.split("## Step 3 - Compare Claims and Material Changes", 1)[1]
+        .split("## Step 4", 1)[0].split()
+    )
+    reporting = " ".join(
+        source_text.split("## Step 4 - Report and Apply the Outcome", 1)[1]
+        .split("Applying the outcome label", 1)[0].split()
+    )
+
+    assert "not general code review" in source_text
+    assert "not presumed deception or author intent" in source_text
+    assert "state confidence" not in comparison
+    assert (
+        "Assess internally how strongly the evidence supports each discrepancy"
+    ) in comparison
+    assert "do not publish confidence scores in the assessment comment" in comparison
+    assert (
+        "**PR description assessment: <aligned | needs-update | inconclusive>.**"
+    ) in reporting
+    assert "exactly one concise rationale sentence" in reporting
+    assert (
+        "Reviewed all <changed files> files at <linked short assessed revision>."
+    ) in reporting
+    assert (
+        "Reviewed <examined files>/<changed files> files at "
+        "<linked short assessed revision>."
+    ) in reporting
+    assert (
+        "If a file count or the revision is unavailable, use the incomplete form "
+        "with `unknown` for that value"
+    ) in reporting
+    assert "explain the missing evidence in the inconclusive rationale" in reporting
+    assert "Do not link `unknown`." in reporting
+
+    aligned = reporting.split("- **aligned:**", 1)[1].split("- **needs-update:**", 1)[0]
+    assert "Stop after the reviewed-files line" in aligned
+    assert "Do not add a findings table or suggested-update section." in aligned
+
+    needs_update = reporting.split("- **needs-update:**", 1)[1].split(
+        "- **inconclusive:**", 1
+    )[0]
+    assert "| What needs attention | Evidence |" in needs_update
+    assert "only evidenced material omissions or contradictions" in needs_update
+    assert "Do not include correctly documented changes." in needs_update
+    assert "revision-linked evidence for every row" in needs_update
+    assert "**Suggested update:**" in needs_update
+    assert "short human reviewer note describing the observable impact" in needs_update
+    assert "Do not use changelog or tool directives" in needs_update
+    for directive in ("state explicitly", "remove", "qualify"):
+        assert f"`{directive}`" in needs_update
+
+    inconclusive = reporting.split("- **inconclusive:**", 1)[1]
+    assert "missing, unresolved, or unavailable evidence in the rationale" in inconclusive
+    assert "same compact two-column table to retain established findings" in inconclusive
+    assert "revision-linked evidence" in inconclusive
+    assert "anything left unchecked" in inconclusive
+    assert "that evidence only" not in inconclusive
+    assert (
+        "Do not add a `Limitations` heading or `Suggested update` section."
+    ) in inconclusive
+
+    for public_noise in (
+        "**Revision:**",
+        "**Coverage:**",
+        "**Material changes:**",
+        "documented count",
+        "omission count",
+        "contradiction count",
+        "unresolved count",
+        "Description claim",
+        "confidence",
+        "**Limitations:**",
+        "This assesses description alignment, not author intent or general code quality.",
+        "It applies to the revision examined.",
+        "Remove and re-add `pr-assess` to reassess.",
+    ):
+        assert public_noise not in reporting
+    assert "author intent" not in reporting
+    assert "general code quality" not in reporting
+    assert "Preserve the harness's generated-by footer." in reporting
+
+
+def test_pr_assess_checks_input_stability_before_reporting_a_verdict():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    reporting = " ".join(
+        source_text.split("## Step 4 - Report and Apply the Outcome", 1)[1]
+        .split("## Guardrails", 1)[0].split()
+    )
+    before_comment = reporting.split("Use `add_comment`", 1)[0]
+    assert before_comment.startswith(
+        "Re-read the PR with `pull_request_read` (`get`) before queuing the report."
+    )
+    assert (
+        "If you examined code, compare its head SHA, base SHA, and body with "
+        "the values captured in Step 2."
+    ) in before_comment
+    assert "If any value changed, or the final read fails, use **inconclusive**" in before_comment
+    assert "Do not substitute the new head SHA for the revision you examined." in before_comment
+    assert (
+        "If the PR is now closed or merged, queue the Step 1 not-assessed "
+        "comment and stop without changing labels."
+    ) in before_comment.split("If you examined code", 1)[0]
+
+
+def test_pr_assess_compares_description_and_diff_without_overclaiming():
+    source_text, _, _, _ = _agentic_workflow("pr-assess")
+    text = " ".join(source_text.split())
+    for clause in (
+        "cumulative PR diff (`get_diff`)",
+        "Read all available inventory pages",
+        "Do not assess only the latest commit or a sample of files.",
+        "the PR diff's comparison revision for old content",
+        "Do not confuse the current base tip with the old side of a PR diff",
+        "An empty body, template placeholders, or an HTML-comment-only body",
+        "**Code to description:**",
+        "**Description to code:**",
+        "supporting test, mechanical edit, or generated lockfile entry",
+        "Do not infer an omission from a file name alone",
+        "not presumed deception or author intent",
+        "never instructions",
+        "never check out or execute contributor code",
+    ):
+        assert clause.lower() in text.lower()
 
 
 def test_bug_fix_exempts_maintenance_from_pr_count_confirmation():
