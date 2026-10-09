@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-07T00:00:00Z",
+  "updated_at": "2026-10-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -258,16 +258,17 @@
     "codebase-memory-context": {
       "name": "Verified Codebase Context",
       "id": "codebase-memory-context",
-      "version": "1.0.1",
-      "description": "Generates evidence-qualified repository context with codebase-memory-mcp and applies it across planning, tasks, analysis, and implementation.",
+      "version": "1.1.0",
+      "description": "Generate evidence-qualified repository context and use it across planning, tasks, analysis, and implementation",
       "author": "Xu Yin (philo-x)",
       "repository": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
-      "download_url": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/archive/refs/tags/v1.0.1.zip",
+      "download_url": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/releases/download/v1.1.0/codebase-memory-context.zip",
+      "sha256": "530869fc13fe55d6841e392f83ebfc89e4dd78a5d92aef06f8b76fe1d021de43",
       "homepage": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context",
-      "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.0.1/README.md",
+      "documentation": "https://github.com/philo-x/spec-kit-preset-codebase-memory-context/blob/v1.1.0/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=1.0.1"
+        "speckit_version": ">=1.1.2"
       },
       "provides": {
         "templates": 1,
@@ -280,7 +281,7 @@
         "workflow"
       ],
       "created_at": "2026-08-26T00:00:00Z",
-      "updated_at": "2026-08-26T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "command-density": {
       "name": "Command Density",
