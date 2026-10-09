@@ -2033,6 +2033,46 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "epic": {
+      "name": "Epic",
+      "id": "epic",
+      "description": "Break work too big for one feature into many, delivered in order, with decisions that hold across them.",
+      "author": "Paul McKeown",
+      "version": "0.1.5",
+      "download_url": "https://github.com/pmckeown/spec-kit-epic/archive/refs/tags/v0.1.5.zip",
+      "sha256": "734b9a75671802aa8f768765cba32bd2104fec11863c5621896d2c4eb9cc2f46",
+      "repository": "https://github.com/pmckeown/spec-kit-epic",
+      "homepage": "https://github.com/pmckeown/spec-kit-epic",
+      "documentation": "https://github.com/pmckeown/spec-kit-epic/blob/main/README.md",
+      "changelog": "https://github.com/pmckeown/spec-kit-epic/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.9.dev0,<1.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "epic",
+        "planning",
+        "decisions",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-09T00:00:00Z"
+    },
     "evaluator": {
       "name": "Evaluator Contract",
       "id": "evaluator",
