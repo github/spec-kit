@@ -4811,7 +4811,7 @@ class TestFanOutStep:
         ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
         does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
         COMPLETED fan-out the engine reads ``step_template`` back out and, when
-        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        it is truthy, calls ``template.get("id", ...)`` while expanding items. A
         truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
         AttributeError there and took down the whole run. Mirrors the fan-out
         non-list ``items`` guard and the switch non-dict ``cases`` guard.
@@ -5042,24 +5042,16 @@ class TestFanInStep:
 
 
 class TestFanOutConcurrency:
-    """Fan-out honors max_concurrency (WorkflowEngine._run_fan_out)."""
+    """Fan-out honors max_concurrency through WorkflowEngine.execute()."""
 
     @staticmethod
-    def _build(tmp_path, on_item=None):
-        """Wire an engine + run state to a probe step that echoes context.item.
-
-        Per-item output is ``{"seen": <item>}`` so order and per-thread item
-        isolation are checkable. ``on_item(item)`` may run a side effect and
-        optionally return a StepStatus to override COMPLETED (or raise).
-        """
-        from specify_cli.workflows.base import (
-            RunStatus,
-            StepBase,
-            StepContext,
-            StepResult,
-            StepStatus,
-        )
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
+    def _run(
+        tmp_path, monkeypatch, items, max_concurrency, on_item=None, template=None
+    ):
+        """Run a public fan-out workflow with a probe that echoes ``context.item``."""
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
         class _ProbeStep(StepBase):
             type_key = "probe"
@@ -5072,35 +5064,41 @@ class TestFanOutConcurrency:
                         status = override
                 return StepResult(status=status, output={"seen": context.item})
 
-        engine = WorkflowEngine(project_root=tmp_path)
-        context = StepContext()
-        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-        state.status = RunStatus.RUNNING
-        template = {"id": "impl", "type": "probe"}
-        return engine, context, state, {"probe": _ProbeStep()}, template
-
-    def _run(self, tmp_path, items, max_concurrency, on_item=None):
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        results = engine._run_fan_out(
-            items, template, "fan", context, state, registry, max_concurrency
+        monkeypatch.setitem(STEP_REGISTRY, "probe", _ProbeStep())
+        template = template or {"id": "impl", "type": "probe"}
+        state = WorkflowEngine(tmp_path).execute(
+            WorkflowDefinition(
+                {
+                    "workflow": {"id": "fan-out-test", "name": "Fan-out Test"},
+                    "steps": [
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": items,
+                            "max_concurrency": max_concurrency,
+                            "step": template,
+                        }
+                    ],
+                }
+            )
         )
-        return results, state
+        return state.step_results["fan"]["output"]["results"], state
 
-    def test_sequential_default_preserves_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(5)), 1)
+    def test_sequential_default_preserves_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(5)), 1)
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_concurrent_runs_all_items_in_item_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(10)), 4)
+    def test_concurrent_runs_all_items_in_item_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(10)), 4)
         assert results == [{"seen": i} for i in range(10)]
 
-    def test_sequential_and_concurrent_agree(self, tmp_path):
+    def test_sequential_and_concurrent_agree(self, tmp_path, monkeypatch):
         items = [{"n": i} for i in range(8)]
-        seq, _ = self._run(tmp_path, items, 1)
-        con, _ = self._run(tmp_path, items, 4)
+        seq, _ = self._run(tmp_path, monkeypatch, items, 1)
+        con, _ = self._run(tmp_path, monkeypatch, items, 4)
         assert seq == con == [{"seen": {"n": i}} for i in range(8)]
 
-    def test_shuffled_completion_preserves_item_order(self, tmp_path):
+    def test_shuffled_completion_preserves_item_order(self, tmp_path, monkeypatch):
         # Determinism keystone: completion order is forced to the exact REVERSE of
         # item order by an event chain (no sleeps) — item i blocks until item i+1
         # has finished, so item 0 completes LAST — yet results must still be in
@@ -5120,11 +5118,11 @@ class TestFanOutConcurrency:
             done[item].set()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
         assert completion == list(reversed(range(n)))
 
-    def test_concurrency_is_real(self, tmp_path):
+    def test_concurrency_is_real(self, tmp_path, monkeypatch):
         import threading
 
         # Deterministic proof of real parallelism (no wall-clock threshold to
@@ -5138,30 +5136,35 @@ class TestFanOutConcurrency:
             barrier.wait()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
 
     @pytest.mark.parametrize(
         "bad", [0, -1, None, "abc", 1.0, float("inf"), float("nan")]
     )
-    def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+    def test_invalid_max_concurrency_coerces_to_sequential(
+        self, tmp_path, monkeypatch, bad
+    ):
         # float("inf") -> int() raises OverflowError (not TypeError/ValueError);
         # it must fall back to sequential like any other uncoercible value, not
         # crash the run.
-        results, _ = self._run(tmp_path, list(range(4)), bad)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), bad)
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_string_max_concurrency_is_honored(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(4)), "2")
+    def test_string_max_concurrency_is_honored(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), "2")
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_context_item_isolation_across_threads(self, tmp_path):
+    def test_context_item_isolation_across_threads(self, tmp_path, monkeypatch):
         items = [{"id": f"x{i}"} for i in range(6)]
-        results, _ = self._run(tmp_path, items, 6)
+        results, _ = self._run(tmp_path, monkeypatch, items, 6)
         assert [r["seen"]["id"] for r in results] == [f"x{i}" for i in range(6)]
 
     @pytest.mark.parametrize("max_concurrency", [1, 2])
-    def test_marks_item_context_as_inside_fan_out(self, tmp_path, max_concurrency):
+    def test_marks_item_context_as_inside_fan_out(
+        self, tmp_path, monkeypatch, max_concurrency
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
         from specify_cli.workflows.base import StepBase, StepResult, StepStatus
 
         class _ContextProbeStep(StepBase):
@@ -5173,28 +5176,27 @@ class TestFanOutConcurrency:
                     output={"inside_fan_out": context.inside_fan_out},
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        results = engine._run_fan_out(
+        monkeypatch.setitem(STEP_REGISTRY, "context-probe", _ContextProbeStep())
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
             ["a", "b"],
-            {"id": "probe", "type": "context-probe"},
-            "fan",
-            context,
-            state,
-            {"context-probe": _ContextProbeStep()},
             max_concurrency,
+            template={"id": "probe", "type": "context-probe"},
         )
 
         assert results == [
             {"inside_fan_out": True},
             {"inside_fan_out": True},
         ]
-        assert context.inside_fan_out is False
 
-    def test_empty_items(self, tmp_path):
-        results, _ = self._run(tmp_path, [], 4)
+    def test_empty_items(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, [], 4)
         assert results == []
 
-    def test_concurrent_halt_status_not_clobbered_by_later_item(self, tmp_path):
+    def test_concurrent_halt_status_not_clobbered_by_later_item(
+        self, tmp_path, monkeypatch
+    ):
         # Item 1 PAUSES (first halting item in order); item 3 FAILS while in
         # flight. The final run status must be the halting item's (PAUSED), never
         # a later item's (FAILED) that raced after it — matching sequential.
@@ -5207,22 +5209,24 @@ class TestFanOutConcurrency:
                 return StepStatus.FAILED
             return None
 
-        results, state = self._run(tmp_path, list(range(4)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(4)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}]
         assert state.status == RunStatus.PAUSED
 
-    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path):
+    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path, monkeypatch):
         from specify_cli.workflows.base import RunStatus, StepStatus
 
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(5)), 1, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(5)), 1, on_item)
         assert len(results) == 3  # items 0,1,2 ran; 3,4 never dispatched
         assert results[2] == {"seen": 2}
         assert state.status == RunStatus.FAILED
 
-    def test_halt_on_failure_concurrent_includes_halting_item(self, tmp_path):
+    def test_halt_on_failure_concurrent_includes_halting_item(
+        self, tmp_path, monkeypatch
+    ):
         # The concurrent prefix must match the sequential one: items up to and
         # INCLUDING the failing item (2), never a short prefix that drops it just
         # because a later in-flight item flipped the shared run status first.
@@ -5231,11 +5235,11 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(6)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(6)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}, {"seen": 2}]
         assert state.status == RunStatus.FAILED
 
-    def test_concurrent_restores_halting_item_error(self, tmp_path):
+    def test_concurrent_restores_halting_item_error(self, tmp_path, monkeypatch):
         # After a concurrent fan-out halts, the run-level error must be the first
         # halting item's own error (parity with the sequential path), even when a
         # later concurrent item failed with a different error AND the halting
@@ -5268,15 +5272,15 @@ class TestFanOutConcurrency:
                     status=StepStatus.COMPLETED, output={"seen": item}
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        engine._run_fan_out(
+        from specify_cli.workflows import STEP_REGISTRY
+
+        monkeypatch.setitem(STEP_REGISTRY, "err-probe", _ErrorProbe())
+        _results, state = self._run(
+            tmp_path,
+            monkeypatch,
             ["ok0", "halt", "ok2", "leak"],
-            {"id": "impl", "type": "err-probe"},
-            "fan",
-            context,
-            state,
-            {"err-probe": _ErrorProbe()},
             4,
+            template={"id": "impl", "type": "err-probe"},
         )
 
         assert state.status == RunStatus.FAILED
@@ -5285,7 +5289,9 @@ class TestFanOutConcurrency:
         # error verbatim, even when falsy.
         assert state.error == ""
 
-    def test_continue_on_error_item_does_not_halt_concurrent(self, tmp_path):
+    def test_continue_on_error_item_does_not_halt_concurrent(
+        self, tmp_path, monkeypatch
+    ):
         # A failing item whose template sets continue_on_error must NOT truncate
         # the fan-out: every item still runs and is returned in order.
         from specify_cli.workflows.base import StepStatus
@@ -5293,41 +5299,38 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        template["continue_on_error"] = True
-        results = engine._run_fan_out(
-            list(range(5)), template, "fan", context, state, registry, 4
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
+            list(range(5)),
+            4,
+            on_item,
+            template={"id": "impl", "type": "probe", "continue_on_error": True},
         )
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_unknown_template_type_halts_concurrent_like_sequential(self, tmp_path):
+    def test_unknown_template_type_halts_concurrent_like_sequential(
+        self, tmp_path, monkeypatch
+    ):
         # A template whose type isn't registered fails fast and records no result;
         # the concurrent path must still attribute the halt to the first item and
         # return the same prefix as sequential — never run on as if completed.
-        from specify_cli.workflows.base import RunStatus, StepContext
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
-
-        def fresh():
-            state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-            state.status = RunStatus.RUNNING
-            return WorkflowEngine(project_root=tmp_path), StepContext(), state
-
         template = {"id": "impl", "type": "does-not-exist"}
-        e1, c1, s1 = fresh()
-        seq = e1._run_fan_out(list(range(5)), template, "fan", c1, s1, {}, 1)
-        e2, c2, s2 = fresh()
-        con = e2._run_fan_out(list(range(5)), template, "fan", c2, s2, {}, 4)
+        seq, s1 = self._run(tmp_path, monkeypatch, list(range(5)), 1, template=template)
+        con, s2 = self._run(tmp_path, monkeypatch, list(range(5)), 4, template=template)
         assert seq == con == [{}]  # halted at the first item; rest never returned
+        from specify_cli.workflows.base import RunStatus
+
         assert s1.status == s2.status == RunStatus.FAILED
 
-    def test_first_exception_cancels_and_reraises(self, tmp_path):
+    def test_first_exception_cancels_and_reraises(self, tmp_path, monkeypatch):
         def on_item(item):
             if item == 0:
                 raise ValueError("boom")
             return None
 
         with pytest.raises(ValueError, match="boom"):
-            self._run(tmp_path, list(range(4)), 2, on_item)
+            self._run(tmp_path, monkeypatch, list(range(4)), 2, on_item)
 
 
 class TestFanInWaitForValidation:
@@ -5450,6 +5453,26 @@ steps:
         assert any(
             "must be step-id strings" in e and "int" in e for e in errors
         )
+
+    def test_non_ascii_fan_out_item_index_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: [one]
+    step:
+      id: item
+      type: command
+      command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [fan:item:١]
+""")
+        assert any("unknown or not-yet-declared step id 'fan:item:١'" in e for e in errors)
 
 
 # ===== Workflow Definition Tests =====
@@ -8403,6 +8426,59 @@ steps:
 
         assert state.status == RunStatus.FAILED
         assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+
+    def test_unknown_step_type_ignores_continue_on_error(self, project_dir):
+        """A missing implementation is terminal even with recovery enabled."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-recovery"
+  name: "Unknown Type Recovery"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+    continue_on_error: true
+  - id: after
+    type: shell
+    run: "echo should-not-run"
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+        assert "after" not in state.step_results
+        events = [entry["event"] for entry in state.log_entries]
+        assert "step_failed" in events
+        assert "step_continue_on_error" not in events
+
+    def test_unknown_step_type_events_match_main(self, project_dir):
+        """Only step_started and step_failed, and no projected step result."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-events"
+  name: "Unknown Type Events"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert [
+            entry["event"]
+            for entry in state.log_entries
+            if entry.get("step_id") == "mystery"
+        ] == ["step_started", "step_failed"]
+        assert "mystery" not in state.step_results
 
 
 # ===== State Persistence Tests =====

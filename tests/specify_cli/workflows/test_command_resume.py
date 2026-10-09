@@ -296,6 +296,31 @@ steps:
         assert "Resume failed" in result.output
         assert "permission [denied]" in result.output
 
+    def test_resume_legacy_migration_checkpoint_error_is_reported_cleanly(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows._execution import CheckpointError
+        from specify_cli.workflows.engine import RunState
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+        state_path = project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data.pop("installed_workflow_id", None)
+        data.pop("installed_registry_root", None)
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr(RunState, "save", lambda _: (_ for _ in ()).throw(CheckpointError("disk full")))
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Resume failed" in result.output
+        assert "disk full" in result.output
+
     @pytest.mark.parametrize("malformation", ["non-object", "missing-run-id"])
     def test_resume_preload_rejects_malformed_state_cleanly(
         self, project_dir, monkeypatch, malformation
