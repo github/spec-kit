@@ -5,6 +5,9 @@ import shutil
 import os
 import subprocess
 import sys
+import hashlib
+import threading
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -335,6 +338,109 @@ def test_invalid_projected_hook_cannot_replace_existing_projection(tmp_path):
     assert run_hook(tmp_path)[1]["hooks"][0]["extension"] == "git"
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("replacement", [
+    b'{"event":"before_plan","hooks":[\n',
+    b'{"event":"before_tasks","hooks":[]}\n',
+    b'{"event":"before_plan","hooks":{}}\n',
+])
+def test_corrupt_projection_reports_error(tmp_path, variant, replacement):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    (cache / "before_plan.json").write_bytes(replacement)
+    (cache / "before_plan.sha256").write_text(
+        hashlib.sha256(replacement).hexdigest() + "\n", encoding="utf-8",
+    )
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "projection" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_projection_modified_without_new_digest_is_rejected(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    (tmp_path / ".specify/hook-dispatch/before_plan.json").write_text(
+        '{"event":"before_plan","hooks":[]}\n', encoding="utf-8",
+    )
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "invalid" in data["error"]
+
+
+def test_concurrent_projection_saves_publish_matching_configuration(tmp_path, monkeypatch):
+    from specify_cli.extensions import HookExecutor
+    from specify_cli.integrations import _file_changes
+    from specify_cli import shared_infra
+
+    first_writing = threading.Event()
+    resume_first = threading.Event()
+    second_attempted = threading.Event()
+    second_done = threading.Event()
+    failures = []
+    original_write = _file_changes.write_bytes
+    original_lock = shared_infra._exclusive_project_lock
+
+    def paused_write(path, content):
+        if path.name == "before_plan.json" and threading.current_thread().name == "first":
+            first_writing.set()
+            if not resume_first.wait(10):
+                raise TimeoutError("First writer was not released")
+        return original_write(path, content)
+
+    @contextmanager
+    def observed_lock(*args, **kwargs):
+        if threading.current_thread().name == "second":
+            second_attempted.set()
+        with original_lock(*args, **kwargs):
+            yield
+
+    monkeypatch.setattr(_file_changes, "write_bytes", paused_write)
+    monkeypatch.setattr(shared_infra, "_exclusive_project_lock", observed_lock)
+
+    def save(name):
+        try:
+            HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+                {"extension": name, "command": f"speckit.{name}.run"},
+            ]}})
+        except Exception as exc:
+            failures.append(exc)
+        finally:
+            if name == "second":
+                second_done.set()
+
+    first = threading.Thread(target=save, args=("first",), name="first")
+    second = threading.Thread(target=save, args=("second",), name="second")
+    first.start()
+    try:
+        assert first_writing.wait(10)
+        second.start()
+        assert second_attempted.wait(10)
+        assert not second_done.wait(0.2)
+    finally:
+        resume_first.set()
+        first.join(10)
+        if second.ident is not None:
+            second.join(10)
+    assert not first.is_alive() and not second.is_alive()
+    assert not failures
+    assert HookExecutor(tmp_path).get_project_config()["hooks"]["before_plan"][0]["extension"] == "second"
+    assert run_hook(tmp_path)[1]["hooks"][0]["extension"] == "second"
+
+
 def test_no_yaml_dependency_needed_for_absent_config(tmp_path):
     result = subprocess.run(
         [sys.executable, "-I", "-S", str(PYTHON / "pre_hooks.py"), "plan"],
@@ -464,6 +570,21 @@ def test_canonical_backslash_escape_matches_python(tmp_path, variant, phase):
     assert code == 0
     assert data == run_hook(tmp_path, phase)[1]
     assert data["hooks"][0]["prompt"] == prompt
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_legacy_yaml_escaped_slash_matches_python(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, (
+        'hooks:\n  before_plan:\n'
+        '    - extension: git\n      command: speckit.git.commit\n'
+        '      prompt: "a\\/b"\n'
+    ))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert data["hooks"][0]["prompt"] == "a/b"
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])

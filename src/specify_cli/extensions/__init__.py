@@ -5816,7 +5816,7 @@ class HookExecutor:
         hooks = config.get("hooks", {})
         if not isinstance(hooks, dict):
             raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
-        projected: dict[str, str] = {}
+        projected: dict[str, bytes] = {}
         for event, entries in hooks.items():
             if not isinstance(event, str) or not re.fullmatch(r"(before|after)_[a-z][a-z0-9_]*", event):
                 raise ValueError(f"Invalid hook event: {event}")
@@ -5854,31 +5854,45 @@ class HookExecutor:
                     "prompt": entry.get("prompt") or "", "priority": priority,
                 })
             selected.sort(key=lambda hook: hook["priority"])
-            projected[event] = json.dumps({"event": event, "hooks": selected}, ensure_ascii=True) + "\n"
+            projected[event] = (
+                json.dumps(
+                    {"event": event, "hooks": selected}, ensure_ascii=True,
+                    separators=(",", ":"),
+                ) + "\n"
+            ).encode("utf-8")
 
         rendered = "# Hook projection: .specify/hook-dispatch\n" + yaml.dump(
             config, default_flow_style=False, sort_keys=False,
             allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
         )
-        cache = self.config_file.parent / "hook-dispatch"
-        if cache.is_symlink():
-            raise ValueError("Refusing to write symlinked hook dispatch cache")
-        if not cache.exists():
-            with changing_file(cache):
-                cache.mkdir(parents=True)
-        for path in cache.iterdir():
-            if path.is_symlink():
-                raise ValueError("Refusing to write symlinked hook dispatch cache entry")
-        snapshot = cache / "source.yml"
-        unlink(snapshot, missing_ok=True)
-        for path in cache.glob("*.json"):
-            unlink(path)
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        for event, payload in projected.items():
-            write_text(cache / f"{event}.json", payload, encoding="utf-8")
-        write_bytes(cache / "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
-        write_text(self.config_file, rendered, encoding="utf-8")
-        write_bytes(snapshot, self.config_file.read_bytes())
+        from ..shared_infra import _exclusive_project_lock
+
+        lock = self.config_file.parent / ".hook-dispatch.lock"
+        with changing_file(lock):
+            with _exclusive_project_lock(self.project_root, lock.name, context="hook dispatch"):
+                cache = self.config_file.parent / "hook-dispatch"
+                if cache.is_symlink():
+                    raise ValueError("Refusing to write symlinked hook dispatch cache")
+                if not cache.exists():
+                    with changing_file(cache):
+                        cache.mkdir(parents=True)
+                for path in cache.iterdir():
+                    if path.is_symlink():
+                        raise ValueError("Refusing to write symlinked hook dispatch cache entry")
+                snapshot = cache / "source.yml"
+                unlink(snapshot, missing_ok=True)
+                for pattern in ("*.json", "*.sha256"):
+                    for path in cache.glob(pattern):
+                        unlink(path)
+                for event, payload in projected.items():
+                    write_bytes(cache / f"{event}.json", payload)
+                    write_text(
+                        cache / f"{event}.sha256", hashlib.sha256(payload).hexdigest() + "\n",
+                        encoding="utf-8",
+                    )
+                write_bytes(cache / "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
+                write_text(self.config_file, rendered, encoding="utf-8")
+                write_bytes(snapshot, self.config_file.read_bytes())
 
     def migrate_project_config(self) -> None:
         """Validate and project existing hook configuration during project refresh."""

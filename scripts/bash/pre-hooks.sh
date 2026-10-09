@@ -100,7 +100,7 @@ hook_scalar() {
                     HOOK_SCALAR+=$HOOK_UTF8
                     i=$((i+count))
                     ;;
-                '"'|'\') HOOK_SCALAR+=$escaped ;;
+                '"'|'\'|'/') HOOK_SCALAR+=$escaped ;;
                 *) HOOK_ERROR="Unsupported YAML escape"; return ;;
             esac
         done
@@ -283,7 +283,36 @@ resolve_hooks() {
             return 1
         fi
         if [[ -f .specify/hook-dispatch/$event.json ]]; then
-            cat -- ".specify/hook-dispatch/$event.json"
+            local projection=".specify/hook-dispatch/$event.json" expected actual response
+            if [[ ! -f .specify/hook-dispatch/$event.sha256 ]]; then
+                hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
+                return 1
+            fi
+            IFS= read -r expected < ".specify/hook-dispatch/$event.sha256"
+            if command -v sha256sum >/dev/null 2>&1; then
+                actual=$(sha256sum -- "$projection") || {
+                    hook_error "$event" "Cannot validate hook projection"
+                    return 1
+                }
+            elif command -v shasum >/dev/null 2>&1; then
+                actual=$(shasum -a 256 -- "$projection") || {
+                    hook_error "$event" "Cannot validate hook projection"
+                    return 1
+                }
+            else
+                hook_error "$event" "Cannot validate hook projection: sha256sum or shasum is required"
+                return 1
+            fi
+            if [[ ! $expected =~ ^[0-9a-f]{64}$ || ${actual%% *} != "$expected" ]]; then
+                hook_error "$event" "Hook projection is invalid; reinstall the extension or refresh the project"
+                return 1
+            fi
+            if ! IFS= read -r response < "$projection" ||
+               [[ $response != "{\"event\":\"$event\",\"hooks\":["*"]}" ]]; then
+                hook_error "$event" "Invalid hook projection; reinstall the extension or refresh the project"
+                return 1
+            fi
+            cat -- "$projection"
         elif grep -Fxq -- "$event" .specify/hook-dispatch/events.txt; then
             hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
             return 1

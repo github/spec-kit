@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -29,11 +30,26 @@ def resolve(event: str, project_root: Path) -> dict:
                 if event in events:
                     raise ValueError("Hook projection is incomplete; reinstall the extension or refresh the project")
                 return {"event": event, "hooks": []}
-            result = json.loads(projection.read_text(encoding="utf-8"))
+            expected = (cache / f"{event}.sha256").read_text(encoding="utf-8").strip()
+            payload = projection.read_bytes()
+            if not re.fullmatch("[0-9a-f]{64}", expected) or hashlib.sha256(payload).hexdigest() != expected:
+                raise ValueError("Hook projection is invalid; reinstall the extension or refresh the project")
+            result = json.loads(payload.decode("utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"Could not read hook projection: {exc}") from exc
         if not isinstance(result, dict) or result.get("event") != event or not isinstance(result.get("hooks"), list):
             raise ValueError("Invalid hook projection; reinstall the extension or refresh the project")
+        for hook in result["hooks"]:
+            if (not isinstance(hook, dict)
+                or any(not isinstance(hook.get(field), str) or not hook[field]
+                       for field in ("extension", "command"))
+                or not isinstance(hook.get("optional"), bool)
+                or not isinstance(hook.get("description"), str)
+                or not isinstance(hook.get("prompt"), str)
+                or not isinstance(hook.get("priority"), int)
+                or isinstance(hook["priority"], bool)
+                or hook["priority"] < 1):
+                raise ValueError("Invalid hook projection; reinstall the extension or refresh the project")
         return result
     if config_file.exists():
         try:

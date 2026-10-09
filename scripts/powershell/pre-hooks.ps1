@@ -283,7 +283,35 @@ function Invoke-HookResolver {
             }
             $projected = Join-Path $cache "$event.json"
             if (Test-Path -LiteralPath $projected -PathType Leaf) {
-                [Console]::WriteLine([IO.File]::ReadAllText($projected, [Text.Encoding]::UTF8).TrimEnd("`r", "`n"))
+                $digest = Join-Path $cache "$event.sha256"
+                if (-not (Test-Path -LiteralPath $digest -PathType Leaf)) {
+                    throw "Hook projection is incomplete; reinstall the extension or refresh the project"
+                }
+                $bytes = [IO.File]::ReadAllBytes($projected)
+                $expected = [IO.File]::ReadAllText($digest, [Text.Encoding]::UTF8).Trim()
+                if ($expected -cnotmatch '^[0-9a-f]{64}$' -or
+                    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) -cne $expected.ToUpperInvariant()) {
+                    throw "Hook projection is invalid; reinstall the extension or refresh the project"
+                }
+                $text = [Text.Encoding]::UTF8.GetString($bytes)
+                try { $data = ConvertFrom-Json -InputObject $text -AsHashtable -ErrorAction Stop }
+                catch { throw "Invalid hook projection: $($_.Exception.Message)" }
+                if ($data -isnot [Collections.IDictionary] -or $data.event -cne $event -or
+                    $data.hooks -isnot [array]) {
+                    throw "Invalid hook projection; reinstall the extension or refresh the project"
+                }
+                foreach ($entry in $data.hooks) {
+                    if ($entry -isnot [Collections.IDictionary] -or
+                        $entry.extension -isnot [string] -or -not $entry.extension -or
+                        $entry.command -isnot [string] -or -not $entry.command -or
+                        $entry.optional -isnot [bool] -or
+                        $entry.description -isnot [string] -or
+                        $entry.prompt -isnot [string] -or
+                        $entry.priority -isnot [long] -or $entry.priority -lt 1) {
+                        throw "Invalid hook projection; reinstall the extension or refresh the project"
+                    }
+                }
+                [Console]::WriteLine($text.TrimEnd("`r", "`n"))
             } elseif (@([IO.File]::ReadAllLines($events, [Text.Encoding]::UTF8)) -ccontains $event) {
                 throw "Hook projection is incomplete; reinstall the extension or refresh the project"
             } else {
