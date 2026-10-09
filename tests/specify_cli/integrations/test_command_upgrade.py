@@ -103,6 +103,65 @@ def _init_dotted_kiro_project(tmp_path, monkeypatch, *commands):
     return project
 
 
+@pytest.fixture
+def offline_adapter(tmp_path, monkeypatch):
+    import io
+    import zipfile
+    import yaml
+    from specify_cli.authentication import http
+    from specify_cli.integrations import IntegrationCatalog, installer
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    installer.unload_installed_integrations()
+
+    def install(project, *, operation="install", extra_code=""):
+        descriptor = {
+            "schema_version": "1.0",
+            "integration": {
+                "id": "sample-agent", "name": "Sample Agent", "version": "1.0.0",
+                "description": "Offline test adapter",
+            },
+            "requires": {"speckit_version": ">=0.6.0"},
+        }
+        code = '''from specify_cli.integrations.base import MarkdownIntegration
+class SampleIntegration(MarkdownIntegration):
+    key = "sample-agent"
+    config = {"name": "Sample Agent", "folder": ".sample-agent", "commands_subdir": "commands", "requires_cli": False, "install_url": "https://example.com"}
+    registrar_config = {"dir": ".sample-agent/commands", "format": "markdown", "args": "$ARGUMENTS", "extension": ".md"}
+    multi_install_safe = True
+''' + extra_code
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("integration.yml", yaml.safe_dump(descriptor))
+            package.writestr("__init__.py", code)
+        data = archive.getvalue()
+        url = "https://example.com/sample-agent.zip"
+        info = {
+            **descriptor["integration"], "download_url": url,
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "_catalog_name": "offline", "_install_allowed": True,
+        }
+
+        class Response(io.BytesIO):
+            headers = {"Content-Type": "application/zip"}
+
+            def geturl(self):
+                return url
+
+        with monkeypatch.context() as patch:
+            patch.setattr(IntegrationCatalog, "get_integration_info", lambda *args, **kwargs: info)
+            patch.setattr(http, "open_url", lambda *args, **kwargs: Response(data))
+            return _run_in_project(project, [
+                "integration", operation, "sample-agent", "--trust-integration", "--script", "sh",
+            ])
+
+    yield install
+    installer.unload_installed_integrations()
+
+
 class TestIntegrationUpgradeDetailed:
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -401,6 +460,72 @@ class TestIntegrationUpgradeDetailed:
         assert sorted(prompts.glob("speckit.*.md")) == []
         assert (prompts / "speckit-plan.md").is_file()
         assert (prompts / "speckit-git-commit.md").is_file()
+
+    def test_failed_external_switch_restores_legacy_prompt(self, tmp_path, monkeypatch, offline_adapter):
+        from specify_cli.integrations import installer
+
+        source = _write_command_extension(tmp_path)
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+        legacy = project / ".kiro/prompts/speckit.audit.run.md"
+        before = legacy.read_bytes()
+        registry = project / ".specify/extensions/.registry"
+        before_registry = registry.read_bytes()
+
+        def fail_commit(*args, **kwargs):
+            assert not os.path.lexists(legacy)
+            raise OSError("Injected external package commit failure")
+
+        monkeypatch.setattr(installer, "write_records", fail_commit)
+        result = offline_adapter(project, operation="switch")
+        assert result.exit_code == 1, result.output
+        assert "Injected external package commit failure" in result.output
+        assert registry.read_bytes() == before_registry
+        assert legacy.read_bytes() == before
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    def test_remove_after_generic_settings_damage(self, tmp_path, agent):
+        project = _init_project(tmp_path, agent)
+        source = _write_command_extension(tmp_path)
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        command = project / (".kiro/prompts/speckit-audit-run.md" if agent == "kiro-cli" else
+                             ".qoder/skills/speckit-audit-run/SKILL.md")
+        assert command.is_file()
+        result = _run_in_project(project, [
+            "integration", "install", "generic", "--integration-options=--commands-dir .custom/commands", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+        assert _run_in_project(project, ["integration", "use", "generic"]).exit_code == 0
+        state = project / ".specify/integration.json"
+        data = json.loads(state.read_bytes())
+        data["integration_settings"]["generic"].update(parsed_options={}, raw_options="")
+        state.write_bytes(json.dumps(data).encode())
+
+        result = _run_in_project(project, ["extension", "remove", "audit", "--force"])
+        assert result.exit_code == 0, result.output
+        assert not os.path.lexists(command)
+        assert not (project / ".specify/extensions/audit").exists()
+
+    def test_external_adapter_removal_preserves_unowned_command(self, tmp_path, offline_adapter):
+        from specify_cli.integrations.installer import unload_installed_integrations
+
+        project = _init_project(tmp_path, "kiro-cli")
+        result = offline_adapter(project, extra_code=(
+            '    legacy_flat_command_dir = ".sample-agent/legacy"\n'
+            '    legacy_flat_command_extension = ".md"\n'
+        ))
+        assert result.exit_code == 0, result.output
+        assert _run_in_project(project, ["integration", "use", "sample-agent"]).exit_code == 0
+        source = _write_command_extension(tmp_path)
+        assert _run_in_project(project, ["extension", "add", "--dev", str(source)]).exit_code == 0
+        command = project / ".sample-agent/commands/speckit.audit.run.md"
+        assert command.is_file()
+        command.unlink()
+        command.write_bytes(b"USER OWNED FILE\n")
+        unload_installed_integrations()
+
+        result = _run_in_project(project, ["extension", "remove", "audit", "--force"])
+        assert result.exit_code == 0, result.output
+        assert command.read_bytes() == b"USER OWNED FILE\n"
 
     @pytest.mark.parametrize("empty_manifest", [False, True])
     def test_upgrade_refuses_kiro_prompt_rename_while_presets_are_installed(

@@ -1337,6 +1337,7 @@ class ExtensionManager:
             if agent:
                 self._validate_command_destinations(manifest, agent)
 
+    @project_registration
     def _validate_command_destinations(self, manifest: ExtensionManifest, agent_name: str) -> None:
         """Protect occupied destinations while a flat-command rename is pending (#4797)."""
         from ..agents import CommandRegistrar
@@ -1346,7 +1347,7 @@ class ExtensionManager:
         legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
         if not legacy_dir:
             return
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         config = registrar.AGENT_CONFIGS[agent_name]
         names = self._collect_manifest_command_names(manifest)
         recorded = (self.registry.get(manifest.id) or {}).get("registered_commands", {})
@@ -3839,6 +3840,7 @@ class ExtensionManager:
             return []
         return [item for item in value if isinstance(item, str)]
 
+    @project_registration
     def _recover_registered_commands(self, extension_id: str, recorded: Any) -> Dict[str, Any]:
         """Recover unknown legacy command tracking without losing cleanup names (#4797)."""
         from ..integrations import INTEGRATION_REGISTRY
@@ -3993,6 +3995,7 @@ class ExtensionManager:
             if updates:
                 self.registry.update(ext_id, updates)
 
+    @project_registration
     def _unregister_extension_commands(
         self, extension_id: str, agent_name: str, command_names: Any,
         *, retire_legacy: bool = True,
@@ -4019,7 +4022,7 @@ class ExtensionManager:
         command_names = self._valid_name_list(command_names)
         preserved_output_names = {os.path.normcase(name) for name in (preserved_output_names or set())}
         preserved = self._preserved_command_files(extension_id, agent_name, command_names) | preserved_output_names
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         registrar.unregister_commands(
             {agent_name: command_names}, self.project_root,
             preserved_output_names={agent_name: preserved},
@@ -4077,6 +4080,7 @@ class ExtensionManager:
         from .. import _print_cli_warning
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..integrations._file_changes import unlink
 
         integration = get_integration(agent_name)
         legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
@@ -4091,7 +4095,7 @@ class ExtensionManager:
         ):
             return []
 
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         if not agent_config:
             return []
@@ -4160,7 +4164,7 @@ class ExtensionManager:
                         continuing="Preserving the legacy file.",
                     )
                     continue
-                legacy_file.unlink()
+                unlink(legacy_file)
                 removed.append(legacy_file)
 
         return removed
@@ -4196,7 +4200,7 @@ class ExtensionManager:
         if not core:
             return preserved
 
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         config = registrar.AGENT_CONFIGS[agent_name]
         for stem in core - preserved:
             path = self.project_root / config["dir"] / f"{stem}{config['extension']}"
@@ -4232,6 +4236,7 @@ class ExtensionManager:
                 )
         return preserved
 
+    @project_registration
     def _core_command_files(
         self, agent_name: str, *, installed_only: bool = False
     ) -> Set[str]:
@@ -4264,7 +4269,7 @@ class ExtensionManager:
         ):
             return set()
 
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         if not agent_config:
             return set()
@@ -4323,7 +4328,7 @@ class ExtensionManager:
 
         from ..agents import CommandRegistrar
 
-        registrar = CommandRegistrar(self.project_root)
+        registrar = CommandRegistrar(self.project_root, include_generic=agent_name == "generic")
         agent_config = registrar.AGENT_CONFIGS[agent_name]
         owners: Dict[str, Set[tuple[str, str]]] = {
             os.path.normcase(stem): {("", stem)} for stem in core_files
