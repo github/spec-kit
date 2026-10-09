@@ -14,7 +14,7 @@ _PathType = TypeVar("_PathType", bound=PurePath)
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
     """Normalize Windows extended drive/UNC spellings for comparison only."""
     raw = str(path)
-    if raw.startswith("\\\\?\\UNC\\"):
+    if raw.lower().startswith("\\\\?\\unc\\"):
         return type(path)("\\\\" + raw[len("\\\\?\\UNC\\"):])
     if raw.startswith("\\\\?\\"):
         return type(path)(raw[len("\\\\?\\"):])

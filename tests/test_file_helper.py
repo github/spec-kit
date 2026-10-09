@@ -634,6 +634,26 @@ def test_windows_extended_contained_targets_match_roots_portably(
     assert FileHelper._parts(boundary, target) == ("inside", "file")
 
 
+@pytest.mark.parametrize("marker", ["unc", "uNc", "UnC", "UNC"])
+@pytest.mark.parametrize("prefixed_root", [False, True])
+def test_windows_mixed_case_unc_prefixes_preserve_contained_targets(marker, prefixed_root):
+    plain = r"\\Server\Share\Project"
+    prefixed = "\\\\?\\" + marker + r"\Server\Share\Project"
+    root_path = PureWindowsPath(prefixed if prefixed_root else plain)
+    boundary = SimpleNamespace(root=root_path, _canonical_root=root_path)
+    target = PureWindowsPath(prefixed + r"\ChIlD\FiLe")
+    assert FileHelper._parts(boundary, target) == ("ChIlD", "FiLe")
+
+
+@pytest.mark.parametrize("marker", ["unc", "uNc", "UnC", "UNC"])
+def test_windows_mixed_case_unc_prefixes_do_not_allow_external_targets(marker):
+    root_path = PureWindowsPath(r"\\Server\Share\Project")
+    boundary = SimpleNamespace(root=root_path, _canonical_root=root_path)
+    target = PureWindowsPath("\\\\?\\" + marker + r"\Server\Share\ProjectSibling\file")
+    with pytest.raises(PathEscapeError):
+        FileHelper._parts(boundary, target)
+
+
 @pytest.mark.parametrize(
     "spelling",
     [

@@ -46,7 +46,9 @@ For Windows containment comparisons, extended-length drive and UNC spellings
 (`\\?\D:\project\file`, `\\?\UNC\server\share\project\file`) are compared with
 their ordinary equivalents on both the target and root sides. This does not
 resolve links or collapse `..`: accessed hierarchy evidence is retained for
-the component walk. External targets, ambiguous rooted-relative paths, and
+the component walk. The UNC namespace marker is matched case-insensitively,
+while the remaining path's original spelling is preserved. External targets,
+ambiguous rooted-relative paths, and
 unsupported device namespaces are still rejected. POSIX filenames are not
 reinterpreted as Windows path spellings.
 
