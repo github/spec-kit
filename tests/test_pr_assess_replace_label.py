@@ -90,7 +90,8 @@ def pinned_handler() -> Path:
     path = Path(__file__).parent / "fixtures" / "gh_aw" / "replace_label.cjs"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == HANDLER_SHA256
     assert hashlib.sha256(path.with_name("LICENSE").read_bytes()).hexdigest() == LICENSE_SHA256
-    assert shutil.which("node"), "Node.js is required for the pinned-handler probe"
+if shutil.which("node") is None:
+        pytest.skip("node not available")
     return path
 
 
