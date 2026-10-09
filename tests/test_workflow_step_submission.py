@@ -800,6 +800,46 @@ def test_missing_history_digests_cli_blocks_and_discards_stale_snapshot(catalog_
     assert not (paths / "snapshot.json").exists()
 
 
+@pytest.mark.parametrize("duplicate", ["steps", "step_id", "version", "digest"])
+def test_generated_duplicate_keys_cannot_pass_snapshot_comparison(catalog_files, duplicate):
+    paths = catalog_files
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = json.loads((paths / "snapshot.json").read_text())["expected_catalog"]
+    text = json.dumps(expected)
+    key = {
+        "steps": "steps", "step_id": "deploy-preview",
+        "version": "version", "digest": "step.yml",
+    }[duplicate]
+    token = json.dumps(key) + ":"
+    text = text.replace(token, token + " null, " + token, 1)
+    assert json.loads(text) == expected
+    (paths / "catalog.json").write_text(text)
+    result = run_catalog_verifier(paths, "generated")
+    assert result.returncode == 3
+    assert result.stdout.startswith("GENERATED ERROR:")
+    assert "Duplicate field" in result.stdout
+    assert not result.stderr
+
+
+@pytest.mark.parametrize("phase", ["original", "snapshot", "receipt", "submission"])
+def test_duplicate_evidence_keys_preserve_phase_classification(catalog_files, phase):
+    paths = catalog_files
+    result = run_catalog_verifier(paths, "snapshot")
+    assert result.returncode == 0, result.stdout + result.stderr
+    name = "catalog" if phase == "original" else phase
+    path = paths / f"{name}.json"
+    original = path.read_text()
+    first_key = next(iter(json.loads(original)))
+    token = json.dumps(first_key) + ":"
+    path.write_text(original.replace(token, token + " null, " + token, 1))
+    result = run_catalog_verifier(paths, "generated" if phase == "snapshot" else "snapshot")
+    assert result.returncode == (1 if phase == "submission" else 2)
+    assert result.stdout.startswith("FAILED:" if phase == "submission" else "BLOCKED:")
+    assert "Duplicate field" in result.stdout
+    assert not result.stderr
+
+
 @pytest.mark.parametrize("failure", ["missing", "non_utf8", "directory"])
 @pytest.mark.parametrize("phase", ["generated", "original", "snapshot", "receipt"])
 def test_catalog_read_failures_preserve_phase_exit_codes(catalog_files, phase, failure):

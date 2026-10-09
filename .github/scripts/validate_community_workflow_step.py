@@ -35,6 +35,19 @@ class GeneratedError(Exception):
     pass
 
 
+class DuplicateField(ValueError):
+    pass
+
+
+def unique_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateField(f"Duplicate field '{key}' in JSON evidence")
+        result[key] = value
+    return result
+
+
 def field(data: dict[str, Any], key: str) -> str:
     value = data.get(key)
     if not isinstance(value, str) or not value:
@@ -442,8 +455,8 @@ def read_json(
     except (OSError, UnicodeError) as exc:
         raise error_type(f"cannot read JSON evidence at {path}: {exc}") from exc
     try:
-        value = json.loads(text)
-    except json.JSONDecodeError as exc:
+        value = json.loads(text, object_pairs_hook=unique_json_fields)
+    except (json.JSONDecodeError, DuplicateField) as exc:
         raise error_type(f"invalid JSON evidence at {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise error_type(f"JSON evidence must be an object: {path}")
@@ -464,8 +477,8 @@ def main() -> int:
         except (OSError, UnicodeError) as exc:
             raise Blocked(f"cannot read submission: {exc}") from exc
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError as exc:
+            data = json.loads(text, object_pairs_hook=unique_json_fields)
+        except (json.JSONDecodeError, DuplicateField) as exc:
             raise SubmissionMismatch(f"invalid submission JSON: {exc}") from exc
         if not isinstance(data, dict):
             raise SubmissionMismatch("submission JSON must be an object")
