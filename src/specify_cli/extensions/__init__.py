@@ -1369,7 +1369,7 @@ class ExtensionManager:
             except (OSError, ValueError):
                 pass
             raise ValidationError(
-                f"Cannot register extension '{manifest.id}': {path.relative_to(self.project_root)} is not marked as owned "
+                f"Cannot register extension '{manifest.id}': {path.relative_to(self.project_root).as_posix()} is not marked as owned "
                 "by this extension. Move or remove it and retry; none of this extension's "
                 "files were written or retired."
             )
