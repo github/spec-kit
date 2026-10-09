@@ -677,6 +677,11 @@ Catalog installs resolve individual file URLs from the active step catalogs and
 then go through the same validation and commit path as `--dev` and `--from`.
 Discovery-only catalogs cannot be installed from.
 
+To submit a custom step type to the discovery-only community catalog, follow
+[Community Workflow Steps](../community/workflow-steps.md). Submissions use
+tag-pinned individual file URLs and per-file digests; maintainers validate
+metadata and distribution evidence, not submitted code.
+
 ##### Catalog release history
 
 `specify workflow step info <id> --versions` lists the current and historical

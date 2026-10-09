@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for contributing a workflow step type! This form captures the package, release, and catalog metadata needed for manual community catalog review.
+        Thanks for contributing a workflow step type! This form captures the package, release, and catalog metadata needed for community catalog review.
 
         **Before submitting:**
         - Review the [Community Workflow Step Types guide](https://github.com/github/spec-kit/blob/main/docs/community/workflow-steps.md)
@@ -16,13 +16,13 @@ body:
         - Provide version-pinned URLs and SHA-256 digests for every catalog-downloaded file
         - Test the release artifact with `specify workflow step add <step-id> --from <download-url>`
 
-        **After submitting:** GitHub automatically applies only the `triage-must-have` intake verdict. This phase is intake-only: no validation workflow or draft pull request is triggered. Maintainers currently review the metadata manually and, when accepted, update the community catalog through the normal reviewed pull request process.
+        **After submitting:** GitHub automatically applies only the `triage-must-have` intake verdict. A maintainer applies `workflow-step-submission` during triage to start automated metadata validation. Opening the form alone does not start validation. Successful validation proposes a draft catalog pull request for maintainer review; submitted Python is never reviewed or executed by this automation.
 
   - type: input
     id: step-id
     attributes:
       label: Step Type ID
-      description: Exact catalog key and `step.type_key`; it must be one safe path component and must not collide with a built-in step type
+      description: Exact catalog key and `step.type_key`; use lowercase letters, digits, and hyphens in one safe path component, avoiding built-in types and Windows device names such as con, aux, com1, and lpt1
       placeholder: "e.g., deploy"
     validations:
       required: true
@@ -76,7 +76,11 @@ body:
     id: download-url
     attributes:
       label: Download URL
-      description: URL to the versioned `.zip`, `.tar.gz`, or `.tgz` step package archive for this release
+      description: >-
+        URL to the versioned step package archive; GitHub-generated tag archives support `.zip` and `.tar.gz`,
+        while named release assets may also use `.tgz`. The URL path must match `^[A-Za-z0-9._~+!/-]+$`;
+        percent escapes, spaces, query strings, fragments, and dot/traversal segments are rejected.
+        Tags have no slashes; `+` and `!` support PEP 440 local versions and epochs.
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/releases/download/v1.0.0/deploy-1.0.0.zip"
     validations:
       required: true
@@ -85,7 +89,10 @@ body:
     id: step-yml-url
     attributes:
       label: step.yml URL
-      description: Exact tag-pinned HTTPS URL used as the catalog `step_yml_url` (or `url`)
+      description: >-
+        Exact tag-pinned raw GitHub HTTPS URL used as the catalog `step_yml_url` (or `url`).
+        The file path within the tag must match `^[A-Za-z0-9._~/-]+$`, without percent escapes or spaces;
+        tags may additionally contain `+` and `!`.
       placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/step.yml"
     validations:
       required: true
@@ -94,7 +101,10 @@ body:
     id: init-url
     attributes:
       label: __init__.py URL
-      description: Exact tag-pinned HTTPS URL used as the catalog `init_url`
+      description: >-
+        Exact tag-pinned raw GitHub HTTPS URL used as the catalog `init_url`.
+        The file path within the tag must match `^[A-Za-z0-9._~/-]+$`, without percent escapes or spaces;
+        tags may additionally contain `+` and `!`.
       placeholder: "https://raw.githubusercontent.com/your-org/spec-kit-step-deploy/v1.0.0/__init__.py"
     validations:
       required: true
@@ -104,9 +114,13 @@ body:
     attributes:
       label: Extra File URLs
       description: >-
-        JSON mapping of every additional package-relative file path to its exact tag-pinned HTTPS URL.
+        JSON mapping of every additional package-relative file path to its exact tag-pinned raw GitHub HTTPS URL.
+        Package-relative keys and file paths within the tag must match `^[A-Za-z0-9._~/-]+$`;
+        percent escapes, spaces, query strings, and fragments are rejected. Tags may additionally contain `+` and `!`.
         Paths must use forward slashes, be relative and non-empty, contain no empty, `.` or `..` segments,
-        and must not case-insensitively alias `step.yml` or `__init__.py`. Enter `{}` when there are no extra files.
+        and must not case-insensitively alias `step.yml` or `__init__.py`, another file, or a package directory.
+        Case-insensitive aliases of `.git`, `__pycache__`, and `.DS_Store` are forbidden.
+        Enter `{}` when there are no extra files.
       render: json
       placeholder: |
         {
@@ -183,7 +197,7 @@ body:
     id: documentation
     attributes:
       label: Documentation URL
-      description: Tag-pinned documentation covering configuration, outputs, failure behavior, side effects, and an example workflow
+      description: Tag-pinned Markdown documentation (`.md`) covering configuration, outputs, failure behavior, side effects, and an example workflow; README.md is not required
       placeholder: "https://github.com/your-org/spec-kit-step-deploy/blob/v1.0.0/README.md"
     validations:
       required: true
