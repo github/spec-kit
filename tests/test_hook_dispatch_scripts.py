@@ -119,6 +119,32 @@ def test_invalid_config_reports_error(tmp_path, text, part, phase):
 
 @pytest.mark.parametrize("variant", ["py", "sh", "ps"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
+def test_legacy_empty_hooks_map_rejects_nested_entries(tmp_path, variant, phase):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, (
+        f"hooks: {{}}\n  {event}:\n"
+        "    - extension: git\n      command: speckit.git.commit\n"
+    ))
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert data["error"]
+
+
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+def test_legacy_empty_hooks_map_without_entries_is_valid(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, "hooks: {}\nsettings:\n  auto_execute_hooks: true\n")
+    assert run_hook(tmp_path, variant=variant) == (
+        0, {"event": "before_plan", "hooks": []}
+    )
+
+
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
 @pytest.mark.parametrize("invalid_event", ["invalid_event", "before_Bad"])
 def test_legacy_rejects_invalid_event_even_when_other_hooks_are_valid(
     tmp_path, variant, phase, invalid_event
@@ -1009,6 +1035,67 @@ def test_canonical_writer_rejects_nul_without_touching_config(tmp_path):
             {"extension": "git", "command": "speckit.git.commit", "prompt": "before\0after"}
         ]}})
     assert config.read_text(encoding="utf-8") == "hooks: {}\n"
+
+
+@pytest.mark.parametrize("symlinked", ["config", "directory"])
+def test_direct_save_rejects_symlinks_without_writing_outside_project(
+    tmp_path, symlinked
+):
+    from specify_cli.extensions import HookExecutor
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "extensions.yml").write_text("outside remains unchanged\n", encoding="utf-8")
+    specify = project / ".specify"
+    try:
+        if symlinked == "config":
+            specify.mkdir()
+            (specify / "extensions.yml").symlink_to(outside / "extensions.yml")
+        else:
+            specify.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are unavailable")
+
+    with pytest.raises((ValueError, OSError), match="symlink"):
+        HookExecutor(project).save_project_config({"hooks": {"before_plan": [
+            {"extension": "git", "command": "speckit.git.commit"},
+        ]}})
+
+    assert (outside / "extensions.yml").read_text(encoding="utf-8") == (
+        "outside remains unchanged\n"
+    )
+    assert not (outside / "hook-dispatch").exists()
+
+
+def test_direct_save_symlink_preserves_existing_projection(tmp_path):
+    from specify_cli.extensions import HookExecutor
+
+    project = tmp_path / "project"
+    project.mkdir()
+    executor = HookExecutor(project)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "old", "command": "speckit.old.run"},
+    ]}})
+    cache = project / ".specify/hook-dispatch"
+    original = {path.name: path.read_bytes() for path in cache.iterdir()}
+    outside = tmp_path / "outside.yml"
+    outside.write_text("untouched\n", encoding="utf-8")
+    executor.config_file.unlink()
+    try:
+        executor.config_file.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are unavailable")
+
+    with pytest.raises(ValueError, match="symlinked"):
+        executor.save_project_config({"hooks": {"before_plan": [
+            {"extension": "new", "command": "speckit.new.run"},
+        ]}})
+
+    assert executor.config_file.is_symlink()
+    assert outside.read_text(encoding="utf-8") == "untouched\n"
+    assert {path.name: path.read_bytes() for path in cache.iterdir()} == original
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])

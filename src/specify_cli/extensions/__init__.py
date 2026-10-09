@@ -5913,6 +5913,8 @@ class HookExecutor:
         lock = self.config_file.parent / ".hook-dispatch.lock"
         with changing_file(lock):
             with _exclusive_project_lock(self.project_root, lock.name, context="hook dispatch"):
+                if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
+                    raise ValueError("Refusing to save symlinked .specify/extensions.yml")
                 cache = self.config_file.parent / "hook-dispatch"
                 if cache.is_symlink():
                     raise ValueError("Refusing to write symlinked hook dispatch cache")

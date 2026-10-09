@@ -292,7 +292,7 @@ hook_projection_shape_valid() {
 
 resolve_hooks() {
     local phase=$1 command=$2 event config line spaces indent text key value
-    local section="" target=false empty=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
+    local section="" target=false empty=false hooks_empty=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
     local i n chosen first=true
     local -a HOOK_EXT HOOK_CMD HOOK_ENABLED HOOK_OPTIONAL HOOK_CONDITION
     local -a HOOK_PRIORITY HOOK_PRIORITY_QUOTED HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED HOOK_EVENTS HOOK_TARGETS
@@ -390,6 +390,8 @@ resolve_hooks() {
                 seen_hooks=true
                 section=hooks
                 empty=false
+                hooks_empty=false
+                [[ $text == 'hooks: {}' ]] && hooks_empty=true
             elif [[ $text == hooks:* ]]; then
                 HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"
             elif [[ $text == 'installed:' || $text == 'installed: []' ]]; then
@@ -417,6 +419,7 @@ resolve_hooks() {
             [[ -n $HOOK_ERROR ]] && break
             continue
         fi
+        if [[ $hooks_empty == true ]]; then HOOK_ERROR="Unsupported YAML hook layout"; break; fi
         if (( indent == 2 )) && [[ $text != '- '* && $text =~ ^([^:]+):([[:space:]]|$) ]]; then
             key=${BASH_REMATCH[1]}
             if [[ ! $key =~ ^(before|after)_[a-z][a-z0-9_]*$ ]]; then
