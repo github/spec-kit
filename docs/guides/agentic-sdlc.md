@@ -151,12 +151,14 @@ still run deterministically.
 by applying `pr-assess` to a PR. It compares the description with the cumulative
 diff, reports material omissions or contradictions, and applies one
 `pr-description-aligned`, `pr-description-needs-update`, or
-`pr-description-inconclusive` label. A changed verdict replaces the sole existing
-outcome in one label operation; a matching verdict leaves labels unchanged.
-Multiple existing outcomes block label application, not description assessment:
-the report explains the inconsistent label state without changing labels.
-Every completed assessment posts a new standalone comment. Label application
-and comment delivery are separate operations, not a workflow-wide transaction.
+`pr-description-inconclusive` label. It removes up to two stale outcome labels,
+then adds the selected outcome only when absent. A matching sole outcome leaves
+labels unchanged; conflicting outcomes are cleaned up without changing the
+description verdict solely because of that conflict.
+Every completed assessment posts a new standalone comment, including matching
+reruns. Suggested updates are description-only, not code-change alternatives.
+This MVP uses separate remove/add operations that can partially fail and do not
+make concurrent manual label edits safe. Comment delivery is also separate.
 It reads repository and fork changes
 without executing contributor code. A mislabeled issue or closed PR receives
 an explanatory comment, not a verdict. Reassessment is manual: remove and re-add

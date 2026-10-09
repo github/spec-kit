@@ -45,11 +45,10 @@ safe-outputs:
     allowed: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
     max: 1
     issue-intent: false
-  replace-label:
+  remove-labels:
     target: triggering
-    allowed-add: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
-    allowed-remove: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
-    max: 1
+    allowed: [pr-description-aligned, pr-description-needs-update, pr-description-inconclusive]
+    max: 2
 ---
 
 # Assess PR Description Alignment
@@ -205,9 +204,8 @@ Use these verdict-specific forms:
   ```
 
   Then add `**Suggested update:**` with a short human reviewer note describing
-  the observable impact and the smallest description correction.
-  Suggest changes to the PR description only. Do not suggest changing code to match the description.
-  Do not use
+  the observable impact. This is **DESCRIPTION-ONLY**: suggest the smallest
+  correction to the PR description, not code-change alternatives. Do not use
   changelog or tool directives such as `state explicitly`, `remove`, or `qualify`.
 - **inconclusive:** Explain the missing, unresolved, or unavailable evidence in
   the rationale. Use the same compact two-column table to retain established
@@ -228,24 +226,22 @@ maintainer. Map the description verdict to its outcome label:
 
 Consider only these three labels when choosing the action:
 
-- **No existing outcome:** Use `add_labels` with exactly one **plain string**
-  containing the selected outcome label.
-- **Exactly one different outcome:** Use `replace_label` with `label_to_remove`
-  set to the existing outcome and `label_to_add` set to the selected outcome.
-  Queue one replacement, not separate removal and addition.
-- **Matching sole outcome:** Do not queue any label mutation. Still queue the
-  new standalone assessment comment.
-- **Multiple existing outcomes:** Do not queue any label mutation or attempt
-  partial cleanup. Assess the actual description normally and append one concise
-  sentence after the verdict-specific report explaining that label application
-  is blocked by inconsistent existing outcome labels, naming those labels.
-  Do not change the description verdict to inconclusive solely because labels
-  conflict.
+1. Use `remove_labels` to queue removal of any existing outcome labels other
+   than the selected outcome, at most two.
+2. After queuing stale-label cleanup, use `add_labels` with exactly one **plain
+   string** containing the selected outcome label only if the selected outcome
+   is absent.
+
+If the selected outcome is already present, do not remove or re-add it.
+A matching sole outcome requires no label mutation. Still queue the new
+standalone assessment comment. Do not change the description verdict to
+inconclusive solely because labels conflict.
 
 Never emit label objects with `suggest: true` or suggestion-only output.
 Do not remove `pr-assess`, unrelated labels, or earlier assessment comments.
-Only change labels on the triggering PR. Label replacement and comment delivery
-are separate operations; do not claim a failed workflow run necessarily
+Only change labels on the triggering PR. Separate remove/add operations can
+partially fail and do not make concurrent manual label edits safe. Comment
+delivery is also separate; do not claim a failed workflow run necessarily
 preserves the previous verdict or delivers the comment.
 
 ## Guardrails
