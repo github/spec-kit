@@ -5760,7 +5760,9 @@ class HookExecutor:
             pass
 
         def represent_string(dumper: yaml.SafeDumper, value: str):
-            style = '"' if "\n" in value or "\r" in value else None
+            if "\0" in value:
+                raise ValueError("Cannot serialize NUL in native extension hook configuration")
+            style = '"' if any(char in value for char in "\n\r\x85\u2028\u2029{}[]") else None
             return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
 
         CanonicalHookDumper.add_representer(str, represent_string)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 hook_json_string() {
-    local value=$1
+    local value=$1 code hex char
     value=${value//\\/\\\\}
     value=${value//\"/\\\"}
     value=${value//$'\n'/\\n}
@@ -9,7 +9,31 @@ hook_json_string() {
     value=${value//$'\t'/\\t}
     value=${value//$'\b'/\\b}
     value=${value//$'\f'/\\f}
+    for ((code=1; code<32; code++)); do
+        printf -v hex '%02X' "$code"
+        printf -v char '%b' "\\x$hex"
+        value=${value//$char/\\u00$hex}
+    done
     printf '"%s"' "$value"
+}
+
+hook_unicode() {
+    local number=$1 bytes
+    HOOK_UTF8=""
+    if (( number == 0 || number > 0x10ffff || (number >= 0xd800 && number <= 0xdfff) )); then
+        HOOK_ERROR="Unsupported YAML escape"
+        return
+    fi
+    if (( number < 0x80 )); then
+        printf -v bytes '\\x%02X' "$number"
+    elif (( number < 0x800 )); then
+        printf -v bytes '\\x%02X\\x%02X' "$((0xc0 | (number >> 6)))" "$((0x80 | (number & 0x3f)))"
+    elif (( number < 0x10000 )); then
+        printf -v bytes '\\x%02X\\x%02X\\x%02X' "$((0xe0 | (number >> 12)))" "$((0x80 | ((number >> 6) & 0x3f)))" "$((0x80 | (number & 0x3f)))"
+    else
+        printf -v bytes '\\x%02X\\x%02X\\x%02X\\x%02X' "$((0xf0 | (number >> 18)))" "$((0x80 | ((number >> 12) & 0x3f)))" "$((0x80 | ((number >> 6) & 0x3f)))" "$((0x80 | (number & 0x3f)))"
+    fi
+    printf -v HOOK_UTF8 '%b' "$bytes"
 }
 
 hook_error() {
@@ -22,7 +46,7 @@ hook_error() {
 }
 
 hook_scalar() {
-    local raw=$1 inner c escaped i
+    local raw=$1 inner c escaped i digits count
     while [[ $raw == ' '* ]]; do raw=${raw# }; done
     while [[ $raw == *' ' ]]; do raw=${raw% }; done
     HOOK_QUOTED=false
@@ -56,6 +80,26 @@ hook_scalar() {
                 r) HOOK_SCALAR+=$'\r' ;;
                 b) HOOK_SCALAR+=$'\b' ;;
                 f) HOOK_SCALAR+=$'\f' ;;
+                a) HOOK_SCALAR+=$'\a' ;;
+                v) HOOK_SCALAR+=$'\v' ;;
+                e) HOOK_SCALAR+=$'\033' ;;
+                N) hook_unicode 0x85; HOOK_SCALAR+=$HOOK_UTF8 ;;
+                _) hook_unicode 0xa0; HOOK_SCALAR+=$HOOK_UTF8 ;;
+                L) hook_unicode 0x2028; HOOK_SCALAR+=$HOOK_UTF8 ;;
+                P) hook_unicode 0x2029; HOOK_SCALAR+=$HOOK_UTF8 ;;
+                x|u|U)
+                    count=2
+                    [[ $escaped == u ]] && count=4
+                    [[ $escaped == U ]] && count=8
+                    digits=${inner:i+1:count}
+                    if (( ${#digits} != count )) || [[ ! $digits =~ ^[[:xdigit:]]+$ ]]; then
+                        HOOK_ERROR="Unsupported YAML escape"; return
+                    fi
+                    hook_unicode "$((16#$digits))"
+                    [[ -n $HOOK_ERROR ]] && return
+                    HOOK_SCALAR+=$HOOK_UTF8
+                    i=$((i+count))
+                    ;;
                 '"'|'\') HOOK_SCALAR+=$escaped ;;
                 *) HOOK_ERROR="Unsupported YAML escape"; return ;;
             esac
@@ -142,15 +186,73 @@ hook_installed_field() {
 }
 
 hook_priority() {
-    local raw=$1 quoted=$2 whole
+    local raw=$1 quoted=$2 whole frac="" exponent=0 shift digits part octal=false
     HOOK_RANK=10
-    [[ $raw =~ ^\+?[0-9]+(\.[0-9]+)?$ ]] || return
-    [[ $quoted == true && $raw == *.* ]] && return
-    whole=${raw%%.*}
-    whole=${whole#+}
-    while [[ $whole == 0* && ${#whole} -gt 1 ]]; do whole=${whole#0}; done
-    (( ${#whole} <= 10 )) || return
-    HOOK_RANK=$((10#$whole))
+    [[ $raw == -* ]] && return
+    if [[ $quoted == false && $raw =~ ^\+?0x[0-9a-fA-F_]+$ ]]; then
+        digits=${raw#+}
+        digits=${digits:2}
+        digits=${digits//_/}
+        while [[ $digits == 0* && ${#digits} -gt 1 ]]; do digits=${digits#0}; done
+        (( ${#digits} <= 8 )) || return
+        HOOK_RANK=$((16#$digits))
+    elif [[ $quoted == false && $raw =~ ^\+?0b[01_]+$ ]]; then
+        digits=${raw#+}
+        digits=${digits:2}
+        digits=${digits//_/}
+        while [[ $digits == 0* && ${#digits} -gt 1 ]]; do digits=${digits#0}; done
+        (( ${#digits} <= 31 )) || return
+        HOOK_RANK=$((2#$digits))
+    elif [[ $quoted == false && $raw =~ ^\+?[1-9][0-9_]*(:[0-5]?[0-9])+$ ]]; then
+        digits=${raw#+}
+        digits=${digits//_/}
+        HOOK_RANK=0
+        while [[ $digits == *:* ]]; do
+            part=${digits%%:*}
+            (( ${#part} <= 10 )) || { HOOK_RANK=10; return; }
+            HOOK_RANK=$((HOOK_RANK * 60 + 10#$part))
+            (( HOOK_RANK <= 2147483647 )) || { HOOK_RANK=10; return; }
+            digits=${digits#*:}
+        done
+        HOOK_RANK=$((HOOK_RANK * 60 + 10#$digits))
+    else
+        if [[ $raw =~ ^\+?[0-9][0-9_]*$ ]]; then
+            digits=${raw#+}
+            [[ $quoted == false && $digits =~ ^0[0-7_]+$ ]] && octal=true
+            digits=${digits//_/}
+            if [[ $octal == true ]]; then
+                while [[ $digits == 0* && ${#digits} -gt 1 ]]; do digits=${digits#0}; done
+                (( ${#digits} <= 11 )) || return
+                HOOK_RANK=$((8#$digits))
+                (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
+                return
+            fi
+        elif [[ $quoted == false && $raw =~ ^[+]?[0-9][0-9_]*\.[0-9_]+([eE][+-][0-9]+)?$ ]]; then
+            digits=${raw#+}
+            digits=${digits//_/}
+            if [[ $digits == *[eE]* ]]; then
+                exponent=${digits##*[eE]}
+                (( ${#exponent} <= 4 )) || return
+                digits=${digits%[eE]*}
+            fi
+            whole=${digits%%.*}
+            frac=${digits#*.}
+            shift=$((exponent - ${#frac}))
+            digits=$whole$frac
+            if (( shift >= 0 )); then
+                (( shift <= 10 )) || return
+                while (( shift > 0 )); do digits+=0; shift=$((shift-1)); done
+            else
+                (( ${#digits} + shift > 0 )) || return
+                digits=${digits:0:${#digits}+shift}
+            fi
+        else
+            return
+        fi
+        while [[ $digits == 0* && ${#digits} -gt 1 ]]; do digits=${digits#0}; done
+        (( ${#digits} <= 10 )) || return
+        HOOK_RANK=$((10#$digits))
+    fi
     (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
 }
 

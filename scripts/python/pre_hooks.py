@@ -41,6 +41,8 @@ def resolve(event: str, project_root: Path) -> dict:
             label = f"hooks.{hook_event}[{index}]"
             if not isinstance(entry, dict):
                 raise ValueError(f"Invalid .specify/extensions.yml: {label} must be a mapping")
+            if any(isinstance(value, str) and "\0" in value for value in entry.values()):
+                raise ValueError(f"Invalid .specify/extensions.yml: {label} contains a NUL character")
             for field in ("enabled", "optional"):
                 if field in entry and not isinstance(entry[field], bool):
                     raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a boolean")

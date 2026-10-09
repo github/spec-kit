@@ -59,10 +59,8 @@ Unmodified managed copies are refreshed; customized scripts are preserved.
 
 ## Requirements
 
-- Spec Kit **0.12.17 or newer**. Extension-local `scripts/...` path rewriting arrived in
-  0.12.6, but auto-registered skills did not resolve `__SPECKIT_COMMAND_*__` references
-  until 0.12.17. Earlier releases cannot render this command correctly in every supported
-  layout, so `specify extension add github` refuses to install below 0.12.17.
+- Spec Kit **1.1.3 or newer**. Older releases cannot resolve the hook
+  placeholders or install the shared pre/post dispatchers used by this command.
 - A Git remote pointing at GitHub.
 - The **GitHub MCP server** available to your coding agent, providing the `list_issues` and `issue_write` tools.
 

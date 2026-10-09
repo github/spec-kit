@@ -351,6 +351,8 @@ Core commands run two hook dispatchers, one before and one after their main work
 
 All three dispatchers validate hook fields across every configured event before returning the requested event. Priorities are truncated to integers in the range `1` through `2147483647`; values outside this range, booleans, and non-integer strings fall back to `10`. Quoted integer strings are accepted, but quoted decimal strings are not.
 
+Native dispatchers also recognize the numeric YAML forms accepted by the Python resolver, including digit separators, hex/binary/octal integers, sexagesimal integers, and decimal floats with exponents. The canonical writer quotes strings that would otherwise be ambiguous to the native parsers and preserves YAML control-character escapes. A NUL character in hook configuration is rejected explicitly because Bash cannot represent it.
+
 The native Bash and PowerShell resolvers support the CLI's pretty-printed `.specify/extensions.yml` layout: a `hooks:` mapping, event names indented two spaces, list items under each event, and single-line scalar fields (including quoted strings and common escapes). Other YAML constructs such as anchors, flow-style hook lists, and block scalars are not supported; these variants reject them explicitly rather than silently skipping hooks. The CLI writes hook configuration in this canonical layout without wrapping long scalar values; installing or upgrading shared infrastructure rewrites existing valid YAML to this layout so configurations produced by older versions remain usable (YAML comments and formatting are not retained). The Python variant accepts general YAML through PyYAML. A hook `condition` must be a string or null in all variants.
 
 ## FAQ

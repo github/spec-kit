@@ -541,3 +541,92 @@ def test_priority_range_and_coercion_parity(tmp_path, variant, priority, expecte
         ["default", "high"] if expected > 10 else ["high", "default"]
     )
     assert next(hook for hook in data["hooks"] if hook["extension"] == "high")["priority"] == expected
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("raw,expected", [
+    ("2_0", 20), ("0x14", 20), ("2.0e+1", 20),
+    ("0b10100", 20), ("024", 20), ("1:02", 62),
+    ("+0x14", 20), ("+024", 20), ("1:2", 62),
+    ("+1:2", 62), ("01:02", 10), ("0:2", 10),
+    ("0X14", 10), ("0B10100", 10),
+    ("'0x14'", 10), ("'2_0'", 20),
+    ("2.0e+99", 10), ("0xGG", 10),
+])
+def test_yaml_numeric_priority_parity(tmp_path, variant, raw, expected):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, (
+        "hooks:\n  before_plan:\n"
+        "    - extension: high\n      command: speckit.high.run\n"
+        f"      priority: {raw}\n"
+        "    - extension: default\n      command: speckit.default.run\n"
+    ))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert next(hook for hook in data["hooks"] if hook["extension"] == "high")["priority"] == expected
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("value", [
+    "\a", "\v", "\x01", "\x1b", "\x85", "\xa0", "\u2028", "\u2029",
+    "\ufeff", "😀", "😀\nmore",
+])
+def test_canonical_writer_control_escape_parity(tmp_path, variant, value):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "prompt": f"before{value}after"},
+    ]}})
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert data["hooks"][0]["prompt"] == f"before{value}after"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_nul_in_existing_hook_configuration_is_rejected(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, (
+        'hooks:\n  before_plan:\n'
+        '    - extension: git\n      command: speckit.git.commit\n'
+        '      prompt: "before\\0after"\n'
+    ))
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "NUL" in data["error"] or "Unsupported YAML escape" in data["error"]
+
+
+def test_canonical_writer_rejects_nul_without_touching_config(tmp_path):
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    config = write_config(tmp_path, "hooks: {}\n")
+    with pytest.raises(ValueError, match="NUL"):
+        executor.save_project_config({"hooks": {"before_plan": [
+            {"extension": "git", "command": "speckit.git.commit", "prompt": "before\0after"}
+        ]}})
+    assert config.read_text(encoding="utf-8") == "hooks: {}\n"
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("value", [
+    "JSvjEuqRsqs$tn]X", "N1Y'dombB*Afj9e;SO}^0^S'", "prefix{suffix",
+])
+def test_canonical_writer_quotes_native_reserved_scalar_chars(tmp_path, variant, value):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "prompt": value},
+    ]}})
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert data["hooks"][0]["prompt"] == value

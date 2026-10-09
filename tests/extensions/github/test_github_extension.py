@@ -40,10 +40,9 @@ CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
-INSTALL_SPECKIT_VERSION = "1.0.12"
-# The floor exists because auto-registered skills did not resolve command
-# reference tokens until 0.12.17 (#3544).
-MIN_SPECKIT_VERSION = "0.12.17"
+INSTALL_SPECKIT_VERSION = "1.1.3.dev0"
+# Hook placeholders and dispatcher installation first ship with this CLI release.
+MIN_SPECKIT_VERSION = "1.1.3.dev0"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -201,6 +200,7 @@ class TestManifest:
         spec = SpecifierSet(floor)
         assert "0.12.5" not in spec, floor
         assert "0.12.16" not in spec, floor
+        assert "1.1.2" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor

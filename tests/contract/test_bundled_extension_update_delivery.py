@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +40,10 @@ DRIFTED_BEFORE_BUMP = frozenset({"agent-context", "assess", "git"})
 def _catalog_entries() -> dict[str, dict]:
     catalog = json.loads((EXTENSIONS_ROOT / "catalog.json").read_text(encoding="utf-8"))
     return catalog["extensions"]
+
+def _checkout_version() -> str:
+    """Use this checkout's version, not possibly stale editable-install metadata."""
+    return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 
 def _bundled_ids() -> list[str]:
@@ -72,7 +77,7 @@ def _stale_copy(tmp_path: Path, ext_id: str, version: str) -> Path:
 
 def _run_update(project_dir: Path, ext_id: str):
     from specify_cli import app
-    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.extensions import ExtensionCatalog, _commands
 
     catalog_info = dict(_catalog_entries()[ext_id])
     catalog_info.setdefault("_install_allowed", True)
@@ -80,6 +85,7 @@ def _run_update(project_dir: Path, ext_id: str):
     # catalog is replaced, and downloading must never be attempted for a
     # bundled extension.
     with patch.object(Path, "cwd", return_value=project_dir), \
+         patch.object(_commands, "get_speckit_version", return_value=_checkout_version()), \
          patch.object(ExtensionCatalog, "get_extension_info", return_value=catalog_info), \
          patch.object(
              ExtensionCatalog,
@@ -109,7 +115,6 @@ def test_drifted_extensions_are_covered():
 
 @pytest.mark.parametrize("ext_id", _bundled_ids())
 def test_stale_bundled_install_is_updated_to_catalog_version(tmp_path: Path, ext_id: str):
-    from specify_cli._assets import get_speckit_version
     from specify_cli.extensions import ExtensionManager
 
     catalog_version = Version(_catalog_entries()[ext_id]["version"])
@@ -124,8 +129,13 @@ def test_stale_bundled_install_is_updated_to_catalog_version(tmp_path: Path, ext
     project_dir = _make_project(tmp_path)
     stale_source = _stale_copy(tmp_path, ext_id, PRE_BUMP_VERSION)
     manager = ExtensionManager(project_dir)
-    manager.install_from_directory(stale_source, get_speckit_version())
+    manager.install_from_directory(stale_source, _checkout_version())
     assert manager.registry.get(ext_id)["version"] == PRE_BUMP_VERSION
+    if ext_id == "github":
+        for phase in ("pre", "post"):
+            dispatcher = project_dir / ".specify/scripts/bash" / f"{phase}-hooks.sh"
+            assert dispatcher.is_file()
+            dispatcher.unlink()
 
     result = _run_update(project_dir, ext_id)
 
@@ -134,19 +144,21 @@ def test_stale_bundled_install_is_updated_to_catalog_version(tmp_path: Path, ext
     assert f"Updated to v{catalog_version}" in flat, flat
     assert "Up to date" not in flat, flat
     assert ExtensionManager(project_dir).registry.get(ext_id)["version"] == str(catalog_version)
+    if ext_id == "github":
+        for phase in ("pre", "post"):
+            assert (project_dir / ".specify/scripts/bash" / f"{phase}-hooks.sh").is_file()
 
 
 @pytest.mark.parametrize("ext_id", _bundled_ids())
 def test_current_bundled_install_is_up_to_date(tmp_path: Path, ext_id: str):
     """The bumped catalog must not re-offer an update to an install that
     already carries the bundled version, or every fresh install would loop."""
-    from specify_cli._assets import get_speckit_version
     from specify_cli.extensions import ExtensionManager
 
     catalog_version = _catalog_entries()[ext_id]["version"]
     project_dir = _make_project(tmp_path)
     ExtensionManager(project_dir).install_from_directory(
-        EXTENSIONS_ROOT / ext_id, get_speckit_version()
+        EXTENSIONS_ROOT / ext_id, _checkout_version()
     )
 
     result = _run_update(project_dir, ext_id)

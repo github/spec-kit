@@ -11,9 +11,49 @@ function Convert-HookScalar {
     }
     if ($raw.StartsWith('"')) {
         if ($raw.Length -lt 2 -or -not $raw.EndsWith('"')) { throw "Unsupported YAML scalar" }
-        try { $value = ConvertFrom-Json -InputObject $raw -ErrorAction Stop }
+        $json = [Text.StringBuilder]::new()
+        for ($i = 0; $i -lt $raw.Length; $i++) {
+            if ($raw[$i] -ne '\') {
+                $null = $json.Append($raw[$i])
+                continue
+            }
+            $i++
+            if ($i -ge $raw.Length) { throw "Unsupported YAML escape" }
+            $escaped = [string]$raw[$i]
+            if ($escaped -ceq 'x' -or $escaped -ceq 'U') {
+                $count = if ($escaped -ceq 'x') { 2 } else { 8 }
+                if ($i + $count -ge $raw.Length) { throw "Unsupported YAML escape" }
+                $hex = $raw.Substring($i + 1, $count)
+                if ($hex -notmatch '^[0-9a-fA-F]+$') { throw "Unsupported YAML escape" }
+                $number = [Convert]::ToInt32($hex, 16)
+                if ($number -eq 0 -or $number -gt 0x10ffff -or
+                    ($number -ge 0xd800 -and $number -le 0xdfff)) {
+                    throw "Unsupported YAML escape"
+                }
+                if ($escaped -ceq 'x') {
+                    $null = $json.Append('\u00').Append($hex)
+                } else {
+                    $null = $json.Append([char]::ConvertFromUtf32($number))
+                }
+                $i += $count
+                continue
+            }
+            $replacement = switch -CaseSensitive ($escaped) {
+                'a' { '\u0007' }
+                'v' { '\u000B' }
+                'e' { '\u001B' }
+                'N' { '\u0085' }
+                '_' { '\u00A0' }
+                'L' { '\u2028' }
+                'P' { '\u2029' }
+                default { '\' + $escaped }
+            }
+            $null = $json.Append($replacement)
+        }
+        try { $value = ConvertFrom-Json -InputObject $json.ToString() -ErrorAction Stop }
         catch { throw "Unsupported YAML escape: $($_.Exception.Message)" }
         if ($value -isnot [string]) { throw "Unsupported YAML scalar" }
+        if ($value.Contains([char]0)) { throw "Unsupported YAML NUL character" }
         return @{ Value = $value; Quoted = $true }
     }
     $raw = ($raw -replace '\s+#.*$', '').TrimEnd()
@@ -66,13 +106,36 @@ function Test-HookTypedScalar {
 
 function Get-HookPriority {
     param([string]$Raw, [bool]$Quoted)
-    if ($Raw -notmatch '^[+-]?[0-9]+(\.[0-9]+)?$') { return 10 }
-    if ($Quoted -and $Raw.Contains('.')) { return 10 }
-    $number = 0.0
-    if (-not [double]::TryParse($Raw, [Globalization.NumberStyles]::Float,
-            [Globalization.CultureInfo]::InvariantCulture, [ref]$number)) { return 10 }
-    if ($number -lt 1 -or [Math]::Truncate($number) -gt [int]::MaxValue) { return 10 }
-    return [int][Math]::Truncate($number)
+    $digits = $Raw.Replace('_', '')
+    if ($Raw -match '^-') { return 10 }
+    try {
+        if (-not $Quoted -and $Raw -cmatch '^\+?0x[0-9a-fA-F_]+$') {
+            $number = [Convert]::ToInt64($digits.TrimStart('+').Substring(2), 16)
+        } elseif (-not $Quoted -and $Raw -cmatch '^\+?0b[01_]+$') {
+            $number = [Convert]::ToInt64($digits.TrimStart('+').Substring(2), 2)
+        } elseif (-not $Quoted -and $Raw -match '^\+?0[0-7_]+$') {
+            $number = [Convert]::ToInt64($digits.TrimStart('+'), 8)
+        } elseif (-not $Quoted -and $Raw -match '^\+?[1-9][0-9_]*(:[0-5]?[0-9])+$') {
+            $number = [long]0
+            foreach ($part in ($digits.TrimStart('+') -split ':')) {
+                $number = $number * 60 + [long]::Parse($part)
+                if ($number -gt [int]::MaxValue) { return 10 }
+            }
+        } elseif ($Raw -match '^\+?[0-9][0-9_]*$') {
+            $number = [long]::Parse($digits.TrimStart('+'), [Globalization.CultureInfo]::InvariantCulture)
+        } elseif (-not $Quoted -and $Raw -match '^\+?[0-9][0-9_]*\.[0-9_]+([eE][+-][0-9]+)?$') {
+            $number = [double]::Parse(
+                $digits, [Globalization.NumberStyles]::Float,
+                [Globalization.CultureInfo]::InvariantCulture
+            )
+        } else {
+            return 10
+        }
+        if ($number -lt 1 -or $number -ge ([double][int]::MaxValue + 1)) { return 10 }
+        return [int][Math]::Truncate($number)
+    } catch [FormatException], [OverflowException] {
+        return 10
+    }
 }
 
 function Resolve-HookConfig {
