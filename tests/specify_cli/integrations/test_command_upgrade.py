@@ -527,6 +527,20 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, result.output
         assert command.read_bytes() == b"USER OWNED FILE\n"
 
+    def test_removal_keeps_a_looping_prompt_symlink(self, tmp_path, monkeypatch):
+        source = _write_command_extension(tmp_path)
+        project = _init_dotted_kiro_project(tmp_path, monkeypatch, ["extension", "add", "--dev", str(source)])
+        legacy = project / ".kiro/prompts/speckit.audit.run.md"
+        legacy.unlink()
+        try:
+            legacy.symlink_to(legacy.name)
+        except OSError:
+            pytest.skip("Symlinks are unavailable")
+
+        result = _run_in_project(project, ["extension", "remove", "audit", "--force"])
+        assert result.exit_code == 0, result.output
+        assert legacy.is_symlink()
+
     def test_extension_add_without_init_options_loads_installed_adapters(self, tmp_path, offline_adapter):
         from specify_cli.integrations.installer import unload_installed_integrations
 

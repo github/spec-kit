@@ -4177,7 +4177,11 @@ class ExtensionManager:
         from ..shared_infra import _validate_safe_shared_directory
 
         _validate_safe_shared_directory(self.project_root, path.parent)
-        CommandRegistrar._ensure_inside(path.resolve(), self.project_root.resolve())
+        try:
+            resolved = path.resolve()
+        except RuntimeError as exc:  # symlink loop before Python 3.13
+            raise OSError(f"Symlink loop at {path}") from exc
+        CommandRegistrar._ensure_inside(resolved, self.project_root.resolve())
         content = path.read_text(encoding="utf-8")
         marker = next((
             line for line in content.splitlines()
