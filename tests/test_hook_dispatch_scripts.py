@@ -422,6 +422,83 @@ def test_semantically_invalid_projected_hook_is_rejected(tmp_path, variant):
     assert "projection" in data["error"]
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_read_during_projection_save_fails_then_recovers(tmp_path, monkeypatch, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+    from specify_cli.integrations import _file_changes
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "old", "command": "speckit.old.run"},
+    ]}})
+    writing = threading.Event()
+    resume = threading.Event()
+    failures = []
+    original_write = _file_changes.write_bytes
+
+    def paused_write(path, content):
+        if path.name == "before_plan.json":
+            writing.set()
+            if not resume.wait(10):
+                raise TimeoutError("Writer was not released")
+        return original_write(path, content)
+
+    monkeypatch.setattr(_file_changes, "write_bytes", paused_write)
+
+    def save():
+        try:
+            executor.save_project_config({"hooks": {"before_plan": [
+                {"extension": "new", "command": "speckit.new.run"},
+            ]}})
+        except (OSError, ValueError, RuntimeError) as exc:
+            failures.append(exc)
+
+    writer = threading.Thread(target=save)
+    writer.start()
+    try:
+        assert writing.wait(10)
+        code, data = run_hook(tmp_path, variant=variant)
+        assert code == 1
+        assert data["hooks"] == []
+        assert "projection" in data["error"]
+    finally:
+        resume.set()
+        writer.join(10)
+    assert not writer.is_alive() and not failures
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"][0]["extension"] == "new"
+
+
+def test_python_reader_rejects_save_after_reading_old_projection(tmp_path, monkeypatch):
+    from scripts.python import pre_hooks
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "old", "command": "speckit.old.run"},
+    ]}})
+    original_read = Path.read_bytes
+    replaced = False
+
+    def read_and_replace(path):
+        nonlocal replaced
+        payload = original_read(path)
+        if path.name == "before_plan.json" and not replaced:
+            replaced = True
+            executor.save_project_config({"hooks": {"before_plan": [
+                {"extension": "new", "command": "speckit.new.run"},
+            ]}})
+        return payload
+
+    monkeypatch.setattr(Path, "read_bytes", read_and_replace)
+    with pytest.raises(ValueError, match="changed during resolution"):
+        pre_hooks.resolve("before_plan", tmp_path)
+    assert replaced
+
+
 def test_concurrent_projection_saves_publish_matching_configuration(tmp_path, monkeypatch):
     from specify_cli.extensions import HookExecutor
     from specify_cli.integrations import _file_changes

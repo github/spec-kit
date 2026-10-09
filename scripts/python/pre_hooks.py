@@ -22,7 +22,8 @@ def resolve(event: str, project_root: Path) -> dict:
     cache = project_root / ".specify" / "hook-dispatch"
     if cache.is_dir():
         try:
-            if config_file.read_bytes() != (cache / "source.yml").read_bytes():
+            source = config_file.read_bytes()
+            if source != (cache / "source.yml").read_bytes():
                 raise ValueError("Hook projection is stale; reinstall the extension or refresh the project")
             event_bytes = (cache / "events.txt").read_bytes()
             index_digest = (cache / "events.txt.sha256").read_text(encoding="utf-8").strip()
@@ -33,12 +34,15 @@ def resolve(event: str, project_root: Path) -> dict:
             if not projection.exists():
                 if event in events:
                     raise ValueError("Hook projection is incomplete; reinstall the extension or refresh the project")
-                return {"event": event, "hooks": []}
-            expected = (cache / f"{event}.sha256").read_text(encoding="utf-8").strip()
-            payload = projection.read_bytes()
-            if not re.fullmatch("[0-9a-f]{64}", expected) or hashlib.sha256(payload).hexdigest() != expected:
-                raise ValueError("Hook projection is invalid; reinstall the extension or refresh the project")
-            result = json.loads(payload.decode("utf-8"))
+                result = {"event": event, "hooks": []}
+            else:
+                expected = (cache / f"{event}.sha256").read_text(encoding="utf-8").strip()
+                payload = projection.read_bytes()
+                if not re.fullmatch("[0-9a-f]{64}", expected) or hashlib.sha256(payload).hexdigest() != expected:
+                    raise ValueError("Hook projection is invalid; reinstall the extension or refresh the project")
+                result = json.loads(payload.decode("utf-8"))
+            if source != config_file.read_bytes() or source != (cache / "source.yml").read_bytes():
+                raise ValueError("Hook projection changed during resolution; retry the command")
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"Could not read hook projection: {exc}") from exc
         if not isinstance(result, dict) or result.get("event") != event or not isinstance(result.get("hooks"), list):

@@ -433,10 +433,22 @@ class ExtensionManifest:
                             f"Invalid hook '{hook_name}': "
                             "expected a mapping or list of mappings"
                         )
-                    if not entry.get("command"):
+                    if not isinstance(entry.get("command"), str) or not entry["command"]:
                         raise ValidationError(
                             f"Hook '{hook_name}' missing required 'command' field"
                         )
+                    for field in ("enabled", "optional"):
+                        if field in entry and not isinstance(entry[field], bool):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid '{field}': must be a boolean"
+                            )
+                    for field in ("condition", "description", "prompt"):
+                        if entry.get(field) is not None and not isinstance(entry[field], str):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid '{field}': must be a string or null"
+                            )
+                    if any(isinstance(value, str) and "\0" in value for value in entry.values()):
+                        raise ValidationError(f"Hook '{hook_name}' contains a NUL character")
                     if "priority" in entry:
                         priority = entry["priority"]
                         if not isinstance(priority, int) or isinstance(priority, bool):
@@ -2462,6 +2474,11 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
+        for event in manifest.hooks:
+            if not isinstance(event, str) or not re.fullmatch(
+                r"(before|after)_[a-z][a-z0-9_]*", event
+            ):
+                raise ValidationError(f"Invalid hook event for hook projection: {event}")
 
         # Check compatibility
         self.check_compatibility(manifest, speckit_version)

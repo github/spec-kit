@@ -276,9 +276,11 @@ function Invoke-HookResolver {
             $events = Join-Path $cache 'events.txt'
             if (-not (Test-Path -LiteralPath $config -PathType Leaf) -or
                 -not (Test-Path -LiteralPath $snapshot -PathType Leaf) -or
-                -not (Test-Path -LiteralPath $events -PathType Leaf) -or
-                [Convert]::ToBase64String([IO.File]::ReadAllBytes($config)) -cne
-                [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
+                -not (Test-Path -LiteralPath $events -PathType Leaf)) {
+                throw "Hook projection is stale; reinstall the extension or refresh the project"
+            }
+            $source = [Convert]::ToBase64String([IO.File]::ReadAllBytes($config))
+            if ($source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
                 throw "Hook projection is stale; reinstall the extension or refresh the project"
             }
             $indexDigest = Join-Path $cache 'events.txt.sha256'
@@ -321,12 +323,17 @@ function Invoke-HookResolver {
                         throw "Invalid hook projection; reinstall the extension or refresh the project"
                     }
                 }
-                [Console]::WriteLine($text.TrimEnd("`r", "`n"))
+                $result = $text.TrimEnd("`r", "`n")
             } elseif (@([Text.Encoding]::UTF8.GetString($eventBytes) -split "`n") -ccontains $event) {
                 throw "Hook projection is incomplete; reinstall the extension or refresh the project"
             } else {
-                @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress
+                $result = @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress
             }
+            if ($source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($config)) -or
+                $source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
+                throw "Hook projection changed during resolution; retry the command"
+            }
+            [Console]::WriteLine($result)
             exit 0
         }
         $hooks = @()

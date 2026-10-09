@@ -70,6 +70,61 @@ class TestExtensionAddCLI:
         assert config.read_text(encoding="utf-8") == existing
         assert not ExtensionManager(project_dir).registry.is_installed("git")
 
+    @pytest.mark.parametrize("invalid", [
+        {"optional": "false"},
+        {"condition": False},
+        {"prompt": False},
+        {"description": False},
+        {"enabled": "true"},
+        {"prompt": "invalid\0prompt"},
+    ])
+    def test_add_rejects_invalid_manifest_hooks_before_install(
+        self, extension_dir, project_dir, invalid
+    ):
+        from specify_cli.extensions import HookExecutor
+
+        executor = HookExecutor(project_dir)
+        executor.save_project_config({"hooks": {"before_plan": [
+            {"extension": "existing", "command": "speckit.existing.run"},
+        ]}})
+        existing = executor.config_file.read_bytes()
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"]["after_tasks"].update(invalid)
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code != 0
+        assert executor.config_file.read_bytes() == existing
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
+        assert json.loads(
+            (project_dir / ".specify/hook-dispatch/before_plan.json").read_text(encoding="utf-8")
+        )["hooks"][0]["extension"] == "existing"
+
+    def test_add_rejects_invalid_manifest_hook_event_before_install(
+        self, extension_dir, project_dir
+    ):
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"]["invalid-event"] = payload["hooks"].pop("after_tasks")
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+
+        assert result.exit_code != 0
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

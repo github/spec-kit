@@ -271,6 +271,16 @@ hook_digest_valid() {
     [[ $expected =~ ^[0-9a-f]{64}$ && ${actual%% *} == "$expected" ]]
 }
 
+hook_file_digest() {
+    local output
+    if command -v sha256sum >/dev/null 2>&1; then
+        output=$(sha256sum -- "$1") || return 1
+    else
+        output=$(shasum -a 256 -- "$1") || return 1
+    fi
+    printf '%s' "${output%% *}"
+}
+
 hook_projection_shape_valid() {
     local response=$1 event=$2
     local string='"([^"\\[:cntrl:]]|\\(["\\/bfnrt]|u[[:xdigit:]]{4}))*"'
@@ -311,6 +321,11 @@ resolve_hooks() {
             hook_error "$event" "${HOOK_ERROR:-Hook projection index is invalid; reinstall the extension or refresh the project}"
             return 1
         fi
+        local source_digest result
+        if ! source_digest=$(hook_file_digest "$config"); then
+            hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
+            return 1
+        fi
         if [[ -f .specify/hook-dispatch/$event.json ]]; then
             local projection=".specify/hook-dispatch/$event.json" response
             if ! hook_digest_valid "$projection" ".specify/hook-dispatch/$event.sha256"; then
@@ -322,13 +337,20 @@ resolve_hooks() {
                 hook_error "$event" "Invalid hook projection; reinstall the extension or refresh the project"
                 return 1
             fi
-            cat -- "$projection"
+            result=$response
         elif grep -Fxq -- "$event" .specify/hook-dispatch/events.txt; then
             hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
             return 1
         else
-            printf '{"event":"%s","hooks":[]}\n' "$event"
+            result="{\"event\":\"$event\",\"hooks\":[]}"
         fi
+        if [[ ! -f .specify/hook-dispatch/source.yml ]] ||
+           ! cmp -s -- "$config" .specify/hook-dispatch/source.yml ||
+           [[ $(hook_file_digest "$config") != "$source_digest" ]]; then
+            hook_error "$event" "Hook projection changed during resolution; retry the command"
+            return 1
+        fi
+        printf '%s\n' "$result"
         return
     fi
     if [[ ! -e $config ]]; then
