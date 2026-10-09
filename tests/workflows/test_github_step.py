@@ -210,6 +210,31 @@ def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
     assert "ready" not in observed[0][0]
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/owner/repo.git",
+        "https://github.com/owner/repo",
+        "git@github.com:owner/repo.git",
+        "git@github.com:owner/repo",
+    ],
+)
+def test_github_origin_derives_repository_and_api_url(context, monkeypatch, origin):
+    root = Path(context.project_root)
+    calls = []
+
+    def fake_run(args, cwd, *, input_text=None):
+        calls.append((args, cwd))
+        return origin
+
+    monkeypatch.setattr(github, "_run", fake_run)
+    assert github._identity(root) == (
+        "owner/repo",
+        "https://api.github.com/repos/owner/repo",
+    )
+    assert calls == [(["git", "remote", "get-url", "origin"], root)]
+
+
 def test_origin_must_be_github_dot_com(context, monkeypatch):
     monkeypatch.setattr(
         github, "_run", lambda args, root, **kwargs: "https://evil.example/o/r.git"
