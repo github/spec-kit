@@ -83,10 +83,10 @@ Rendering selects the same `sh`, `ps`, or `py` variant as the command's main
 script; the shared-infrastructure installer includes the selected native
 pre/post entry points. The CLI validates hook configuration on write and
 materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
-CLI writers serialize publication, and each variant checks the snapshot and
-generated response digest before returning hooks. Each reads the projection
-in its own runtime, without depending on another variant or on runtime PyYAML;
-it rejects stale, corrupt, or missing projections.
+CLI writers serialize publication, and each variant checks the snapshot,
+event-index digest, and generated response digest before returning hooks. Each
+reads the projection in its own runtime, without depending on another variant
+or on runtime PyYAML; it rejects stale, corrupt, or missing projections.
 The legacy YAML resolver remains for projects not yet refreshed. The resolver
 returns ordered hook metadata as JSON; agent commands themselves remain the
 responsibility of the agent. The command/skill registrar resolves these

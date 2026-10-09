@@ -231,6 +231,8 @@ def test_materialized_projection_resolves_without_yaml_or_native_parsing(tmp_pat
     projected = tmp_path / ".specify/hook-dispatch/before_plan.json"
     assert projected.is_file()
     assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"before_plan\n"
+    assert b"\r" not in (tmp_path / ".specify/hook-dispatch/events.txt.sha256").read_bytes()
+    assert b"\r" not in (tmp_path / ".specify/hook-dispatch/before_plan.sha256").read_bytes()
     assert [h["extension"] for h in json.loads(projected.read_text(encoding="utf-8"))["hooks"]] == [
         "first", "late",
     ]
@@ -379,6 +381,45 @@ def test_projection_modified_without_new_digest_is_rejected(tmp_path, variant):
     assert code == 1
     assert data["hooks"] == []
     assert "invalid" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_truncated_event_index_cannot_hide_mandatory_hooks(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit", "optional": False},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    (cache / "events.txt").write_bytes(b"")
+    (cache / "before_plan.json").unlink()
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "index" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_semantically_invalid_projected_hook_is_rejected(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    payload = b'{"event":"before_plan","hooks":[{"extension":1}]}\n'
+    (cache / "before_plan.json").write_bytes(payload)
+    (cache / "before_plan.sha256").write_text(
+        hashlib.sha256(payload).hexdigest() + "\n", encoding="utf-8",
+    )
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "projection" in data["error"]
 
 
 def test_concurrent_projection_saves_publish_matching_configuration(tmp_path, monkeypatch):

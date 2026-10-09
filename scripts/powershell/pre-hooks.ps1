@@ -281,6 +281,16 @@ function Invoke-HookResolver {
                 [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
                 throw "Hook projection is stale; reinstall the extension or refresh the project"
             }
+            $indexDigest = Join-Path $cache 'events.txt.sha256'
+            if (-not (Test-Path -LiteralPath $indexDigest -PathType Leaf)) {
+                throw "Hook projection index is incomplete; reinstall the extension or refresh the project"
+            }
+            $eventBytes = [IO.File]::ReadAllBytes($events)
+            $eventHash = [IO.File]::ReadAllText($indexDigest, [Text.Encoding]::UTF8).Trim()
+            if ($eventHash -cnotmatch '^[0-9a-f]{64}$' -or
+                [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($eventBytes)) -cne $eventHash.ToUpperInvariant()) {
+                throw "Hook projection index is invalid; reinstall the extension or refresh the project"
+            }
             $projected = Join-Path $cache "$event.json"
             if (Test-Path -LiteralPath $projected -PathType Leaf) {
                 $digest = Join-Path $cache "$event.sha256"
@@ -312,7 +322,7 @@ function Invoke-HookResolver {
                     }
                 }
                 [Console]::WriteLine($text.TrimEnd("`r", "`n"))
-            } elseif (@([IO.File]::ReadAllLines($events, [Text.Encoding]::UTF8)) -ccontains $event) {
+            } elseif (@([Text.Encoding]::UTF8.GetString($eventBytes) -split "`n") -ccontains $event) {
                 throw "Hook projection is incomplete; reinstall the extension or refresh the project"
             } else {
                 @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress

@@ -24,7 +24,11 @@ def resolve(event: str, project_root: Path) -> dict:
         try:
             if config_file.read_bytes() != (cache / "source.yml").read_bytes():
                 raise ValueError("Hook projection is stale; reinstall the extension or refresh the project")
-            events = (cache / "events.txt").read_text(encoding="utf-8").splitlines()
+            event_bytes = (cache / "events.txt").read_bytes()
+            index_digest = (cache / "events.txt.sha256").read_text(encoding="utf-8").strip()
+            if not re.fullmatch("[0-9a-f]{64}", index_digest) or hashlib.sha256(event_bytes).hexdigest() != index_digest:
+                raise ValueError("Hook projection index is invalid; reinstall the extension or refresh the project")
+            events = event_bytes.decode("utf-8").splitlines()
             projection = cache / f"{event}.json"
             if not projection.exists():
                 if event in events:

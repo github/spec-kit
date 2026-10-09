@@ -256,6 +256,30 @@ hook_priority() {
     (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
 }
 
+hook_digest_valid() {
+    local path=$1 digest=$2 expected actual
+    [[ -f $path && -f $digest ]] || return 1
+    IFS= read -r expected < "$digest"
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum -- "$path") || return 1
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 -- "$path") || return 1
+    else
+        HOOK_ERROR="Cannot validate hook projection: sha256sum or shasum is required"
+        return 1
+    fi
+    [[ $expected =~ ^[0-9a-f]{64}$ && ${actual%% *} == "$expected" ]]
+}
+
+hook_projection_shape_valid() {
+    local response=$1 event=$2
+    local string='"([^"\\[:cntrl:]]|\\(["\\/bfnrt]|u[[:xdigit:]]{4}))*"'
+    local required='"([^"\\[:cntrl:]]|\\(["\\/bfnrt]|u[[:xdigit:]]{4}))+"'
+    local entry='\{"extension":'"$required"',"command":'"$required"',"optional":(true|false),"description":'"$string"',"prompt":'"$string"',"priority":[1-9][0-9]*\}'
+    local shape='^\{"event":"'"$event"'","hooks":\[('"$entry"'(,'"$entry"')*)?\]\}$'
+    [[ $response =~ $shape ]]
+}
+
 resolve_hooks() {
     local phase=$1 command=$2 event config line spaces indent text key value
     local section="" target=false empty=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
@@ -282,33 +306,19 @@ resolve_hooks() {
             hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
             return 1
         fi
+        HOOK_ERROR=""
+        if ! hook_digest_valid .specify/hook-dispatch/events.txt .specify/hook-dispatch/events.txt.sha256; then
+            hook_error "$event" "${HOOK_ERROR:-Hook projection index is invalid; reinstall the extension or refresh the project}"
+            return 1
+        fi
         if [[ -f .specify/hook-dispatch/$event.json ]]; then
-            local projection=".specify/hook-dispatch/$event.json" expected actual response
-            if [[ ! -f .specify/hook-dispatch/$event.sha256 ]]; then
-                hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
-                return 1
-            fi
-            IFS= read -r expected < ".specify/hook-dispatch/$event.sha256"
-            if command -v sha256sum >/dev/null 2>&1; then
-                actual=$(sha256sum -- "$projection") || {
-                    hook_error "$event" "Cannot validate hook projection"
-                    return 1
-                }
-            elif command -v shasum >/dev/null 2>&1; then
-                actual=$(shasum -a 256 -- "$projection") || {
-                    hook_error "$event" "Cannot validate hook projection"
-                    return 1
-                }
-            else
-                hook_error "$event" "Cannot validate hook projection: sha256sum or shasum is required"
-                return 1
-            fi
-            if [[ ! $expected =~ ^[0-9a-f]{64}$ || ${actual%% *} != "$expected" ]]; then
-                hook_error "$event" "Hook projection is invalid; reinstall the extension or refresh the project"
+            local projection=".specify/hook-dispatch/$event.json" response
+            if ! hook_digest_valid "$projection" ".specify/hook-dispatch/$event.sha256"; then
+                hook_error "$event" "${HOOK_ERROR:-Hook projection is invalid; reinstall the extension or refresh the project}"
                 return 1
             fi
             if ! IFS= read -r response < "$projection" ||
-               [[ $response != "{\"event\":\"$event\",\"hooks\":["*"]}" ]]; then
+               ! hook_projection_shape_valid "$response" "$event"; then
                 hook_error "$event" "Invalid hook projection; reinstall the extension or refresh the project"
                 return 1
             fi

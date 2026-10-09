@@ -53,6 +53,23 @@ class TestExtensionAddCLI:
         assert projected["event"] == "before_plan"
         assert [hook["extension"] for hook in projected["hooks"]] == ["git"]
 
+    @pytest.mark.parametrize("existing", [
+        "hooks: [broken]\n",
+        "hooks:\n  before_plan:\n    - extension: orphan\n",
+    ])
+    def test_add_git_rejects_invalid_existing_hooks(self, project_dir, existing):
+        git_source = Path(__file__).parents[3] / "extensions" / "git"
+        config = project_dir / ".specify" / "extensions.yml"
+        config.write_text(existing, encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(git_source), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code != 0
+        assert "invalid hooks" in result.output.lower()
+        assert config.read_text(encoding="utf-8") == existing
+        assert not ExtensionManager(project_dir).registry.is_installed("git")
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

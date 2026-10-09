@@ -2593,6 +2593,12 @@ class ExtensionManager:
                 "{PRE_HOOK_SCRIPT}" in command_source or "{POST_HOOK_SCRIPT}" in command_source
             )
 
+        if not needs_hook_dispatchers:
+            try:
+                HookExecutor(self.project_root).migrate_project_config()
+            except (OSError, ValueError) as exc:
+                raise ExtensionError(f"Cannot install extension with invalid hooks: {exc}") from exc
+
         if needs_hook_dispatchers:
             from .. import _install_shared_infra
             from ..integrations.base import get_invocation_prefix
@@ -5886,11 +5892,16 @@ class HookExecutor:
                         unlink(path)
                 for event, payload in projected.items():
                     write_bytes(cache / f"{event}.json", payload)
-                    write_text(
-                        cache / f"{event}.sha256", hashlib.sha256(payload).hexdigest() + "\n",
-                        encoding="utf-8",
+                    write_bytes(
+                        cache / f"{event}.sha256",
+                        (hashlib.sha256(payload).hexdigest() + "\n").encode("ascii"),
                     )
-                write_bytes(cache / "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
+                events_payload = "".join(f"{event}\n" for event in projected).encode("utf-8")
+                write_bytes(cache / "events.txt", events_payload)
+                write_bytes(
+                    cache / "events.txt.sha256",
+                    (hashlib.sha256(events_payload).hexdigest() + "\n").encode("ascii"),
+                )
                 write_text(self.config_file, rendered, encoding="utf-8")
                 write_bytes(snapshot, self.config_file.read_bytes())
 
