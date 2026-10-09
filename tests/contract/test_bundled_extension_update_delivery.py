@@ -17,6 +17,7 @@ entry and the real bundled copy, and assert it reaches the catalog version.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tomllib
 from pathlib import Path
@@ -132,8 +133,9 @@ def test_stale_bundled_install_is_updated_to_catalog_version(tmp_path: Path, ext
     manager.install_from_directory(stale_source, _checkout_version())
     assert manager.registry.get(ext_id)["version"] == PRE_BUMP_VERSION
     if ext_id == "github":
+        script_dir, suffix = ("powershell", "ps1") if os.name == "nt" else ("bash", "sh")
         for phase in ("pre", "post"):
-            dispatcher = project_dir / ".specify/scripts/bash" / f"{phase}-hooks.sh"
+            dispatcher = project_dir / ".specify" / "scripts" / script_dir / f"{phase}-hooks.{suffix}"
             assert dispatcher.is_file()
             dispatcher.unlink()
 
@@ -146,7 +148,7 @@ def test_stale_bundled_install_is_updated_to_catalog_version(tmp_path: Path, ext
     assert ExtensionManager(project_dir).registry.get(ext_id)["version"] == str(catalog_version)
     if ext_id == "github":
         for phase in ("pre", "post"):
-            assert (project_dir / ".specify/scripts/bash" / f"{phase}-hooks.sh").is_file()
+            assert (project_dir / ".specify" / "scripts" / script_dir / f"{phase}-hooks.{suffix}").is_file()
 
 
 @pytest.mark.parametrize("ext_id", _bundled_ids())

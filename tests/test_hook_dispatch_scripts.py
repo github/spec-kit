@@ -41,7 +41,10 @@ def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
     env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
     if extra_env:
         env.update(extra_env)
-    result = subprocess.run(scripts[variant] + [name], cwd=tmp_path, env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        scripts[variant] + [name], cwd=tmp_path, env=env,
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
     return result.returncode, json.loads(result.stdout)
 
 
