@@ -20,29 +20,20 @@ from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
+from .integrations._registration import project_registration
 
 
 def _build_agent_configs() -> dict[str, Any]:
     """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
     from specify_cli.integrations import INTEGRATION_REGISTRY
+    from specify_cli.integrations.base import resolve_registrar_config
 
     configs: dict[str, dict[str, Any]] = {}
     for key, integration in INTEGRATION_REGISTRY.items():
         if key == "generic":
             continue
         if integration.registrar_config:
-            config = dict(integration.registrar_config)
-            # Propagate invoke_separator from the integration class when the
-            # registrar_config dict doesn't already declare it explicitly.
-            # SkillsIntegration subclasses (claude, codex, …) set
-            # invoke_separator="-" as a class attribute but omit it from
-            # registrar_config, so without this they would fall back to "."
-            # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
-            if "invoke_separator" not in config:
-                config["invoke_separator"] = integration.invoke_separator
-            if integration.dev_no_symlink:
-                config["dev_no_symlink"] = True
-            configs[key] = config
+            configs[key] = resolve_registrar_config(integration)
     return configs
 
 
@@ -59,10 +50,20 @@ class CommandRegistrar:
     AGENT_CONFIGS: dict[str, dict[str, Any]] = {}
     _configs_loaded: bool = False
 
-    def __init__(self, project_root: Path | None = None) -> None:
-        self._ensure_configs()
-        self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
-        if project_root is not None:
+    def __init__(self, project_root: Path | None = None, *, include_generic: bool = True) -> None:
+        from .integrations.installer import registry_synchronized
+
+        @registry_synchronized
+        def snapshot_configs():
+            if project_root is not None:
+                from .integrations import load_installed_integrations
+
+                load_installed_integrations(project_root)
+            self._ensure_configs()
+            self.AGENT_CONFIGS = dict(self.AGENT_CONFIGS)
+
+        snapshot_configs()
+        if project_root is not None and include_generic:
             from .integrations.generic import registration_directory
 
             from ._init_options import load_init_options
@@ -85,7 +86,8 @@ class CommandRegistrar:
     def _ensure_configs(cls) -> None:
         if not cls._configs_loaded:
             try:
-                cls.AGENT_CONFIGS = _build_agent_configs()
+                cls.AGENT_CONFIGS.clear()
+                cls.AGENT_CONFIGS.update(_build_agent_configs())
                 cls._configs_loaded = True
             except ImportError:
                 pass  # Circular import during module init; retry on next access
@@ -663,6 +665,7 @@ class CommandRegistrar:
             return None
         return agent
 
+    @project_registration
     def register_commands(
         self,
         agent_name: str,
@@ -1025,10 +1028,18 @@ class CommandRegistrar:
         agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        if dest_file.is_symlink():
+            before_file_change(dest_file, removal=True)
+            dest_file.unlink()
+            after_file_change(dest_file)
+        before_file_change(dest_file)
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
             if dest_file.is_symlink():
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
+            after_file_change(dest_file)
             return
 
         rel_output = Path(f"{output_name}{extension}")
@@ -1037,8 +1048,10 @@ class CommandRegistrar:
         CommandRegistrar._ensure_inside(cache_file, cache_root)
 
         try:
+            before_file_change(cache_file)
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(content, encoding="utf-8")
+            after_file_change(cache_file)
             if dest_file.exists() or dest_file.is_symlink():
                 dest_file.unlink()
             target = os.path.relpath(cache_file, dest_file.parent)
@@ -1050,6 +1063,7 @@ class CommandRegistrar:
             if dest_file.is_symlink():
                 dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
+        after_file_change(dest_file)
 
     @staticmethod
     def write_copilot_prompt(project_root: Path, cmd_name: str) -> None:
@@ -1069,7 +1083,11 @@ class CommandRegistrar:
         prompt_file = prompts_dir / f"{cmd_name}.prompt.md"
         CommandRegistrar._ensure_inside(prompt_file, prompts_dir)
         prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(prompt_file)
         prompt_file.write_text(f"---\nagent: {cmd_name}\n---\n", encoding="utf-8")
+        after_file_change(prompt_file)
 
     @staticmethod
     def _resolve_agent_dir(
@@ -1434,7 +1452,11 @@ class CommandRegistrar:
                         except ValueError:
                             continue
                         if cmd_file.exists() or cmd_file.is_symlink():
+                            from .integrations._file_changes import after_file_change, before_file_change
+
+                            before_file_change(cmd_file, removal=True)
                             cmd_file.unlink()
+                            after_file_change(cmd_file)
                             # For SKILL.md agents each command lives in its own
                             # subdirectory (e.g. .agents/skills/speckit-ext-cmd/
                             # SKILL.md).  Remove the parent dir when it becomes
@@ -1451,7 +1473,11 @@ class CommandRegistrar:
                         project_root / ".github" / "prompts" / f"{cmd_name}.prompt.md"
                     )
                     if prompt_file.exists():
+                        from .integrations._file_changes import after_file_change, before_file_change
+
+                        before_file_change(prompt_file, removal=True)
                         prompt_file.unlink()
+                        after_file_change(prompt_file)
 
 
 # Populate AGENT_CONFIGS after class definition.

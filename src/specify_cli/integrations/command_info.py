@@ -19,18 +19,29 @@ def integration_info(
     versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
 ):
     """Show catalog details for a single integration."""
+    from .. import _require_specify_project
     from . import (
+        BUILTIN_INTEGRATION_KEYS,
         INTEGRATION_REGISTRY,
         IntegrationCatalog,
         IntegrationCatalogError,
         IntegrationValidationError,
     )
-    from .. import _require_specify_project
 
     project_root = _require_specify_project()
     catalog = IntegrationCatalog(project_root)
     installed_key = _default_integration_key(_read_integration_json(project_root))
     safe_integration_id = _rich_escape(str(integration_id))
+    from .installer import IntegrationInstallError, read_records
+
+    try:
+        packages = read_records(project_root)
+    except (IntegrationInstallError, OSError) as exc:
+        from .installer import unload_installed_integrations
+
+        unload_installed_integrations()
+        console.print(f"[red]Error:[/red] {_rich_escape(str(exc))}")
+        raise typer.Exit(1) from exc
 
     try:
         info = catalog.get_integration_info(integration_id)
@@ -106,18 +117,28 @@ def integration_info(
                 f"  [dim]Repository:[/dim] {_rich_escape(str(info['repository']))}"
             )
 
+        if integration_id in packages:
+            console.print(f"  [dim]Installed package version:[/dim] {_rich_escape(packages[integration_id]['version'])}")
         if integration_id == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
-        elif integration_id in INTEGRATION_REGISTRY:
+        elif integration_id in BUILTIN_INTEGRATION_KEYS:
             console.print("\n  [dim]Built-in integration (not currently active)[/dim]")
+        elif integration_id in packages:
+            console.print("\n  [dim]Installed external integration (not currently active)[/dim]")
         return
 
-    if integration_id in INTEGRATION_REGISTRY:
-        integration = INTEGRATION_REGISTRY[integration_id]
-        cfg = integration.config or {}
-        name = cfg.get("name", integration_id)
-        console.print(f"\n[bold cyan]{name}[/bold cyan] ({integration_id})")
-        console.print("  [dim]Built-in integration (not listed in catalog)[/dim]")
+    if integration_id in BUILTIN_INTEGRATION_KEYS or integration_id in packages:
+        cfg = (
+            INTEGRATION_REGISTRY[integration_id].config or {}
+            if integration_id in BUILTIN_INTEGRATION_KEYS
+            else packages[integration_id]
+        )
+        name = _rich_escape(str(cfg.get("name", integration_id)))
+        console.print(f"\n[bold cyan]{name}[/bold cyan] ({safe_integration_id})")
+        label = "Built-in integration" if integration_id in BUILTIN_INTEGRATION_KEYS else "Installed external integration"
+        console.print(f"  [dim]{label} (not listed in catalog)[/dim]")
+        if integration_id in packages:
+            console.print(f"  [dim]Package version:[/dim] {_rich_escape(packages[integration_id]['version'])}")
         if integration_id == installed_key:
             console.print("\n  [green]✓ Installed[/green] (currently active)")
         if catalog_error:

@@ -5,6 +5,7 @@ import os
 from pathlib import PurePath
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from ..integration_runtime import (
@@ -26,15 +27,18 @@ from ._command_upgrade_layout import (
     _planned_command_files,
 )
 from ._commands import integration_app
+from ._lifecycle import external_lifecycle, lifecycle_success
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _register_extensions_for_agent, _register_presets_for_agent, _resolve_integration_options, _resolve_integration_script_type, _resync_manifest_after_registration, _unregister_enabled_extension_commands_for_agent, _update_init_options_for_integration, _write_integration_json
 
 
 @integration_app.command("upgrade")
+@external_lifecycle("upgrade")
 def integration_upgrade(
     key: str | None = typer.Argument(None, help="Integration key to upgrade (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Force upgrade even if files are modified"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help="Options for the integration"),
+    trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration update without prompting"),
 ):
     """Upgrade an integration by reinstalling with diff-aware file handling.
 
@@ -388,6 +392,7 @@ def integration_upgrade(
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}
+        stale_manifest._ownership_modes = {k: old_manifest.ownership_modes[k] for k in stale_keys}
         # remove_manifest=False: this throwaway manifest shares ``key`` with the
         # real one just saved above (new_manifest.save()).  Letting uninstall()
         # delete ``{key}.manifest.json`` would wipe the freshly-written manifest
@@ -442,4 +447,4 @@ def integration_upgrade(
         )
 
     name = (integration.config or {}).get("name", key)
-    console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' upgraded successfully")

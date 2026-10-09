@@ -71,6 +71,15 @@ def yaml_quote(value: str) -> str:
     ).strip()
 
 
+def resolve_registrar_config(integration: IntegrationBase) -> dict[str, Any]:
+    """Resolve static registrar overrides and integration-class defaults."""
+    config = dict(integration.registrar_config or {})
+    config.setdefault("invoke_separator", integration.invoke_separator)
+    if integration.dev_no_symlink:
+        config["dev_no_symlink"] = True
+    return config
+
+
 # ---------------------------------------------------------------------------
 # IntegrationOption
 # ---------------------------------------------------------------------------
@@ -607,9 +616,13 @@ class IntegrationBase(ABC):
         written file.  The caller can post-process the file before
         recording it in the manifest.
         """
-        dest_dir.mkdir(parents=True, exist_ok=True)
         dst = dest_dir / filename
+        from ._file_changes import after_file_change, before_file_change
+
+        before_file_change(dst)
+        dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+        after_file_change(dst)
         return dst
 
     @staticmethod
@@ -639,9 +652,13 @@ class IntegrationBase(ABC):
         ``\r\n`` sequences in *content* are normalised to ``\n`` before
         writing.  Returns *dest*.
         """
-        dest.parent.mkdir(parents=True, exist_ok=True)
         normalized = content.replace("\r\n", "\n")
+        from ._file_changes import after_file_change, before_file_change
+
+        before_file_change(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(normalized.encode("utf-8"))
+        after_file_change(dest)
         rel = dest.resolve().relative_to(project_root.resolve())
         manifest.record_existing(rel)
         return dest
@@ -677,14 +694,17 @@ class IntegrationBase(ABC):
         if not scripts_src:
             return []
 
+        from ._file_changes import before_file_change
+
         created: list[Path] = []
         scripts_dest = project_root / ".specify" / "integrations" / self.key / "scripts"
-        scripts_dest.mkdir(parents=True, exist_ok=True)
 
         for src_script in sorted(scripts_src.iterdir()):
             if not src_script.is_file():
                 continue
             dst_script = scripts_dest / src_script.name
+            before_file_change(dst_script)
+            scripts_dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_script, dst_script)
             if dst_script.suffix in (".sh", ".py"):
                 dst_script.chmod(dst_script.stat().st_mode | 0o111)
