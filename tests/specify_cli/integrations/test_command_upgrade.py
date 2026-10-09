@@ -527,6 +527,19 @@ class TestIntegrationUpgradeDetailed:
         assert result.exit_code == 0, result.output
         assert command.read_bytes() == b"USER OWNED FILE\n"
 
+    def test_extension_add_without_init_options_loads_installed_adapters(self, tmp_path, offline_adapter):
+        from specify_cli.integrations.installer import unload_installed_integrations
+
+        project = _init_project(tmp_path, "claude")
+        (project / ".specify/init-options.json").unlink()
+        result = offline_adapter(project)
+        assert result.exit_code == 0, result.output
+        unload_installed_integrations()
+
+        source = _write_command_extension(tmp_path)
+        result = _run_in_project(project, ["extension", "add", "--dev", str(source)])
+        assert result.exit_code == 0, result.output
+
     @pytest.mark.parametrize("empty_manifest", [False, True])
     def test_upgrade_refuses_kiro_prompt_rename_while_presets_are_installed(
         self, tmp_path, monkeypatch, empty_manifest

@@ -1330,12 +1330,14 @@ class ExtensionManager:
 
         from .._init_options import MISSING_INIT_OPTIONS_FILE, resolve_active_agent_for_registration
         from ..integrations import INTEGRATION_REGISTRY
+        from ..integrations.installer import project_integrations
 
         active_agent = resolve_active_agent_for_registration(self.project_root)
-        agents = INTEGRATION_REGISTRY if active_agent is MISSING_INIT_OPTIONS_FILE else [active_agent]
-        for agent in agents:
-            if agent:
-                self._validate_command_destinations(manifest, agent)
+        with project_integrations(self.project_root):
+            agents = list(INTEGRATION_REGISTRY) if active_agent is MISSING_INIT_OPTIONS_FILE else [active_agent]
+            for agent in agents:
+                if agent:
+                    self._validate_command_destinations(manifest, agent)
 
     @project_registration
     def _validate_command_destinations(self, manifest: ExtensionManifest, agent_name: str) -> None:
