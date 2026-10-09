@@ -491,14 +491,14 @@
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "description": "Reviews single, series, campaign, and language-aware requirements collections before Spec Kit execution.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.3.zip",
-      "sha256": "a97d3b3039587d391cd214296d5cfd1cb7665aff76630c08a87879091ddcc1d1",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/archive/refs/tags/v0.2.4.zip",
+      "sha256": "c4a21c4a99ba6eed0df3028bc1ee19158f1274d9e440f433c504877c997ed816",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-review-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.3/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-review-governance/blob/v0.2.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -516,7 +516,7 @@
         "quality-gate"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-09-25T00:00:00Z"
+      "updated_at": "2026-10-09T00:00:00Z"
     },
     "intake-sequencing-governance": {
       "name": "Intake Sequencing Governance",
