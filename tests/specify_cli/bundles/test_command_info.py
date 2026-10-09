@@ -10,7 +10,9 @@ import yaml  # noqa: F401
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundles.manifest import ComponentRef
 from specify_cli.bundles.packager import build_bundle  # noqa: F401
+from specify_cli.bundles.records import InstalledBundleRecord, save_records
 from tests.conftest import strip_ansi  # noqa: F401
 from tests.specify_cli.bundles._command_helpers import (
     MARKUP_BUNDLE_ID,
@@ -102,7 +104,28 @@ def test_info_expands_full_component_set(project: Path, monkeypatch):
     assert preset["strategy"] == "append"
     assert payload["trust"] == "verified"
 
+    save_records(
+        project,
+        [
+            InstalledBundleRecord.create(
+                bundle_id="other",
+                version="1.0.0",
+                components=[],
+                required_components=[
+                    ComponentRef(kind="presets", id="preset-a", version="2.0.0")
+                ],
+            )
+        ],
+    )
+    overlap = "preset 'preset-a' is already required by bundle 'other'."
+    json_with_overlap = runner.invoke(
+        app, ["bundle", "info", "demo-bundle", "--json", "--offline"]
+    )
+    assert json_with_overlap.exit_code == 0, json_with_overlap.output
+    assert json.loads(json_with_overlap.output)["overlaps"] == [overlap]
+
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert overlap in text.output
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
 

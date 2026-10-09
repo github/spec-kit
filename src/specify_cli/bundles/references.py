@@ -13,35 +13,48 @@ from __future__ import annotations
 from pathlib import Path
 
 from .manifest import ComponentRef
+from .versioning import same_version
+
+
+def _matches_pin(component: ComponentRef, actual: str | None) -> bool:
+    return component.version is None or (
+        bool(actual) and same_version(actual, component.version)
+    )
 
 
 def _resolved_locally(root: Path, component: ComponentRef) -> bool:
     kind = component.kind
     try:
+        if component.source:
+            return False
+        from .primitives import _bundled_manifest_version, primitive_manager
+
         if kind == "presets":
             from .._assets import _locate_bundled_preset
-            from ..presets import PresetManager
 
-            if _locate_bundled_preset(component.id) is not None:
+            bundled = _locate_bundled_preset(component.id)
+            if bundled is not None and _matches_pin(
+                component, _bundled_manifest_version(bundled / "preset.yml", "preset")
+            ):
                 return True
-            return PresetManager(root).get_pack(component.id) is not None
         if kind == "extensions":
             from .._assets import _locate_bundled_extension
-            from ..extensions import ExtensionManager
 
-            if _locate_bundled_extension(component.id) is not None:
+            bundled = _locate_bundled_extension(component.id)
+            if bundled is not None and _matches_pin(
+                component, _bundled_manifest_version(bundled / "extension.yml", "extension")
+            ):
                 return True
-            return ExtensionManager(root).registry.is_installed(component.id)
         if kind == "workflows":
             from .._assets import _locate_bundled_workflow
-            from ..workflows.catalog import WorkflowRegistry
 
-            if _locate_bundled_workflow(component.id) is not None:
+            bundled = _locate_bundled_workflow(component.id)
+            if bundled is not None and _matches_pin(
+                component, _bundled_manifest_version(bundled / "workflow.yml", "workflow")
+            ):
                 return True
-            return WorkflowRegistry(root).is_installed(component.id)
         if kind == "steps":
             from ..workflows import BUILTIN_STEP_TYPES
-            from ..workflows.catalog import StepRegistry
 
             # Step types ship with Spec Kit as built-ins (shell, gate, if, ...)
             # rather than as an on-disk asset directory, so there is no
@@ -53,36 +66,146 @@ def _resolved_locally(root: Path, component: ComponentRef) -> bool:
             # loaded for one project would be accepted as "bundled" when
             # validating another. Without any bundled check at all, every
             # built-in step type looked unresolved.
-            if component.id in BUILTIN_STEP_TYPES:
+            if component.id in BUILTIN_STEP_TYPES and component.version is None:
                 return True
-            return StepRegistry(root).is_installed(component.id)
+        manager = primitive_manager(kind, root, allow_network=False)
+        return manager.is_installed(component) and _matches_pin(
+            component, manager.installed_version(component)
+        )
     except Exception:  # noqa: BLE001 - resolution is best-effort
         return False
     return False
 
 
-def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | None:
-    """Return True/False if a catalog could be consulted, or None on failure."""
+def _validate_pinned_install_metadata(component: ComponentRef, selected: dict) -> None:
+    from .._download_security import is_https_or_localhost_http
+    from . import BundlerError
+
+    def require_url(value: object, label: str) -> str:
+        if not isinstance(value, str) or not is_https_or_localhost_http(value):
+            raise BundlerError(
+                f"{component.kind[:-1]} '{component.id}' has an invalid {label} "
+                f"for pinned version {component.version}."
+            )
+        return value
+
+    if component.kind in ("extensions", "presets"):
+        from ..shared_infra import _SHA256_HEX_RE
+
+        require_url(selected.get("download_url"), "download URL")
+        digest = selected.get("sha256")
+        if digest is not None:
+            value = str(digest).strip()
+            if value[:7].lower() == "sha256:":
+                value = value[7:].strip()
+            if not _SHA256_HEX_RE.fullmatch(value.lower()):
+                raise BundlerError(
+                    f"{component.kind[:-1]} '{component.id}' has an invalid SHA-256 "
+                    f"digest for pinned version {component.version}."
+                )
+        return
+
+    if component.kind == "workflows":
+        from ..workflows.catalog._versions import _SHA256
+
+        require_url(selected.get("url"), "install URL")
+        digest = selected.get("sha256")
+        if digest is not None and (
+            not isinstance(digest, str) or not _SHA256.fullmatch(digest)
+        ):
+            raise BundlerError(
+                f"workflow '{component.id}' has an invalid SHA-256 digest "
+                f"for pinned version {component.version}."
+            )
+        if "requires" in selected and not isinstance(selected["requires"], dict):
+            raise BundlerError(
+                f"workflow '{component.id}' has invalid requirements "
+                f"for pinned version {component.version}."
+            )
+        return
+
+    from ..workflows.step.catalog._versions import validate_checksums
+
+    validate_checksums(selected, component.id, required=True)
+    step_url = require_url(
+        selected.get("step_yml_url") or selected.get("url"), "step.yml URL"
+    )
+    init_url = selected.get("init_url")
+    if init_url is None:
+        if not step_url.endswith("step.yml"):
+            raise BundlerError(
+                f"step '{component.id}' has no __init__.py URL "
+                f"for pinned version {component.version}."
+            )
+    else:
+        require_url(init_url, "__init__.py URL")
+    for url in selected.get("extra_files", {}).values():
+        require_url(url, "extra file URL")
+
+
+def _catalog_has_release(component: ComponentRef, catalog) -> bool:
+    from .component_catalog import select_catalog_release, winning_catalog_entry
+
+    current = winning_catalog_entry(catalog, component)
+    if current is None or not current.get("_install_allowed", True):
+        return False
+    if component.source and current.get("_catalog_name") != component.source:
+        return False
+    if component.version is None:
+        return True
+    if component.kind in ("extensions", "presets") and not current.get("version"):
+        # These legacy catalogs cannot attest a version; the primitive
+        # installer likewise accepts their unversioned current entry.
+        return True
+    selected = select_catalog_release(component, current)
+    if (
+        selected is None
+        or selected.get("_catalog_name") != current.get("_catalog_name")
+        or not selected.get("_install_allowed", True)
+        or not _matches_pin(component, selected.get("version"))
+    ):
+        return False
+    if component.kind in ("extensions", "presets", "workflows", "steps"):
+        _validate_pinned_install_metadata(component, selected)
+    return True
+
+
+def _resolved_in_catalog(root: Path, component: ComponentRef) -> bool | str | None:
+    """Return the lookup result, a validation error, or None if unreachable."""
+    from ..extensions import ExtensionError
+    from ..presets import PresetError
+    from ..workflows.catalog import StepCatalogError, WorkflowCatalogError
+    from . import BundlerError
+    from .component_catalog import CatalogUnavailable
+
     kind = component.kind
     try:
         if kind == "presets":
             from ..presets import PresetCatalog
 
-            return PresetCatalog(root).get_pack_info(component.id) is not None
+            catalog = PresetCatalog(root)
+            return _catalog_has_release(component, catalog)
         if kind == "extensions":
             from ..extensions import ExtensionCatalog
 
-            return ExtensionCatalog(root).get_extension_info(component.id) is not None
+            catalog = ExtensionCatalog(root)
+            return _catalog_has_release(component, catalog)
         if kind == "workflows":
             from ..workflows.catalog import WorkflowCatalog
 
-            return WorkflowCatalog(root).get_workflow_info(component.id) is not None
+            catalog = WorkflowCatalog(root)
+            return _catalog_has_release(component, catalog)
         if kind == "steps":
             from ..workflows.catalog import StepCatalog
 
-            return StepCatalog(root).get_step_info(component.id) is not None
-    except Exception:  # noqa: BLE001 - catalog may be unreachable/misconfigured
+            catalog = StepCatalog(root)
+            return _catalog_has_release(component, catalog)
+    except (ConnectionError, TimeoutError):
         return None
+    except CatalogUnavailable:
+        return None
+    except (BundlerError, ExtensionError, PresetError, WorkflowCatalogError, StepCatalogError) as exc:
+        return f"Catalog lookup failed: {exc}"
     return None
 
 
@@ -103,15 +226,41 @@ def make_reference_checker(
         if _resolved_locally(project_root, component):
             return None
 
+        if component.kind in ("presets", "extensions") and component.source is None:
+            from .._assets import _locate_bundled_extension, _locate_bundled_preset
+            from . import BundlerError
+            from .primitives import _assert_pinned_version, _bundled_manifest_version
+
+            kind = component.kind[:-1]
+            locate = (
+                _locate_bundled_preset
+                if component.kind == "presets"
+                else _locate_bundled_extension
+            )
+            bundled = locate(component.id)
+            if bundled is not None:
+                try:
+                    _assert_pinned_version(
+                        kind.capitalize(),
+                        component.id,
+                        component.version,
+                        _bundled_manifest_version(bundled / f"{kind}.yml", kind),
+                    )
+                except BundlerError as exc:
+                    return str(exc)
+
         if allow_network:
             in_catalog = _resolved_in_catalog(project_root, component)
             if in_catalog is True:
                 return None
             if in_catalog is False:
                 return (
-                    f"{component.kind[:-1]} '{component.id}' is not bundled, "
-                    "installed, or present in any active catalog."
+                    f"{component.kind[:-1]} '{component.id}' at "
+                    f"{component.version or 'current'} is not available "
+                    "locally or from the selected install-allowed catalog."
                 )
+            if isinstance(in_catalog, str):
+                return in_catalog
             warnings.append(
                 f"Could not verify {component.kind[:-1]} '{component.id}' "
                 "(catalog unreachable); reference left unchecked."

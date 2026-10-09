@@ -136,7 +136,7 @@ def _bundle_overlaps(project_root: Path, manifest, *, offline: bool) -> list[str
             active_integration(project_root),
             load_records(project_root),
         )
-        return list(report.overlaps)
+        return [*report.overlaps, *report.version_clashes]
     except BundlerError:
         return []
 
