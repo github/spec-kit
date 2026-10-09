@@ -38,6 +38,102 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    def test_partial_command_registration_is_tracked_for_rollback(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        manager = ExtensionManager(project_dir)
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        from specify_cli.agents import CommandRegistrar
+
+        manifest_path = extension_dir / "extension.yml"
+        manifest_data = yaml.safe_load(manifest_path.read_text())
+        manifest_data["provides"]["commands"].append(
+            {"name": "speckit.test-ext.second", "file": "commands/second.md",
+             "description": "Second output"}
+        )
+        manifest_path.write_text(yaml.safe_dump(manifest_data))
+        (extension_dir / "commands" / "second.md").write_text("Second command")
+        original_write = CommandRegistrar._write_registered_output
+        recorded = []
+        writes = []
+
+        def fail_second_output(dest_file, *args, **kwargs):
+            writes.append(dest_file)
+            if len(writes) == 2:
+                assert writes[0].exists(), "First output must be materialized before failure"
+                raise OSError("injected partial command registration failure")
+            return original_write(dest_file, *args, **kwargs)
+
+        monkeypatch.setattr(
+            CommandRegistrar, "_write_registered_output", staticmethod(fail_second_output)
+        )
+        original_unregister = __import__("specify_cli.agents", fromlist=["CommandRegistrar"]).CommandRegistrar.unregister_commands
+
+        def record_unregister(registrar, commands, root):
+            recorded.append(commands)
+            return original_unregister(registrar, commands, root)
+
+        monkeypatch.setattr(
+            "specify_cli.agents.CommandRegistrar.unregister_commands", record_unregister
+        )
+        with pytest.raises(OSError, match="partial command"):
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+        assert len(writes) == 2
+        assert any("speckit.test-ext.hello" in names for commands in recorded for names in commands.values())
+        assert not manager.registry.is_installed("test-ext")
+        assert not (manager.extensions_dir / "test-ext").exists()
+        assert not (project_dir / ".github" / "agents" / "speckit.test-ext.hello.agent.md").exists()
+        assert not (project_dir / ".github" / "agents" / "speckit.test-ext.second.agent.md").exists()
+
+    @pytest.mark.parametrize("failure_point", ["hooks", "registry"])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_install_failure_rolls_back_files_registry_and_hooks(
+        self, extension_dir, project_dir, monkeypatch, failure_point, force
+    ):
+        manager = ExtensionManager(project_dir)
+        if force:
+            manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+            installed = manager.extensions_dir / "test-ext"
+            (installed / "user-data.txt").write_text("keep me", encoding="utf-8")
+        installed = manager.extensions_dir / "test-ext"
+        previous_tree = (
+            {p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()}
+            if force else None
+        )
+        previous_registry = manager.registry.registry_path.read_bytes() if manager.registry.registry_path.exists() else None
+        hooks_path = project_dir / ".specify" / "extensions.yml"
+        previous_hooks = hooks_path.read_bytes() if hooks_path.exists() else None
+
+        if failure_point == "hooks":
+            original = __import__("specify_cli.extensions", fromlist=["HookExecutor"]).HookExecutor.register_hooks
+
+            def fail_after_hooks(executor, manifest):
+                original(executor, manifest)
+                raise OSError("injected hook registration failure")
+
+            monkeypatch.setattr(
+                "specify_cli.extensions.HookExecutor.register_hooks", fail_after_hooks
+            )
+        else:
+            monkeypatch.setattr(
+                manager.registry, "add",
+                lambda *args, **kwargs: (_ for _ in ()).throw(OSError("injected registry failure")),
+            )
+
+        with pytest.raises(OSError, match="injected"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False, force=force
+            )
+
+        assert manager.registry.registry_path.read_bytes() == previous_registry if previous_registry else not manager.registry.registry_path.exists()
+        assert hooks_path.read_bytes() == previous_hooks if previous_hooks else not hooks_path.exists()
+        if force:
+            assert {p.relative_to(installed): p.read_bytes() for p in installed.rglob("*") if p.is_file()} == previous_tree
+            assert manager.registry.is_installed("test-ext")
+        else:
+            assert not manager.registry.is_installed("test-ext")
+            assert not installed.exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

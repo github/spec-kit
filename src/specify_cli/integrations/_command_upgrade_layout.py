@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path, PurePath
 
+
 def _manifest_tracks_skill_layout(manifest) -> bool:
     """Return True when *manifest* tracks any skills-layout artifact.
 
@@ -93,6 +94,7 @@ def _installed_presets_affecting_agent(
     agent_key: str,
     *,
     include_skills: bool = True,
+    include_disabled: bool = True,
 ) -> list[str]:
     """Return IDs of installed presets with artifacts registered for *agent_key*.
 
@@ -128,9 +130,7 @@ def _installed_presets_affecting_agent(
     except (OSError, ValueError) as exc:
         raise _PresetRegistryUnreadableError(str(exc)) from exc
     if not isinstance(data, dict) or not isinstance(data.get("presets", {}), dict):
-        raise _PresetRegistryUnreadableError(
-            "preset registry structure is malformed"
-        )
+        raise _PresetRegistryUnreadableError("preset registry structure is malformed")
 
     affected: list[str] = []
     for preset_id, meta in data.get("presets", {}).items():
@@ -147,21 +147,21 @@ def _installed_presets_affecting_agent(
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_commands is malformed"
             )
+        if not meta.get("enabled", True) and not include_disabled:
+            continue
+        # Including disabled presets widens inspection, not ownership. Apply
+        # exactly the same per-agent provenance checks to both states.
         registered_skills = meta.get("registered_skills", [])
         if isinstance(registered_skills, dict):
             # Per-agent provenance ({agent: [skill names]}): only entries for
             # *this* agent make the preset affect it. Values must be lists —
             # anything else (e.g. null) leaves ownership undecidable, so fail
             # closed rather than read it as "no artifacts".
-            if not all(
-                isinstance(names, list) for names in registered_skills.values()
-            ):
+            if not all(isinstance(names, list) for names in registered_skills.values()):
                 raise _PresetRegistryUnreadableError(
                     f"preset '{preset_id}' registered_skills is malformed"
                 )
-            has_skills = include_skills and bool(
-                registered_skills.get(agent_key)
-            )
+            has_skills = include_skills and bool(registered_skills.get(agent_key))
         elif isinstance(registered_skills, (list, tuple)):
             # Legacy flat list: not agent-scoped, so any recorded skill may
             # belong to this agent — fail closed and count it as affecting.
@@ -180,9 +180,18 @@ def _installed_command_presets_affecting_agent(
     project_root,
     agent_key: str,
 ) -> list[str]:
-    """Return installed presets with command artifacts registered for *agent_key*."""
+    """Return installed presets with command artifacts registered for *agent_key*.
+
+    ``include_disabled=True`` is deliberate: a failed ``preset disable`` keeps a
+    disabled registry entry carrying command provenance so its cleanup can be
+    retried, and those retained old-layout files are exactly what this guard
+    protects. Ownership is still decided per agent by the shared checks below,
+    so a disabled preset that was cleaned up cleanly (empty ownership) — or one
+    whose artifacts belong only to another agent — does not block a migration.
+    """
     return _installed_presets_affecting_agent(
         project_root,
         agent_key,
         include_skills=False,
+        include_disabled=True,
     )

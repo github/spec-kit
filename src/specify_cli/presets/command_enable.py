@@ -36,8 +36,54 @@ def preset_enable(
         console.print(f"[yellow]Preset '{preset_id}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
-    # Enable the preset
+    # Capture selector matches while the preset is disabled, then enable it and
+    # reconcile the newly active resolution stack.
+    from ._resolver import PresetResolver
+
+    resolver = PresetResolver(project_root)
+    preset_dir = manager.presets_dir / preset_id
+    manifest = resolver._get_manifest(preset_dir)
+    declarations = [
+        item
+        for item in (manifest.templates if manifest is not None else [])
+        if item.get("type") == "command"
+    ]
+    names = {
+        item["name"]
+        for item in manager._expand_command_selectors(
+            resolver, preset_dir, declarations
+        )
+        if isinstance(item.get("name"), str)
+    }
+    names.update(manager._collect_selector_command_names(resolver))
     manager.registry.update(preset_id, {"enabled": True})
+    # Disabled regex declarations have no pre-state expansion. Always collect
+    # post-state matches, including historical destinations owned by lower packs.
+    names.update(manager._collect_selector_command_names(PresetResolver(project_root)))
+    historical_agents, historical_skills_dirs = manager._historical_command_targets(
+        names
+    )
+    from .. import load_init_options
+
+    options = load_init_options(project_root)
+    active_agent = options.get("ai") if isinstance(options, dict) else None
+    if isinstance(active_agent, str) and active_agent:
+        manager.register_enabled_presets_for_agent(active_agent)
+    if names:
+        try:
+            manager._reconcile_composed_commands(
+                sorted(names), extra_agents=historical_agents or None
+            )
+            manager._reconcile_skills(
+                sorted(names), extra_skills_dirs=historical_skills_dirs or None
+            )
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"Could not reconcile preset commands after enabling {preset_id}: {exc}",
+                stacklevel=2,
+            )
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after enabling preset {preset_id}"
     )

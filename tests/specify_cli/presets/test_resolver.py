@@ -642,6 +642,108 @@ class TestResolveCore:
         assert result is None, "OSError during manifest load must be silently skipped"
 
 
+    def test_collect_all_layers_extension_alternate_filename_respects_registry(
+        self, project_dir
+    ):
+        extensions_dir = project_dir / ".specify" / "extensions"
+        ext_dir = extensions_dir / "alternate"
+        command_file = ext_dir / "commands" / "alternate.collect.md"
+        command_file.parent.mkdir(parents=True)
+        command_file.write_text("# alternate command\n", encoding="utf-8")
+        (ext_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "alternate",
+                        "name": "alternate",
+                        "version": "1.0.0",
+                        "description": "alternate command fixture",
+                    },
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.alternate.collect",
+                                "file": "commands/alternate.collect.md",
+                                "description": "collect",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        registry = ExtensionRegistry(extensions_dir)
+        registry.add("alternate", {"enabled": True, "version": "1.0.0"})
+        resolver = PresetResolver(project_dir)
+
+        enabled_layers = resolver.collect_all_layers(
+            "speckit.alternate.collect", "command"
+        )
+        assert any(layer["path"] == command_file for layer in enabled_layers)
+
+        registry.update("alternate", {"enabled": False})
+        disabled_layers = resolver.collect_all_layers(
+            "speckit.alternate.collect", "command"
+        )
+        assert all(layer["path"] != command_file for layer in disabled_layers)
+
+    def test_unregistered_extension_alternate_command_fallback_remains_supported(
+        self, project_dir
+    ):
+        ext_dir = project_dir / ".specify" / "extensions" / "orphan"
+        command_file = ext_dir / "commands" / "orphan.collect.md"
+        command_file.parent.mkdir(parents=True)
+        command_file.write_text("# orphan command\n", encoding="utf-8")
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "speckit.orphan.collect", "command"
+        )
+
+        assert any(layer["path"] == command_file for layer in layers)
+
+    def test_collect_all_layers_extension_alternate_manifest_must_own_command(
+        self, project_dir
+    ):
+        ext_dir = project_dir / ".specify" / "extensions" / "named"
+        command_file = ext_dir / "commands" / "named.other.md"
+        command_file.parent.mkdir(parents=True)
+        command_file.write_text("# unrelated file\n", encoding="utf-8")
+        (ext_dir / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "named",
+                        "name": "named",
+                        "version": "1.0.0",
+                        "description": "manifest ownership fixture",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.named.declared",
+                                "file": "commands/named.other.md",
+                                "description": "declared",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+            "named", {"enabled": True, "version": "1.0.0"}
+        )
+
+        layers = PresetResolver(project_dir).collect_all_layers(
+            "speckit.named.declared", "command"
+        )
+
+        assert any(layer["path"] == command_file for layer in layers)
+
+
 class TestExtensionPriorityResolution:
     """Test extension priority resolution with registered and unregistered extensions."""
 

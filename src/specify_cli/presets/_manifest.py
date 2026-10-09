@@ -13,16 +13,19 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 class PresetError(Exception):
     """Base exception for preset-related errors."""
+
     pass
 
 
 class PresetValidationError(PresetError):
     """Raised when preset manifest validation fails."""
+
     pass
 
 
 class PresetCompatibilityError(PresetError):
     """Raised when preset is incompatible with current environment."""
+
     pass
 
 
@@ -54,7 +57,7 @@ class PresetManifest:
     def _load_yaml(self, path: Path) -> dict:
         """Load YAML file safely."""
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise PresetValidationError(f"Invalid YAML in {path}: {e}")
@@ -90,9 +93,7 @@ class PresetManifest:
 
         for section in ("preset", "requires", "provides"):
             if not isinstance(self.data[section], dict):
-                raise PresetValidationError(
-                    f"Invalid {section}: expected a mapping"
-                )
+                raise PresetValidationError(f"Invalid {section}: expected a mapping")
 
         # Validate preset metadata
         pack = self.data["preset"]
@@ -117,7 +118,7 @@ class PresetManifest:
                 )
 
         # Validate pack ID format
-        if not re.match(r'^[a-z0-9-]+$', pack["id"]):
+        if not re.match(r"^[a-z0-9-]+$", pack["id"]):
             raise PresetValidationError(
                 f"Invalid preset ID '{pack['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -164,9 +165,7 @@ class PresetManifest:
         # Validate provides section
         provides = self.data["provides"]
         if "templates" not in provides:
-            raise PresetValidationError(
-                "Preset must provide at least one template"
-            )
+            raise PresetValidationError("Preset must provide at least one template")
 
         # Validate templates. Guard the container and each entry's shape so a
         # malformed third-party preset.yml (e.g. ``templates: 5`` or
@@ -182,13 +181,9 @@ class PresetManifest:
         # latter, since that genuinely is a list with no templates.
         templates = provides["templates"]
         if not isinstance(templates, list):
-            raise PresetValidationError(
-                "Invalid provides.templates: expected a list"
-            )
+            raise PresetValidationError("Invalid provides.templates: expected a list")
         if not templates:
-            raise PresetValidationError(
-                "Preset must provide at least one template"
-            )
+            raise PresetValidationError("Preset must provide at least one template")
         seen_name_types: set[tuple[str, str]] = set()
         for tmpl in templates:
             if not isinstance(tmpl, dict):
@@ -264,20 +259,36 @@ class PresetManifest:
                     f"scripts only support {sorted(VALID_SCRIPT_STRATEGIES)}"
                 )
 
-            # Validate template name format
-            if tmpl["type"] == "command":
-                # Commands use dot notation (e.g. speckit.specify)
-                if not re.match(r'^[a-z0-9.-]+$', tmpl["name"]):
+            # Regex selectors are validated here, before installation or resolution.
+            # The logical resource name grammar is validated separately below.
+            from ._selectors import (
+                REGEX_COMPILE_ERRORS,
+                compile_name_selector,
+                is_regex_selector,
+            )
+
+            if is_regex_selector(tmpl["name"]):
+                try:
+                    compile_name_selector(tmpl["name"])
+                except REGEX_COMPILE_ERRORS as exc:
                     raise PresetValidationError(
-                        f"Invalid command name '{tmpl['name']}': "
-                        "must be lowercase alphanumeric with hyphens and dots only"
-                    )
+                        f"Invalid regex selector in template name {tmpl['name']!r}: {exc}"
+                    ) from exc
             else:
-                if not re.match(r'^[a-z0-9-]+$', tmpl["name"]):
-                    raise PresetValidationError(
-                        f"Invalid template name '{tmpl['name']}': "
-                        "must be lowercase alphanumeric with hyphens only"
-                    )
+                # Validate template name format
+                if tmpl["type"] == "command":
+                    # Commands use dot notation (e.g. speckit.specify)
+                    if not re.match(r"^[a-z0-9.-]+$", tmpl["name"]):
+                        raise PresetValidationError(
+                            f"Invalid command name '{tmpl['name']}': "
+                            "must be lowercase alphanumeric with hyphens and dots only"
+                        )
+                else:
+                    if not re.match(r"^[a-z0-9-]+$", tmpl["name"]):
+                        raise PresetValidationError(
+                            f"Invalid template name '{tmpl['name']}': "
+                            "must be lowercase alphanumeric with hyphens only"
+                        )
 
     @property
     def id(self) -> str:
@@ -355,7 +366,7 @@ class PresetManifest:
             # otherwise validate here while PresetResolver._is_safe_registry_id
             # (which uses fullmatch) rejects it, and the newline would land in
             # a suggested command.
-            if not re.fullmatch(r'[a-z0-9-]+', extension_id):
+            if not re.fullmatch(r"[a-z0-9-]+", extension_id):
                 raise PresetValidationError(
                     f"Invalid {label}.id {extension_id!r}: "
                     "must be lowercase alphanumeric with hyphens only"
@@ -432,7 +443,7 @@ class PresetManifest:
     def get_hash(self) -> str:
         """Calculate SHA256 hash of manifest file."""
         h = hashlib.sha256()
-        with open(self.path, 'rb') as f:
+        with open(self.path, "rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return f"sha256:{h.hexdigest()}"

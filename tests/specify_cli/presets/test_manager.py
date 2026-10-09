@@ -1,6 +1,7 @@
 """Tests for preset installation and removal in specify_cli.presets._manager."""
 
 import json
+import shutil
 import tarfile
 import zipfile
 from pathlib import Path
@@ -117,6 +118,189 @@ class TestPresetManager:
         assert installed_dir.exists()
         assert (installed_dir / "preset.yml").exists()
         assert (installed_dir / "templates" / "spec-template.md").exists()
+
+    def test_force_install_copy_failure_preserves_existing_install(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        installed_dir = manager.presets_dir / "test-pack"
+        before_files = {p.relative_to(installed_dir): p.read_bytes() for p in installed_dir.rglob("*") if p.is_file()}
+        before_metadata = manager.registry.get("test-pack")
+        before_artifacts = {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        }
+        real_copytree = shutil.copytree
+
+        def fail_copytree(src, dst, *args, **kwargs):
+            if Path(src) == pack_dir:
+                raise OSError("simulated staged copy failure")
+            return real_copytree(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr("specify_cli.presets._manager.shutil.copytree", fail_copytree)
+        with pytest.raises(OSError, match="staged copy failure"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+
+        assert {p.relative_to(installed_dir): p.read_bytes() for p in installed_dir.rglob("*") if p.is_file()} == before_files
+        assert manager.registry.get("test-pack") == before_metadata
+        assert {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        } == before_artifacts
+
+    def test_force_install_registry_add_failure_restores_install_and_artifacts(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        installed_dir = manager.presets_dir / "test-pack"
+        before_files = {p.relative_to(installed_dir): p.read_bytes() for p in installed_dir.rglob("*") if p.is_file()}
+        before_metadata = manager.registry.get("test-pack")
+        before_artifacts = {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        }
+
+        def fail_add(*args, **kwargs):
+            raise OSError("simulated registry pre-commit failure")
+
+        monkeypatch.setattr(manager.registry, "add", fail_add)
+        with pytest.raises(OSError, match="registry pre-commit failure"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+
+        assert {p.relative_to(installed_dir): p.read_bytes() for p in installed_dir.rglob("*") if p.is_file()} == before_files
+        assert manager.registry.get("test-pack") == before_metadata
+        assert {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        } == before_artifacts
+
+    @pytest.mark.parametrize("skills", [False, True])
+    def test_force_install_regex_only_registry_add_failure_restores_commands(
+        self, project_dir, temp_dir, monkeypatch, skills
+    ):
+        """A failed forced reinstall restores regex-only commands and skills."""
+        from specify_cli import save_init_options
+
+        agent = "claude" if skills else "amp"
+        save_init_options(project_dir, {"ai": agent, "ai_skills": skills})
+        (project_dir / (".claude/skills" if skills else ".agents/commands")).mkdir(
+            parents=True
+        )
+        preset_dir = temp_dir / "regex-command"
+        (preset_dir / "commands").mkdir(parents=True)
+        (preset_dir / "commands" / "override.md").write_text(
+            "---\ndescription: Regex override\n---\n\nRegex override\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "regex-command",
+                        "name": "Regex Command",
+                        "version": "1.0.0",
+                        "description": "Regex command",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {"templates": [{
+                        "type": "command",
+                        "name": "regex:^speckit\\.specify$",
+                        "file": "commands/override.md",
+                    }]},
+                }
+            )
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        artifact = (
+            project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+            if skills
+            else project_dir / ".agents" / "commands" / "speckit.specify.md"
+        )
+        assert "Regex override" in artifact.read_text()
+        before = {
+            path.relative_to(project_dir): path.read_bytes()
+            for path in project_dir.rglob("*") if path.is_file()
+        }
+
+        def fail_add(*args, **kwargs):
+            raise OSError("simulated regex registry failure")
+
+        monkeypatch.setattr(manager.registry, "add", fail_add)
+        with pytest.raises(OSError, match="regex registry failure"):
+            manager.install_from_directory(preset_dir, "0.1.5", force=True)
+
+        assert manager.registry.is_installed("regex-command")
+        assert {
+            path.relative_to(project_dir): path.read_bytes()
+            for path in project_dir.rglob("*")
+            if path.is_file()
+        } == before
+
+    def test_force_install_selector_failure_restores_install_and_artifacts(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        installed_dir = manager.presets_dir / "test-pack"
+        before_install = {
+            p.relative_to(installed_dir): p.read_bytes()
+            for p in installed_dir.rglob("*") if p.is_file()
+        }
+        registry_file = manager.registry.registry_path
+        before_registry_file = registry_file.read_bytes()
+        before_metadata = manager.registry.get("test-pack")
+        before_artifacts = {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        }
+
+        def fail_selector_expansion(*args, **kwargs):
+            raise OSError("simulated selector expansion failure")
+
+        monkeypatch.setattr(manager, "_expand_command_selectors", fail_selector_expansion)
+        with pytest.raises(OSError, match="selector expansion failure"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+
+        assert {
+            p.relative_to(installed_dir): p.read_bytes()
+            for p in installed_dir.rglob("*") if p.is_file()
+        } == before_install
+        assert manager.registry.get("test-pack") == before_metadata
+        assert registry_file.read_bytes() == before_registry_file
+        assert {
+            p.relative_to(project_dir): p.read_bytes()
+            for p in project_dir.rglob("*")
+            if p.is_file() and ".specify/presets" not in str(p.relative_to(project_dir))
+        } == before_artifacts
+        assert not list(manager.presets_dir.glob(".test-pack.backup-*"))
+
+    def test_initial_install_copy_failure_leaves_no_partial_install(
+        self, project_dir, pack_dir, monkeypatch
+    ):
+        manager = PresetManager(project_dir)
+
+        def partial_failure(src, dst, *args, **kwargs):
+            Path(dst).mkdir(parents=True)
+            (Path(dst) / "partial").write_text("partial", encoding="utf-8")
+            raise OSError("simulated initial copy failure")
+
+        monkeypatch.setattr(
+            "specify_cli.presets._manager.shutil.copytree", partial_failure
+        )
+        with pytest.raises(OSError, match="initial copy failure"):
+            manager.install_from_directory(pack_dir, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
+        assert not (manager.presets_dir / "test-pack").exists()
+        assert not list(manager.presets_dir.glob(".test-pack.stage-*"))
 
     def test_install_already_installed(self, project_dir, pack_dir):
         """Test installing an already-installed pack raises error."""
@@ -808,6 +992,72 @@ class TestSelfTestPreset:
 
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         assert memory.read_text() == "# Core constitution-template\n"
+
+    @pytest.mark.parametrize("selector", ["constitution-template", "regex:constitution-.*"])
+    def test_constitution_selector_removal_recomposes_remaining_regex_layers(
+        self, project_dir, temp_dir, selector
+    ):
+        """Removing a middle wrapper must refresh composite-source provenance."""
+        manager = PresetManager(project_dir)
+        install_constitution_sync_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        for preset_id, priority, name in (
+            ("regex-outer", 1, "regex:.*-template"),
+            ("regex-inner", 2, selector),
+        ):
+            source = temp_dir / preset_id
+            (source / "templates").mkdir(parents=True)
+            (source / "templates" / "wrapper.md").write_text(
+                f"# {preset_id}\n{{CORE_TEMPLATE}}\n"
+            )
+            (source / "preset.yml").write_text(yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {"id": preset_id, "name": preset_id,
+                           "version": "1.0.0", "description": "wrapper"},
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": [{"type": "template", "name": name,
+                    "file": "templates/wrapper.md", "strategy": "wrap"}]},
+            }))
+            manager.install_from_directory(source, "0.1.5", priority=priority)
+        assert "regex-inner" in memory.read_text(encoding="utf-8")
+        assert "regex-outer" in memory.read_text(encoding="utf-8")
+
+        manager.remove("regex-inner")
+
+        assert "regex-inner" not in memory.read_text(encoding="utf-8")
+        assert "regex-outer" in memory.read_text(encoding="utf-8")
+        assert "{CORE_TEMPLATE}" not in memory.read_text(encoding="utf-8")
+        # The core constitution template contains non-ASCII text (``->`` arrows),
+        # so the comparison must decode as UTF-8 on every platform instead of
+        # relying on the locale codec (cp1252 on Windows).
+        assert memory.read_text(encoding="utf-8") == PresetResolver(
+            project_dir
+        ).resolve_content("constitution-template", "template")
+
+    def test_regex_constitution_removal_without_lower_resource(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Removal detects a matching selector without depending on expansion."""
+        source = temp_dir / "unmatched-constitution"
+        source.mkdir()
+        (source / "wrapper.md").write_text("wrapper\n")
+        (source / "preset.yml").write_text(yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {"id": source.name, "name": source.name,
+                       "version": "1.0.0", "description": "wrapper"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template",
+                "name": "regex:constitution-.*", "file": "wrapper.md"}]},
+        }))
+        manager = PresetManager(project_dir)
+        monkeypatch.setattr(manager, "_has_lower_resource", lambda *args: False)
+        with pytest.warns(UserWarning, match="currently matches no"):
+            manager.install_from_directory(source, "0.1.5")
+        calls = []
+        monkeypatch.setattr(manager, "_reconcile_constitution", lambda: calls.append(True))
+
+        assert manager.remove(source.name)
+        assert calls == [True]
 
     def test_self_test_removal_preserves_edited_constitution(self, project_dir):
         """Removing a preset does not overwrite an edited generated constitution."""

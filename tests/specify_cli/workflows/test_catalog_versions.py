@@ -50,6 +50,8 @@ def _archive(version: str, workflow_id: str = "history-wf", requires=None) -> by
         document["requires"] = requires
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
+        # Catalog digest and mocked download build this archive separately.
+        # Fix ZIP metadata so crossing a clock boundary cannot change its hash.
         archive.writestr(
             zipfile.ZipInfo("workflow.yml", date_time=(2020, 1, 1, 0, 0, 0)),
             yaml.safe_dump(document),

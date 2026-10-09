@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import copy
+
 import typer
 
 from .._console import console
 from . import _commands
 from ._commands import preset_app
+from ._transaction import _ArtifactSnapshot, _capture_preset_artifacts
 
 
 @preset_app.command("set-priority")
@@ -56,11 +59,48 @@ def preset_set_priority(
 
     old_priority = normalize_priority(raw_priority)
 
-    # Update priority
-    manager.registry.update(preset_id, {"priority": priority})
-    manager.reconcile_constitution(
-        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
-    )
+    from ._resolver import PresetResolver
+
+    registry_before = copy.deepcopy(manager.registry.data)
+    snapshot = _ArtifactSnapshot()
+    captured = False
+    try:
+        # Capture before even the first scan: directory resolution may create
+        # skill roots, and rollback must not depend on the failing resolver.
+        _capture_preset_artifacts(manager, snapshot)
+        captured = True
+        resolver = PresetResolver(project_root)
+        affected_commands = manager._collect_selector_command_names(resolver)
+        manager.registry.update(preset_id, {"priority": priority})
+        affected_commands.update(
+            manager._collect_selector_command_names(PresetResolver(project_root))
+        )
+        names = sorted(affected_commands)
+        if names:
+            manager._reconcile_composed_commands(names)
+            manager._reconcile_skills(names, strict=True)
+        manager._reconcile_constitution()
+    except Exception as exc:
+        manager.registry.data = registry_before
+        try:
+            if captured:
+                snapshot.restore()
+        except Exception as rollback_exc:
+            exc.add_note(f"Preset priority rollback failed: {rollback_exc}")
+        raise
+    finally:
+        import sys
+
+        operation_exc = sys.exception()
+        try:
+            snapshot.close()
+        except Exception as cleanup_exc:
+            if operation_exc is not None:
+                operation_exc.add_note(
+                    f"Preset priority snapshot cleanup failed: {cleanup_exc}"
+                )
+            else:
+                raise
 
     console.print(
         f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}"

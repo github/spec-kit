@@ -44,7 +44,11 @@ from .._download_security import (
 )
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
+from .._utils import (
+    dump_frontmatter,
+    relative_extension_path_violation,
+    version_satisfies,
+)
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..integration_state import (
@@ -161,7 +165,12 @@ def _fsync_directory(path: Path) -> None:
         except (AttributeError, NotImplementedError):
             return
         except OSError as exc2:
-            if exc2.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+            if exc2.errno in {
+                errno.ENOTSUP,
+                errno.EOPNOTSUPP,
+                errno.EINVAL,
+                errno.EBADF,
+            }:
                 return
             raise
     try:
@@ -400,6 +409,7 @@ class ExtensionManifest:
             raise ValidationError("Invalid hooks: expected a mapping")
         if "events" in self.data:
             from ..events import validate_events
+
             validate_events(self.data)
 
         has_commands = bool(commands)
@@ -408,13 +418,21 @@ class ExtensionManifest:
         has_templates = bool(templates)
         has_scripts = bool(scripts)
 
-        if not has_commands and not has_hooks and not has_events and not has_templates and not has_scripts:
+        if (
+            not has_commands
+            and not has_hooks
+            and not has_events
+            and not has_templates
+            and not has_scripts
+        ):
             raise ValidationError(
                 "Extension must provide at least one command, hook, or event "
                 "(or a declared template/script)"
             )
 
-        self._validate_provided_artifacts(templates, section="templates", singular="template")
+        self._validate_provided_artifacts(
+            templates, section="templates", singular="template"
+        )
         self._validate_provided_artifacts(scripts, section="scripts", singular="script")
 
         # Validate hook values (if present).
@@ -477,7 +495,11 @@ class ExtensionManifest:
             cmd_file = cmd["file"]
             reason = relative_extension_path_violation(cmd_file)
             if reason:
-                label = repr(cmd_file) if isinstance(cmd_file, str) else f"for command '{cmd.get('name')}'"
+                label = (
+                    repr(cmd_file)
+                    if isinstance(cmd_file, str)
+                    else f"for command '{cmd.get('name')}'"
+                )
                 raise ValidationError(f"Invalid command 'file' {label}: {reason}")
 
             # Validate command name format
@@ -577,7 +599,9 @@ class ExtensionManifest:
                     )
 
     @staticmethod
-    def _validate_provided_artifacts(entries: List[Any], section: str, singular: str) -> None:
+    def _validate_provided_artifacts(
+        entries: List[Any], section: str, singular: str
+    ) -> None:
         """Validate provides.templates / provides.scripts entries.
 
         Mirrors the shape/path-safety checks PresetManifest applies to its
@@ -600,7 +624,9 @@ class ExtensionManifest:
                     f"Each entry in 'provides.{section}' must be a mapping"
                 )
             if "name" not in entry or "file" not in entry:
-                raise ValidationError(f"{singular.capitalize()} missing 'name' or 'file'")
+                raise ValidationError(
+                    f"{singular.capitalize()} missing 'name' or 'file'"
+                )
 
             name = entry["name"]
             if not isinstance(name, str):
@@ -621,7 +647,11 @@ class ExtensionManifest:
             file_value = entry["file"]
             reason = relative_extension_path_violation(file_value)
             if reason:
-                label = repr(file_value) if isinstance(file_value, str) else f"for {singular} '{name}'"
+                label = (
+                    repr(file_value)
+                    if isinstance(file_value, str)
+                    else f"for {singular} '{name}'"
+                )
                 raise ValidationError(f"Invalid {singular} 'file' {label}: {reason}")
 
             if "description" in entry and not isinstance(entry["description"], str):
@@ -716,7 +746,9 @@ class ExtensionManifest:
     def config(self) -> List[Dict[str, Any]]:
         """Get list of provided config templates, normalized to dictionaries."""
         raw = self.data.get("provides", {}).get("config", [])
-        if not isinstance(raw, list) or not all(isinstance(entry, dict) for entry in raw):
+        if not isinstance(raw, list) or not all(
+            isinstance(entry, dict) for entry in raw
+        ):
             return []
         return raw
 
@@ -1130,9 +1162,7 @@ class ExtensionManager:
 
                 path_reason = relative_extension_path_violation(name)
                 if path_reason:
-                    raise ValidationError(
-                        f"Invalid {kind} {name!r}: {path_reason}"
-                    )
+                    raise ValidationError(f"Invalid {kind} {name!r}: {path_reason}")
 
                 # Enforce canonical pattern only for primary command names;
                 # aliases are free-form to preserve community extension compat.
@@ -1227,7 +1257,8 @@ class ExtensionManager:
             exclude_extension_id=manifest.id
         )
         core_shadow_names = {
-            self._normalize_shadow_name(f"speckit.{name}") for name in CORE_COMMAND_NAMES
+            self._normalize_shadow_name(f"speckit.{name}")
+            for name in CORE_COMMAND_NAMES
         }
 
         collisions = []
@@ -1507,6 +1538,147 @@ class ExtensionManager:
 
         return targets
 
+    def _materialize_extension_winners(self, manifest, extension_dir):
+        """Write resolved preset winners inside the provider's install transaction.
+
+        Return extension declarations not claimed by a preset, plus concrete
+        provider ownership for the winners. Raw extension registration must not
+        publish an intermediate lower layer at these same destinations.
+        """
+        from ..presets import PresetManager
+        from ..presets._resolver import PresetResolver
+        from ..presets._selectors import is_regex_selector
+
+        from ._commands import _snapshot_command_candidates
+
+        manager = PresetManager(self.project_root)
+        resolver = PresetResolver(self.project_root)
+        remaining = []
+        groups = {}
+        declared = list(manifest.commands)
+        declared_names = {
+            command.get("name")
+            for command in declared
+            if isinstance(command.get("name"), str)
+        }
+        # The resolver also serves conventional extension command files
+        # (``commands/<concrete-name>.md`` and the namespace fallback) that no
+        # manifest entry names, and ``_snapshot_command_candidates`` already
+        # recognises them for rollback snapshots. Iterating only
+        # ``manifest.commands`` therefore left a preset selector that matches
+        # such a name unmaterialized until some later lifecycle refresh, so the
+        # candidate set is the union of declared and conventional names.
+        candidates = declared + [
+            {"name": name}
+            for name in sorted(_snapshot_command_candidates(self, manifest))
+            if name not in declared_names and not is_regex_selector(name)
+        ]
+
+        def _owning_preset_declaration(name, layers):
+            """Return ``(pack_id, declaration)`` for the preset owning the winner."""
+            for pack_id, _metadata in manager.registry.list_by_priority():
+                pack_dir = manager.presets_dir / pack_id
+                if not layers[0]["path"].is_relative_to(pack_dir):
+                    continue
+                preset_manifest = resolver._get_manifest(pack_dir)
+                if preset_manifest is None:
+                    return None, None
+                declarations = manager._expand_command_selectors(
+                    resolver,
+                    pack_dir,
+                    [t for t in preset_manifest.templates if t.get("type") == "command"],
+                )
+                declaration = next(
+                    (
+                        t
+                        for t in declarations
+                        if t["name"] == name and pack_dir / t["file"] == layers[0]["path"]
+                    ),
+                    None,
+                )
+                return pack_id, declaration
+            return None, None
+
+        for command in candidates:
+            name = command["name"]
+            is_declared = name in declared_names
+            layers = resolver.collect_all_layers(name, "command")
+            if not layers:
+                if is_declared:
+                    remaining.append(command)
+                continue
+            if layers[0]["source"] == "project override":
+                if not is_declared:
+                    # A convention-only candidate has no manifest entry to carry
+                    # a staged payload for, and the project override still wins
+                    # at resolution time, so there is nothing to publish here.
+                    continue
+                # Project overrides outrank presets as well as the newly
+                # eligible provider. Stage the resolved payload inside the
+                # provider so its normal registrars retain their active-agent,
+                # ownership and incremental rollback behavior without first
+                # publishing the raw extension command.
+                content = resolver.resolve_content(name, "command")
+                if content is None:
+                    raise ExtensionError(
+                        f"Winning project override for '{name}' is unreadable"
+                    )
+                resolved_dir = extension_dir / ".resolved"
+                resolved_dir.mkdir(parents=True, exist_ok=True)
+                resolved_file = resolved_dir / f"{name}.md"
+                resolved_file.write_text(content, encoding="utf-8")
+                remaining.append({
+                    **command,
+                    # The declaration ``file`` is a portable, extension-relative
+                    # path: ``relative_extension_path_violation`` (shared with
+                    # manifest validation and the registrar's runtime guard)
+                    # rejects any backslash, so a native ``str(Path)`` — which is
+                    # separator-dependent — drops this command on Windows only.
+                    "file": resolved_file.relative_to(extension_dir).as_posix(),
+                })
+                continue
+            pack_id, declaration = _owning_preset_declaration(name, layers)
+            if declaration is None:
+                if is_declared:
+                    remaining.append(command)
+                continue
+            groups.setdefault(pack_id, []).append({
+                **declaration,
+                "aliases": list(dict.fromkeys(
+                    list(declaration.get("aliases", []))
+                    + list(command.get("aliases", []))
+                )),
+            })
+
+        commands = {}
+        skills = []
+        # Share incremental command tracking with the outer install rollback;
+        # snapshots also restore preset skill ownership and overwritten bytes.
+        manager._preset_install_transaction = self._install_transaction_artifacts["commands"]
+        # Provider ownership covers conventional command candidates as well, so
+        # a selector-materialized conventional command is recorded against this
+        # extension instead of losing its ownership record.
+        provider_names = _snapshot_command_candidates(self, manifest)
+        provider_skill_names = {
+            self._skill_name_for_command(name) for name in provider_names
+        }
+        for pack_id, declarations in groups.items():
+            pack_dir = manager.presets_dir / pack_id
+            preset_manifest = resolver._get_manifest(pack_dir)
+            if preset_manifest is None:
+                raise ExtensionError(f"Winning preset '{pack_id}' is unreadable")
+            written_commands = manager._register_commands(
+                preset_manifest, pack_dir, command_templates=declarations
+            )
+            written_skills = manager._register_skills(
+                preset_manifest, pack_dir, command_templates=declarations
+            )
+            for agent, names in written_commands.items():
+                commands.setdefault(agent, []).extend(n for n in names if n in provider_names)
+            for names in written_skills.values():
+                skills.extend(n for n in names if n in provider_skill_names)
+        return remaining, commands, list(dict.fromkeys(skills))
+
     def _register_commands_for_active_agent(
         self,
         manifest: ExtensionManifest,
@@ -1540,7 +1712,16 @@ class ExtensionManager:
         if not manifest.commands:
             return {}
         registrar = CommandRegistrar(self.project_root)
+        transaction = getattr(self, "_install_transaction_artifacts", None)
         agent_scope = self._active_command_registration_scope()
+
+        def record_output(agent: str, command: str) -> None:
+            if not isinstance(transaction, dict):
+                return
+            commands = transaction.setdefault("commands", {})
+            names = commands.setdefault(agent, [])
+            if command not in names:
+                names.append(command)
 
         if agent_scope is None:
             return registrar.register_commands_for_all_agents(
@@ -1549,6 +1730,7 @@ class ExtensionManager:
                 self.project_root,
                 link_outputs=link_outputs,
                 create_missing_active_skills_dir=True,
+                on_output=record_output,
             )
 
         if not agent_scope:
@@ -1568,6 +1750,7 @@ class ExtensionManager:
             link_outputs=link_outputs,
             create_missing_active_skills_dir=True,
             only_agent=active_agent,
+            on_output=record_output,
         )
 
     def _register_extension_skills(
@@ -1609,6 +1792,7 @@ class ExtensionManager:
         from ..integrations import get_integration
         from ..integrations.base import IntegrationBase
 
+        transaction = getattr(self, "_install_transaction_artifacts", None)
         written: List[str] = []
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
@@ -1640,9 +1824,7 @@ class ExtensionManager:
                     match.group(0), agent_config.get("invoke_separator", ".")
                 )
 
-            return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
-            )
+            return re.sub(r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body)
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -1673,9 +1855,7 @@ class ExtensionManager:
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
-            skill_dir_preexists = (
-                skill_subdir.exists() or skill_subdir.is_symlink()
-            )
+            skill_dir_preexists = skill_subdir.exists() or skill_subdir.is_symlink()
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if selected_ai == "generic" and skill_dir_preexists:
                 metadata = self.registry.get(manifest.id) or {}
@@ -1726,7 +1906,11 @@ class ExtensionManager:
             # before the generic placeholder/path resolution below.
             body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
-                selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
+                selected_ai,
+                frontmatter,
+                body,
+                self.project_root,
+                extension_id=manifest.id,
             )
             body = _resolve_command_ref_tokens(body)
 
@@ -1778,6 +1962,12 @@ class ExtensionManager:
                 if skill_file.is_symlink():
                     skill_file.unlink()
                 skill_file.write_text(skill_content, encoding="utf-8")
+                # The artifact is tracked as soon as it is materialized so
+                # outer install rollback can see partial helper failures.
+                if isinstance(transaction, dict):
+                    tracked = transaction.setdefault("skills", [])
+                    if skill_name not in tracked:
+                        tracked.append(skill_name)
             written.append(skill_name)
 
         return written
@@ -1911,9 +2101,7 @@ class ExtensionManager:
         for cfg in AGENT_CONFIG.values():
             folder = cfg.get("folder", "")
             if folder:
-                add_candidate(
-                    self.project_root / folder.rstrip("/") / "skills"
-                )
+                add_candidate(self.project_root / folder.rstrip("/") / "skills")
         add_candidate(self.project_root / DEFAULT_SKILLS_DIR)
 
         from ..integration_state import integration_setting, try_read_integration_json
@@ -1955,8 +2143,7 @@ class ExtensionManager:
         output_dir = registration_directory(self.project_root)
         root = self.project_root.resolve()
         paths = [
-            output_dir / f"{name}.md"
-            for name in registered_commands.get("generic", [])
+            output_dir / f"{name}.md" for name in registered_commands.get("generic", [])
         ] + [output_dir / name / "SKILL.md" for name in registered_skills]
         hashes = dict(previous or {})
         for path in paths:
@@ -1972,9 +2159,13 @@ class ExtensionManager:
         return hashes
 
     def _snapshot_generic_refresh_artifacts(
-        self, extension_id: str, manifest: Optional[ExtensionManifest],
+        self,
+        extension_id: str,
+        manifest: Optional[ExtensionManifest],
         metadata: Dict[str, Any],
-        *, skills_mode_active: bool, include_current_candidates: bool = True,
+        *,
+        skills_mode_active: bool,
+        include_current_candidates: bool = True,
     ) -> Dict[Path, tuple[bytes | None, str | None, bool]]:
         """Remember owned outputs and absent candidates for generic rollback."""
         from ..integrations.generic import registration_directory
@@ -1983,7 +2174,8 @@ class ExtensionManager:
         root = self.project_root.resolve()
         output_dir = (
             registration_directory(self.project_root)
-            if include_current_candidates else None
+            if include_current_candidates
+            else None
         )
         source = (self.extensions_dir / extension_id).resolve()
         hashes = metadata.get("generic_artifact_hashes", {})
@@ -1992,13 +2184,18 @@ class ExtensionManager:
         registered = metadata.get("registered_commands", {})
         command_names = (
             set(self._collect_manifest_command_names(manifest))
-            if manifest is not None and not skills_mode_active else set()
+            if manifest is not None and not skills_mode_active
+            else set()
         )
         if isinstance(registered, dict):
             command_names.update(self._valid_name_list(registered.get("generic")))
         skill_names = (
-            {self._skill_name_for_command(command["name"]) for command in manifest.commands}
-            if manifest is not None and skills_mode_active else set()
+            {
+                self._skill_name_for_command(command["name"])
+                for command in manifest.commands
+            }
+            if manifest is not None and skills_mode_active
+            else set()
         )
         skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
         paths: set[Path] = set()
@@ -2029,12 +2226,15 @@ class ExtensionManager:
             relative = path.relative_to(root).as_posix()
             if hashes.get(relative) == hashlib.sha256(content).hexdigest():
                 snapshot[path] = (
-                    content, os.readlink(path) if path.is_symlink() else None, True
+                    content,
+                    os.readlink(path) if path.is_symlink() else None,
+                    True,
                 )
         return snapshot
 
     def _restore_generic_refresh_artifacts(
-        self, snapshot: Dict[Path, tuple[bytes | None, str | None, bool]],
+        self,
+        snapshot: Dict[Path, tuple[bytes | None, str | None, bool]],
         extension_id: str,
     ) -> None:
         """Restore prior owned files and remove only outputs absent before refresh."""
@@ -2079,11 +2279,17 @@ class ExtensionManager:
             except (OSError, ValueError) as exc:
                 errors.append(f"{path}: {exc}")
         if errors:
-            raise ExtensionError("Could not restore generic artifacts: " + "; ".join(errors))
+            raise ExtensionError(
+                "Could not restore generic artifacts: " + "; ".join(errors)
+            )
 
     def _generic_owned_names(
-        self, metadata: Dict[str, Any], names: List[str], *,
-        skills: bool, extension_id: str,
+        self,
+        metadata: Dict[str, Any],
+        names: List[str],
+        *,
+        skills: bool,
+        extension_id: str,
     ) -> List[str]:
         """Keep customized or untracked generic artifacts out of cleanup."""
         from ..integrations.generic import registration_directory
@@ -2096,7 +2302,9 @@ class ExtensionManager:
         root = self.project_root.resolve()
         owned = []
         for name in names:
-            path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+            path = (
+                output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+            )
             try:
                 _validate_safe_shared_directory(root, path.parent)
             except (OSError, ValueError):
@@ -2129,7 +2337,8 @@ class ExtensionManager:
             self._generic_owned_names(
                 metadata, missing, skills=skills, extension_id=extension_id
             )
-            if missing else []
+            if missing
+            else []
         )
         absent = sorted(set(missing) - set(retained))
         if absent:
@@ -2146,9 +2355,11 @@ class ExtensionManager:
 
         manifest = self.get_extension(extension_id)
         registered = metadata.get("registered_commands", {})
-        command_names = set(
-            self._valid_name_list(registered.get("generic", []))
-        ) if isinstance(registered, dict) else set()
+        command_names = (
+            set(self._valid_name_list(registered.get("generic", [])))
+            if isinstance(registered, dict)
+            else set()
+        )
         skill_names = set(self._valid_name_list(metadata.get("registered_skills", [])))
         if manifest is not None:
             command_names.update(
@@ -2171,9 +2382,7 @@ class ExtensionManager:
             name = Path(relative)
             if name.is_absolute() or ".." in name.parts:
                 continue
-            skill_output = (
-                name.name == "SKILL.md" and name.parent.name in skill_names
-            )
+            skill_output = name.name == "SKILL.md" and name.parent.name in skill_names
             if skill_output and not skills:
                 continue
             if not skill_output and name.name not in {
@@ -2250,11 +2459,14 @@ class ExtensionManager:
             if generic_hashes is not None and skill_file.is_relative_to(
                 self.project_root.resolve()
             ):
-                relative = skill_file.relative_to(self.project_root.resolve()).as_posix()
+                relative = skill_file.relative_to(
+                    self.project_root.resolve()
+                ).as_posix()
                 if Path(relative).parent.parent in generic_roots:
-                    if generic_hashes.get(relative) != hashlib.sha256(
-                        skill_file.read_bytes()
-                    ).hexdigest():
+                    if (
+                        generic_hashes.get(relative)
+                        != hashlib.sha256(skill_file.read_bytes()).hexdigest()
+                    ):
                         continue
                     skill_file.unlink()
                     try:
@@ -2411,6 +2623,205 @@ class ExtensionManager:
         *,
         catalog_name: str | None = None,
     ) -> ExtensionManifest:
+        """Install an extension as a rollback-safe transaction."""
+        if priority < 1:
+            raise ValidationError("Priority must be a positive integer (1 or higher)")
+
+        manifest = ExtensionManifest(source_dir / "extension.yml")
+        self.check_compatibility(manifest, speckit_version)
+        if not force and self.registry.is_installed(manifest.id):
+            raise ExtensionError(
+                f"Extension '{manifest.id}' is already installed. "
+                f"Use 'specify extension remove {manifest.id}' first, "
+                f"or retry with --force to overwrite."
+            )
+        self._validate_install_conflicts(manifest)
+        dest_dir = self.extensions_dir / manifest.id
+        try:
+            same_location = source_dir.resolve(strict=False) == dest_dir.resolve(
+                strict=False
+            )
+        except (OSError, RuntimeError):
+            same_location = source_dir.absolute() == dest_dir.absolute()
+        if same_location:
+            raise ValidationError(
+                f"Source path is the install destination for '{manifest.id}' "
+                f"({dest_dir}). Refusing to proceed to avoid deleting the "
+                "extension. Install from a copy in a different location instead."
+            )
+
+        was_installed = self.registry.is_installed(manifest.id)
+        kept_config = dest_dir.exists() and not was_installed
+        # Keep the established config rescue installer, but snapshot the new
+        # eligibility/winner mutations just as for ordinary installs.
+        old_registry_data = copy.deepcopy(self.registry.data)
+        registry_path = self.registry.registry_path
+        old_registry_bytes = (
+            registry_path.read_bytes() if registry_path.is_file() else None
+        )
+        hook_path = self.project_root / ".specify" / "extensions.yml"
+        old_hook_bytes = hook_path.read_bytes() if hook_path.is_file() else None
+        self.extensions_dir.mkdir(parents=True, exist_ok=True)
+        backup_root = Path(
+            tempfile.mkdtemp(prefix=f".install-{manifest.id}-", dir=self.extensions_dir)
+        )
+        backup_dir = backup_root / "extension"
+        transaction_artifacts: dict[str, Any] = {"commands": {}, "skills": []}
+        previous_transaction_artifacts = getattr(
+            self, "_install_transaction_artifacts", None
+        )
+        from ..presets import PresetManager
+        from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+        from ._commands import _conventional_command_names
+
+        artifact_snapshot = _ArtifactSnapshot()
+        try:
+            from .._init_options import resolve_active_agent_for_registration
+
+            preset_manager = PresetManager(self.project_root)
+            if (
+                resolve_active_agent_for_registration(self.project_root) is not None
+                and preset_manager.registry.list_by_priority()
+            ):
+                _capture_preset_artifacts(
+                    preset_manager, artifact_snapshot,
+                    # The extension is not copied into ``extensions_dir`` yet, so
+                    # conventional candidates must come from the staging source
+                    # directory; otherwise a selector-generated global skill for a
+                    # convention-only command is outside the rollback snapshot.
+                    extra_commands=(
+                        set(self._collect_manifest_command_names(manifest))
+                        | _conventional_command_names(source_dir)
+                    ),
+                )
+            elif resolve_active_agent_for_registration(self.project_root) not in {None, "generic"}:
+                # No preset winners: preserve the registrar's established
+                # fail-closed handling of unusable output directories.
+                for directory in self._command_registration_targets().values():
+                    artifact_snapshot.capture(directory)
+                skills_directory = self._get_skills_dir(create=False)
+                if skills_directory is not None:
+                    from ..shared_infra import _validate_safe_shared_directory
+
+                    try:
+                        _validate_safe_shared_directory(
+                            self._extension_skill_trusted_root(skills_directory), skills_directory
+                        )
+                    except (OSError, ValueError):
+                        pass
+                    else:
+                        artifact_snapshot.capture(skills_directory)
+        except BaseException:
+            artifact_snapshot.close()
+            raise
+        self._install_transaction_artifacts = transaction_artifacts
+        try:
+            if dest_dir.is_dir() and was_installed:
+                shutil.copytree(dest_dir, backup_dir, symlinks=True)
+            return self._install_from_directory_unchecked(
+                source_dir,
+                speckit_version,
+                register_commands=register_commands,
+                priority=priority,
+                link_commands=link_commands,
+                force=force,
+                catalog_name=catalog_name,
+            )
+        except BaseException as install_error:
+            def rollback(label, action, primary_error=install_error):
+                try:
+                    action()
+                except BaseException as rollback_error:
+                    primary_error.add_note(f"Install rollback {label} failed: {rollback_error}")
+
+            # Remove artifacts even if registry.add never committed: remove()
+            # only knows about previously committed ownership metadata.
+            try:
+                if transaction_artifacts["commands"]:
+                    CommandRegistrar().unregister_commands(
+                        transaction_artifacts["commands"], self.project_root
+                    )
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback command cleanup failed: {rollback_error}")
+            try:
+                self._unregister_extension_skills(
+                    transaction_artifacts["skills"], manifest.id
+                )
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback skill cleanup failed: {rollback_error}")
+            try:
+                HookExecutor(self.project_root).unregister_hooks(manifest.id)
+            except BaseException as rollback_error:
+                install_error.add_note(f"Install rollback hook cleanup failed: {rollback_error}")
+            # Generic integration rollback deliberately converts a failed install
+            # into a config-only, unregistered extension directory. Preserve that
+            # user-facing recovery state instead of restoring the pre-install
+            # registered snapshot captured by this outer transaction.
+            preserved_generic_config = (
+                dest_dir.is_dir()
+                and self._has_keep_config_marker(dest_dir)
+                and not (dest_dir / "extension.yml").exists()
+                and all(
+                    child.name == ".keep-config"
+                    or child.name.endswith(("-config.yml", "-config.local.yml"))
+                    for child in dest_dir.iterdir()
+                )
+            )
+            if preserved_generic_config:
+                # Generic installs never publish the new selector eligibility;
+                # retain their established config-only/unregistered recovery.
+                raise
+            if not kept_config:
+                rollback("registered install cleanup", lambda: (
+                    self.remove(manifest.id) if self.registry.is_installed(manifest.id) else None
+                ))
+
+                def restore_extension():
+                    if dest_dir.is_symlink():
+                        dest_dir.unlink()
+                    elif dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                    if backup_dir.is_dir():
+                        shutil.copytree(backup_dir, dest_dir, symlinks=True)
+
+                rollback("extension directory", restore_extension)
+
+            # Kept config and generic rescue directories remain under the
+            # unchecked installer's recovery contract; never delete that state.
+            # Eligibility and affected winner artifacts are independent and
+            # must be restored even if directory cleanup fails.
+            self.registry.data = old_registry_data
+
+            def restore_file(path, content):
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+
+            rollback("extension registry", lambda: restore_file(registry_path, old_registry_bytes))
+            rollback("hook config", lambda: restore_file(hook_path, old_hook_bytes))
+            rollback("winner artifacts", artifact_snapshot.restore)
+            raise
+        finally:
+            if previous_transaction_artifacts is None:
+                del self._install_transaction_artifacts
+            else:
+                self._install_transaction_artifacts = previous_transaction_artifacts
+            artifact_snapshot.close()
+            shutil.rmtree(backup_root, ignore_errors=True)
+
+    def _install_from_directory_unchecked(
+        self,
+        source_dir: Path,
+        speckit_version: str,
+        register_commands: bool = True,
+        priority: int = 10,
+        link_commands: bool = False,
+        force: bool = False,
+        *,
+        catalog_name: str | None = None,
+    ) -> ExtensionManifest:
         """Install extension from a local directory.
 
         Args:
@@ -2456,7 +2867,9 @@ class ExtensionManager:
         from .. import load_init_options
 
         active_options = load_init_options(self.project_root)
-        generic_active = isinstance(active_options, dict) and active_options.get("ai") == "generic"
+        generic_active = (
+            isinstance(active_options, dict) and active_options.get("ai") == "generic"
+        )
         if register_commands and manifest.commands:
             state, state_error = try_read_integration_json(self.project_root)
             if state_error is not None and generic_active:
@@ -2470,17 +2883,22 @@ class ExtensionManager:
                     "Cannot register extension commands: cannot read integration settings: "
                     f"{detail}"
                 )
-            generic_default = default_integration_key(state) == "generic" if state else False
+            generic_default = (
+                default_integration_key(state) == "generic" if state else False
+            )
             if state is not None and (generic_default or generic_active):
                 if generic_default != generic_active:
                     raise ExtensionError(
                         "Cannot register generic extension commands: generic integration "
                         "and init options disagree"
                     )
-                parsed_options = integration_setting(state, "generic").get("parsed_options")
+                parsed_options = integration_setting(state, "generic").get(
+                    "parsed_options"
+                )
                 configured_skills = (
                     parsed_options.get("skills", False)
-                    if isinstance(parsed_options, dict) else False
+                    if isinstance(parsed_options, dict)
+                    else False
                 )
                 init_skills = active_options.get("ai_skills", False)
                 if (
@@ -2498,11 +2916,16 @@ class ExtensionManager:
             try:
                 output_dir = registration_directory(self.project_root)
             except (OSError, ValueError) as exc:
-                raise ExtensionError(f"Cannot register generic extension commands: {exc}") from exc
+                raise ExtensionError(
+                    f"Cannot register generic extension commands: {exc}"
+                ) from exc
             source_root = source_dir.resolve()
             for command in manifest.commands:
                 source_file = (source_root / command["file"]).resolve()
-                if not source_file.is_relative_to(source_root) or not source_file.is_file():
+                if (
+                    not source_file.is_relative_to(source_root)
+                    or not source_file.is_file()
+                ):
                     raise ExtensionError(
                         "Cannot register generic extension commands: missing source "
                         f"'{command['file']}'"
@@ -2516,22 +2939,32 @@ class ExtensionManager:
                     ) from exc
             skills = is_ai_skills_enabled(active_options)
             names = (
-                {self._skill_name_for_command(command["name"]) for command in manifest.commands}
-                if skills else self._collect_manifest_command_names(manifest)
+                {
+                    self._skill_name_for_command(command["name"])
+                    for command in manifest.commands
+                }
+                if skills
+                else self._collect_manifest_command_names(manifest)
             )
             owned = (
-                set(self._generic_owned_names(
-                    self.registry.get(manifest.id) or {}, list(names),
-                    skills=skills, extension_id=manifest.id,
-                ))
-                if force and self.registry.is_installed(manifest.id) else set()
+                set(
+                    self._generic_owned_names(
+                        self.registry.get(manifest.id) or {},
+                        list(names),
+                        skills=skills,
+                        extension_id=manifest.id,
+                    )
+                )
+                if force and self.registry.is_installed(manifest.id)
+                else set()
             )
             for name in sorted(names):
                 target = output_dir / name if skills else output_dir / f"{name}.md"
                 if not (target.exists() or target.is_symlink()):
                     continue
                 if name in owned and (
-                    not skills or not any(child.name != "SKILL.md" for child in target.iterdir())
+                    not skills
+                    or not any(child.name != "SKILL.md" for child in target.iterdir())
                 ):
                     continue
                 raise ExtensionError(
@@ -2635,9 +3068,7 @@ class ExtensionManager:
                 if not directory.is_dir():
                     return names
                 for entry in directory.iterdir():
-                    if not entry.name.endswith(
-                        ("-config.yml", "-config.local.yml")
-                    ):
+                    if not entry.name.endswith(("-config.yml", "-config.local.yml")):
                         continue
                     if follow_symlinks:
                         if entry.is_file() and not entry.is_symlink():
@@ -2652,9 +3083,7 @@ class ExtensionManager:
 
             conflicting: set[str] = set()
             staged_names = _recognized_config_names(rescue_staging_dir)
-            live_names = _recognized_config_names(
-                dest_dir, follow_symlinks=False
-            )
+            live_names = _recognized_config_names(dest_dir, follow_symlinks=False)
 
             def _matches_source_config_baseline(config_name: str) -> bool:
                 source_file = source_dir / config_name
@@ -2682,9 +3111,7 @@ class ExtensionManager:
             # Only truly divergent live-only configs are conflicts.
             live_only = live_names - staged_names
             conflicting.update(
-                name
-                for name in live_only
-                if not _matches_source_config_baseline(name)
+                name for name in live_only if not _matches_source_config_baseline(name)
             )
             # Load original permission bits from the sidecar JSON written by
             # the staging step.  Staged files are kept at mode 0o600 so that
@@ -2758,9 +3185,10 @@ class ExtensionManager:
                     except OSError:
                         conflicting.add(staged_name)
                     else:
-                        if live_bytes != staged_bytes or stat.S_IMODE(
-                            live_stat.st_mode
-                        ) != staged_mode:
+                        if (
+                            live_bytes != staged_bytes
+                            or stat.S_IMODE(live_stat.st_mode) != staged_mode
+                        ):
                             conflicting.add(staged_name)
                 stranded_configs[staged_name] = (staged_bytes, staged_mode)
             if conflicting:
@@ -2800,9 +3228,8 @@ class ExtensionManager:
                 or self._is_legacy_keep_config_leftover(dest_dir)
             )
         ):
-            for cfg_file in (
-                list(dest_dir.glob("*-config.yml"))
-                + list(dest_dir.glob("*-config.local.yml"))
+            for cfg_file in list(dest_dir.glob("*-config.yml")) + list(
+                dest_dir.glob("*-config.local.yml")
             ):
                 if cfg_file.is_symlink():
                     # `remove --keep-config` preserves a symlinked config
@@ -2866,7 +3293,10 @@ class ExtensionManager:
                     # bytes' "\n" into "\r\n" as they are written.
                     fd = os.open(
                         str(staged),
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | getattr(os, "O_BINARY", 0),
                         0o600,
                     )
                     try:
@@ -3020,7 +3450,11 @@ class ExtensionManager:
             root = self.project_root.resolve()
             installed_root = dest_dir.resolve()
             for name in names:
-                path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+                path = (
+                    output_dir / name / "SKILL.md"
+                    if skills
+                    else output_dir / f"{name}.md"
+                )
                 try:
                     _validate_safe_shared_directory(root, path.parent)
                 except (OSError, ValueError):
@@ -3050,7 +3484,9 @@ class ExtensionManager:
                         if (
                             config_file.is_file()
                             and not config_file.is_symlink()
-                            and config_file.name.endswith(("-config.yml", "-config.local.yml"))
+                            and config_file.name.endswith(
+                                ("-config.yml", "-config.local.yml")
+                            )
                         ):
                             shutil.copy2(config_file, dest_dir / config_file.name)
                             preserved.add(config_file.name)
@@ -3069,22 +3505,74 @@ class ExtensionManager:
         hooks_started = False
         registry_started = False
         try:
-            # Register commands with AI agents (active integration only, #2948)
+            # Publish provider eligibility inside the transaction before resolving
+            # selectors. No raw command has been written yet.
+            winner_commands, winner_skills = {}, []
+            registration_manifest = manifest
+            if register_commands and not generic_active:
+                self.registry.data.setdefault("extensions", {})[manifest.id] = {
+                    "version": manifest.version, "enabled": True,
+                    "priority": priority, "registered_commands": {},
+                    "registered_skills": [],
+                }
+                self.registry._save()
+                remaining, winner_commands, winner_skills = self._materialize_extension_winners(
+                    manifest, dest_dir
+                )
+                registration_manifest = copy.copy(manifest)
+                registration_manifest.data = copy.deepcopy(manifest.data)
+                registration_manifest.data["provides"]["commands"] = remaining
             registered_commands = {}
             if register_commands:
                 registered_commands = self._register_commands_for_active_agent(
-                    manifest, dest_dir, link_outputs=link_commands
+                    registration_manifest, dest_dir, link_outputs=link_commands
                 )
+            for agent, names in winner_commands.items():
+                registered_commands.setdefault(agent, []).extend(names)
 
-            # Auto-register extension commands as agent skills when skills mode
-            # was used during project initialisation (feature parity).
-            registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+            # Merge the callback-populated partial state with returned totals;
+            # do not replace it, because registration can fail before returning.
+            transaction_commands = self._install_transaction_artifacts.setdefault(
+                "commands", {}
             )
+            for agent, commands in registered_commands.items():
+                tracked = transaction_commands.setdefault(agent, [])
+                for command in commands:
+                    if command not in tracked:
+                        tracked.append(command)
+
+            registered_skills = self._register_extension_skills(
+                registration_manifest, dest_dir, link_outputs=link_commands
+            )
+            registered_skills.extend(winner_skills)
+            # The merged ledger is the rollback source of truth: it holds every
+            # output the callbacks recorded, which can exceed the registrar's
+            # (possibly empty or partial) return value after a handled error.
+            self._install_transaction_artifacts["commands"] = transaction_commands
+            # Registry ownership is that same union narrowed to the names this
+            # extension actually provides, so an alias the preset materialized
+            # for its own selector declaration is not misattributed to the
+            # extension while the extension's own recorded outputs are kept.
+            # NOTE: the loop variables are deliberately named ``agent_names``/
+            # ``candidate`` — ``names`` above is the generic command list that
+            # the generic artifact check below still reads.
+            from ._commands import _snapshot_command_candidates
+
+            provider_names = _snapshot_command_candidates(self, manifest)
+            committed_commands: dict[str, list[str]] = {}
+            for source in (registered_commands, transaction_commands):
+                for agent, agent_names in source.items():
+                    tracked = committed_commands.setdefault(agent, [])
+                    for candidate in agent_names:
+                        if candidate in provider_names and candidate not in tracked:
+                            tracked.append(candidate)
+
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
                 actual = set(
-                    registered_skills if skills else registered_commands.get("generic", [])
+                    registered_skills
+                    if skills
+                    else registered_commands.get("generic", [])
                 )
                 missing = expected - actual
                 if missing:
@@ -3094,7 +3582,8 @@ class ExtensionManager:
                     )
             generic_hashes = (
                 self._generic_artifact_hashes(registered_commands, registered_skills)
-                if generic_active else {}
+                if generic_active
+                else {}
             )
 
             # Register hooks and update installed list in extensions.yml
@@ -3138,7 +3627,10 @@ class ExtensionManager:
                 "manifest_hash": manifest.get_hash(),
                 "enabled": True,
                 "priority": priority,
-                "registered_commands": registered_commands,
+                # Ownership must reflect every output the callbacks recorded as
+                # written (not only the registrar's possibly partial totals),
+                # narrowed to the names this extension provides.
+                "registered_commands": committed_commands,
                 "registered_skills": registered_skills,
             }
             if generic_active:
@@ -3181,8 +3673,11 @@ class ExtensionManager:
                     from .. import _print_cli_warning
 
                     _print_cli_warning(
-                        "remove", "configuration backup", str(backup_config_dir),
-                        exc, continuing="The extension was installed; the backup remains.",
+                        "remove",
+                        "configuration backup",
+                        str(backup_config_dir),
+                        exc,
+                        continuing="The extension was installed; the backup remains.",
                     )
 
         # Post-commit cleanup: the registry now records this extension as
@@ -3219,6 +3714,7 @@ class ExtensionManager:
         # did, and it would cost a per-caller scan-scope argument on an otherwise simple,
         # widely-used interface. The simpler call wins.
         from .. import ensure_executable_scripts
+
         ensure_executable_scripts(self.project_root)
 
         return manifest
@@ -3353,7 +3849,9 @@ class ExtensionManager:
             "-config.local.yml"
         )
 
-    def scaffold_config(self, extension_id: str) -> tuple[List[str], List[str], List[str]]:
+    def scaffold_config(
+        self, extension_id: str
+    ) -> tuple[List[str], List[str], List[str]]:
         """Deploy config templates from an installed extension to the project.
 
         Reads the extension's manifest provides.config section and copies
@@ -3379,12 +3877,9 @@ class ExtensionManager:
 
         provides = manifest.data.get("provides", {})
         raw_config = provides.get("config", [])
-        config_is_malformed = (
-            "config" in provides
-            and (
-                not isinstance(raw_config, list)
-                or not all(isinstance(entry, dict) for entry in raw_config)
-            )
+        config_is_malformed = "config" in provides and (
+            not isinstance(raw_config, list)
+            or not all(isinstance(entry, dict) for entry in raw_config)
         )
         if config_is_malformed:
             return deployed, skipped_existing, ["provides.config"]
@@ -3408,7 +3903,11 @@ class ExtensionManager:
         for config_entry in manifest.config:
             template_name = config_entry.get("template", "")
             target_name = config_entry.get("name", template_name)
-            failure_name = target_name if isinstance(target_name, str) and target_name else "provides.config"
+            failure_name = (
+                target_name
+                if isinstance(target_name, str) and target_name
+                else "provides.config"
+            )
             if not isinstance(template_name, str) or not template_name:
                 failed.append(failure_name)
                 continue
@@ -3518,9 +4017,7 @@ class ExtensionManager:
             if "generic" in safe_commands:
                 safe_commands.pop("generic")
             if safe_commands:
-                CommandRegistrar().unregister_commands(
-                    safe_commands, self.project_root
-                )
+                CommandRegistrar().unregister_commands(safe_commands, self.project_root)
         if metadata:
             self._remove_generic_artifact_paths(extension_id, metadata)
 
@@ -3528,7 +4025,9 @@ class ExtensionManager:
         self._unregister_extension_skills(
             registered_skills,
             extension_id,
-            generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
+            generic_hashes=metadata.get("generic_artifact_hashes")
+            if metadata
+            else None,
         )
 
         if keep_config:
@@ -3587,7 +4086,11 @@ class ExtensionManager:
             raise ExtensionError(f"Extension '{extension_id}' is not installed")
 
         registered = metadata.get("registered_commands", {})
-        commands = self._valid_name_list(registered.get("generic")) if isinstance(registered, dict) else []
+        commands = (
+            self._valid_name_list(registered.get("generic"))
+            if isinstance(registered, dict)
+            else []
+        )
         skills = self._valid_name_list(metadata.get("registered_skills", []))
         hashes = metadata.get("generic_artifact_hashes", {})
         has_artifacts = bool(commands or skills or hashes)
@@ -3605,7 +4108,12 @@ class ExtensionManager:
                     if name.is_absolute() or ".." in name.parts:
                         continue
                     path = self.project_root.resolve() / name
-                    if path.parent.resolve().is_relative_to(self.project_root.resolve()) and path.is_file():
+                    if (
+                        path.parent.resolve().is_relative_to(
+                            self.project_root.resolve()
+                        )
+                        and path.is_file()
+                    ):
                         if path.is_symlink() and not path.resolve().is_relative_to(
                             (self.extensions_dir / extension_id).resolve()
                         ):
@@ -3621,14 +4129,20 @@ class ExtensionManager:
             if not hashes:
                 for names, is_skill in ((commands, False), (skills, True)):
                     for name in names:
-                        path = directory / name / "SKILL.md" if is_skill else directory / f"{name}.md"
+                        path = (
+                            directory / name / "SKILL.md"
+                            if is_skill
+                            else directory / f"{name}.md"
+                        )
                         if path.exists() or path.is_symlink():
                             raise ExtensionError(
                                 f"Cannot disable '{extension_id}': generic artifact {path} "
                                 "was modified or is not owned; preserve it and remove it manually"
                             )
             snapshot = self._snapshot_generic_refresh_artifacts(
-                extension_id, self.get_extension(extension_id), metadata,
+                extension_id,
+                self.get_extension(extension_id),
+                metadata,
                 skills_mode_active=bool(skills),
             )
 
@@ -3638,16 +4152,22 @@ class ExtensionManager:
                 self._remove_generic_artifact_paths(extension_id, metadata)
                 if skills:
                     self._unregister_extension_skills(
-                        skills, extension_id, skills_dir=directory,
+                        skills,
+                        extension_id,
+                        skills_dir=directory,
                         generic_hashes=metadata.get("generic_artifact_hashes", {}),
                     )
                 new_commands = dict(registered) if isinstance(registered, dict) else {}
                 new_commands.pop("generic", None)
-                updates.update({
-                    "registered_commands": new_commands,
-                    "registered_skills": self._extension_owned_skill_names(skills, extension_id),
-                    "generic_artifact_hashes": {},
-                })
+                updates.update(
+                    {
+                        "registered_commands": new_commands,
+                        "registered_skills": self._extension_owned_skill_names(
+                            skills, extension_id
+                        ),
+                        "generic_artifact_hashes": {},
+                    }
+                )
             registry_update_started = True
             self.registry.update(extension_id, updates)
         except Exception as exc:
@@ -3681,6 +4201,7 @@ class ExtensionManager:
         *,
         enabled_only: bool = False,
         commands_only: bool = False,
+        extension_ids: Optional[set[str]] = None,
     ) -> None:
         """Remove extension files registered for a specific agent.
 
@@ -3715,6 +4236,8 @@ class ExtensionManager:
         agent_skills_dir = resolve_skills_dir(self.project_root, agent_name)
 
         for ext_id, metadata in self.registry.list().items():
+            if extension_ids is not None and ext_id not in extension_ids:
+                continue
             if enabled_only and not metadata.get("enabled", True):
                 continue
 
@@ -3764,10 +4287,13 @@ class ExtensionManager:
                 # to clean up; the fast path below is a safe no-op in that
                 # case (every candidate skill_subdir.is_dir() check fails).
                 self._unregister_extension_skills(
-                    registered_skills, ext_id, skills_dir=agent_skills_dir,
+                    registered_skills,
+                    ext_id,
+                    skills_dir=agent_skills_dir,
                     generic_hashes=(
                         metadata.get("generic_artifact_hashes")
-                        if agent_name == "generic" else None
+                        if agent_name == "generic"
+                        else None
                     ),
                 )
 
@@ -3819,9 +4345,7 @@ class ExtensionManager:
 
         integration = get_integration(agent_name)
         legacy_dir = getattr(integration, "legacy_flat_command_dir", None)
-        legacy_extension = getattr(
-            integration, "legacy_flat_command_extension", None
-        )
+        legacy_extension = getattr(integration, "legacy_flat_command_extension", None)
         if (
             not isinstance(legacy_dir, str)
             or not legacy_dir
@@ -3878,8 +4402,13 @@ class ExtensionManager:
 
         return removed
 
-    def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
+    def register_enabled_extensions_for_agent(
+        self, agent_name: str, *, force: bool = False, strict: bool = False
+    ) -> None:
         """Register installed, enabled extensions for ``agent_name``.
+
+        ``strict`` propagates failures to an enclosing artifact transaction;
+        other callers retain best-effort per-extension registration.
 
         Command-file registration is scoped to the explicit ``agent_name``
         argument. Since #2948, callers pass the active agent only (``use`` /
@@ -3941,7 +4470,9 @@ class ExtensionManager:
             try:
                 if agent_name == "generic":
                     generic_snapshot = self._snapshot_generic_refresh_artifacts(
-                        ext_id, manifest, metadata,
+                        ext_id,
+                        manifest,
+                        metadata,
                         skills_mode_active=skills_mode_active,
                     )
                 updates: Dict[str, Any] = {}
@@ -3991,9 +4522,9 @@ class ExtensionManager:
                     # actual removal is deferred until after the skills
                     # phase below completes without raising (#2948).
                     registered_commands = metadata.get("registered_commands", {})
-                    if isinstance(registered_commands, dict) and registered_commands.get(
-                        agent_name
-                    ):
+                    if isinstance(
+                        registered_commands, dict
+                    ) and registered_commands.get(agent_name):
                         deferred_stale_commands = self._valid_name_list(
                             registered_commands.get(agent_name)
                         )
@@ -4030,7 +4561,7 @@ class ExtensionManager:
                         # Skills are a companion artifact.  If command registration
                         # already succeeded, still persist it so later cleanup can
                         # find those command files.
-                        if agent_name == "generic":
+                        if strict or agent_name == "generic":
                             raise
                         from .. import _print_cli_warning
 
@@ -4084,19 +4615,26 @@ class ExtensionManager:
                                 for cmd_name in (registered or [])
                             }
                             to_remove = [
-                                name for name in owned_here
+                                name
+                                for name in owned_here
                                 if name in replaced_skill_names
                             ]
                             if agent_name == "generic":
                                 to_remove = self._generic_owned_names(
-                                    metadata, to_remove, skills=True, extension_id=ext_id
+                                    metadata,
+                                    to_remove,
+                                    skills=True,
+                                    extension_id=ext_id,
                                 )
                             if to_remove:
                                 self._unregister_extension_skills(
-                                    to_remove, ext_id, skills_dir=agent_skills_dir,
+                                    to_remove,
+                                    ext_id,
+                                    skills_dir=agent_skills_dir,
                                     generic_hashes=(
                                         metadata.get("generic_artifact_hashes")
-                                        if agent_name == "generic" else None
+                                        if agent_name == "generic"
+                                        else None
                                     ),
                                 )
                                 # registered_skills is a single flat list
@@ -4169,7 +4707,8 @@ class ExtensionManager:
                                 )
 
                             fully_replaced = [
-                                cmd_name for cmd_name in deferred_stale_commands
+                                cmd_name
+                                for cmd_name in deferred_stale_commands
                                 if group_fully_replaced.get(
                                     alias_to_primary.get(cmd_name, cmd_name), False
                                 )
@@ -4177,7 +4716,9 @@ class ExtensionManager:
                             if fully_replaced:
                                 if agent_name == "generic":
                                     fully_replaced = self._generic_owned_names(
-                                        metadata, fully_replaced, skills=False,
+                                        metadata,
+                                        fully_replaced,
+                                        skills=False,
                                         extension_id=ext_id,
                                     )
                                 registrar.unregister_commands(
@@ -4191,7 +4732,8 @@ class ExtensionManager:
                                 ):
                                     new_registered = copy.deepcopy(registered_commands)
                                     remaining_commands = [
-                                        c for c in new_registered[agent_name]
+                                        c
+                                        for c in new_registered[agent_name]
                                         if c not in fully_replaced
                                     ]
                                     if remaining_commands:
@@ -4219,6 +4761,8 @@ class ExtensionManager:
                     registry_update_started = True
                     self.registry.update(ext_id, updates)
             except Exception as ext_err:
+                if strict:
+                    raise
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.
                 from .. import _print_cli_warning
@@ -4279,7 +4823,9 @@ class ExtensionManager:
                         "installed_at": metadata.get("installed_at"),
                         "command_count": len(manifest.commands),
                         "hook_count": hook_count,
-                        "_json_author": author if isinstance(author, str) and author else None,
+                        "_json_author": author
+                        if isinstance(author, str) and author
+                        else None,
                         "_json_source": metadata.get("source"),
                         "_json_provides": {
                             "commands": len(manifest.commands),
@@ -4304,7 +4850,12 @@ class ExtensionManager:
                         "hook_count": 0,
                         "_json_author": None,
                         "_json_source": metadata.get("source"),
-                        "_json_provides": {"commands": 0, "templates": 0, "scripts": 0, "hooks": 0},
+                        "_json_provides": {
+                            "commands": 0,
+                            "templates": 0,
+                            "scripts": 0,
+                            "hooks": 0,
+                        },
                     }
                 )
 
@@ -4416,6 +4967,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
         only_agent: Optional[str] = None,
+        on_output=None,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -4430,6 +4982,7 @@ class CommandRegistrar:
             only_agent=only_agent,
             extension_id=manifest.id,
             author=manifest.data["extension"].get("author"),
+            on_output=on_output,
         )
 
     def unregister_commands(
@@ -4520,7 +5073,9 @@ class ExtensionCatalog(CatalogStackBase):
         passing the ``github`` provider hosts from ``auth.json`` so GitHub
         Enterprise Server release assets resolve via ``/api/v3``.
         """
-        from specify_cli.authentication.github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.github_http import (
+            resolve_github_release_asset_api_url,
+        )
         from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(
@@ -5141,9 +5696,7 @@ class ExtensionCatalog(CatalogStackBase):
         if not download_url:
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
         if not isinstance(download_url, str):
-            raise ExtensionError(
-                f"Extension download URL is malformed: {download_url}"
-            )
+            raise ExtensionError(f"Extension download URL is malformed: {download_url}")
 
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
@@ -5163,9 +5716,7 @@ class ExtensionCatalog(CatalogStackBase):
                 f"Extension download URL is malformed: {download_url}"
             ) from None
         if not hostname:
-            raise ExtensionError(
-                f"Extension download URL is malformed: {download_url}"
-            )
+            raise ExtensionError(f"Extension download URL is malformed: {download_url}")
         if not is_https_or_localhost_http(download_url):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"
@@ -5205,9 +5756,7 @@ class ExtensionCatalog(CatalogStackBase):
                     label=f"extension '{extension_id}' download",
                 )
                 final_url = (
-                    response.geturl()
-                    if hasattr(response, "geturl")
-                    else download_url
+                    response.geturl() if hasattr(response, "geturl") else download_url
                 )
                 content_type = (
                     response.getheader("Content-Type")

@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -10,6 +11,16 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from . import _commands
+
+
+def _enable_hooks(hook_executor, extension_id):
+    config = hook_executor.get_project_config()
+    if "hooks" in config:
+        for hooks in config["hooks"].values():
+            for hook in hooks:
+                if hook.get("extension") == extension_id:
+                    hook["enabled"] = True
+        hook_executor.save_project_config(config)
 
 
 @_commands.extension_app.command("enable")
@@ -31,7 +42,7 @@ def extension_enable(
 
     # Update registry
     metadata = manager.registry.get(extension_id)
-    if metadata is None or not isinstance(metadata, dict):
+    if not extension_id or metadata is None or not isinstance(metadata, dict):
         console.print(
             f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
             "not found in registry (corrupted state)"
@@ -39,15 +50,58 @@ def extension_enable(
         raise typer.Exit(1)
 
     if metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]"
+        )
         raise typer.Exit(0)
-
-    manager.registry.update(extension_id, {"enabled": True})
 
     from .. import load_init_options
 
     init_options = load_init_options(project_root)
-    if init_options.get("ai") == "generic":
+    agent = init_options.get("ai")
+    if agent and agent != "generic":
+        # Enabling makes lower layers visible to selectors. Snapshot before
+        # publishing eligibility, including ownership of every refreshed winner.
+        import copy
+
+        from ..presets import PresetManager
+        from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+
+        preset_manager = PresetManager(project_root)
+        snapshot = _ArtifactSnapshot()
+        old_registry = copy.deepcopy(manager.registry.data)
+        try:
+            manifest = manager.get_extension(extension_id)
+            if manifest is None:
+                raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+            _capture_preset_artifacts(
+                preset_manager,
+                snapshot,
+                extra_commands=_commands._snapshot_command_candidates(
+                    manager, manifest
+                ),
+            )
+            snapshot.capture(project_root / ".specify" / "extensions.yml")
+            affected = _commands._capture_preset_command_names(project_root)
+            manager.registry.update(extension_id, {"enabled": True})
+            manager.register_enabled_extensions_for_agent(agent, strict=True)
+            affected.update(_commands._capture_preset_command_names(project_root))
+            preset_manager.register_enabled_presets_for_agent(
+                agent, affected_commands=affected, strict=True
+            )
+            _enable_hooks(hook_executor, extension_id)
+        except BaseException as exc:
+            manager.registry.data = old_registry
+            try:
+                snapshot.restore()
+            except BaseException as rollback_error:  # noqa: BLE001 - preserve operation error
+                exc.add_note(f"Enable artifact rollback failed: {rollback_error}")
+            raise
+        finally:
+            snapshot.close()
+    else:
+        manager.registry.update(extension_id, {"enabled": True})
+    if agent == "generic":
         try:
             manifest = manager.get_extension(extension_id)
             if manifest is None:
@@ -63,11 +117,17 @@ def extension_enable(
                         manager._skill_name_for_command(command["name"])
                         for command in manifest.commands
                     }
-                    if skills else set(manager._collect_manifest_command_names(manifest))
+                    if skills
+                    else set(manager._collect_manifest_command_names(manifest))
                 )
-                owned = set(manager._generic_owned_names(
-                    refreshed, list(expected), skills=skills, extension_id=extension_id,
-                ))
+                owned = set(
+                    manager._generic_owned_names(
+                        refreshed,
+                        list(expected),
+                        skills=skills,
+                        extension_id=extension_id,
+                    )
+                )
                 missing = expected - owned
                 if missing:
                     manager.disable_generic_extension_artifacts(extension_id)
@@ -81,21 +141,18 @@ def extension_enable(
                 f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1) from exc
+    if not agent or agent == "generic":
+        _enable_hooks(hook_executor, extension_id)
 
-    # Enable hooks in extensions.yml
-    config = hook_executor.get_project_config()
-    if "hooks" in config:
-        for hook_name in config["hooks"]:
-            for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension_id:
-                    hook["enabled"] = True
-        hook_executor.save_project_config(config)
-
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled")
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled"
+    )
 
     # #1: regenerate native event config so the enabled extension's events
     # are re-emitted in installed integrations.
     _commands._refresh_events_and_warn(project_root)
+    if not agent or agent == "generic":
+        _commands._refresh_presets_and_warn(project_root)
 
     # Scaffold config templates on enable
     try:
@@ -113,7 +170,9 @@ def extension_enable(
         for cfg in deployed:
             console.print(f"  • {config_home}/{_escape_markup(str(cfg))}")
     if skipped:
-        console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
+        console.print(
+            f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]"
+        )
     if failed:
         console.print(
             f"\n[yellow]Warning:[/yellow] Config templates not scaffolded: "

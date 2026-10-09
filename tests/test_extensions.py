@@ -1726,7 +1726,9 @@ class TestExtensionManager:
             project_root,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            on_output=None,
         ):
+            captured["on_output"] = on_output
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
@@ -1763,7 +1765,9 @@ class TestExtensionManager:
             extension_id=None,
             only_agent=None,
             author="github-spec-kit",
+            on_output=None,
         ):
+            captured["on_output"] = on_output
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )

@@ -148,7 +148,13 @@ class PresetArtifactTestHelpers:
         preset_dir = temp_dir / preset_id
         preset_dir.mkdir()
         (preset_dir / "commands").mkdir()
-        command_file = f"{command_name}.md"
+        # A regex selector is a legal manifest name but not a legal file name on
+        # every platform (Windows rejects ':' in paths), so sanitize the on-disk
+        # file name while leaving the declared name untouched.
+        safe_name = "".join(
+            ch if (ch.isalnum() or ch in "._-") else "_" for ch in command_name
+        ) or "command"
+        command_file = f"{safe_name}.md"
         (preset_dir / "commands" / command_file).write_text(
             f"---\ndescription: {description}\n---\n\n{body}\n"
         )
@@ -188,7 +194,10 @@ class PresetArtifactTestHelpers:
         (preset_dir / "commands").mkdir()
         templates = []
         for command_name in command_names:
-            command_file = f"{command_name}.md"
+            safe_name = "".join(
+                ch if (ch.isalnum() or ch in "._-") else "_" for ch in command_name
+            ) or "command"
+            command_file = f"{safe_name}.md"
             (preset_dir / "commands" / command_file).write_text(
                 f"---\ndescription: {command_name} test command\n---\n\n"
                 f"{command_name} body\n"
@@ -227,10 +236,17 @@ class PresetArtifactTestHelpers:
         (preset_dir / "commands").mkdir()
         templates = []
         for primary_name, aliases in command_specs:
-            command_file = f"{primary_name}.md"
+            # Same platform rule as _create_command_preset: a regex selector is a
+            # legal manifest name but not a legal Windows file name (':' and '*'
+            # are rejected), so sanitize the on-disk name only.
+            safe_name = "".join(
+                ch if (ch.isalnum() or ch in "._-") else "_" for ch in primary_name
+            ) or "command"
+            command_file = f"{safe_name}.md"
             (preset_dir / "commands" / command_file).write_text(
                 f"---\ndescription: {primary_name} test command\n---\n\n"
-                f"{primary_name} body\n"
+                f"{primary_name} body\n",
+                encoding="utf-8",
             )
             templates.append({
                 "type": "command",

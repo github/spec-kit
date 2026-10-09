@@ -3,6 +3,7 @@
 Registered by ``_commands.register()``; shared command infrastructure lives in
 ``_commands.py``.
 """
+
 from __future__ import annotations
 
 import typer
@@ -23,7 +24,9 @@ def extension_set_priority(
     project_root = _commands._require_specify_project()
     # Validate priority
     if priority < 1:
-        console.print("[red]Error:[/red] Priority must be a positive integer (1 or higher)")
+        console.print(
+            "[red]Error:[/red] Priority must be a positive integer (1 or higher)"
+        )
         raise typer.Exit(1)
 
     manager = ExtensionManager(project_root)
@@ -54,13 +57,64 @@ def extension_set_priority(
         and not isinstance(raw_priority, bool)
         and raw_priority == priority
     ):
-        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' already has priority {priority}[/yellow]")
+        console.print(
+            f"[yellow]Extension '{_escape_markup(str(display_name))}' already has priority {priority}[/yellow]"
+        )
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
 
-    # Update priority
-    manager.registry.update(extension_id, {"priority": priority})
+    # Extension reordering can change the lower-layer candidates matched by
+    # enabled preset regex selectors, so the new priority is only committed
+    # together with the recomposed artifacts. Mirrors the preset priority
+    # transaction: snapshot the artifact trees and both registries, run the
+    # reconciliation strictly, and roll back to the previous priority on any
+    # failure instead of reporting a change that never reached the
+    # selector-backed outputs.
+    import copy
 
-    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' priority changed: {old_priority} → {priority}")
-    console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
+    from ..presets import PresetManager
+    from ..presets._transaction import _ArtifactSnapshot, _capture_preset_artifacts
+
+    preset_manager = PresetManager(project_root)
+    registry_before = copy.deepcopy(manager.registry.data)
+    snapshot = _ArtifactSnapshot()
+    captured = False
+    try:
+        _capture_preset_artifacts(preset_manager, snapshot)
+        captured = True
+        manager.registry.update(extension_id, {"priority": priority})
+        _commands._refresh_presets_and_warn(project_root, strict=True)
+    except BaseException as exc:
+        manager.registry.data = registry_before
+        try:
+            if captured:
+                snapshot.restore()
+        except Exception as rollback_exc:
+            exc.add_note(f"Extension priority rollback failed: {rollback_exc}")
+        console.print(
+            f"[red]Error:[/red] Could not apply the new priority for "
+            f"'{_escape_markup(str(display_name))}': "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise
+    finally:
+        import sys
+
+        operation_exc = sys.exception()
+        try:
+            snapshot.close()
+        except Exception as cleanup_exc:
+            if operation_exc is not None:
+                operation_exc.add_note(
+                    f"Extension priority snapshot cleanup failed: {cleanup_exc}"
+                )
+            else:
+                raise
+
+    console.print(
+        f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' priority changed: {old_priority} → {priority}"
+    )
+    console.print(
+        "\n[dim]Lower priority = higher precedence in template resolution[/dim]"
+    )

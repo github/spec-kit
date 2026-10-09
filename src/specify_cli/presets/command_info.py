@@ -14,6 +14,58 @@ from .._project import resolve_specify_project_root
 from ._commands import preset_app
 
 
+def _diagnostic_selector_matches(
+    project_root, resolver, preset_dir, selector, resource_type
+):
+    from ._selectors import is_regex_selector, selector_matches
+    from ..artifacts.catalog import ArtifactCatalog
+
+    inventory = ArtifactCatalog(project_root).list_artifacts()
+    candidates = {
+        artifact.name
+        for artifact in inventory
+        if artifact.kind == resource_type
+        and isinstance(artifact.name, str)
+        and not is_regex_selector(artifact.name)
+    }
+    ordered_presets = resolver._get_all_presets_by_priority()
+    try:
+        current_index = next(
+            index
+            for index, (preset_id, _meta) in enumerate(ordered_presets)
+            if preset_id == preset_dir.name
+        )
+    except StopIteration:
+        return []
+    lower_presets = {
+        preset_id for preset_id, _meta in ordered_presets[current_index + 1 :]
+    }
+    lower_extensions = resolver._get_all_extensions_by_priority()
+    matches = []
+    for name in candidates:
+        if not selector_matches(selector, name):
+            continue
+        # Inventory supplies names, not ownership: a higher/project override or
+        # another regex declaration cannot create this selector's concrete base.
+        if (
+            any(
+                resolver._preset_has_concrete_resource(
+                    resolver.presets_dir / preset_id, name, resource_type
+                )
+                for preset_id in lower_presets
+            )
+            or any(
+                resolver._extension_has_concrete_resource(
+                    resolver.extensions_dir / extension_id, name, resource_type
+                )
+                for _priority, extension_id, _meta in lower_extensions
+            )
+            or resolver._core_has_concrete_resource(name, resource_type)
+        ):
+            matches.append(name)
+    return sorted(matches)
+
+
 @preset_app.command("info", cls=InstalledListJSONCommand)
 def preset_info(
     preset_id: str = typer.Argument(..., help="Preset ID to get info about"),
@@ -79,12 +131,44 @@ def preset_info(
         if isinstance(local_tags, list) and local_tags:
             tags_str = _escape_markup(", ".join(str(t) for t in local_tags))
             console.print(f"  Tags:        {tags_str}")
+        from ._selectors import is_regex_selector
+        from ._resolver import PresetResolver
+
+        resolver = PresetResolver(project_root)
+        preset_dir = manager.presets_dir / local_pack.id
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
             tmpl_name = _escape_markup(str(tmpl["name"]))
             tmpl_type = _escape_markup(str(tmpl["type"]))
             tmpl_desc = _escape_markup(str(tmpl.get("description", "")))
             console.print(f"    - {tmpl_name} ({tmpl_type}): {tmpl_desc}")
+            if (
+                tmpl.get("type") == "command"
+                and isinstance(tmpl.get("name"), str)
+                and is_regex_selector(tmpl["name"])
+            ):
+                matches = manager._expand_command_selectors(
+                    resolver, preset_dir, [tmpl]
+                )
+            elif (
+                tmpl.get("type") in {"template", "script"}
+                and isinstance(tmpl.get("name"), str)
+                and is_regex_selector(tmpl["name"])
+            ):
+                matches = [
+                    {"name": name}
+                    for name in _diagnostic_selector_matches(
+                        project_root, resolver, preset_dir, tmpl["name"], tmpl["type"]
+                    )
+                ]
+            else:
+                matches = []
+            if is_regex_selector(str(tmpl.get("name", ""))):
+                if matches:
+                    for match in matches:
+                        console.print(f"      - {_escape_markup(str(match['name']))}")
+                else:
+                    console.print("      [dim]No current matches[/dim]")
         repo = local_pack.data.get("preset", {}).get("repository")
         if repo:
             console.print(f"  Repository:  {_escape_markup(str(repo))}")

@@ -31,6 +31,7 @@ class TestPresetResolve:
         pack_id="markup-pack",
         priority=10,
         tmpl_description=None,
+        tmpl_name="spec-template",
     ):
         """Install a preset from a directory built with the given manifest fields."""
 
@@ -47,7 +48,7 @@ class TestPresetResolve:
         preset_section.update(preset_overrides or {})
         tmpl = {
             "type": "template",
-            "name": "spec-template",
+            "name": tmpl_name,
             "file": "templates/spec-template.md",
         }
         if tmpl_description is not None:
@@ -214,3 +215,62 @@ class TestPresetResolve:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+    def test_resolve_reports_selector_attribution(self, temp_dir, project_dir):
+        """A layer contributed by a regex selector must name that selector.
+
+        The linked acceptance criteria require ``specify preset info`` *and*
+        resolution diagnostics to show the concrete resources matched by each
+        selector. Tracing the stack for a concrete name that a selector matched
+        must therefore attribute the contributing layer to its declaration, not
+        only to the pack that owns the winning file.
+        """
+        self._install(
+            temp_dir,
+            project_dir,
+            strategy="append",
+            pack_id="sel-pack",
+            priority=5,
+            tmpl_name="regex:^spec-.*$",
+        )
+
+        result = self._invoke(project_dir, ["preset", "resolve", "spec-template"])
+        assert result.exit_code == 0, (result.output, result.exception)
+        output = " ".join(strip_ansi(result.output).split())
+        # The selected concrete resource is named, and the declaration that
+        # matched it is attributed.
+        assert "spec-template" in output, output
+        assert "regex:^spec-.*$" in output, output
+
+    def test_layers_expose_the_matched_declaration(self, temp_dir, project_dir):
+        """``collect_all_layers`` must expose the manifest name that matched.
+
+        Diagnostics cannot attribute a layer to a selector if the resolver
+        discards the declaration while collecting the stack. Exact
+        declarations stay attributed to their literal name.
+        """
+        from specify_cli.presets import PresetResolver
+
+        self._install(
+            temp_dir,
+            project_dir,
+            strategy="append",
+            pack_id="sel-pack",
+            priority=5,
+            tmpl_name="regex:^spec-.*$",
+        )
+        self._install(
+            temp_dir,
+            project_dir,
+            strategy="append",
+            pack_id="exact-pack",
+            priority=20,
+            tmpl_name="spec-template",
+        )
+
+        layers = PresetResolver(Path(project_dir)).collect_all_layers(
+            "spec-template", "template"
+        )
+        by_source = {layer["source"]: layer for layer in layers}
+        assert by_source["sel-pack v1.0.0"]["declaration"] == "regex:^spec-.*$"
+        assert by_source["exact-pack v1.0.0"]["declaration"] == "spec-template"

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
+
+from tests._temp_tree import remove_fixture_tree
 
 
 @pytest.fixture
@@ -15,7 +16,12 @@ def temp_dir():
     """Create a temporary directory for tests."""
     tmpdir = tempfile.mkdtemp()
     yield Path(tmpdir)
-    shutil.rmtree(tmpdir)
+    # Windows can refuse to remove the tree while another process is still
+    # releasing a handle inside it (CI saw ``WinError 32`` here), so teardown
+    # goes through the shared retrying cleanup that still raises if the tree
+    # cannot be removed. Pass the raw path: a suite may patch ``os.name`` to
+    # simulate Windows, which makes ``Path(...)`` raise here.
+    remove_fixture_tree(tmpdir)
 
 
 @pytest.fixture

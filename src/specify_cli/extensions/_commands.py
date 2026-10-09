@@ -5,6 +5,7 @@ when multiple commands or external CLI flows share them; compatibility shims
 re-fetch package helpers at call time so existing monkeypatch paths keep
 working. Cohesive private phases use ``_command_<name>_*.py`` modules.
 """
+
 from __future__ import annotations
 
 import errno
@@ -34,25 +35,30 @@ extension_app = typer.Typer(
     add_completion=False,
 )
 
+
 # Root helpers re-fetched at call time so test monkeypatching of
 # `specify_cli.<name>` keeps working after the move.
 def _require_specify_project(*args, **kwargs):
     from .. import _require_specify_project as _f
+
     return _f(*args, **kwargs)
 
 
 def _locate_bundled_extension(*args, **kwargs):
     from .. import _locate_bundled_extension as _f
+
     return _f(*args, **kwargs)
 
 
 def load_init_options(*args, **kwargs):
     from .. import load_init_options as _f
+
     return _f(*args, **kwargs)
 
 
 def _display_project_path(*args, **kwargs):
     from .. import _display_project_path as _f
+
     return _f(*args, **kwargs)
 
 
@@ -95,6 +101,106 @@ def _archive_extension_directory(*args, **kwargs):
     from ._command_update_artifacts import _archive_extension_directory as _helper
 
     return _helper(*args, **kwargs)
+
+
+def _capture_preset_command_names(project_root: Path) -> set[str]:
+    """Snapshot concrete selector matches while the old provider still exists."""
+    from ..presets import PresetManager
+    from ..presets._resolver import PresetResolver
+
+    return PresetManager(project_root)._collect_selector_command_names(
+        PresetResolver(project_root)
+    )
+
+
+def _conventional_command_names(root: Path) -> set[str]:
+    """Concrete command names *root* provides through conventional files.
+
+    The resolver honours ``commands/<name>.md`` and the namespace fallback
+    ``commands/<name without the speckit. prefix>.md`` (plus
+    ``templates/commands/``), so those names are real lower-layer resources even
+    though no manifest entry declares them. A raw ``regex:...`` file name is a
+    selector, never a concrete resource, and is skipped. Shared by rollback
+    snapshot seeding and selector expansion so both agree with the resolver.
+    """
+    names: set[str] = set()
+    for subdir in ("commands", "templates/commands"):
+        candidate_dir = root / subdir
+        if not candidate_dir.is_dir():
+            continue
+        for path in candidate_dir.glob("*.md"):
+            stem = path.stem
+            if not stem or stem.startswith("regex:"):
+                continue
+            names.add(stem if stem.startswith("speckit.") else f"speckit.{stem}")
+    return names
+
+
+def _snapshot_command_candidates(manager, manifest) -> set[str]:
+    """Concrete command names an extension can provide, declared or conventional.
+
+    The preset resolver also honours conventional command filenames inside an
+    extension directory (``commands/<name>.md`` and the namespace fallback
+    ``commands/<name without the speckit prefix>.md``). A regex selector can
+    match those concrete names even though no manifest entry names them, and an
+    agent then gets brand-new skill directories. Rollback snapshots seeded from
+    the manifest alone would leave those directories behind, so callers include
+    every conventional candidate as well. A raw ``regex:...`` name is a
+    selector, never a concrete resource, and is skipped.
+    """
+    names = set(manager._collect_manifest_command_names(manifest))
+    names |= _conventional_command_names(manager.extensions_dir / manifest.id)
+    return names
+
+
+def _refresh_presets_and_warn(
+    project_root: Path,
+    affected_commands: set[str] | None = None,
+    *,
+    strict: bool = False,
+) -> None:
+    """Re-register enabled preset overrides after extension stack changes.
+
+    Preset regex selectors expand against currently available lower layers, so
+    installing, removing, enabling, disabling, or reprioritizing an extension
+    can change which concrete command declarations are materialized. Keep the
+    normal preset enablement and active-integration rules by using its existing
+    integration-switch registration path.
+
+    ``strict=True`` propagates reconciliation failures to a caller that owns an
+    atomic transaction (priority changes must not commit while selector-backed
+    artifacts still reflect the previous ordering). Default callers keep the
+    existing best-effort warning behavior.
+    """
+    from .._init_options import load_init_options
+    from ..presets import PresetManager
+
+    agent = load_init_options(project_root).get("ai")
+    if not agent:
+        return
+    manager = PresetManager(project_root)
+    if strict:
+        manager.register_enabled_presets_for_agent(
+            agent, affected_commands=affected_commands, strict=True
+        )
+        return
+    try:
+        if affected_commands:
+            manager.register_enabled_presets_for_agent(
+                agent, affected_commands=affected_commands
+            )
+        else:
+            manager.register_enabled_presets_for_agent(agent)
+    except Exception as exc:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "reconcile preset artifacts after extension change",
+            "project",
+            str(project_root),
+            exc,
+            continuing="Continuing; run 'specify integration use' to retry registration.",
+        )
 
 
 def _refresh_events_and_warn(project_root: Path) -> None:
@@ -146,9 +252,7 @@ def install_extension_from_url(
     from . import ExtensionCatalog, ExtensionError
 
     if not is_https_or_localhost_http(url):
-        raise ExtensionError(
-            "URL must use HTTPS (HTTP is only allowed for localhost)"
-        )
+        raise ExtensionError("URL must use HTTPS (HTTP is only allowed for localhost)")
 
     download_dir = _validate_safe_cache_dir(project_root)
     archive_filename = f"extension-url-download-{uuid4().hex}.archive"
@@ -209,9 +313,7 @@ def install_extension_from_url(
             ) from exc
 
         format_source = (
-            final_url
-            if archive_format_from_name(final_url) is not None
-            else url
+            final_url if archive_format_from_name(final_url) is not None else url
         )
         try:
             detect_archive_format(
@@ -282,7 +384,9 @@ def _resolve_installed_extension(
             return (ext["id"], ext["name"])
 
     # If not found by ID, try display name match
-    name_matches = [ext for ext in installed_extensions if ext["name"].lower() == argument.lower()]
+    name_matches = [
+        ext for ext in installed_extensions if ext["name"].lower() == argument.lower()
+    ]
 
     if len(name_matches) == 1:
         # Unique display-name match
@@ -311,7 +415,9 @@ def _resolve_installed_extension(
         # No match by ID or display name
         if allow_not_found:
             return (None, None)
-        console.print(f"[red]Error:[/red] Extension '{_escape_markup(argument)}' is not installed")
+        console.print(
+            f"[red]Error:[/red] Extension '{_escape_markup(argument)}' is not installed"
+        )
         raise typer.Exit(1)
 
 
@@ -375,7 +481,9 @@ def _resolve_catalog_extension(
                 )
             console.print(table)
             console.print("\nPlease rerun using the extension ID:")
-            console.print(f"  [bold]specify extension {command_name} <extension-id>[/bold]")
+            console.print(
+                f"  [bold]specify extension {command_name} <extension-id>[/bold]"
+            )
             raise typer.Exit(1)
 
         # Not found
@@ -432,9 +540,7 @@ def _verify_leaf_identity(fd: int, path: Path) -> None:
         or path_stat.st_dev != open_stat.st_dev
         or path_stat.st_ino != open_stat.st_ino
     ):
-        raise OSError(
-            errno.ENOTDIR, "Download file changed between creation and open"
-        )
+        raise OSError(errno.ENOTDIR, "Download file changed between creation and open")
 
 
 def _validate_safe_cache_dir(project_root: Path) -> Path:
@@ -568,9 +674,7 @@ def _safe_open_download_zip(
     classes on every supported platform.
     """
     if _has_secure_dir_fd():
-        return _open_download_zip_via_dir_fd(
-            project_root, download_dir, zip_filename
-        )
+        return _open_download_zip_via_dir_fd(project_root, download_dir, zip_filename)
     return _open_download_zip_via_paths(project_root, download_dir, zip_filename)
 
 
@@ -623,15 +727,15 @@ def _open_download_zip_via_paths(
     project_root_resolved = project_root.resolve()
 
     if download_dir.is_symlink() or not download_dir.is_dir():
-        raise OSError(
-            errno.ENOTDIR, "Download cache directory is not a real directory"
-        )
+        raise OSError(errno.ENOTDIR, "Download cache directory is not a real directory")
     try:
         download_dir.resolve().relative_to(project_root_resolved)
     except (OSError, ValueError):
         raise OSError(errno.ENOTDIR, "Download cache directory escapes project root")
     if zip_path.is_symlink():
-        raise OSError(errno.ELOOP, "Refusing to write through a symlinked download file")
+        raise OSError(
+            errno.ELOOP, "Refusing to write through a symlinked download file"
+        )
 
     flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
     flags |= getattr(os, "O_NOFOLLOW", 0)
