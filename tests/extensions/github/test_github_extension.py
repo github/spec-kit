@@ -193,6 +193,8 @@ class TestManifest:
         but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
         tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
         accept the extension but leak a raw command token in skills mode.
+        Hook placeholders and dispatcher installation require 1.1.3 or later;
+        1.1.2 still accepts the extension but cannot run its hook commands.
         """
         from packaging.specifiers import SpecifierSet
 

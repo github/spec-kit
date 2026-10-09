@@ -38,6 +38,21 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    def test_add_git_materializes_hook_projection(self, project_dir):
+        git_source = Path(__file__).parents[3] / "extensions" / "git"
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(git_source), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 0, result.output
+        cache = project_dir / ".specify" / "hook-dispatch"
+        assert (cache / "source.yml").read_bytes() == (
+            project_dir / ".specify" / "extensions.yml"
+        ).read_bytes()
+        projected = json.loads((cache / "before_plan.json").read_text(encoding="utf-8"))
+        assert projected["event"] == "before_plan"
+        assert [hook["extension"] for hook in projected["hooks"]] == ["git"]
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

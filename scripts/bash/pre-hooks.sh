@@ -108,7 +108,7 @@ hook_scalar() {
     fi
     raw=${raw%%' #'*}
     while [[ $raw == *' ' ]]; do raw=${raw% }; done
-    if [[ $raw == null || $raw == '~' ]]; then raw=""; fi
+    if [[ $raw == null || $raw == Null || $raw == NULL || $raw == '~' ]]; then raw=""; fi
     case $raw in
         *'['*|*']'*|*'{'*|*'}'*|*': '*|'&'*|'*'*|'!'*|'|'*|'>'*)
             HOOK_ERROR="Unsupported YAML scalar"; return ;;
@@ -227,7 +227,7 @@ hook_priority() {
                 (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
                 return
             fi
-        elif [[ $quoted == false && $raw =~ ^[+]?[0-9][0-9_]*\.[0-9_]+([eE][+-][0-9]+)?$ ]]; then
+        elif [[ $quoted == false && $raw =~ ^[+]?[0-9][0-9_]*\.[0-9_]*([eE][+-][0-9]+)?$ ]]; then
             digits=${raw#+}
             digits=${digits//_/}
             if [[ $digits == *[eE]* ]]; then
@@ -268,6 +268,30 @@ resolve_hooks() {
         return 1
     fi
     config=.specify/extensions.yml
+    if [[ -f $config && ! -d .specify/hook-dispatch ]]; then
+        IFS= read -r line < "$config"
+        if [[ $line == '# Hook projection: .specify/hook-dispatch' ]]; then
+            hook_error "$event" "Hook projection is missing; reinstall the extension or refresh the project"
+            return 1
+        fi
+    fi
+    if [[ -d .specify/hook-dispatch ]]; then
+        if [[ ! -f $config || ! -f .specify/hook-dispatch/source.yml ||
+              ! -f .specify/hook-dispatch/events.txt ]] ||
+           ! cmp -s -- "$config" .specify/hook-dispatch/source.yml; then
+            hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
+            return 1
+        fi
+        if [[ -f .specify/hook-dispatch/$event.json ]]; then
+            cat -- ".specify/hook-dispatch/$event.json"
+        elif grep -Fxq -- "$event" .specify/hook-dispatch/events.txt; then
+            hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
+            return 1
+        else
+            printf '{"event":"%s","hooks":[]}\n' "$event"
+        fi
+        return
+    fi
     if [[ ! -e $config ]]; then
         printf '{"event":"%s","hooks":[]}\n' "$event"
         return

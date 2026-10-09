@@ -215,6 +215,126 @@ def test_missing_yaml_dependency_is_reported_not_silently_skipped(tmp_path):
     }
 
 
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_materialized_projection_resolves_without_yaml_or_native_parsing(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "late", "command": "speckit.late.run", "priority": 20, "prompt": "😀"},
+        {"extension": "first", "command": "speckit.first.run", "priority": 5},
+    ]}})
+    projected = tmp_path / ".specify/hook-dispatch/before_plan.json"
+    assert projected.is_file()
+    assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"before_plan\n"
+    assert [h["extension"] for h in json.loads(projected.read_text(encoding="utf-8"))["hooks"]] == [
+        "first", "late",
+    ]
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"][1]["prompt"] == "😀"
+    assert data == run_hook(tmp_path)[1]
+    if variant == "py":
+        result = subprocess.run(
+            [sys.executable, "-I", "-S", str(PYTHON / "pre_hooks.py"), "plan"],
+            cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == data
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_projection_rejects_stale_yaml_and_recovers_after_refresh(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "old", "command": "speckit.old.run"},
+    ]}})
+    config = tmp_path / ".specify/extensions.yml"
+    config.write_text(
+        "hooks:\n  before_plan:\n    - extension: new\n      command: speckit.new.run\n",
+        encoding="utf-8",
+    )
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "stale" in data["error"]
+    executor.migrate_project_config()
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert [hook["extension"] for hook in data["hooks"]] == ["new"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_projection_missing_entry_fails_instead_of_skipping_hook(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    (tmp_path / ".specify/hook-dispatch/before_plan.json").unlink()
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "incomplete" in data["error"]
+    assert run_hook(tmp_path, name="tasks", variant=variant)[1]["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_projection_missing_cache_fails_instead_of_using_legacy_yaml(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    (tmp_path / ".specify/hook-dispatch").rename(tmp_path / "removed-cache")
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "missing" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_projection_removes_old_event_after_config_save(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    executor.save_project_config({"hooks": {}})
+    assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data["hooks"] == []
+
+
+def test_invalid_projected_hook_cannot_replace_existing_projection(tmp_path):
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    before = (tmp_path / ".specify/extensions.yml").read_bytes()
+    with pytest.raises(ValueError, match="condition must be a string or null"):
+        executor.save_project_config({"hooks": {"after_plan": [
+            {"extension": "other", "command": "speckit.other.run", "condition": False},
+        ]}})
+    assert (tmp_path / ".specify/extensions.yml").read_bytes() == before
+    assert run_hook(tmp_path)[1]["hooks"][0]["extension"] == "git"
+
+
 def test_no_yaml_dependency_needed_for_absent_config(tmp_path):
     result = subprocess.run(
         [sys.executable, "-I", "-S", str(PYTHON / "pre_hooks.py"), "plan"],
@@ -421,14 +541,28 @@ def test_quoted_condition_remains_a_string(tmp_path, variant):
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
-def test_null_condition_allows_hook(tmp_path, variant):
+@pytest.mark.parametrize("value", ["null", "Null", "NULL", "~"])
+def test_null_condition_allows_hook(tmp_path, variant, value):
     if variant == "ps" and not shutil.which("pwsh"):
         pytest.skip("PowerShell not installed")
     write_config(tmp_path, "hooks:\n  before_plan:\n    - extension: git\n"
-                           "      command: speckit.git.commit\n      condition: null\n")
+                           f"      command: speckit.git.commit\n      condition: {value}\n")
     code, data = run_hook(tmp_path, variant=variant)
     assert code == 0
+    assert data == run_hook(tmp_path)[1]
     assert len(data["hooks"]) == 1
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+def test_mixed_case_null_condition_remains_a_string(tmp_path, variant):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, "hooks:\n  before_plan:\n    - extension: git\n"
+                           "      command: speckit.git.commit\n      condition: nUll\n")
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 0
+    assert data == run_hook(tmp_path)[1]
+    assert data["hooks"] == []
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps"])
@@ -549,6 +683,7 @@ def test_priority_range_and_coercion_parity(tmp_path, variant, priority, expecte
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 @pytest.mark.parametrize("raw,expected", [
     ("2_0", 20), ("0x14", 20), ("2.0e+1", 20),
+    ("2.", 2), ("2.e+1", 20), ("+2.", 2),
     ("0b10100", 20), ("024", 20), ("1:02", 62),
     ("+0x14", 20), ("+024", 20), ("1:2", 62),
     ("+1:2", 62), ("01:02", 10), ("0:2", 10),

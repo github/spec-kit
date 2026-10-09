@@ -5811,20 +5811,77 @@ class HookExecutor:
             return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
 
         CanonicalHookDumper.add_representer(str, represent_string)
-        from ..integrations._file_changes import write_text
+        from ..integrations._file_changes import changing_file, unlink, write_bytes, write_text
 
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        write_text(
-            self.config_file,
-            yaml.dump(
-                config, default_flow_style=False, sort_keys=False,
-                allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
-            ),
-            encoding="utf-8",
+        hooks = config.get("hooks", {})
+        if not isinstance(hooks, dict):
+            raise ValueError("Invalid .specify/extensions.yml: expected a hooks mapping")
+        projected: dict[str, str] = {}
+        for event, entries in hooks.items():
+            if not isinstance(event, str) or not re.fullmatch(r"(before|after)_[a-z][a-z0-9_]*", event):
+                raise ValueError(f"Invalid hook event: {event}")
+            if not isinstance(entries, list):
+                raise ValueError(f"Invalid .specify/extensions.yml: hooks.{event} must be a list")
+            selected = []
+            for index, entry in enumerate(entries):
+                label = f"hooks.{event}[{index}]"
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label} must be a mapping")
+                if any(isinstance(value, str) and "\0" in value for value in entry.values()):
+                    raise ValueError(f"Invalid .specify/extensions.yml: {label} contains a NUL character")
+                for field in ("enabled", "optional"):
+                    if field in entry and not isinstance(entry[field], bool):
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a boolean")
+                for field in ("condition", "description", "prompt"):
+                    if entry.get(field) is not None and not isinstance(entry[field], str):
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label}.{field} must be a string or null")
+                for field in ("extension", "command"):
+                    if not isinstance(entry.get(field), str) or not entry[field]:
+                        raise ValueError(f"Invalid .specify/extensions.yml: {label} needs extension and command")
+                if entry.get("enabled", True) is False or entry.get("condition"):
+                    continue
+                priority = entry.get("priority", DEFAULT_HOOK_PRIORITY)
+                try:
+                    priority = int(priority) if not isinstance(priority, bool) else DEFAULT_HOOK_PRIORITY
+                except (TypeError, ValueError, OverflowError):
+                    priority = DEFAULT_HOOK_PRIORITY
+                if not 1 <= priority <= 2147483647:
+                    priority = DEFAULT_HOOK_PRIORITY
+                selected.append({
+                    "extension": entry["extension"], "command": entry["command"],
+                    "optional": entry.get("optional", True),
+                    "description": entry.get("description") or "",
+                    "prompt": entry.get("prompt") or "", "priority": priority,
+                })
+            selected.sort(key=lambda hook: hook["priority"])
+            projected[event] = json.dumps({"event": event, "hooks": selected}, ensure_ascii=True) + "\n"
+
+        rendered = "# Hook projection: .specify/hook-dispatch\n" + yaml.dump(
+            config, default_flow_style=False, sort_keys=False,
+            allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
         )
+        cache = self.config_file.parent / "hook-dispatch"
+        if cache.is_symlink():
+            raise ValueError("Refusing to write symlinked hook dispatch cache")
+        if not cache.exists():
+            with changing_file(cache):
+                cache.mkdir(parents=True)
+        for path in cache.iterdir():
+            if path.is_symlink():
+                raise ValueError("Refusing to write symlinked hook dispatch cache entry")
+        snapshot = cache / "source.yml"
+        unlink(snapshot, missing_ok=True)
+        for path in cache.glob("*.json"):
+            unlink(path)
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        for event, payload in projected.items():
+            write_text(cache / f"{event}.json", payload, encoding="utf-8")
+        write_bytes(cache / "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
+        write_text(self.config_file, rendered, encoding="utf-8")
+        write_bytes(snapshot, self.config_file.read_bytes())
 
     def migrate_project_config(self) -> None:
-        """Rewrite existing hook configuration for the native script resolvers."""
+        """Validate and project existing hook configuration during project refresh."""
         if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
             raise ValueError("Refusing to migrate symlinked .specify/extensions.yml")
         if not self.config_file.exists():

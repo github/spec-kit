@@ -8165,7 +8165,7 @@ class TestHookExecutorRegistration:
         )
         config = executor.get_project_config()
         config["hooks"]["after_tasks"].append("corrupt-non-dict-entry")
-        executor.save_project_config(config)
+        executor.config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
 
         executor.register_hooks(_StubManifest("ext-a", {}))
 

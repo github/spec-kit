@@ -57,7 +57,7 @@ function Convert-HookScalar {
         return @{ Value = $value; Quoted = $true }
     }
     $raw = ($raw -replace '\s+#.*$', '').TrimEnd()
-    if ($raw -match '^(~|null)$') { $raw = '' }
+    if ($raw -cmatch '^(~|null|Null|NULL)$') { $raw = '' }
     if ($raw -match '[\[\]{}]|: |^[&*!|>]') { throw "Unsupported YAML scalar" }
     return @{ Value = $raw; Quoted = $false }
 }
@@ -123,7 +123,7 @@ function Get-HookPriority {
             }
         } elseif ($Raw -match '^\+?[0-9][0-9_]*$') {
             $number = [long]::Parse($digits.TrimStart('+'), [Globalization.CultureInfo]::InvariantCulture)
-        } elseif (-not $Quoted -and $Raw -match '^\+?[0-9][0-9_]*\.[0-9_]+([eE][+-][0-9]+)?$') {
+        } elseif (-not $Quoted -and $Raw -match '^\+?[0-9][0-9_]*\.[0-9_]*([eE][+-][0-9]+)?$') {
             $number = [double]::Parse(
                 $digits, [Globalization.NumberStyles]::Float,
                 [Globalization.CultureInfo]::InvariantCulture
@@ -263,6 +263,34 @@ function Invoke-HookResolver {
             throw "Invalid hook event: $event"
         }
         $config = Join-Path (Get-Location) '.specify/extensions.yml'
+        $cache = Join-Path (Get-Location) '.specify/hook-dispatch'
+        if ((Test-Path -LiteralPath $config -PathType Leaf) -and
+            -not (Test-Path -LiteralPath $cache -PathType Container)) {
+            $firstLine = Get-Content -LiteralPath $config -TotalCount 1 -Encoding UTF8 -ErrorAction Stop
+            if ($firstLine -ceq '# Hook projection: .specify/hook-dispatch') {
+                throw "Hook projection is missing; reinstall the extension or refresh the project"
+            }
+        }
+        if (Test-Path -LiteralPath $cache -PathType Container) {
+            $snapshot = Join-Path $cache 'source.yml'
+            $events = Join-Path $cache 'events.txt'
+            if (-not (Test-Path -LiteralPath $config -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $snapshot -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $events -PathType Leaf) -or
+                [Convert]::ToBase64String([IO.File]::ReadAllBytes($config)) -cne
+                [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
+                throw "Hook projection is stale; reinstall the extension or refresh the project"
+            }
+            $projected = Join-Path $cache "$event.json"
+            if (Test-Path -LiteralPath $projected -PathType Leaf) {
+                [Console]::WriteLine([IO.File]::ReadAllText($projected, [Text.Encoding]::UTF8).TrimEnd("`r", "`n"))
+            } elseif (@([IO.File]::ReadAllLines($events, [Text.Encoding]::UTF8)) -ccontains $event) {
+                throw "Hook projection is incomplete; reinstall the extension or refresh the project"
+            } else {
+                @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress
+            }
+            exit 0
+        }
         $hooks = @()
         if (Test-Path -LiteralPath $config) {
             $hooks = @(Resolve-HookConfig $event $config)

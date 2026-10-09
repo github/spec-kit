@@ -18,6 +18,30 @@ def resolve(event: str, project_root: Path) -> dict:
         raise ValueError(f"Invalid hook event: {event}")
 
     config_file = project_root / ".specify" / "extensions.yml"
+    cache = project_root / ".specify" / "hook-dispatch"
+    if cache.is_dir():
+        try:
+            if config_file.read_bytes() != (cache / "source.yml").read_bytes():
+                raise ValueError("Hook projection is stale; reinstall the extension or refresh the project")
+            events = (cache / "events.txt").read_text(encoding="utf-8").splitlines()
+            projection = cache / f"{event}.json"
+            if not projection.exists():
+                if event in events:
+                    raise ValueError("Hook projection is incomplete; reinstall the extension or refresh the project")
+                return {"event": event, "hooks": []}
+            result = json.loads(projection.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Could not read hook projection: {exc}") from exc
+        if not isinstance(result, dict) or result.get("event") != event or not isinstance(result.get("hooks"), list):
+            raise ValueError("Invalid hook projection; reinstall the extension or refresh the project")
+        return result
+    if config_file.exists():
+        try:
+            with config_file.open(encoding="utf-8") as handle:
+                if handle.readline().strip() == "# Hook projection: .specify/hook-dispatch":
+                    raise ValueError("Hook projection is missing; reinstall the extension or refresh the project")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"Could not read .specify/extensions.yml: {exc}") from exc
     if not config_file.exists():
         return {"event": event, "hooks": []}
 
