@@ -253,16 +253,16 @@ class GitHubStep(StepBase):
                 raise ValueError("; ".join(errors))
             if not context.project_root:
                 raise ValueError("GitHub step requires a project root")
-            if context.inside_fan_out:
-                raise ValueError(
-                    "GitHub steps cannot run inside fan-out "
-                    "(run/step retry identity is not unique per item)"
-                )
             root = Path(context.project_root).resolve()
             repo, url = _identity(root)
             number = _number(_resolved(config["number"], context))
             operation = config["operation"]
             if operation == "checkout-pr":
+                if context.inside_fan_out and context.fan_out_concurrency > 1:
+                    raise ValueError(
+                        "checkout-pr cannot run concurrently in fan-out "
+                        "because items share one working tree"
+                    )
                 return self._checkout(root, url, number)
             target = config["target"]
             resource_kind = "pulls" if target == "pull_request" else "issues"
@@ -337,7 +337,10 @@ class GitHubStep(StepBase):
             )
         artifact = config.get("artifact", "-")
         run_id = hashlib.sha256(_string(context.run_id, "run_id").encode("utf-8")).hexdigest()
-        step_id = hashlib.sha256(_string(config["id"], "id").encode("utf-8")).hexdigest()
+        step_name = _string(config["id"], "id")
+        if context.fan_out_key is not None:
+            step_name = f"{context.fan_out_key}\0{step_name}"
+        step_id = hashlib.sha256(step_name.encode("utf-8")).hexdigest()
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         marked_body = (f"{body}\n\n<!-- speckit-github:v2 artifact={artifact} "
                        f"run={run_id} step={step_id} bytes={artifact_bytes} sha256={digest} -->")

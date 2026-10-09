@@ -59,6 +59,12 @@ class StepContext:
     #: Whether the current step is executing inside a fan-out template.
     inside_fan_out: bool = False
 
+    #: Stable fan-out item path (including parent and item index), for retries.
+    fan_out_key: str | None = None
+
+    #: Number of concurrent workers in the current fan-out.
+    fan_out_concurrency: int = 1
+
     #: Fan-in aggregated results (set only for fan-in steps).
     fan_in: dict[str, Any] = field(default_factory=dict)
 

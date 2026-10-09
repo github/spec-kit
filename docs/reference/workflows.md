@@ -649,8 +649,12 @@ closed there rather than writing outside the project.
 `checkout-pr` fetches GitHub's `pull/<number>/head` ref, verifies its SHA
 matches the API's PR head, and checks out that commit detached. Local changes
 that prevent checkout cause the step to fail.
-GitHub steps cannot be nested in `fan-out`: an item has no distinct run/step
-identity for safe comment retries.
+GitHub comments in `fan-out` (including nested branches) use the item's
+parent/step/index path in their retry identity, so identical items still create
+distinct comments and retry without duplicates. Concurrent fan-out comments
+operate on distinct markers. Artifact retrieval in fan-out needs a distinct
+`write_to` path per item; concurrent `checkout-pr` fails explicitly because
+items share a working tree (use sequential fan-out for checkout).
 
 ### Custom step packages
 

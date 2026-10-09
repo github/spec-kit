@@ -85,7 +85,7 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 13 built-in step types:
 
 ### Command Steps (default)
 
@@ -171,6 +171,14 @@ Run a shell command and capture output:
 killed and the step fails; it must be a positive number and defaults to
 `300` (five minutes) when omitted. Raise it for long-running gates such as
 full builds, linter aggregators, or integration-test targets.
+
+### GitHub Steps
+
+The built-in `github` step posts comments, retrieves workflow-posted artifacts,
+or checks out a PR head when a workflow explicitly uses `type: github`. It
+does not install or invoke the opt-in GitHub agent-command extension. See the
+[GitHub step reference](../docs/reference/workflows.md#github-step) for the
+operations, credentials, retry behavior, and fan-out constraints.
 
 ### Init Steps
 

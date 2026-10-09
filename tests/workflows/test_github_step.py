@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import indent
 from types import SimpleNamespace
 
 import pytest
@@ -321,6 +322,120 @@ steps:
     assert len(comments) == 1
 
 
+@pytest.mark.parametrize("workers", [1, 3])
+@pytest.mark.parametrize("nested", [False, True])
+def test_github_comment_fan_out_retries_per_index(context, api, workers, nested):
+    comments, calls = api
+    if nested:
+        template = """id: branch
+type: if
+condition: true
+then:
+  - id: publish
+    type: github
+    operation: comment
+    target: issue
+    number: 12
+    body: "same content"
+"""
+    else:
+        template = """id: publish
+type: github
+operation: comment
+target: issue
+number: 12
+body: "same content"
+"""
+    workflow = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: fan-out-github
+  name: Fan-out GitHub
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: "{{ ['same', 'same', 'same'] }}"
+    max_concurrency: WORKERS
+    step:
+TEMPLATE
+""".replace("WORKERS", str(workers)).replace("TEMPLATE", indent(template, "      ").rstrip()))
+    engine = WorkflowEngine(Path(context.project_root))
+    assert engine.validate(workflow) == []
+    assert engine.execute(workflow, run_id="fan-run").status == RunStatus.COMPLETED
+    assert len(comments) == 3
+    assert engine.execute(workflow, run_id="fan-run").status == RunStatus.COMPLETED
+    assert len(comments) == 3
+    assert len([method for method, _ in calls if method == "POST"]) == 3
+
+
+def test_github_fetch_artifact_fan_out_writes_distinct_paths(context, api):
+    root = Path(context.project_root)
+    step = get_step_type("github")
+    assert step.execute(config(body="Shared", artifact="report"), context).status == StepStatus.COMPLETED
+    workflow = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: fetch-fan-out
+  name: Fetch fan-out
+  version: "1.0.0"
+steps:
+  - id: fetch-all
+    type: fan-out
+    items: "{{ ['one', 'two'] }}"
+    max_concurrency: 2
+    step:
+      id: fetch
+      type: github
+      operation: fetch-artifact
+      target: issue
+      number: 12
+      artifact: report
+      write_to: "artifacts/{{ item }}.md"
+""")
+    engine = WorkflowEngine(root)
+    assert engine.validate(workflow) == []
+    assert engine.execute(workflow).status == RunStatus.COMPLETED
+    assert (root / "artifacts" / "one.md").read_text() == "Shared"
+    assert (root / "artifacts" / "two.md").read_text() == "Shared"
+
+
+@pytest.mark.parametrize("workers,expected", [(1, RunStatus.COMPLETED), (2, RunStatus.FAILED)])
+def test_checkout_pr_fan_out_requires_sequential_worktree(context, api, monkeypatch,
+                                                         workers, expected):
+    calls = []
+
+    def fake_run(args, root, *, input_text=None):
+        calls.append(args)
+        return "a" * 40 if args[:2] == ["git", "rev-parse"] else ""
+
+    monkeypatch.setattr(github, "_run", fake_run)
+    workflow = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: checkout-fan-out
+  name: Checkout fan-out
+  version: "1.0.0"
+steps:
+  - id: checkouts
+    type: fan-out
+    items: "{{ [7, 7] }}"
+    max_concurrency: WORKERS
+    step:
+      id: checkout
+      type: github
+      operation: checkout-pr
+      number: "{{ item }}"
+""".replace("WORKERS", str(workers)))
+    state = WorkflowEngine(Path(context.project_root)).execute(workflow)
+    assert state.status == expected
+    if workers == 1:
+        assert len([call for call in calls if call[:2] == ["git", "fetch"]]) == 2
+    else:
+        assert not calls
+        assert "share one working tree" in state.error
+
+
 def test_pull_request_comment_uses_issue_comment_endpoint(context, api):
     comments, calls = api
     definition = config(body="PR feedback", target="pull_request", number=7)
@@ -400,7 +515,7 @@ def test_bad_identifiers_and_missing_artifact_fail_without_post(context, api):
     assert not any(method == "POST" for method, _ in calls)
 
 
-def test_comment_rejects_symlinked_source_and_fan_out(context, api, tmp_path):
+def test_comment_rejects_symlinked_source_inside_fan_out(context, api, tmp_path):
     root = Path(context.project_root)
     (root / "link.md").symlink_to(tmp_path.parent / "outside.md")
     step = get_step_type("github")
@@ -408,9 +523,9 @@ def test_comment_rejects_symlinked_source_and_fan_out(context, api, tmp_path):
     assert result.status == StepStatus.FAILED
     assert "Symlinked" in result.error
     context.inside_fan_out = True
+    context.fan_out_key = "fan:post:0"
     result = step.execute(config(body="hi"), context)
-    assert result.status == StepStatus.FAILED
-    assert "fan-out" in result.error
+    assert result.status == StepStatus.COMPLETED
 
 
 def test_api_error_fails_without_success_shaped_output(context, api, monkeypatch):
