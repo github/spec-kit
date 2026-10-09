@@ -529,6 +529,24 @@ def test_info_converts_resolution_failures(
     assert exc_info.value.__cause__ is failure
 
 
+def test_info_preserves_explicit_resolution_diagnostics(
+    spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    failure = ArtifactResolutionError("Integration 'sample-agent' installed package has been modified")
+    monkeypatch.setattr(
+        artifacts.ArtifactCatalog, "get_artifact_info", Mock(side_effect=failure),
+    )
+    with pytest.raises(ArtifactInfoResolutionError) as exc_info:
+        get_artifact_info(ArtifactInfoRequest(spec_kit_project, "speckit.plan"))
+    assert exc_info.value.message == failure.message
+    assert str(exc_info.value) == failure.message
+    assert exc_info.value.code == "artifact_resolution_failed"
+    assert exc_info.value.details == {
+        "project_directory": str(spec_kit_project), "identifier": "speckit.plan",
+    }
+    assert exc_info.value.__cause__ is failure
+
+
 def _named_payload() -> dict[str, object]:
     return {
         "id": "template:broken",

@@ -194,7 +194,9 @@ class ClineIntegration(MarkdownIntegration):
             updated = self.post_process_command_content(content)
 
             if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
+                from .._file_changes import write_bytes
+
+                write_bytes(path, updated.encode("utf-8"))
                 self.record_file_in_manifest(path, project_root, manifest)
 
         return created

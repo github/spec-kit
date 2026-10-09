@@ -201,10 +201,13 @@ class ArtifactInfoAmbiguousError(ArtifactInfoError):
 class ArtifactInfoResolutionError(ArtifactInfoError):
     """Artifact composition could not be resolved."""
 
-    def __init__(self, project_directory: Path, identifier: str) -> None:
+    def __init__(
+        self, project_directory: Path, identifier: str, *,
+        message: str = "artifact resolution failed",
+    ) -> None:
         super().__init__(
             code="artifact_resolution_failed",
-            message="artifact resolution failed",
+            message=message,
             details={
                 "project_directory": str(project_directory),
                 "identifier": identifier,
@@ -521,7 +524,11 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
         if _requests_hook(request.identifier, request.kind):
             raise ArtifactInfoHookNotFoundError(request.identifier) from exc
         raise ArtifactInfoNotFoundError(request.identifier) from exc
-    except (ArtifactResolutionError, OSError, PresetError) as exc:
+    except ArtifactResolutionError as exc:
+        raise ArtifactInfoResolutionError(
+            project_directory, request.identifier, message=exc.message,
+        ) from exc
+    except (OSError, PresetError) as exc:
         raise ArtifactInfoResolutionError(
             project_directory,
             request.identifier,
