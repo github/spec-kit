@@ -86,7 +86,7 @@ The engine ships with 13 built-in step types, each in its own subpackage under `
 | `command` | `CommandStep` | Invoke an installed Spec Kit command via integration CLI | No |
 | `prompt` | `PromptStep` | Send an arbitrary inline prompt to integration CLI | No |
 | `shell` | `ShellStep` | Run a shell command, capture output | No |
-| `github` | `GitHubStep` | GitHub comments, artifacts, and PR checkout | No |
+| `github` | `GitHubStep` | Add an explicit issue or pull-request label | No |
 | `init` | `InitStep` | Bootstrap a project (equivalent to `specify init`) | No |
 | `slot` | `SlotStep` | Named workflow slot; skipped when unfilled | No |
 | `gate` | `GateStep` | Interactive human review/approval | No (pauses in CI) |

@@ -1,10 +1,9 @@
-"""Deterministic tests for the built-in GitHub workflow step."""
+"""Tests for the opt-in-by-use built-in GitHub label step (no live API calls)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from textwrap import indent
-from types import SimpleNamespace
 
 import pytest
 
@@ -17,589 +16,232 @@ from specify_cli.workflows.step import github
 @pytest.fixture
 def context(tmp_path: Path) -> StepContext:
     return StepContext(
-        inputs={"issue": "12", "pr": 7},
-        project_root=str(tmp_path),
-        run_id="run-1",
+        inputs={"number": 12}, project_root=str(tmp_path), run_id="run-1"
     )
 
 
 @pytest.fixture
 def api(monkeypatch):
-    comments: list[dict] = []
-    calls: list[tuple[str, str]] = []
+    stored: list[str] = []
+    calls: list[tuple[str, str, list[str] | None]] = []
 
-    def fake_api(root, endpoint, *, method="GET", data=None, paginated=False):
-        calls.append((method, endpoint))
-        if endpoint.endswith("/user"):
-            return {"login": "maintainer"}
-        if endpoint.endswith("/pulls/7"):
-            return {"number": 7, "head": {"sha": "a" * 40}}
+    def fake_api(root, endpoint, *, labels: list[str] | None = None):
+        calls.append(("POST" if labels is not None else "GET", endpoint, labels))
         if endpoint.endswith("/issues/12"):
-            return {"number": 12}
-        if endpoint.endswith("/comments?per_page=100"):
-            assert paginated
-            return [comments[:]]
-        if endpoint.endswith("/comments") and method == "POST":
-            comment = {"id": len(comments) + 1, "body": data["body"],
-                       "user": {"login": "maintainer"}}
-            comments.append(comment)
-            return comment
-        raise AssertionError(f"Unexpected API call: {method} {endpoint}")
+            return {"number": 12, "labels": [{"name": name} for name in stored]}
+        if endpoint.endswith("/pulls/12"):
+            return {"number": 12, "labels": [{"name": name} for name in stored]}
+        if endpoint.endswith("/issues/12/labels") and labels is not None:
+            for name in labels:
+                if name.casefold() not in {existing.casefold() for existing in stored}:
+                    stored.append(name)
+            return [{"name": name} for name in stored]
+        raise AssertionError(f"Unexpected API call: {endpoint}")
 
     monkeypatch.setattr(github, "_api", fake_api)
-    monkeypatch.setattr(github, "_identity", lambda root: (
-        "owner/repo", "https://api.github.com/repos/owner/repo",
-    ))
-    return comments, calls
+    monkeypatch.setattr(
+        github,
+        "_identity",
+        lambda root: ("owner/repo", "https://api.github.com/repos/owner/repo"),
+    )
+    return stored, calls
 
 
-def config(**kwargs):
-    definition = {"id": "post-plan", "type": "github", "operation": "comment",
-                  "target": "issue", "number": "{{ inputs.issue }}"}
-    definition.update(kwargs)
+def config(**overrides):
+    definition = {
+        "id": "label",
+        "type": "github",
+        "operation": "add-label",
+        "target": "issue",
+        "number": "{{ inputs.number }}",
+        "label": "ready-for-review",
+    }
+    definition.update(overrides)
     return definition
 
 
-def test_registered_builtin_and_validation():
+def test_builtin_registered_and_accepts_only_add_label():
     step = get_step_type("github")
     assert step is not None
     assert "github" in BUILTIN_STEP_TYPES
-    assert step.validate(config(body="text")) == []
-    assert step.validate(config(body_file="plan.md")) == []
-    assert step.validate(config(body_files=["plan.md"])) == []
-    assert step.validate(config(body="text", body_file="plan.md"))
-    assert step.validate(config(body_files=[]))
-    assert step.validate(config(body="text", number=True))
-    assert step.validate(config(body="text", target="repository"))
-    assert step.validate(config(body="text", unexpected="field"))
-    assert step.validate(config(body="text", maintainer_action={"summary": "x"}))
-    assert step.validate({"id": "fetch", "type": "github", "operation": "fetch-artifact",
-                          "target": "issue", "number": 12, "write_to": "result.md"})
-    assert step.validate({"id": "checkout", "type": "github", "operation": "checkout-pr",
-                          "number": 0})
+    assert step.validate(config()) == []
+    assert step.validate(config(target="pull_request")) == []
+    for operation in ("comment", "fetch-artifact", "checkout-pr", "remove-label", None):
+        assert step.validate(config(operation=operation))
+    assert step.validate(config(body="Not supported"))
 
 
-def test_comment_retry_is_idempotent_and_changed_content_fails(context, api):
-    comments, calls = api
+def test_issue_label_added_once_and_retry_skips_write(context, api):
+    labels, calls = api
     step = get_step_type("github")
-    definition = config(body="Plan for {{ inputs.issue }}", artifact="plan",
-                        maintainer_action={"summary": "Review only",
-                                           "possible_labels": ["approved"]})
-    first = step.execute(definition, context)
-    again = step.execute(definition, context)
-    assert first.status == again.status == StepStatus.COMPLETED
-    assert first.output["comment_id"] == again.output["comment_id"] == 1
-    assert len(comments) == 1
-    assert "Plan for 12" in comments[0]["body"]
-    assert "Possible labels: approved" in comments[0]["body"]
-    assert not any("/labels" in endpoint for _, endpoint in calls)
-    assert len([method for method, _ in calls if method == "POST"]) == 1
-    changed = step.execute(config(body="Different", artifact="plan"), context)
-    assert changed.status == StepStatus.FAILED
-    assert "differs" in changed.error
-    assert len(comments) == 1
+    first = step.execute(config(), context)
+    retry = step.execute(config(), context)
+    assert first.status == retry.status == StepStatus.COMPLETED
+    assert first.output == {
+        "repository": "owner/repo",
+        "target": "issue",
+        "number": 12,
+        "label": "ready-for-review",
+        "added": True,
+    }
+    assert retry.output == {**first.output, "added": False}
+    assert labels == ["ready-for-review"]
+    assert len([method for method, _, _ in calls if method == "POST"]) == 1
 
 
-def test_valid_punctuated_step_id_posts_and_retries(context, api):
-    comments, _ = api
-    definition = config(id="publish.plan", body="Plan")
-    assert get_step_type("github").validate(definition) == []
-    step = get_step_type("github")
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    assert len(comments) == 1
-    workflow = WorkflowDefinition.from_string("""
-schema_version: "1.0"
-workflow:
-  id: punctuated-step
-  name: Punctuated step
-  version: "1.0.0"
-steps:
-  - id: publish.plan
-    type: github
-    operation: comment
-    target: issue
-    number: 12
-    body: Plan
-""")
-    engine = WorkflowEngine(Path(context.project_root))
-    assert engine.validate(workflow) == []
-    assert engine.execute(workflow, run_id="new-run").status == RunStatus.COMPLETED
-    assert len(comments) == 2
+def test_pull_request_uses_issue_labels_endpoint(context, api):
+    labels, calls = api
+    result = get_step_type("github").execute(config(target="pull_request"), context)
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["target"] == "pull_request"
+    assert labels == ["ready-for-review"]
+    assert calls[0][1].endswith("/pulls/12")
+    assert calls[1][1].endswith("/issues/12/labels")
 
 
-def test_foreign_markers_cannot_block_post_or_fetch(context, api):
-    comments, _ = api
-    step = get_step_type("github")
-    definition = config(body="Original", artifact="report")
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    comments.append({"id": 2, "body": "Bad\n\n<!-- speckit-github:v2",
-                     "user": {"login": "stranger"}})
-    comments.append({"id": 3, "body": comments[0]["body"],
-                     "user": {"login": "stranger"}})
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    result = step.execute({"id": "fetch", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "report",
-                           "write_to": "result.md"}, context)
-    assert result.status == StepStatus.COMPLETED, result.error
-    assert (Path(context.project_root) / "result.md").read_text() == "Original"
-    assert len(comments) == 3
+def test_existing_label_is_case_insensitive_and_skips_post(context, api):
+    labels, calls = api
+    labels.append("Ready-For-Review")
+    result = get_step_type("github").execute(config(), context)
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["added"] is False
+    assert len(calls) == 1
 
 
-def test_only_foreign_marker_is_not_a_trusted_artifact(context, api):
-    comments, _ = api
-    step = get_step_type("github")
-    assert step.execute(config(body="Original", artifact="report"), context).status == StepStatus.COMPLETED
-    comments[0]["user"] = {"login": "stranger"}
-    result = step.execute({"id": "fetch", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "report",
-                           "write_to": "result.md"}, context)
+@pytest.mark.parametrize("number", [0, -1, True, None, "1; echo bad", ""])
+def test_invalid_number_fails_before_any_api_call(context, api, number):
+    _, calls = api
+    result = get_step_type("github").execute(config(number=number), context)
     assert result.status == StepStatus.FAILED
-    assert "found 0" in result.error
+    assert "number" in result.error
+    assert calls == []
 
 
-def test_comment_files_and_fetch_artifact(context, api):
-    comments, _ = api
-    root = Path(context.project_root)
-    (root / "one.md").write_text("First")
-    (root / "two.md").write_text("Second")
-    step = get_step_type("github")
-    posted = step.execute(config(body_files=["one.md", "two.md"], artifact="report"), context)
-    assert posted.status == StepStatus.COMPLETED
-    result = step.execute({"id": "retrieve", "type": "github", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "report",
-                           "write_to": "result.md"}, context)
-    assert result.status == StepStatus.COMPLETED, result.error
-    assert (root / "result.md").read_text() == "First\n\nSecond"
-    assert result.output["comment_id"] == comments[0]["id"]
-    again = step.execute({"id": "retrieve", "operation": "fetch-artifact",
-                          "target": "issue", "number": 12, "artifact": "report",
-                          "write_to": "result.md"}, context)
-    assert again.status == StepStatus.FAILED
-    assert (root / "result.md").read_text() == "First\n\nSecond"
-
-
-def test_fetch_creates_fresh_nested_parent_and_restores_only_artifact(context, api):
-    root = Path(context.project_root)
-    artifact = "# Assessment\r\n\r\nCafé\r\n\r\n### Maintainer action (proposal only)\r\nLiteral artifact text.\r\n"
-    (root / "assessment.md").write_bytes(artifact.encode("utf-8"))
-    step = get_step_type("github")
-    definition = config(body_file="assessment.md", artifact="assessment",
-                        maintainer_action={"summary": "Please review before proceeding.",
-                                           "possible_labels": ["ready"]})
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    destination = root / ".specify" / "bugs" / "fresh-label" / "assessment.md"
-    assert not destination.parent.exists()
-    result = step.execute({"id": "rehydrate", "type": "github", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "assessment",
-                           "write_to": ".specify/bugs/fresh-label/assessment.md"}, context)
-    assert result.status == StepStatus.COMPLETED, result.error
-    assert destination.read_bytes() == artifact.encode("utf-8")
-    assert "Please review before proceeding" not in destination.read_text(encoding="utf-8")
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-
-
-def test_actions_installation_token_verifies_bot_author(context, api, monkeypatch):
-    comments, _ = api
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
-    original_api = github._api
-
-    def actions_api(root, endpoint, **kwargs):
-        if endpoint.endswith("/installation/repositories"):
-            return {"total_count": 1, "repositories": [{"full_name": "owner/repo"}]}
-        if endpoint.endswith("/user"):
-            raise AssertionError("Actions installation tokens do not need /user")
-        result = original_api(root, endpoint, **kwargs)
-        if kwargs.get("method") == "POST":
-            result["user"] = {"login": "github-actions[bot]"}
-        return result
-
-    monkeypatch.setattr(github, "_api", actions_api)
-    step = get_step_type("github")
-    definition = config(body="Artifact", artifact="report")
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    assert step.execute(definition, context).status == StepStatus.COMPLETED
-    result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
-                           "number": 12, "artifact": "report", "write_to": "new/fix.md"}, context)
-    assert result.status == StepStatus.COMPLETED, result.error
-    assert (Path(context.project_root) / "new" / "fix.md").read_bytes() == b"Artifact"
-    assert len(comments) == 1
-
-
-@pytest.mark.parametrize("installation", [
-    {"total_count": 1, "repositories": [{"full_name": "elsewhere/repo"}]},
-    {"total_count": 2, "repositories": [{"full_name": "owner/repo"}]},
-    {"total_count": 1, "repositories": [{"full_name": 42}]},
-])
-def test_actions_rejects_untrusted_installation(context, api, monkeypatch, installation):
-    comments, _ = api
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
-    original_api = github._api
-    monkeypatch.setattr(
-        github, "_api",
-        lambda root, endpoint, **kwargs: installation
-        if endpoint.endswith("/installation/repositories")
-        else original_api(root, endpoint, **kwargs),
-    )
-    result = get_step_type("github").execute(config(body="text"), context)
+@pytest.mark.parametrize(
+    "label", [None, "", " ", "bad\nlabel", "bad\x7flabel", "a" * 51, ["ready"]]
+)
+def test_invalid_label_fails_before_any_api_call(context, api, label):
+    _, calls = api
+    result = get_step_type("github").execute(config(label=label), context)
     assert result.status == StepStatus.FAILED
-    assert "scoped to this repository" in result.error
-    assert not comments
+    assert "label" in result.error
+    assert calls == []
 
 
-def test_actions_user_token_uses_user_identity(context, api, monkeypatch):
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+def test_missing_fields_and_unsupported_operations_fail(context, api):
+    _, calls = api
+    step = get_step_type("github")
+    for broken in (
+        config(target="repository"),
+        config(operation="comment"),
+        {key: value for key, value in config().items() if key != "label"},
+        {key: value for key, value in config().items() if key != "number"},
+        config(body="unexpected"),
+    ):
+        assert step.validate(broken)
+        assert step.execute(broken, context).status == StepStatus.FAILED
+    assert calls == []
+
+
+def test_wrong_issue_target_and_malformed_labels_fail(context, api, monkeypatch):
     original_api = github._api
+    step = get_step_type("github")
 
-    def user_token(root, endpoint, **kwargs):
-        if endpoint.endswith("/installation/repositories"):
-            raise ValueError("Installation endpoint unavailable to user token")
+    def wrong_target(root, endpoint, **kwargs):
+        if endpoint.endswith("/issues/12"):
+            return {"number": 12, "pull_request": {}, "labels": []}
         return original_api(root, endpoint, **kwargs)
 
-    monkeypatch.setattr(github, "_api", user_token)
-    assert get_step_type("github").execute(config(body="text"), context).status == StepStatus.COMPLETED
+    monkeypatch.setattr(github, "_api", wrong_target)
+    result = step.execute(config(), context)
+    assert result.status == StepStatus.FAILED
+    assert "does not match" in result.error
 
-
-def test_actions_rejects_comment_from_wrong_bot(context, api, monkeypatch):
-    comments, _ = api
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
-    original_api = github._api
     monkeypatch.setattr(
-        github, "_api",
-        lambda root, endpoint, **kwargs: (
-            {"total_count": 1, "repositories": [{"full_name": "owner/repo"}]}
-            if endpoint.endswith("/installation/repositories")
-            else original_api(root, endpoint, **kwargs)
-        ),
+        github,
+        "_api",
+        lambda root, endpoint, **kwargs: {"number": 12, "labels": "invalid"},
     )
-    result = get_step_type("github").execute(config(body="text"), context)
+    result = step.execute(config(), context)
     assert result.status == StepStatus.FAILED
-    assert "author does not match" in result.error
-    assert len(comments) == 1  # The server posted, but success is not reported.
+    assert "invalid label list" in result.error
 
 
-def test_fetch_does_not_create_directories_for_untrusted_artifact(context, api):
+def test_api_failure_or_missing_posted_label_is_not_success(context, api, monkeypatch):
     step = get_step_type("github")
-    root = Path(context.project_root)
-    result = step.execute({"id": "rehydrate", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "missing",
-                           "write_to": ".specify/bugs/fresh-label/fix.md"}, context)
+    original_api = github._api
+
+    def no_label(root, endpoint, **kwargs):
+        if kwargs.get("labels") is not None:
+            return []
+        return original_api(root, endpoint, **kwargs)
+
+    monkeypatch.setattr(github, "_api", no_label)
+    result = step.execute(config(), context)
     assert result.status == StepStatus.FAILED
-    assert "found 0" in result.error
-    assert not (root / ".specify").exists()
-
-
-def test_engine_executes_github_yaml_without_shell(context, api):
-    comments, _ = api
-    definition = WorkflowDefinition.from_string("""
-schema_version: "1.0"
-workflow:
-  id: github-pipeline
-  name: GitHub pipeline
-  version: "1.0.0"
-inputs:
-  issue:
-    type: number
-    required: true
-steps:
-  - id: publish
-    type: github
-    operation: comment
-    target: issue
-    number: "{{ inputs.issue }}"
-    body: "Plan for {{ inputs.issue }}"
-    artifact: plan
-""")
-    engine = WorkflowEngine(Path(context.project_root))
-    assert engine.validate(definition) == []
-    state = engine.execute(definition, {"issue": "12"}, run_id="pipeline1")
-    assert state.status == RunStatus.COMPLETED
-    assert state.step_results["publish"]["output"]["comment_id"] == 1
-    assert len(comments) == 1
-
-
-@pytest.mark.parametrize("workers", [1, 3])
-@pytest.mark.parametrize("nested", [False, True])
-def test_github_comment_fan_out_retries_per_index(context, api, workers, nested):
-    comments, calls = api
-    if nested:
-        template = """id: branch
-type: if
-condition: true
-then:
-  - id: publish
-    type: github
-    operation: comment
-    target: issue
-    number: 12
-    body: "same content"
-"""
-    else:
-        template = """id: publish
-type: github
-operation: comment
-target: issue
-number: 12
-body: "same content"
-"""
-    workflow = WorkflowDefinition.from_string("""
-schema_version: "1.0"
-workflow:
-  id: fan-out-github
-  name: Fan-out GitHub
-  version: "1.0.0"
-steps:
-  - id: fan
-    type: fan-out
-    items: "{{ ['same', 'same', 'same'] }}"
-    max_concurrency: WORKERS
-    step:
-TEMPLATE
-""".replace("WORKERS", str(workers)).replace("TEMPLATE", indent(template, "      ").rstrip()))
-    engine = WorkflowEngine(Path(context.project_root))
-    assert engine.validate(workflow) == []
-    assert engine.execute(workflow, run_id="fan-run").status == RunStatus.COMPLETED
-    assert len(comments) == 3
-    assert engine.execute(workflow, run_id="fan-run").status == RunStatus.COMPLETED
-    assert len(comments) == 3
-    assert len([method for method, _ in calls if method == "POST"]) == 3
-
-
-def test_github_fetch_artifact_fan_out_writes_distinct_paths(context, api):
-    root = Path(context.project_root)
-    step = get_step_type("github")
-    assert step.execute(config(body="Shared", artifact="report"), context).status == StepStatus.COMPLETED
-    workflow = WorkflowDefinition.from_string("""
-schema_version: "1.0"
-workflow:
-  id: fetch-fan-out
-  name: Fetch fan-out
-  version: "1.0.0"
-steps:
-  - id: fetch-all
-    type: fan-out
-    items: "{{ ['one', 'two'] }}"
-    max_concurrency: 2
-    step:
-      id: fetch
-      type: github
-      operation: fetch-artifact
-      target: issue
-      number: 12
-      artifact: report
-      write_to: "artifacts/{{ item }}.md"
-""")
-    engine = WorkflowEngine(root)
-    assert engine.validate(workflow) == []
-    assert engine.execute(workflow).status == RunStatus.COMPLETED
-    assert (root / "artifacts" / "one.md").read_text() == "Shared"
-    assert (root / "artifacts" / "two.md").read_text() == "Shared"
-
-
-@pytest.mark.parametrize("workers,expected", [(1, RunStatus.COMPLETED), (2, RunStatus.FAILED)])
-def test_checkout_pr_fan_out_requires_sequential_worktree(context, api, monkeypatch,
-                                                         workers, expected):
-    calls = []
-
-    def fake_run(args, root, *, input_text=None):
-        calls.append(args)
-        return "a" * 40 if args[:2] == ["git", "rev-parse"] else ""
-
-    monkeypatch.setattr(github, "_run", fake_run)
-    workflow = WorkflowDefinition.from_string("""
-schema_version: "1.0"
-workflow:
-  id: checkout-fan-out
-  name: Checkout fan-out
-  version: "1.0.0"
-steps:
-  - id: checkouts
-    type: fan-out
-    items: "{{ [7, 7] }}"
-    max_concurrency: WORKERS
-    step:
-      id: checkout
-      type: github
-      operation: checkout-pr
-      number: "{{ item }}"
-""".replace("WORKERS", str(workers)))
-    state = WorkflowEngine(Path(context.project_root)).execute(workflow)
-    assert state.status == expected
-    if workers == 1:
-        assert len([call for call in calls if call[:2] == ["git", "fetch"]]) == 2
-    else:
-        assert not calls
-        assert "share one working tree" in state.error
-
-
-def test_pull_request_comment_uses_issue_comment_endpoint(context, api):
-    comments, calls = api
-    definition = config(body="PR feedback", target="pull_request", number=7)
-    result = get_step_type("github").execute(definition, context)
-    assert result.status == StepStatus.COMPLETED, result.error
-    assert get_step_type("github").execute(definition, context).status == StepStatus.COMPLETED
-    assert len(comments) == 1
-    assert any(url.endswith("/pulls/7") for _, url in calls)
-    assert any(method == "POST" and url.endswith("/issues/7/comments")
-               for method, url in calls)
-
-
-@pytest.mark.parametrize("change,expected", [
-    (lambda comments: comments[0].update(body=comments[0]["body"].replace("First", "Altered")), "digest"),
-    (lambda comments: comments[0].update(user={"login": "someone-else"}), "found 0"),
-    (lambda comments: comments.append(dict(comments[0], id=2)), "found 2"),
-])
-def test_fetch_rejects_untrusted_or_ambiguous(context, api, change, expected):
-    comments, _ = api
-    step = get_step_type("github")
-    assert step.execute(config(body="First", artifact="report"), context).status == StepStatus.COMPLETED
-    change(comments)
-    result = step.execute({"id": "retrieve", "operation": "fetch-artifact",
-                           "target": "issue", "number": 12, "artifact": "report",
-                           "write_to": "result.md"}, context)
+    assert "did not apply label" in result.error
+    monkeypatch.setattr(
+        github,
+        "_api",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("GitHub API failed")),
+    )
+    result = step.execute(config(), context)
     assert result.status == StepStatus.FAILED
-    assert expected in result.error
-    assert not (Path(context.project_root) / "result.md").exists()
-
-
-@pytest.mark.parametrize("name", ["../elsewhere", "/tmp/elsewhere", "link/result.md"])
-def test_fetch_rejects_unsafe_destinations(context, api, name, tmp_path):
-    root = Path(context.project_root)
-    (root / "link").symlink_to(tmp_path.parent, target_is_directory=True)
-    step = get_step_type("github")
-    assert step.execute(config(body="text", artifact="report"), context).status == StepStatus.COMPLETED
-    result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
-                           "number": 12, "artifact": "report", "write_to": name}, context)
-    assert result.status == StepStatus.FAILED
-
-
-def test_fetch_rejects_symlinked_missing_parent_and_existing_destination(context, api, tmp_path):
-    root = Path(context.project_root)
-    (root / ".specify").mkdir()
-    (root / ".specify" / "bugs").symlink_to(tmp_path.parent, target_is_directory=True)
-    (root / "existing.md").write_text("keep", encoding="utf-8")
-    step = get_step_type("github")
-    assert step.execute(config(body="original", artifact="report"), context).status == StepStatus.COMPLETED
-    for name in (".specify/bugs/new/fix.md", "existing.md"):
-        result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
-                               "number": 12, "artifact": "report", "write_to": name}, context)
-        assert result.status == StepStatus.FAILED
-    assert (root / "existing.md").read_text() == "keep"
-    assert not (tmp_path.parent / "new").exists()
-
-
-def test_windows_write_fails_closed_before_creating_directories(context, monkeypatch):
-    root = Path(context.project_root)
-    monkeypatch.setattr(github, "os", SimpleNamespace(name="nt"))
-    with pytest.raises(ValueError, match="unsupported"):
-        github._write_artifact(root, root / "new" / "report.md", "report")
-    assert not (root / "new").exists()
-
-
-def test_bad_identifiers_and_missing_artifact_fail_without_post(context, api):
-    comments, calls = api
-    step = get_step_type("github")
-    for number in (0, "-1", True, "1; echo bad", None):
-        result = step.execute(config(body="hello", number=number), context)
-        assert result.status == StepStatus.FAILED
-        assert "number" in result.error
-    result = step.execute({"id": "fetch", "operation": "fetch-artifact", "target": "issue",
-                           "number": 12, "artifact": "missing", "write_to": "result.md"}, context)
-    assert result.status == StepStatus.FAILED
-    assert "found 0" in result.error
-    assert not comments
-    assert not any(method == "POST" for method, _ in calls)
-
-
-def test_comment_rejects_symlinked_source_inside_fan_out(context, api, tmp_path):
-    root = Path(context.project_root)
-    (root / "link.md").symlink_to(tmp_path.parent / "outside.md")
-    step = get_step_type("github")
-    result = step.execute(config(body_file="link.md"), context)
-    assert result.status == StepStatus.FAILED
-    assert "Symlinked" in result.error
-    context.inside_fan_out = True
-    context.fan_out_key = "fan:post:0"
-    result = step.execute(config(body="hi"), context)
-    assert result.status == StepStatus.COMPLETED
-
-
-def test_api_error_fails_without_success_shaped_output(context, api, monkeypatch):
-    monkeypatch.setattr(github, "_api", lambda *args, **kwargs: (_ for _ in ()).throw(
-        ValueError("GitHub request failed (exit code 403)")))
-    result = get_step_type("github").execute(config(body="hi"), context)
-    assert result.status == StepStatus.FAILED
-    assert "403" in result.error
+    assert "GitHub API failed" in result.error
     assert result.output == {}
 
 
-def test_api_posts_json_on_stdin_and_slurps_comment_pages(context, monkeypatch):
+def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
+    context, monkeypatch
+):
     observed = []
 
     def fake_run(args, root, *, input_text=None):
         observed.append((args, input_text))
-        return "[[]]" if "--paginate" in args else '{"id": 1}'
+        return '[{"name":"ready"}]'
 
     monkeypatch.setattr(github, "_run", fake_run)
-    root = Path(context.project_root)
-    assert github._api(root, "https://api.github.com/repos/o/r/issues/1/comments",
-                       method="POST", data={"body": "private body"}) == {"id": 1}
-    assert observed[0][1] == '{"body": "private body"}'
-    assert "private body" not in " ".join(observed[0][0])
-    assert github._api(root, "https://api.github.com/repos/o/r/issues/1/comments",
-                       paginated=True) == [[]]
-    assert observed[1][0][-2:] == ["--paginate", "--slurp"]
+    github._api(
+        Path(context.project_root),
+        "https://api.github.com/repos/o/r/issues/12/labels",
+        labels=["ready"],
+    )
+    assert json.loads(observed[0][1]) == {"labels": ["ready"]}
+    assert "ready" not in observed[0][0]
 
 
-def test_identity_rejects_non_github_origin(context, monkeypatch):
-    assert github._ORIGIN.fullmatch("https://evil.example/owner/repo.git") is None
-    assert github._ORIGIN.fullmatch("https://github.com/owner/repo.git")
-    monkeypatch.setattr(github, "_run", lambda args, root, **kwargs: "https://evil.example/owner/repo.git")
+def test_origin_must_be_github_dot_com(context, monkeypatch):
+    monkeypatch.setattr(
+        github, "_run", lambda args, root, **kwargs: "https://evil.example/o/r.git"
+    )
     with pytest.raises(ValueError, match="github.com origin"):
         github._identity(Path(context.project_root))
 
 
-def test_comment_rejects_wrong_target(context, api, monkeypatch):
-    step = get_step_type("github")
-    original_api = github._api
-
-    def wrong_target(root, endpoint, **kwargs):
-        if endpoint.endswith("/issues/12"):
-            return {"number": 12, "pull_request": {}}
-        return original_api(root, endpoint, **kwargs)
-
-    monkeypatch.setattr(github, "_api", wrong_target)
-    bad = step.execute(config(body="hi"), context)
-    assert bad.status == StepStatus.FAILED
-    assert "does not match" in bad.error
-
-
-def test_checkout_verifies_head_before_checkout(context, api, monkeypatch):
-    commands = []
-    sha = "a" * 40
-
-    def fake_run(args, root, *, input_text=None):
-        commands.append(args)
-        if args[:2] == ["git", "rev-parse"]:
-            return sha
-        return ""
-
-    monkeypatch.setattr(github, "_run", fake_run)
-    step = get_step_type("github")
-    definition = {"id": "checkout", "type": "github", "operation": "checkout-pr",
-                  "number": "{{ inputs.pr }}"}
-    result = step.execute(definition, context)
-    assert result.status == StepStatus.COMPLETED
-    assert result.output["head_sha"] == sha
-    assert ["git", "fetch", "origin", "pull/7/head"] in commands
-    assert ["git", "-c", "advice.detachedHead=false", "checkout", "--detach", sha] in commands
-    assert commands[-1] == ["git", "rev-parse", "HEAD"]
-    commands.clear()
-    monkeypatch.setattr(github, "_run", lambda args, root, **kwargs: "b" * 40)
-    failed = step.execute(definition, context)
-    assert failed.status == StepStatus.FAILED
-    assert "differs" in failed.error
+def test_engine_executes_label_yaml_and_fan_out_with_retries(context, api):
+    labels, calls = api
+    workflow = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: label-items
+  name: Label items
+  version: "1.0.0"
+steps:
+  - id: labels
+    type: fan-out
+    items: "{{ ['ready', 'needs-review'] }}"
+    max_concurrency: 2
+    step:
+      id: add-label
+      type: github
+      operation: add-label
+      target: issue
+      number: 12
+      label: "{{ item }}"
+""")
+    engine = WorkflowEngine(Path(context.project_root))
+    assert engine.validate(workflow) == []
+    assert engine.execute(workflow, run_id="labels-run").status == RunStatus.COMPLETED
+    assert set(labels) == {"ready", "needs-review"}
+    assert engine.execute(workflow, run_id="labels-run").status == RunStatus.COMPLETED
+    assert len([method for method, _, _ in calls if method == "POST"]) == 2

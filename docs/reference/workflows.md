@@ -570,7 +570,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `command`    | Invoke a Spec Kit command (e.g., `speckit.plan`) |
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
-| `github`     | Post/retrieve GitHub comments or check out a PR   |
+| `github`     | Add an explicit issue or pull-request label       |
 | `init`       | Bootstrap a project (like `specify init`)        |
 | `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
@@ -586,75 +586,32 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 ### GitHub step
 
 `type: github` uses the installed `gh` CLI and its active authentication for a
-repository whose `origin` points to `github.com`. The token needs read access
-for PRs/issues, and issue-comment write access only for `comment`. The step
-does not request or elevate permissions. It does not interpret issue/comment
-contents as workflow instructions or apply labels. GitHub operations require
-network access; tests should mock the API rather than post live comments.
-In GitHub Actions, a repository-scoped `GITHUB_TOKEN` is supported: when
-`GITHUB_ACTIONS=true` and `GITHUB_REPOSITORY` matches `origin`, the step
-verifies that the active credential is an installation token restricted to
-that repository, then checks the author against `github-actions[bot]`.
-User tokens (including user tokens used inside Actions) use `GET /user` for
-author verification instead. A non-Actions app token cannot post as
-`github-actions[bot]`; an unexpected post author fails the step.
+repository whose `origin` points to `github.com`. The active token needs
+permission to read the issue or pull request and to write its labels (for
+example, `issues: write` for issues or `pull-requests: write` for PRs when
+using `GITHUB_TOKEN` in Actions). The step uses only the existing token: it
+does not request or elevate permissions. It does not inspect issue contents
+for instructions or make a maintainer decision.
 
 ```yaml
-- id: publish-plan
+- id: mark-ready
   type: github
-  operation: comment
+  operation: add-label
   target: issue
   number: "{{ inputs.issue_number }}"
-  body_file: docs/plan.md
-  artifact: reviewed-plan
-  maintainer_action:
-    summary: "Review the plan before scheduling implementation."
-    possible_labels: [ready-for-review]
-
-- id: retrieve-plan
-  type: github
-  operation: fetch-artifact
-  target: issue
-  number: "{{ inputs.issue_number }}"
-  artifact: reviewed-plan
-  write_to: docs/retrieved-plan.md
-
-- id: checkout
-  type: github
-  operation: checkout-pr
-  number: "{{ inputs.pr_number }}"
+  label: ready-for-review
 ```
 
-For `comment`, supply exactly one of `body` (text), `body_file` (UTF-8 file),
-or `body_files` (non-empty list of UTF-8 files joined with two newlines).
 `target` is `issue` or `pull_request`; `number` must resolve to a positive
-integer. `artifact` is an optional stable alphanumeric identifier (hyphens
-and underscores allowed), required by `fetch-artifact`. `maintainer_action`
-adds a **proposal only** section with `summary` and `possible_labels` to the
-comment; it never changes GitHub labels. The posted comment includes a
-digest-bearing marker tying it to the workflow run and step. Re-running the
-same step in the same run reuses an identical comment rather than posting a
-duplicate; changed content or a changed author fails instead. `fetch-artifact`
-requires exactly one intact, previously marked comment authored by the
-verified account/bot. It writes only the original artifact bytes, excluding
-the maintainer-action footer and marker, to a *new* relative file under the
-project root. Missing parent directories are created inside the project
-after the comment is verified; symlinks and overwrites are refused. Run and
-step IDs are hashed in the marker so workflow-valid IDs (including dots)
-remain valid. Foreign-authored comments are ignored before parsing markers;
-malformed markers from the verified author fail explicitly. This implementation
-does not provide handle-anchored writes on Windows, so `fetch-artifact` fails
-closed there rather than writing outside the project.
-
-`checkout-pr` fetches GitHub's `pull/<number>/head` ref, verifies its SHA
-matches the API's PR head, and checks out that commit detached. Local changes
-that prevent checkout cause the step to fail.
-GitHub comments in `fan-out` (including nested branches) use the item's
-parent/step/index path in their retry identity, so identical items still create
-distinct comments and retry without duplicates. Concurrent fan-out comments
-operate on distinct markers. Artifact retrieval in fan-out needs a distinct
-`write_to` path per item; concurrent `checkout-pr` fails explicitly because
-items share a working tree (use sequential fan-out for checkout).
+integer. `label` is one explicit label name (up to 50 characters) and must
+already exist in the repository. Both values may use workflow expressions.
+The step checks the target type and its existing labels, skips the write when
+the label is already present, and verifies GitHub's response after adding it.
+The output includes `repository`, `target`, `number`, `label`, and `added`
+(`true` only when a label was added). Repeated execution and fan-out items
+are safe to retry: an already-present label is left unchanged. This first
+version does not post comments, restore artifacts, check out PRs, or infer
+which label a maintainer would choose.
 
 ### Custom step packages
 

@@ -1536,25 +1536,16 @@ class WorkflowEngine:
             results: list[Any] = []
             previous_item = context.item
             previous_inside_fan_out = context.inside_fan_out
-            previous_fan_out_key = context.fan_out_key
-            previous_fan_out_concurrency = context.fan_out_concurrency
             context.inside_fan_out = True
             try:
                 for item_idx, item_val in enumerate(items):
                     context.item = item_val
-                    item_key = item_id(item_idx)
-                    context.fan_out_key = (
-                        f"{previous_fan_out_key}:{item_key}"
-                        if previous_fan_out_key else item_key
-                    )
                     results.append(run_item(item_idx, context))
                     if state.status in halting:
                         break
             finally:
                 context.item = previous_item
                 context.inside_fan_out = previous_inside_fan_out
-                context.fan_out_key = previous_fan_out_key
-                context.fan_out_concurrency = previous_fan_out_concurrency
             return results
 
         # Concurrent path — bounded sliding window; results assembled in item order.
@@ -1571,11 +1562,6 @@ class WorkflowEngine:
                     context,
                     item=items[idx],
                     inside_fan_out=True,
-                    fan_out_concurrency=max(context.fan_out_concurrency, workers),
-                    fan_out_key=(
-                        f"{context.fan_out_key}:{item_id(idx)}"
-                        if context.fan_out_key else item_id(idx)
-                    ),
                 ),
             )
 
