@@ -13,6 +13,10 @@ from pathlib import Path
 _EVENT = re.compile(r"^(before|after)_[a-z][a-z0-9_]*$")
 
 
+def _lf_bytes(data: bytes) -> bytes:
+    return data.replace(b"\r\n", b"\n")
+
+
 def resolve(event: str, project_root: Path) -> dict:
     """Return enabled, unconditional hooks in priority order."""
     if not _EVENT.fullmatch(event):
@@ -22,10 +26,10 @@ def resolve(event: str, project_root: Path) -> dict:
     cache = project_root / ".specify" / "hook-dispatch"
     if cache.is_dir():
         try:
-            source = config_file.read_bytes()
-            if source != (cache / "source.yml").read_bytes():
+            source = _lf_bytes(config_file.read_bytes())
+            if source != _lf_bytes((cache / "source.yml").read_bytes()):
                 raise ValueError("Hook projection is stale; reinstall the extension or refresh the project")
-            event_bytes = (cache / "events.txt").read_bytes()
+            event_bytes = _lf_bytes((cache / "events.txt").read_bytes())
             index_digest = (cache / "events.txt.sha256").read_text(encoding="utf-8").strip()
             if not re.fullmatch("[0-9a-f]{64}", index_digest) or hashlib.sha256(event_bytes).hexdigest() != index_digest:
                 raise ValueError("Hook projection index is invalid; reinstall the extension or refresh the project")
@@ -37,11 +41,11 @@ def resolve(event: str, project_root: Path) -> dict:
                 result = {"event": event, "hooks": []}
             else:
                 expected = (cache / f"{event}.sha256").read_text(encoding="utf-8").strip()
-                payload = projection.read_bytes()
+                payload = _lf_bytes(projection.read_bytes())
                 if not re.fullmatch("[0-9a-f]{64}", expected) or hashlib.sha256(payload).hexdigest() != expected:
                     raise ValueError("Hook projection is invalid; reinstall the extension or refresh the project")
                 result = json.loads(payload.decode("utf-8"))
-            if source != config_file.read_bytes() or source != (cache / "source.yml").read_bytes():
+            if source != _lf_bytes(config_file.read_bytes()) or source != _lf_bytes((cache / "source.yml").read_bytes()):
                 raise ValueError("Hook projection changed during resolution; retry the command")
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"Could not read hook projection: {exc}") from exc

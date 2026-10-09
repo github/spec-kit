@@ -296,6 +296,69 @@ def test_materialized_projection_resolves_without_yaml_or_native_parsing(tmp_pat
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("conversion", ["cache", "all"])
+def test_projection_accepts_git_crlf_checkout(tmp_path, variant, phase, conversion):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+        {"extension": "git", "command": "speckit.git.commit", "optional": False},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    converted = list(cache.iterdir())
+    if conversion == "all":
+        converted.append(tmp_path / ".specify/extensions.yml")
+    for path in converted:
+        data = path.read_bytes()
+        path.write_bytes(data.replace(b"\n", b"\r\n"))
+
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 0, data
+    assert [entry["command"] for entry in data["hooks"]] == ["speckit.git.commit"]
+    assert data["hooks"][0]["optional"] is False
+    assert run_hook(tmp_path, phase, name="tasks", variant=variant) == (
+        0, {"event": f"{'before' if phase == 'pre' else 'after'}_tasks", "hooks": []}
+    )
+
+    (cache / f"{event}.json").unlink()
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "incomplete" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("corruption", ["projection", "index"])
+def test_crlf_projection_still_rejects_corrupt_content(tmp_path, variant, corruption):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    HookExecutor(tmp_path).save_project_config({"hooks": {"before_plan": [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    for path in cache.iterdir():
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    if corruption == "projection":
+        projection = cache / "before_plan.json"
+        projection.write_bytes(projection.read_bytes().replace(
+            b"speckit.git.commit", b"speckit.bad.commit"
+        ))
+    else:
+        index = cache / "events.txt"
+        index.write_bytes(index.read_bytes().replace(b"before_plan", b"after_plan"))
+
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1
+    assert data["hooks"] == []
+    assert "invalid" in data["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 def test_projection_rejects_stale_yaml_and_recovers_after_refresh(tmp_path, variant):
     if variant == "ps" and not shutil.which("pwsh"):
         pytest.skip("PowerShell not installed")

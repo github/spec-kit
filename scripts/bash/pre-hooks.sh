@@ -256,29 +256,35 @@ hook_priority() {
     (( HOOK_RANK >= 1 && HOOK_RANK <= 2147483647 )) || HOOK_RANK=10
 }
 
-hook_digest_valid() {
-    local path=$1 digest=$2 expected actual
-    [[ -f $path && -f $digest ]] || return 1
-    IFS= read -r expected < "$digest"
-    if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum -- "$path") || return 1
-    elif command -v shasum >/dev/null 2>&1; then
-        actual=$(shasum -a 256 -- "$path") || return 1
-    else
-        HOOK_ERROR="Cannot validate hook projection: sha256sum or shasum is required"
-        return 1
-    fi
-    [[ $expected =~ ^[0-9a-f]{64}$ && ${actual%% *} == "$expected" ]]
+hook_canonical_file() {
+    local cr=$'\r'
+    LC_ALL=C sed "s/${cr}\$//" < "$1"
 }
 
 hook_file_digest() {
     local output
     if command -v sha256sum >/dev/null 2>&1; then
-        output=$(sha256sum -- "$1") || return 1
+        output=$(set -o pipefail; hook_canonical_file "$1" | sha256sum) || return 1
+    elif command -v shasum >/dev/null 2>&1; then
+        output=$(set -o pipefail; hook_canonical_file "$1" | shasum -a 256) || return 1
     else
-        output=$(shasum -a 256 -- "$1") || return 1
+        return 1
     fi
     printf '%s' "${output%% *}"
+}
+
+hook_digest_valid() {
+    local path=$1 digest=$2 expected actual
+    [[ -f $path && -f $digest ]] || return 1
+    IFS= read -r expected < "$digest"
+    expected=${expected%$'\r'}
+    if ! command -v sha256sum >/dev/null 2>&1 &&
+       ! command -v shasum >/dev/null 2>&1; then
+        HOOK_ERROR="Cannot validate hook projection: sha256sum or shasum is required"
+        return 1
+    fi
+    actual=$(hook_file_digest "$path") || return 1
+    [[ $expected =~ ^[0-9a-f]{64}$ && $actual == "$expected" ]]
 }
 
 hook_projection_shape_valid() {
@@ -311,8 +317,7 @@ resolve_hooks() {
     fi
     if [[ -d .specify/hook-dispatch ]]; then
         if [[ ! -f $config || ! -f .specify/hook-dispatch/source.yml ||
-              ! -f .specify/hook-dispatch/events.txt ]] ||
-           ! cmp -s -- "$config" .specify/hook-dispatch/source.yml; then
+              ! -f .specify/hook-dispatch/events.txt ]]; then
             hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
             return 1
         fi
@@ -321,8 +326,10 @@ resolve_hooks() {
             hook_error "$event" "${HOOK_ERROR:-Hook projection index is invalid; reinstall the extension or refresh the project}"
             return 1
         fi
-        local source_digest result
-        if ! source_digest=$(hook_file_digest "$config"); then
+        local source_digest snapshot_digest current_digest result
+        if ! source_digest=$(hook_file_digest "$config") ||
+           ! snapshot_digest=$(hook_file_digest .specify/hook-dispatch/source.yml) ||
+           [[ $source_digest != "$snapshot_digest" ]]; then
             hook_error "$event" "Hook projection is stale; reinstall the extension or refresh the project"
             return 1
         fi
@@ -333,20 +340,21 @@ resolve_hooks() {
                 return 1
             fi
             if ! IFS= read -r response < "$projection" ||
-               ! hook_projection_shape_valid "$response" "$event"; then
+               ! hook_projection_shape_valid "${response%$'\r'}" "$event"; then
                 hook_error "$event" "Invalid hook projection; reinstall the extension or refresh the project"
                 return 1
             fi
-            result=$response
-        elif grep -Fxq -- "$event" .specify/hook-dispatch/events.txt; then
+            result=${response%$'\r'}
+        elif grep -Fxq -- "$event" <(hook_canonical_file .specify/hook-dispatch/events.txt); then
             hook_error "$event" "Hook projection is incomplete; reinstall the extension or refresh the project"
             return 1
         else
             result="{\"event\":\"$event\",\"hooks\":[]}"
         fi
         if [[ ! -f .specify/hook-dispatch/source.yml ]] ||
-           ! cmp -s -- "$config" .specify/hook-dispatch/source.yml ||
-           [[ $(hook_file_digest "$config") != "$source_digest" ]]; then
+           ! current_digest=$(hook_file_digest "$config") ||
+           ! snapshot_digest=$(hook_file_digest .specify/hook-dispatch/source.yml) ||
+           [[ $current_digest != "$source_digest" || $snapshot_digest != "$source_digest" ]]; then
             hook_error "$event" "Hook projection changed during resolution; retry the command"
             return 1
         fi

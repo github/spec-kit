@@ -85,7 +85,8 @@ for each hook-bearing command's selected variant, including fallback variants
 when the project preference is unavailable. The CLI validates hook configuration on write and
 materializes ordered per-event JSON with a snapshot of `.specify/extensions.yml`.
 CLI writers serialize publication, and each variant checks the snapshot,
-event-index digest, and generated response digest before returning hooks. Each
+event-index digest, and generated response digest after normalizing CRLF line
+endings to LF, so tracked projections survive Git checkout conversion. Each
 reads the projection in its own runtime, without depending on another variant
 or on runtime PyYAML; it rejects stale, corrupt, or missing projections.
 The legacy YAML resolver remains for projects not yet refreshed. The resolver

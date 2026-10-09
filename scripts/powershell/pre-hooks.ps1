@@ -259,6 +259,22 @@ function Resolve-HookConfig {
     return $result
 }
 
+function ConvertTo-HookLfBytes {
+    param([byte[]]$Bytes)
+    $stream = [IO.MemoryStream]::new($Bytes.Length)
+    try {
+        for ($i = 0; $i -lt $Bytes.Length; $i++) {
+            if ($Bytes[$i] -eq 13 -and $i + 1 -lt $Bytes.Length -and $Bytes[$i + 1] -eq 10) {
+                continue
+            }
+            $stream.WriteByte($Bytes[$i])
+        }
+        return ,$stream.ToArray()
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Invoke-HookResolver {
     param([string]$Phase, [string]$Command)
     $event = "${Phase}_${Command}"
@@ -283,15 +299,15 @@ function Invoke-HookResolver {
                 -not (Test-Path -LiteralPath $events -PathType Leaf)) {
                 throw "Hook projection is stale; reinstall the extension or refresh the project"
             }
-            $source = [Convert]::ToBase64String([IO.File]::ReadAllBytes($config))
-            if ($source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
+            $source = [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($config))))
+            if ($source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($snapshot))))) {
                 throw "Hook projection is stale; reinstall the extension or refresh the project"
             }
             $indexDigest = Join-Path $cache 'events.txt.sha256'
             if (-not (Test-Path -LiteralPath $indexDigest -PathType Leaf)) {
                 throw "Hook projection index is incomplete; reinstall the extension or refresh the project"
             }
-            $eventBytes = [IO.File]::ReadAllBytes($events)
+            $eventBytes = ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($events))
             $eventHash = [IO.File]::ReadAllText($indexDigest, [Text.Encoding]::UTF8).Trim()
             if ($eventHash -cnotmatch '^[0-9a-f]{64}$' -or
                 [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($eventBytes)) -cne $eventHash.ToUpperInvariant()) {
@@ -303,7 +319,7 @@ function Invoke-HookResolver {
                 if (-not (Test-Path -LiteralPath $digest -PathType Leaf)) {
                     throw "Hook projection is incomplete; reinstall the extension or refresh the project"
                 }
-                $bytes = [IO.File]::ReadAllBytes($projected)
+                $bytes = ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($projected))
                 $expected = [IO.File]::ReadAllText($digest, [Text.Encoding]::UTF8).Trim()
                 if ($expected -cnotmatch '^[0-9a-f]{64}$' -or
                     [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) -cne $expected.ToUpperInvariant()) {
@@ -333,8 +349,8 @@ function Invoke-HookResolver {
             } else {
                 $result = @{ event = $event; hooks = @() } | ConvertTo-Json -Depth 5 -Compress
             }
-            if ($source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($config)) -or
-                $source -cne [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot))) {
+            if ($source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($config)))) -or
+                $source -cne [Convert]::ToBase64String((ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($snapshot))))) {
                 throw "Hook projection changed during resolution; retry the command"
             }
             [Console]::WriteLine($result)
