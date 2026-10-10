@@ -257,6 +257,28 @@ def integration_switch(
         from .. import ensure_executable_scripts
         ensure_executable_scripts(project_root)
 
+    # The forced refresh above may have just overwritten
+    # .specify/scripts/bash/<name>.sh with the bundled core, clobbering any
+    # generated launcher chain for a script an already-enabled preset
+    # provides. Restore those chains now: this call happens before
+    # _set_default_integration below, whose own reconciliation
+    # (_helpers.py) is gated on refresh_templates_force and would not fire
+    # here since this phase's force comes from --refresh-shared-infra, not
+    # from that helper's own parameter.
+    if refresh_shared_infra:
+        try:
+            from ..presets import PresetManager as _ExistingPresetManager
+
+            _ExistingPresetManager(project_root).reconcile_all_script_chains()
+        except Exception as exc:
+            _print_cli_warning(
+                "reconcile script presets after",
+                "integration switch --refresh-shared-infra",
+                str(project_root),
+                exc,
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+            )
+
     # Phase 2: Install target integration
     console.print(f"Installing integration: [cyan]{target}[/cyan]")
     manifest = IntegrationManifest(

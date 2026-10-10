@@ -1,6 +1,8 @@
 """Tests for preset installation and removal in specify_cli.presets._manager."""
 
 import json
+import os
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -25,6 +27,7 @@ from tests.specify_cli.presets._helpers import (
 from tests.specify_cli.presets._helpers import (
     make_convention_constitution_preset as _make_convention_constitution_preset,
 )
+from tests.specify_cli.presets._helpers import create_pack as _create_pack
 
 
 class TestPresetManifest:
@@ -1607,3 +1610,321 @@ class TestRemoveReconciliation:
         cmd_files = list(gemini_dir.glob("*specify*"))
         assert cmd_files, "Command file should still exist after removal"
         assert "Lo content" in cmd_files[0].read_text()
+
+
+class TestScriptChainReconciliation:
+    """Test PresetManager._reconcile_script_chain() (#4551).
+
+    Verifies the canonical ``.specify/scripts/bash/<name>.sh`` file that
+    agents actually invoke: a plain copy when there's nothing to compose,
+    and the topmost launcher of a materialized chain when there is.
+    """
+
+    def _canonical(self, project_dir, name):
+        return project_dir / ".specify" / "scripts" / "bash" / f"{name}.sh"
+
+    def _core(self, project_dir, name):
+        return project_dir / ".specify" / "scripts" / "bash" / f"{name}.speckit-core.sh"
+
+    def test_install_replace_script_writes_verbatim_with_no_intermediate_files(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A single-layer replace has nothing to compose, so it's written
+        verbatim with no generated launcher/core files at all."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "override-only",
+            "echo overridden\n",
+            strategy="replace",
+            template_type="script",
+            template_name="plain-override",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "plain-override")
+        assert canonical.read_text() == "echo overridden\n"
+        assert not self._core(project_dir, "plain-override").exists()
+        chain = PresetResolver(project_dir).resolve_script_chain("plain-override")
+        assert [p.read_text() for p in chain] == ["echo overridden\n"]
+
+    def test_remove_only_provider_removes_generated_dispatcher(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "solo-pack", "echo x\n",
+            template_type="script", template_name="no-core-script",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        canonical = self._canonical(project_dir, "no-core-script")
+        assert canonical.is_file()
+        manager.remove("solo-pack")
+        assert not canonical.exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX execute bits")
+    def test_remove_last_provider_restores_executable_core_script(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Frontmatter runs the canonical path directly, so the restored core
+        script must stay executable after the dispatcher is replaced."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "exec-restore.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "exec-pack", "echo x\n",
+            strategy="wrap", template_type="script", template_name="exec-restore",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        manager.remove("exec-pack")
+
+        canonical = self._canonical(project_dir, "exec-restore")
+        assert canonical.read_text() == "echo core\n"
+        assert canonical.stat().st_mode & 0o111
+
+    def test_reconcile_refuses_symlinked_destination(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        scripts = project_dir / ".specify" / "scripts"
+        scripts.mkdir(parents=True)
+        try:
+            os.symlink(outside, scripts / "bash", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "sym-pack", "echo x\n",
+            template_type="script", template_name="sym-script",
+        )
+        with pytest.warns(UserWarning, match="symlink"):
+            PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        assert list(outside.iterdir()) == []
+
+    def test_install_wrap_script_writes_launcher_stub(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "stub-target.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "stub-pack",
+            "echo before\n$CORE_SCRIPT\necho after\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="stub-target",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "stub-target")
+        content = canonical.read_text()
+        assert "speckit-generated: script launcher" in content
+        assert "CORE_SCRIPT" in content
+        # Unlike the old runtime dispatcher, the materialized launcher DOES
+        # encode stack-specific data: it execs the preset's own installed
+        # file directly rather than re-resolving anything at invocation
+        # time, so the resolved path is baked in.
+        assert "stub-pack" in content
+
+        core_path = self._core(project_dir, "stub-target")
+        assert core_path.read_text() == "echo core\n"
+        assert core_path.name in content
+
+    @pytest.mark.parametrize("reserved", ["common"])
+    def test_reserved_helper_names_are_refused(self, project_dir, reserved):
+        """A launcher named after a runtime helper would overwrite it."""
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="reserved"):
+            manager._reconcile_script_chain(reserved)
+
+    def test_symlinked_specify_dir_is_not_written_through(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A symlinked ancestor must not redirect the dispatcher writes."""
+        outside = temp_dir / "outside"
+        (outside / "scripts" / "bash").mkdir(parents=True)
+        real_specify = project_dir / ".specify"
+        moved = temp_dir / "moved-specify"
+        real_specify.rename(moved)
+        try:
+            real_specify.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            real_specify.mkdir()
+            pytest.skip("symlinks unavailable on this platform")
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError, match="symlink"):
+            manager._reconcile_script_chain("linked")
+        assert list((outside / "scripts" / "bash").iterdir()) == []
+
+    def test_launcher_written_when_extension_layer_ends_chain(
+        self, project_dir, temp_dir, valid_pack_data, monkeypatch
+    ):
+        """An extension replace layer above a preset truncates the chain, but
+        the preset is still an active declaration and needs the generated
+        marker so a later priority change is not inert."""
+        preset_file = (
+            project_dir / ".specify" / "presets" / "p1" / "scripts" / "shadowed.sh"
+        )
+        preset_file.parent.mkdir(parents=True)
+        preset_file.write_text("echo preset\n")
+        ext_file = temp_dir / "ext-shadowed.sh"
+        ext_file.write_text("echo ext\n")
+        monkeypatch.setattr(
+            PresetResolver, "resolve_script_chain", lambda self, name: [ext_file]
+        )
+        monkeypatch.setattr(
+            PresetResolver,
+            "collect_all_layers",
+            lambda self, name, kind: [
+                {"path": ext_file, "source": "extension", "strategy": "replace"},
+                {"path": preset_file, "source": "preset", "strategy": "replace"},
+            ],
+        )
+        PresetManager(project_dir)._reconcile_script_chain("shadowed")
+        canonical = self._canonical(project_dir, "shadowed")
+        # Single-layer chain: written verbatim with no in-content marker, so
+        # provenance tracking (not canonical's own content) is what lets a
+        # later reconcile tell this apart from a real repo-committed script.
+        assert canonical.read_text() == "echo ext\n"
+        provenance = (
+            project_dir / ".specify" / "scripts" / "bash" / "shadowed.speckit-generated"
+        )
+        assert provenance.is_file()
+
+    def test_remove_last_composing_preset_reverts_to_core_copy(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "revert-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir,
+            valid_pack_data,
+            "revert-pack",
+            "echo before\n$CORE_SCRIPT\n",
+            strategy="wrap",
+            template_type="script",
+            template_name="revert-me",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "revert-me")
+        content = canonical.read_text()
+        assert "speckit-generated: script launcher" in content
+        assert "CORE_SCRIPT" in content
+        core_path = self._core(project_dir, "revert-me")
+        assert core_path.read_text() == "echo core\n"
+
+        manager.remove("revert-pack")
+
+        assert canonical.read_text() == "echo core\n"
+        assert not core_path.exists()
+
+    def test_reconcile_all_script_chains_restores_chain_after_shared_infra_refresh(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """``specify init --force`` rewrites the canonical script from the
+        bundled core, clobbering a generated launcher chain for an
+        already-enabled script preset. ``reconcile_all_script_chains()`` is
+        what a forced refresh calls afterward to restore it."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "reinit-pack", "echo wrapped\n",
+            strategy="replace", template_type="script", template_name="reinit-me",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+
+        canonical = self._canonical(project_dir, "reinit-me")
+        assert canonical.read_text() == "echo wrapped\n"
+
+        # Simulate install_shared_infra --force overwriting the canonical
+        # script with the bundled core, as it would on `specify init --force`.
+        canonical.write_text("echo bundled-core\n")
+
+        manager.reconcile_all_script_chains()
+
+        assert canonical.read_text() == "echo wrapped\n"
+
+    def test_reconcile_all_script_chains_covers_standalone_override(
+        self, project_dir
+    ):
+        """A project-local override with no preset declaring its script name
+        (the override-only reproduction from #4551) is still "provided": it
+        must be re-materialized once shared infrastructure is reconciled,
+        not just names that appear in an installed preset's manifest."""
+        override_dir = (
+            project_dir / ".specify" / "templates" / "overrides" / "scripts"
+        )
+        override_dir.mkdir(parents=True, exist_ok=True)
+        (override_dir / "setup-plan.sh").write_text("echo overridden\n")
+
+        canonical = self._canonical(project_dir, "setup-plan")
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("echo bundled-core\n")
+
+        manager = PresetManager(project_dir)
+        manager.reconcile_all_script_chains()
+
+        assert canonical.read_text() == "echo overridden\n"
+        chain = PresetResolver(project_dir).resolve_script_chain("setup-plan")
+        assert [p.read_text() for p in chain] == ["echo overridden\n"]
+
+    def test_enable_disable_and_set_priority_rematerialize_scripts(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """Unlike commands (which stay stale until removal), scripts must
+        take effect immediately on enable/disable/set-priority (#4551) --
+        mnriem's pivot explicitly closes this gap."""
+        core_script = (
+            project_dir / ".specify" / "templates" / "scripts" / "toggle-me.sh"
+        )
+        core_script.parent.mkdir(parents=True, exist_ok=True)
+        core_script.write_text("echo core\n")
+
+        manager = PresetManager(project_dir)
+        low_pack = _create_pack(
+            temp_dir, valid_pack_data, "low-pack", "echo low-before\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="toggle-me",
+        )
+        manager.install_from_directory(low_pack, "0.1.5", priority=20)
+        high_pack = _create_pack(
+            temp_dir, valid_pack_data, "high-pack", "echo high-before\n$CORE_SCRIPT\n",
+            strategy="wrap", template_type="script", template_name="toggle-me",
+        )
+        manager.install_from_directory(high_pack, "0.1.5", priority=5)
+
+        canonical = self._canonical(project_dir, "toggle-me")
+        assert "high-pack" in canonical.read_text()
+
+        # Disabling the higher-priority preset must immediately drop it from
+        # the materialized chain, not just the live resolver's view.
+        manager.registry.update("high-pack", {"enabled": False})
+        manager.reconcile_scripts_for_preset("high-pack", "test disable")
+        content_after_disable = canonical.read_text()
+        assert "high-pack" not in content_after_disable
+        assert "low-pack" in content_after_disable
+
+        # Re-enabling restores it.
+        manager.registry.update("high-pack", {"enabled": True})
+        manager.reconcile_scripts_for_preset("high-pack", "test enable")
+        assert "high-pack" in canonical.read_text()
+
+        # A priority change must reorder the chain immediately too.
+        manager.registry.update("high-pack", {"priority": 30})
+        manager.reconcile_scripts_for_preset("high-pack", "test set-priority")
+        assert "low-pack" in canonical.read_text()
+        assert "high-pack" not in canonical.read_text()

@@ -220,6 +220,27 @@ def integration_upgrade(
         from .. import ensure_executable_scripts
         ensure_executable_scripts(project_root)
 
+    # _install_shared_infra_or_exit above may have just overwritten
+    # .specify/scripts/bash/<name>.sh with the bundled core when force=True,
+    # clobbering any generated launcher chain for a script an
+    # already-enabled preset provides. Restore those chains now,
+    # mirroring the same call in command_init.py.
+    if force:
+        try:
+            from ..presets import PresetManager as _ExistingPresetManager
+
+            _ExistingPresetManager(project_root).reconcile_all_script_chains()
+        except Exception as exc:
+            from .. import _print_cli_warning
+
+            _print_cli_warning(
+                "reconcile script presets after",
+                "integration upgrade",
+                str(project_root),
+                exc,
+                continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+            )
+
     # Phase 1: Install new files (overwrites existing; old-only files remain)
     console.print(f"Upgrading integration: [cyan]{key}[/cyan]")
     new_manifest = IntegrationManifest(key, project_root, version=_get_speckit_version())

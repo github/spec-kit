@@ -252,3 +252,45 @@ class PresetArtifactTestHelpers:
         with open(preset_dir / "preset.yml", "w") as f:
             yaml.dump(manifest_data, f)
         return preset_dir
+
+
+def create_pack(temp_dir, valid_pack_data, pack_id, content,
+                 strategy="replace", template_type="template",
+                 template_name="spec-template"):
+    """Helper to create a preset pack directory."""
+    pack_data = {**valid_pack_data}
+    pack_data["preset"] = {**valid_pack_data["preset"], "id": pack_id, "name": pack_id}
+
+    tmpl_entry = {
+        "type": template_type,
+        "name": template_name,
+    }
+    if template_type == "script":
+        tmpl_entry["file"] = f"scripts/{template_name}.sh"
+    elif template_type == "command":
+        tmpl_entry["file"] = f"commands/{template_name}.md"
+    else:
+        tmpl_entry["file"] = f"templates/{template_name}.md"
+    if strategy != "replace":
+        tmpl_entry["strategy"] = strategy
+    pack_data["provides"] = {"templates": [tmpl_entry]}
+
+    pack_dir = temp_dir / pack_id
+    pack_dir.mkdir(exist_ok=True)
+    with open(pack_dir / "preset.yml", 'w') as f:
+        yaml.dump(pack_data, f)
+
+    if template_type == "script":
+        subdir = pack_dir / "scripts"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.sh").write_text(content)
+    elif template_type == "command":
+        subdir = pack_dir / "commands"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.md").write_text(content)
+    else:
+        subdir = pack_dir / "templates"
+        subdir.mkdir(exist_ok=True)
+        (subdir / f"{template_name}.md").write_text(content)
+
+    return pack_dir

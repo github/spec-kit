@@ -1565,6 +1565,51 @@ class TestIntegrationUpgradeDiagnostics(IntegrationCatalogCliTestBase):
         assert "upgrade exploded with context" in normalized
         assert "previous integration files may still be in place" in normalized
 
+    def test_upgrade_force_restores_script_preset_launcher(self, tmp_path):
+        """``integration upgrade --force`` rewrites the canonical script from
+        the bundled core (via ``_install_shared_infra_or_exit(force=True)``),
+        clobbering a generated launcher chain for an already-enabled script
+        preset. The upgrade must reconcile script chains afterward so the
+        preset's script keeps working, mirroring ``specify init --force``."""
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        from specify_cli.presets import PresetManager
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "upgrade-script-pack",
+                    "name": "Upgrade Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/upgrade-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "upgrade-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="upgrade-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "upgrade-me.sh"
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
 
 class TestIntegrationUpgradeBasic:
     """Test ``specify integration upgrade``."""

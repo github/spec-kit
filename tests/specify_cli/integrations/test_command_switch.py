@@ -96,6 +96,118 @@ class TestIntegrationSwitch:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
+    def test_switch_same_force_restores_script_preset_launcher(self, tmp_path):
+        """``integration switch <same> --force`` refreshes shared infra
+        (including ``.specify/scripts/bash/<name>.sh``) from the bundled
+        core, clobbering a generated launcher chain for an already-enabled
+        script preset. The switch must reconcile script chains afterward
+        so the preset's script keeps working."""
+        from tests.specify_cli.presets._helpers import create_pack
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-script-pack",
+                    "name": "Switch Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "switch-me.sh"
+        provenance = (
+            project / ".specify" / "scripts" / "bash" / "switch-me.speckit-generated"
+        )
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+        assert provenance.is_file()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "claude",
+                "--force",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+    def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_launcher(
+        self, tmp_path
+    ):
+        """``integration switch <different-target> --refresh-shared-infra``
+        forces its own shared-infra refresh in phase 1 (before phase 2 ever
+        calls ``_set_default_integration``), clobbering a generated
+        launcher chain the same way the same-target case does. The switch
+        must reconcile script chains for this path too, not just for
+        switching to the already-default integration."""
+        from tests.specify_cli.presets._helpers import create_pack
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-target-script-pack",
+                    "name": "Switch Target Script Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-target-script-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-target-script-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-target-me",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "switch-target-me.sh"
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+                "--refresh-shared-infra",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert canonical.read_text(encoding="utf-8") == "echo custom\n"
+
     def test_switch_installed_target_rejects_integration_options(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()

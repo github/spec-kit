@@ -74,6 +74,25 @@ those operations may reconcile the live file, but only if its provenance hash pr
 generated content. Missing files may be seeded when the preset is installed; authored or edited
 constitutions are never overwritten.
 
+### Script chain lifecycle
+
+Unlike templates, scripts are executed rather than read, so composition must be fully resolved
+before invocation (#4551). `PresetManager._reconcile_script_chain()` materializes the chain to disk:
+each composing layer gets its own fixed-path generated launcher under `.specify/scripts/bash/`, the
+topmost landing at the canonical `<name>.sh` agents actually invoke, each pointing `$CORE_SCRIPT` at
+the next-lower layer's fixed path and ending in a materialized copy of the base layer at
+`<name>.speckit-core.sh`. A single `replace`-strategy layer with no composition needs no intermediate
+files at all.
+
+Preset installation, removal, enablement, disablement, and priority changes all call this
+materializer for every script name the affected preset declares, so a chain never goes stale — unlike
+`constitution-template`, there is no opt-in gate here. The one case that does not self-materialize: a
+project-local override added directly to `.specify/templates/overrides/scripts/` outside any
+lifecycle command is not picked up automatically and needs an explicit
+`PresetManager.reconcile_all_script_chains()` call, the same call a forced shared-infrastructure
+refresh (`specify init --force`, a forced integration switch/upgrade) already makes to restore chains
+it just overwrote.
+
 ## Command Registration
 
 When a preset is installed with `type: "command"` entries, the `PresetManager` registers them into all detected agent directories using the shared `CommandRegistrar` from `src/specify_cli/agents.py`.
