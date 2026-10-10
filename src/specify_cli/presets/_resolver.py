@@ -688,10 +688,13 @@ class PresetResolver:
         Scripts are executed rather than merely read, so — unlike
         templates and commands — their composition doesn't need to be
         spliced into a single file ahead of time. A ``"wrap"`` script
-        contains a literal ``$CORE_SCRIPT`` reference that a runtime
-        continuation runner resolves hop by hop, so this returns the
-        stack of files that reference forms, in priority order, rather
-        than composed content.
+        contains a literal ``$CORE_SCRIPT`` reference that stays a shell
+        variable rather than being textually substituted; ``PresetManager``
+        consumes this chain to generate the fixed-path launcher files that
+        materialize that continuation on disk at lifecycle time (install,
+        remove, enable, disable, set-priority), so this returns the stack
+        of files that reference forms, in priority order, rather than
+        composed content.
 
         This walks the same priority stack as ``resolve_content()`` for
         ``template_type="script"``: the highest-priority layer down

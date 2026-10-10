@@ -173,7 +173,19 @@ _SCRIPT_PROVENANCE_SUFFIX = ".speckit-generated"
 _RESERVED_SCRIPT_NAMES = frozenset({"common"})
 
 
-def _script_launcher_stub(script_name: str, next_hop_name: str, original_path: Path) -> str:
+def _shell_single_quote(value: str) -> str:
+    """Single-quote ``value`` for safe embedding in a generated shell script.
+
+    Single quotes suppress ``$``, backtick, and double-quote expansion
+    entirely (unlike double quotes, which still expand ``$``) -- the only
+    escape needed is for an embedded single quote itself.
+    """
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _script_launcher_stub(
+    script_name: str, next_hop_name: str, original_path: Path, scripts_dir: Path
+) -> str:
     """Generated fixed-path launcher for one layer of a materialized script chain.
 
     Sets ``$CORE_SCRIPT`` to the next-lower layer's fixed path and execs the
@@ -184,11 +196,19 @@ def _script_launcher_stub(script_name: str, next_hop_name: str, original_path: P
     chmod +x since a layer above it invokes $CORE_SCRIPT as a bare command.
 
     The next hop is always a sibling generated file, so it's resolved via
-    ``$SCRIPT_DIR`` + basename at run time rather than an embedded absolute
-    path -- keeps the generated file portable across checkouts/platforms.
-    The preset's own authored file lives elsewhere and is embedded as a
-    POSIX-style absolute path (bash-compatible on Windows via git-bash/WSL).
+    ``$SCRIPT_DIR`` + basename at run time rather than an embedded path --
+    keeps the generated file portable across checkouts/platforms. The
+    preset's own authored file (``original_path``) is project-owned too --
+    it always lives under ``.specify/presets/`` or
+    ``.specify/templates/overrides/`` -- so it is likewise referenced
+    relative to ``$SCRIPT_DIR`` rather than as an absolute path: an absolute
+    path would go stale the moment the checkout is moved or copied. The
+    relative fragment is still single-quoted defensively, since a project
+    path can itself contain ``$``, backticks, or spaces that double quotes
+    alone would not neutralize.
     """
+    relative_original = Path(os.path.relpath(original_path, scripts_dir)).as_posix()
+    quoted_original = _shell_single_quote(relative_original)
     return (
         "#!/usr/bin/env bash\n"
         f"{_SCRIPT_LAUNCHER_MARKER}\n"
@@ -198,7 +218,11 @@ def _script_launcher_stub(script_name: str, next_hop_name: str, original_path: P
         "set -e\n"
         'SCRIPT_DIR="$(CDPATH="" cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"\n'
         f'export CORE_SCRIPT="$SCRIPT_DIR/{next_hop_name}"\n'
-        f'exec bash "{original_path.as_posix()}" "$@"\n'
+        # Adjacent "..."'...' quoting: bash concatenates the two literals with
+        # no space between them, so $SCRIPT_DIR still expands inside the
+        # double-quoted prefix while the project-owned suffix stays inert
+        # inside single quotes.
+        f'exec bash "$SCRIPT_DIR/"{quoted_original} "$@"\n'
     )
 
 
@@ -665,7 +689,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 _write_shared_text(
                     self.project_root,
                     target,
-                    _script_launcher_stub(script_name, next_path.name, layer),
+                    _script_launcher_stub(script_name, next_path.name, layer, scripts_dir),
                 )
                 generated.append(target)
                 next_path = target
