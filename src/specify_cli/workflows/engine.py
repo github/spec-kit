@@ -736,6 +736,52 @@ class RunState:
     def runs_dir(self) -> Path:
         return self.project_root / ".specify" / "workflows" / "runs" / self.run_id
 
+    @property
+    def definition_path(self) -> Path:
+        """Snapshot of the workflow definition the run was started with.
+
+        Storage contract: ``resume`` and ``specify workflow definition`` both
+        read this file, so its location and persisted shape must not change.
+        """
+        return self.runs_dir / "workflow.yml"
+
+    def load_definition(self) -> WorkflowDefinition:
+        """Load the definition persisted when this run started.
+
+        Raises ``FileNotFoundError`` if no snapshot exists and ``ValueError``
+        for invalid YAML or a non-mapping document. Never consults the
+        installed workflow.
+        """
+        return WorkflowDefinition.from_yaml(self.definition_path)
+
+    def load_workflow_scopes(
+        self,
+    ) -> list[tuple[list[str], str, WorkflowDefinition]]:
+        """Bound workflow calls as ``(scope_path, workflow_id, definition)``.
+
+        Returned in execution order, with the same ``scope_path`` and
+        ``workflow_id`` that ``status`` reports. Empty when the run has no
+        execution tree. Read-only: the tree is structurally validated but never
+        cross-checked against the root workflow snapshot.
+        Raises ``ValueError`` if the tree or a frozen definition is unusable.
+        """
+        tree = self.execution
+        if tree is None:
+            return []
+        from ._execution import bound_scopes, validate_execution
+
+        validate_execution(tree)
+        scopes = []
+        for path, binding in bound_scopes(tree):
+            scopes.append(
+                (
+                    path,
+                    binding["workflow"],
+                    WorkflowDefinition.from_string(binding["definition"]),
+                )
+            )
+        return scopes
+
     def save(self) -> None:
         """Persist current state to disk.
 
@@ -1107,14 +1153,11 @@ class WorkflowEngine:
         )
         self._execution_state.set(state)
 
-        # Persist a copy of the workflow definition so resume can
-        # reload it even if the original source is no longer available
-        # (e.g. a local YAML path that was moved or deleted).
-        run_dir = self.project_root / ".specify" / "workflows" / "runs" / state.run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        workflow_copy = run_dir / "workflow.yml"
-        import yaml
-        with open(workflow_copy, "w", encoding="utf-8") as f:
+        # Persist the definition the run was started with. Storage contract
+        # (see RunState.definition_path): read by resume and by
+        # `specify workflow definition`; do not change location or content.
+        state.runs_dir.mkdir(parents=True, exist_ok=True)
+        with open(state.definition_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
         # Resolve inputs
@@ -1182,11 +1225,9 @@ class WorkflowEngine:
         # Load the workflow definition — try the persisted copy in the
         # run directory first so resume works even if the original
         # source (e.g. a local YAML path) is no longer available.
-        run_dir = self.project_root / ".specify" / "workflows" / "runs" / run_id
-        run_copy = run_dir / "workflow.yml"
-        if run_copy.exists():
-            definition = WorkflowDefinition.from_yaml(run_copy)
-        else:
+        try:
+            definition = state.load_definition()
+        except FileNotFoundError:
             definition = self.load_workflow(state.workflow_id)
 
         # RunState.load() rejects a non-int/negative current_step_index but
