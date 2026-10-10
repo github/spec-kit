@@ -132,6 +132,61 @@ class JunieIntegration(MarkdownIntegration):
             lambda m: f"{m.group(1)}{format_junie_command_name(m.group(2))}",
             content,
         )
+
+    @staticmethod
+    def _inject_allow_prompt_argument(content: str, allow_prompt: bool = True) -> str:
+        """Inject allowPromptArgument: true/false into the YAML frontmatter.
+
+        If frontmatter exists, it ensures the key is set to the desired value (overwriting if needed).
+        If not, it creates a minimal frontmatter.
+        """
+        value = "true" if allow_prompt else "false"
+        if not content.startswith("---"):
+            # No frontmatter at all? Create one.
+            return f"---\nallowPromptArgument: {value}\n---\n\n" + content
+
+        parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
+        if len(parts) < 3:
+            # Malformed frontmatter (e.g. missing closing dashes)?
+            return content
+
+        frontmatter = parts[1]
+        body = parts[2]
+
+        if "allowPromptArgument:" in frontmatter:
+            # Overwrite existing key
+            frontmatter = re.sub(
+                r"(?m)^(allowPromptArgument:\s*).*",
+                fr"\1{value}",
+                frontmatter
+            )
+        else:
+            # Append to frontmatter. Ensure it ends with newline.
+            # Check if the last line of frontmatter is a key-value pair.
+            lines = frontmatter.splitlines()
+            if lines and not lines[-1].strip():
+                # Remove trailing empty lines in frontmatter
+                while lines and not lines[-1].strip():
+                    lines.pop()
+                frontmatter = "\n".join(lines) + "\n"
+            elif not frontmatter.endswith("\n"):
+                frontmatter += "\n"
+
+            frontmatter += f"allowPromptArgument: {value}\n"
+
+        return f"---{frontmatter}---{body}"
+
+    @staticmethod
+    def _transform_body_variables(content: str) -> str:
+        """Transform $ARGUMENTS to $prompt and escape other $word by doubling $."""
+        def replacer(match: re.Match[str]) -> str:
+            word = match.group(1)
+            if word == "ARGUMENTS":
+                return "$prompt"
+            return "$$" + word
+
+        return re.sub(r"(?<!\$)\$([A-Za-z_][A-Za-z0-9_-]*)", replacer, content)
+
     def post_process_command_content(self, content: str) -> str:
         """Apply Junie-specific transformations to command content.
 
@@ -140,8 +195,36 @@ class JunieIntegration(MarkdownIntegration):
         ``post_process_command_content``) applies these transforms to
         extension/preset command files too, not just core commands.
         """
+        # If it has frontmatter, we must isolate it to avoid transforming variables
+        # inside the YAML header (e.g. key: $VAL should not become key: $$VAL).
+        if content.startswith("---"):
+            parts = re.split(r"(?m)^---\s*$", content, maxsplit=2)
+            if len(parts) < 3:
+                # Malformed frontmatter (missing closing dashes) - return as is.
+                return content
+            
+            frontmatter_block = f"---{parts[1]}---"
+            body = parts[2]
+
+            has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", body))
+            updated_body = self._inject_hook_command_note(body)
+            updated_body = self._rewrite_handoff_references(updated_body)
+            updated_body = self._transform_body_variables(updated_body)
+
+            # Recombine and then inject/update allowPromptArgument in the frontmatter.
+            return self._inject_allow_prompt_argument(
+                frontmatter_block + updated_body, 
+                allow_prompt=has_arguments
+            )
+
+        # No frontmatter case.
+        has_arguments = bool(re.search(r"(?<!\$)\$ARGUMENTS(?![A-Za-z0-9_-])", content))
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
+        # FR-002, FR-003: Set allowPromptArgument based on $ARGUMENTS presence.
+        # This will prepend frontmatter if none exists.
+        updated = self._inject_allow_prompt_argument(updated, allow_prompt=has_arguments)
+        updated = self._transform_body_variables(updated)
         return updated
 
     def setup(
