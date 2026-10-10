@@ -1,6 +1,7 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
 from dataclasses import dataclass, field
+import errno
 import os
 from pathlib import Path, PurePath, PureWindowsPath
 import stat
@@ -168,6 +169,12 @@ class FileHelper:
     def create_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Exclusively create a file; never overwrite an existing entry."""
         destination = self._path(path, allow_missing=True, follow_leaf=False)
+        try:
+            self._entry_mode(destination)
+        except FileNotFoundError:
+            pass
+        else:
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(destination, flags, mode)

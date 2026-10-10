@@ -65,7 +65,7 @@ helpers for independent project/source/managed boundaries.
 |---|---|---|
 | Read file | Reject accessed parent or leaf links | Follow only existing contained regular-file targets |
 | Create directory | Reject accessed links before creating parents | Follow contained directory links; reject dangling targets |
-| Exclusively create file | Reject accessed links | Follow contained parents; an existing leaf link is never overwritten |
+| Exclusively create file | Reject accessed links | Follow contained parents; reject an existing leaf without opening its target |
 | Atomic write/upsert | Reject accessed links | Replace the resolved regular-file target and preserve every link |
 | Delete leaf link | Reject without mutation | Unlink the link, including dangling, cyclic, or external-target links |
 | Delete through linked parent | Reject without mutation | Delete the contained target entry, leaving the parent link intact |
@@ -77,7 +77,11 @@ helpers for independent project/source/managed boundaries.
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
-  create files with existing parents.
+  create files with existing parents. A no-follow `lstat` preflight rejects
+  existing leaves, including dangling links, before opening the destination.
+  This avoids target creation on backends that follow dangling links despite
+  exclusive-open flags. `O_EXCL` and `O_NOFOLLOW` (where available) remain in use;
+  the static preflight does not eliminate concurrent path-change races.
 - `write_bytes(path, content, mode=0o644)` / `write_text(...)` atomically
   create or update files with existing parents. Text variants also accept
   `encoding="utf-8"`. Replacement files use the supplied mode; metadata and

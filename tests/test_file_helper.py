@@ -1,6 +1,7 @@
 """Operation-level evidence for the scoped FileHelper foundation."""
 
 from dataclasses import FrozenInstanceError
+import errno
 import os
 from pathlib import Path, PureWindowsPath
 import subprocess
@@ -421,18 +422,74 @@ def test_intermediate_target_link_is_checked(root, link):
 
 
 @pytest.mark.parametrize("allow", [False, True])
-def test_exclusive_create_never_overwrites_file_or_link(root, link, allow):
+@pytest.mark.parametrize("entry", ["file", "alias", "dangling"])
+def test_exclusive_create_never_overwrites_file_or_link(root, link, allow, entry):
     (root / "file").write_bytes(b"keep")
     alias = link(root / "alias", root / "file")
     dangling = link(root / "dangling", root / "missing")
     files = FileHelper(root, allow_symlinks=allow)
-    for path in (root / "file", alias, dangling):
-        error = SymlinkDeniedError if path.is_symlink() and not allow else FileExistsError
-        with pytest.raises(error):
-            files.create_bytes(path, b"bad")
+    path = root / entry
+    error = SymlinkDeniedError if path.is_symlink() and not allow else FileExistsError
+    with pytest.raises(error):
+        files.create_bytes(path, b"bad")
     assert (root / "file").read_bytes() == b"keep"
     assert alias.is_symlink() and dangling.is_symlink()
     assert not (root / "missing").exists()
+
+
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("cyclic", [False, True])
+def test_exclusive_create_rejects_existing_leaf_before_open(
+    root, link, monkeypatch, operation, cyclic
+):
+    target = root / "target"
+    target.write_bytes(b"keep")
+    alias = link(root / "alias", root / "alias" if cyclic else target)
+    original_target = os.readlink(alias)
+    opened = []
+    real_open = os.open
+
+    def recording_open(path, flags, mode):
+        opened.append(Path(path))
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr("specify_cli.file_helper.os.open", recording_open)
+    content = b"bad" if operation == "create_bytes" else "bad"
+    with pytest.raises(FileExistsError) as error:
+        getattr(FileHelper(root, allow_symlinks=True), operation)(alias, content)
+    assert error.value.errno == errno.EEXIST
+    assert opened == []
+    assert alias.is_symlink()
+    assert os.readlink(alias) == original_target
+    assert target.read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize("operation", ["create_bytes", "create_text"])
+@pytest.mark.parametrize("external", [False, True])
+def test_exclusive_create_rejects_dangling_leaf_with_windows_backend(
+    root, link, monkeypatch, operation, external
+):
+    target = root.parent / "external-missing" if external else root / "missing"
+    alias = link(root / "alias", target)
+    original_target = os.readlink(alias)
+    opened = []
+    real_open = os.open
+    monkeypatch.delattr("specify_cli.file_helper.os.O_NOFOLLOW", raising=False)
+
+    def windows_open(path, flags, mode):
+        opened.append(Path(path))
+        assert flags & os.O_CREAT and flags & os.O_EXCL
+        return real_open(Path(os.readlink(path)), flags, mode)
+
+    monkeypatch.setattr("specify_cli.file_helper.os.open", windows_open)
+    content = b"bad" if operation == "create_bytes" else "bad"
+    with pytest.raises(FileExistsError) as error:
+        getattr(FileHelper(root, allow_symlinks=True), operation)(alias, content)
+    assert error.value.errno == errno.EEXIST
+    assert opened == []
+    assert alias.is_symlink()
+    assert os.readlink(alias) == original_target
+    assert not os.path.lexists(target)
 
 
 def test_symlink_creation_requires_permission_and_contained_target(root, link):
