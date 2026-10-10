@@ -551,6 +551,14 @@ class TestNegative:
         _assert_json_error(result, "has no persisted workflow definition")
         assert "approve" not in result.stderr
 
+    def test_recursive_yaml_alias_returns_json_error(self, project_dir):
+        recursive_workflow = GATE_WF + "\nmetadata: &loop\n  self: *loop\n"
+        run = _run(project_dir, recursive_workflow)
+
+        result = _definition(project_dir, run["run_id"])
+
+        _assert_json_error(result, "cannot represent recursive YAML aliases")
+
     @pytest.mark.parametrize("content", [": : :\n  - [", "- a\n- b\n"])
     def test_corrupt_snapshot(self, project_dir, content):
         run = _run(project_dir, GATE_WF)

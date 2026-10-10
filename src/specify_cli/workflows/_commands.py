@@ -1067,19 +1067,37 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
     represent (e.g. dates), mapping keys, and non-finite floats are stringified,
     so output is always plain JSON.
     """
-    def plain_json(value: Any) -> Any:
+    def plain_json(value: Any, active_containers: set[int]) -> Any:
         if isinstance(value, dict):
-            return {
-                key if isinstance(key, (str, int, float, bool)) or key is None else str(key): plain_json(item)
-                for key, item in value.items()
-            }
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return {
+                    key if isinstance(key, (str, int, float, bool)) or key is None else str(key): plain_json(item, active_containers)
+                    for key, item in value.items()
+                }
+            finally:
+                active_containers.remove(container_id)
         if isinstance(value, float) and not math.isfinite(value):
             return str(value)
         if isinstance(value, (list, tuple)):
-            return [plain_json(item) for item in value]
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return [plain_json(item, active_containers) for item in value]
+            finally:
+                active_containers.remove(container_id)
         return value
 
-    print(json.dumps(plain_json(payload), indent=2, default=str))
+    print(json.dumps(plain_json(payload, set()), indent=2, default=str))
 
 
 def _load_run_state(run_id: str, project_root: Path) -> RunState:

@@ -49,13 +49,16 @@ def workflow_definition(
     except (OSError, ValueError) as exc:
         emit_json_error(ValueError(f"Invalid workflow definition for run {state.run_id}: {exc}"))
 
-    cli._emit_workflow_json(
-        {
-            "run_id": state.run_id,
-            "definition": definition.data,
-            "workflow_scopes": [
-                {"scope_path": path, "workflow_id": workflow_id, "definition": d.data}
-                for path, workflow_id, d in scopes
-            ],
-        }
-    )
+    try:
+        cli._emit_workflow_json(
+            {
+                "run_id": state.run_id,
+                "definition": definition.data,
+                "workflow_scopes": [
+                    {"scope_path": path, "workflow_id": workflow_id, "definition": d.data}
+                    for path, workflow_id, d in scopes
+                ],
+            }
+        )
+    except ValueError as exc:
+        emit_json_error(exc)
