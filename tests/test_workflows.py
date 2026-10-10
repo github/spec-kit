@@ -8593,6 +8593,126 @@ steps:
         assert "\\u" not in raw and "\\x" not in raw
         assert yaml.safe_load(raw)["workflow"]["name"] == name
 
+    _GATED = """
+schema_version: "1.0"
+workflow:
+  id: "gated"
+  name: "Gated"
+  version: "1.0.0"
+inputs:
+  verdict: {type: string, default: ""}
+steps:
+  - {id: ask, type: gate, message: "Review", verdict_input: verdict}
+"""
+
+    def _gated_run(self, project_dir):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        wf_dir = project_dir / ".specify" / "workflows" / "gated"
+        wf_dir.mkdir(parents=True)
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text(self._GATED, encoding="utf-8")
+        engine = WorkflowEngine(project_dir)
+        return engine, engine.execute(WorkflowDefinition.from_yaml(wf_file))
+
+    def test_definition_path_and_load_definition(self, project_dir):
+        from specify_cli.workflows.engine import RunState
+
+        _, state = self._gated_run(project_dir)
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.definition_path == loaded.runs_dir / "workflow.yml"
+        definition = loaded.load_definition()
+        assert definition.data == yaml.safe_load(self._GATED)
+
+    def test_load_definition_missing_snapshot_raises_file_not_found(self, project_dir):
+        _, state = self._gated_run(project_dir)
+        state.definition_path.unlink()
+        with pytest.raises(FileNotFoundError):
+            state.load_definition()
+
+    @pytest.mark.parametrize("content", [": : :\n  - [", "- a\n- b\n"])
+    def test_load_definition_rejects_corrupt_snapshot(self, project_dir, content):
+        _, state = self._gated_run(project_dir)
+        state.definition_path.write_text(content, encoding="utf-8")
+        with pytest.raises(ValueError):
+            state.load_definition()
+
+    def test_snapshot_storage_contract(self, project_dir):
+        """``runs/<id>/workflow.yml`` is read by ``resume`` and ``workflow
+        definition``: pin its location and persisted shape."""
+        _, state = self._gated_run(project_dir)
+        path = project_dir / ".specify" / "workflows" / "runs" / state.run_id / "workflow.yml"
+        assert state.definition_path == path
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert list(data) == ["schema_version", "workflow", "inputs", "steps"]
+        assert data == yaml.safe_load(self._GATED)
+        assert yaml.safe_load(yaml.safe_dump(data, sort_keys=False)) == data
+
+    def test_resume_uses_snapshot_when_installed_workflow_is_gone(self, project_dir):
+        from specify_cli.workflows.base import RunStatus
+
+        engine, state = self._gated_run(project_dir)
+        (project_dir / ".specify" / "workflows" / "gated" / "workflow.yml").unlink()
+        resumed = engine.resume(state.run_id, {"verdict": "approve"})
+        assert resumed.status == RunStatus.COMPLETED
+
+    def test_resume_falls_back_to_installed_workflow_without_snapshot(self, project_dir):
+        from specify_cli.workflows.base import RunStatus
+
+        engine, state = self._gated_run(project_dir)
+        state.definition_path.unlink()
+        resumed = engine.resume(state.run_id, {"verdict": "approve"})
+        assert resumed.status == RunStatus.COMPLETED
+
+    def test_load_workflow_scopes_without_tree_is_empty(self, project_dir):
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(run_id="plain", workflow_id="w", project_root=project_dir)
+        state.save()
+        assert RunState.load("plain", project_dir).load_workflow_scopes() == []
+
+    def test_load_workflow_scopes_matches_scope_summaries(self, project_dir):
+        from specify_cli.workflows._execution import scope_summaries
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
+
+        child_dir = project_dir / ".specify" / "workflows" / "child"
+        child_dir.mkdir(parents=True)
+        (child_dir / "workflow.yml").write_text(
+            "workflow: {id: child, name: Child}\n"
+            "steps:\n  - {id: review, type: gate, message: Review}\n",
+            encoding="utf-8",
+        )
+        WorkflowRegistry(project_dir).add("child", {"enabled": True})
+        root = WorkflowDefinition({
+            "workflow": {"id": "parent", "name": "Parent"},
+            "steps": [{"id": "call", "type": "workflow", "workflow": "child"}],
+        })
+        state = WorkflowEngine(project_dir).execute(root)
+        loaded = RunState.load(state.run_id, project_dir)
+        scopes = loaded.load_workflow_scopes()
+        summaries = scope_summaries(loaded.execution, loaded.status.value)
+        assert [(p, w) for p, w, _ in scopes] == [
+            (s["scope_path"], s["workflow_id"]) for s in summaries
+        ] == [(["call"], "child")]
+        assert scopes[0][2].data["steps"][0]["id"] == "review"
+
+    @pytest.mark.parametrize(
+        "tree",
+        [{"version": 999, "sequence": {}}, {"version": 2}, "not-a-dict"],
+    )
+    def test_load_workflow_scopes_wraps_bad_tree_in_value_error(self, project_dir, tree):
+        from specify_cli.workflows.engine import RunState
+
+        state = RunState(run_id="bad", workflow_id="w", project_root=project_dir)
+        state.execution = tree
+        with pytest.raises(ValueError):
+            state.load_workflow_scopes()
+
     @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
     def test_load_rejects_non_object_step_results(
         self, project_dir, invalid_step_results

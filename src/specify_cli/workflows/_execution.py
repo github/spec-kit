@@ -331,6 +331,13 @@ def active_step(tree):
     return None
 
 
+def bound_scopes(tree):
+    """Yield (path, binding) for every bound workflow call, in execution order."""
+    for _, node, path, _ in walk_execution(tree["sequence"]):
+        if binding := node.get("binding"):
+            yield path, binding
+
+
 def scope_summaries(tree, run_status="running"):
     """Report workflow boundaries without exposing private inputs or results.
 
@@ -340,24 +347,25 @@ def scope_summaries(tree, run_status="running"):
     summaries = []
     active = active_step(tree)
     active_path = active[0] if active is not None else ()
-    for _, node, path, _ in walk_execution(tree["sequence"]):
-        binding = node.get("binding")
-        if binding:
-            output = node.get("result", {}).get("output", {})
-            status = output.get("status")
-            if status is None:
-                status = (
-                    run_status
-                    if run_status in HALTING and active_path[:len(path)] == path
-                    else "running"
-                )
-            summaries.append(
-                {
-                    "scope_path": path,
-                    "workflow_id": binding["workflow"],
-                    "status": status,
-                }
+    nodes_by_path = {
+        tuple(path): node for _, node, path, _ in walk_execution(tree["sequence"])
+    }
+    for path, binding in bound_scopes(tree):
+        output = nodes_by_path[tuple(path)].get("result", {}).get("output", {})
+        status = output.get("status")
+        if status is None:
+            status = (
+                run_status
+                if run_status in HALTING and active_path[:len(path)] == path
+                else "running"
             )
+        summaries.append(
+            {
+                "scope_path": path,
+                "workflow_id": binding["workflow"],
+                "status": status,
+            }
+        )
     return summaries
 
 

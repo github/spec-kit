@@ -103,6 +103,53 @@ specify workflow status [<run_id>]
 
 Shows the status of a specific run, or lists all runs if no ID is given. Run states: `created`, `running`, `completed`, `paused`, `failed`, `aborted`.
 
+## Workflow Definition
+
+```bash
+specify workflow definition <run_id> --json
+```
+
+| Option   | Description                                                      |
+| -------- | ---------------------------------------------------------------- |
+| `--json` | Required. Emit the run's workflow definition as a JSON object    |
+
+Returns the workflow definition a run was **started with**, so an integration can render a run (for example every gate and its message) without drifting from what the engine actually executes. It reads only the run's own persisted data and never the installed workflow: editing or removing the installed workflow does not change the output. Runtime progress and the active gate come from [`specify workflow status --json`](#workflow-status).
+
+Omitting `--json` exits with code `2` and prints a usage message on stderr; no stdout is produced. A text renderer is deferred, so the JSON shape below is the only contract.
+
+```json
+{
+  "run_id": "662bf791",
+  "definition": {
+    "schema_version": "1.0",
+    "workflow": { "id": "spec-review", "name": "Spec review", "version": "1.0.0" },
+    "steps": [
+      { "id": "draft", "type": "command", "command": "speckit.specify" },
+      { "id": "approve", "type": "gate", "message": "Review the specification." }
+    ]
+  },
+  "workflow_scopes": []
+}
+```
+
+- **`definition`** is the workflow as persisted for the run, verbatim and with overlays already applied, so it reflects the steps as executed. Every key is passed through (including `requires`, `outputs` and unknown keys). Nothing is added, renamed or filled in: an omitted field, such as a gate's `options`, means the engine default applies at run time. Expressions (`{{ ... }}`) are not evaluated. The structure follows the [workflow YAML schema](#workflow-yaml-schema), so `schema_version` is the version of this interface and a schema change is a change to it. Keys may be added to the top-level object but are never removed or renamed.
+- **Plain JSON.** YAML-native values that JSON cannot represent, such as an unquoted date, appear as strings. Non-string mapping keys and non-finite numbers are stringified too.
+- **`workflow_scopes`** (always present) holds the frozen definition of every [workflow call](#workflow-composition) that has been reached, in execution order. Each entry is `{ "scope_path", "workflow_id", "definition" }`, with `scope_path` and `workflow_id` identical to the values in `status --json`. A call step inside `definition` stays as authored; the callee is never expanded in place. A call that has not been reached yet, or whose target could not be resolved, has no entry, and its definition is never read from the installed workflow. The list grows as calls are reached, and a call inside a loop or fan-out has one entry per iteration or item.
+- **`scope_path`** is a list of strings from the root: the authored `id` of every enclosing step (`step-<index>` for a step without an `id`). Containers such as `if`, `switch`, loops and fan-out are elements; each loop iteration and fan-out item adds its index as a string, including the first (`["loop", "0", "call"]`). `workflow_scopes` is always present here, while `status --json` includes it only when the run has workflow calls.
+
+### Matching a gate to its definition
+
+`status --json` reports an active gate as `gate.step_id` and `gate.scope_path`. To find the gate's definition:
+
+1. Take the `workflow_scopes` entry with the longest `scope_path` that is a prefix of `gate.scope_path`. If there is none, use the root `definition`. Do not require an exact match: `gate.scope_path` lists every enclosing step, including `if`, `switch`, loops and fan-out containers, while an entry's `scope_path` ends at the call step. A gate in an `if` named `wrap` inside a workflow called by `call`, itself in an `if` named `route`, reports `["route", "call", "wrap"]`, and its entry has `["route", "call"]`.
+2. In that definition, find the step whose `id` equals the authored step ID. Step IDs are unique within one workflow definition. In later loop iterations and in fan-out items `step_id` is qualified as `<container>:<id>:<n>` (for example `fan:g:0`); the authored ID is the second-to-last `:`-separated segment, because `:` is not allowed in authored step IDs.
+
+`status --json` does not report per-step status for steps inside called workflows.
+
+### Errors
+
+Failures write a single `{"error": "<message>"}` object to stderr, leave stdout empty and exit with code `1`: not a Spec Kit project, an invalid `SPECIFY_INIT_DIR`, unsafe (including symlinked) workflow storage, an invalid or unknown run ID, an unreadable run state, a run with no persisted definition (for example one created before definitions were persisted), and a corrupt definition or execution state. Usage errors with `--json` also use this JSON error contract and exit with code `2`.
+
 ## List Installed Workflows
 
 ```bash
@@ -482,7 +529,7 @@ Catalogs are resolved in this order (first match wins):
 3. **User config** — `~/.specify/workflow-catalogs.yml`
 4. **Built-in defaults** — official catalog + community catalog
 
-## Workflow Definition
+## Workflow YAML Schema
 
 Workflows are defined in YAML files. Here is the built-in **Full SDD Cycle** workflow that ships with Spec Kit:
 

@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 import sys
 from pathlib import Path, PurePosixPath as PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 import yaml
@@ -30,6 +31,9 @@ from .._download_security import (
 )
 from .._project import _resolve_init_dir_override as _resolve_init_dir_override
 from ..shared_infra import verify_archive_sha256
+
+if TYPE_CHECKING:
+    from .engine import RunState
 
 workflow_app = typer.Typer(
     name="workflow",
@@ -147,6 +151,15 @@ def _parse_input_values(
     return inputs
 
 
+def _unsafe_dir_error(path: Path, label: str) -> str | None:
+    """Return the unsafe-storage error for *path*, if any."""
+    if path.is_symlink():
+        return f"Refusing to use symlinked {label} path"
+    if path.exists() and not path.is_dir():
+        return f"{label} path exists but is not a directory"
+    return None
+
+
 def _reject_unsafe_dir(path: Path, label: str) -> None:
     """Refuse to proceed when *path* is a symlink or an existing non-directory.
 
@@ -155,26 +168,29 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
     writes files beneath it must bail first. Absence is tolerated — the caller
     creates the directory — only an existing-but-wrong target is rejected.
     """
-    if path.is_symlink():
-        err_console.print(f"[red]Error:[/red] Refusing to use symlinked {label} path")
+    if error := _unsafe_dir_error(path, label):
+        err_console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1)
-    if path.exists() and not path.is_dir():
-        err_console.print(f"[red]Error:[/red] {label} path exists but is not a directory")
-        raise typer.Exit(1)
+
+
+def _workflow_storage_error(project_root: Path) -> str | None:
+    """Return the first unsafe workflow-storage error, if any."""
+    for path, label in (
+        (project_root / ".specify", ".specify"),
+        (project_root / ".specify" / "workflows", ".specify/workflows"),
+        (project_root / ".specify" / "workflows" / "runs", ".specify/workflows/runs"),
+        (project_root / ".specify" / "workflows" / "overlays", ".specify/workflows/overlays"),
+    ):
+        if error := _unsafe_dir_error(path, label):
+            return error
+    return None
 
 
 def _reject_unsafe_workflow_storage(project_root: Path) -> None:
-    """Refuse symlinked workflow storage directories before workflow commands run."""
-    _reject_unsafe_dir(project_root / ".specify", ".specify")
-    _reject_unsafe_dir(project_root / ".specify" / "workflows", ".specify/workflows")
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "runs",
-        ".specify/workflows/runs",
-    )
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "overlays",
-        ".specify/workflows/overlays",
-    )
+    """Refuse unsafe workflow storage directories before workflow commands run."""
+    if error := _workflow_storage_error(project_root):
+        err_console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1)
 
 
 def _resolve_installed_workflow_ownership(
@@ -1047,9 +1063,53 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
 
     Uses the builtin ``print`` rather than ``console.print`` so Rich
     markup interpretation, syntax highlighting, and line-wrapping can
-    never alter the emitted JSON.
+    never alter the emitted JSON. YAML-native scalars that JSON cannot
+    represent (e.g. dates), mapping keys, and non-finite floats are stringified,
+    so output is always plain JSON.
     """
-    print(json.dumps(payload, indent=2))
+    def plain_json(value: Any, active_containers: set[int]) -> Any:
+        if isinstance(value, dict):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return {
+                    key if isinstance(key, (str, int, float, bool)) or key is None else str(key): plain_json(item, active_containers)
+                    for key, item in value.items()
+                }
+            finally:
+                active_containers.remove(container_id)
+        if isinstance(value, float) and not math.isfinite(value):
+            return str(value)
+        if isinstance(value, (list, tuple)):
+            container_id = id(value)
+            if container_id in active_containers:
+                raise ValueError(
+                    "Workflow JSON output cannot represent recursive YAML aliases"
+                )
+            active_containers.add(container_id)
+            try:
+                return [plain_json(item, active_containers) for item in value]
+            finally:
+                active_containers.remove(container_id)
+        return value
+
+    print(json.dumps(plain_json(payload, set()), indent=2, default=str))
+
+
+def _load_run_state(run_id: str, project_root: Path) -> RunState:
+    """Load a run's state; raise ValueError with a user-facing message on failure."""
+    from .engine import RunState
+
+    try:
+        return RunState.load(run_id, project_root)
+    except FileNotFoundError:
+        raise ValueError(f"Run not found: {run_id}") from None
+    except OSError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 @contextlib.contextmanager
@@ -1584,6 +1644,7 @@ def register(app: typer.Typer) -> None:
     from . import command_run  # noqa: F401 -- registers handler
     from . import command_resume  # noqa: F401 -- registers handler
     from . import command_status  # noqa: F401 -- registers handler
+    from . import command_definition  # noqa: F401 -- registers handler
     from . import command_list  # noqa: F401 -- registers handler
     from . import command_add  # noqa: F401 -- registers handler
     from . import command_remove  # noqa: F401 -- registers handler
