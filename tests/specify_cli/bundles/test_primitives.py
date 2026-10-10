@@ -762,6 +762,77 @@ def test_step_refresh_restores_null_registry_entry_when_reinstall_fails(
     )
 
 
+def test_step_refresh_restores_null_entry_when_removal_fails(
+    tmp_path: Path, monkeypatch
+):
+    """A removal ``BundlerError`` restores the snapshot instead of deleting it.
+
+    ``_remove_step_locked`` drops the registry key before ``rmtree``. A JSON
+    null value cannot be put back by that function, and the removal error used
+    to escape before rollback, so ``finally`` deleted the only copy of the
+    entry and the package.
+    """
+    import json
+    import shutil
+
+    import specify_cli
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+    (steps_dir / "my-step").mkdir(parents=True)
+    (steps_dir / "my-step" / "step.yml").write_text(
+        "step:\n  type_key: my-step\n", encoding="utf-8"
+    )
+    (steps_dir / "my-step" / "__init__.py").write_text("", encoding="utf-8")
+    (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+        json.dumps({"schema_version": "1.0", "steps": {"my-step": None}}),
+        encoding="utf-8",
+    )
+    package_text = (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8")
+
+    def _add(*_args, **_kwargs):
+        raise AssertionError("reinstall ran after a failed removal")
+
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+
+    real_rmtree = shutil.rmtree
+    failed = {"done": False}
+
+    def _failing_rmtree(path, *args, **kwargs):
+        target = Path(path)
+        if (
+            not failed["done"]
+            and target.name == "my-step"
+            and "speckit-step-refresh-" not in str(target)
+        ):
+            # Directory is gone, then removal reports failure. The null key
+            # was already deleted and cannot be restored by ``_remove_step_locked``.
+            failed["done"] = True
+            real_rmtree(path, *args, **kwargs)
+            raise OSError("simulated rmtree failure")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", _failing_rmtree)
+
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    with pytest.raises(BundlerError, match="Failed to remove step 'my-step'") as caught:
+        manager.refresh(_component("steps", "my-step"))
+
+    assert failed["done"]
+    assert not getattr(caught.value, "__notes__", ())
+    restored = StepRegistry(tmp_path)
+    assert restored.is_installed("my-step")
+    assert restored.get("my-step") is None
+    saved = json.loads(
+        (steps_dir / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8")
+    )
+    assert saved["steps"]["my-step"] is None
+    assert (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8") == (
+        package_text
+    )
+    assert (steps_dir / "my-step" / "__init__.py").read_text(encoding="utf-8") == ""
+
+
 def _seed_refresh_step(root: Path) -> tuple[Path, dict]:
     """Install ``my-step`` on disk the way a previous ``step add`` would have."""
     import json
@@ -967,7 +1038,12 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
 def test_step_refresh_skips_backup_when_offline_or_not_installed(
     tmp_path: Path, monkeypatch
 ):
-    """Offline and not-installed refresh delegate to install with no backup."""
+    """Offline refresh, and a step absent under the lock, do not back up.
+
+    Online refresh still takes the install lock to read the registry. Only
+    the offline gate may skip that lock; a missing locked snapshot delegates
+    to install with no backup.
+    """
     import tempfile
 
     import specify_cli
@@ -979,7 +1055,7 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
         calls.append((step_id, Path.cwd()))
 
     def _forbid_step_lock(*_args, **_kwargs):
-        raise AssertionError("step refresh took the step lock")
+        raise AssertionError("offline step refresh took the step lock")
 
     real_mkdtemp = tempfile.mkdtemp
 
@@ -990,13 +1066,13 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
         return real_mkdtemp(*args, **kwargs)
 
     monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
-    monkeypatch.setattr(step_installer, "_step_install_transaction", _forbid_step_lock)
     monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
 
     missing = primitive_manager("steps", tmp_path, allow_network=True)
     missing.refresh(_component("steps", "missing-step"))
     assert calls == [("missing-step", tmp_path)]
 
+    monkeypatch.setattr(step_installer, "_step_install_transaction", _forbid_step_lock)
     _seed_refresh_step(tmp_path)
     offline = primitive_manager("steps", tmp_path, allow_network=False)
     with pytest.raises(
@@ -1094,6 +1170,86 @@ def test_step_refresh_installs_when_removed_before_locked_snapshot(
     assert install_calls == [("my-step", 0)]
     # No refresh backup is created, so none can be left behind.
     assert backup_dirs == []
+
+
+def test_step_refresh_snapshots_step_added_after_manager_construction(
+    tmp_path: Path, monkeypatch
+):
+    """Online refresh reads presence under the lock, not the constructor registry.
+
+    The manager is built while the step is absent, so ``self._registry`` would
+    skip straight to non-force ``install``. A concurrent ``step add`` then
+    commits. Refresh must snapshot, remove, and reinstall; ``check_installable``
+    would reject the step if removal had not happened first.
+    """
+    import contextlib
+    import tempfile
+
+    import specify_cli
+    import specify_cli.workflows.step.command_remove as command_remove
+    import specify_cli.workflows.step.installer as step_installer
+    import typer
+
+    component = _component("steps", "my-step")
+    manager = primitive_manager("steps", tmp_path, allow_network=True)
+    assert not manager.is_installed(component)
+
+    _seed_refresh_step(tmp_path)
+    assert StepRegistry(tmp_path).is_installed("my-step")
+    assert not manager.is_installed(component)
+
+    hold = {"depth": 0}
+    remove_depths: list[int] = []
+    install_calls: list[tuple[str, int]] = []
+    backup_dirs: list[Path] = []
+    real_txn = step_installer._step_install_transaction
+    real_remove = command_remove._remove_step_locked
+    real_mkdtemp = tempfile.mkdtemp
+
+    @contextlib.contextmanager
+    def _tracking_transaction(project_root):
+        if hold["depth"] >= 1:
+            raise AssertionError("nested _step_install_transaction")
+        hold["depth"] += 1
+        try:
+            with real_txn(project_root):
+                yield
+        finally:
+            hold["depth"] -= 1
+
+    def _tracking_remove(project_root, step_id):
+        remove_depths.append(hold["depth"])
+        assert backup_dirs
+        assert (backup_dirs[-1] / step_id / "step.yml").is_file()
+        return real_remove(project_root, step_id)
+
+    def _add(step_id: str, *args, **kwargs) -> None:
+        try:
+            step_installer.check_installable(tmp_path, step_id, force=False)
+        except step_installer.StepInstallError as exc:
+            raise typer.Exit(1) from exc
+        install_calls.append((step_id, hold["depth"]))
+
+    def _mkdtemp(*args, **kwargs):
+        prefix = kwargs.get("prefix", args[0] if args else "")
+        path = Path(real_mkdtemp(*args, **kwargs))
+        if str(prefix).startswith("speckit-step-refresh-"):
+            backup_dirs.append(path)
+        return str(path)
+
+    monkeypatch.setattr(
+        step_installer, "_step_install_transaction", _tracking_transaction
+    )
+    monkeypatch.setattr(command_remove, "_remove_step_locked", _tracking_remove)
+    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
+
+    manager.refresh(component)
+
+    assert remove_depths == [1]
+    assert install_calls == [("my-step", 0)]
+    assert backup_dirs
+    assert all(not path.exists() for path in backup_dirs)
 
 
 def _backup_root_from_note(note: str) -> Path:

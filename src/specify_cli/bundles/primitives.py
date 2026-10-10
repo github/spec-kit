@@ -506,9 +506,11 @@ class _StepKindManager:
             )
 
     def refresh(self, component: ComponentRef) -> None:
-        # Offline and not-yet-installed steps have nothing to roll back.
-        # Delegate to install and skip the backup path entirely.
-        if not (self._allow_network and self.is_installed(component)):
+        # Only offline refresh can skip the lock. Online presence is the
+        # registry read under ``_step_install_transaction``: a step added
+        # after this manager was constructed is still refreshed, and a step
+        # missing from that read delegates to ``install`` below.
+        if not self._allow_network:
             self.install(component)
             return
 
@@ -532,6 +534,7 @@ class _StepKindManager:
         keep_backup = False
         metadata = None
         had_snapshot = False
+        removal_error: BundlerError | None = None
         try:
             try:
                 with step_installer._step_install_transaction(self._root):
@@ -550,13 +553,20 @@ class _StepKindManager:
                         if step_dir.exists():
                             shutil.copytree(step_dir, backup_dir)
                         with _chdir(self._root):
-                            _delegate_command(
-                                "remove",
-                                f"step '{component.id}'",
-                                lambda: command_remove._remove_step_locked(
-                                    self._root, component.id
-                                ),
-                            )
+                            try:
+                                _delegate_command(
+                                    "remove",
+                                    f"step '{component.id}'",
+                                    lambda: command_remove._remove_step_locked(
+                                        self._root, component.id
+                                    ),
+                                )
+                            except BundlerError as exc:
+                                # ``_remove_step_locked`` drops the registry key
+                                # before the directory delete. A JSON null cannot
+                                # be put back there, so this error must reach
+                                # rollback below with the snapshot still intact.
+                                removal_error = exc
             except step_installer.StepInstallError as exc:
                 # Lock acquisition failed before any package or registry snapshot.
                 raise BundlerError(
@@ -568,6 +578,8 @@ class _StepKindManager:
                 return
 
             try:
+                if removal_error is not None:
+                    raise removal_error
                 self.install(component)
             except BundlerError as original:
                 try:
