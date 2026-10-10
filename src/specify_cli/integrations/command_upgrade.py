@@ -16,11 +16,15 @@ from ..integration_runtime import (
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys
 from ._command_upgrade_layout import (
     _PresetRegistryUnreadableError,
+    _check_extension_command_claims,
+    _command_file_names_changed,
+    _command_files_on_disk,
     _installed_command_presets_affecting_agent,
     _installed_presets_affecting_agent,
     _legacy_command_root_changed,
     _legacy_command_root_upgrade_pending,
     _manifest_tracks_skill_layout,
+    _planned_command_files,
 )
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_success
@@ -190,6 +194,91 @@ def integration_upgrade(
                 f"--integration-options \"...\"[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
             )
+            raise typer.Exit(1)
+
+    # Reject in-place command file renames (Kiro CLI's speckit.<cmd>.md ->
+    # speckit-<cmd>.md, #4797) while preset command artifacts are tracked for
+    # the integration. A preset override shares its path with the core or
+    # extension command it overrides, and its rescaffold is best-effort: if
+    # the preset can't be re-registered, stale cleanup or the other layer's
+    # new file would replace the override. Refuse before any mutation, as for
+    # the layout changes above.
+    planned_command_files = _planned_command_files(integration)
+    renamed = _command_file_names_changed(
+        integration, old_manifest.files, planned_command_files
+    )
+    untracked = [rel for rel in planned_command_files if rel not in old_manifest.files]
+    if not renamed and key == "kiro-cli":
+        # The manifest may not show the rename (e.g. empty ``files``); a dotted
+        # core prompt on disk does, until the manifest tracks its replacement.
+        renamed = _command_file_names_changed(
+            integration,
+            _command_files_on_disk(project_root, integration) - planned_command_files,
+            untracked,
+        )
+    if renamed:
+        try:
+            affected_presets = _installed_command_presets_affecting_agent(
+                project_root,
+                key,
+            )
+        except _PresetRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files: the "
+                "preset registry could not be read to verify installed presets."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "A command file rename cannot reconcile preset command "
+                "artifacts while the preset registry state is unknown. Fix or "
+                "restore [cyan].specify/presets/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
+            console.print(
+                f"[red]Error:[/red] Cannot rename '{key}' command files while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "Preset command artifacts cannot yet be reconciled across a "
+                "command file rename, so the upgrade is refused before "
+                "changing files."
+            )
+            console.print(
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                f"  [cyan]specify preset remove <id>[/cyan]\n"
+                f"  [cyan]specify integration upgrade {key}[/cyan]\n"
+                f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+    # Kiro CLI's manifest may not show the rename (e.g. empty files), so its
+    # untracked core files get the same checks.
+    if renamed or (key == "kiro-cli" and untracked):
+        _check_extension_command_claims(project_root, integration, planned_command_files if renamed else untracked)
+        # Any other file already at a new core name is tracked by nothing,
+        # e.g. a prompt the user wrote because Kiro ignored the dotted names,
+        # so ownership can't be verified. Replace it only with --force, and
+        # never write through a symlink to wherever it points.
+        occupied = sorted(rel for rel in untracked if os.path.lexists(project_root / rel))
+        linked = [rel for rel in occupied if (project_root / rel).is_symlink()]
+        if linked or (occupied and not force):
+            console.print(
+                f"[yellow]⚠[/yellow]  {len(occupied)} file(s) not installed by "
+                f"'{key}' already use the new command file names:"
+            )
+            for rel in occupied:
+                console.print(f"    {rel}")
+            if linked:
+                console.print(
+                    "\nSymbolic links are not overwritten, even with "
+                    "[cyan]--force[/cyan]. Move them away and retry."
+                )
+            else:
+                console.print(
+                    "\nUse [cyan]--force[/cyan] to overwrite them, or move "
+                    "them away and retry."
+                )
             raise typer.Exit(1)
 
     # Ensure shared infrastructure is up to date; --force overwrites existing files.

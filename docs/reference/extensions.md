@@ -32,6 +32,8 @@ specify extension add <name>
 
 Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The deprecated core `speckit.taskstoissues` command remains available during migration and will be removed in a future minor release. It warns on invocation and continues its existing workflow without installing or enabling the extension automatically. For GitHub issue tracking, run `specify extension add github` and use the recommended `/speckit.github.taskstoissues` command (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`).
 
+Installation is refused when a command or alias would write the same file as a core command or another installed extension's command once dots become hyphens, as Cline, Forge, Junie, Kiro CLI and skills-based integrations name their files (for example `speckit.foo.bar-baz` and `speckit.foo-bar.baz`). An installed extension's names include those still registered for it, because their files stay on disk after its manifest stops declaring them. Installation is also refused while `.specify/extensions/.registry` can't be read, or while an installed extension has neither a readable manifest nor a readable list of registered commands, because its names can't be checked. An extension installed before this check that shares such a file is not registered for Kiro CLI or Qoder CLI, and keeps its existing files, until it is updated or removed, or the extension it shares the file with is removed.
+
 If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
 
 An unqualified catalog install still selects the advertised current version.
@@ -55,6 +57,15 @@ specify extension remove <name>
 | `--force`       | Skip confirmation prompt                       |
 
 Removes an installed extension. Configuration files are backed up by default; use `--keep-config` to leave them in place or `--force` to skip the confirmation.
+
+For Kiro CLI and Qoder CLI, removal deletes an extension's prompt or skill, its
+legacy commands, and any file at a core command's name only when the file's
+generated marker names that extension: `metadata.source` in a skill, and in a
+prompt its first `<!-- Extension: <id> -->` line, or `metadata.source` in its
+frontmatter when it has no such line. An extension prompt, skill or
+legacy command without that marker is kept, with a warning. Extension cleanup
+never removes installed core commands, including the cleanup that
+`specify integration switch` runs.
 
 ## List Installed Extensions
 

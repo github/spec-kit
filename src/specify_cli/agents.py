@@ -1370,7 +1370,12 @@ class CommandRegistrar:
         return results
 
     def unregister_commands(
-        self, registered_commands: Dict[str, List[str]], project_root: Path
+        self,
+        registered_commands: Dict[str, List[str]],
+        project_root: Path,
+        preserved_output_names: Dict[str, set[str]] | None = None,
+        *,
+        preserve_legacy_flat_commands: bool = False,
     ) -> None:
         """Remove previously registered command files from agent directories.
 
@@ -1379,9 +1384,18 @@ class CommandRegistrar:
         commands left behind after an ``integration upgrade`` are
         cleaned up as well.
 
+        ``preserved_output_names`` maps an agent to formatted stems that
+        must stay. Extension removal protects installed core commands and
+        shared migrated files not owned by the extension being removed.
+        Protection applies to both formatted and raw command names.
+
+        Extension callers preserve legacy flat names for ownership-checked
+        retirement by their manager (#4797); preset cleanup is unchanged.
+
         Args:
             registered_commands: Dict mapping agent names to command name lists
             project_root: Path to project root
+            preserved_output_names: Agent -> formatted stems to leave in place
         """
         self._ensure_configs()
         for agent_name, cmd_names in registered_commands.items():
@@ -1389,6 +1403,11 @@ class CommandRegistrar:
                 continue
 
             agent_config = self.AGENT_CONFIGS[agent_name]
+            from .integrations import get_integration
+
+            preserve_raw = preserve_legacy_flat_commands and bool(
+                getattr(get_integration(agent_name), "legacy_flat_command_dir", None)
+            )
             commands_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
@@ -1402,13 +1421,25 @@ class CommandRegistrar:
                 if legacy_dir.exists() and legacy_dir != commands_dir:
                     dirs_to_clean.append(legacy_dir)
 
+            preserved = {
+                os.path.normcase(name)
+                for name in (preserved_output_names or {}).get(agent_name, ())
+                if isinstance(name, str)
+            }
             for cmd_name in cmd_names:
                 output_name = self._compute_output_name(
                     agent_name, cmd_name, agent_config
                 )
 
-                names_to_clean = [output_name]
-                if output_name != cmd_name and self._is_safe_command_name(cmd_name):
+                names_to_clean = []
+                if os.path.normcase(output_name) not in preserved:
+                    names_to_clean.append(output_name)
+                if (
+                    output_name != cmd_name
+                    and not preserve_raw
+                    and os.path.normcase(cmd_name) not in preserved
+                    and self._is_safe_command_name(cmd_name)
+                ):
                     names_to_clean.append(cmd_name)
 
                 for target_dir in dirs_to_clean:

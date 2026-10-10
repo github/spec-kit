@@ -83,6 +83,7 @@ def run_update_command(extension: str | None) -> None:
             ) from exc
         hook_executor = HookExecutor(project_root)
         from ..agents import CommandRegistrar as _AgentReg  # used in backup and rollback paths
+        from ..integrations import get_integration
 
         # UNSET sentinel: backup not yet captured (exception before backup step)
         UNSET = object()
@@ -269,7 +270,9 @@ def run_update_command(extension: str | None) -> None:
                         shutil.copy2(cfg_file, backup_config_dir / cfg_file.name)
 
                 # 3. Backup command files for all agents
-                registered_commands = backup_registry_entry.get("registered_commands", {}) if isinstance(backup_registry_entry, dict) else {}
+                registered_commands = manager._recover_registered_commands(
+                    extension_id, backup_registry_entry.get("registered_commands") if isinstance(backup_registry_entry, dict) else {}
+                )
                 for agent_name, cmd_names in registered_commands.items():
                     if agent_name not in registrar.AGENT_CONFIGS:
                         continue
@@ -277,7 +280,7 @@ def run_update_command(extension: str | None) -> None:
                     commands_dir = _AgentReg._resolve_agent_dir(
                         agent_name, agent_config, project_root
                     )
-                    dirs_to_backup = [commands_dir]
+                    dirs_to_backup = [(commands_dir, agent_config["extension"])]
                     legacy = agent_config.get("legacy_dir")
                     if legacy:
                         legacy_dir = project_root / legacy
@@ -285,9 +288,13 @@ def run_update_command(extension: str | None) -> None:
                             legacy_dir.exists()
                             and legacy_dir != commands_dir
                         ):
-                            dirs_to_backup.append(legacy_dir)
+                            dirs_to_backup.append((legacy_dir, agent_config["extension"]))
+                    integration = get_integration(agent_name)
+                    legacy_flat = getattr(integration, "legacy_flat_command_dir", None)
+                    if legacy_flat:
+                        dirs_to_backup.append((project_root / legacy_flat, integration.legacy_flat_command_extension))
 
-                    for cmd_name in cmd_names:
+                    for cmd_name in manager._valid_name_list(cmd_names):
                         output_name = _AgentReg._compute_output_name(
                             agent_name, cmd_name, agent_config
                         )
@@ -298,13 +305,13 @@ def run_update_command(extension: str | None) -> None:
                         ):
                             names_to_backup.append(cmd_name)
 
-                        for dir_index, target_dir in enumerate(
+                        for dir_index, (target_dir, suffix) in enumerate(
                             dirs_to_backup
                         ):
                             for name in names_to_backup:
                                 cmd_file = (
                                     target_dir
-                                    / f"{name}{agent_config['extension']}"
+                                    / f"{name}{suffix}"
                                 )
                                 try:
                                     _AgentReg._ensure_inside(

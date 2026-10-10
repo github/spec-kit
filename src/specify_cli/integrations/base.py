@@ -153,7 +153,11 @@ class IntegrationBase(ABC):
     """
 
     legacy_flat_command_dir: str | None = None
-    """Previous flat command directory retired after skill replacements exist."""
+    """Previous flat command directory retired after replacements exist.
+
+    Its files are named ``<command name><legacy_flat_command_extension>``. It
+    may be the current command directory when only the file names changed.
+    """
 
     legacy_flat_command_extension: str | None = None
     """File extension used by commands in ``legacy_flat_command_dir``."""
