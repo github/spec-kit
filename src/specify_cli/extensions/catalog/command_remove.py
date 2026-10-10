@@ -48,16 +48,21 @@ def catalog_remove(
         _commands.console.print(f"[red]Error:[/red] Catalog '{safe_name}' not found.")
         raise typer.Exit(1)
 
-    config["catalogs"] = catalogs
-    config_path.write_text(
-        _commands.yaml.safe_dump(
-            config,
-            default_flow_style=False,
-            sort_keys=False,
-            allow_unicode=True,
-        ),
-        encoding="utf-8",
-    )
+    if catalogs:
+        config["catalogs"] = catalogs
+        config_path.write_text(
+            _commands.yaml.safe_dump(
+                config,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+    else:
+        # The catalog loader rejects an existing config with no entries, so
+        # delete the file instead of writing ``catalogs: []``.
+        config_path.unlink(missing_ok=True)
 
     _commands.console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
