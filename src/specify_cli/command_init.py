@@ -1051,6 +1051,7 @@ def register(app: typer.Typer) -> None:
         dsh_skill_mode = selected_ai == "dsh" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
         forge_skill_mode = selected_ai == "forge"
+        junie_skill_mode = selected_ai == "junie"
         bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         native_skill_mode = (
             codex_skill_mode
@@ -1146,6 +1147,7 @@ def register(app: typer.Typer) -> None:
                 _is_slash_skills_agent(selected_ai, _ai_skills_enabled)
                 or cline_skill_mode
                 or forge_skill_mode
+                or junie_skill_mode
             ):
                 return f"/speckit-{name}"
             return f"/speckit.{name}"

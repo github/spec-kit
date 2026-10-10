@@ -109,6 +109,30 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_init_next_steps_show_hyphenated_commands(self, tmp_path):
+        """Next Steps must list the `/speckit-<name>` commands Junie installs."""
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(tmp_path / "junie-next-steps"),
+                "--integration",
+                self.KEY,
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "/speckit-plan" in result.output
+        assert "/speckit.plan" not in result.output
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):
