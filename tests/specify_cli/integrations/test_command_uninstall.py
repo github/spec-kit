@@ -167,6 +167,66 @@ class TestIntegrationUninstall:
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
         assert "/speckit-plan" in script.read_text(encoding="utf-8")
 
+    def test_uninstall_unregisters_extension_artifacts(self, tmp_path):
+        """Uninstall must not leave extension skills orphaned in the agent's directory."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        claude_git_feature = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert claude_git_feature.exists()
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+        assert result.exit_code == 0, result.output
+
+        assert not claude_git_feature.exists(), "Extension skill should be removed with its agent"
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        assert "claude" not in registry["extensions"]["git"]["registered_commands"]
+
+    @pytest.mark.parametrize("missing_manifest", [False, True])
+    def test_uninstall_default_registers_extensions_for_fallback(self, tmp_path, missing_manifest):
+        """The integration promoted to default receives enabled extensions, like ``use``."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        codex_git_feature = project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert not codex_git_feature.exists(), "precondition: secondary install has no extension artifacts"
+        if missing_manifest:
+            (project / ".specify" / "integrations" / "claude.manifest.json").unlink()
+
+        result = _run_in_project(project, ["integration", "uninstall", "claude"])
+        assert result.exit_code == 0, result.output
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        assert codex_git_feature.exists(), "Promoted default should receive enabled extensions"
+        assert not (project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md").exists()
+
+    def test_uninstall_non_default_preserves_default_extension_artifacts(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+
+        assert (project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md").exists()
+        registry = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )
+        assert "claude" in registry["extensions"]["git"]["registered_commands"]
+
     def test_uninstall_preserves_shared_infra(self, tmp_path):
         """Shared scripts and templates are not removed by integration uninstall."""
         project = _init_project(tmp_path, "claude")
