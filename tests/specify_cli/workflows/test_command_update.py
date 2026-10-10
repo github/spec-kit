@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,49 @@ steps:
         result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
         assert result.exit_code == 0, result.output
         return src
+
+    @staticmethod
+    def _write_custom_step(project_dir, type_key):
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / type_key
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "\n".join(
+                (
+                    'schema_version: "1.0"',
+                    "step:",
+                    f'  type_key: "{type_key}"',
+                    '  name: "Test Update Step"',
+                    '  version: "1.0.0"',
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+        (step_dir / "__init__.py").write_text(
+            "\n".join(
+                (
+                    "from specify_cli.workflows.base import StepBase, StepResult",
+                    "",
+                    "",
+                    "class TestUpdateStep(StepBase):",
+                    f'    type_key = "{type_key}"',
+                    "",
+                    "    def execute(self, config, context):",
+                    "        return StepResult()",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _custom_step_module_name(type_key):
+        import hashlib
+        import re
+
+        safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
+        key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+        return f"_speckit_custom_step_{safe_key}_{key_hash}"
 
     class _FakeResponse:
         def __init__(self, data, url="https://example.com/workflow.yml", headers=None):
@@ -201,6 +245,243 @@ steps:
         meta = WorkflowRegistry(project_dir).get("align-wf")
         assert meta["version"] == "2.0.0"
         assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+
+    def test_update_installs_newer_workflow_with_project_custom_step(
+        self, project_dir, monkeypatch
+    ):
+        """Updates validate against custom steps installed by this project."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.workflows as workflows
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        custom_type = "test-update-step"
+        module_name = self._custom_step_module_name(custom_type)
+        self._write_custom_step(project_dir, custom_type)
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(workflows, "STEP_REGISTRY", dict(workflows.STEP_REGISTRY))
+        try:
+            registry = WorkflowRegistry(project_dir)
+            registry.add("align-wf", {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "description": "CLI alignment test workflow",
+                "source": "catalog",
+                "catalog_name": "test-catalog",
+                "url": "https://example.com/workflow.yml",
+            })
+            wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+            wf_dir.mkdir(parents=True)
+            (wf_dir / "workflow.yml").write_text(
+                self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+            )
+            monkeypatch.setattr(
+                WorkflowCatalog,
+                "get_workflow_info",
+                lambda self, wid: {
+                    "id": wid,
+                    "name": "Align Workflow",
+                    "version": "2.0.0",
+                    "url": "https://example.com/workflow.yml",
+                    "_install_allowed": True,
+                    "_catalog_name": "test-catalog",
+                },
+            )
+            data = self.WORKFLOW_YAML.format(version="2.0.0").replace(
+                "type: shell", f"type: {custom_type}"
+            ).encode()
+            with patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None,
+                redirect_validator=None: self._FakeResponse(data, url),
+            ):
+                result = CliRunner().invoke(app, ["workflow", "update"], input="y\n")
+
+            assert result.exit_code == 0, result.output
+            assert custom_type in workflows.STEP_REGISTRY
+            assert WorkflowRegistry(project_dir).get("align-wf")["version"] == "2.0.0"
+            assert (wf_dir / "workflow.yml").read_bytes() == data
+        finally:
+            sys.modules.pop(module_name, None)
+
+    def test_update_refreshes_custom_steps_between_projects(
+        self, project_dir, monkeypatch
+    ):
+        """A later project update must replace, not retain, custom step types."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.workflows as workflows
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        project_a = project_dir
+        project_b = project_dir / "project-b"
+        (project_b / ".specify" / "workflows").mkdir(parents=True)
+        type_a = "project-a-step"
+        module_names = {self._custom_step_module_name(type_a)}
+        self._write_custom_step(project_a, type_a)
+        monkeypatch.setattr(workflows, "STEP_REGISTRY", dict(workflows.STEP_REGISTRY))
+
+        def workflow_data(workflow_id, version, step_type="shell"):
+            return (
+                self.WORKFLOW_YAML.format(version=version)
+                .replace('id: "align-wf"', f'id: "{workflow_id}"')
+                .replace("type: shell", f"type: {step_type}")
+                .encode()
+            )
+
+        updated_workflows = {
+            "project-a-workflow": workflow_data(
+                "project-a-workflow", "2.0.0", type_a
+            ),
+            "project-b-workflow": workflow_data(
+                "project-b-workflow", "2.0.0", type_a
+            ),
+        }
+
+        def install_initial_workflow(project_root, workflow_id):
+            registry = WorkflowRegistry(project_root)
+            registry.add(workflow_id, {
+                "name": workflow_id,
+                "version": "1.0.0",
+                "description": "custom-step refresh regression",
+                "source": "catalog",
+                "catalog_name": "test-catalog",
+                "url": f"https://example.com/{workflow_id}.yml",
+            })
+            workflow_dir = project_root / ".specify" / "workflows" / workflow_id
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "workflow.yml").write_bytes(
+                workflow_data(workflow_id, "1.0.0")
+            )
+
+        install_initial_workflow(project_a, "project-a-workflow")
+        install_initial_workflow(project_b, "project-b-workflow")
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, workflow_id, *args: {
+                "id": workflow_id,
+                "name": workflow_id,
+                "version": "2.0.0",
+                "url": f"https://example.com/{workflow_id}.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+
+        def response_for(url, **_kwargs):
+            workflow_id = Path(url).stem
+            return self._FakeResponse(updated_workflows[workflow_id], url)
+
+        try:
+            runner = CliRunner()
+            monkeypatch.chdir(project_a)
+            with patch(
+                "specify_cli.authentication.http.open_url", side_effect=response_for
+            ):
+                result_a = runner.invoke(app, ["workflow", "update"], input="y\n")
+            assert result_a.exit_code == 0, result_a.output
+            assert type_a in workflows.STEP_REGISTRY
+
+            monkeypatch.chdir(project_b)
+            workflow_file_b = (
+                project_b
+                / ".specify"
+                / "workflows"
+                / "project-b-workflow"
+                / "workflow.yml"
+            )
+            registry_b = WorkflowRegistry(project_b)
+            original_workflow_b = workflow_file_b.read_bytes()
+            original_registry_b = registry_b.registry_path.read_bytes()
+            original_metadata_b = dict(registry_b.get("project-b-workflow"))
+            with patch(
+                "specify_cli.authentication.http.open_url", side_effect=response_for
+            ):
+                result_b = runner.invoke(app, ["workflow", "update"], input="y\n")
+
+            assert result_b.exit_code != 0
+            assert f"invalid type '{type_a}'" in result_b.output
+            assert type_a not in workflows.STEP_REGISTRY
+            assert workflow_file_b.read_bytes() == original_workflow_b
+            assert registry_b.registry_path.read_bytes() == original_registry_b
+            assert (
+                WorkflowRegistry(project_b).get("project-b-workflow")
+                == original_metadata_b
+            )
+        finally:
+            for module_name in module_names:
+                sys.modules.pop(module_name, None)
+
+    def test_update_rejects_unknown_step_without_changing_installed_workflow(
+        self, project_dir, monkeypatch
+    ):
+        """Loading a project custom step must not admit unrelated types."""
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.workflows as workflows
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        custom_type = "test-update-step"
+        module_name = self._custom_step_module_name(custom_type)
+        self._write_custom_step(project_dir, custom_type)
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(workflows, "STEP_REGISTRY", dict(workflows.STEP_REGISTRY))
+        try:
+            registry = WorkflowRegistry(project_dir)
+            registry.add("align-wf", {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "description": "CLI alignment test workflow",
+                "source": "catalog",
+                "catalog_name": "test-catalog",
+                "url": "https://example.com/workflow.yml",
+            })
+            wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+            wf_dir.mkdir(parents=True)
+            workflow_file = wf_dir / "workflow.yml"
+            original_workflow = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+            workflow_file.write_bytes(original_workflow)
+            original_metadata = dict(WorkflowRegistry(project_dir).get("align-wf"))
+            registry_file = registry.registry_path
+            original_registry = registry_file.read_bytes()
+
+            monkeypatch.setattr(
+                WorkflowCatalog,
+                "get_workflow_info",
+                lambda self, wid: {
+                    "id": wid,
+                    "name": "Align Workflow",
+                    "version": "2.0.0",
+                    "url": "https://example.com/workflow.yml",
+                    "_install_allowed": True,
+                    "_catalog_name": "test-catalog",
+                },
+            )
+            data = self.WORKFLOW_YAML.format(version="2.0.0").replace(
+                "type: shell", "type: unknown-update-step"
+            ).encode()
+            with patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None,
+                redirect_validator=None: self._FakeResponse(data, url),
+            ):
+                result = CliRunner().invoke(app, ["workflow", "update"], input="y\n")
+
+            assert result.exit_code != 0
+            assert "invalid type 'unknown-update-step'" in result.output
+            assert custom_type in workflows.STEP_REGISTRY
+            assert workflow_file.read_bytes() == original_workflow
+            assert registry_file.read_bytes() == original_registry
+            assert WorkflowRegistry(project_dir).get("align-wf") == original_metadata
+        finally:
+            sys.modules.pop(module_name, None)
 
     def test_update_downloaded_invalid_yaml_escapes_rich_markup(self, project_dir, monkeypatch):
         """A malformed downloaded workflow can quote the offending line verbatim; escape it before printing."""
