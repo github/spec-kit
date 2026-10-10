@@ -159,12 +159,13 @@ Re-read the PR with `pull_request_read` (`get`) before queuing the report.
 If the PR is now closed or merged, queue the Step 1 not-assessed comment and
 stop without changing labels.
 
-If you examined code, compare its head SHA, base SHA, and body with the values
-captured in Step 2. Do not substitute the new head SHA for the revision you
-examined.
+If you examined code, compare its head SHA, base SHA, body, and title text with
+the values captured in Step 2. Do not substitute the new head SHA for the revision
+you examined.
 
 If any value changed, or the final read fails, use **inconclusive** and explain
-that the assessed inputs could not be confirmed.
+that the assessed inputs could not be confirmed. If the title changed, say that
+the title changed during assessment.
 
 Use the existing outcome labels from the final PR read to determine the label
 action below before composing the report. If existing outcome labels cannot be

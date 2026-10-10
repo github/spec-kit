@@ -2000,11 +2000,15 @@ def test_pr_assess_checks_input_stability_before_reporting_a_verdict():
         "Re-read the PR with `pull_request_read` (`get`) before queuing the report."
     )
     assert (
-        "If you examined code, compare its head SHA, base SHA, and body with "
+        "If you examined code, compare its head SHA, base SHA, body, and title text with "
         "the values captured in Step 2."
     ) in before_comment
     assert (
         "If any value changed, or the final read fails, use **inconclusive**"
+        in before_comment
+    )
+    assert (
+        "If the title changed, say that the title changed during assessment."
         in before_comment
     )
     assert (
