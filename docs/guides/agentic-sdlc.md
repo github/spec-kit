@@ -146,6 +146,25 @@ as complete. The
 uses an agent to select relevant tests, but the test commands themselves
 still run deterministically.
 
+&#9733; Maintainers can also request the
+[pr-assess workflow](https://github.com/github/spec-kit/blob/main/.github/workflows/pr-assess.md)
+by applying `pr-assess` to a PR. It compares the description with the cumulative
+diff, reports material omissions or contradictions, and applies one
+`pr-description-aligned`, `pr-description-needs-update`, or
+`pr-description-inconclusive` label. It removes up to two stale outcome labels,
+then adds the selected outcome only when absent. A matching sole outcome leaves
+labels unchanged; conflicting outcomes are cleaned up without changing the
+description verdict solely because of that conflict.
+Every completed assessment posts a new standalone comment, including matching
+reruns. Suggested updates are description-only, not code-change alternatives.
+This MVP uses separate remove/add operations that can partially fail and do not
+make concurrent manual label edits safe. Comment delivery is also separate.
+It reads repository and fork changes
+without executing contributor code. A mislabeled issue or closed PR receives
+an explanatory comment, not a verdict. Reassessment is manual: remove and re-add
+the trigger label. This checks description alignment, not author intent or
+general code quality, and does not replace human review.
+
 Separately, conventional GitHub Actions run
 [Python tests and Ruff](https://github.com/github/spec-kit/blob/main/.github/workflows/test.yml),
 [Markdown linting for documentation and ShellCheck for shell scripts](https://github.com/github/spec-kit/blob/main/.github/workflows/lint.yml),
