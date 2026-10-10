@@ -536,37 +536,7 @@ def external_lifecycle(operation: str):
                             installer.unload_installed_integrations()
                             installer.persist_package(root, key, *candidate)
                         for removed in records.keys() - set(remaining):
-                            if operation == "uninstall":
-                                from ._helpers import (
-                                    _unregister_extensions_for_agent,
-                                    _unregister_presets_for_agent,
-                                )
-
-                                _unregister_extensions_for_agent(
-                                    root, removed,
-                                    continuing="The adapter was removed, but extension artifacts may need manual cleanup.",
-                                )
-                                _unregister_presets_for_agent(
-                                    root, removed,
-                                    continuing="The adapter was removed, but preset artifacts may need manual cleanup.",
-                                )
                             installer.remove_package(root, removed)
-                        if operation == "uninstall" and key in records and key == default_integration_key(state or {}):
-                            fallback = default_integration_key(new_state or {})
-                            if fallback:
-                                from ._helpers import (
-                                    _register_extensions_for_agent,
-                                    _register_presets_for_agent,
-                                )
-
-                                _register_extensions_for_agent(
-                                    root, fallback,
-                                    continuing="The fallback integration was selected, but extensions may need re-registration.",
-                                )
-                                _register_presets_for_agent(
-                                    root, fallback,
-                                    continuing="The fallback integration was selected, but presets may need re-registration.",
-                                )
                         if not candidate:
                             installer.load_installed_integrations(root)
                     for message in messages:

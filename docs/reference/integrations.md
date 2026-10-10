@@ -230,6 +230,8 @@ Uninstalls the current integration (or the specified one). Spec Kit tracks every
 - **Modified files** (where you've made manual edits) are preserved so your customizations are not lost.
 - Use `--force` to remove all integration files regardless of modifications.
 
+Uninstall also removes the extension and preset artifacts registered for the integration. The extensions and presets themselves stay installed. If you uninstall the default integration while other integrations remain, one of them becomes the default, and Spec Kit registers the enabled extensions and presets for it, as `use` does.
+
 ## Switch to a Different Integration
 
 ```bash
