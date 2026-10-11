@@ -78,3 +78,88 @@ def test_get_speckit_version_reads_pyproject_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(importlib.metadata, "version", _not_found)
 
     assert get_speckit_version() == "9.9.9"
+
+
+def test_unrelated_exception_from_version_lookup_propagates(monkeypatch):
+    """A TypeError from importlib.metadata.version() must NOT be swallowed.
+
+    With the old bare ``except Exception`` this was silently caught and
+    the function returned "unknown". After the narrowing to
+    (PackageNotFoundError, InvalidMetadataError) an unrelated exception
+    must propagate. This test fails against the previous implementation.
+    """
+    def _boom(name):
+        raise TypeError("unexpected internal error")
+
+    monkeypatch.setattr(importlib.metadata, "version", _boom)
+
+    try:
+        get_speckit_version()
+    except TypeError:
+        pass  # narrowed: TypeError propagates
+    else:
+        raise AssertionError("TypeError was swallowed by the fallback")
+
+
+def test_unrelated_exception_from_pyproject_propagates(monkeypatch, tmp_path):
+    """A RuntimeError from pyproject parsing must NOT be swallowed.
+
+    With the old bare ``except Exception`` in the inner fallback this
+    was silently caught. After narrowing to (OSError, KeyError,
+    ValueError) an unrelated exception must propagate. This test fails
+    against the previous implementation.
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(_assets, "_repo_root", lambda: tmp_path)
+
+    def _not_found(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", _not_found)
+
+    original_tomllib_load = None
+    import tomllib
+
+    def _boom_load(f):
+        raise RuntimeError("corrupt tomllib")
+
+    monkeypatch.setattr(tomllib, "load", _boom_load)
+
+    try:
+        get_speckit_version()
+    except RuntimeError:
+        pass  # narrowed: RuntimeError propagates
+    else:
+        raise AssertionError("RuntimeError was swallowed by the pyproject fallback")
+
+
+def test_pyproject_io_error_returns_unknown(monkeypatch, tmp_path):
+    """An OSError reading pyproject.toml must return "unknown", not propagate.
+
+    This exercises the intended pyproject I/O failure path: the narrowing
+    keeps OSError in the caught tuple so a missing/unreadable pyproject
+    still falls through to "unknown".
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(_assets, "_repo_root", lambda: tmp_path)
+
+    def _not_found(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", _not_found)
+
+    import builtins
+    real_open = builtins.open
+
+    def _deny_read(path, *args, **kwargs):
+        if "pyproject" in str(path):
+            raise OSError("permission denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _deny_read)
+
+    assert get_speckit_version() == "unknown"
