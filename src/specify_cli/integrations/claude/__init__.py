@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from ..base import SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
+from ..manifest import IntegrationManifest
 from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -64,6 +66,43 @@ class ClaudeIntegration(SkillsIntegration):
     }
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
+
+    # Set by ``setup()`` from ``--no-model-invocation``. Integrations are
+    # process-wide singletons, so preset and extension skills re-registered
+    # later in the same run (init, upgrade, switch) see the same value.
+    # Commands that write those skills without calling setup()
+    # (``extension add``, ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        opts = super().options()
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install skills as user-invocable only "
+                    "(disable-model-invocation: true)"
+                ),
+            )
+        )
+        return opts
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        self._disable_model_invocation = bool(
+            (parsed_options or {}).get("no_model_invocation")
+        )
+        return super().setup(
+            project_root, manifest, parsed_options=parsed_options, **opts
+        )
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -228,10 +267,17 @@ class ClaudeIntegration(SkillsIntegration):
         Applied by every skill-generation path (setup, presets, extensions),
         so command-specific frontmatter (argument-hint, fork context) stays
         consistent however the SKILL.md was produced.
+
+        ``disable-model-invocation`` is ``true`` when the last ``setup()`` in
+        this process was given ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        updated = self._inject_frontmatter_flag(
+            updated,
+            "disable-model-invocation",
+            "true" if self._disable_model_invocation else "false",
+        )
 
         stem = self._skill_stem_from_content(updated)
         if stem:
