@@ -67,15 +67,14 @@ class ClaudeIntegration(SkillsIntegration):
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
 
-    # Core command stems (``plan``, ``specify``, ...) whose skills get
-    # ``disable-model-invocation: true``; set by ``setup()`` from
-    # ``--no-model-invocation``. Extension skills are never included:
-    # mandatory hooks rely on the model invoking them. Integrations are
-    # process-wide singletons, so preset overrides re-registered later in
-    # the same run (init, upgrade, or a switch that installs Claude) see
-    # the same value. Commands that rewrite skills without calling setup()
-    # (e.g. ``preset add``, ``integration use``) get the default.
-    _no_model_invocation_stems: frozenset[str] = frozenset()
+    # Set by ``setup()`` from ``--no-model-invocation``; applies to core
+    # command skills only, since mandatory extension hooks rely on the model
+    # invoking the hook skill. Integrations are process-wide singletons, so
+    # preset overrides re-registered later in the same run (init, upgrade,
+    # or a switch that installs Claude) see the same value. Commands that
+    # rewrite skills without calling setup() (e.g. ``preset add``,
+    # ``integration use``) get the default.
+    _disable_model_invocation: bool = False
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -86,7 +85,7 @@ class ClaudeIntegration(SkillsIntegration):
                 is_flag=True,
                 default=False,
                 help=(
-                    "Install skills as user-invocable only "
+                    "Install core command skills as user-invocable only "
                     "(disable-model-invocation: true)"
                 ),
             )
@@ -100,17 +99,15 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        self._no_model_invocation_stems = (
-            frozenset(f.stem for f in self.list_command_templates())
-            if (parsed_options or {}).get("no_model_invocation")
-            else frozenset()
+        self._disable_model_invocation = bool(
+            (parsed_options or {}).get("no_model_invocation")
         )
         try:
             return super().setup(
                 project_root, manifest, parsed_options=parsed_options, **opts
             )
         except BaseException:
-            self._no_model_invocation_stems = frozenset()
+            self._disable_model_invocation = False
             raise
 
     @staticmethod
@@ -248,12 +245,8 @@ class ClaudeIntegration(SkillsIntegration):
         return "".join(out)
 
     @staticmethod
-    def _skill_stem_from_content(content: str) -> str | None:
-        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
-
-        Reads the ``name:`` field of the first frontmatter block and strips
-        the ``speckit-`` prefix. Returns ``None`` when no name is present.
-        """
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
         dash_count = 0
         for line in content.splitlines():
             stripped = line.rstrip("\r\n")
@@ -264,10 +257,29 @@ class ClaudeIntegration(SkillsIntegration):
                 continue
             if dash_count == 1 and stripped.startswith("name:"):
                 name = stripped[len("name:"):].strip().strip('"').strip("'")
-                if name.startswith("speckit-"):
-                    return name[len("speckit-"):]
                 return name or None
         return None
+
+    @classmethod
+    def _skill_stem_from_content(cls, content: str) -> str | None:
+        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
+
+        Reads the ``name:`` field of the first frontmatter block and strips
+        the ``speckit-`` prefix. Returns ``None`` when no name is present.
+        """
+        name = cls._skill_name_from_content(content)
+        if name and name.startswith("speckit-"):
+            return name[len("speckit-"):]
+        return name
+
+    def _is_core_command_skill(self, content: str) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        name = self._skill_name_from_content(content) or ""
+        return (
+            name.startswith("speckit-")
+            and name[len("speckit-"):] in CORE_COMMAND_NAMES
+        )
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Claude-specific frontmatter flags, hook notes, and any
@@ -283,13 +295,12 @@ class ClaudeIntegration(SkillsIntegration):
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        stem = self._skill_stem_from_content(updated)
+        disable = self._disable_model_invocation and self._is_core_command_skill(updated)
         updated = self._inject_frontmatter_flag(
-            updated,
-            "disable-model-invocation",
-            "true" if stem in self._no_model_invocation_stems else "false",
+            updated, "disable-model-invocation", "true" if disable else "false"
         )
 
+        stem = self._skill_stem_from_content(updated)
         if stem:
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:

@@ -480,13 +480,15 @@ specify init my-project --integration claude --integration-options="--no-model-i
   `specify integration upgrade claude`. Passing `--integration-options` to
   `upgrade` replaces all stored options, so repeat any you want to keep (for
   example `--integration-options="--events false --no-model-invocation"`);
-  `--integration-options=""` clears them.
-- Commands that rewrite these skills without reinstalling Claude, such as
-  `specify preset add` or `remove` and `specify integration use claude`, write
-  them with the default. Run `specify integration upgrade claude --force`
-  afterwards to reapply the option (`--force` is needed because those commands
-  modify installed skill files, and it overwrites local edits to Spec
-  Kit-managed files).
+  `--integration-options=""` clears them. Re-running `specify init` likewise
+  stores only the options passed to it.
+- Commands that rewrite these skills without reinstalling Claude write them with
+  the default: the `specify preset` commands that add, remove, enable, disable,
+  reprioritize or update presets, `specify integration use claude`, and `specify
+  integration switch claude` when Claude is already installed. Run `specify
+  integration upgrade claude --force` afterwards to reapply the option
+  (`--force` is needed because those commands modify installed skill files, and
+  it overwrites local edits to Spec Kit-managed files).
 
 ## Scaffold a New Integration
 

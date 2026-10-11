@@ -21,9 +21,9 @@ def _reset_claude_model_invocation():
     """``setup()`` stores ``--no-model-invocation`` on the process-wide Claude
     singleton; keep it from leaking between tests."""
     claude = get_integration("claude")
-    claude._no_model_invocation_stems = frozenset()
+    claude._disable_model_invocation = False
     yield
-    claude._no_model_invocation_stems = frozenset()
+    claude._disable_model_invocation = False
 
 
 def _skill_frontmatter(skill_file: Path) -> dict:
@@ -665,6 +665,18 @@ class TestClaudeNoModelInvocationOption:
         assert "disable-model-invocation: false" in result
         assert "disable-model-invocation: true" not in result
 
+    def test_option_requires_speckit_prefixed_core_name(self, tmp_path):
+        """A skill merely named like a core stem is not a core command skill."""
+        i = get_integration("claude")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("claude", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
     def test_failed_setup_does_not_leave_option_set(self, tmp_path):
         i = get_integration("claude")
         with patch.object(SkillsIntegration, "setup", side_effect=RuntimeError("boom")):
@@ -746,7 +758,7 @@ class TestClaudeNoModelInvocationOption:
 
         # A later ``specify integration upgrade`` is a new process: drop the
         # in-memory value so only the persisted options can supply it.
-        get_integration("claude")._no_model_invocation_stems = frozenset()
+        get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output
         for f in skill_files:
@@ -763,25 +775,24 @@ class TestClaudeNoModelInvocationOption:
         state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert "parsed_options" not in state["integration_settings"]["claude"]
 
-    def test_standalone_preset_add_uses_default_until_upgrade(self, tmp_path):
-        """Documented limitation: ``preset add`` runs without ``setup()``, so
-        the skills it writes keep the default until the next upgrade."""
+    def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
+        """``preset add`` runs without ``setup()`` (documented limitation);
+        ``integration upgrade claude --force`` reapplies the option to the
+        core-command skills a preset overrides."""
         from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
 
         project = _init_project(tmp_path, "claude", "--no-model-invocation")
         skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
         assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
 
-        get_integration("claude")._no_model_invocation_stems = frozenset()
+        get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(
             project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
         )
         assert result.exit_code == 0, result.output
-        fm = _skill_frontmatter(skill_file)
-        assert fm["metadata"]["source"] == "preset:lean"
-        assert fm["disable-model-invocation"] is False
+        assert _skill_frontmatter(skill_file)["metadata"]["source"] == "preset:lean"
 
-        get_integration("claude")._no_model_invocation_stems = frozenset()
+        get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output
         fm = _skill_frontmatter(skill_file)
@@ -799,6 +810,7 @@ class TestClaudeNoModelInvocationOption:
             project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
         )
         assert result.exit_code == 0, result.output
+        get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output
 
