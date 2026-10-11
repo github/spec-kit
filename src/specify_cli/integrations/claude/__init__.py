@@ -67,12 +67,15 @@ class ClaudeIntegration(SkillsIntegration):
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
 
-    # Set by ``setup()`` from ``--no-model-invocation``. Integrations are
-    # process-wide singletons, so preset and extension skills re-registered
-    # later in the same run (init, upgrade, switch) see the same value.
-    # Commands that write those skills without calling setup()
-    # (``extension add``, ``preset add``, ``integration use``) get the default.
-    _disable_model_invocation: bool = False
+    # Core command stems (``plan``, ``specify``, ...) whose skills get
+    # ``disable-model-invocation: true``; set by ``setup()`` from
+    # ``--no-model-invocation``. Extension skills are never included:
+    # mandatory hooks rely on the model invoking them. Integrations are
+    # process-wide singletons, so preset overrides re-registered later in
+    # the same run (init, upgrade, or a switch that installs Claude) see
+    # the same value. Commands that rewrite skills without calling setup()
+    # (e.g. ``preset add``, ``integration use``) get the default.
+    _no_model_invocation_stems: frozenset[str] = frozenset()
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -97,12 +100,18 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        self._disable_model_invocation = bool(
-            (parsed_options or {}).get("no_model_invocation")
+        self._no_model_invocation_stems = (
+            frozenset(f.stem for f in self.list_command_templates())
+            if (parsed_options or {}).get("no_model_invocation")
+            else frozenset()
         )
-        return super().setup(
-            project_root, manifest, parsed_options=parsed_options, **opts
-        )
+        try:
+            return super().setup(
+                project_root, manifest, parsed_options=parsed_options, **opts
+            )
+        except BaseException:
+            self._no_model_invocation_stems = frozenset()
+            raise
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -268,18 +277,19 @@ class ClaudeIntegration(SkillsIntegration):
         so command-specific frontmatter (argument-hint, fork context) stays
         consistent however the SKILL.md was produced.
 
-        ``disable-model-invocation`` is ``true`` when the last ``setup()`` in
-        this process was given ``--no-model-invocation``, else ``false``.
+        ``disable-model-invocation`` is ``true`` for core command skills when
+        the last ``setup()`` in this process was given
+        ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
+        stem = self._skill_stem_from_content(updated)
         updated = self._inject_frontmatter_flag(
             updated,
             "disable-model-invocation",
-            "true" if self._disable_model_invocation else "false",
+            "true" if stem in self._no_model_invocation_stems else "false",
         )
 
-        stem = self._skill_stem_from_content(updated)
         if stem:
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:

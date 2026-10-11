@@ -21,9 +21,9 @@ def _reset_claude_model_invocation():
     """``setup()`` stores ``--no-model-invocation`` on the process-wide Claude
     singleton; keep it from leaking between tests."""
     claude = get_integration("claude")
-    claude._disable_model_invocation = False
+    claude._no_model_invocation_stems = frozenset()
     yield
-    claude._disable_model_invocation = False
+    claude._no_model_invocation_stems = frozenset()
 
 
 def _skill_frontmatter(skill_file: Path) -> dict:
@@ -636,8 +636,8 @@ class TestClaudeNoModelInvocationOption:
             assert f.read_text(encoding="utf-8").count("disable-model-invocation:") == 1
 
     def test_post_process_follows_option_from_setup(self, tmp_path):
-        """Preset and extension skills re-registered in the same run as
-        ``setup()`` (init, upgrade, switch) get the same value."""
+        """Preset overrides of core commands re-registered in the same run as
+        ``setup()`` (init, upgrade) get the same value."""
         i = get_integration("claude")
         i.setup(
             tmp_path,
@@ -645,9 +645,38 @@ class TestClaudeNoModelInvocationOption:
             parsed_options={"no_model_invocation": True},
             script_type="sh",
         )
-        result = i.post_process_skill_content("---\nname: speckit-git-commit\n---\n\nBody\n")
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
         assert "disable-model-invocation: true" in result
         assert "disable-model-invocation: false" not in result
+
+    def test_extension_skills_stay_model_invocable(self, tmp_path):
+        """Mandatory extension hooks rely on the model invoking the hook skill,
+        so the option never applies to extension commands."""
+        i = get_integration("claude")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("claude", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content(
+            "---\nname: speckit-git-feature\n---\n\nBody\n"
+        )
+        assert "disable-model-invocation: false" in result
+        assert "disable-model-invocation: true" not in result
+
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path):
+        i = get_integration("claude")
+        with patch.object(SkillsIntegration, "setup", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                i.setup(
+                    tmp_path,
+                    IntegrationManifest("claude", tmp_path),
+                    parsed_options={"no_model_invocation": True},
+                    script_type="sh",
+                )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
 
     def test_setup_without_option_resets_to_false(self, tmp_path):
         i = get_integration("claude")
@@ -717,7 +746,7 @@ class TestClaudeNoModelInvocationOption:
 
         # A later ``specify integration upgrade`` is a new process: drop the
         # in-memory value so only the persisted options can supply it.
-        get_integration("claude")._disable_model_invocation = False
+        get_integration("claude")._no_model_invocation_stems = frozenset()
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output
         for f in skill_files:
@@ -743,7 +772,7 @@ class TestClaudeNoModelInvocationOption:
         skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
         assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
 
-        get_integration("claude")._disable_model_invocation = False
+        get_integration("claude")._no_model_invocation_stems = frozenset()
         result = _run_in_project(
             project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
         )
@@ -752,12 +781,35 @@ class TestClaudeNoModelInvocationOption:
         assert fm["metadata"]["source"] == "preset:lean"
         assert fm["disable-model-invocation"] is False
 
-        get_integration("claude")._disable_model_invocation = False
+        get_integration("claude")._no_model_invocation_stems = frozenset()
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output
         fm = _skill_frontmatter(skill_file)
         assert fm["metadata"]["source"] == "preset:lean"
         assert fm["disable-model-invocation"] is True
+
+    def test_extension_hook_skills_stay_model_invocable_after_upgrade(self, tmp_path):
+        """``integration upgrade`` re-registers extension skills in the same
+        process as ``setup()``; they must keep ``false`` so mandatory hooks
+        (e.g. ``speckit.git.feature``) can still be invoked by the model."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+        assert result.exit_code == 0, result.output
+
+        skills_dir = project / ".claude" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
+            "disable-model-invocation"
+        ] is True
 
 
 class TestClaudeInjectFrontmatterFlagNoTrailingNewline:
