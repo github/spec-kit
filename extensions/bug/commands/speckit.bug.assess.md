@@ -17,7 +17,7 @@ The user input contains the bug description and (optionally) a slug. Treat it as
 1. **Pasted text** — a copy of an issue, a stack trace, an error message, or a freeform description.
 2. **A URL** — a link to a GitHub/GitLab issue, a discussion, a Sentry/log link, a forum thread, or any web page describing the bug. Fetch and read the page content before proceeding.
 3. **A mix** — text plus a URL for additional context.
-4. **An `issue` flag** — `issue` / `--issue` (or `issue=true` / `issue=false`). When present and truthy, this command also files a GitHub issue for the bug after writing the assessment (the "report" phase). See **Optional — file the GitHub issue** below.
+4. **An `issue` flag** — `issue` / `--issue` (or `issue=true` / `issue=false`). When present and truthy, this command also files a GitHub issue for the bug after writing the assessment (the "report" phase). See **File the GitHub issue** below.
 
 If both a URL and text are present, fetch the URL and merge its content with the pasted text when forming the bug summary.
 
@@ -160,7 +160,7 @@ Do not attempt to validate the URL by issuing a preflight `HEAD` (or any other) 
    - [NEEDS CLARIFICATION: …]
    ```
 
-### Optional — file the GitHub issue (report phase)
+### File the GitHub issue (report phase — explicit or automatic)
 
 By default, `assess` only writes a **local** assessment; it does **not** file a GitHub issue. "Assess" means *triage*, not *report*. File the issue in one of two ways:
 
