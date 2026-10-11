@@ -467,28 +467,33 @@ workflow and does not install or enable the extension automatically.
 By default every Spec Kit skill installed for Claude Code is model-invocable, so
 its description is always in Claude's context and counts toward the
 skill-listing budget. In projects with many skills this can push other skills
-out of the listing. To make the core Spec Kit command skills (including preset
-overrides of them) user-invocable only:
+out of the listing. To make the core Spec Kit command skills user-invocable
+only:
 
 ```bash
 specify init my-project --integration claude --integration-options="--no-model-invocation"
 ```
 
 - Extension skills stay model-invocable, because mandatory extension hooks rely
-  on the model invoking them.
+  on the model invoking them. If an extension registers a mandatory hook on a
+  core command, leave this option off: the model cannot run that hook while the
+  core skill is user-invocable only.
 - The option is stored with the integration's other options and reapplied by
   `specify integration upgrade claude`. Passing `--integration-options` to
   `upgrade` replaces all stored options, so repeat any you want to keep (for
   example `--integration-options="--events false --no-model-invocation"`);
   `--integration-options=""` clears them. Re-running `specify init` likewise
   stores only the options passed to it.
-- Commands that rewrite these skills without reinstalling Claude write them with
-  the default: the `specify preset` commands that add, remove, enable, disable,
-  reprioritize or update presets, `specify integration use claude`, and `specify
-  integration switch claude` when Claude is already installed. Run `specify
-  integration upgrade claude --force` afterwards to reapply the option
-  (`--force` is needed because those commands modify installed skill files, and
-  it overwrites local edits to Spec Kit-managed files).
+- It is applied whenever Claude's skills are installed or upgraded, including to
+  preset overrides of core commands present at that point. Commands that later
+  rewrite those skills without reinstalling Claude write them with the default:
+  commands that install, remove, enable, disable, reprioritize or update presets
+  (including `specify bundle` commands that carry presets), `specify integration
+  use claude`, and `specify integration switch claude` when Claude is installed
+  but not the default. Run `specify integration upgrade claude --force`
+  afterwards to reapply the option (`--force` is needed because those commands
+  modify installed skill files, and it overwrites local edits to Spec
+  Kit-managed files).
 
 ## Scaffold a New Integration
 

@@ -99,8 +99,8 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        self._disable_model_invocation = bool(
-            (parsed_options or {}).get("no_model_invocation")
+        self._disable_model_invocation = (
+            (parsed_options or {}).get("no_model_invocation") is True
         )
         try:
             return super().setup(
@@ -260,25 +260,11 @@ class ClaudeIntegration(SkillsIntegration):
                 return name or None
         return None
 
-    @classmethod
-    def _skill_stem_from_content(cls, content: str) -> str | None:
-        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
-
-        Reads the ``name:`` field of the first frontmatter block and strips
-        the ``speckit-`` prefix. Returns ``None`` when no name is present.
-        """
-        name = cls._skill_name_from_content(content)
-        if name and name.startswith("speckit-"):
-            return name[len("speckit-"):]
-        return name
-
-    def _is_core_command_skill(self, content: str) -> bool:
+    def _is_core_command_skill(self, name: str | None) -> bool:
         from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
-        name = self._skill_name_from_content(content) or ""
-        return (
-            name.startswith("speckit-")
-            and name[len("speckit-"):] in CORE_COMMAND_NAMES
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
         )
 
     def post_process_skill_content(self, content: str) -> str:
@@ -295,12 +281,13 @@ class ClaudeIntegration(SkillsIntegration):
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        disable = self._disable_model_invocation and self._is_core_command_skill(updated)
+        name = self._skill_name_from_content(updated)
+        disable = self._disable_model_invocation and self._is_core_command_skill(name)
         updated = self._inject_frontmatter_flag(
             updated, "disable-model-invocation", "true" if disable else "false"
         )
 
-        stem = self._skill_stem_from_content(updated)
+        stem = name.removeprefix("speckit-") if name else None
         if stem:
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:

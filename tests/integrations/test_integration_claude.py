@@ -790,7 +790,11 @@ class TestClaudeNoModelInvocationOption:
             project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
         )
         assert result.exit_code == 0, result.output
-        assert _skill_frontmatter(skill_file)["metadata"]["source"] == "preset:lean"
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        # Documented in docs/reference/integrations.md; update the docs if
+        # preset commands start honouring the option.
+        assert fm["disable-model-invocation"] is False
 
         get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
