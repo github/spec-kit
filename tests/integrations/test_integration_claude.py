@@ -796,6 +796,13 @@ class TestClaudeNoModelInvocationOption:
         # preset commands start honouring the option.
         assert fm["disable-model-invocation"] is False
 
+        # The docs say ``--force`` is needed here: preset add modified
+        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+        assert result.exit_code != 0
+        assert "modified since installation" in result.output
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is False
+
         get_integration("claude")._disable_model_invocation = False
         result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
         assert result.exit_code == 0, result.output

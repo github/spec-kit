@@ -260,7 +260,8 @@ class ClaudeIntegration(SkillsIntegration):
                 return name or None
         return None
 
-    def _is_core_command_skill(self, name: str | None) -> bool:
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
         from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
 
         return bool(name) and name.startswith("speckit-") and (
