@@ -186,4 +186,3 @@ class TestAutoCreateIssueHook:
         result = executor.check_hooks_for_event("after_bug_assess")
         assert result["has_hooks"] is True
         assert result["hooks"][0]["command"] == "speckit.bug.issue"
-
