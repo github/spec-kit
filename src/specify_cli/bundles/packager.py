@@ -149,11 +149,15 @@ def build_bundle(
         # unreadable-to-others archive (a direct ZipFile(path, "w") write used
         # to produce 0666 & ~umask).  Set an intentional mode first: a rebuild
         # keeps the existing artifact's mode so publishing pipelines that
-        # chmod'd it are not overridden; a fresh build gets 0644.
+        # chmod'd it are not overridden; a fresh build honors the caller's
+        # umask (0666 & ~umask) so restrictive umasks still produce private
+        # files while normal umasks yield the expected 0644.
         if artifact_path.exists():
             os.chmod(tmp_path, artifact_path.stat().st_mode & 0o777)
         else:
-            os.chmod(tmp_path, 0o644)
+            umask = os.umask(0)
+            os.umask(umask)  # restore immediately
+            os.chmod(tmp_path, 0o666 & ~umask)
         os.replace(tmp_path, artifact_path)
     except BaseException:
         # Clean up the temporary file on any failure (exception, interrupt, etc.)
@@ -202,8 +206,10 @@ def _collect_files(
             if artifact_re is not None and artifact_re.match(name):
                 # A prior build artifact for this bundle — never re-package it.
                 continue
-            if staging_re is not None and staging_re.match(name):
-                # A leftover packager staging file — never re-package it.
+            if staging_re is not None and root_path == bundle_dir and staging_re.match(name):
+                # A leftover staging file in the default output directory (the
+                # bundle root).  Never re-package it.  Restricted to the root so
+                # legitimate nested assets that merely match the pattern are kept.
                 continue
             if path.is_symlink():
                 # Skip symlinked files to avoid escaping the bundle directory.

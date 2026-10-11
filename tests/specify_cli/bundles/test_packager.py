@@ -313,13 +313,93 @@ def test_leftover_staging_file_is_not_packaged(tmp_path: Path):
     assert "demo-bundle-1.2.0-abcd1234.tmp" not in names
 
 
+def test_nested_staging_like_asset_is_packaged(tmp_path: Path):
+    """A legitimate nested asset that merely matches the staging pattern must
+    still be packaged — the staging filter is restricted to the bundle root."""
+    bundle = _make_bundle(
+        tmp_path / "b",
+        extra_files={"assets/demo-bundle-1.2.0-backup.tmp": "legit asset"},
+    )
+    result = build_bundle(bundle)
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = set(archive.namelist())
+    assert "assets/demo-bundle-1.2.0-backup.tmp" in names
+
+
+def test_read_is_bounded_when_asset_grows_after_fstat(tmp_path: Path):
+    """If an asset grows past MAX_ZIP_MEMBER_BYTES between fstat and read,
+    the bounded read must catch it and the build must fail cleanly.
+
+    Simulates a TOCTOU race by making the file object's read() return
+    oversized content regardless of what's on disk."""
+    bundle = _make_bundle(tmp_path / "b", extra_files={"good.txt": "ok"})
+
+    # First build succeeds so we can verify the previous artifact is preserved.
+    out_dir = tmp_path / "out"
+    first = build_bundle(bundle, output_dir=out_dir)
+    first_bytes = first.artifact_path.read_bytes()
+
+    # Add a small asset that will "grow" after fstat.
+    target = bundle / "assets" / "growing.bin"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"\x00" * 10)
+
+    import unittest.mock as mock
+    from specify_cli.bundles.packager import MAX_ZIP_MEMBER_BYTES as LIMIT
+
+    original_open = Path.open
+
+    def _open_with_growth(self, *args, **kwargs):
+        fh = original_open(self, *args, **kwargs)
+        if "growing.bin" not in str(self):
+            return fh
+
+        class _FakeFile:
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                fh.close()
+            def fileno(self):
+                return fh.fileno()
+            def read(self, size=-1):
+                # Return oversized content regardless of what's on disk.
+                return b"\x00" * (LIMIT + 1)
+
+        return _FakeFile()
+
+    with mock.patch.object(Path, "open", _open_with_growth):
+        with pytest.raises(BundlerError, match="exceeds"):
+            build_bundle(bundle, output_dir=out_dir)
+
+    # Previous artifact must remain intact.
+    assert first.artifact_path.exists()
+    assert first.artifact_path.read_bytes() == first_bytes
+    # No staging files left behind.
+    tmp_files = list(out_dir.glob("*.tmp"))
+    assert tmp_files == []
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_artifact_is_world_readable_after_build(tmp_path: Path):
-    """A fresh build must publish a 0644 artifact, not the 0600 mode that
-    mkstemp() creates the staging file with."""
+    """A fresh build must publish an artifact honoring the caller's umask,
+    not the 0600 mode that mkstemp() creates the staging file with.
+
+    Under a normal umask (022) the expected mode is 0644."""
     bundle = _make_bundle(tmp_path / "b")
     result = build_bundle(bundle, output_dir=tmp_path / "out")
     assert stat.S_IMODE(result.artifact_path.stat().st_mode) == 0o644
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_fresh_artifact_honors_restrictive_umask(tmp_path: Path):
+    """A restrictive umask (077) must yield a private artifact, not 0644."""
+    bundle = _make_bundle(tmp_path / "b")
+    old_umask = os.umask(0o077)
+    try:
+        result = build_bundle(bundle, output_dir=tmp_path / "out")
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE(result.artifact_path.stat().st_mode) == 0o600
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
