@@ -486,13 +486,13 @@ specify init my-project --integration claude --integration-options="--no-model-i
   stores only the options passed to it.
 - Core command skills that a preset overrides, or stops overriding, are reverted
   to the default by commands that re-register preset skills without reinstalling
-  Claude: commands that install, remove, enable, disable, reprioritize or update
-  presets (including `specify bundle` commands that carry presets), `specify
-  integration use claude`, and `specify integration switch claude` when Claude
-  is installed but not the default. To reapply the option, run `specify
-  integration upgrade claude --force` while Claude is the default integration
-  (`--force` is needed because those commands modify installed skill files, and
-  it overwrites local edits to Spec Kit-managed files).
+  Claude: commands that install, remove or update presets (including `specify
+  bundle` commands that carry presets), `specify integration use claude`, and
+  `specify integration switch claude` when Claude is installed but not the
+  default. To reapply the option, run `specify integration upgrade claude
+  --force` while Claude is the default integration (`--force` is needed because
+  those commands modify installed skill files, and it overwrites local edits to
+  Spec Kit-managed files).
 
 ## Scaffold a New Integration
 
