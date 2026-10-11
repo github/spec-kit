@@ -47,6 +47,29 @@ Agent-specific native events can be declared on the integration. Set
 `multi_install_safe = True` only for a static, non-overlapping agent root and
 command directory; shared dynamic paths are not safe by default.
 
+### Executable resolution and availability
+
+`_resolve_executable()` returns the executable `dispatch_command()` will
+launch, and `is_cli_available()` resolves the same value: preflight must never
+report a tool as present under a name dispatch cannot find. Resolution order
+is:
+
+1. An explicit operator override read from
+   `SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`, where hyphens in the key become
+   underscores (`kiro-cli` reads `SPECKIT_INTEGRATION_KIRO_CLI_EXECUTABLE`).
+   A whitespace-only value counts as unset.
+2. Any integration-specific fallback, such as a known install location that is
+   not on `PATH`.
+3. `self.key`.
+
+An override always wins, **including when its value equals the integration
+key**. A subclass that adds step 2 must ask `_executable_override()` whether an
+override is in effect rather than comparing the resolved string against
+`self.key`; that comparison cannot tell a deliberate pin from a plain fallback,
+so it silently redirects the operator to a different binary. Fallback
+candidates must also be executable (`os.access(path, os.X_OK)`), so a stale
+non-executable file cannot mask a working install later in the list.
+
 ## Output flavors
 
 Choose the smallest base class that matches the agent's native format. The

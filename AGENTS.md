@@ -30,6 +30,11 @@ Before adding or changing AI agent integrations, read
 [Agent Integration Design](design/integration.md). It covers
 delivery routes, output formats, registration, and install/uninstall ownership.
 
+When an integration resolves its own executable, an explicit
+`SPECKIT_INTEGRATION_<KEY>_EXECUTABLE` override always wins over any fallback,
+and `is_cli_available()` must resolve exactly what dispatch will run. See
+[Executable resolution and availability](design/integration.md#executable-resolution-and-availability).
+
 ## Adding or Updating Workflow Steps
 
 Before adding or changing workflow step types, read
