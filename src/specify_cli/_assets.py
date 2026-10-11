@@ -103,9 +103,17 @@ def _locate_bundled_preset(preset_id: str) -> Path | None:
 
 def get_speckit_version() -> str:
     """Get current spec-kit version."""
+    # Mirror _version._get_installed_version(): a malformed installed
+    # distribution raises InvalidMetadataError, which is not a
+    # PackageNotFoundError and must not escape the fallback path.
+    metadata_errors = [importlib.metadata.PackageNotFoundError]
+    invalid_metadata_error = getattr(importlib.metadata, "InvalidMetadataError", None)
+    if invalid_metadata_error is not None:
+        metadata_errors.append(invalid_metadata_error)
+
     try:
         return importlib.metadata.version("specify-cli")
-    except importlib.metadata.PackageNotFoundError:
+    except tuple(metadata_errors):
         # Fallback: try reading from pyproject.toml
         try:
             import tomllib
