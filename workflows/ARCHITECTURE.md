@@ -286,8 +286,10 @@ The `.specify/workflows/runs` tree is a project-owned persistence boundary.
 Every run directory and persisted artifact below it must be a real filesystem
 object rather than a symlink. `RunState` enforces this policy before reading or
 writing `state.json`, `inputs.json`, `workflow.yml`, or `log.jsonl`; artifact
-opens also use no-follow flags where the platform provides them. Commands
-fail closed instead of following redirected run storage.
+opens also use no-follow flags and directory descriptors where supported.
+Other platforms recheck path components before access and use atomic replacement
+for state writes; that fallback rejects existing symlinks but cannot prevent
+concurrent path replacement.
 
 ## Module Structure
 

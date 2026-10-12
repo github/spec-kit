@@ -669,6 +669,24 @@ class RunState:
         if path.is_symlink():
             raise ValueError(f"Refusing to use symlinked {label} path: {path}")
 
+    @staticmethod
+    def _supports_descriptor_access() -> bool:
+        supports_dir_fd = getattr(os, "supports_dir_fd", ())
+        return (
+            hasattr(os, "O_DIRECTORY")
+            and hasattr(os, "O_NOFOLLOW")
+            and os.open in supports_dir_fd
+            and os.rename in supports_dir_fd
+            and os.unlink in supports_dir_fd
+        )
+
+    @classmethod
+    def _validate_fallback_path(cls, path: Path) -> None:
+        """Recheck persisted-run components before path-based access."""
+        cls._reject_symlink(path.parent.parent, ".specify/workflows/runs")
+        cls._reject_symlink(path.parent, "workflow run")
+        cls._reject_symlink(path, f"workflow run artifact {path.name!r}")
+
     @classmethod
     def _run_artifact(
         cls, project_root: Path, run_id: str, name: str, *, create: bool = False
@@ -685,15 +703,12 @@ class RunState:
     def _open_run_directory(cls, project_root: Path, run_id: str, *, create=False):
         """Open a run directory without following a replacement symlink."""
         run_path = cls._run_directory(project_root, run_id, create=create)
-        directory_flag = getattr(os, "O_DIRECTORY", None)
-        nofollow = getattr(os, "O_NOFOLLOW", None)
-        if (
-            directory_flag is None
-            or nofollow is None
-            or os.open not in os.supports_dir_fd
-        ):
-            raise OSError("Secure workflow run-directory access is unavailable")
+        if not cls._supports_descriptor_access():
+            yield None
+            return
 
+        directory_flag = os.O_DIRECTORY
+        nofollow = os.O_NOFOLLOW
         runs_path = run_path.parent
         runs_fd = os.open(runs_path, os.O_RDONLY | directory_flag | nofollow)
         try:
@@ -710,8 +725,14 @@ class RunState:
             os.close(run_fd)
 
     @staticmethod
-    def _open_artifact(path: Path, mode: str, *, dir_fd: int, **kwargs):
+    def _open_artifact(
+        path: Path, mode: str, *, dir_fd: int | None = None, **kwargs
+    ):
         """Open a run artifact relative to its safely opened run directory."""
+        if dir_fd is None:
+            RunState._validate_fallback_path(path)
+            return open(path, mode, **kwargs)
+
         flags = {
             "r": os.O_RDONLY,
             "a": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
@@ -886,11 +907,30 @@ class RunState:
                 raise CheckpointError(str(exc)) from exc
 
     @staticmethod
-    def _atomic_write_json(path: Path, data: dict[str, Any], *, dir_fd: int) -> None:
+    def _atomic_write_json(
+        path: Path, data: dict[str, Any], *, dir_fd: int | None = None
+    ) -> None:
         """Write *data* as indented JSON to *path* atomically."""
-        if os.rename not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
-            raise OSError("Secure workflow artifact replacement is unavailable")
         tmp = f".{path.name}.{uuid.uuid4().hex}.tmp"
+        if dir_fd is None:
+            tmp_path = path.with_name(tmp)
+            RunState._validate_fallback_path(path)
+            try:
+                with tmp_path.open(
+                    "x", encoding="utf-8", errors="backslashreplace"
+                ) as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                RunState._validate_fallback_path(path)
+                os.replace(tmp_path, path)
+            except BaseException:
+                try:
+                    RunState._validate_fallback_path(tmp_path)
+                    tmp_path.unlink()
+                except (OSError, ValueError):
+                    pass
+                raise
+            return
+
         fd = os.open(
             tmp,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL,
