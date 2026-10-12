@@ -644,6 +644,10 @@ def _validate_steps(
 class RunState:
     """Manages workflow run state for persistence and resume."""
 
+    _RUN_ARTIFACTS = frozenset(
+        {"state.json", "inputs.json", "workflow.yml", "log.jsonl"}
+    )
+
     # ``run_id`` is interpolated into a filesystem path (``runs/<run_id>``)
     # by both ``save()`` and ``load()``. Constrain it to a charset that
     # cannot contain path separators (``/`` ``\``), parent-directory
@@ -670,6 +674,59 @@ class RunState:
                 "hyphens/underscores only (and must start with an "
                 "alphanumeric character)."
             )
+
+    @classmethod
+    def _run_directory(
+        cls, project_root: Path, run_id: str, *, create: bool = False
+    ) -> Path:
+        """Return a run directory after enforcing the persisted-run boundary."""
+        cls._validate_run_id(run_id)
+        runs_root = project_root / ".specify" / "workflows" / "runs"
+        if create:
+            runs_root.mkdir(parents=True, exist_ok=True)
+        cls._reject_symlink(runs_root, ".specify/workflows/runs")
+
+        run_dir = runs_root / run_id
+        if run_dir.is_symlink():
+            raise ValueError(
+                f"Refusing to use symlinked workflow run path: {run_dir}"
+            )
+        if run_dir.exists() and not run_dir.is_dir():
+            raise OSError(f"Workflow run path is not a directory: {run_dir}")
+        if create:
+            run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    @staticmethod
+    def _reject_symlink(path: Path, label: str) -> None:
+        """Reject an existing symlink without resolving its target."""
+        if path.is_symlink():
+            raise ValueError(f"Refusing to use symlinked {label} path: {path}")
+
+    @classmethod
+    def _run_artifact(
+        cls, project_root: Path, run_id: str, name: str, *, create: bool = False
+    ) -> Path:
+        if name not in cls._RUN_ARTIFACTS:
+            raise ValueError(f"Unknown workflow run artifact: {name}")
+        run_dir = cls._run_directory(project_root, run_id, create=create)
+        artifact = run_dir / name
+        cls._reject_symlink(artifact, f"workflow run artifact {name!r}")
+        return artifact
+
+    @staticmethod
+    def _open_artifact(path: Path, mode: str, **kwargs):
+        """Open a run artifact without following a symlink at the leaf."""
+        flags = {
+            "r": os.O_RDONLY,
+            "a": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            "w": os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        }.get(mode)
+        if flags is None:
+            raise ValueError(f"Unsupported workflow artifact open mode: {mode!r}")
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags | nofollow, 0o666)
+        return os.fdopen(fd, mode, **kwargs)
 
     @staticmethod
     def _validate_installed_origin(
@@ -771,7 +828,7 @@ class RunState:
 
     @property
     def runs_dir(self) -> Path:
-        return self.project_root / ".specify" / "workflows" / "runs" / self.run_id
+        return self._run_directory(self.project_root, self.run_id)
 
     @property
     def definition_path(self) -> Path:
@@ -827,8 +884,7 @@ class RunState:
         nor leave a reader observing a half-written file. Racing writers only
         contend to be last; they never corrupt.
         """
-        runs_dir = self.runs_dir
-        runs_dir.mkdir(parents=True, exist_ok=True)
+        self._run_directory(self.project_root, self.run_id, create=True)
 
         with self._lock:
             if self._checkpoint_failed:
@@ -856,8 +912,18 @@ class RunState:
             if self.execution is not None:
                 state_data["execution"] = self.execution
             try:
-                self._atomic_write_json(runs_dir / "state.json", state_data)
-                self._atomic_write_json(runs_dir / "inputs.json", {"inputs": self.inputs})
+                self._atomic_write_json(
+                    self._run_artifact(
+                        self.project_root, self.run_id, "state.json", create=True
+                    ),
+                    state_data,
+                )
+                self._atomic_write_json(
+                    self._run_artifact(
+                        self.project_root, self.run_id, "inputs.json", create=True
+                    ),
+                    {"inputs": self.inputs},
+                )
             except Exception as exc:
                 # Only write failures poison the instance. A graceful interrupt
                 # (KeyboardInterrupt) propagates unchanged: during step
@@ -873,6 +939,7 @@ class RunState:
     @staticmethod
     def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
         """Write *data* as indented JSON to *path* atomically (temp + ``os.replace``)."""
+        RunState._reject_symlink(path, f"workflow run artifact {path.name!r}")
         fd, tmp = tempfile.mkstemp(
             dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
         )
@@ -906,13 +973,11 @@ class RunState:
         *after* the file lookup — too late to prevent the disclosure.
         Mirrors the precedent in ``agents._ensure_within_directory``.
         """
-        cls._validate_run_id(run_id)
-        runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
-        state_path = runs_dir / "state.json"
+        state_path = cls._run_artifact(project_root, run_id, "state.json")
 
         try:
-            with open(state_path, encoding="utf-8") as f:
-                state_data = _safe_json_load(f, f"run state for {run_id}")
+            with cls._open_artifact(state_path, "r", encoding="utf-8") as f:
+                state_data = json.load(f)
         except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
@@ -1003,10 +1068,10 @@ class RunState:
 
             validate_execution(state.execution)
 
-        inputs_path = runs_dir / "inputs.json"
+        inputs_path = cls._run_artifact(project_root, run_id, "inputs.json")
         if "inputs" not in state_data and inputs_path.exists():
-            with open(inputs_path, encoding="utf-8") as f:
-                inputs_data = _safe_json_load(f, f"run inputs for {run_id}")
+            with cls._open_artifact(inputs_path, "r", encoding="utf-8") as f:
+                inputs_data = json.load(f)
             if not isinstance(inputs_data, dict):
                 raise ValueError(
                     "Invalid run inputs: expected a JSON object"
@@ -1034,8 +1099,7 @@ class RunState:
         worker can log once any checkpoint of this run has failed.
         """
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-        runs_dir = self.runs_dir
-        runs_dir.mkdir(parents=True, exist_ok=True)
+        self._run_directory(self.project_root, self.run_id, create=True)
         with self._lock:
             if self._checkpoint_failed:
                 from ._execution import CheckpointError
@@ -1043,8 +1107,10 @@ class RunState:
                 raise CheckpointError("A previous checkpoint failed; reload the run")
             with self._log_lock:
                 self.log_entries.append(entry)
-                with open(
-                    runs_dir / "log.jsonl",
+                with self._open_artifact(
+                    self._run_artifact(
+                        self.project_root, self.run_id, "log.jsonl", create=True
+                    ),
                     "a",
                     encoding="utf-8",
                     errors="backslashreplace",
@@ -1193,11 +1259,17 @@ class WorkflowEngine:
         # Validate inputs before creating or replacing any run artifacts.
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
 
-        # Persist the definition the run was started with. Storage contract
-        # (see RunState.definition_path): read by resume and by
-        # `specify workflow definition`; do not change location or content.
-        state.runs_dir.mkdir(parents=True, exist_ok=True)
-        with open(state.definition_path, "w", encoding="utf-8") as f:
+        # Persist a copy of the workflow definition so resume can
+        # reload it even if the original source is no longer available
+        # (e.g. a local YAML path that was moved or deleted).
+        run_dir = RunState._run_directory(
+            self.project_root, state.run_id, create=True
+        )
+        workflow_copy = RunState._run_artifact(
+            self.project_root, state.run_id, "workflow.yml", create=True
+        )
+        import yaml
+        with RunState._open_artifact(workflow_copy, "w", encoding="utf-8") as f:
             yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
         state.inputs = resolved_inputs
@@ -1266,9 +1338,12 @@ class WorkflowEngine:
         # Load the workflow definition — try the persisted copy in the
         # run directory first so resume works even if the original
         # source (e.g. a local YAML path) is no longer available.
-        try:
-            definition = state.load_definition()
-        except FileNotFoundError:
+        run_copy = RunState._run_artifact(
+            self.project_root, run_id, "workflow.yml"
+        )
+        if run_copy.exists():
+            definition = WorkflowDefinition.from_yaml(run_copy)
+        else:
             definition = self.load_workflow(state.workflow_id)
 
         # RunState.load() rejects a non-int/negative current_step_index but
@@ -1577,15 +1652,22 @@ class WorkflowEngine:
         runs_dir = self.project_root / ".specify" / "workflows" / "runs"
         if not runs_dir.exists():
             return []
+        self._reject_symlink(runs_dir, ".specify/workflows/runs")
 
         runs: list[dict[str, Any]] = []
         for run_dir in sorted(runs_dir.iterdir()):
+            if run_dir.is_symlink():
+                raise ValueError(
+                    f"Refusing to use symlinked workflow run path: {run_dir}"
+                )
             if not run_dir.is_dir():
                 continue
-            state_path = run_dir / "state.json"
+            state_path = self._run_artifact(
+                self.project_root, run_dir.name, "state.json"
+            )
             if state_path.exists():
                 try:
-                    with open(state_path, encoding="utf-8") as f:
+                    with self._open_artifact(state_path, "r", encoding="utf-8") as f:
                         state_data = json.load(f)
                 except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                     continue
