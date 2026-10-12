@@ -11460,3 +11460,70 @@ class TestStepRegistryAtomicSaveRegression:
         data = json.loads(registry_path.read_text(encoding="utf-8"))
         assert "test-step" in data.get("steps", {})
         assert not list(registry_path.parent.glob(".*.tmp"))
+
+    def test_save_failure_preserves_previous_bytes(self, tmp_path, monkeypatch):
+        """Injecting a write failure must leave the previous file untouched.
+
+        With a direct write (no temp file + os.replace), a mid-write failure
+        would truncate the existing registry.  This test injects a failure
+        during json.dump and asserts the previously persisted bytes remain.
+        """
+        import specify_cli.workflows.step.catalog._domain as catalog_mod
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        # First save succeeds normally.
+        registry = StepRegistry(tmp_path)
+        registry.add("step-a", {"type": "command", "config": {}})
+        registry.save()
+        registry_path = (
+            tmp_path / ".specify" / "workflows" / "steps" / StepRegistry.REGISTRY_FILE
+        )
+        original_bytes = registry_path.read_bytes()
+
+        # Inject a write failure on the second save.
+        def _fail_dump(obj, fp, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(catalog_mod.json, "dump", _fail_dump)
+
+        with pytest.raises((OSError, Exception), match="disk full"):
+            registry.save()
+
+        # Previous bytes must be intact — no partial write.
+        assert registry_path.read_bytes() == original_bytes
+        # No temp files left behind.
+        assert not list(registry_path.parent.glob(".*.tmp"))
+
+    def test_cli_list_exits_cleanly_on_corrupted_registry(self, project_dir, monkeypatch):
+        """A corrupted registry must produce exit code 1 with a clean error,
+        not a traceback."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+
+        steps_dir = project_dir / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("not valid json {{{", encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "step", "list"])
+        assert result.exit_code == 1
+        assert "corrupted" in result.output.lower() or "error" in result.output.lower()
+        assert "Traceback" not in result.output
+
+    def test_installer_translates_oserror_before_mutation(self, project_dir, monkeypatch):
+        """A corrupted registry must raise StepInstallError before any
+        package/destination mutation occurs."""
+        from specify_cli.workflows.step.installer import StepInstallError, _load_step_registry
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        steps_dir = project_dir / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("corrupted {{{", encoding="utf-8")
+
+        with pytest.raises(StepInstallError, match="corrupted"):
+            _load_step_registry(project_dir)

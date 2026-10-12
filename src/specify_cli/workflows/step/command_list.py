@@ -15,7 +15,7 @@ def workflow_step_list():
     project_root = cli._require_specify_project()
     specify_dir = project_root / ".specify"
 
-    # Read installed custom steps from registry only �?" no dynamic imports
+    # Read installed custom steps from registry only — no dynamic imports
     installed: dict = {}
     if specify_dir.exists():
         registry = step_helpers._load_step_registry_or_exit(project_root)
