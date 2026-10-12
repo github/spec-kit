@@ -1087,6 +1087,8 @@ Notes on the newer filters:
   condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
   ```
 
+`and` and `or` return `true` or `false` and evaluate their right side only when the left side does not decide the result: `and` skips it when the left side is false, and `or` skips it when the left side is true. A condition can therefore guard a filter that would fail on an empty value. `{{ inputs.payload != '' and (inputs.payload | from_json | length) }}` is false for an empty optional `payload` instead of failing the run on invalid JSON. When the right side is evaluated, its errors still fail the run.
+
 Example:
 
 ```yaml
