@@ -119,7 +119,6 @@ def test_unrelated_exception_from_pyproject_propagates(monkeypatch, tmp_path):
 
     monkeypatch.setattr(importlib.metadata, "version", _not_found)
 
-    original_tomllib_load = None
     import tomllib
 
     def _boom_load(f):
