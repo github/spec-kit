@@ -1,6 +1,7 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
 from dataclasses import dataclass, field
+import codecs
 import errno
 import os
 from pathlib import Path, PurePath, PureWindowsPath
@@ -207,6 +208,20 @@ class FileHelper:
         self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644
     ) -> None:
         self.write_bytes(path, content.encode(encoding), mode=mode)
+
+    def overwrite_text(
+        self, path: Path | str, content: str, *, encoding: str = "utf-8"
+    ) -> None:
+        """Non-atomic text upsert preserving existing inode and native text I/O."""
+        destination = self._path(path, allow_missing=True)
+        if destination.exists():
+            self._require_file(destination)
+        codecs.lookup(encoding)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(destination, flags, 0o666)
+        with os.fdopen(fd, "w", encoding=encoding) as stream:
+            stream.write(content)
 
     def symlink(self, target: Path | str, path: Path | str) -> None:
         """Create a link to an existing contained regular file or directory.
