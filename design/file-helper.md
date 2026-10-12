@@ -42,6 +42,10 @@ missing suffix using a deny-mode helper rooted at the nearest existing parent;
 an existing explicitly supplied root alias is trusted. `preflight_init_root`
 validates the original requested spelling without creating a root, including
 missing-parent traversal and dangling-parent evidence before canonicalization.
+Before presence probes, every prefix preceding `..` must be an existing
+directory: Windows can otherwise fold `missing/../existing` into an apparently
+existing target. Valid existing-directory/root-alias traversal remains trusted;
+prefix permission and other I/O failures remain explicit errors.
 Init's external-adapter lifecycle validates existing target policy before
 reading integration records, loading adapters or preparing catalog packages.
 When that lifecycle requires a

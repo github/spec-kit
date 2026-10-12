@@ -646,6 +646,136 @@ def test_new_init_target_preserves_evidence_before_project_reads(tmp_path, symli
     assert not (tmp_path / "missing").exists()
 
 
+@pytest.fixture
+def normalized_parent_traversal(monkeypatch):
+    """Model Windows existence/resolution folding '..' before filesystem access."""
+    exists = Path.exists
+    resolve = Path.resolve
+
+    def normalized_exists(path):
+        if ".." in path.parts:
+            path = resolve(path, strict=False)
+        return exists(path)
+
+    def normalized_resolve(path, strict=False):
+        if ".." in path.parts:
+            path = resolve(path, strict=False)
+        return resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "exists", normalized_exists)
+    monkeypatch.setattr(Path, "resolve", normalized_resolve)
+
+
+@pytest.mark.parametrize("prefix_kind", ["missing", "file"])
+def test_init_normalized_traversal_fails_before_project_reads(
+    tmp_path, normalized_parent_traversal, prefix_kind,
+):
+    from specify_cli.integrations import _lifecycle, installer
+
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    policy_module().save_project_options(unrelated, {"allow_symlinks": True})
+    prefix = tmp_path / "prefix"
+    if prefix_kind == "file":
+        prefix.write_text("retained")
+    requested = prefix / ".." / unrelated.name
+    assert requested.exists()
+    assert requested.resolve(strict=True) == unrelated
+    called = Mock()
+
+    @_lifecycle.external_lifecycle("init")
+    def handler(project_name=None, integration=None):
+        called()
+
+    with (
+        patch.object(installer, "read_records", return_value={}) as records,
+        patch.object(installer, "load_installed_integrations") as loader,
+        patch.object(installer, "catalog_package") as catalog,
+        patch.object(policy_module(), "read_project_options") as options,
+        pytest.raises(typer.Exit) as failure,
+    ):
+        handler(project_name=str(requested), integration="generic")
+    assert failure.value.exit_code == 1
+    records.assert_not_called()
+    loader.assert_not_called()
+    catalog.assert_not_called()
+    options.assert_not_called()
+    called.assert_not_called()
+    if prefix_kind == "file":
+        assert prefix.read_text() == "retained"
+    else:
+        assert not prefix.exists()
+
+
+@pytest.mark.parametrize("prefix_kind", ["missing", "file"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_prepare_init_root_rejects_normalized_traversal(
+    tmp_path, normalized_parent_traversal, prefix_kind, existing,
+):
+    target = tmp_path / "target"
+    if existing:
+        target.mkdir()
+        (target / "retained").write_text("retained")
+    prefix = tmp_path / "prefix"
+    if prefix_kind == "file":
+        prefix.write_text("retained")
+    with pytest.raises(ValueError, match="Parent traversal"):
+        policy_module().prepare_init_root(prefix / ".." / target.name)
+    assert target.exists() is existing
+    if existing:
+        assert (target / "retained").read_text() == "retained"
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_init_existing_parent_traversal_root_remains_trusted(tmp_path, existing):
+    anchor = tmp_path / "anchor"
+    anchor.mkdir()
+    target = tmp_path / "target"
+    if existing:
+        target.mkdir()
+        policy_module().save_project_options(target, {"allow_symlinks": True})
+    requested = anchor / ".." / target.name
+    assert policy_module().preflight_init_root(requested) == target
+    assert target.exists() is existing
+    assert policy_module().prepare_init_root(requested) == requested
+    assert policy_module().project_files(requested).allow_symlinks is existing
+
+
+def test_init_linked_parent_traversal_root_remains_trusted(tmp_path, symlinks):
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / "anchor").mkdir()
+    target = parent / "project"
+    target.mkdir()
+    policy_module().save_project_options(target, {"allow_symlinks": True})
+    alias = tmp_path / "alias"
+    alias.symlink_to(parent, target_is_directory=True)
+    requested = alias / "anchor" / ".." / target.name
+    assert policy_module().preflight_init_root(requested) == target
+    assert policy_module().prepare_init_root(requested) == requested
+    assert policy_module().project_files(requested).allow_symlinks is True
+
+
+@pytest.mark.parametrize("operation", ["preflight_init_root", "prepare_init_root"])
+@pytest.mark.parametrize("error", [PermissionError("prefix permission denied"), OSError("prefix I/O failed")])
+def test_init_parent_traversal_io_failures_are_explicit(tmp_path, monkeypatch, operation, error):
+    prefix = tmp_path / "prefix"
+    prefix.mkdir()
+    requested = prefix / ".." / "target"
+    original_stat = Path.stat
+
+    def failing_stat(path, *args, **kwargs):
+        if path == prefix:
+            raise error
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", failing_stat)
+    expected = policy_module().ProjectPolicyError if operation == "preflight_init_root" else type(error)
+    with pytest.raises(expected, match=str(error)):
+        getattr(policy_module(), operation)(requested)
+    assert not (tmp_path / "target").exists()
+
+
 @pytest.mark.parametrize("override", [False, True])
 @pytest.mark.parametrize("document", [None, "{}", '{"allow_symlinks": true}', '{"allow_symlinks": false}'])
 def test_check_policy_optional_project_and_override(tmp_path, monkeypatch, override, document):

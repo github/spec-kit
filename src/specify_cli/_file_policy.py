@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -100,10 +101,29 @@ def _existing_init_parent(target: Path) -> Path:
     return ancestor
 
 
+def _validate_init_traversal(target: Path) -> None:
+    # Windows presence probes can fold missing/../existing before filesystem access.
+    for index, part in enumerate(target.parts):
+        if part != "..":
+            continue
+        prefix = Path(*target.parts[:index])
+        try:
+            is_directory = stat.S_ISDIR(prefix.stat().st_mode)
+        except FileNotFoundError as exc:
+            raise FileHelperError(
+                f"Parent traversal requires an existing directory before '..': {prefix}"
+            ) from exc
+        if not is_directory:
+            raise FileHelperError(
+                f"Parent traversal requires an existing directory before '..': {prefix}"
+            )
+
+
 def preflight_init_root(target: Path) -> Path:
     """Validate original init spelling and policy before project preparation."""
     target = target.absolute()
     try:
+        _validate_init_traversal(target)
         if target.exists() or target.is_symlink():
             read_project_options(target)
         else:
@@ -126,6 +146,7 @@ def prepare_init_root(target: Path) -> Path:
     For new roots, deny traversal below the nearest existing directory.
     """
     target = target.absolute()
+    _validate_init_traversal(target)
     if target.exists() or target.is_symlink():
         FileHelper(target)
         return target
