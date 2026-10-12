@@ -588,6 +588,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `command`    | Invoke a Spec Kit command (e.g., `speckit.plan`) |
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
+| `github`     | Add an explicit issue or pull-request label       |
 | `init`       | Bootstrap a project (like `specify init`)        |
 | `slot`       | Named workflow slot; skipped when unfilled       |
 | `gate`       | Pause for human approval before continuing       |
@@ -768,6 +769,40 @@ emit before their children, while replayed completed occurrences emit no step
 events.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
+### GitHub step
+
+`type: github` uses the installed `gh` CLI and its active authentication.
+Specify the GitHub repository as `owner/repo`; no Git remote or source checkout
+is required. Requests go to GitHub's `api.github.com` REST endpoint for that
+repository. The active token needs permission to read the issue or pull request
+and to write its labels (for example, `issues: write` for issues or
+`pull-requests: write` for PRs when using `GITHUB_TOKEN` in Actions). The step
+uses only the existing token: it does not request or elevate permissions. It
+does not inspect issue contents for instructions or make a maintainer decision.
+
+```yaml
+- id: mark-ready
+  type: github
+  operation: add-label
+  repository: owner/repo
+  target: issue
+  number: "{{ inputs.issue_number }}"
+  label: ready-for-review
+```
+
+`target` is `issue` or `pull_request`; `number` must resolve to a positive
+integer. `label` is one explicit label name (up to 50 characters) and must
+already exist in the repository. `repository`, `number`, and `label` may use
+workflow expressions. The repository must resolve to a single `owner/repo`
+name, not a URL or Git remote. The step checks the target type and its existing
+labels, skips the write when the label is already present, and verifies GitHub's
+response after adding it.
+The output includes `repository`, `target`, `number`, `label`, and `added`
+(`true` only when a label was added). Repeated execution and fan-out items
+are safe to retry: an already-present label is left unchanged. This first
+version does not post comments, restore artifacts, check out PRs, or infer
+which label a maintainer would choose.
 
 ### Custom step packages
 

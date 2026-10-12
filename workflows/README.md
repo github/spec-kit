@@ -89,7 +89,7 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 13 built-in step types, including `workflow` for calling an
+Workflows support 14 built-in step types, including `workflow` for calling an
 installed workflow with private inputs and declared outputs. See
 [workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
 for the scope and execution identity contracts.
@@ -178,6 +178,14 @@ Run a shell command and capture output:
 killed and the step fails; it must be a positive number and defaults to
 `300` (five minutes) when omitted. Raise it for long-running gates such as
 full builds, linter aggregators, or integration-test targets.
+
+### GitHub Steps
+
+The built-in `github` step adds an explicitly configured issue or pull-request
+label when a workflow uses `type: github`. It does not install or invoke the
+opt-in GitHub agent-command extension. See the
+[GitHub step reference](../docs/reference/workflows.md#github-step) for
+configuration, credentials, and retry behavior.
 
 ### Init Steps
 
