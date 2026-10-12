@@ -60,6 +60,110 @@ def test_plain_operations(root, allow):
     assert list(root.iterdir()) == []
 
 
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_text_preserves_inode_and_native_text_behavior(root, allow):
+    files = FileHelper(root, allow_symlinks=allow)
+    files.overwrite_text("config", "caf\u00e9\n")
+    path = root / "config"
+    inode = path.stat().st_ino
+    assert path.read_bytes() == ("caf\u00e9" + os.linesep).encode("utf-8")
+    path.chmod(0o600)
+    files.overwrite_text("config", "updated\n")
+    assert path.stat().st_ino == inode
+    assert path.read_text() == "updated\n"
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("kind", ["leaf", "parent", "dangling"])
+def test_overwrite_text_deny_preflights_links(root, link, kind):
+    target = root / "target"
+    target.mkdir()
+    (target / "file").write_text("old")
+    if kind == "parent":
+        path = link(root / "alias", target) / "file"
+    else:
+        path = link(root / "alias", target / ("missing" if kind == "dangling" else "file"))
+    with pytest.raises(SymlinkDeniedError):
+        FileHelper(root).overwrite_text(path, "new")
+    assert (target / "file").read_text() == "old"
+    assert not (target / "missing").exists()
+
+
+def test_overwrite_text_allow_updates_target_not_link(root, link):
+    target = root / "target"
+    target.write_text("old")
+    alias = link(root / "alias", target)
+    chain = link(root / "chain", "alias")
+    FileHelper(root, allow_symlinks=True).overwrite_text(chain, "new")
+    assert alias.is_symlink() and chain.is_symlink()
+    assert target.read_text() == "new"
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("kind", ["dangling", "external", "cycle"])
+def test_overwrite_text_rejects_unsafe_link_targets(root, link, allow, kind):
+    outside = root.parent / "outside"
+    outside.write_text("unchanged")
+    if kind == "external":
+        target = outside
+    elif kind == "cycle":
+        target = root / "alias"
+    else:
+        target = root / "missing"
+    alias = link(root / "alias", target)
+    expected = (FileHelperError, FileNotFoundError)
+    with pytest.raises(expected):
+        FileHelper(root, allow_symlinks=allow).overwrite_text(alias, "new")
+    assert outside.read_text() == "unchanged"
+    assert not (root / "missing").exists()
+    assert alias.is_symlink()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_text_through_contained_parent(root, link, allow):
+    (root / "directory").mkdir()
+    alias = link(root / "alias", root / "directory")
+    files = FileHelper(root, allow_symlinks=allow)
+    if allow:
+        files.overwrite_text(alias / "new", "content")
+        assert (root / "directory/new").read_text() == "content"
+    else:
+        with pytest.raises(SymlinkDeniedError):
+            files.overwrite_text(alias / "new", "content")
+        assert not (root / "directory/new").exists()
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_text_encoding_errors_propagate(root, allow):
+    files = FileHelper(root, allow_symlinks=allow)
+    with pytest.raises(LookupError):
+        files.overwrite_text("new", "text", encoding="invalid-encoding")
+    assert not (root / "new").exists()
+    with pytest.raises(UnicodeEncodeError):
+        files.overwrite_text("new", "caf\u00e9", encoding="ascii")
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_text_io_errors_propagate(root, monkeypatch, allow):
+    def denied(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("specify_cli.file_helper.os.open", denied)
+    with pytest.raises(PermissionError, match="denied"):
+        FileHelper(root, allow_symlinks=allow).overwrite_text("new", "text")
+    assert not (root / "new").exists()
+
+
+@pytest.mark.parametrize("path", ["../escape", "directory"])
+@pytest.mark.parametrize("allow", [False, True])
+def test_overwrite_text_rejects_invalid_destination(root, path, allow):
+    (root / "directory").mkdir()
+    with pytest.raises(FileHelperError):
+        FileHelper(root, allow_symlinks=allow).overwrite_text(path, "new")
+    assert (root / "directory").is_dir()
+
+
 @pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "create_bytes", "mkdir", "delete"])
 @pytest.mark.parametrize("kind", ["leaf", "parent", "dangling"])
 def test_deny_rejects_accessed_links_without_mutation(root, link, operation, kind):
@@ -858,6 +962,7 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
     for operation in (
         lambda: files.read_bytes(junction / "keep"),
         lambda: files.write_bytes(junction / "keep", b"bad"),
+        lambda: files.overwrite_text(junction / "keep", "bad"),
         lambda: files.create_bytes(junction / "new", b"bad"),
         lambda: files.mkdir(junction / "new-directory"),
         lambda: files.delete(junction, recursive=recursive),

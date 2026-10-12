@@ -289,6 +289,10 @@ def register(app: typer.Typer) -> None:
             "--force",
             help="Force merge/overwrite when using --here (skip confirmation)",
         ),
+        allow_symlinks: bool = typer.Option(
+            False, "--allow-symlinks",
+            help="Persist permission for contained symlinks in migrated FileHelper operations (default: deny).",
+        ),
         non_interactive: bool = typer.Option(
             False,
             "--non-interactive",
@@ -499,7 +503,7 @@ def register(app: typer.Typer) -> None:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
         else:
-            project_path = Path(project_name).resolve()
+            project_path = Path(project_name).absolute()
             original_directory = initial_directory_state(project_path)
             dir_existed_before = original_directory[0] if original_directory else project_path.exists()
             if dir_existed_before:
@@ -533,6 +537,20 @@ def register(app: typer.Typer) -> None:
                     console.print()
                     console.print(error_panel)
                     raise typer.Exit(1)
+
+        from ._file_policy import (
+            ProjectPolicyError, prepare_init_root, read_project_options,
+        )
+        from .file_helper import FileHelperError
+
+        try:
+            # Existing targets are checked before any integration or scaffold mutation.
+            previous_init_options = (
+                read_project_options(project_path) if dir_existed_before else {}
+            )
+        except ProjectPolicyError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
 
         if integration:
             if integration not in AGENT_CONFIG:
@@ -675,6 +693,12 @@ def register(app: typer.Typer) -> None:
         # Disable transient mode on Windows: PowerShell 5.1's legacy console
         # hangs when Rich tries to restore cursor state via VT escape sequences.
         _transient = sys.platform != "win32"
+
+        try:
+            project_path = prepare_init_root(project_path).resolve()
+        except (OSError, FileHelperError, RuntimeError) as exc:
+            console.print(f"[red]Error:[/red] Cannot create project root: {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
 
         with Live(
             tracker.render(), console=console, refresh_per_second=8, transient=_transient
@@ -824,17 +848,21 @@ def register(app: typer.Typer) -> None:
                     tracker.error("workflow", f"install failed: {sanitized_wf[:120]}")
 
                 init_opts = {
+                    **previous_init_options,
                     "ai": selected_ai,
                     "integration": resolved_integration.key,
                     "here": here,
                     "script": selected_script,
                     "feature_numbering": "sequential",
                     "speckit_version": get_speckit_version(),
+                    "allow_symlinks": allow_symlinks,
                 }
                 if resolved_integration.is_skills_mode(
                     integration_parsed_options or None, project_root=project_path
                 ):
                     init_opts["ai_skills"] = True
+                else:
+                    init_opts.pop("ai_skills", None)
                 save_init_options(project_path, init_opts)
 
                 ensure_executable_scripts(project_path, tracker=tracker)
