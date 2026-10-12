@@ -30,7 +30,7 @@ specify extension add <name>
 | `--force`       | Overwrite if the extension is already installed          |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
-Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The core `speckit.taskstoissues` command remains available alongside the GitHub extension's namespaced replacement during migration.
+Installs an extension from the catalog, a URL, or a local directory. Extension commands are registered with the active AI coding agent integration. For `generic`, invocations use the configured `--commands-dir`: flat command files by default, or `speckit-<name>/SKILL.md` with `--skills`. The deprecated core `speckit.taskstoissues` command remains available during migration and will be removed in a future minor release. It warns on invocation and continues its existing workflow without installing or enabling the extension automatically. For GitHub issue tracking, run `specify extension add github` and use the recommended `/speckit.github.taskstoissues` command (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`).
 
 If a generic integration refresh cannot produce every extension invocation (for example, because a command or skill is user-modified or its source is missing), it warns and restores that extension's prior registered artifacts. Other extensions can still refresh.
 
@@ -90,6 +90,7 @@ including for help, the existing human-readable behavior is unchanged.
 ```bash
 specify extension info <name>
 specify extension info <name> --versions
+specify extension info <name> --json
 ```
 
 Shows detailed information about an installed or available extension, including its description, version, commands, and configuration.
@@ -130,6 +131,27 @@ not be repeated in `releases`; malformed or duplicate release records are
 rejected. Bundle pins still use the current catalog resolution path until the
 separate bundle work described in [#4719](https://github.com/github/spec-kit/issues/4719)
 adds exact-version component lookup.
+
+`--json` describes one installed extension and writes a single JSON object to
+stdout. `<name>` is matched as without `--json`: the extension ID first, then a
+unique display name, ignoring case. The object has the same `id`, `name`,
+`description`, `version`, `author`, `priority`, `enabled`, and `source` keys as
+the matching `specify extension list --json` item. In place of the `provides`
+counts it has `commands`, `templates`, `scripts`, and `hooks` arrays. Command,
+template, and script entries have `name`, `description` (`""` when absent),
+`source` (`{"layer": "extension", "extensionId": "<id>"}`, the extension that
+provides it; the top-level `source` is where it was installed from), and
+`sourcePath` (the manifest `file`,
+relative to the extension directory); script entries also have `runtimes` when
+the manifest declares them. Extension entries carry no `strategy`, because
+extension-provided files always replace. Each hook entry has `trigger` (the
+hook event, such as `after_tasks`), `targetCommand`, `optional` (default
+`true`), and `priority` (default `10`). When an event declares the same command
+more than once, the last declaration wins, as it does when hooks are
+registered. `--json` cannot be combined with `--versions` (usage error, exit 2).
+An extension that is not installed, an ambiguous name, or a missing project
+writes one `{"error":"..."}` object to stderr and exits 1; usage errors keep
+their exit code (normally 2), as with `list --json`.
 
 ## Update Extensions
 

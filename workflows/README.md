@@ -4,7 +4,11 @@ Workflows are multi-step, resumable automation pipelines defined in YAML. They o
 
 ## How It Works
 
-A workflow definition declares a sequence of steps. The engine executes them in order, dispatching commands to AI integrations, running shell commands, evaluating conditions for branching, and pausing at gates for human review. State is persisted after each step, so workflows can be resumed after interruption.
+A workflow definition declares a sequence of steps. The engine executes them in
+order, dispatching commands to AI integrations, running shell commands,
+evaluating conditions for branching, and pausing at gates for human review.
+Persisted execution transitions let workflows resume after interruption without
+re-running completed work.
 
 ```yaml
 steps:
@@ -85,7 +89,10 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 14 built-in step types, including `workflow` for calling an
+installed workflow with private inputs and declared outputs. See
+[workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
+for the scope and execution identity contracts.
 
 ### Command Steps (default)
 
@@ -171,6 +178,14 @@ Run a shell command and capture output:
 killed and the step fails; it must be a positive number and defaults to
 `300` (five minutes) when omitted. Raise it for long-running gates such as
 full builds, linter aggregators, or integration-test targets.
+
+### GitHub Steps
+
+The built-in `github` step adds an explicitly configured issue or pull-request
+label when a workflow uses `type: github`. It does not install or invoke the
+opt-in GitHub agent-command extension. See the
+[GitHub step reference](../docs/reference/workflows.md#github-step) for
+configuration, credentials, and retry behavior.
 
 ### Init Steps
 
@@ -312,6 +327,11 @@ Aggregate results from fan-out steps:
   wait_for: [parallel-impl]
   output: {}
 ```
+
+`wait_for` references declared step IDs. For a fan-out, use the fan-out step's
+own `id` (`parallel-impl` above); its ordered item results are available as
+`steps.<fan-out-id>.output.results`. Generated item aliases such as
+`fan:template:0` are reporting-only and are not valid `wait_for` targets.
 
 ## Error Handling
 
@@ -522,9 +542,11 @@ specify workflow catalog list
 # Add a custom catalog
 specify workflow catalog add https://example.com/catalog.json --name my-org
 
-# Remove a catalog
+# Remove a project catalog by its index in the priority-ordered list
 specify workflow catalog remove <index>
 ```
+
+Environment-provided sources cannot be removed this way; unset `SPECKIT_WORKFLOW_CATALOG_URL` to manage project sources.
 
 ## Creating a Workflow
 

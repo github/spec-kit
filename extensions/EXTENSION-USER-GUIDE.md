@@ -407,6 +407,9 @@ settings:
 #                   before_analyze, after_analyze, before_checklist, after_checklist,
 #                   before_clarify, after_clarify, before_constitution, after_constitution,
 #                   before_taskstoissues, after_taskstoissues
+# Bundled bug extension events (when installed):
+#                   before_bug_assess, after_bug_assess, before_bug_fix, after_bug_fix,
+#                   before_bug_test, after_bug_test
 hooks:
   after_tasks:
     - extension: jira

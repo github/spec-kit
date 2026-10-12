@@ -574,13 +574,16 @@ class CopilotIntegration(IntegrationBase):
         settings_src = self._vscode_settings_path()
         if settings_src and settings_src.is_file():
             dst_settings = project_root / ".vscode" / "settings.json"
-            dst_settings.parent.mkdir(parents=True, exist_ok=True)
             if dst_settings.exists():
                 # Merge into existing — don't track since we can't safely
                 # remove the user's settings file on uninstall.
                 self._merge_vscode_settings(settings_src, dst_settings)
             else:
-                shutil.copy2(settings_src, dst_settings)
+                from .._file_changes import changing_file
+
+                with changing_file(dst_settings):
+                    dst_settings.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(settings_src, dst_settings)
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 
@@ -613,7 +616,9 @@ class CopilotIntegration(IntegrationBase):
             content = path.read_text(encoding="utf-8")
             updated = self.post_process_skill_content(content)
             if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
+                from .._file_changes import write_bytes
+
+                write_bytes(path, updated.encode("utf-8"))
                 self.record_file_in_manifest(path, project_root, manifest)
 
         return created
@@ -677,7 +682,10 @@ class CopilotIntegration(IntegrationBase):
             return
 
         # A lone surrogate (\ud800) can't be UTF-8 encoded; write it back as its JSON escape.
-        dst.write_text(
+        from .._file_changes import write_text
+
+        write_text(
+            dst,
             json.dumps(existing, indent=4, ensure_ascii=False) + "\n",
             encoding="utf-8",
             errors="backslashreplace",

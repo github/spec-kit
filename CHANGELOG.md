@@ -2,6 +2,81 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.1.3] - 2026-10-09
+
+### Changed
+
+- Update Intake Sequencing Governance preset to v0.2.8 (#4900)
+- feat(bundles): reconcile exact component pins and version conflicts (#4844)
+- feat(workflows): compose workflows with a unified execution tree (#4764)
+- [extension] Update Applied Epistemic Engineering extension to v1.2.0 (#4895)
+- Update Intake Review Governance preset to v0.2.4 (#4894)
+- Add Epic extension to community catalog (#4896)
+- feat: automate community workflow step submissions (#4873)
+- Add OpenProject Integration extension to community catalog (#4893)
+- Add OpenProject Work Packages preset to community catalog (#4897)
+- Update Verified Codebase Context preset to v1.1.0 (#4898)
+- feat: support catalog-installed external agent adapters (#4862)
+- feat(mcp): add artifact info adapter (#4885)
+- Add lifecycle hooks to the bug workflow (#4878)
+- refactor(artifact): extract info operation (#4882)
+- Deprecate the core taskstoissues command (#4879)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.4.1 (#4880)
+- docs: define integration delivery and design review boundaries (#4881)
+- fix(workflows): keep non-ASCII text readable in run artifacts (#4877)
+- community: add decision v0.9.0 workflow step catalog entry (#4872)
+- chore: release 1.1.2, begin 1.1.3.dev0 development (#4871)
+
+## [1.1.2] - 2026-10-07
+
+### Changed
+
+- feat(mcp): add first-class artifact list tool (#4867)
+- fix(workflows): remove the catalog source shown at the listed index (#4870)
+- fix(bundler): resolve the active integration like the canonical reader (#4541)
+- fix(workflows): an interrupted gate prompt must not approve the gate (#4529)
+- [preset] Update Intake Authoring Governance preset to v0.3.7 (#4838)
+- fix(workflows): state the equal-priority tie-break in 'workflow resolve' output (#4542)
+- feat: add --json to preset info and extension info (#4833)
+- feat(bundles): select exact bundle catalog releases (#4849)
+- fix(bundler): treat an explicitly null catalog field as empty, not "None" (#4532)
+- refactor(artifact): extract list operation (#4866)
+- fix(bundler): report a newline-containing version constraint instead of crashing (#4538)
+- feat(mcp): add first-class version tool (#4864)
+- refactor(version): extract shared operation (#4863)
+- feat(workflows): add workflow step submission intake (#4861)
+- docs: define shared CLI and MCP command architecture (#4847)
+- Add AttackTree extension to community catalog (#4859)
+- Update SpecKit Companion extension to v0.24.0 (#4858)
+- Automatically prioritize bundle submissions (#4856)
+- Update SpecAssay preset to v0.5.6 (#4854)
+- chore: release 1.1.1, begin 1.1.2.dev0 development (#4860)
+
+## [1.1.1] - 2026-10-06
+
+### Changed
+
+- Update SpecAssay bundle to v0.5.6 (#4855)
+- Update SpecAssay Check extension to v0.5.6 (#4853)
+- chore(triage): prioritize preset submissions (#4848)
+- Automatically prioritize extension submissions (#4845)
+- fix(bundles): install pinned catalog releases via exact-release selection (#4753)
+- feat(integrations): expose versioned catalog metadata (#4841)
+- fix(workflows): init step must not replace init's own error with "SystemExit: 1" (#4530)
+- feat(workflows): select exact step catalog releases (#4840)
+- feat(presets): select exact catalog releases (#4823)
+- fix(bundler): let 'catalog remove' delete a project source overriding a built-in (#4533)
+- Update Quality Gates (Enforcement Layer) extension to v0.3.6 (#4837)
+- fix(bundles): reject non-ASCII digits in SemVer identifiers (#4835)
+- Updating the ad hoc project to the tenant url (#4828)
+- feat(workflows): add upper, lower, split, length, and to_json expression filters (#4766)
+- Revert community submission intake and outcome reporting changes (#4831)
+- fix: recognize community submission types and report workflow outcomes (#4829)
+- feat(mcp): add experimental version-only stdio server (#4822)
+- fix: apply required agentic workflow labels (#4824)
+- feat(version): print complete version information as JSON (#4821)
+- chore: release 1.1.0, begin 1.1.1.dev0 development (#4820)
+
 ## [1.1.0] - 2026-10-02
 
 ### Changed
