@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -282,6 +283,51 @@ def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
     )
     assert json.loads(observed[0][1]) == {"labels": ["ready"]}
     assert "ready" not in observed[0][0]
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (FileNotFoundError("gh unavailable"), "gh unavailable"),
+        (subprocess.TimeoutExpired(["gh", "api"], 60), "timed out"),
+        (
+            subprocess.CompletedProcess(["gh", "api"], 1, "", "sensitive-token"),
+            "exit code 1",
+        ),
+    ],
+)
+def test_subprocess_failures_fail_step_without_exposing_stderr(
+    context, monkeypatch, failure, expected
+):
+    def fake_run(*args, **kwargs):
+        assert kwargs["cwd"] == Path(context.project_root)
+        assert kwargs["timeout"] == 60
+        if isinstance(failure, BaseException):
+            raise failure
+        return failure
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    result = get_step_type("github").execute(config(), context)
+    assert result.status == StepStatus.FAILED
+    assert expected in result.error
+    assert "sensitive-token" not in result.error
+    assert result.output == {}
+
+
+@pytest.mark.parametrize("malformed_method", ["GET", "POST"])
+def test_malformed_api_json_fails_step(context, monkeypatch, malformed_method):
+    def fake_run(*args, **kwargs):
+        method = args[0][3]
+        stdout = (
+            "not JSON" if method == malformed_method else '{"number": 12, "labels": []}'
+        )
+        return subprocess.CompletedProcess(args[0], 0, stdout, "")
+
+    monkeypatch.setattr(github.subprocess, "run", fake_run)
+    result = get_step_type("github").execute(config(), context)
+    assert result.status == StepStatus.FAILED
+    assert "invalid JSON" in result.error
+    assert result.output == {}
 
 
 def test_engine_executes_label_yaml_and_fan_out_with_retries(context, api):
