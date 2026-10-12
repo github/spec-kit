@@ -101,3 +101,41 @@ def test_workflow_snapshot_artifact_is_checked(project_dir, tmp_path):
 
     with pytest.raises(ValueError, match="symlinked workflow run artifact"):
         RunState._run_artifact(project_dir, "run-1", "workflow.yml")
+
+
+def test_execute_rejects_symlinked_workflow_snapshot(project_dir, tmp_path):
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+    run_dir = _run_dir(project_dir)
+    target = tmp_path / "workflow.yml"
+    target.write_text("external workflow", encoding="utf-8")
+    (run_dir / "workflow.yml").symlink_to(target)
+
+    definition = WorkflowDefinition({
+        "workflow": {"id": "workflow", "name": "Workflow"},
+        "steps": [],
+    })
+    with pytest.raises(ValueError, match="symlinked workflow run artifact"):
+        WorkflowEngine(project_dir).execute(definition, run_id="run-1")
+
+    assert target.read_text(encoding="utf-8") == "external workflow"
+
+
+def test_resume_rejects_symlinked_workflow_snapshot(project_dir, tmp_path):
+    from specify_cli.workflows.engine import WorkflowEngine
+
+    state = _state(project_dir)
+    state.save()
+    run_dir = _run_dir(project_dir)
+    target = tmp_path / "workflow.yml"
+    target.write_text(
+        "workflow: {id: workflow, name: Workflow}\n"
+        "steps:\n  - {id: review, type: gate, message: Review}\n",
+        encoding="utf-8",
+    )
+    (run_dir / "workflow.yml").symlink_to(target)
+
+    with pytest.raises(ValueError, match="symlinked workflow run artifact"):
+        WorkflowEngine(project_dir).resume("run-1")
+
+    assert target.read_text(encoding="utf-8").startswith("workflow:")
