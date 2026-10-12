@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
 import threading
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
@@ -714,9 +714,38 @@ class RunState:
         cls._reject_symlink(artifact, f"workflow run artifact {name!r}")
         return artifact
 
+    @classmethod
+    @contextmanager
+    def _open_run_directory(cls, project_root: Path, run_id: str, *, create=False):
+        """Open a run directory without following a replacement symlink."""
+        run_path = cls._run_directory(project_root, run_id, create=create)
+        directory_flag = getattr(os, "O_DIRECTORY", None)
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if (
+            directory_flag is None
+            or nofollow is None
+            or os.open not in os.supports_dir_fd
+        ):
+            raise OSError("Secure workflow run-directory access is unavailable")
+
+        runs_path = run_path.parent
+        runs_fd = os.open(runs_path, os.O_RDONLY | directory_flag | nofollow)
+        try:
+            run_fd = os.open(
+                run_id,
+                os.O_RDONLY | directory_flag | nofollow,
+                dir_fd=runs_fd,
+            )
+        finally:
+            os.close(runs_fd)
+        try:
+            yield run_fd
+        finally:
+            os.close(run_fd)
+
     @staticmethod
-    def _open_artifact(path: Path, mode: str, **kwargs):
-        """Open a run artifact without following a symlink at the leaf."""
+    def _open_artifact(path: Path, mode: str, *, dir_fd: int, **kwargs):
+        """Open a run artifact relative to its safely opened run directory."""
         flags = {
             "r": os.O_RDONLY,
             "a": os.O_WRONLY | os.O_CREAT | os.O_APPEND,
@@ -724,8 +753,10 @@ class RunState:
         }.get(mode)
         if flags is None:
             raise ValueError(f"Unsupported workflow artifact open mode: {mode!r}")
-        nofollow = getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(path, flags | nofollow, 0o666)
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if nofollow is None or os.open not in os.supports_dir_fd:
+            raise OSError("Secure workflow artifact access is unavailable")
+        fd = os.open(path.name, flags | nofollow, 0o666, dir_fd=dir_fd)
         return os.fdopen(fd, mode, **kwargs)
 
     @staticmethod
@@ -912,18 +943,19 @@ class RunState:
             if self.execution is not None:
                 state_data["execution"] = self.execution
             try:
-                self._atomic_write_json(
-                    self._run_artifact(
-                        self.project_root, self.run_id, "state.json", create=True
-                    ),
-                    state_data,
+                state_path = self._run_artifact(
+                    self.project_root, self.run_id, "state.json", create=True
                 )
-                self._atomic_write_json(
-                    self._run_artifact(
-                        self.project_root, self.run_id, "inputs.json", create=True
-                    ),
-                    {"inputs": self.inputs},
+                inputs_path = self._run_artifact(
+                    self.project_root, self.run_id, "inputs.json", create=True
                 )
+                with self._open_run_directory(
+                    self.project_root, self.run_id, create=True
+                ) as run_fd:
+                    self._atomic_write_json(state_path, state_data, dir_fd=run_fd)
+                    self._atomic_write_json(
+                        inputs_path, {"inputs": self.inputs}, dir_fd=run_fd
+                    )
             except Exception as exc:
                 # Only write failures poison the instance. A graceful interrupt
                 # (KeyboardInterrupt) propagates unchanged: during step
@@ -937,11 +969,16 @@ class RunState:
                 raise CheckpointError(str(exc)) from exc
 
     @staticmethod
-    def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-        """Write *data* as indented JSON to *path* atomically (temp + ``os.replace``)."""
-        RunState._reject_symlink(path, f"workflow run artifact {path.name!r}")
-        fd, tmp = tempfile.mkstemp(
-            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    def _atomic_write_json(path: Path, data: dict[str, Any], *, dir_fd: int) -> None:
+        """Write *data* as indented JSON to *path* atomically."""
+        if os.rename not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+            raise OSError("Secure workflow artifact replacement is unavailable")
+        tmp = f".{path.name}.{uuid.uuid4().hex}.tmp"
+        fd = os.open(
+            tmp,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=dir_fd,
         )
         try:
             # Keep non-ASCII text readable in these human-auditable records;
@@ -950,10 +987,12 @@ class RunState:
                 fd, "w", encoding="utf-8", errors="backslashreplace"
             ) as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(tmp, path)
+            os.rename(
+                tmp, path.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd
+            )
         except BaseException:
             try:
-                os.unlink(tmp)
+                os.unlink(tmp, dir_fd=dir_fd)
             except OSError:
                 pass
             raise
@@ -976,8 +1015,11 @@ class RunState:
         state_path = cls._run_artifact(project_root, run_id, "state.json")
 
         try:
-            with cls._open_artifact(state_path, "r", encoding="utf-8") as f:
-                state_data = json.load(f)
+            with cls._open_run_directory(project_root, run_id) as run_fd:
+                with cls._open_artifact(
+                    state_path, "r", dir_fd=run_fd, encoding="utf-8"
+                ) as f:
+                    state_data = json.load(f)
         except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
@@ -1068,20 +1110,27 @@ class RunState:
 
             validate_execution(state.execution)
 
-        inputs_path = cls._run_artifact(project_root, run_id, "inputs.json")
-        if "inputs" not in state_data and inputs_path.exists():
-            with cls._open_artifact(inputs_path, "r", encoding="utf-8") as f:
-                inputs_data = json.load(f)
-            if not isinstance(inputs_data, dict):
-                raise ValueError(
-                    "Invalid run inputs: expected a JSON object"
-                )
-            inputs = inputs_data.get("inputs", {})
-            if not isinstance(inputs, dict):
-                raise ValueError(
-                    "Invalid run inputs: 'inputs' must be a JSON object"
-                )
-            state.inputs = inputs
+        if "inputs" not in state_data:
+            inputs_path = cls._run_artifact(project_root, run_id, "inputs.json")
+            try:
+                with cls._open_run_directory(project_root, run_id) as run_fd:
+                    with cls._open_artifact(
+                        inputs_path, "r", dir_fd=run_fd, encoding="utf-8"
+                    ) as f:
+                        inputs_data = json.load(f)
+            except FileNotFoundError:
+                inputs_data = None
+            if inputs_data is not None:
+                if not isinstance(inputs_data, dict):
+                    raise ValueError(
+                        "Invalid run inputs: expected a JSON object"
+                    )
+                inputs = inputs_data.get("inputs", {})
+                if not isinstance(inputs, dict):
+                    raise ValueError(
+                        "Invalid run inputs: 'inputs' must be a JSON object"
+                    )
+                state.inputs = inputs
 
         if "inputs" in state_data:
             if not isinstance(state_data["inputs"], dict):
@@ -1107,15 +1156,20 @@ class RunState:
                 raise CheckpointError("A previous checkpoint failed; reload the run")
             with self._log_lock:
                 self.log_entries.append(entry)
-                with self._open_artifact(
-                    self._run_artifact(
-                        self.project_root, self.run_id, "log.jsonl", create=True
-                    ),
-                    "a",
-                    encoding="utf-8",
-                    errors="backslashreplace",
-                ) as f:
-                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                log_path = self._run_artifact(
+                    self.project_root, self.run_id, "log.jsonl", create=True
+                )
+                with self._open_run_directory(
+                    self.project_root, self.run_id, create=True
+                ) as run_fd:
+                    with self._open_artifact(
+                        log_path,
+                        "a",
+                        dir_fd=run_fd,
+                        encoding="utf-8",
+                        errors="backslashreplace",
+                    ) as f:
+                        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1266,8 +1320,13 @@ class WorkflowEngine:
             self.project_root, state.run_id, "workflow.yml", create=True
         )
         import yaml
-        with RunState._open_artifact(workflow_copy, "w", encoding="utf-8") as f:
-            yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
+        with RunState._open_run_directory(
+            self.project_root, state.run_id, create=True
+        ) as run_fd:
+            with RunState._open_artifact(
+                workflow_copy, "w", dir_fd=run_fd, encoding="utf-8"
+            ) as f:
+                yaml.safe_dump(definition.data, f, sort_keys=False, allow_unicode=True)
 
         state.inputs = resolved_inputs
         workflow_dir = workflow_dir_for(definition)
@@ -1338,13 +1397,19 @@ class WorkflowEngine:
         run_copy = RunState._run_artifact(
             self.project_root, run_id, "workflow.yml"
         )
-        if run_copy.exists():
-            with RunState._open_artifact(run_copy, "r", encoding="utf-8") as f:
-                try:
-                    data = yaml.safe_load(f)
-                except yaml.YAMLError as exc:
-                    msg = f"Invalid YAML in {run_copy}: {exc}"
-                    raise ValueError(msg) from exc
+        try:
+            with RunState._open_run_directory(self.project_root, run_id) as run_fd:
+                with RunState._open_artifact(
+                    run_copy, "r", dir_fd=run_fd, encoding="utf-8"
+                ) as f:
+                    try:
+                        data = yaml.safe_load(f)
+                    except yaml.YAMLError as exc:
+                        msg = f"Invalid YAML in {run_copy}: {exc}"
+                        raise ValueError(msg) from exc
+        except FileNotFoundError:
+            definition = self.load_workflow(state.workflow_id)
+        else:
             if not isinstance(data, dict):
                 msg = (
                     "Workflow YAML must be a mapping, "
@@ -1352,8 +1417,6 @@ class WorkflowEngine:
                 )
                 raise ValueError(msg)
             definition = WorkflowDefinition(data, source_path=run_copy)
-        else:
-            definition = self.load_workflow(state.workflow_id)
 
         # RunState.load() rejects a non-int/negative current_step_index but
         # can't check the upper bound — the step count isn't known until the
@@ -1661,7 +1724,7 @@ class WorkflowEngine:
         runs_dir = self.project_root / ".specify" / "workflows" / "runs"
         if not runs_dir.exists():
             return []
-        self._reject_symlink(runs_dir, ".specify/workflows/runs")
+        RunState._reject_symlink(runs_dir, ".specify/workflows/runs")
 
         runs: list[dict[str, Any]] = []
         for run_dir in sorted(runs_dir.iterdir()):
@@ -1671,18 +1734,25 @@ class WorkflowEngine:
                 )
             if not run_dir.is_dir():
                 continue
-            state_path = self._run_artifact(
+            state_path = RunState._run_artifact(
                 self.project_root, run_dir.name, "state.json"
             )
-            if state_path.exists():
-                try:
-                    with self._open_artifact(state_path, "r", encoding="utf-8") as f:
+            try:
+                with RunState._open_run_directory(
+                    self.project_root, run_dir.name
+                ) as run_fd:
+                    with RunState._open_artifact(
+                        state_path,
+                        "r",
+                        dir_fd=run_fd,
+                        encoding="utf-8",
+                    ) as f:
                         state_data = json.load(f)
-                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-                    continue
-                if not isinstance(state_data, dict) or "run_id" not in state_data:
-                    continue
-                runs.append(state_data)
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                continue
+            if not isinstance(state_data, dict) or "run_id" not in state_data:
+                continue
+            runs.append(state_data)
         return runs
 
 
