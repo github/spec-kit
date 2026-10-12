@@ -26,6 +26,71 @@ def _state(project_dir, run_id="run-1"):
     return state
 
 
+def test_workflow_operations_use_portable_storage_fallback(
+    project_dir, monkeypatch
+):
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import (
+        RunState,
+        WorkflowDefinition,
+        WorkflowEngine,
+    )
+
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+    )
+    definition = WorkflowDefinition.from_string(
+        """
+schema_version: "1.0"
+workflow:
+  id: portable-storage
+  name: Portable Storage
+inputs:
+  verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: Review
+    verdict_input: verdict
+"""
+    )
+    engine = WorkflowEngine(project_dir)
+
+    state = engine.execute(definition, run_id="portable")
+
+    assert state.status == RunStatus.PAUSED
+    resumed = engine.resume("portable", {"verdict": "approve"})
+    assert resumed.status == RunStatus.COMPLETED
+    assert engine.list_runs()[0]["run_id"] == "portable"
+
+
+def test_portable_storage_fallback_rechecks_artifact_symlinks(
+    project_dir, tmp_path, monkeypatch
+):
+    from specify_cli.workflows.engine import RunState
+
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+    )
+    state = _state(project_dir)
+    state.save()
+    artifact = RunState._run_artifact(project_dir, "run-1", "state.json")
+    external = tmp_path / "state.json"
+    external.write_text("external state", encoding="utf-8")
+
+    with RunState._open_run_directory(project_dir, "run-1") as run_fd:
+        artifact.unlink()
+        artifact.symlink_to(external)
+        with pytest.raises(ValueError, match="symlinked workflow run artifact"):
+            RunState._open_artifact(
+                artifact, "r", dir_fd=run_fd, encoding="utf-8"
+            )
+
+    assert external.read_text(encoding="utf-8") == "external state"
+
+
 def test_load_rejects_symlinked_run_directory(project_dir, tmp_path):
     from specify_cli.workflows.engine import RunState
 
