@@ -559,6 +559,41 @@ class TestNegative:
 
         _assert_json_error(result, "cannot represent recursive YAML aliases")
 
+    def test_shared_alias_within_budget_emits_definition(self, project_dir):
+        # A modest alias reused a few times is legitimate YAML; the node budget
+        # must bound exponential DAGs without rejecting ordinary sharing.
+        workflow = GATE_WF + (
+            "shared: &shared {choice: approve}\n"
+            "metadata: {a: *shared, b: *shared}\n"
+        )
+        run = _run(project_dir, workflow)
+
+        result = _definition(project_dir, run["run_id"])
+
+        assert result.exit_code == 0, result.stderr
+        definition = json.loads(result.stdout)["definition"]
+        assert definition["metadata"] == {
+            "a": {"choice": "approve"},
+            "b": {"choice": "approve"},
+        }
+
+    def test_exponential_alias_dag_returns_json_error(self, project_dir):
+        # A non-recursive YAML alias DAG is linear on disk but expands
+        # exponentially as JSON duplicates each shared reference. Cycle
+        # detection alone lets it terminate, so the node budget must stop it
+        # before it consumes unbounded CPU, memory, and stdout. Depth 20 is
+        # ~1.6M nodes -- comfortably past the budget yet fast to reach.
+        depth = 20
+        lines = ["x0: &x0 [a]"]
+        for i in range(1, depth):
+            lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+        lines.append(f"metadata: *x{depth - 1}")
+        run = _run(project_dir, GATE_WF + "\n".join(lines) + "\n")
+
+        result = _definition(project_dir, run["run_id"])
+
+        _assert_json_error(result, "too large to represent")
+
     @pytest.mark.parametrize(
         "mapping",
         [

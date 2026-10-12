@@ -1058,6 +1058,9 @@ def _run_outcome_exit_code(status_value: str) -> int:
     return 1 if status_value in ("failed", "aborted") else 0
 
 
+_MAX_JSON_NODES = 1_000_000
+
+
 def _emit_workflow_json(payload: dict[str, Any]) -> None:
     """Write a workflow payload as machine-readable JSON to stdout.
 
@@ -1066,7 +1069,15 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
     never alter the emitted JSON. YAML-native scalars that JSON cannot
     represent (e.g. dates), mapping keys, and non-finite floats are stringified,
     so output is always plain JSON.
+
+    JSON has no way to share a reference, so a YAML alias graph must be
+    duplicated into a tree; a non-recursive alias DAG can therefore expand
+    exponentially even though it is linear on disk. Cycle detection alone
+    lets that terminate, so a node budget bounds the expansion (see
+    ``_MAX_JSON_NODES``) instead of rejecting every reused alias.
     """
+    remaining_nodes = _MAX_JSON_NODES
+
     def json_key(key: Any) -> str:
         """Canonicalize a mapping key to the property name json.dumps emits."""
         if isinstance(key, str):
@@ -1076,6 +1087,13 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
         return str(key)
 
     def plain_json(value: Any, active_containers: set[int]) -> Any:
+        nonlocal remaining_nodes
+        remaining_nodes -= 1
+        if remaining_nodes < 0:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: the definition "
+                f"expands past {_MAX_JSON_NODES} nodes (nested YAML aliases)"
+            )
         if isinstance(value, dict):
             container_id = id(value)
             if container_id in active_containers:
