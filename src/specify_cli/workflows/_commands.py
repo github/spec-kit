@@ -1058,7 +1058,9 @@ def _run_outcome_exit_code(status_value: str) -> int:
     return 1 if status_value in ("failed", "aborted") else 0
 
 
-_MAX_JSON_NODES = 1_000_000
+# Real workflow definitions are tiny (largest shipped: ~67 nodes); this leaves
+# >1000x headroom while capping worst-case memory and stdout to a few MB.
+_MAX_JSON_NODES = 100_000
 
 
 def _emit_workflow_json(payload: dict[str, Any]) -> None:
