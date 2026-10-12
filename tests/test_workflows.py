@@ -387,6 +387,35 @@ class TestExpressions:
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
 
+    @pytest.mark.parametrize(("expression", "expected"), [
+        ("inputs.payload != '' and (inputs.payload | from_json | length)", False),
+        ("inputs.payload == '' or (inputs.payload | from_json | length)", True),
+        ("false and true or true", True),
+        ("true or (false and (inputs.payload | from_json))", True),
+    ])
+    def test_boolean_short_circuits(self, expression, expected):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        assert evaluate_expression(
+            "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+        ) is expected
+
+    @pytest.mark.parametrize("expression", [
+        "true and (inputs.payload | from_json)",
+        "false or (inputs.payload | from_json)",
+        "(inputs.payload | from_json) and false",
+        "(inputs.payload | from_json) or true",
+    ])
+    def test_boolean_required_operand_still_raises(self, expression):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression(
+                "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+            )
+
     def test_list_literal_preserves_quoted_commas(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
