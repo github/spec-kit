@@ -283,6 +283,35 @@ def test_api_post_uses_json_stdin_and_does_not_put_label_in_arguments(
     )
     assert json.loads(observed[0][1]) == {"labels": ["ready"]}
     assert "ready" not in observed[0][0]
+    assert observed[0][0].count("--header") == 1
+    assert observed[0][0][observed[0][0].index("--header") + 1] == (
+        "Content-Type: application/json"
+    )
+
+
+def test_api_get_has_no_body_or_content_type(context, monkeypatch):
+    observed = []
+
+    def fake_run(args, root, *, input_text=None):
+        observed.append((args, input_text))
+        return '{"number": 12, "labels": []}'
+
+    monkeypatch.setattr(github, "_run", fake_run)
+    github._api(
+        Path(context.project_root), "https://api.github.com/repos/o/r/issues/12"
+    )
+    assert observed == [
+        (
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                "https://api.github.com/repos/o/r/issues/12",
+            ],
+            None,
+        )
+    ]
 
 
 @pytest.mark.parametrize(

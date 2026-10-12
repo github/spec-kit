@@ -38,7 +38,7 @@ def _api(root: Path, endpoint: str, *, labels: list[str] | None = None) -> Any:
     method = "POST" if labels is not None else "GET"
     args = ["gh", "api", "--method", method, endpoint]
     if labels is not None:
-        args.extend(["--input", "-"])
+        args.extend(["--header", "Content-Type: application/json", "--input", "-"])
     raw = _run(
         args,
         root,
