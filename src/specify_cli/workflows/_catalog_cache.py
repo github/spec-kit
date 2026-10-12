@@ -44,9 +44,11 @@ def _windows_handle(path: Path, *, directory: bool) -> Iterator[int]:
     # OPEN_REPARSE_POINT inspects the link itself; BACKUP_SEMANTICS permits
     # directory handles. Holding every ancestor without FILE_SHARE_DELETE
     # prevents a junction/symlink swap during path-based create/replace.
+    # Attribute-only handles bypass share checking: include FILE_LIST_DIRECTORY
+    # with FILE_READ_ATTRIBUTES so even an empty directory cannot be renamed.
     handle = create(
         str(path),
-        0x80 if directory else 0x80000000,
+        (0x80 | 0x1) if directory else 0x80000000,
         0x3,
         None,
         3,
