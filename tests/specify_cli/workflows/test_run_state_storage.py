@@ -43,6 +43,83 @@ def test_load_rejects_symlinked_run_directory(project_dir, tmp_path):
         RunState.load("run-1", project_dir)
 
 
+def test_load_keeps_open_run_directory_when_path_is_replaced(
+    project_dir, tmp_path, monkeypatch
+):
+    from specify_cli.workflows.engine import RunState
+
+    state = _state(project_dir)
+    state.save()
+    run_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
+    detached_dir = tmp_path / "detached-run"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_state = outside / "state.json"
+    outside_state.write_text(
+        json.dumps({
+            "run_id": "run-1",
+            "workflow_id": "external",
+            "status": "paused",
+        }),
+        encoding="utf-8",
+    )
+    original_open = RunState._open_artifact
+    swapped = False
+
+    def _replace_run_directory(path, mode, *, dir_fd, **kwargs):
+        nonlocal swapped
+        if path.name == "state.json" and not swapped:
+            swapped = True
+            os.rename(run_dir, detached_dir)
+            run_dir.symlink_to(outside, target_is_directory=True)
+        return original_open(path, mode, dir_fd=dir_fd, **kwargs)
+
+    monkeypatch.setattr(
+        RunState, "_open_artifact", staticmethod(_replace_run_directory)
+    )
+
+    loaded = RunState.load("run-1", project_dir)
+
+    assert loaded.workflow_id == "workflow"
+    assert json.loads(outside_state.read_text(encoding="utf-8"))["workflow_id"] == "external"
+
+
+def test_save_keeps_open_run_directory_when_path_is_replaced(
+    project_dir, tmp_path, monkeypatch
+):
+    from specify_cli.workflows.engine import RunState
+
+    state = _state(project_dir)
+    state.save()
+    run_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
+    detached_dir = tmp_path / "detached-run"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_state = outside / "state.json"
+    outside_state.write_text("external state", encoding="utf-8")
+    original_write = RunState._atomic_write_json
+    swapped = False
+
+    def _replace_run_directory(path, data, *, dir_fd):
+        nonlocal swapped
+        if path.name == "state.json" and not swapped:
+            swapped = True
+            os.rename(run_dir, detached_dir)
+            run_dir.symlink_to(outside, target_is_directory=True)
+        return original_write(path, data, dir_fd=dir_fd)
+
+    monkeypatch.setattr(
+        RunState, "_atomic_write_json", staticmethod(_replace_run_directory)
+    )
+
+    state.save()
+
+    assert outside_state.read_text(encoding="utf-8") == "external state"
+    assert json.loads((detached_dir / "state.json").read_text(encoding="utf-8"))[
+        "run_id"
+    ] == "run-1"
+
+
 @pytest.mark.parametrize("artifact", ["state.json", "inputs.json"])
 def test_run_state_rejects_symlinked_persisted_artifacts(
     project_dir, tmp_path, artifact
