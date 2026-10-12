@@ -219,9 +219,14 @@ def integration_upgrade(
     # _install_shared_infra_or_exit above may have just overwritten
     # .specify/scripts/bash/<name>.sh with the bundled core when force=True,
     # clobbering any generated launcher chain for a script an
-    # already-enabled preset provides. Restore those chains now,
-    # mirroring the same call in command_init.py.
-    if force:
+    # already-enabled preset provides. Restore those chains now, mirroring
+    # the same call in command_init.py -- but only when this is the final
+    # shared-infra refresh this command will perform. When installed_key ==
+    # key, the "installed_key == key" branch below runs a second
+    # _install_shared_infra for the same reason (refreshing the integration's
+    # own shared files) and would immediately re-clobber the chain restored
+    # here; that branch reconciles again after its own refresh instead.
+    if force and installed_key != key:
         try:
             from ..presets import PresetManager as _ExistingPresetManager
 
@@ -288,6 +293,26 @@ def integration_upgrade(
             if os.name != "nt":
                 from .. import ensure_executable_scripts
                 ensure_executable_scripts(project_root)
+
+            # This refresh above is the final shared-infra write this
+            # command performs for the default integration, so it's the one
+            # that must not leave a script preset's generated launcher
+            # chain clobbered by the restored bundled core script.
+            if force:
+                try:
+                    from ..presets import PresetManager as _ExistingPresetManager
+
+                    _ExistingPresetManager(project_root).reconcile_all_script_chains()
+                except Exception as exc:
+                    from .. import _print_cli_warning
+
+                    _print_cli_warning(
+                        "reconcile script presets after",
+                        "integration upgrade",
+                        str(project_root),
+                        exc,
+                        continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+                    )
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:

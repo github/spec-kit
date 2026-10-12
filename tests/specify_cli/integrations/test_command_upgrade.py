@@ -468,6 +468,66 @@ class TestIntegrationUpgradeDetailed:
             "disabled extensions must not be re-registered in the canonical dir"
         )
 
+    def test_upgrade_force_same_integration_preserves_script_preset_dispatcher(
+        self, tmp_path
+    ):
+        """
+        Forced upgrade of the already-default integration refreshes shared
+        infrastructure twice: once explicitly, then again via the Phase 2
+        re-setup that runs when installed_key == key. The second refresh
+        must not re-clobber a script preset's generated dispatcher chain
+        after the first refresh's reconciliation already restored it.
+        """
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = tmp_path / "dispatcher-test-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "setup-plan.sh").write_text(
+            "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "dispatcher-test-pack",
+                "name": "dispatcher-test-pack",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "setup-plan",
+                        "file": "scripts/setup-plan.sh",
+                    },
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+        canonical = project / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+        assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+            "precondition: script preset dispatcher chain installed"
+        )
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "claude", "--force"]
+        )
+        assert result.exit_code == 0, result.output
+
+        assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+            "forced upgrade's second shared-infra refresh clobbered the "
+            "script preset's dispatcher chain restored after the first refresh"
+        )
+
     def test_upgrade_secondary_kilocode_legacy_dir_cleans_commands_without_backfill(
         self, tmp_path
     ):

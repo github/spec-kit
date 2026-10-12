@@ -1163,6 +1163,79 @@ class TestInitIntegrationFlag:
         # --force should overwrite the custom file
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
+    def test_init_here_force_restores_script_preset_dispatcher(self, tmp_path):
+        """E2E: a forced re-init must not leave a script preset's generated
+        dispatcher chain clobbered by the restored bundled core script."""
+        import yaml
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        project = tmp_path / "e2e-force-dispatcher"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+            assert result.exit_code == 0, result.output
+
+            pack_dir = tmp_path / "dispatcher-test-pack"
+            (pack_dir / "scripts").mkdir(parents=True)
+            (pack_dir / "scripts" / "setup-plan.sh").write_text(
+                "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "dispatcher-test-pack",
+                    "name": "dispatcher-test-pack",
+                    "version": "1.0.0",
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "script",
+                            "name": "setup-plan",
+                            "file": "scripts/setup-plan.sh",
+                        },
+                    ]
+                },
+            }
+            with open(pack_dir / "preset.yml", "w") as f:
+                yaml.dump(manifest_data, f)
+
+            PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+            canonical = project / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+            assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+                "precondition: script preset dispatcher chain installed"
+            )
+
+            result2 = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result2.exit_code == 0, result2.output
+        assert "WRAPPED-BY-PRESET" in canonical.read_text(encoding="utf-8"), (
+            "init --here --force clobbered the script preset's dispatcher "
+            "chain instead of restoring it after the shared-infra refresh"
+        )
+
     def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
         """E2E: confirming the merge with piped "y" (no --force) preserves
         existing shared infra files (unlike --force, which overwrites them)."""

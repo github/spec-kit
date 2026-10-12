@@ -144,6 +144,38 @@ class TestPresetManager:
         with pytest.raises(PresetCompatibilityError):
             manager.install_from_directory(incompat_dir, "0.1.5")
 
+    def test_install_rejects_script_preset_for_ps_project(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A script-providing preset must not silently no-op on a non-Bash
+        project: the generated dispatcher chain is Bash-only, so installing
+        one into a ``--script ps`` project is rejected outright."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"script": "ps"}), encoding="utf-8")
+
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "ps-rejected-pack", "echo x\n",
+            template_type="script", template_name="setup-plan",
+        )
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="--script ps"):
+            manager.install_from_directory(pack_dir, "0.1.5")
+        assert not manager.registry.is_installed("ps-rejected-pack")
+
+    def test_install_allows_non_script_preset_for_ps_project(
+        self, project_dir, pack_dir
+    ):
+        """Only script-providing presets are runtime-gated; a plain template
+        preset must install normally regardless of the selected script type."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"script": "ps"}), encoding="utf-8")
+
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_directory(pack_dir, "0.1.5")
+        assert manager.registry.is_installed(manifest.id)
+
     def test_install_from_zip(self, project_dir, pack_dir, temp_dir):
         """Test installing from a ZIP file."""
         zip_path = temp_dir / "test-pack.zip"

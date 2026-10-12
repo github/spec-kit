@@ -12,7 +12,11 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._download_security import safe_extract_archive
-from .._init_options import is_ai_skills_enabled, resolve_active_agent_for_registration
+from .._init_options import (
+    is_ai_skills_enabled,
+    load_init_options,
+    resolve_active_agent_for_registration,
+)
 from .._utils import version_satisfies
 from ..extensions import REINSTALL_COMMAND, normalize_priority
 from ..shared_infra import (
@@ -283,6 +287,31 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         return True
 
+    def _reject_script_preset_for_unsupported_runtime(
+        self, manifest: PresetManifest
+    ) -> None:
+        """Reject installing a preset that provides scripts on a non-Bash project.
+
+        Script dispatcher chains (see ``_reconcile_script_chain``) are only
+        ever materialized as Bash launchers under ``.specify/scripts/bash/``.
+        Installing a script-providing preset into a project configured with
+        ``--script ps`` or ``--script py`` would otherwise succeed but never
+        take effect, since the canonical script that project actually
+        executes is the PowerShell/Python variant, which this mechanism never
+        touches. Reject explicitly rather than let installation succeed with
+        silently inert files.
+        """
+        if not any(t.get("type") == "script" for t in manifest.templates):
+            return
+        selected_script = load_init_options(self.project_root).get("script")
+        if selected_script not in (None, "sh"):
+            raise PresetValidationError(
+                f"Preset '{manifest.id}' provides a script template, but this "
+                f"project is configured for --script {selected_script}. "
+                f"Script-providing presets currently only support Bash "
+                f"(--script sh) projects."
+            )
+
     def find_unmet_extension_dependencies(
         self,
         manifest: PresetManifest
@@ -464,6 +493,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         manifest = PresetManifest(manifest_path)
 
         self.check_compatibility(manifest, speckit_version)
+        self._reject_script_preset_for_unsupported_runtime(manifest)
 
         if self.registry.is_installed(manifest.id):
             if not force:
