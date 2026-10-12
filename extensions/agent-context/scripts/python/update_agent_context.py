@@ -11,8 +11,8 @@ Usage: update_agent_context.py [plan_path]
 
 When ``plan_path`` is omitted, the script derives it from
 ``.specify/feature.json`` (written by /speckit-specify). Falls back to the most
-recently modified ``plan.md`` anywhere under ``specs/`` (including nested scoped
-layouts such as ``specs/<scope>/<feature>/plan.md``) only when feature.json is
+recently modified ``plan.md`` found anywhere under ``specs/`` — scoped layouts
+nest it as ``specs/<scope>/<feature>/plan.md`` — only when feature.json is
 absent or its plan does not exist yet.
 """
 
@@ -173,16 +173,31 @@ def _resolve_plan_path(project_root: str) -> str:
 
     if not plan_path:
         root = Path(project_root).resolve()
-        plans = sorted(
-            (root / "specs").rglob("plan.md"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if plans:
+        specs = root / "specs"
+
+        def _resolved_rel(p: Path) -> Path | None:
+            # Resolve symlinks before checking containment: relative_to() is
+            # lexical and would otherwise accept a plan reached through a specs/
+            # symlink that points outside the project, emitting an
+            # in-project-looking path for an out-of-project file (or picking it
+            # as "most recent").
             try:
-                plan_path = plans[0].relative_to(root).as_posix()
-            except ValueError:
-                plan_path = ""
+                return p.resolve().relative_to(root)
+            except (OSError, ValueError):
+                return None
+
+        # Recurse (rather than the old one-level specs/*/plan.md glob) so scoped
+        # layouts created via SPECIFY_FEATURE_DIRECTORY, e.g.
+        # specs/<scope>/<feature>/plan.md, are still discovered when
+        # feature.json is absent (#3024). Mirrors the bash and PowerShell twins.
+        candidates = []
+        for p in specs.rglob("plan.md"):
+            rel = _resolved_rel(p)
+            if rel is not None:
+                candidates.append((p, rel))
+        candidates.sort(key=lambda pr: pr[0].stat().st_mtime, reverse=True)
+        if candidates:
+            plan_path = candidates[0][1].as_posix()
     return plan_path
 
 

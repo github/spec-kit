@@ -4,6 +4,10 @@ handoffs:
   - label: Build Specification
     agent: speckit.specify
     prompt: Implement the feature specification based on the updated constitution. I want to build...
+scripts:
+  sh: scripts/bash/resolve-template.sh constitution-template --json
+  ps: scripts/powershell/resolve-template.ps1 constitution-template -Json
+  py: scripts/python/resolve_template.py constitution-template --json
 ---
 
 ## User Input
@@ -38,7 +42,7 @@ and commands read the constitution at runtime and are not modified here.
 **Check for extension hooks (before constitution update)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_constitution` key
-- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
+- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue normally
 - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
@@ -70,13 +74,22 @@ and commands read the constitution at runtime and are not modified here.
 
 ## Outline
 
-You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values and (b) fill the template precisely.
-
-**Note**: If `.specify/memory/constitution.md` does not exist yet, it should have been initialized from `.specify/templates/constitution-template.md` during project setup. If it's missing, copy the template first.
+You are updating the project constitution at `.specify/memory/constitution.md`. The active
+constitution scaffold is resolved at command time from `constitution-template` through the Spec Kit
+preset/template resolution stack.
 
 Follow this execution flow:
 
-1. Load the existing constitution at `.specify/memory/constitution.md`.
+1. Run `{SCRIPT}` from the repository root and parse `TEMPLATE_CONTENT` as the active template.
+   - The shared resolver applies project overrides, composing preset layers, and extension layers
+     before the core template fallback. It MUST succeed before continuing.
+   - If it fails, stop and report the resolution error; do not continue with only one contributing
+     template layer.
+   - If `.specify/memory/constitution.md` exists, load it as the source of current project-specific
+     values and amendments. Preserve information that is still applicable when applying the newly
+     resolved scaffold.
+   - If it does not exist, use the resolved template as the initial document.
+   - Do not write back to any versioned template layer.
    - Identify every placeholder token of the form `[ALL_CAPS_IDENTIFIER]`.
    **IMPORTANT**: The user might require less or more principles than the ones used in the template. If a number is specified, respect that - follow the general template. You will update the doc accordingly.
 
@@ -90,13 +103,15 @@ Follow this execution flow:
      - PATCH: Clarifications, wording, typo fixes, non-semantic refinements.
    - If version bump type ambiguous, propose reasoning before finalizing.
 
-3. Draft the updated constitution content:
+3. Draft the updated constitution content using the resolved template as the required structure:
    - Replace every placeholder with concrete text (no bracketed tokens left except intentionally retained template slots that the project has chosen not to define yet—explicitly justify any left).
    - Preserve heading hierarchy and comments can be removed once replaced unless they still add clarifying guidance.
    - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
 
-4. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
+4. Produce a Sync Impact Report as an HTML comment at the top of the constitution file after update.
+   This report is temporary scratch material for human review of the amendment, not governance
+   content; it is expected to be removed before the amended constitution file is committed.
    - Version change: old → new
    - List of modified principles (old title → new title if renamed)
    - Added sections
@@ -128,14 +143,14 @@ If the user supplies partial updates (e.g., only one principle revision), still 
 
 If critical info missing (e.g., ratification date truly unknown), insert `TODO(<FIELD_NAME>): explanation` and include in the Sync Impact Report under deferred items.
 
-Do not create a new template; always operate on the existing `.specify/memory/constitution.md` file.
+Write only `.specify/memory/constitution.md`; do not create or modify template source files.
 
 ## Post-Execution Checks
 
 **Check for extension hooks (after constitution update)**:
 Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.after_constitution` key
-- If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
+- If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that `.specify/extensions.yml` could not be read (include the parser error) and that no hooks were checked, including any mandatory (`optional: false`) hooks registered there, then continue normally
 - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable

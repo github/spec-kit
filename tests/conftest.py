@@ -5,8 +5,12 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+import yaml
+
+from specify_cli.presets import PresetRegistry
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
@@ -63,6 +67,69 @@ requires_bash = pytest.mark.skipif(
 )
 
 
+def install_preset(
+    project_root: Path, pack_id: str, provides: dict, priority: int = 10
+) -> Path:
+    """Create a registered preset with a validated modern manifest."""
+    pack_dir = project_root / ".specify" / "presets" / pack_id
+    pack_dir.mkdir(parents=True)
+    templates: list[dict[str, str]] = []
+
+    def _default_file(kind: str, name: str) -> str:
+        if kind == "command":
+            return f"commands/{name}.md"
+        if kind == "script":
+            return f"scripts/{name}.sh"
+        return f"templates/{name}.md"
+
+    for entry in provides.get("templates", []):
+        if not isinstance(entry, dict):
+            continue
+        entry_type = entry.get("type", "template")
+        if not isinstance(entry_type, str) or entry_type not in (
+            "command",
+            "template",
+            "script",
+        ):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        normalized = dict(entry)
+        normalized["type"] = entry_type
+        normalized.setdefault("file", _default_file(entry_type, name))
+        templates.append(normalized)
+
+    for kind_key, entry_type in (("commands", "command"), ("scripts", "script")):
+        for entry in provides.get(kind_key, []):
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str):
+                continue
+            normalized = dict(entry)
+            normalized["type"] = entry_type
+            normalized.setdefault("file", _default_file(entry_type, name))
+            templates.append(normalized)
+
+    manifest = {
+        "schema_version": "1.0",
+        "preset": {
+            "id": pack_id,
+            "name": f"Test preset {pack_id}",
+            "version": "1.0.0",
+            "description": f"Test preset {pack_id}",
+        },
+        "requires": {"speckit_version": ">=1.0.0"},
+        "provides": {"templates": templates},
+    }
+    (pack_dir / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    PresetRegistry(project_root / ".specify" / "presets").add(
+        pack_id, {"priority": priority, "version": "1.0.0"}
+    )
+    return pack_dir
+
+
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from Rich-formatted CLI output."""
     return _ANSI_ESCAPE_RE.sub("", text)
@@ -95,6 +162,11 @@ def _strip_specify_env(monkeypatch):
     that wants an override sets it explicitly via monkeypatch afterwards."""
     for key in [k for k in os.environ if k.startswith("SPECIFY_")]:
         monkeypatch.delenv(key, raising=False)
+    for key in list(os.environ):
+        if key.startswith("SPECKIT_INTEGRATION_") and (
+            key.endswith("_EXTRA_ARGS") or key.endswith("_EXECUTABLE")
+        ):
+            monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture

@@ -9,19 +9,23 @@ and ``specify init``'s next-steps output stay consistent.
 from __future__ import annotations
 
 # Agents that render $speckit-<name> (chat invocation) when in skills mode.
-DOLLAR_SKILLS_AGENTS: frozenset[str] = frozenset({"codex", "zcode"})
+DOLLAR_SKILLS_AGENTS: frozenset[str] = frozenset({"codex", "zcode", "command-code"})
 
 # Agents that always render /speckit-<name>, regardless of ai_skills.
-ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "droid", "grok", "trae", "zed"})
+ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset(
+    {"devin", "droid", "dsh", "grok", "mcode", "muse", "qodercli", "trae", "zed"}
+)
 
 # Agents that render /speckit-<name> only when ai_skills is enabled.
 CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
     {
         "agy",
+        "alquimia",
         "bob",
         "claude",
         "copilot",
         "cursor-agent",
+        "generic",
         "hermes",
         "lingma",
         "rovodev",

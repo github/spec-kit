@@ -2,8 +2,13 @@
 
 The **bug** extension adds a three-step bug triage process — assess, fix, and validate — that your coding agent runs alongside the core [Agentic SDD](agentic-sdd.md) process. Each bug lives in its own directory under `.specify/bugs/<slug>/`, with one Markdown report per stage.
 
+For a guided example, follow the [Bug Fixing Quickstart](../guides/bugfix.md).
+Bug fixing does not require the SDD feature process first. For evaluating an idea
+rather than repairing broken behavior, see
+[Idea Assessment](agentic-assessment.md).
+
 > [!NOTE]
-> Commands are written in `/speckit.bug.*` form throughout this page. The exact invocation depends on your agent — some skills-based agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). Substitute the form your agent exposes.
+> Commands are written in `/speckit.bug.*` form throughout this page. GitHub Copilot's default skills mode uses `/speckit-bug-*`; some other agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). See [Command invocation](integrations.md#command-invocation).
 
 The bug extension is a bundled, opt-in extension. Install it before using these commands:
 
@@ -50,3 +55,7 @@ Validates the fix by re-running the reproduction and any added tests, then recor
 ```
 
 Output: `.specify/bugs/<slug>/test.md`.
+
+## Extension hooks
+
+Each bug command exposes `before_bug_<command>` and `after_bug_<command>` hooks for other extensions. Pre-hooks run after slug resolution and prerequisites; assessment creates the bug directory first. Post-hooks run after the report is written and before completion is reported. An unintelligible pasted report stops without writing an assessment or running post-hooks; before-hooks may already have run. Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected. With no hooks registered, the workflow proceeds as before. See the [bug extension's hook events and configuration example](https://github.com/github/spec-kit/blob/main/extensions/bug/README.md#hooks).
