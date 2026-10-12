@@ -280,6 +280,15 @@ When `specify workflow add <id>` installs from catalog, it downloads the workflo
 | Project catalogs | `.specify/workflow-catalogs.yml` | YAML | Project-level catalog sources |
 | User catalogs | `~/.specify/workflow-catalogs.yml` | YAML | User-level catalog sources |
 
+### Persisted-run storage boundary
+
+The `.specify/workflows/runs` tree is a project-owned persistence boundary.
+Every run directory and persisted artifact below it must be a real filesystem
+object rather than a symlink. `RunState` enforces this policy before reading or
+writing `state.json`, `inputs.json`, `workflow.yml`, or `log.jsonl`; artifact
+opens also use no-follow flags where the platform provides them. Commands
+fail closed instead of following redirected run storage.
+
 ## Module Structure
 
 ```text

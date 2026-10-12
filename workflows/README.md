@@ -520,6 +520,12 @@ specify workflow resume <run_id>
 
 Run states: `created` → `running` → `completed` | `paused` | `failed` | `aborted`
 
+Persisted-run storage rejects every symlink below `.specify/workflows/runs`,
+including per-run directories and artifact files. This applies consistently to
+state, inputs, workflow snapshots, and logs for both reads and writes. Workflow
+storage cannot therefore be relocated through symlinks; move the files and
+directories into the project-owned runs directory instead.
+
 ## Catalog Management
 
 Workflows are discovered through catalogs. By default, Spec Kit uses the official and community catalogs:
