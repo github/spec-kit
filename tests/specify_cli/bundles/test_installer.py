@@ -10,11 +10,20 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.manifest import BundleManifest
-from specify_cli.bundles.records import load_records, records_path
 from specify_cli.bundles.installer import install_bundle, remove_bundle
+from specify_cli.bundles.manifest import BundleManifest, ComponentRef
+from specify_cli.bundles.records import (
+    InstalledBundleRecord,
+    load_records,
+    records_path,
+    save_records,
+)
 from specify_cli.bundles.resolver import resolve_install_plan
-from tests.specify_cli.bundles.helpers import FakeInstaller, make_project, valid_manifest_dict
+from tests.specify_cli.bundles.helpers import (
+    FakeInstaller,
+    make_project,
+    valid_manifest_dict,
+)
 
 
 def _plan(manifest):
@@ -49,6 +58,362 @@ def test_install_is_idempotent(tmp_path: Path):
     assert second.installed == []
     assert len(second.skipped) == 4
     assert len(load_records(tmp_path)) == 1
+
+
+def test_second_bundle_cannot_claim_different_pin_before_mutation(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    other = _bundle("other", ["ext-a", "ext-b"], version="2.0.0")
+
+    with pytest.raises(BundlerError, match="Only one version"):
+        install_bundle(tmp_path, _plan(other), installer, manifest=other)
+
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["first"]
+    assert installer.install_calls == [("extensions", "ext-a")]
+
+
+def test_independent_requirement_blocks_conflicting_bundle_after_removal(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("extensions", "ext-a")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+
+    record = load_records(tmp_path)[0]
+    assert record.contributed_components == ()
+    assert record.required_components == tuple(first.components)
+
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+    second = _bundle("second", ["ext-a"], version="2.0.0")
+    with pytest.raises(BundlerError, match="bundle 'first' already requires version 1.0.0"):
+        install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert installer.install_calls == []
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["first"]
+
+
+def test_removal_preserves_component_required_but_not_owned_by_other_bundle(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("extensions", "ext-a")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    first = _bundle("first", ["ext-a"])
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+    second = _bundle("second", ["ext-a"])
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert load_records(tmp_path)[1].contributed_components == tuple(second.components)
+    result = remove_bundle(tmp_path, "second", installer)
+    assert key in {(c.kind, c.id) for c in result.skipped}
+    assert key in installer.installed
+    assert installer.remove_calls == []
+
+    remaining = load_records(tmp_path)
+    assert remaining[0].bundle_id == "first"
+    assert remaining[0].contributed_components == tuple(first.components)
+    remove_bundle(tmp_path, "first", installer)
+    assert key not in installer.installed
+    assert installer.remove_calls == [key]
+
+
+def test_update_transfers_dropped_contribution_to_requiring_bundle(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"])
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    save_records(
+        tmp_path,
+        [
+            *load_records(tmp_path),
+            InstalledBundleRecord.create(
+                "other", "1.0.0", [], required_components=first.components
+            ),
+        ],
+    )
+    reduced = _bundle("first", [])
+    result = install_bundle(
+        tmp_path, _plan(reduced), installer, manifest=reduced, refresh=True
+    )
+
+    assert result.uninstalled == []
+    assert ("extensions", "ext-a") in installer.installed
+    remaining = {record.bundle_id: record for record in load_records(tmp_path)}
+    assert remaining["first"].contributed_components == ()
+    assert remaining["other"].contributed_components == tuple(first.components)
+
+    remove_bundle(tmp_path, "other", installer)
+    assert installer.remove_calls == [("extensions", "ext-a")]
+
+
+@pytest.mark.parametrize("actual", [None, "2.0.0"])
+def test_unpinned_install_cannot_bypass_unowned_bundle_pin(
+    tmp_path: Path, actual: str | None,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    assert load_records(tmp_path)[0].contributed_components == ()
+
+    if actual is None:
+        installer.installed.remove(key)
+        installer.versions.pop(key)
+    else:
+        installer.versions[key] = actual
+    unpinned = _step_bundle("unpinned")
+    with pytest.raises(BundlerError, match="unpinned.*shared.*requires"):
+        install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    assert installer.install_calls == []
+    assert [r.bundle_id for r in load_records(tmp_path)] == ["pinned"]
+
+
+def test_unpinned_install_can_share_matching_unowned_requirement(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+
+    unpinned = _step_bundle("unpinned")
+    result = install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    assert result.skipped == unpinned.components
+    assert installer.install_calls == []
+    assert load_records(tmp_path)[1].contributed_components == ()
+    refreshed = install_bundle(
+        tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+    )
+    assert refreshed.skipped == unpinned.components
+    assert installer.refresh_calls == []
+
+
+def test_unpinned_refresh_cannot_change_unowned_bundle_pin(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    key = ("steps", "shared")
+    installer.installed.add(key)
+    installer.versions[key] = "1.0.0"
+    pinned = _step_bundle("pinned", "1.0.0")
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    installer.installed.remove(key)
+    installer.versions.pop(key)
+
+    owned = _step_bundle("owned", "1.0.0")
+    install_bundle(tmp_path, _plan(owned), installer, manifest=owned)
+    original_record = records_path(tmp_path).read_bytes()
+    unpinned = _step_bundle("owned")
+    with pytest.raises(BundlerError, match="unpinned.*shared.*requires"):
+        install_bundle(
+            tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+        )
+
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == original_record
+
+
+def test_owned_component_drift_is_rejected_without_refresh(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    manifest = _bundle("first", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    installer.versions[("extensions", "ext-a")] = "0.9.0"
+
+    with pytest.raises(BundlerError, match="0.9.0"):
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    assert installer.refresh_calls == []
+
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
+    )
+    assert result.refreshed == manifest.components
+
+
+def test_shared_component_drift_cannot_be_refreshed(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _bundle("first", ["ext-a"], version="1.0.0")
+    second = _bundle("second", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+    installer.versions[("extensions", "ext-a")] = "0.9.0"
+
+    with pytest.raises(BundlerError, match="0.9.0"):
+        install_bundle(tmp_path, _plan(first), installer, manifest=first, refresh=True)
+    assert installer.refresh_calls == []
+
+
+@pytest.mark.parametrize(
+    ("change", "field"),
+    [
+        ({"priority": 20}, "priority"),
+        ({"strategy": "replace"}, "strategy"),
+        ({"source": "trusted"}, "source"),
+    ],
+)
+@pytest.mark.parametrize("required_only", [False, True])
+def test_shared_refresh_preserves_other_bundles_install_requirements(
+    tmp_path: Path, change: dict, field: str, required_only: bool,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    other = _preset_bundle("other")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    if required_only:
+        save_records(
+            tmp_path,
+            [
+                *load_records(tmp_path),
+                InstalledBundleRecord.create(
+                    "other", "1.0.0", [], required_components=other.components
+                ),
+            ],
+        )
+    else:
+        install_bundle(tmp_path, _plan(other), installer, manifest=other)
+    before = records_path(tmp_path).read_bytes()
+
+    changed = _preset_bundle("first", **change)
+    with pytest.raises(BundlerError, match=rf"shared preset.*{field}"):
+        install_bundle(
+            tmp_path, _plan(changed), installer, manifest=changed, refresh=True
+        )
+
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == before
+
+
+def test_shared_install_rejects_conflicting_preset_priority(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    before = records_path(tmp_path).read_bytes()
+    second = _preset_bundle("second", priority=20)
+    second.extensions.append(
+        ComponentRef(kind="extensions", id="ext-new", version="1.0.0")
+    )
+
+    with pytest.raises(BundlerError, match="shared preset.*priority"):
+        install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    assert installer.install_calls == [("presets", "preset-a")]
+    assert ("extensions", "ext-new") not in installer.installed
+    assert installer.refresh_calls == []
+    assert records_path(tmp_path).read_bytes() == before
+
+
+def test_shared_refresh_allows_matching_install_requirements(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _preset_bundle("first")
+    second = _preset_bundle("second")
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    result = install_bundle(
+        tmp_path, _plan(second), installer, manifest=second, refresh=True
+    )
+
+    assert result.refreshed == second.components
+    assert installer.refresh_calls == [("presets", "preset-a")]
+    assert len(load_records(tmp_path)) == 2
+
+
+def test_unpinned_shared_step_cannot_refresh_another_bundles_pin(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    pinned_data = valid_manifest_dict()
+    pinned_data["bundle"]["id"] = "pinned"
+    pinned_data["provides"] = {"steps": [{"id": "shared", "version": "1.0.0"}]}
+    pinned = BundleManifest.from_dict(pinned_data)
+    unpinned_data = valid_manifest_dict()
+    unpinned_data["bundle"]["id"] = "unpinned"
+    unpinned_data["provides"] = {"steps": [{"id": "shared"}]}
+    unpinned = BundleManifest.from_dict(unpinned_data)
+    install_bundle(tmp_path, _plan(pinned), installer, manifest=pinned)
+    install_bundle(tmp_path, _plan(unpinned), installer, manifest=unpinned)
+
+    with pytest.raises(BundlerError, match="unpinned shared"):
+        install_bundle(
+            tmp_path, _plan(unpinned), installer, manifest=unpinned, refresh=True
+        )
+    assert installer.refresh_calls == []
+
+
+@pytest.mark.parametrize("winning,accepted", [("expected", True), ("other", False)])
+def test_source_is_checked_even_when_component_is_already_installed(
+    tmp_path: Path, monkeypatch, winning: str, accepted: bool,
+):
+    from specify_cli.bundles.adapters import DefaultPrimitiveInstaller
+    from specify_cli.extensions import ExtensionCatalog, ExtensionRegistry
+
+    make_project(tmp_path)
+    ExtensionRegistry(tmp_path / ".specify" / "extensions").add(
+        "ext-a", {"version": "1.0.0"}
+    )
+    fetches = []
+
+    def fetch(self, source, force_refresh=False):
+        fetches.append(source.name)
+        return {
+            "schema_version": "1.0",
+            "extensions": {
+                "ext-a": {
+                    "version": "1.0.0",
+                    "download_url": "https://example.com/release.zip",
+                }
+            },
+        }
+
+    from specify_cli.extensions import CatalogEntry
+
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_active_catalogs",
+        lambda self: [
+            CatalogEntry("https://example.com/catalog.json", winning, 1, True)
+        ],
+    )
+    monkeypatch.setattr(ExtensionCatalog, "_fetch_single_catalog", fetch)
+    data = valid_manifest_dict()
+    data["provides"] = {
+        "extensions": [
+            {"id": "ext-a", "version": "1.0.0", "source": "expected"}
+        ]
+    }
+    manifest = BundleManifest.from_dict(data)
+
+    if accepted:
+        result = install_bundle(
+            tmp_path, _plan(manifest), DefaultPrimitiveInstaller(), manifest=manifest
+        )
+        assert result.skipped == manifest.components
+        assert fetches == [winning]
+    else:
+        with pytest.raises(BundlerError, match="expected"):
+            install_bundle(
+                tmp_path, _plan(manifest), DefaultPrimitiveInstaller(), manifest=manifest
+            )
+        assert not records_path(tmp_path).exists()
 
 
 def test_install_rejects_version_change_without_refresh(tmp_path: Path):
@@ -640,6 +1005,32 @@ def _bundle(manifest_id, ext_ids, *, version="1.0.0"):
     data["provides"] = {
         "extensions": [{"id": e, "version": version} for e in ext_ids]
     }
+    return BundleManifest.from_dict(data)
+
+
+def _step_bundle(bundle_id: str, version: str | None = None) -> BundleManifest:
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    step = {"id": "shared"}
+    if version is not None:
+        step["version"] = version
+    data["provides"] = {"steps": [step]}
+    return BundleManifest.from_dict(data)
+
+
+def _preset_bundle(
+    bundle_id: str, *, priority: int = 10, strategy: str = "append",
+    source: str | None = None,
+) -> BundleManifest:
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    preset = {
+        "id": "preset-a", "version": "2.0.0",
+        "priority": priority, "strategy": strategy,
+    }
+    if source is not None:
+        preset["source"] = source
+    data["provides"] = {"presets": [preset]}
     return BundleManifest.from_dict(data)
 
 

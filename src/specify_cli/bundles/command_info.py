@@ -27,12 +27,46 @@ def bundle_info(
     bundle_id: str = typer.Argument(..., help="Bundle id to inspect"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON to stdout"),
+    versions: bool = typer.Option(False, "--versions", help="List catalog versions"),
 ) -> None:
     """Show full metadata and the fully expanded component set (== what install adds)."""
     try:
         project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
+        if versions is True:
+            from .catalog_versions import available_versions
+
+            available = available_versions(resolved.entry)
+            if as_json:
+                print(
+                    _json.dumps(
+                        {
+                            "id": resolved.entry.id,
+                            "versions": available,
+                            "current": resolved.entry.version,
+                            "source": resolved.source.id,
+                            "install_policy": resolved.source.install_policy.value,
+                        },
+                        indent=2,
+                    )
+                )
+                return
+            console.print(
+                f"Catalog versions for {_escape_markup(str(resolved.entry.id))}:"
+            )
+            for index, available_version in enumerate(available):
+                current = " (current)" if index == 0 else ""
+                console.print(f"  {_escape_markup(available_version)}{current}")
+            console.print(
+                f"  Source: {_escape_markup(str(resolved.source.id))} "
+                f"({resolved.source.install_policy.value})"
+            )
+            if not resolved.install_allowed:
+                console.print(
+                    "[yellow]Discovery only; catalog installation is disabled.[/yellow]"
+                )
+            return
         # `info` must show the fully expanded component set that `install` would
         # apply (contracts/cli-commands.md). Expansion happens regardless of
         # install policy — discovery-only bundles stay inspectable; only

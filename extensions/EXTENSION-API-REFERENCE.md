@@ -636,6 +636,17 @@ Standard events (defined by core):
 - `before_taskstoissues` - Before tasks-to-issues conversion
 - `after_taskstoissues` - After tasks-to-issues conversion
 
+#### Bundled `bug` extension events (available when the extension is installed)
+
+Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected. Pre-hooks run after slug resolution and prerequisites; post-hooks run after the report is written and before completion is reported.
+
+- `before_bug_assess` - After the bug directory exists, before ingesting the report
+- `after_bug_assess` - After writing `assessment.md`; not reached when an unintelligible report causes an early stop
+- `before_bug_fix` - Before applying the remediation
+- `after_bug_fix` - After writing `fix.md`
+- `before_bug_test` - Before running verification
+- `after_bug_test` - After writing `test.md`
+
 ### Hook Configuration
 
 **In `.specify/extensions.yml`**:

@@ -356,6 +356,23 @@ def build_integration_status_report(project_root: Path) -> dict[str, Any]:
         project_root,
         findings,
     )
+    from .integrations.installer import (
+        IntegrationInstallError, load_installed_integrations, read_records, unload_installed_integrations,
+    )
+
+    try:
+        if project_root_is_resolved:
+            load_installed_integrations(project_root_resolved)
+        else:
+            unload_installed_integrations()
+            if read_records(project_root):
+                raise IntegrationInstallError("Cannot safely load adapters from an unresolved project root")
+    except (IntegrationInstallError, OSError) as exc:
+        findings.append(
+            _finding("error", "integration-package-invalid", str(exc),
+                     suggestion="Restore the installed adapter package and its registry from a trusted backup.")
+        )
+        return _build_report(None, [], findings, {}, None)
     state, raw_state, error = try_read_integration_json_with_raw(project_root)
     if error is not None:
         findings.append(

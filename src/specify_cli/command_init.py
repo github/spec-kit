@@ -230,9 +230,14 @@ def ensure_constitution_from_template(
         return
 
     try:
+        from .integrations._file_changes import after_file_change, before_file_change
+
+        before_file_change(memory_constitution)
         materialization = _materialize_constitution_template(
             project_path, memory_constitution
         )
+        if memory_constitution.is_file():
+            after_file_change(memory_constitution)
         if materialization is None:
             if tracker:
                 tracker.add("constitution", "Constitution setup")
@@ -257,7 +262,10 @@ def ensure_constitution_from_template(
 
 
 def register(app: typer.Typer) -> None:
+    from .integrations._lifecycle import external_lifecycle, initial_directory_state, lifecycle_owns_rollback, lifecycle_success
+
     @app.command()
+    @external_lifecycle("init")
     def init(
         project_name: str = typer.Argument(
             None,
@@ -339,6 +347,10 @@ def register(app: typer.Typer) -> None:
             False,
             "--trust-extension-urls",
             help="Pre-authorize installing extensions from external URLs without the interactive trust prompt (required for non-interactive URL installs).",
+        ),
+        trust_integration: bool = typer.Option(
+            False, "--trust-integration",
+            help="Authorize executing a reviewed external integration package without prompting.",
         ),
     ):
         """
@@ -432,7 +444,8 @@ def register(app: typer.Typer) -> None:
             project_path = Path.cwd()
             dir_existed_before = True
 
-            existing_items = list(project_path.iterdir())
+            original_directory = initial_directory_state(project_path)
+            existing_items = original_directory[1] if original_directory else list(project_path.iterdir())
             if existing_items:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
@@ -487,15 +500,16 @@ def register(app: typer.Typer) -> None:
                         raise typer.Exit(0)
         else:
             project_path = Path(project_name).resolve()
-            dir_existed_before = project_path.exists()
-            if project_path.exists():
+            original_directory = initial_directory_state(project_path)
+            dir_existed_before = original_directory[0] if original_directory else project_path.exists()
+            if dir_existed_before:
                 safe_name = _escape_markup(str(project_name))
                 if not project_path.is_dir():
                     console.print(
                         f"[red]Error:[/red] '{safe_name}' exists but is not a directory."
                     )
                     raise typer.Exit(1)
-                existing_items = list(project_path.iterdir())
+                existing_items = original_directory[1] if original_directory else list(project_path.iterdir())
                 if force:
                     if existing_items:
                         console.print(
@@ -782,10 +796,14 @@ def register(app: typer.Typer) -> None:
                                 project_path / ".specify" / "workflows" / "speckit"
                             )
                             dest_wf.mkdir(parents=True, exist_ok=True)
+                            from .integrations._file_changes import after_file_change, before_file_change
+
+                            before_file_change(dest_wf / "workflow.yml")
                             _shutil.copy2(
                                 bundled_wf / "workflow.yml",
                                 dest_wf / "workflow.yml",
                             )
+                            after_file_change(dest_wf / "workflow.yml")
                             definition = WorkflowDefinition.from_yaml(
                                 dest_wf / "workflow.yml"
                             )
@@ -871,6 +889,8 @@ def register(app: typer.Typer) -> None:
                                             catalog_name=pack_info.get("_catalog_name"),
                                         )
                                     except PresetError as preset_err:
+                                        if lifecycle_owns_rollback():
+                                            raise
                                         _print_cli_warning(
                                             "install",
                                             "preset",
@@ -885,6 +905,8 @@ def register(app: typer.Typer) -> None:
                                             except OSError:
                                                 pass
                     except Exception as preset_err:
+                        if lifecycle_owns_rollback():
+                            raise
                         _print_cli_warning(
                             "install",
                             "preset",
@@ -919,6 +941,8 @@ def register(app: typer.Typer) -> None:
                             tracker.complete(f"extension-{i}", status_msg)
                             any_extension_installed = True
                         except Exception as ext_err:
+                            if lifecycle_owns_rollback():
+                                raise
                             sanitized_ext = str(ext_err).replace("\n", " ").strip()
                             tracker.error(
                                 f"extension-{i}",
@@ -966,7 +990,10 @@ def register(app: typer.Typer) -> None:
                             border_style="magenta",
                         )
                     )
-                if not here and project_path.exists() and not dir_existed_before:
+                if (
+                    not here and project_path.exists() and not dir_existed_before
+                    and initial_directory_state(project_path) is None
+                ):
                     shutil.rmtree(project_path)
                 raise typer.Exit(1)
             finally:
@@ -974,7 +1001,7 @@ def register(app: typer.Typer) -> None:
 
         if _transient:
             console.print(tracker.render())
-        console.print("\n[bold green]Project ready.[/bold green]")
+        lifecycle_success("\n[bold green]Project ready.[/bold green]")
 
         agent_config = AGENT_CONFIG.get(selected_ai)
         if agent_config:

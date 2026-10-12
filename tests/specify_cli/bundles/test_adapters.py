@@ -143,6 +143,19 @@ def test_http_get_json_preserves_malformed_json(monkeypatch):
     assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
+def test_http_get_json_rejects_duplicate_catalog_keys(monkeypatch):
+    body = b'{"schema_version":"1.0","bundles":{"one":{},"one":{}}}'
+
+    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+        return _FakeResponse(body, url)
+
+    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+    with pytest.raises(BundlerError, match="duplicate key 'one'") as excinfo:
+        adapters._http_get_json("team", "https://example.com/c.json")
+    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
+
+
 def test_http_get_json_preserves_invalid_utf8(monkeypatch):
     def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
         return _FakeResponse(b"\xff\xfe", url)
@@ -194,6 +207,20 @@ def test_local_catalog_decode_errors_are_wrapped(tmp_path, use_file_url):
         fetcher(_source(url))
 
 
+@pytest.mark.parametrize("use_file_url", [False, True], ids=["path", "file-url"])
+def test_local_catalog_rejects_duplicate_release_keys(tmp_path, use_file_url):
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        '{"bundles":{"history":{"id":"history","releases":'
+        '{"1.1.0":{},"1.1.0":{}}}}}',
+        encoding="utf-8",
+    )
+    url = catalog_path.as_uri() if use_file_url else str(catalog_path)
+
+    with pytest.raises(BundlerError, match="duplicate key '1.1.0'"):
+        adapters.make_catalog_fetcher(allow_network=False)(_source(url))
+
+
 _SNAPSHOT_BODY = (
     '{"schema_version":"1.0","bundles":{"packaged":{'
     '"id":"packaged","name":"Packaged","version":"1.0.0",'
@@ -209,6 +236,20 @@ def _write_snapshot(tmp_path, filename):
     path.parent.mkdir(exist_ok=True)
     path.write_text(_SNAPSHOT_BODY, encoding="utf-8")
     return path
+
+
+def test_packaged_catalog_rejects_duplicate_keys(monkeypatch, tmp_path):
+    path = tmp_path / "bundles" / "catalog.json"
+    path.parent.mkdir()
+    path.write_text(
+        '{"bundles":{"history":{"id":"history","releases":'
+        '{"1.1.0":{},"1.1.0":{}}}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(adapters, "_locate_core_pack", lambda: tmp_path)
+
+    with pytest.raises(BundlerError, match="duplicate key '1.1.0'"):
+        adapters._load_packaged_catalog("catalog.json")
 
 
 _BUILTIN_CASES = [

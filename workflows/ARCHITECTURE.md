@@ -70,16 +70,89 @@ flowchart LR
     E -- "resume()" --> B
 ```
 
-When a `gate` step pauses execution, the engine persists `current_step_index` and all accumulated `step_results`. On `specify workflow resume <run_id>`, the engine restores the context and continues from the paused step.
+When a `gate` step pauses execution, the engine persists `current_step_index`
+and all accumulated `step_results`. On `specify workflow resume <run_id>`, the
+same executor replays completed occurrences into their contexts without
+executing them, then continues at the unfinished occurrence.
 
-> **Note:** Resume tracking is at the top-level step index only. If a
-> nested step (inside `if`/`switch`/`while`) pauses, resume re-runs
-> the parent control-flow step and its nested body. A nested step-path
-> stack for exact resume is a planned enhancement.
+New runs use a versioned execution tree. Each occurrence owns its result,
+selected child sequences, and optional workflow binding. A binding stores the
+target, frozen definition, private inputs, and `workflow_dir`; the called
+workflow remains a private scope in the same run. Fan-out items have separate
+contexts. Each occurrence, including a workflow call, is checkpointed as the
+active step before its start is logged and before it executes, so status
+reports it while it runs. Binding and selected expansions are
+checkpointed before child side effects, results before an occurrence is done,
+and logs after the checkpoint.
+Legacy runs enter through their top-level index once. Inputs and tree
+transitions share one atomic state checkpoint; the inputs file is a
+compatibility mirror. A checkpoint failure prevents further writes by that
+executor instance.
+
+### Occurrence lifecycle
+
+`Execution.step()` is the common runner for registered steps and workflow calls.
+`execute_step()` and `workflow()` return a `StepResult`, a subtree outcome, or an
+unknown-implementation failure. The runner alone performs `begin`, `finish`,
+`settle`, and best-effort `leave` on exception unwinding; the phase and field
+allow-lists in `transition()` reject invalid operations. The public, stateless
+`StepBase.execute()` extension contract is unchanged.
+
+All occurrence mutations pass through `Execution.transition()`. It checks the
+allowed source phase and fields, derives the destination phase, validates the
+candidate with the same node rules used on load, projects results, and saves
+under the run lock. Callers cannot supply a destination phase.
+
+| Operation | Meaning |
+|-----------|---------|
+| `begin` | Mark this occurrence active and checkpoint before `step_started` or its callback; a failed checkpoint leaves no start event. A blocked workflow call drops its previous attempt's result |
+| `expand` / `bind` | Freeze children and their source before child execution |
+| `rebind` / `iterate` | Persist updated binding or the next loop occurrence |
+| `outputs` | Children finished; declared workflow outputs remain to finalize |
+| `finish` / `settle` | Record an own-step result or subtree outcome; clear activity |
+| `leave` | Clear activity on exception unwinding; the run handler saves the failure/pause |
+
+`phase` identifies the continuation point, `active` identifies entered occurrences
+(several may be active in a fan-out), and `outcome` identifies a subtree halt or
+completion. A container's own result may be completed while its children are
+paused. `current_step_id` is a compatibility status view updated as
+occurrences are entered, rather than a resume cursor. Completion does not
+reconcile this scalar; during parallel fan-out it may name an item that has
+already finished, while the tree's per-occurrence `active` flags remain
+authoritative.
+Status reporting uses a bound call's recorded result when available. If an
+interruption or exception leaves the active call unfinished without a result,
+its scope inherits the run's paused or failed status; completed calls keep
+their own recorded status.
+A call's recorded result summarizes its previous attempt, so `begin` on a
+blocked call drops `result`, `outcome`, and `error`: a bound call continues at
+`children`, and a call whose binding failed returns to `ready` and binds again.
+A leaf step's record describes that same step, such as a pending gate's prompt,
+and remains until `finish` replaces it.
+
+`notify()` emits events and callbacks only after the corresponding checkpoint.
+Persistence is mandatory lifecycle behavior, not a listener. Existing container
+events describe completion of their own expansion; calls finish after their
+children and declared outputs. Completed replay emits neither events nor saves.
+Entering an unfinished container on resume checkpoints activity without repeating
+its expansion event.
+
+Execution schema version 2 stores fan-out templates as shared YAML sources on
+their parent occurrence. Raw `step_template` configuration is not published in
+persisted step outputs. Frozen expansion results and aggregated `fan_results`
+are separate: `result_view()` adds the aggregate for reporting and downstream
+steps, while items always receive the frozen expansion view. This also preserves
+YAML-native template scalars without putting them in JSON result records.
+
+Resume validates tree structure, root snapshot, and the legacy offset together,
+before any writes. The offset must be within the workflow and no later than the
+saved root index. Legacy checkpoints without a tree still adapt once;
+private, unreleased version-1 trees are rejected rather than silently interpreted
+as the new format.
 
 ## Step Types
 
-The engine ships with 12 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
+The engine ships with 13 built-in step types, each in its own subpackage under `src/specify_cli/workflows/step/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
@@ -95,6 +168,7 @@ The engine ships with 12 built-in step types, each in its own subpackage under `
 | `do-while` | `DoWhileStep` | Loop, always runs body at least once | Yes (always) |
 | `fan-out` | `FanOutStep` | Dispatch per item over a collection | No (engine expands) |
 | `fan-in` | `FanInStep` | Aggregate results from fan-out | No |
+| `workflow` | `WorkflowStep` | Execute an installed workflow in a private scope | No (engine enters scope) |
 
 ## Step Registry
 

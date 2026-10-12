@@ -249,4 +249,8 @@ def write_integration_json(
         data["integration"] = integration_key
         data["default_integration"] = integration_key
 
+    from .integrations._file_changes import after_file_change, before_file_change
+
+    before_file_change(dest)
     dest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    after_file_change(dest)
