@@ -1067,6 +1067,14 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
     represent (e.g. dates), mapping keys, and non-finite floats are stringified,
     so output is always plain JSON.
     """
+    def json_key(key: Any) -> str:
+        """Canonicalize a mapping key to the property name json.dumps emits."""
+        if isinstance(key, str):
+            return key
+        if isinstance(key, (int, float, bool)) or key is None:
+            return json.dumps(key)
+        return str(key)
+
     def plain_json(value: Any, active_containers: set[int]) -> Any:
         if isinstance(value, dict):
             container_id = id(value)
@@ -1076,10 +1084,16 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
                 )
             active_containers.add(container_id)
             try:
-                return {
-                    key if isinstance(key, (str, int, float, bool)) or key is None else str(key): plain_json(item, active_containers)
-                    for key, item in value.items()
-                }
+                result: dict[str, Any] = {}
+                for key, item in value.items():
+                    canonical = json_key(key)
+                    if canonical in result:
+                        raise ValueError(
+                            "Workflow JSON output cannot represent duplicate "
+                            f"mapping key {canonical!r}"
+                        )
+                    result[canonical] = plain_json(item, active_containers)
+                return result
             finally:
                 active_containers.remove(container_id)
         if isinstance(value, float) and not math.isfinite(value):

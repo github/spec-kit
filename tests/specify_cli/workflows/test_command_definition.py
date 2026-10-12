@@ -559,6 +559,29 @@ class TestNegative:
 
         _assert_json_error(result, "cannot represent recursive YAML aliases")
 
+    @pytest.mark.parametrize(
+        "mapping",
+        [
+            "{1: a, '1': b}",
+            "{on: a, 'true': b}",
+            "{2026-01-01: a, '2026-01-01': b}",
+        ],
+    )
+    def test_duplicate_canonical_mapping_keys_return_json_error(
+        self, project_dir, mapping
+    ):
+        # Keys that differ in Python/YAML but collapse to one JSON property
+        # name must fail loudly instead of emitting lossy duplicate keys.
+        text = (
+            "workflow: {id: dup, name: Dup}\n"
+            f"custom_key: {mapping}\n"
+            "steps:\n  - {id: g, type: gate, message: hi}\n"
+        )
+        run = _run(project_dir, text)
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "duplicate mapping key"
+        )
+
     @pytest.mark.parametrize("content", [": : :\n  - [", "- a\n- b\n"])
     def test_corrupt_snapshot(self, project_dir, content):
         run = _run(project_dir, GATE_WF)
