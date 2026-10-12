@@ -159,8 +159,10 @@ class NotASpecKitProjectError(ArtifactError):
 
 
 class ArtifactResolutionError(ArtifactError):
-    def __init__(self) -> None:
+    def __init__(self, detail: str | None = None) -> None:
         self.message = "artifact resolution failed"
+        if detail:
+            self.message += f": {detail}"
         super().__init__(self.message)
 
 

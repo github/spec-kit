@@ -202,7 +202,12 @@ def _materialized_command_source_path(
     except ImportError:
         return None
 
-    registrar = CommandRegistrar()
+    from ..integrations.installer import IntegrationInstallError
+
+    try:
+        registrar = CommandRegistrar(project_root)
+    except (IntegrationInstallError, OSError) as exc:
+        raise ArtifactResolutionError(str(exc)) from exc
     registrar._ensure_configs()
 
     registered_commands = metadata.get("registered_commands")
@@ -351,7 +356,10 @@ def _preset_display_name(pack_dir: Path, pack_id: str) -> str:
     manifest file is missing or fails manifest validation (for example, an
     older flat-layout manifest with no ``preset:`` section at all).
     """
-    from ..presets import PresetManifest, PresetValidationError  # lazy: avoids circular import
+    from ..presets import (  # lazy: avoids circular import
+        PresetManifest,
+        PresetValidationError,
+    )
 
     manifest_path = pack_dir / "preset.yml"
     if not manifest_path.is_file():

@@ -30,6 +30,51 @@ def _workflow_package_has_companions(package_dir: cli.Path) -> bool:
     return any(path.name != "workflow.yml" for path in package_dir.iterdir())
 
 
+def _prepare_workflow_add(
+    project_root: cli.Path, source: str, *, dev: bool, from_url: str | None,
+    version: str | None, selected_catalog: bool = False,
+) -> cli.Path:
+    from . import load_custom_steps
+
+    if version is not None and (
+        dev or from_url is not None or (
+            not selected_catalog and (
+                source.startswith(("http://", "https://"))
+                or cli.Path(source).exists()
+            )
+        )
+    ):
+        cli.console.print(
+            "[red]Error:[/red] --version requires a workflow ID from a catalog."
+        )
+        raise cli.typer.Exit(1)
+    if version is not None or selected_catalog:
+        cli._validate_workflow_id_or_exit(source)
+    load_custom_steps(project_root)
+    cli._open_workflow_registry(project_root)
+    workflows_dir = project_root / ".specify" / "workflows"
+    if from_url is not None and not dev:
+        cli._validate_workflow_id_or_exit(source)
+    cli._reject_unsafe_dir(project_root / ".specify", ".specify")
+    cli._reject_unsafe_dir(workflows_dir, ".specify/workflows")
+    return workflows_dir
+
+
+def _install_preselected_workflow(
+    workflow_id: str, *, version: str | None, selected_info: dict,
+) -> None:
+    """Install a bundle-selected release with the normal workflow preflights."""
+    project_root = cli._require_specify_project()
+    workflows_dir = _prepare_workflow_add(
+        project_root, workflow_id, dev=False, from_url=None,
+        version=version, selected_catalog=True,
+    )
+    cli._install_workflow_from_catalog(
+        project_root, workflows_dir, workflow_id,
+        requested_version=version, selected_info=selected_info,
+    )
+
+
 @cli.workflow_app.command("add")
 def workflow_add(
     source: str = cli.typer.Argument(..., help="Workflow ID, URL, or local path"),
@@ -44,32 +89,12 @@ def workflow_add(
     ] = None,
 ):
     """Install a workflow from catalog, URL, or local path."""
-    from . import load_custom_steps
     from .engine import WorkflowDefinition
 
     project_root = cli._require_specify_project()
-    if version is not None and (
-        dev or from_url is not None or source.startswith(("http://", "https://"))
-        or cli.Path(source).exists()
-    ):
-        cli.console.print(
-            "[red]Error:[/red] --version requires a workflow ID from a catalog."
-        )
-        raise cli.typer.Exit(1)
-    if version is not None:
-        cli._validate_workflow_id_or_exit(source)
-    load_custom_steps(project_root)
-    cli._open_workflow_registry(project_root)
-    workflows_dir = project_root / ".specify" / "workflows"
-    # With --from, source names the expected workflow ID: validate it up
-    # front so a URL/path/typo fails without a network fetch.
-    if from_url is not None and not dev:
-        cli._validate_workflow_id_or_exit(source)
-    # Reject a symlinked .specify / .specify/workflows before any write so an
-    # install can't escape the project root (covers the local, URL, and
-    # catalog branches below — all write beneath workflows_dir).
-    cli._reject_unsafe_dir(project_root / ".specify", ".specify")
-    cli._reject_unsafe_dir(workflows_dir, ".specify/workflows")
+    workflows_dir = _prepare_workflow_add(
+        project_root, source, dev=dev, from_url=from_url, version=version,
+    )
 
     def _validate_and_install_local(
         yaml_path: cli.Path, source_label: str, expected_id: str | None = None

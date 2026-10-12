@@ -227,6 +227,9 @@ Available hook points:
 - `before_clarify` / `after_clarify`: Before/after spec clarification
 - `before_constitution` / `after_constitution`: Before/after constitution update
 - `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
+- `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
+- `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
+- `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)
 
 Each event accepts a single hook object or a list of hook objects (multiple commands on one event).
 

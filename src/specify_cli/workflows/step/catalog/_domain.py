@@ -324,6 +324,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        indexed_entries = self._parse_catalog_config(data, config_path)
+        if indexed_entries is None:
+            return None
+        return [entry for _, entry in indexed_entries]
+
+    def _parse_catalog_config(
+        self, data: Any, config_path: Path
+    ) -> list[tuple[int, StepCatalogEntry]] | None:
+        """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
         # lockstep: this is the step-catalog twin of that loader and read the
         # same way. Dropping ``or {}`` stops a falsy non-mapping top level from
@@ -347,7 +356,7 @@ class StepCatalog:
         if not catalogs_data:
             return None
 
-        entries: list[StepCatalogEntry] = []
+        entries: list[tuple[int, StepCatalogEntry]] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise StepValidationError(
@@ -386,15 +395,18 @@ class StepCatalog:
             else:
                 install_allowed = bool(raw_install)
             entries.append(
-                StepCatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
+                (
+                    idx,
+                    StepCatalogEntry(
+                        url=url,
+                        name=str(item.get("name", f"catalog-{idx + 1}")),
+                        priority=priority,
+                        install_allowed=install_allowed,
+                        description=str(item.get("description", "")),
+                    ),
                 )
             )
-        entries.sort(key=lambda e: e.priority)
+        entries.sort(key=lambda item: item[1].priority)
         if not entries:
             raise StepValidationError(
                 f"Catalog config {config_path} contains {len(catalogs_data)} "
@@ -770,7 +782,12 @@ class StepCatalog:
         return "added"
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by index (0-based). Returns the removed name."""
+        """Remove a project source by its index in the active catalog list."""
+        if os.environ.get("SPECKIT_STEP_CATALOG_URL", "").strip():
+            raise StepValidationError(
+                "The active catalog comes from SPECKIT_STEP_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
         if not config_path.exists():
             raise StepValidationError("No step catalog config file found.")
@@ -781,25 +798,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if data is None:
-            data = {}
-        elif not isinstance(data, dict):
+        entries = self._parse_catalog_config(data, config_path) or []
+
+        if index < 0 or index >= len(entries):
             raise StepValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
-            )
-        catalogs = data.get("catalogs", [])
-        if not isinstance(catalogs, list):
-            raise StepValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog index {index} out of range (0-{len(entries) - 1})."
             )
 
-        if index < 0 or index >= len(catalogs):
-            raise StepValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
-            )
-
-        removed = catalogs.pop(index)
-        data["catalogs"] = catalogs
+        source_index, entry = entries[index]
+        data["catalogs"].pop(source_index)
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
@@ -811,6 +818,4 @@ class StepCatalog:
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
 
-        if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+        return entry.name

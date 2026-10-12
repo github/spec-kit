@@ -11,10 +11,18 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 ## Adding or Updating CLI Commands
 
 Before adding, updating, or reorganizing Specify CLI commands, read
-[Specify CLI Command Architecture](design/cli.md). It defines command-module
-naming, private command phases, nested command groups, registration ownership,
-mirrored tests, and the rationale for making the CLI structure predictable for
-both humans and coding agents.
+[Shared Command Application Architecture](design/shared.md) and
+[Specify CLI Command Architecture](design/cli.md). They define the shared
+operation boundary, command-module naming, private phases, nested command
+groups, registration ownership, and mirrored tests.
+
+## Adding or Updating MCP Commands
+
+Before adding or changing MCP tools for Specify commands, read
+[Shared Command Application Architecture](design/shared.md) and
+[Specify MCP Command Architecture](design/mcp.md). They define the shared
+operation boundary, typed contracts, explicit inventory, side-effect metadata,
+the local stdio protocol boundary, and mirrored tests.
 
 ## Adding or Updating Agent Integrations
 
