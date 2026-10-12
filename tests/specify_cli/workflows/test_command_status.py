@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 import typer
-
 
 
 class TestWorkflowJsonOutput:
@@ -94,6 +94,36 @@ steps:
             self._invoke(project_dir, ["workflow", "status", "--json"]).stdout
         )
         assert any(r["run_id"] == rid for r in listing["runs"])
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @pytest.mark.parametrize("symlink_target", ["run-directory", "state.json"])
+    def test_status_json_list_rejects_symlinked_storage(
+        self, project_dir, tmp_path, symlink_target
+    ):
+        runs_dir = project_dir / ".specify" / "workflows" / "runs"
+        runs_dir.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "state.json").write_text(
+            json.dumps({
+                "run_id": "run-1",
+                "workflow_id": "workflow",
+                "status": "paused",
+            }),
+            encoding="utf-8",
+        )
+        if symlink_target == "run-directory":
+            (runs_dir / "run-1").symlink_to(outside, target_is_directory=True)
+        else:
+            run_dir = runs_dir / "run-1"
+            run_dir.mkdir()
+            (run_dir / "state.json").symlink_to(outside / "state.json")
+
+        result = self._invoke(project_dir, ["workflow", "status", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "symlinked workflow run" in result.stderr
 
     def test_composed_gate_status_and_resume(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowRegistry

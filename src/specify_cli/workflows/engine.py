@@ -1176,9 +1176,6 @@ class WorkflowEngine:
         # Persist a copy of the workflow definition so resume can
         # reload it even if the original source is no longer available
         # (e.g. a local YAML path that was moved or deleted).
-        run_dir = RunState._run_directory(
-            self.project_root, state.run_id, create=True
-        )
         workflow_copy = RunState._run_artifact(
             self.project_root, state.run_id, "workflow.yml", create=True
         )
@@ -1255,7 +1252,19 @@ class WorkflowEngine:
             self.project_root, run_id, "workflow.yml"
         )
         if run_copy.exists():
-            definition = WorkflowDefinition.from_yaml(run_copy)
+            with RunState._open_artifact(run_copy, "r", encoding="utf-8") as f:
+                try:
+                    data = yaml.safe_load(f)
+                except yaml.YAMLError as exc:
+                    msg = f"Invalid YAML in {run_copy}: {exc}"
+                    raise ValueError(msg) from exc
+            if not isinstance(data, dict):
+                msg = (
+                    "Workflow YAML must be a mapping, "
+                    f"got {type(data).__name__}."
+                )
+                raise ValueError(msg)
+            definition = WorkflowDefinition(data, source_path=run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
 
