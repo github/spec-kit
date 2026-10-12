@@ -16042,3 +16042,49 @@ steps:
         result = runner.invoke(app, ["workflow", "disable", "align-wf"])
         assert result.exit_code == 0
         assert "already disabled" in result.output
+
+
+class TestReadResponseWithinLimitExceptions:
+    """Regression tests for narrowed Content-Length header exception handling."""
+
+    def test_attribute_error_from_getheader_is_caught(self):
+        """AttributeError from getheader() must be caught and reading continues."""
+        from specify_cli.workflows._commands import _read_response_within_limit
+
+        class _Response:
+            def __init__(self):
+                self._returned = False
+
+            def getheader(self, name):
+                raise AttributeError("no such header method")
+
+            def read(self, size=-1):
+                if not self._returned:
+                    self._returned = True
+                    return b"hello"
+                return b""
+
+        result = _read_response_within_limit(_Response())
+        assert result == b"hello"
+
+    def test_runtime_error_from_getheader_propagates(self):
+        """A non-AttributeError exception (e.g. RuntimeError) must propagate.
+
+        With the old bare ``except Exception`` this was silently swallowed.
+        This test fails against the previous implementation.
+        """
+        from specify_cli.workflows._commands import _read_response_within_limit
+
+        class _Response:
+            def getheader(self, name):
+                raise RuntimeError("unexpected failure")
+
+            def read(self, size=-1):
+                return b"hello"
+
+        try:
+            _read_response_within_limit(_Response())
+        except RuntimeError:
+            pass  # narrowed: RuntimeError propagates
+        else:
+            raise AssertionError("RuntimeError was swallowed by except Exception")
