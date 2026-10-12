@@ -1815,7 +1815,7 @@
       "sha256": "6e8d9eeb7a436038dad1dfb19a521cf073c57a38227a43a43841abd0c33564f8",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
-      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
+      "documentation": "https://raccioly.github.io/docguard/guides/spec-kit.html",
       "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
