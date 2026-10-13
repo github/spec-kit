@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.0] - 2026-10-13
+
+### Changed
+
+- fix: explain community submission title mismatches (#4946)
+- fix(workflows): confine workflow and step catalog cache writes (#4931)
+- docs: clarify delivery versus post-delivery spec persistence (#4945)
+- fix(bundles): allow newer packaged patch releases with warnings (#4942)
+- Update Applied Epistemic Engineering extension to v1.4.0 (#4941)
+- Update Applied Epistemic Engineering extension to v1.3.0 (#4936)
+- Persist project symlink policy at command boundaries (#4934)
+- [extension] Update DocGuard — CDD Enforcement extension to v0.44.3 (#4927)
+- fix(workflows): skip the right side of and/or when the left side decides (#4923)
+- Update OpenProject preset to v1.0.3 (#4928)
+- fix: narrow exceptions in get_speckit_version() from Exception to specific types (#3917)
+- Update adrkit extension to v0.1.5 (#4932)
+- Update OpenProject Integration extension to v0.2.0 (#4929)
+- feat(claude): add --no-model-invocation integration option (#4919)
+- Add built-in GitHub workflow step (#4905)
+- Add scoped FileHelper foundation for filesystem policy (#4908)
+- feat: add maintainer-triggered PR description assessment (#4902)
+- Update Architecture Governance preset to v0.6.2 (#4907)
+- Update Security Governance preset to v0.7.1 (#4903)
+- chore: release 1.1.3, begin 1.1.4.dev0 development (#4904)
+
 ## [1.1.3] - 2026-10-09
 
 ### Changed
