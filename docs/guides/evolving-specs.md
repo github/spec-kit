@@ -47,8 +47,10 @@ code as a replacement for documented intent.
 Core has no dedicated command that automatically reconciles differences among
 `spec.md`, `plan.md`, and `tasks.md`. `/speckit.analyze` reports inconsistencies
 without changing the artifacts, while contributors can return to
-`/speckit.specify` or `/speckit.clarify`, `/speckit.plan`, and `/speckit.tasks`
-to revise or regenerate the artifacts those commands own. A team can coordinate
+`/speckit.specify` while targeting the existing `SPECIFY_FEATURE_DIRECTORY`, or
+use `/speckit.clarify`, `/speckit.plan`, and `/speckit.tasks`, to revise or
+regenerate the artifacts those commands own. Without an explicit existing
+feature directory, `/speckit.specify` creates a new one. A team can coordinate
 broader reconciliation directly, or an extension can provide commands or hooks
 that do so during or after delivery according to that extension's documented
 behavior. Those actions do not change the responsibilities of the core
