@@ -603,6 +603,117 @@ def _write_manifest(path: Path, root_key: str, version: str) -> Path:
     return path
 
 
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows"])
+@pytest.mark.parametrize("action", ["install", "refresh"])
+def test_bundled_newer_patch_warns(
+    tmp_path: Path, monkeypatch, capsys, kind: str, action: str,
+):
+    import specify_cli
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionManager
+    from specify_cli.presets import PresetManager
+
+    bundled = _write_manifest(tmp_path / "payload", kind[:-1], "1.0.1")
+    monkeypatch.setattr(assets, f"_locate_bundled_{kind[:-1]}", lambda cid: bundled)
+    calls = []
+    if kind == "workflows":
+        monkeypatch.setattr(specify_cli, "workflow_add", lambda *a, **kw: calls.append(a))
+    else:
+        manager_type = ExtensionManager if kind == "extensions" else PresetManager
+
+        def install(self, *args, **kwargs):
+            calls.append(args)
+            return SimpleNamespace(id="x")
+
+        monkeypatch.setattr(manager_type, "install_from_directory", install)
+        if kind == "extensions":
+            monkeypatch.setattr(manager_type, "scaffold_config", lambda *a: None)
+    manager = primitive_manager(kind, tmp_path, allow_network=False)
+
+    warning = getattr(manager, action)(ComponentRef(kind=kind, id="x", version="1.0.0"))
+
+    assert len(calls) == 1
+    assert warning is not None
+    assert warning.code == "bundled_patch_upgrade"
+    assert warning.details.kind == kind
+    assert warning.details.component_id == "x"
+    assert warning.details.requested_version == "1.0.0"
+    assert warning.details.installed_version == "1.0.1"
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize("actual", [
+    "0.9.9", "1.0.0", "1.1.0", "2.0.0", "1.0.2-rc1", "1.0.2-alpha.1",
+])
+def test_bundled_extension_incompatible_versions_still_refuse(
+    tmp_path: Path, monkeypatch, actual: str,
+):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionManager
+
+    bundled = _write_manifest(tmp_path / "payload", "extension", actual)
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    calls = []
+    monkeypatch.setattr(
+        ExtensionManager, "install_from_directory", lambda *a, **kw: calls.append(a),
+    )
+    manager = primitive_manager("extensions", tmp_path, allow_network=False)
+
+    with pytest.raises(BundlerError, match="pinned to version 1.0.1"):
+        manager.install(ComponentRef(kind="extensions", id="x", version="1.0.1"))
+    assert calls == []
+
+
+def test_catalog_extension_newer_patch_still_refuses(tmp_path: Path, monkeypatch):
+    import specify_cli._assets as assets
+    from specify_cli.extensions import ExtensionCatalog
+
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: None)
+    _patch_winning_entry(monkeypatch, {"version": "1.0.1"})
+    downloads = []
+    monkeypatch.setattr(
+        ExtensionCatalog, "download_extension_info", lambda *a: downloads.append(a),
+    )
+    manager = primitive_manager("extensions", tmp_path)
+    with pytest.raises(BundlerError, match="pinned to version 1.0.0"):
+        manager.install(ComponentRef(kind="extensions", id="x", version="1.0.0"))
+    assert downloads == []
+
+
+def test_explicit_source_does_not_relax_bundled_pin(tmp_path: Path, monkeypatch):
+    import specify_cli._assets as assets
+
+    bundled = _write_manifest(tmp_path / "payload", "extension", "1.0.1")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    _patch_winning_entry(
+        monkeypatch, {"version": "1.0.1", "_catalog_name": "custom-catalog"},
+    )
+    manager = primitive_manager("extensions", tmp_path)
+
+    with pytest.raises(BundlerError, match="pinned to version 1.0.0"):
+        manager.install(ComponentRef(
+            kind="extensions", id="x", version="1.0.0", source="custom-catalog",
+        ))
+
+
+@pytest.mark.parametrize("actual,compatible", [
+    ("1.0.1", True), ("1.0.2", False), ("1.0.0", False), ("1.1.0", False),
+])
+def test_installed_patch_must_match_packaged_version(
+    tmp_path: Path, monkeypatch, actual: str, compatible: bool,
+):
+    import specify_cli._assets as assets
+
+    bundled = _write_manifest(tmp_path / "payload", "extension", "1.0.1")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+
+    warning = installer.bundled_patch_warning(
+        ComponentRef(kind="extensions", id="x", version="1.0.0"), actual,
+    )
+    assert (warning is not None) is compatible
+
+
 def test_bundled_extension_pin_mismatch_refuses(tmp_path: Path, monkeypatch):
     """A bundled extension whose version != the manifest pin must be refused
     (the bundled path previously skipped the pin the catalog path enforces)."""

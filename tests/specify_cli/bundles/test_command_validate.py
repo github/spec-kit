@@ -20,6 +20,69 @@ from tests.specify_cli.bundles.helpers import (
 runner = CliRunner()
 
 
+@pytest.mark.parametrize(
+    "actual,exit_code,warning",
+    [("1.0.1", 0, True), ("1.0.0", 0, False), ("0.9.9", 1, False),
+     ("1.1.0", 1, False), ("2.0.0", 1, False), ("1.0.1-rc1", 1, False)],
+)
+def test_validate_bundled_patch_compatibility(
+    project: Path, monkeypatch, actual: str, exit_code: int, warning: bool,
+):
+    import specify_cli._assets as assets
+
+    payload = project / "packaged-extension"
+    payload.mkdir()
+    (payload / "extension.yml").write_text(
+        yaml.safe_dump({"extension": {"id": "x", "version": actual}}), encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: payload)
+    data = valid_manifest_dict(
+        provides={"extensions": [{"id": "x", "version": "1.0.0"}]},
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == exit_code, result.output
+    assert ("newer packaged patch" in " ".join(result.output.split())) is warning
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_validate_bundled_workflow_patch_warns_without_catalog_lookup(
+    project: Path, monkeypatch, offline: bool,
+):
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    payload = project / "packaged-workflow"
+    payload.mkdir()
+    (payload / "workflow.yml").write_text(
+        yaml.safe_dump({"workflow": {"id": "x", "version": "1.0.1"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda cid: payload)
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_active_catalogs",
+        lambda self: pytest.fail("a compatible packaged patch must not consult catalogs"),
+    )
+    data = valid_manifest_dict(
+        provides={"workflows": [{"id": "x", "version": "1.0.0"}]},
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    args = ["bundle", "validate"]
+    if offline:
+        args.append("--offline")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Workflow 'x' is pinned to version 1.0.0" in output
+    assert "Spec Kit ships 1.0.1" in output
+    assert output.count("newer packaged patch") == 1
+    assert "well-formed and valid" in output
+
+
 def test_validate_reports_invalid_manifest(project: Path):
     data = valid_manifest_dict()
     del data["bundle"]["license"]

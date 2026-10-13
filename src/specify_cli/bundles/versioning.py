@@ -123,3 +123,17 @@ def is_semver(value: str) -> bool:
     text = str(value)
     core = text[1:] if text[:1] in ("v", "V") else text
     return bool(_SEMVER_RE.fullmatch(core))
+
+
+def is_newer_patch(actual: str, pinned: str) -> bool:
+    """Accept only stable SemVer patch upgrades within the same major/minor."""
+    if not is_semver(actual) or not is_semver(pinned):
+        return False
+    cores = []
+    for value in (actual, pinned):
+        core = value.lstrip("vV").split("+", 1)[0]
+        if "-" in core:
+            return False
+        cores.append(tuple(int(part) for part in core.split(".")))
+    resolved, requested = cores
+    return resolved[:2] == requested[:2] and resolved[2] > requested[2]

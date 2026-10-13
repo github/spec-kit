@@ -14,6 +14,7 @@ from ._commands import (
     _bundle_overlaps,
     _default_script_type,
     _fail,
+    _render_install_warnings,
     _resolve_init_integration,
     _run_init,
     _speckit_version,
@@ -143,6 +144,7 @@ def bundle_install(
         _fail(str(exc))
         return
 
+    _render_install_warnings(result)
     refresh_summary = (
         f", {len(result.refreshed)} refreshed, {len(result.uninstalled)} removed"
         if refresh
