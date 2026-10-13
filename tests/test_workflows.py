@@ -10741,8 +10741,8 @@ class TestStepCatalog:
         exceeds MAX_JSON_CATALOG_BYTES — the bounded reader must reject it
         first."""
         from specify_cli.authentication import http as auth_http
-        from specify_cli.workflows import catalog as catalog_module
-        from specify_cli.workflows.catalog import (
+        from specify_cli.workflows.step import catalog as catalog_module
+        from specify_cli.workflows.step.catalog import (
             StepCatalog,
             StepCatalogEntry,
             StepCatalogError,
