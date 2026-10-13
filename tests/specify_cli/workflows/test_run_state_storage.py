@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 
 import pytest
 
@@ -24,6 +25,45 @@ def _state(project_dir, run_id="run-1"):
     state = RunState(run_id=run_id, workflow_id="workflow", project_root=project_dir)
     state.status = RunStatus.PAUSED
     return state
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits are required")
+@pytest.mark.parametrize("portable", [False, True])
+def test_state_and_input_writes_are_owner_only(project_dir, monkeypatch, portable):
+    from specify_cli.workflows.engine import RunState
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    original_dump = json.dump
+    temporary_modes = []
+
+    def check_temporary_permissions(data, file, **kwargs):
+        mode = stat.S_IMODE(os.fstat(file.fileno()).st_mode)
+        temporary_modes.append(mode)
+        assert mode == 0o600
+        return original_dump(data, file, **kwargs)
+
+    monkeypatch.setattr(json, "dump", check_temporary_permissions)
+    state = _state(project_dir)
+    state.inputs = {"value": "private"}
+    previous_umask = os.umask(0)
+    try:
+        state.save()
+        for name in ("state.json", "inputs.json"):
+            artifact = state.runs_dir / name
+            assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+            artifact.chmod(0o666)
+
+        state.save()
+        for name in ("state.json", "inputs.json"):
+            artifact = state.runs_dir / name
+            assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+            assert json.loads(artifact.read_text(encoding="utf-8"))["inputs"] == state.inputs
+        assert temporary_modes == [0o600] * 4
+    finally:
+        os.umask(previous_umask)
 
 
 def test_workflow_operations_use_portable_storage_fallback(

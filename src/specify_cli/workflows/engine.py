@@ -957,8 +957,11 @@ class RunState:
             tmp_path = path.with_name(tmp)
             RunState._validate_fallback_path(path)
             try:
-                with tmp_path.open(
-                    "x", encoding="utf-8", errors="backslashreplace"
+                fd = os.open(
+                    tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                )
+                with os.fdopen(
+                    fd, "w", encoding="utf-8", errors="backslashreplace"
                 ) as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 RunState._validate_fallback_path(path)
