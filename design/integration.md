@@ -94,8 +94,9 @@ returns ordered hook metadata as JSON; agent commands themselves remain the
 responsibility of the agent. The command/skill registrar resolves these
 placeholders too when a preset wraps a core command. Preset installation
 provisions selected dispatchers only when the effective command references
-hooks; removal also provisions dispatchers before restoring hook-bearing
-lower layers in older projects that lack them.
+hooks; removal resolves the surviving command without the removed preset and
+provisions its selected variant before restoring hook-bearing lower layers in
+older projects that lack them.
 
 ## External adapter package contract
 

@@ -3131,6 +3131,54 @@ class TestRemoveReconciliation:
         assert (dispatchers / "pre-hooks.sh").is_file()
         assert (dispatchers / "post-hooks.sh").is_file()
 
+    @pytest.mark.parametrize("lower_hooks", [True, False])
+    def test_remove_provisions_only_surviving_replacement_variant(
+        self, project_dir, temp_dir, lower_hooks
+    ):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        lower = _make_wrap_preset_dir(
+            temp_dir, "lower-replace", "speckit.specify", "lower", "lower"
+        )
+        lower_body = "{PRE_HOOK_SCRIPT} specify" if lower_hooks else "No hooks here."
+        (lower / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Lower replacement\nstrategy: replace\n"
+            "scripts:\n  py: .specify/scripts/python/check_prerequisites.py\n"
+            f"---\n\n{lower_body}\n", encoding="utf-8"
+        )
+        manager.install_from_directory(lower, "0.1.5", priority=20)
+        upper = _make_wrap_preset_dir(
+            temp_dir, "upper-replace", "speckit.specify", "upper", "upper"
+        )
+        (upper / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Upper replacement\nstrategy: replace\n"
+            "---\n\nUpper command without hooks.\n", encoding="utf-8"
+        )
+        manager.install_from_directory(upper, "0.1.5", priority=10)
+        python_dispatchers = project_dir / ".specify/scripts/python"
+        if lower_hooks:
+            (python_dispatchers / "pre_hooks.py").unlink()
+            (python_dispatchers / "post_hooks.py").unlink()
+
+        assert manager.remove("upper-replace")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        text = command.read_text(encoding="utf-8")
+        if lower_hooks:
+            assert ".specify/scripts/python/pre_hooks.py" in text
+            assert (python_dispatchers / "pre_hooks.py").is_file()
+            assert (python_dispatchers / "post_hooks.py").is_file()
+        else:
+            assert "No hooks here." in text
+            assert not (python_dispatchers / "pre_hooks.py").exists()
+            assert not (project_dir / ".specify/scripts/bash/pre-hooks.sh").exists()
+
     @pytest.mark.parametrize("script,variant,suffix,agent", [
         ("sh", "bash", ".sh", "gemini"), ("ps", "powershell", ".ps1", "gemini"),
         ("py", "python", ".py", "gemini"), ("py", "python", ".py", "claude"),
