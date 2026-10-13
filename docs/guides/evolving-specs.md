@@ -44,10 +44,17 @@ Converge is append-only: its only possible write is adding tasks to `tasks.md`.
 It does not choose a persistence strategy or rewrite the artifacts to accept
 code as a replacement for documented intent.
 
+No core command reconciles differences among `spec.md`, `plan.md`, and
+`tasks.md`. `/speckit.analyze` reports inconsistencies without changing the
+artifacts. A team can reconcile them directly, or an extension can provide
+commands or hooks that do so during or after delivery according to that
+extension's documented behavior. Those actions do not become core behavior.
+
 Discoveries may arise during delivery under any model. If they lead to an
 agreed change of intent, make the revised contract explicit in the artifacts
-and deliver against it. The maintenance choices below apply after delivery;
-they do not replace this loop.
+and deliver against it. Reconciliation may occur during delivery, but the
+maintenance choices below describe what the team persists after delivery; they
+do not replace this loop.
 
 ## Flow-Forward Spec
 
@@ -107,9 +114,9 @@ alignment with that agreed direction:
 
 The implementation provides evidence for the team's decision; accepting code
 does not automatically make it the intended contract. Reconcile the artifacts
-manually, not through converge or a required core amendment command. If the
-agreed direction requires implementation, use the shared delivery loop above
-against explicit intended artifacts.
+directly or through an extension, not through analyze, converge, or a required
+core amendment command. If the agreed direction requires implementation, use
+the shared delivery loop above against explicit intended artifacts.
 
 Flow-back is flexible, but it requires discipline. Do not leave a lower-level
 change in `tasks.md` or code if `spec.md` still says something different and the

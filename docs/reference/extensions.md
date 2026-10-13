@@ -2,6 +2,13 @@
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. They introduce new commands and templates that go beyond the built-in Spec-Driven Development workflow.
 
+An extension can define commands or hooks that reconcile `spec.md`, `plan.md`,
+and `tasks.md` during or after feature delivery. Any such edits follow the
+extension's documented behavior and the project's governance; they are not
+performed by, or added to the responsibilities of, the core Spec Kit commands.
+The team's persistence model separately determines how artifacts are maintained
+after delivery.
+
 ## Search Available Extensions
 
 ```bash
