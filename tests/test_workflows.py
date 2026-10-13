@@ -11539,5 +11539,5 @@ class TestStepRegistryAtomicSaveRegression:
 
         # No destination directory or staging artifacts should exist.
         assert not (steps_dir / "my-step").exists()
-        assert not list(steps_dir.glob("tmp*"))
+        assert not list(steps_dir.glob(".speckit-step-install-*"))
         assert not list(steps_dir.glob(".*.tmp"))
