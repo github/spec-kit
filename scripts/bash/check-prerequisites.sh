@@ -56,8 +56,8 @@ while [[ $# -gt 0 ]]; do
             fi
             TEMPLATE_NAME="$1"
             ;;
-        --help|-h)
-            cat << 'EOF'
+        --help | -h)
+            cat <<'EOF'
 Usage: check-prerequisites.sh [OPTIONS]
 
 Consolidated prerequisite checking for Spec-Driven Development workflow.
@@ -94,15 +94,22 @@ done
 
 # Source common functions
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 # Get feature paths.
 # In --paths-only mode this is pure resolution, so pass --no-persist to opt out
 # of the feature.json write side effect (issue #3025).
 if $PATHS_ONLY; then
-    _paths_output=$(get_feature_paths --no-persist) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+    _paths_output=$(get_feature_paths --no-persist) || {
+        echo "ERROR: Failed to resolve feature paths" >&2
+        exit 1
+    }
 else
-    _paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+    _paths_output=$(get_feature_paths) || {
+        echo "ERROR: Failed to resolve feature paths" >&2
+        exit 1
+    }
 fi
 eval "$_paths_output"
 unset _paths_output
@@ -183,7 +190,12 @@ fi
 
 TEMPLATE_CONTENT=""
 if [[ -n "$TEMPLATE_NAME" ]]; then
-    if TEMPLATE_CONTENT=$(resolve_template_content "$TEMPLATE_NAME" "$REPO_ROOT"; status=$?; printf x; exit "$status"); then
+    if TEMPLATE_CONTENT=$(
+        resolve_template_content "$TEMPLATE_NAME" "$REPO_ROOT"
+        status=$?
+        printf x
+        exit "$status"
+    ); then
         TEMPLATE_CONTENT="${TEMPLATE_CONTENT%x}"
     else
         echo "ERROR: Could not resolve required $TEMPLATE_NAME from the template override stack for $REPO_ROOT" >&2
