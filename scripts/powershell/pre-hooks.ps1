@@ -1,5 +1,14 @@
 #!/usr/bin/env pwsh
 
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+
+function Get-HookSha256 {
+    param([byte[]]$Bytes)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha.ComputeHash($Bytes)).Replace('-', '') }
+    finally { $sha.Dispose() }
+}
+
 function Convert-HookScalar {
     param([string]$Raw)
     $raw = $Raw.Trim()
@@ -310,7 +319,7 @@ function Invoke-HookResolver {
             $eventBytes = ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($events))
             $eventHash = [IO.File]::ReadAllText($indexDigest, [Text.Encoding]::UTF8).Trim()
             if ($eventHash -cnotmatch '^[0-9a-f]{64}$' -or
-                [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($eventBytes)) -cne $eventHash.ToUpperInvariant()) {
+                (Get-HookSha256 $eventBytes) -cne $eventHash.ToUpperInvariant()) {
                 throw "Hook projection index is invalid; reinstall the extension or refresh the project"
             }
             $projected = Join-Path $cache "$event.json"
@@ -322,24 +331,25 @@ function Invoke-HookResolver {
                 $bytes = ConvertTo-HookLfBytes ([IO.File]::ReadAllBytes($projected))
                 $expected = [IO.File]::ReadAllText($digest, [Text.Encoding]::UTF8).Trim()
                 if ($expected -cnotmatch '^[0-9a-f]{64}$' -or
-                    [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) -cne $expected.ToUpperInvariant()) {
+                    (Get-HookSha256 $bytes) -cne $expected.ToUpperInvariant()) {
                     throw "Hook projection is invalid; reinstall the extension or refresh the project"
                 }
                 $text = [Text.Encoding]::UTF8.GetString($bytes)
-                try { $data = ConvertFrom-Json -InputObject $text -AsHashtable -ErrorAction Stop }
+                try { $data = ConvertFrom-Json -InputObject $text -ErrorAction Stop }
                 catch { throw "Invalid hook projection: $($_.Exception.Message)" }
-                if ($data -isnot [Collections.IDictionary] -or $data.event -cne $event -or
+                if ($data -isnot [pscustomobject] -or $data.event -cne $event -or
                     $data.hooks -isnot [array]) {
                     throw "Invalid hook projection; reinstall the extension or refresh the project"
                 }
                 foreach ($entry in $data.hooks) {
-                    if ($entry -isnot [Collections.IDictionary] -or
+                    if ($entry -isnot [pscustomobject] -or
                         $entry.extension -isnot [string] -or -not $entry.extension -or
                         $entry.command -isnot [string] -or -not $entry.command -or
                         $entry.optional -isnot [bool] -or
                         $entry.description -isnot [string] -or
                         $entry.prompt -isnot [string] -or
-                        $entry.priority -isnot [long] -or $entry.priority -lt 1) {
+                        ($entry.priority -isnot [long] -and $entry.priority -isnot [int]) -or
+                        $entry.priority -lt 1 -or $entry.priority -gt 2147483647) {
                         throw "Invalid hook projection; reinstall the extension or refresh the project"
                     }
                 }

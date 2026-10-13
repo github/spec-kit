@@ -32,11 +32,11 @@ def bash_script(path):
     return [str(path)]
 
 
-def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
+def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None, ps_executable="pwsh"):
     scripts = {
         "py": [sys.executable, str(PYTHON / f"{phase}_hooks.py")],
         "sh": [str(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")],
-        "ps": ["pwsh", "-NoProfile", "-File", str(ROOT / "scripts" / "powershell" / f"{phase}-hooks.ps1")],
+        "ps": [ps_executable, "-NoProfile", "-File", str(ROOT / "scripts" / "powershell" / f"{phase}-hooks.ps1")],
     }
     if variant == "sh":
         scripts["sh"] = bash_script(ROOT / "scripts" / "bash" / f"{phase}-hooks.sh")
@@ -49,6 +49,86 @@ def run_hook(tmp_path, phase="pre", name="plan", variant="py", extra_env=None):
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
     return result.returncode, json.loads(result.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt" or not shutil.which("powershell.exe"),
+                    reason="Windows PowerShell 5.1 is available only on Windows")
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_windows_powershell_51_projection_and_failures(tmp_path, phase):
+    from specify_cli.extensions import HookExecutor
+
+    version = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+        capture_output=True, text=True, check=True,
+    )
+    assert version.stdout.strip().startswith("5.1.")
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+        {"extension": "éxtension", "command": "speckit.git.配置", "optional": False},
+    ]}})
+
+    def resolve(name="plan"):
+        return run_hook(tmp_path, phase, name, variant="ps", ps_executable="powershell.exe")
+
+    code, response = resolve()
+    assert code == 0, response
+    assert response["hooks"][0]["extension"] == "éxtension"
+    assert response["hooks"][0]["command"] == "speckit.git.配置"
+    assert response["hooks"][0]["optional"] is False
+    assert resolve("tasks") == (0, {"event": f"{'before' if phase == 'pre' else 'after'}_tasks", "hooks": []})
+
+    cache = tmp_path / ".specify/hook-dispatch"
+    projection = cache / f"{event}.json"
+    projection.write_bytes(projection.read_bytes().replace(b"speckit.git.", b"speckit.bad."))
+    code, response = resolve()
+    assert code == 1
+    assert response["hooks"] == []
+    assert "invalid" in response["error"]
+
+    malformed = json.dumps({"event": event, "hooks": {}}).encode("utf-8")
+    projection.write_bytes(malformed)
+    (cache / f"{event}.sha256").write_text(
+        hashlib.sha256(malformed).hexdigest() + "\n", encoding="ascii"
+    )
+    code, response = resolve()
+    assert code == 1
+    assert response["hooks"] == []
+    assert "Invalid hook projection" in response["error"]
+
+    projection.unlink()
+    code, response = resolve()
+    assert code == 1
+    assert "incomplete" in response["error"]
+
+    index = cache / "events.txt"
+    index.write_bytes(index.read_bytes() + b"before_bad\n")
+    code, response = resolve("tasks")
+    assert code == 1
+    assert "invalid" in response["error"]
+
+
+@pytest.mark.skipif(os.name != "nt" or not shutil.which("powershell.exe"),
+                    reason="Windows PowerShell 5.1 is available only on Windows")
+@pytest.mark.parametrize("phase", ["pre", "post"])
+def test_windows_powershell_51_legacy_utf8_output(tmp_path, phase):
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    write_config(tmp_path, (
+        f"hooks:\n  {event}:\n"
+        "    - extension: git\n      command: speckit.git.配置\n"
+    ))
+    code, response = run_hook(
+        tmp_path, phase, variant="ps", ps_executable="powershell.exe"
+    )
+    assert code == 0, response
+    assert response["hooks"][0]["command"] == "speckit.git.配置"
+
+
+def test_hook_resolver_avoids_powershell_7_only_projection_apis():
+    script = (ROOT / "scripts/powershell/pre-hooks.ps1").read_text(encoding="utf-8")
+    assert "HashData(" not in script
+    assert "ToHexString(" not in script
+    assert "-AsHashtable" not in script
 
 
 def write_config(tmp_path, text):
@@ -313,7 +393,7 @@ def test_projection_accepts_git_crlf_checkout(tmp_path, variant, phase, conversi
         converted.append(tmp_path / ".specify/extensions.yml")
     for path in converted:
         data = path.read_bytes()
-        path.write_bytes(data.replace(b"\n", b"\r\n"))
+        path.write_bytes(data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
 
     code, data = run_hook(tmp_path, phase, variant=variant)
     assert code == 0, data
@@ -342,7 +422,7 @@ def test_crlf_projection_still_rejects_corrupt_content(tmp_path, variant, corrup
     ]}})
     cache = tmp_path / ".specify/hook-dispatch"
     for path in cache.iterdir():
-        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     if corruption == "projection":
         projection = cache / "before_plan.json"
         projection.write_bytes(projection.read_bytes().replace(

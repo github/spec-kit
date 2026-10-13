@@ -3628,6 +3628,8 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
+        HookExecutor(self.project_root).load_project_config_for_update()
+
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
         registered_commands = (
@@ -5838,7 +5840,33 @@ class HookExecutor:
                 "hooks": {},
             }
 
-    def save_project_config(self, config: Dict[str, Any]):
+    def load_project_config_for_update(self) -> Dict[str, Any]:
+        """Load and validate hook configuration before any extension mutation."""
+        if self.config_file.parent.is_symlink():
+            raise ValueError("Refusing to load symlinked .specify/extensions.yml")
+        cache = self.config_file.parent / "hook-dispatch"
+        try:
+            invalid_cache = cache.is_symlink() or (
+                cache.is_dir() and any(p.is_symlink() for p in cache.iterdir())
+            )
+        except OSError as exc:
+            raise ValueError(f"Cannot inspect hook dispatch cache: {exc}") from exc
+        if invalid_cache:
+            raise ValueError("Refusing to use symlinked hook dispatch cache")
+        if not self.config_file.exists():
+            return {"installed": [], "settings": {"auto_execute_hooks": True}, "hooks": {}}
+        if self.config_file.is_symlink():
+            raise ValueError("Refusing to load symlinked .specify/extensions.yml")
+        try:
+            config = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"Invalid .specify/extensions.yml: {exc}") from exc
+        if not isinstance(config, dict):
+            raise ValueError("Invalid .specify/extensions.yml: expected a mapping")
+        self.save_project_config(config, validate_only=True)
+        return config
+
+    def save_project_config(self, config: Dict[str, Any], *, validate_only: bool = False):
         """Save project-level extension configuration.
 
         Args:
@@ -5908,6 +5936,8 @@ class HookExecutor:
             config, default_flow_style=False, sort_keys=False,
             allow_unicode=True, width=sys.maxsize, Dumper=CanonicalHookDumper,
         )
+        if validate_only:
+            return
         from ..shared_infra import _exclusive_project_lock
 
         lock = self.config_file.parent / ".hook-dispatch.lock"
@@ -5965,7 +5995,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to register
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         if not isinstance(config, dict):
@@ -5984,7 +6014,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
@@ -6061,7 +6091,7 @@ class HookExecutor:
         # Always ensure the extension is in the installed list
         self.register_extension(manifest.id)
 
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         changed = False
@@ -6164,7 +6194,7 @@ class HookExecutor:
         # Always remove from installed list (Feedback from review)
         self.unregister_extension(extension_id)
 
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
@@ -6440,7 +6470,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return
@@ -6459,7 +6489,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return

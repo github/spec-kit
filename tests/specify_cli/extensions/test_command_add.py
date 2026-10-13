@@ -9,6 +9,7 @@ import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -54,7 +55,9 @@ class TestExtensionAddCLI:
         assert [hook["extension"] for hook in projected["hooks"]] == ["git"]
 
     @pytest.mark.parametrize("preferred,available", [
-        ("sh", "py"), ("py", "sh"), ("sh", "ps"),
+        ("sh", "py"), pytest.param("py", "sh", marks=pytest.mark.skipif(
+            sys.platform == "win32", reason="Bash fallback is unavailable on Windows"
+        )), ("sh", "ps"),
     ])
     def test_add_installs_dispatchers_for_selected_command_variant(
         self, extension_dir, project_dir, preferred, available
