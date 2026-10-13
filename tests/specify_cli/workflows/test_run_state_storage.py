@@ -109,11 +109,17 @@ def test_load_rejects_symlinked_run_directory(project_dir, tmp_path):
         RunState.load("run-1", project_dir)
 
 
+@pytest.mark.parametrize("portable", [False, True])
 def test_load_keeps_open_run_directory_when_path_is_replaced(
-    project_dir, tmp_path, monkeypatch
+    project_dir, tmp_path, monkeypatch, portable
 ):
     from specify_cli.workflows.engine import RunState
 
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    descriptor_access = RunState._supports_descriptor_access()
     state = _state(project_dir)
     state.save()
     run_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
@@ -144,17 +150,29 @@ def test_load_keeps_open_run_directory_when_path_is_replaced(
         RunState, "_open_artifact", staticmethod(_replace_run_directory)
     )
 
-    loaded = RunState.load("run-1", project_dir)
+    if descriptor_access:
+        loaded = RunState.load("run-1", project_dir)
+        assert loaded.workflow_id == "workflow"
+    else:
+        with pytest.raises(ValueError, match="symlinked workflow run path"):
+            RunState.load("run-1", project_dir)
 
-    assert loaded.workflow_id == "workflow"
+    assert swapped
     assert json.loads(outside_state.read_text(encoding="utf-8"))["workflow_id"] == "external"
 
 
+@pytest.mark.parametrize("portable", [False, True])
 def test_save_keeps_open_run_directory_when_path_is_replaced(
-    project_dir, tmp_path, monkeypatch
+    project_dir, tmp_path, monkeypatch, portable
 ):
+    from specify_cli.workflows._execution import CheckpointError
     from specify_cli.workflows.engine import RunState
 
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    descriptor_access = RunState._supports_descriptor_access()
     state = _state(project_dir)
     state.save()
     run_dir = project_dir / ".specify" / "workflows" / "runs" / "run-1"
@@ -178,12 +196,26 @@ def test_save_keeps_open_run_directory_when_path_is_replaced(
         RunState, "_atomic_write_json", staticmethod(_replace_run_directory)
     )
 
-    state.save()
+    state.inputs = {"changed": True}
+    if descriptor_access:
+        state.save()
+    else:
+        with pytest.raises(CheckpointError, match="symlinked workflow run path"):
+            state.save()
 
+    assert swapped
     assert outside_state.read_text(encoding="utf-8") == "external state"
+    assert not (outside / "inputs.json").exists()
     assert json.loads((detached_dir / "state.json").read_text(encoding="utf-8"))[
         "run_id"
     ] == "run-1"
+    expected_inputs = {"changed": True} if descriptor_access else {}
+    assert json.loads((detached_dir / "state.json").read_text(encoding="utf-8"))[
+        "inputs"
+    ] == expected_inputs
+    assert json.loads((detached_dir / "inputs.json").read_text(encoding="utf-8"))[
+        "inputs"
+    ] == expected_inputs
 
 
 @pytest.mark.parametrize("artifact", ["state.json", "inputs.json"])
