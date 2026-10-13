@@ -26,6 +26,7 @@ from specify_cli.workflows.expressions import (
     _WORD_OPERATORS,
     format_condition_remediation,
 )
+from specify_cli.workflows.expressions import engine_current, namespace
 from specify_cli.workflows.step.do_while import DoWhileStep
 from specify_cli.workflows.step.if_then import IfThenStep
 from specify_cli.workflows.step.while_loop import WhileStep
@@ -981,7 +982,7 @@ def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     assert expressions._unresolvable_term(path) is not None
 
     monkeypatch.setattr(
-        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
+        namespace, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
     )
     assert expressions._unresolvable_term(path) is None
 
@@ -998,5 +999,5 @@ def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
 
     # Stop the evaluator unwrapping the group and it becomes a leaf again, so
     # the gate goes back to reporting it as a name it cannot resolve.
-    monkeypatch.setattr(expressions, "_is_wrapped_in_parens", lambda text: False)
+    monkeypatch.setattr(engine_current, "_is_wrapped_in_parens", lambda text: False)
     assert expressions._unresolvable_term(grouped) is not None
