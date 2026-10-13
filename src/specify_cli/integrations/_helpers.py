@@ -96,8 +96,10 @@ def _write_integration_json(
 
 def _refresh_init_options_speckit_version(project_root: Path) -> None:
     """Refresh only the Spec Kit version recorded in init-options.json."""
-    from .. import load_init_options, save_init_options
-    opts = load_init_options(project_root)
+    from .. import save_init_options
+    from .._file_policy import read_project_options
+
+    opts = read_project_options(project_root)
     if not isinstance(opts, dict) or not opts:
         return
     opts["speckit_version"] = _get_speckit_version()
@@ -106,11 +108,10 @@ def _refresh_init_options_speckit_version(project_root: Path) -> None:
 
 def _clear_init_options_for_integration(project_root: Path, integration_key: str) -> None:
     """Clear active integration keys from init-options.json when they match."""
-    from .. import (
-        load_init_options,
-        save_init_options,
-    )
-    opts = load_init_options(project_root)
+    from .. import save_init_options
+    from .._file_policy import read_project_options
+
+    opts = read_project_options(project_root)
     if opts.get("integration") == integration_key or opts.get("ai") == integration_key:
         opts.pop("integration", None)
         opts.pop("ai", None)
@@ -121,7 +122,11 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
 def _remove_integration_json(project_root: Path) -> None:
     """Remove ``.specify/integration.json`` if it exists."""
     path = project_root / INTEGRATION_JSON
+    from ._file_changes import after_file_change, before_file_change
+
+    before_file_change(path, removal=True)
     path.unlink(missing_ok=True)
+    after_file_change(path)
 
 
 # ---------------------------------------------------------------------------
@@ -269,11 +274,10 @@ def _update_init_options_for_integration(
     agent-context extension, so this function never touches the extension
     or its config.
     """
-    from .. import (
-        load_init_options,
-        save_init_options,
-    )
-    opts = load_init_options(project_root)
+    from .. import save_init_options
+    from .._file_policy import read_project_options
+
+    opts = read_project_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["speckit_version"] = _get_speckit_version()
@@ -475,6 +479,60 @@ def _register_presets_for_agent(
             "integration",
             agent_key,
             preset_err,
+            continuing=continuing,
+        )
+
+
+def _resync_manifest_after_registration(
+    new_manifest: Any,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Refresh tracked-file hashes after extensions/presets re-registration.
+
+    ``_register_extensions_for_agent`` / ``_register_presets_for_agent`` run
+    after ``new_manifest`` is saved and can overwrite files it already
+    tracks (e.g. a preset overriding a core command rendered as a skill).
+    Nothing else touches the project between the manifest save and these
+    calls, so any tracked file whose bytes now differ was changed by our own
+    registration step, not by the user — re-hash it and persist the refresh
+    so ``check_modified()`` doesn't misreport a legitimate override as
+    tampering (see #4696).
+
+    Best-effort: registration itself is best-effort, so a failure here must
+    not abort the surrounding upgrade/use/switch transaction.
+    """
+    try:
+        changed = False
+        for rel in new_manifest.files:
+            abs_path = new_manifest.project_root / rel
+            try:
+                if abs_path.is_symlink() or not abs_path.is_file():
+                    continue
+                new_manifest.record_existing(rel)
+                changed = True
+            except (ValueError, OSError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "resync manifest hash for",
+                    "file",
+                    str(rel),
+                    file_err,
+                    continuing="Continuing with the remaining files.",
+                )
+                continue
+        if changed:
+            new_manifest.save()
+    except Exception as resync_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "resync manifest hashes for",
+            "integration",
+            agent_key,
+            resync_err,
             continuing=continuing,
         )
 

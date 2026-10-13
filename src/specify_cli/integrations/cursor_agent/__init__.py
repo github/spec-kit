@@ -11,6 +11,10 @@ is what indicates dispatch support, mirroring ``CopilotIntegration``.
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
 
@@ -48,6 +52,14 @@ class CursorAgentIntegration(SkillsIntegration):
     }
     events_config_file = ".cursor/hooks.json"
     events_format = "json-flat"
+    # Cursor sessionStart injects a top-level additional_context (snake_case)
+    # field (C13). beforeSubmitPrompt has no context output field (block/allow
+    # only), and plain text on any hook fails Cursor's JSON parse — suppress
+    # everything else.
+    events_context_envelope = {
+        "*": "suppress",
+        "session_start": "additional_context",
+    }
 
     def build_exec_args(
         self,
@@ -55,6 +67,9 @@ class CursorAgentIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build CLI arguments for non-interactive ``cursor-agent`` execution.
 
@@ -86,6 +101,7 @@ class CursorAgentIntegration(SkillsIntegration):
         either drops tool calls or exits non-zero on the first approval
         prompt.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [
             self._resolve_executable(),
             "-p",

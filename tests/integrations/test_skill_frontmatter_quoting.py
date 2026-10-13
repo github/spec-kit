@@ -178,3 +178,66 @@ class TestHermesSkillFrontmatterQuoting:
 
         fm = _parse_frontmatter(skill_files[0])
         assert fm["description"] == MULTILINE
+
+    def test_dashed_description_is_preserved(self, tmp_path, monkeypatch):
+        """Hermes overrides setup(), so it needs the same line-anchored parse."""
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+        integration = get_integration("hermes")
+        monkeypatch.setattr(
+            integration,
+            "shared_commands_dir",
+            lambda: _fake_templates(tmp_path, DASHED_TEMPLATE),
+        )
+        manifest = IntegrationManifest("hermes", tmp_path)
+        created = integration.setup(tmp_path, manifest)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        fm = _parse_frontmatter_line_anchored(skill_files[0])
+        assert fm["description"] == DASHED_DESCRIPTION
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        lines = content.splitlines(keepends=True)
+        end = next(i for i in range(1, len(lines)) if lines[i].rstrip() == "---")
+        body = "".join(lines[end + 1 :])
+        assert "name-marker: sentinel" not in body
+
+
+class TestKimiGeneratedSkillDetection:
+    """``_is_speckit_generated_skill`` must survive a ``---`` in a value.
+
+    Teardown only removes a legacy skill directory it recognizes as
+    Speckit-generated via the frontmatter ``metadata`` block. A substring split
+    truncated the frontmatter before ``metadata`` when a description embedded
+    ``---``, so the directory was left behind on uninstall.
+    """
+
+    def _write_skill(self, skill_dir: Path, description: str) -> None:
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            'name: "speckit-plan"\n'
+            f"description: {description}\n"
+            "metadata:\n"
+            '  author: "github-spec-kit"\n'
+            '  source: "templates/commands/plan.md"\n'
+            "---\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+    def test_detects_skill_with_dashes_in_description(self, tmp_path):
+        from specify_cli.integrations.kimi import _is_speckit_generated_skill
+
+        skill_dir = tmp_path / "speckit-plan"
+        self._write_skill(skill_dir, "Separate sections with --- markers")
+        assert _is_speckit_generated_skill(skill_dir) is True
+
+    def test_still_detects_plain_description(self, tmp_path):
+        from specify_cli.integrations.kimi import _is_speckit_generated_skill
+
+        skill_dir = tmp_path / "speckit-plan"
+        self._write_skill(skill_dir, "Plain description")
+        assert _is_speckit_generated_skill(skill_dir) is True

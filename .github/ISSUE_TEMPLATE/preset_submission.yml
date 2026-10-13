@@ -1,7 +1,7 @@
 name: Preset Submission
 description: Submit your preset to the Spec Kit preset catalog
 title: "[Preset]: Add "
-labels: ["enhancement", "needs-triage"]
+labels: ["triage-must-have"]
 body:
   - type: markdown
     attributes:
@@ -13,6 +13,8 @@ body:
         - Ensure your preset has a valid `preset.yml` manifest
         - Create a GitHub release with a version tag (e.g., v1.0.0)
         - Test installation from the release archive: `specify preset add --from <download-url>`
+
+        **After submitting:** GitHub automatically applies the `triage-must-have` intake verdict. A maintainer separately applies the `preset-submission` label during issue triage, which starts the automated catalog validation. You don't need to apply any label or ask for one.
 
   - type: input
     id: preset-id

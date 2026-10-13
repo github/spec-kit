@@ -83,10 +83,32 @@ function Test-SpecPrefixInUse {
         Select-Object -First 1)
 }
 
+function ConvertTo-AsciiLower {
+    param([string]$Name)
+
+    return [regex]::Replace($Name, '[A-Z]', { param($match) $match.Value.ToLowerInvariant() })
+}
+
+function ConvertTo-UnicodeWords {
+    param([string]$Name, [string]$Separator)
+
+    $lowerName = ConvertTo-AsciiLower -Name $Name
+    return [regex]::Replace($lowerName, '[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\p{L}\p{Nd}]', {
+        param($match)
+        if ($match.Length -eq 2) {
+            $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($match.Value, 0)
+            if ($category.ToString() -match '(Letter|DecimalDigitNumber)$') {
+                return $match.Value
+            }
+        }
+        return $Separator
+    })
+}
+
 function ConvertTo-CleanBranchName {
     param([string]$Name)
 
-    return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+    return (ConvertTo-UnicodeWords -Name $Name -Separator '-') -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
 }
 
 function Get-FittedBranchName {
@@ -96,10 +118,15 @@ function Get-FittedBranchName {
     )
 
     $fittedName = "$FeatureNum-$BranchSuffix"
-    if ($fittedName.Length -gt $maxBranchLength) {
+    if ([System.Text.Encoding]::UTF8.GetByteCount($fittedName) -gt $maxBranchLength) {
         $prefixLength = $FeatureNum.Length + 1
         $maxSuffixLength = $maxBranchLength - $prefixLength
-        $truncatedSuffix = $BranchSuffix.Substring(0, [Math]::Min($BranchSuffix.Length, $maxSuffixLength))
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($BranchSuffix)
+        $bytesToUse = $maxSuffixLength
+        while ($bytesToUse -gt 0 -and ($bytes[$bytesToUse] -band 0xC0) -eq 0x80) {
+            $bytesToUse--
+        }
+        $truncatedSuffix = [System.Text.Encoding]::UTF8.GetString($bytes, 0, $bytesToUse)
         $truncatedSuffix = $truncatedSuffix -replace '-$', ''
         $fittedName = "$FeatureNum-$truncatedSuffix"
     }
@@ -132,24 +159,27 @@ function Get-BranchName {
         'want', 'need', 'add', 'get', 'set'
     )
 
-    # Convert to lowercase and extract words (alphanumeric only)
-    $cleanName = $Description.ToLower() -replace '[^a-z0-9\s]', ' '
+    # Lowercase ASCII and extract Unicode words, matching the shell variant.
+    $cleanName = ConvertTo-UnicodeWords -Name $Description -Separator ' '
     $words = $cleanName -split '\s+' | Where-Object { $_ }
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     $meaningfulWords = @()
     foreach ($word in $words) {
         # Skip stop words
-        if ($stopWords -contains $word) { continue }
+        if ($stopWords -ccontains $word) { continue }
 
-        # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
-        if ($word.Length -ge 3) {
+        # Keep Unicode words even when short; ASCII words still need three
+        # characters or an uppercase acronym in the original.
+        if ($word.Length -ge 3 -or $word -match '[^\x00-\x7F]') {
             $meaningfulWords += $word
-        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "(?<![0-9A-Za-z_])$($word.ToUpper())(?![0-9A-Za-z_])") {
             # Keep short words only if they appear as uppercase in original (likely
             # acronyms). Use -cmatch so the comparison is case-sensitive, matching the
             # bash script's case-sensitive grep; -match would be case-insensitive and
-            # would keep every short word.
+            # would keep every short word. The boundaries are spelled out as ASCII
+            # because .NET's \b is Unicode-aware, so an accented letter next to the
+            # acronym would suppress the match that bash's LC_ALL=C grep still makes.
             $meaningfulWords += $word
         }
     }
@@ -162,7 +192,8 @@ function Get-BranchName {
     } else {
         # Fallback to original logic if no meaningful words found
         $result = ConvertTo-CleanBranchName -Name $Description
-        $fallbackWords = ($result -split '-') | Where-Object { $_ } | Select-Object -First 3
+        # @() keeps this an array when the description contains only separators.
+        $fallbackWords = @(($result -split '-') | Where-Object { $_ } | Select-Object -First 3)
         return [string]::Join('-', $fallbackWords)
     }
 }
@@ -174,6 +205,10 @@ if ($ShortName) {
 } else {
     # Generate from description with smart filtering
     $branchSuffix = Get-BranchName -Description $featureDesc
+}
+
+if (-not $branchSuffix) {
+    [Console]::Error.WriteLine("[specify] Warning: Feature name is empty after removing unsupported characters. Use -ShortName with letters or digits (for example, user-auth).")
 }
 
 # Treat an explicit empty string as omitted, matching the bash and Python twins.
@@ -245,8 +280,8 @@ $originalBranchName = "$featureNum-$branchSuffix"
 $branchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
 if ($branchName -ne $originalBranchName) {
     [Console]::Error.WriteLine("[specify] Warning: Branch name exceeded GitHub's 244-byte limit")
-    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)")
-    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($($branchName.Length) bytes)")
+    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($([System.Text.Encoding]::UTF8.GetByteCount($originalBranchName)) bytes)")
+    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($([System.Text.Encoding]::UTF8.GetByteCount($branchName)) bytes)")
 }
 
 $featureDir = Join-Path $specsDir $branchName
@@ -262,13 +297,16 @@ if (-not $DryRun) {
         exit 1
     }
 
+    $needsSpec = -not (Test-Path -PathType Leaf $specFile)
+    $content = $null
+    if ($needsSpec) {
+        $content = Resolve-TemplateContent -TemplateName 'spec-template' -RepoRoot $repoRoot
+    }
+
     New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
 
-    if (-not (Test-Path -PathType Leaf $specFile)) {
-        $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
-        if ($template -and (Test-Path $template)) {
-            # Read the template content and write it to the spec file with UTF-8 encoding without BOM
-            $content = [System.IO.File]::ReadAllText($template)
+    if ($needsSpec) {
+        if ($null -ne $content) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {
@@ -280,8 +318,11 @@ if (-not $DryRun) {
         }
     }
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    # Persist to .specify/feature.json so downstream commands can find the
+    # feature, unless the orchestrator opted out via SPECIFY_FEATURE_NO_PERSIST (#4129).
+    if ($env:SPECIFY_FEATURE_NO_PERSIST -ne '1' -and $env:SPECIFY_FEATURE_NO_PERSIST -ne 'true') {
+        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
+    }
 
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName

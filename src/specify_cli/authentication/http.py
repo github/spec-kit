@@ -13,13 +13,18 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
-from fnmatch import fnmatch
 from typing import Callable
 from urllib.parse import urlparse
 
 from .._download_security import is_safe_download_redirect
 from . import get_provider
-from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
+from .config import (
+    AuthConfigEntry,
+    _default_config_path,
+    _host_matches_pattern,
+    find_entries_for_url,
+    load_auth_config,
+)
 
 
 _config_override: list[AuthConfigEntry] | None = None
@@ -54,16 +59,19 @@ def _load_config() -> list[AuthConfigEntry]:
 
 def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
     """Return True if *hostname* matches any pattern in *hosts*."""
-    hostname = hostname.lower()
-    return any(p == hostname or fnmatch(hostname, p) for p in hosts)
+    return any(_host_matches_pattern(hostname, pattern) for pattern in hosts)
 
 
 RedirectValidator = Callable[[str, str], None]
 
 
+class RedirectPolicyError(urllib.error.URLError):
+    """A redirect rejected because it violates the client's security policy."""
+
+
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
     if not is_safe_download_redirect(old_url, new_url):
-        raise urllib.error.URLError(
+        raise RedirectPolicyError(
             f"unsafe redirect to {new_url}: target must use HTTPS with a hostname, "
             "must not enter a local target from a remote host, and may use HTTP only "
             "within loopback (for example localhost, 127.0.0.1, ::1)"
@@ -96,7 +104,7 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         except ValueError as exc:
             # Malformed redirect target (e.g. unterminated IPv6 bracket).
             # Surface as URLError so callers' download error handling applies.
-            raise urllib.error.URLError(f"malformed redirect URL: {exc}") from exc
+            raise RedirectPolicyError(f"malformed redirect URL: {exc}") from exc
 
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)
@@ -146,9 +154,9 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
 def github_provider_hosts() -> tuple[str, ...]:
     """Return host patterns from every ``github`` provider entry in ``auth.json``.
 
-    Used to classify which hosts are GitHub Enterprise Server instances when
-    resolving release-asset download URLs. Returns an empty tuple when no
-    ``auth.json`` exists or it contains no ``github`` entries.
+    Used to classify trusted GitHub Enterprise Cloud and GitHub Enterprise
+    Server hosts when resolving release-asset download URLs. Returns an empty
+    tuple when no ``auth.json`` exists or it contains no ``github`` entries.
     """
     hosts: list[str] = []
     for entry in _load_config():

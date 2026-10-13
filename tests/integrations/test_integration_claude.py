@@ -5,12 +5,30 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
 from specify_cli.integrations.claude import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
 from specify_cli.integrations.manifest import IntegrationManifest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _reset_claude_model_invocation():
+    """``setup()`` stores ``--no-model-invocation`` on the process-wide Claude
+    singleton; keep it from leaking between tests."""
+    claude = get_integration("claude")
+    claude._disable_model_invocation = False
+    yield
+    claude._disable_model_invocation = False
+
+
+def _skill_frontmatter(skill_file: Path) -> dict:
+    content = skill_file.read_text(encoding="utf-8")
+    return yaml.safe_load(content.split("---", 2)[1])
 
 
 class TestClaudeIntegration:
@@ -174,8 +192,8 @@ class TestClaudeIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
-                patch("specify_cli.commands.init.select_with_arrows", return_value="claude"),
+                patch("specify_cli.command_init._stdin_is_interactive", return_value=True),
+                patch("specify_cli.command_init.select_with_arrows", return_value="claude"),
             ):
                 result = runner.invoke(
                     app,
@@ -451,6 +469,93 @@ class TestClaudeArgumentHints:
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1
 
+    def test_inject_argument_hint_survives_folded_description(self):
+        """A long description folded across lines must not corrupt the YAML (#4044).
+
+        A description long enough for the YAML dumper to fold it into a
+        multi-line plain scalar previously had ``argument-hint:`` spliced
+        into the *middle* of that scalar, producing invalid YAML.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts an issue URL "
+                "resolved via gh CLI (demo customization)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_quoted_folded_description(self):
+        """A folded description forced into quotes must not absorb the hint (#4044)."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "Create or update the feature specification from a natural "
+                "language feature description. Also accepts a GitHub "
+                "issue/PR URL or #N reference resolved via gh CLI (demo)."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n  " in content, "fixture description must actually fold across lines"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
+    def test_inject_argument_hint_survives_multi_paragraph_description(self):
+        """A description with an embedded blank line must not absorb the hint.
+
+        PyYAML serializes an embedded ``\\n\\n`` inside a quoted scalar as
+        unindented blank lines, not indented ones, so a fix that only skips
+        indented continuation lines still fails on this case.
+        """
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        frontmatter = {
+            "name": "speckit-specify",
+            "description": (
+                "First paragraph of a fairly long description that will "
+                "need to wrap across multiple lines when dumped by PyYAML."
+                "\n\n"
+                "Second paragraph continues the description after a blank "
+                "line separator to force embedded newlines in the scalar."
+            ),
+            "compatibility": "Requires spec-kit project structure with .specify/ directory",
+        }
+        frontmatter_text = yaml.safe_dump(
+            frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
+        content = f"---\n{frontmatter_text}\n---\n\nBody text\n"
+        assert "\n\n" in frontmatter_text, "fixture must produce a blank continuation line"
+
+        result = ClaudeIntegration.inject_argument_hint(content, "Describe the feature")
+
+        parsed = yaml.safe_load(result.split("---")[1])
+        assert parsed["argument-hint"] == "Describe the feature"
+        assert parsed["description"] == frontmatter["description"]
+
 
 class TestClaudeDisableModelInvocation:
     """Verify disable-model-invocation is false for Claude skills."""
@@ -502,6 +607,282 @@ class TestClaudeDisableModelInvocation:
             return  # agy not registered in this build
         content = "---\nname: test\n---\nBody"
         assert agy.post_process_skill_content(content) == content
+
+
+class TestClaudeNoModelInvocationOption:
+    """``--integration-options="--no-model-invocation"`` opts out of model invocation (#2654)."""
+
+    def test_options_include_no_model_invocation_flag(self):
+        opts = get_integration("claude").options()
+        matching = [o for o in opts if o.name == "--no-model-invocation"]
+        assert len(matching) == 1
+        assert matching[0].is_flag is True
+        # Opt-in: skills stay model-invocable unless the flag is passed.
+        assert matching[0].default is False
+        assert "--events" in [o.name for o in opts]
+
+    def test_setup_with_option_sets_disable_model_invocation_true(self, tmp_path):
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(
+            tmp_path, m, parsed_options={"no_model_invocation": True}, script_type="sh"
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            fm = _skill_frontmatter(f)
+            assert fm["disable-model-invocation"] is True, f.parent.name
+            assert fm["user-invocable"] is True, f.parent.name
+            assert f.read_text(encoding="utf-8").count("disable-model-invocation:") == 1
+
+    def test_post_process_follows_option_from_setup(self, tmp_path):
+        """Preset overrides of core commands re-registered in the same run as
+        ``setup()`` (init, upgrade) get the same value."""
+        i = get_integration("claude")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("claude", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: true" in result
+        assert "disable-model-invocation: false" not in result
+
+    def test_extension_skills_stay_model_invocable(self, tmp_path):
+        """Mandatory extension hooks rely on the model invoking the hook skill,
+        so the option never applies to extension commands."""
+        i = get_integration("claude")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("claude", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content(
+            "---\nname: speckit-git-feature\n---\n\nBody\n"
+        )
+        assert "disable-model-invocation: false" in result
+        assert "disable-model-invocation: true" not in result
+
+    def test_option_requires_speckit_prefixed_core_name(self, tmp_path):
+        """A skill merely named like a core stem is not a core command skill."""
+        i = get_integration("claude")
+        i.setup(
+            tmp_path,
+            IntegrationManifest("claude", tmp_path),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        result = i.post_process_skill_content("---\nname: tasks\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path):
+        i = get_integration("claude")
+        with patch.object(SkillsIntegration, "setup", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                i.setup(
+                    tmp_path,
+                    IntegrationManifest("claude", tmp_path),
+                    parsed_options={"no_model_invocation": True},
+                    script_type="sh",
+                )
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
+    def test_setup_without_option_resets_to_false(self, tmp_path):
+        i = get_integration("claude")
+        first = tmp_path / "first"
+        first.mkdir()
+        i.setup(
+            first,
+            IntegrationManifest("claude", first),
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        second = tmp_path / "second"
+        second.mkdir()
+        created = i.setup(second, IntegrationManifest("claude", second), script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
+        assert "disable-model-invocation: false" in result
+
+    def test_cli_rejects_value_for_flag(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-bad-option"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--integration-options",
+                    "--no-model-invocation=yes",
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "does not accept a value" in result.output
+        assert not (project / ".claude" / "skills").exists()
+
+    def test_option_persists_across_upgrade_and_can_be_cleared(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude", "--no-model-invocation")
+        skills_dir = project / ".claude" / "skills"
+        skill_files = sorted(skills_dir.glob("*/SKILL.md"))
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        settings = state["integration_settings"]["claude"]
+        assert settings["raw_options"] == "--no-model-invocation"
+        assert settings["parsed_options"] == {"no_model_invocation": True}
+
+        # A later ``specify integration upgrade`` is a new process: drop the
+        # in-memory value so only the persisted options can supply it.
+        get_integration("claude")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is True, f.parent.name
+
+        # Passing replacement options (here: none) clears it.
+        result = _run_in_project(
+            project,
+            ["integration", "upgrade", "claude", "--force", "--integration-options", ""],
+        )
+        assert result.exit_code == 0, result.output
+        for f in skill_files:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        state = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert "parsed_options" not in state["integration_settings"]["claude"]
+
+    def test_upgrade_reapplies_option_to_preset_overrides(self, tmp_path):
+        """``preset add`` runs without ``setup()`` (documented limitation);
+        ``integration upgrade claude --force`` reapplies the option to the
+        core-command skills a preset overrides."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude", "--no-model-invocation")
+        skill_file = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is True
+
+        get_integration("claude")._disable_model_invocation = False
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(REPO_ROOT / "presets" / "lean")]
+        )
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        # Documented in docs/reference/integrations.md; update the docs if
+        # preset commands start honouring the option.
+        assert fm["disable-model-invocation"] is False
+
+        # The docs say ``--force`` is needed here: preset add modified
+        # installed skill files, so a plain upgrade refuses.
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+        assert result.exit_code != 0
+        assert "modified since installation" in result.output
+        assert _skill_frontmatter(skill_file)["disable-model-invocation"] is False
+
+        get_integration("claude")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+        assert result.exit_code == 0, result.output
+        fm = _skill_frontmatter(skill_file)
+        assert fm["metadata"]["source"] == "preset:lean"
+        assert fm["disable-model-invocation"] is True
+
+    def test_extension_hook_skills_stay_model_invocable_after_upgrade(self, tmp_path):
+        """``integration upgrade`` re-registers extension skills in the same
+        process as ``setup()``; they must keep ``false`` so mandatory hooks
+        (e.g. ``speckit.git.feature``) can still be invoked by the model."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "claude", "--no-model-invocation")
+        result = _run_in_project(
+            project, ["extension", "add", "--dev", str(REPO_ROOT / "extensions" / "git")]
+        )
+        assert result.exit_code == 0, result.output
+        get_integration("claude")._disable_model_invocation = False
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+        assert result.exit_code == 0, result.output
+
+        skills_dir = project / ".claude" / "skills"
+        git_skills = sorted(skills_dir.glob("speckit-git-*/SKILL.md"))
+        assert git_skills, "git extension skills were not generated"
+        for f in git_skills:
+            assert _skill_frontmatter(f)["disable-model-invocation"] is False, f.parent.name
+        assert _skill_frontmatter(skills_dir / "speckit-specify" / "SKILL.md")[
+            "disable-model-invocation"
+        ] is True
+
+
+class TestClaudeInjectFrontmatterFlagNoTrailingNewline:
+    """`_inject_frontmatter_flag` must not corrupt content whose closing
+    frontmatter delimiter is the file's last line with no trailing newline.
+
+    `post_process_skill_content` calls this helper on content from
+    "external skill generators (presets, extensions)" (per its own
+    docstring) -- not guaranteed to end with a trailing newline. Without a
+    newline after the injected line, the injected text glues onto the
+    closing `---`, destroying the delimiter.
+    """
+
+    def test_single_call_keeps_delimiter_on_its_own_line(self):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\nname: x\n---"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\nname: x\nuser-invocable: true\n---"
+
+    def test_chained_calls_both_apply(self):
+        """The exact sequence `post_process_skill_content` runs: a second
+        injected key must still land, not be silently dropped because the
+        first call already destroyed the closing `---` line."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\nname: x\n---"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            result, "disable-model-invocation", "false"
+        )
+        assert result == (
+            "---\nname: x\nuser-invocable: true\n"
+            "disable-model-invocation: false\n---"
+        )
+
+    def test_preserves_crlf_line_endings(self):
+        """When the closing delimiter *does* end with \\r\\n, the injected
+        line must reuse that EOL rather than switching the file to LF."""
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        content = "---\r\nname: x\r\n---\r\n"
+        result = ClaudeIntegration._inject_frontmatter_flag(
+            content, "user-invocable"
+        )
+        assert result == "---\r\nname: x\r\nuser-invocable: true\r\n---\r\n"
 
 
 class TestClaudeForkContext:

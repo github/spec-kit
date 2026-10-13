@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_bash
+from tests.parity_helpers import install_composition_stack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
@@ -137,6 +138,87 @@ def _normalize_help_text(text: str) -> str:
 
 
 @requires_bash
+@pytest.mark.parametrize("missing", [False, True], ids=["composed", "missing"])
+def test_all_variants_resolve_requested_template(
+    prereq_repo: Path, missing: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    template_name = "missing-template" if missing else "checklist-template"
+    expected = install_composition_stack(
+        prereq_repo, "checklist-template", "# Checklist\n"
+    )
+
+    results = [
+        _run(
+            _bash_cmd(prereq_repo, "--json", "--template", template_name),
+            prereq_repo,
+        ),
+        _run(
+            _py_cmd(prereq_repo, "--json", "--template", template_name),
+            prereq_repo,
+        ),
+    ]
+    if HAS_PWSH or _WINDOWS_POWERSHELL:
+        results.append(
+            _run(
+                _ps_cmd(prereq_repo, "-Json", "-Template", template_name),
+                prereq_repo,
+            )
+        )
+
+    expected_status = 1 if missing else 0
+    assert all(result.returncode == expected_status for result in results)
+    if missing:
+        assert all(result.stdout == "" for result in results)
+    else:
+        assert all(
+            _json_stdout(result)["TEMPLATE_CONTENT"] == expected
+            for result in results
+        )
+
+
+@requires_bash
+@pytest.mark.parametrize("missing", [False, True], ids=["composed", "missing"])
+def test_all_variants_validate_requested_template_in_text_mode(
+    prereq_repo: Path, missing: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    template_name = "missing-template" if missing else "checklist-template"
+    install_composition_stack(
+        prereq_repo, "checklist-template", "# Checklist\n"
+    )
+
+    results = [
+        _run(
+            _bash_cmd(prereq_repo, "--template", template_name),
+            prereq_repo,
+        ),
+        _run(
+            _py_cmd(prereq_repo, "--template", template_name),
+            prereq_repo,
+        ),
+    ]
+    if HAS_PWSH or _WINDOWS_POWERSHELL:
+        results.append(
+            _run(
+                _ps_cmd(prereq_repo, "-Template", template_name),
+                prereq_repo,
+            )
+        )
+
+    expected_status = 1 if missing else 0
+    assert all(result.returncode == expected_status for result in results)
+    if missing:
+        assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
 @pytest.mark.parametrize(
     "args",
     [
@@ -166,6 +248,78 @@ def test_python_json_output_matches_bash(prereq_repo: Path, args: tuple[str, ...
 
 
 @requires_bash
+def test_python_require_spec_matches_bash(prereq_repo: Path) -> None:
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "tasks.md").write_text("# tasks\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+
+    # spec.md is missing, and without the flag that stays the caller's problem
+    bash_without = _run(_bash_cmd(prereq_repo, "--json", "--require-tasks"), prereq_repo)
+    py_without = _run(_py_cmd(prereq_repo, "--json", "--require-tasks"), prereq_repo)
+    assert py_without.returncode == bash_without.returncode == 0
+
+    # with the flag both variants fail the same way and name the same command
+    bash_missing = _run(
+        _bash_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    py_missing = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert py_missing.returncode == bash_missing.returncode == 1
+    assert py_missing.stderr == bash_missing.stderr
+    assert "spec.md not found" in bash_missing.stderr
+
+    # and once the spec exists the flag is satisfied
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    bash_present = _run(
+        _bash_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    py_present = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert py_present.returncode == bash_present.returncode == 0
+    assert _json_stdout(py_present) == _json_stdout(bash_present)
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_powershell_require_spec_matches_python(prereq_repo: Path) -> None:
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "tasks.md").write_text("# tasks\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+
+    # spec.md is missing, and without the flag that stays the caller's problem
+    ps_without = _run(_ps_cmd(prereq_repo, "-Json", "-RequireTasks"), prereq_repo)
+    py_without = _run(_py_cmd(prereq_repo, "--json", "--require-tasks"), prereq_repo)
+    assert ps_without.returncode == py_without.returncode == 0
+
+    # with the flag both variants fail the same way and name the same file
+    ps_missing = _run(
+        _ps_cmd(prereq_repo, "-Json", "-RequireSpec", "-RequireTasks"), prereq_repo
+    )
+    py_missing = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert ps_missing.returncode == py_missing.returncode == 1
+    assert "spec.md not found" in ps_missing.stderr
+    assert "spec.md not found" in py_missing.stderr
+
+    # and once the spec exists the flag is satisfied and the payloads agree
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    ps_present = _run(
+        _ps_cmd(prereq_repo, "-Json", "-RequireSpec", "-RequireTasks"), prereq_repo
+    )
+    py_present = _run(
+        _py_cmd(prereq_repo, "--json", "--require-spec", "--require-tasks"), prereq_repo
+    )
+    assert ps_present.returncode == py_present.returncode == 0
+    assert _json_stdout(ps_present) == _json_stdout(py_present)
+
+
+@requires_bash
 def test_python_text_output_matches_bash(prereq_repo: Path) -> None:
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True)
@@ -179,6 +333,52 @@ def test_python_text_output_matches_bash(prereq_repo: Path) -> None:
     assert py.returncode == bash.returncode == 0
     assert py.stderr == bash.stderr == ""
     assert _normalize_status_text(py.stdout) == _normalize_status_text(bash.stdout)
+
+
+def test_python_text_output_survives_a_legacy_stdout_code_page(
+    prereq_repo: Path,
+) -> None:
+    """Text mode must not crash when stdout cannot encode the status glyphs.
+
+    On Windows sys.stdout falls back to the ANSI code page whenever it is not a
+    console — which is every time an agent or a workflow step captures the
+    output. U+2713 is unencodable in cp1252, so printing it raised
+    UnicodeEncodeError and truncated the report right after "AVAILABLE_DOCS:".
+    The ASCII fallback is the rendering these markers already have in-tree
+    (Test-FileExists in scripts/powershell/common.ps1, and
+    normalize_status_text here).
+    """
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    # research.md is present and the rest are not, so BOTH status markers are
+    # produced in the same cp1252 subprocess: U+2713 for the available document
+    # and U+2717 for the missing ones. Asserting only one of them would let a
+    # fallback that always returned "[FAIL]" pass.
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    (feat / "contracts").mkdir()  # present but empty -> reported missing
+    _write_feature_json(prereq_repo)
+
+    env = _clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = _run(_py_cmd(prereq_repo, "--include-tasks"), prereq_repo, env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    assert "AVAILABLE_DOCS:" in result.stdout
+    # Every per-document line must still be there, not truncated away by the
+    # encode error.
+    for doc in (
+        "research.md",
+        "data-model.md",
+        "contracts/",
+        "quickstart.md",
+        "tasks.md",
+    ):
+        assert doc in result.stdout, (doc, result.stdout)
+    # Both fallback markers, so neither branch of _status_marker can regress.
+    assert "[OK] research.md" in result.stdout, result.stdout
+    assert "[FAIL] quickstart.md" in result.stdout, result.stdout
 
 
 @requires_bash
@@ -436,3 +636,38 @@ class TestGetInvokeSeparatorTolerance:
             "integration_settings": {"droid": {"invoke_separator": "-"}},
         })
         assert common.get_invoke_separator(self._repo(tmp_path, body)) == "-"
+
+
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
+def test_powershell_text_output_lists_available_docs(prereq_repo: Path) -> None:
+    """Text mode must print a status line per document, like the twins.
+
+    `Test-FileExists` / `Test-DirHasFiles` report their line with `Write-Output`
+    and ALSO `return $true/$false`, both on the Success stream. The callers piped
+    the whole call to `| Out-Null` to discard the boolean, which discarded the
+    report line too — so `AVAILABLE_DOCS:` was emitted with nothing under it
+    while the bash and Python twins list every document.
+    """
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+
+    ps = _run(_ps_cmd(prereq_repo, "-IncludeTasks"), prereq_repo)
+
+    assert ps.returncode == 0, ps.stderr
+    assert "AVAILABLE_DOCS:" in ps.stdout
+    for doc in (
+        "research.md",
+        "data-model.md",
+        "contracts/",
+        "quickstart.md",
+        "tasks.md",
+    ):
+        assert doc in ps.stdout, (doc, ps.stdout)
+    # The existing file reports [OK], the missing ones [FAIL].
+    assert "[OK] research.md" in _normalize_status_text(ps.stdout), ps.stdout
+    assert "[FAIL] quickstart.md" in _normalize_status_text(ps.stdout), ps.stdout

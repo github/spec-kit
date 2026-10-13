@@ -4,7 +4,11 @@ Workflows are multi-step, resumable automation pipelines defined in YAML. They o
 
 ## How It Works
 
-A workflow definition declares a sequence of steps. The engine executes them in order, dispatching commands to AI integrations, running shell commands, evaluating conditions for branching, and pausing at gates for human review. State is persisted after each step, so workflows can be resumed after interruption.
+A workflow definition declares a sequence of steps. The engine executes them in
+order, dispatching commands to AI integrations, running shell commands,
+evaluating conditions for branching, and pausing at gates for human review.
+Persisted execution transitions let workflows resume after interruption without
+re-running completed work.
 
 ```yaml
 steps:
@@ -70,15 +74,25 @@ specify workflow run ./my-workflow.yml --input spec="Build a user authentication
 
 ### Multiple Inputs
 
+When a workflow declares more than one input, pass each with a separate
+`--input` flag. For example, a custom workflow that gates steps on a
+`scope` selector:
+
 ```bash
-specify workflow run speckit \
+specify workflow run ./my-workflow.yml \
   --input spec="Build a user authentication system with OAuth support" \
   --input scope="backend-only"
 ```
 
+The bundled `speckit` workflow only declares `spec` (and optional
+`integration`); it does not take a `scope` input.
+
 ## Step Types
 
-Workflows support 11 built-in step types:
+Workflows support 14 built-in step types, including `workflow` for calling an
+installed workflow with private inputs and declared outputs. See
+[workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
+for the scope and execution identity contracts.
 
 ### Command Steps (default)
 
@@ -92,6 +106,39 @@ Invoke an installed Spec Kit command by name via the integration CLI:
   integration: claude        # Optional: override workflow default
   model: "claude-sonnet-4-20250514"   # Optional: override model
 ```
+
+CLI integrations can expose per-step positional arguments and named runtime
+options. For example, Docker Agent accepts an agent reference plus validated
+`agent` and `safety` options. Use the command step's top-level `model` field for
+model selection:
+
+```yaml
+- id: specify-with-docker-agent
+  command: speckit.specify
+  integration: docker-agent
+  integration_args:
+    - "{{ inputs.agent_config }}"
+  integration_options:
+    agent: root
+    safety: balanced
+  model: "openai/gpt-5"
+  input:
+    args: "{{ inputs.spec }}"
+```
+
+`integration_args` must be an ordered list of strings. Expressions are resolved
+one element at a time. `integration_options` must be a mapping with string keys;
+its values are likewise expression-resolved and validated by the selected
+integration. Non-empty runtime configuration is rejected when an integration
+does not support it. Resolved values are stored in workflow run state for audit
+and recovery. On resume, the complete dispatch configuration (`integration`,
+`model`, `integration_args`, and `integration_options`) is re-resolved from the
+current workflow inputs; without updated inputs this reproduces the prior values.
+
+When Docker Agent `integration_args` supplies an agent reference for a command
+step, it takes precedence over `SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS`;
+the entire legacy environment value is ignored for that step. Without a per-step
+agent reference, the legacy environment behavior is unchanged.
 
 ### Prompt Steps
 
@@ -132,6 +179,14 @@ killed and the step fails; it must be a positive number and defaults to
 `300` (five minutes) when omitted. Raise it for long-running gates such as
 full builds, linter aggregators, or integration-test targets.
 
+### GitHub Steps
+
+The built-in `github` step adds an explicitly configured issue or pull-request
+label when a workflow uses `type: github`. It does not install or invoke the
+opt-in GitHub agent-command extension. See the
+[GitHub step reference](../docs/reference/workflows.md#github-step) for
+configuration, credentials, and retry behavior.
+
 ### Init Steps
 
 Bootstrap a project the same way `specify init` does — scaffolding
@@ -145,10 +200,28 @@ and resolves the integration from the step config or the workflow default:
   here: true                 # or: project: my-project
   integration: copilot       # Optional: defaults to workflow integration
   integration_options: "--skills"  # Optional: extra options for the integration
-  script: sh                 # Optional: sh or ps
+  script: sh                 # Optional: sh, ps, or py
   force: true                # Optional: required when target directory already exists
   preset: healthcare-compliance   # Optional preset ID
 ```
+
+### Workflow Slots
+
+Declare a named workflow slot that downstream projects can fill with a
+workflow overlay. The slot is skipped when unfilled; its `id` is the overlay
+anchor and `name` is a required human-readable label:
+
+```yaml
+- id: post-implement
+  type: slot
+  name: "Post-implementation checks"
+```
+
+Use an overlay `replace` edit anchored on `post-implement` to fill the slot.
+Keep the same `id` when downstream expressions or fan-in steps reference it,
+and preserve any output keys they consume. Slot steps are invalid inside
+`fan-out.step` templates because those runtime-multiplied templates cannot be
+targeted by overlays.
 
 ### Gate Steps
 
@@ -255,6 +328,11 @@ Aggregate results from fan-out steps:
   output: {}
 ```
 
+`wait_for` references declared step IDs. For a fan-out, use the fan-out step's
+own `id` (`parallel-impl` above); its ordered item results are available as
+`steps.<fan-out-id>.output.results`. Generated item aliases such as
+`fan:template:0` are reporting-only and are not valid `wait_for` targets.
+
 ## Error Handling
 
 By default, any step that returns `StepResult(status=StepStatus.FAILED, ...)`
@@ -348,9 +426,26 @@ condition: "{{ steps.run-tests.output.exit_code != 0 }}"
 
 # Filters
 message: "{{ status | default('pending') }}"
+ids: "{{ rows | split(',') | length }}"
 ```
 
-Supported filters: `default`, `join`, `contains`, `map`, `from_json`.
+Supported filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+The new filters validate their input types and raise a `ValueError` naming
+the problem instead of coercing — so `upper`/`lower` take strings only, `split`
+takes a string value and a non-empty string separator, `length` accepts
+lists and strings but rejects mappings, and `to_json` rejects what it cannot
+serialize: non-finite floats (`NaN`, `Infinity`, `-Infinity`), which would
+otherwise serialize to tokens that are not valid JSON, and mapping keys that
+are not strings, which JSON objects cannot carry. A filter used with the wrong
+number of
+arguments
+(`| upper('x')`, `| split(',', 1)`, bare `| split`) is reported as a known
+filter misused, which is
+distinct from an entirely unknown filter name. The older filters are more
+permissive and unchanged: `join` stringifies unsupported values, and
+`map`/`contains` return fallbacks rather than raising. See
+[ARCHITECTURE.md](ARCHITECTURE.md#expression-evaluation) for the full table.
 
 ### Runtime Context
 
@@ -447,9 +542,11 @@ specify workflow catalog list
 # Add a custom catalog
 specify workflow catalog add https://example.com/catalog.json --name my-org
 
-# Remove a catalog
+# Remove a project catalog by its index in the priority-ordered list
 specify workflow catalog remove <index>
 ```
+
+Environment-provided sources cannot be removed this way; unset `SPECKIT_WORKFLOW_CATALOG_URL` to manage project sources.
 
 ## Creating a Workflow
 
@@ -474,13 +571,17 @@ specify workflow catalog remove <index>
 
 ## Repository Layout
 
-```
+```text
 workflows/
 ├── ARCHITECTURE.md                         # Internal architecture documentation
 ├── PUBLISHING.md                           # Guide for submitting workflows to the catalog
 ├── README.md                               # This file
 ├── catalog.json                            # Official workflow catalog
 ├── catalog.community.json                  # Community workflow catalog
-└── speckit/                                # Built-in SDD cycle workflow
+├── speckit/                                # Built-in SDD cycle workflow
+│   └── workflow.yml
+├── bugfix/                                 # Built-in bug-fixing pipeline
+│   └── workflow.yml
+└── assess/                                 # Built-in idea-assessment pipeline
     └── workflow.yml
 ```

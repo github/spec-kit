@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-from specify_cli.bundler.models.catalog import (
+from specify_cli.bundles.catalogs import (
     BUILTIN_DEFAULT_STACK,
     CatalogSource,
     InstallPolicy,
@@ -21,7 +21,7 @@ from specify_cli.bundler.models.catalog import (
 )
 from specify_cli.bundler import BundlerError
 import pytest
-from tests.bundler_helpers import catalog_entry_dict, catalog_payload, make_project
+from tests.specify_cli.bundles.helpers import catalog_entry_dict, catalog_payload, make_project
 
 
 def test_non_integer_source_priority_raises_actionable_error():
@@ -229,8 +229,21 @@ def test_wheel_packages_community_bundle_catalog():
     )
 
 
+def test_wheel_packages_firstparty_bundle_catalog():
+    repo_root = Path(__file__).parents[2]
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject = tomllib.load(pyproject_file)
+
+    force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    assert force_include["bundles/catalog.json"] == (
+        "specify_cli/core_pack/bundles/catalog.json"
+    )
+
+
 def test_catalog_entry_rejects_string_tags():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["tags"] = "not-a-list"
@@ -238,13 +251,88 @@ def test_catalog_entry_rejects_string_tags():
         CatalogEntry.from_dict(data)
 
 
+def test_catalog_entry_rejects_non_string_tag_members():
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["tags"] = ["valid", 1]
+    with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
+        CatalogEntry.from_dict(data)
+
+
 def test_catalog_entry_rejects_non_boolean_verified():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["verified"] = "false"  # truthy string must not mark the entry verified
     with pytest.raises(BundlerError, match="'verified' must be a boolean"):
         CatalogEntry.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "name",
+        "version",
+        "role",
+        "description",
+        "author",
+        "license",
+        "download_url",
+    ],
+)
+def test_catalog_entry_explicit_null_field_reads_as_empty(field: str):
+    """An explicitly null field must read as "", not the literal "None".
+
+    `str(data.get(key, ""))` only defaults for a *missing* key. A key present
+    but null — how YAML spells an empty field (`author:` with nothing after
+    it) — yields `None`, and `str(None)` is the truthy string `"None"`. The
+    same constructor already guards `sha256` and `repository` against exactly
+    this.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data[field] = None
+
+    entry = CatalogEntry.from_dict(data)
+
+    assert getattr(entry, field) == ""
+
+
+def test_catalog_source_rejects_an_explicitly_null_id():
+    """`id: null` must be refused, not registered as a source named "None".
+
+    The `if not source_id` guard was defeated by the truthy literal, so the
+    source was accepted and carried the name `"None"` into the stack.
+    """
+    from specify_cli.bundles.catalogs import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        CatalogSource.from_dict(
+            {
+                "id": None,
+                "url": "https://example.test/catalog.json",
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
+
+
+def test_catalog_source_rejects_an_explicitly_null_url():
+    from specify_cli.bundles.catalogs import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="missing its 'url'"):
+        CatalogSource.from_dict(
+            {
+                "id": "demo",
+                "url": None,
+                "priority": 5,
+                "install_policy": "install-allowed",
+            },
+            Scope.PROJECT,
+        )
 
 
 def test_catalog_entry_preserves_sha256_through_provenance():
@@ -283,7 +371,7 @@ def test_load_payload_rejects_missing_entry_id():
 
 
 def test_catalog_entry_rejects_non_mapping_requires():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["requires"] = "speckit>=0.1"
@@ -292,12 +380,29 @@ def test_catalog_entry_rejects_non_mapping_requires():
 
 
 def test_catalog_entry_rejects_non_mapping_provides():
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data["provides"] = "extensions"
     with pytest.raises(BundlerError, match="'provides' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+def test_load_payload_rejects_unsupported_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "2.0"
+
+    with pytest.raises(BundlerError, match="Unsupported catalog schema version"):
+        load_catalog_payload(payload)
+
+
+def test_load_payload_accepts_matching_or_absent_schema_version():
+    payload = catalog_payload({"demo": catalog_entry_dict("demo")})
+    payload["schema_version"] = "1.5"
+    assert "demo" in load_catalog_payload(payload)
+
+    payload.pop("schema_version")
+    assert "demo" in load_catalog_payload(payload)
 
 
 @pytest.mark.parametrize("field", ["requires", "provides"])
@@ -306,9 +411,43 @@ def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
     # `or {}` coerced a FALSY non-mapping ([], '', 0, False) to {} before the
     # isinstance guard, silently accepting a corrupt entry; only absent/None
     # means "not present". Mirrors the manifest requires/provides guard.
-    from specify_cli.bundler.models.catalog import CatalogEntry
+    from specify_cli.bundles.catalogs import CatalogEntry
 
     data = catalog_entry_dict("demo")
     data[field] = bad
     with pytest.raises(BundlerError, match=f"'{field}' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+def test_catalog_entry_explicit_null_id_reports_missing_id():
+    """`id: null` must surface as the missing-id error, not an id mismatch.
+
+    `entry_id` was still computed with `str(data.get("id", ""))`, so an explicit
+    null became the literal "None". That is truthy, so `load_catalog_payload`
+    compared it against the mapping key and reported
+    "id mismatch: key 'demo' != entry id 'None'" instead of the accurate
+    missing-id error.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["id"] = None
+    assert CatalogEntry.from_dict(data).id == ""
+
+    with pytest.raises(BundlerError, match="missing its 'id' field"):
+        load_catalog_payload(catalog_payload({"demo": data}))
+
+
+def test_catalog_entry_explicit_null_requires_speckit_version_reads_as_empty():
+    """The nested `requires.speckit_version` branch is covered too.
+
+    It was switched to `_text` alongside the top-level fields, but only the
+    top-level attributes were exercised — so this branch could regress while
+    the suite still passed.
+    """
+    from specify_cli.bundles.catalogs import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["requires"] = {"speckit_version": None}
+
+    assert CatalogEntry.from_dict(data).requires_speckit_version == ""

@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: "speckit"
   name: "Full SDD Cycle"
-  version: "1.0.0"
+  version: "1.0.1"
   author: "GitHub"
   description: "Runs specify → plan → tasks → implement with review gates"
 
@@ -35,10 +35,6 @@ inputs:
     type: string
     default: "auto"
     prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
-  scope:
-    type: string
-    default: "full"
-    enum: ["full", "backend-only", "frontend-only"]
 
 steps:
   - id: specify
