@@ -314,3 +314,97 @@ def test_resume_rejects_symlinked_workflow_snapshot(project_dir, tmp_path):
         WorkflowEngine(project_dir).resume("run-1")
 
     assert target.read_text(encoding="utf-8").startswith("workflow:")
+
+
+@pytest.mark.parametrize("ancestor", [".specify", "workflows"])
+@pytest.mark.parametrize("operation", ["load", "save", "list"])
+def test_ancestor_replacement_never_accesses_external_storage(
+    project_dir, tmp_path, monkeypatch, ancestor, operation
+):
+    from specify_cli.workflows._execution import CheckpointError
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    if not RunState._supports_descriptor_access():
+        pytest.skip("directory descriptors are unavailable")
+
+    state = _state(project_dir)
+    state.save()
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    ancestor_path = (
+        project_dir / ".specify" if ancestor == ".specify" else runs_root.parent
+    )
+    outside = tmp_path / "outside"
+    outside_run = (
+        outside / "workflows" / "runs" / "run-1"
+        if ancestor == ".specify"
+        else outside / "runs" / "run-1"
+    )
+    outside_run.mkdir(parents=True)
+    external_state = outside_run / "state.json"
+    external_state.write_text(
+        json.dumps({
+            "run_id": "run-1",
+            "workflow_id": "external",
+            "status": "paused",
+            "inputs": {},
+        }),
+        encoding="utf-8",
+    )
+    original_content = external_state.read_bytes()
+    original_open = os.open
+    original_artifact_open = RunState._open_artifact
+    artifact_attempts = []
+    swapped = False
+
+    def replace_ancestor(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if not swapped and path in (project_dir, runs_root):
+            swapped = True
+            ancestor_path.rename(tmp_path / "detached")
+            ancestor_path.symlink_to(outside, target_is_directory=True)
+        return original_open(path, flags, *args, **kwargs)
+
+    def track_artifact_open(*args, **kwargs):
+        artifact_attempts.append(args[0])
+        return original_artifact_open(*args, **kwargs)
+
+    monkeypatch.setattr(
+        RunState, "_supports_descriptor_access", staticmethod(lambda: True)
+    )
+    monkeypatch.setattr(os, "open", replace_ancestor)
+    monkeypatch.setattr(
+        RunState, "_open_artifact", staticmethod(track_artifact_open)
+    )
+    expected = (
+        (CheckpointError, ValueError, OSError)
+        if operation == "save"
+        else (ValueError, OSError)
+    )
+    with pytest.raises(expected):
+        if operation == "load":
+            RunState.load("run-1", project_dir)
+        elif operation == "save":
+            state.save()
+        else:
+            WorkflowEngine(project_dir).list_runs()
+
+    assert swapped
+    assert not artifact_attempts
+    assert external_state.read_bytes() == original_content
+    assert sorted(path.name for path in outside_run.iterdir()) == ["state.json"]
+
+
+@pytest.mark.parametrize("portable", [False, True])
+def test_list_rejects_dangling_runs_root(project_dir, tmp_path, monkeypatch, portable):
+    from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+    if portable:
+        monkeypatch.setattr(
+            RunState, "_supports_descriptor_access", staticmethod(lambda: False)
+        )
+    runs_root = project_dir / ".specify" / "workflows" / "runs"
+    runs_root.parent.mkdir(parents=True, exist_ok=True)
+    runs_root.symlink_to(tmp_path / "missing", target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlinked"):
+        WorkflowEngine(project_dir).list_runs()
