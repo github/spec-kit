@@ -402,9 +402,6 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 f"Preset '{manifest.id}' is already installed. "
                 f"Use 'specify preset remove {manifest.id}' first."
             )
-        self._ensure_hook_dispatchers_for_core_commands([
-            t["name"] for t in manifest.templates if t.get("type") == "command"
-        ])
         before_file_change(dest_dir, removal=True)
         try:
             if installed:
@@ -438,6 +435,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}
         try:
+            self._ensure_hook_dispatchers_for_core_commands([
+                t["name"] for t in manifest.templates if t.get("type") == "command"
+            ], effective=True)
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.

@@ -18,7 +18,7 @@ from .._init_options import (
 from ..extensions import ExtensionRegistry
 from ..integrations.base import IntegrationBase
 from ..integrations._file_changes import write_text as _write_text
-from ._manifest import PresetError, PresetManifest
+from ._manifest import PresetError, PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
 
 
@@ -94,18 +94,38 @@ def _substitute_core_template(
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
 
-    def _ensure_hook_dispatchers_for_core_commands(self, command_names: List[str]) -> None:
+    def _ensure_hook_dispatchers_for_core_commands(
+        self, command_names: List[str], *, effective: bool = False
+    ) -> None:
         """Provision dispatchers before a preset can render a core command."""
         if not command_names:
             return
         registrar = self._command_registrar()
+        resolver = PresetResolver(self.project_root) if effective else None
         options = load_init_options(self.project_root)
         requested = options.get("script") or ("ps" if os.name == "nt" else "sh")
         variants = set()
         for name in command_names:
-            body, frontmatter = _substitute_core_template(
-                "{CORE_TEMPLATE}", name, self.project_root, registrar
-            )
+            if resolver is not None:
+                try:
+                    content = resolver.resolve_content(name, "command")
+                except PresetValidationError:
+                    # Registration reports invalid composition through its existing warning path.
+                    continue
+                if content is None:
+                    continue
+                frontmatter, body = registrar.parse_frontmatter(content)
+                if frontmatter.get("strategy") == "wrap" and "{CORE_TEMPLATE}" in body:
+                    body, core_frontmatter = _substitute_core_template(
+                        body, name, self.project_root, registrar
+                    )
+                    for key in ("scripts", "agent_scripts"):
+                        if key not in frontmatter and key in core_frontmatter:
+                            frontmatter[key] = core_frontmatter[key]
+            else:
+                body, frontmatter = _substitute_core_template(
+                    "{CORE_TEMPLATE}", name, self.project_root, registrar
+                )
             if "{PRE_HOOK_SCRIPT}" not in body and "{POST_HOOK_SCRIPT}" not in body:
                 continue
             scripts = frontmatter.get("scripts")

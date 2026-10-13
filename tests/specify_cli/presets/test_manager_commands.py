@@ -3079,6 +3079,58 @@ def _make_wrap_preset_dir(
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
 
+    def test_replace_install_ignores_discarded_core_hook_refs(self, project_dir, temp_dir):
+        core = project_dir / ".specify/templates/commands"
+        core.mkdir(parents=True, exist_ok=True)
+        (core / "specify.md").write_text(
+            "---\nscripts:\n  sh: .specify/scripts/bash/check-prerequisites.sh\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        preset = _make_wrap_preset_dir(
+            temp_dir, "replace-no-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Independent replacement\nstrategy: replace\n"
+            "---\n\nReplacement without hook references.\n", encoding="utf-8"
+        )
+        scripts = project_dir / ".specify/scripts/bash"
+        scripts.mkdir(parents=True)
+        outside = temp_dir / "missing-hook.sh"
+        try:
+            (scripts / "pre-hooks.sh").symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"file symlinks unavailable: {exc}")
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset, "0.1.5")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        assert manager.registry.is_installed("replace-no-hooks")
+        assert "Replacement without hook references." in command.read_text(encoding="utf-8")
+        assert ".specify/scripts/bash/pre-hooks.sh" not in command.read_text(encoding="utf-8")
+        assert (scripts / "pre-hooks.sh").is_symlink()
+        assert not (scripts / "post-hooks.sh").exists()
+
+    def test_replace_install_provisions_its_own_hook_refs(self, project_dir, temp_dir):
+        (project_dir / ".gemini/commands").mkdir(parents=True)
+        preset = _make_wrap_preset_dir(
+            temp_dir, "replace-with-hooks", "speckit.specify", "before", "after"
+        )
+        (preset / "commands/speckit.specify.md").write_text(
+            "---\ndescription: Hook-bearing replacement\nstrategy: replace\n"
+            "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
+        )
+        dispatchers = project_dir / ".specify/scripts/bash"
+        assert not (dispatchers / "pre-hooks.sh").exists()
+
+        PresetManager(project_dir).install_from_directory(preset, "0.1.5")
+
+        command = project_dir / ".gemini/commands/speckit.specify.toml"
+        assert ".specify/scripts/bash/pre-hooks.sh" in command.read_text(encoding="utf-8")
+        assert (dispatchers / "pre-hooks.sh").is_file()
+        assert (dispatchers / "post-hooks.sh").is_file()
+
     @pytest.mark.parametrize("script,variant,suffix,agent", [
         ("sh", "bash", ".sh", "gemini"), ("ps", "powershell", ".ps1", "gemini"),
         ("py", "python", ".py", "gemini"), ("py", "python", ".py", "claude"),
