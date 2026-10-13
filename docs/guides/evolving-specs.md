@@ -2,35 +2,61 @@
 
 If the repository has not been initialized with Spec Kit yet, start with
 [Adopting Spec Kit in an Existing Project](existing-projects.md). This page
-covers how to maintain artifacts after adoption.
+covers how to maintain feature artifacts after delivery and deliver subsequent
+changes.
 
 Existing projects need two separate maintenance loops:
 
 - **Spec Kit project-file updates** refresh managed commands, scripts,
   templates, and shared memory files.
-- **Feature artifact evolution** keeps repository-specific `specs/` artifacts
-  aligned with the code and product behavior you intend to ship.
+- **Feature artifact evolution** maintains repository-specific `specs/`
+  artifacts according to the team's post-delivery persistence convention.
 
 Use the [upgrade workflow](../upgrade.md) when you need newer Spec Kit project
-files. Use one of the artifact persistence models below when requirements or
-implementation insights change an existing project.
+files. Use one of the artifact persistence models below to decide how completed
+feature artifacts are maintained when requirements or implementation insights
+change an existing project. None is required or the default.
 
 For the conceptual model definitions, see
 [Spec Persistence Models](../concepts/spec-persistence.md).
 
+## Shared Feature Delivery Loop
+
+All three persistence models use the same delivery/completeness process:
+specify -> plan -> tasks -> implement -> converge. Repeat implementation and
+convergence until the agreed feature is complete.
+
+For a new feature or a later change requiring implementation:
+
+1. Make the intended contract explicit in `spec.md`. Use `/speckit.specify` to
+   create a new feature directory under `specs/`, or revise an existing spec
+   according to your team's persistence convention.
+2. Run `/speckit.plan` or revise `plan.md` to define the implementation approach.
+3. Run `/speckit.tasks` or revise `tasks.md` to derive the work breakdown.
+   Run `/speckit.analyze` before implementation to catch cross-artifact gaps.
+4. Run `/speckit.implement` and review the resulting code and artifact diffs.
+5. Run `/speckit.converge` to assess implementation against the spec, plan, and
+   tasks, governed by the constitution. If it appends tasks for remaining gaps,
+   repeat `/speckit.implement` and `/speckit.converge` until the agreed feature
+   is complete.
+
+Converge is append-only: its only possible write is adding tasks to `tasks.md`.
+It does not choose a persistence strategy or rewrite the artifacts to accept
+code as a replacement for documented intent.
+
+Discoveries may arise during delivery under any model. If they lead to an
+agreed change of intent, make the revised contract explicit in the artifacts
+and deliver against it. The maintenance choices below apply after delivery;
+they do not replace this loop.
+
 ## Flow-Forward Spec
 
-Use flow-forward when each feature directory should remain a historical record.
+Use flow-forward when each completed feature directory should remain a
+historical record.
 
-When you add another feature or make a substantial follow-up change, create a
-new feature spec through your installed `/speckit.specify` command and continue
-through the standard flow:
-
-1. Run `/speckit.specify` to create a new feature directory under `specs/`.
-2. Run `/speckit.plan` to define the implementation approach.
-3. Run `/speckit.tasks` to derive the work breakdown.
-4. Run `/speckit.implement` and review the resulting code and artifact diffs.
-5. Run `/speckit.converge` to verify completeness and generate tasks for remaining gaps. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
+After delivery, retain the completed artifacts without changing them. For
+another feature or a follow-up change requiring implementation, create a new
+feature directory and use the shared delivery loop above.
 
 The previous feature directory remains intact for audit, comparison, or
 explaining how the project reached its current state. Use clear feature names or
@@ -41,9 +67,9 @@ cross-links when a new directory supersedes or extends earlier work.
 Use living spec when `spec.md` is the contract and `plan.md` and `tasks.md` are
 derived from it.
 
-When intended behavior changes, revise the existing `spec.md` first. Then
-regenerate or manually revise downstream artifacts so they match the updated
-spec:
+After delivery, maintain `spec.md` as the contract. When intended behavior
+changes, revise the existing `spec.md` first. Then regenerate or manually revise
+downstream artifacts so they match the updated spec:
 
 1. Start from a clean working tree or a dedicated branch so every generated
    change is reviewable.
@@ -52,10 +78,11 @@ spec:
    the revised spec.
 4. Rerun `/speckit.tasks` or revise `tasks.md` so implementation work matches
    the revised plan.
-5. Run `/speckit.analyze` before implementation resumes to catch gaps between
-   the spec, plan, and tasks.
-6. Run `/speckit.implement`, then review the code and artifact diffs together.
-7. Run `/speckit.converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
+5. Run `/speckit.analyze` to catch gaps between the spec, plan, and tasks.
+
+These steps maintain the artifact set; they do not deliver changed behavior.
+If the revised contract requires implementation, use the shared delivery loop
+above against those explicit intended artifacts.
 
 Preserve important implementation rationale before replacing derived artifacts.
 If a plan or task list contains decisions that still matter, carry them forward
@@ -63,12 +90,13 @@ explicitly.
 
 ## Flow-Back Spec
 
-Use flow-back when implementation discoveries are allowed to reshape the
-artifact set.
+Use flow-back when accepted discoveries inform maintenance across the artifact
+set after delivery.
 
-In this model, the first useful edit can happen wherever the insight lands:
-`spec.md`, `plan.md`, `tasks.md`, or the implementation. After the change, bring
-the artifact set back into alignment:
+A discovery may have originated in `spec.md`, `plan.md`, `tasks.md`, or the
+implementation, including during delivery. For post-delivery maintenance,
+the team decides which discoveries to accept and brings the artifacts into
+alignment with that agreed direction:
 
 1. Capture the discovery in the artifact closest to the work.
 2. Decide whether it changes intended behavior, implementation strategy, task
@@ -76,8 +104,12 @@ the artifact set back into alignment:
 3. Update any other artifacts that now disagree with the accepted direction.
 4. Run `/speckit.analyze` to check for gaps across `spec.md`, `plan.md`, and
    `tasks.md`.
-5. Continue implementation only after the artifact set describes the behavior
-   and approach you want future contributors to trust.
+
+The implementation provides evidence for the team's decision; accepting code
+does not automatically make it the intended contract. Reconcile the artifacts
+manually, not through converge or a required core amendment command. If the
+agreed direction requires implementation, use the shared delivery loop above
+against explicit intended artifacts.
 
 Flow-back is flexible, but it requires discipline. Do not leave a lower-level
 change in `tasks.md` or code if `spec.md` still says something different and the

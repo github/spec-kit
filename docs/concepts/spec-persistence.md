@@ -1,11 +1,35 @@
 # Spec Persistence Models
 
 Spec Kit intentionally leaves teams in control of what happens to `spec.md`,
-`plan.md`, and `tasks.md` after requirements change. The toolkit gives you a
+`plan.md`, and `tasks.md` after a feature is delivered. The toolkit gives you a
 repeatable workflow, but it does not force one artifact maintenance strategy.
 
 This page names three common models so teams can make that choice explicit.
 None is the default, and none is required by Spec Kit.
+
+## Shared Delivery, Separate Persistence
+
+All three models use the same feature delivery process:
+specify -> plan -> tasks -> implement -> converge. Repeat implement and
+converge until the agreed feature is complete.
+
+Converge assesses the implementation against the feature's spec, plan, and
+tasks, governed by the constitution. It is append-only: its only possible write
+is adding remaining work to `tasks.md`. It does not select a persistence model,
+rewrite intent to match code, or treat approval of code as agreement with
+documented intent.
+
+Persistence is the team's choice of how to maintain artifacts **after
+delivery**, not an alternative way to deliver or determine completeness.
+Discoveries can occur during implementation, but their timing does not define
+the persistence model. If the team agrees to change the intended contract,
+make that intent explicit in the artifacts and deliver against it.
+
+A later change requiring implementation still goes through the shared delivery
+process and convergence against its explicit intended artifacts, whether those
+artifacts are new or revised. See
+[Evolving Specs in Existing Projects](../guides/evolving-specs.md) for practical
+guidance.
 
 ## Two Separate Questions
 
@@ -21,17 +45,24 @@ frames that lifecycle in three levels:
   regenerate implementation artifacts from it.
 
 Spec Kit also exposes a second question: what happens to the artifact set when
-requirements change? The models below describe that mutation strategy.
+requirements change after delivery? The models below describe that maintenance
+strategy.
 
 ## Flow-Back Spec
 
 Use flow-back when `spec.md`, `plan.md`, `tasks.md`, and the implementation are
 all allowed to inform each other.
 
-In this model, edits can begin in any artifact. A developer might update
-`tasks.md` during implementation, revise `plan.md` after a technical discovery,
-or adjust `spec.md` after a product clarification. The team then reconciles the
-artifact set manually so the final project history still makes sense.
+After delivery, accepted discoveries can inform maintenance edits to any
+artifact. The team decides what those discoveries mean for intended behavior,
+technical approach, or task breakdown, then manually reconciles `spec.md`,
+`plan.md`, and `tasks.md` with that agreed direction. The implementation is
+evidence for that discussion, not a replacement source of intent.
+
+This is a team-owned maintenance convention, not a requirement for a new core
+amendment command or an artifact-rewriting role for converge. If reconciliation
+identifies implementation work, deliver that change through the shared process
+against the explicit intended artifacts.
 
 Flow-back works well when:
 
@@ -68,10 +99,10 @@ that make the lineage easy to follow.
 Use living spec when `spec.md` is the contract and the other artifacts are
 derived from it.
 
-In this model, teams update `spec.md` first and then regenerate or revise
-`plan.md` and `tasks.md` from that source. The plan and task list are still
-valuable, but they are treated as disposable derivations rather than permanent
-sources of truth.
+After delivery, teams maintain `spec.md` as the contract, updating it first when
+intended behavior changes, then regenerating or revising `plan.md` and
+`tasks.md` from that source. The plan and task list are still valuable, but they
+are treated as disposable derivations rather than permanent sources of truth.
 
 Living spec works well when:
 
@@ -89,9 +120,9 @@ The model is a team convention, not a CLI setting. A project can even use
 different models in different areas, as long as contributors know which one
 applies.
 
-| Model | Mutation rule | Best fit | Watch out for |
+| Model | Post-delivery maintenance rule | Best fit | Watch out for |
 |---|---|---|---|
-| Flow-back spec | Edit any artifact, then reconcile | Fast iteration and close collaboration | Silent drift between artifacts |
+| Flow-back spec | Reflect accepted discoveries in any artifact, then reconcile | Fast iteration and close collaboration | Silent drift between artifacts |
 | Flow-forward spec | Create a new feature directory for new requirements | Audit trails and historical clarity | Duplicate or fragmented context |
 | Living spec | Edit `spec.md`; regenerate derived artifacts | Spec as contract | Lost rationale in regenerated files |
 
