@@ -669,15 +669,15 @@ def test_checkpoint_failure_leaves_running_run_not_resumable(
     original = RunState._atomic_write_json
     failed = False
 
-    def write(path, data):
+    def write(path, data, *, dir_fd=None):
         nonlocal failed
         record = data.get("step_results", {}).get("work")
         if path.name == "state.json" and record and not failed:
             failed = True
             if failure_after_replace:
-                original(path, data)
+                original(path, data, dir_fd=dir_fd)
             raise OSError("checkpoint failure")
-        original(path, data)
+        original(path, data, dir_fd=dir_fd)
 
     monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
     with pytest.raises(CheckpointError, match="checkpoint failure"):
@@ -702,11 +702,11 @@ def _interrupt_state_write(monkeypatch, when):
     original = RunState._atomic_write_json
     fired = []
 
-    def write(path, data):
+    def write(path, data, *, dir_fd=None):
         if path.name == "state.json" and not fired and when(data):
             fired.append(path)
             raise KeyboardInterrupt
-        original(path, data)
+        original(path, data, dir_fd=dir_fd)
 
     monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
     return fired
@@ -847,10 +847,10 @@ def test_checkpoint_failure_stops_concurrent_fan_out_logging(tmp_path, monkeypat
             assert second_failed.wait(5)
         return original_notify(self, operation, occurrence, **kwargs)
 
-    def write(path, data):
+    def write(path, data, *, dir_fd=None):
         if items.get(threading.current_thread()) == 2:
             raise OSError("disk full")
-        original_write(path, data)
+        original_write(path, data, dir_fd=dir_fd)
 
     monkeypatch.setitem(STEP_REGISTRY, "sync", Sync())
     monkeypatch.setattr(execution.Execution, "transition", transition)
@@ -3428,10 +3428,10 @@ def test_workflow_call_start_checkpoint_failure_logs_no_start(tmp_path, monkeypa
     install(tmp_path, definition("child", [{"id": "inner", "type": "probe"}]))
     original = RunState._atomic_write_json
 
-    def write(path, data):
+    def write(path, data, *, dir_fd=None):
         if path.name == "state.json" and data.get("current_step_id") == "call":
             raise OSError("checkpoint failure")
-        original(path, data)
+        original(path, data, dir_fd=dir_fd)
 
     monkeypatch.setattr(RunState, "_atomic_write_json", staticmethod(write))
     callbacks = []
