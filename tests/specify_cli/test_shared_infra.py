@@ -590,6 +590,67 @@ def test_stale_plan_rechecks_managed_hash_after_shared_writes(shared_project):
     assert relative in IntegrationManifest.load("speckit", project, files=files).files
 
 
+@pytest.mark.parametrize("suffix", ["D:outside", "D:", "nested/D:outside", "D:/outside", r"D:\outside"])
+def test_stale_windows_drive_components_are_skipped_before_access(
+    shared_project, tmp_path, monkeypatch, suffix,
+):
+    from pathlib import Path, PureWindowsPath
+
+    from specify_cli import shared_infra
+
+    project, core = shared_project
+    files = FileHelper(project)
+    install(project, core, files=files)
+    victim = tmp_path / "outside"
+    victim.write_bytes(b"outside user content\n")
+    relative = f".specify/scripts/bash/{suffix}"
+    manifest_path = project / ".specify/integrations/speckit.manifest.json"
+    data = json.loads(manifest_path.read_text())
+    data["files"][relative] = hashlib.sha256(victim.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(data))
+    parsed = PureWindowsPath(relative)
+    assert not parsed.anchor and ".." not in parsed.parts
+    original_stat = FileHelper.stat
+
+    def windows_manifest_path(value):
+        if isinstance(value, str) and not Path(value).is_absolute():
+            return PureWindowsPath(value)
+        return Path(value)
+
+    def checked_stat(helper, path, **kwargs):
+        checked = Path(path)
+        if checked.is_absolute():
+            checked = checked.relative_to(project)
+        assert "D:" not in str(checked), "Corrupt drive component reached filesystem access"
+        return original_stat(helper, path, **kwargs)
+
+    monkeypatch.setattr(shared_infra, "Path", windows_manifest_path)
+    monkeypatch.setattr(FileHelper, "stat", checked_stat)
+    install(project, core, files=files, refresh_managed=True)
+
+    assert victim.read_bytes() == b"outside user content\n"
+    assert relative in json.loads(manifest_path.read_text())["files"]
+    assert (project / ".specify/scripts/bash/common.sh").read_text() == "# bundled\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Colons are native POSIX filename characters")
+def test_posix_stale_drive_looking_filename_remains_a_native_filename(shared_project):
+    project, core = shared_project
+    files = FileHelper(project)
+    install(project, core, files=files)
+    relative = ".specify/scripts/bash/D:obsolete"
+    stale = project / relative
+    stale.write_text("managed stale\n")
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(relative)
+    manifest.save()
+
+    install(project, core, files=files)
+
+    assert not stale.exists()
+    assert relative not in IntegrationManifest.load("speckit", project, files=files).files
+
+
 @pytest.mark.parametrize("customized,recovered", [(False, False), (True, False), (False, True)])
 def test_stale_cleanup_through_allowed_parent_obeys_ownership(shared_project, customized, recovered):
     project, core = shared_project

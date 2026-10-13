@@ -671,7 +671,9 @@ def install_shared_infra(
             if rel in seen_rels or not rel.startswith(script_prefixes):
                 continue
             rel_path = Path(rel)
-            if rel_path.anchor or ".." in rel_path.parts:
+            if rel_path.anchor or any(
+                part == ".." or Path(part).anchor for part in rel_path.parts
+            ):
                 continue
             dst = project_path / rel_path
             files.stat(dst, follow_symlinks=False, missing_ok=True)
