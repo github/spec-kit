@@ -648,9 +648,17 @@ class RunState:
         """Return a run directory after enforcing the persisted-run boundary."""
         cls._validate_run_id(run_id)
         runs_root = project_root / ".specify" / "workflows" / "runs"
+        cls._validate_runs_path(project_root)
         if create:
-            runs_root.mkdir(parents=True, exist_ok=True)
-        cls._reject_symlink(runs_root, ".specify/workflows/runs")
+            with cls._open_runs_directory(project_root, create=True) as runs_fd:
+                if runs_fd is None:
+                    (runs_root / run_id).mkdir(exist_ok=True)
+                else:
+                    try:
+                        os.mkdir(run_id, dir_fd=runs_fd)
+                    except FileExistsError:
+                        # Existing entries are validated before artifact access.
+                        pass
 
         run_dir = runs_root / run_id
         if run_dir.is_symlink():
@@ -659,8 +667,6 @@ class RunState:
             )
         if run_dir.exists() and not run_dir.is_dir():
             raise OSError(f"Workflow run path is not a directory: {run_dir}")
-        if create:
-            run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
     @staticmethod
@@ -678,12 +684,53 @@ class RunState:
             and os.open in supports_dir_fd
             and os.rename in supports_dir_fd
             and os.unlink in supports_dir_fd
+            and os.mkdir in supports_dir_fd
+            and os.listdir in os.supports_fd
         )
+
+    @classmethod
+    def _validate_runs_path(cls, project_root: Path) -> None:
+        path = project_root
+        for name in (".specify", "workflows", "runs"):
+            path = path / name
+            cls._reject_symlink(path, f"workflow storage {name!r}")
+
+    @classmethod
+    @contextmanager
+    def _open_runs_directory(cls, project_root: Path, *, create=False):
+        """Walk storage ancestors relative to the trusted project directory."""
+        cls._validate_runs_path(project_root)
+        runs_path = project_root / ".specify" / "workflows" / "runs"
+        if not cls._supports_descriptor_access():
+            if create:
+                runs_path.mkdir(parents=True, exist_ok=True)
+            cls._validate_runs_path(project_root)
+            yield None
+            return
+
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        if create:
+            project_root.mkdir(parents=True, exist_ok=True)
+        fd = os.open(project_root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for name in (".specify", "workflows", "runs"):
+                if create:
+                    try:
+                        os.mkdir(name, dir_fd=fd)
+                    except FileExistsError:
+                        # An existing component must still pass the no-follow open.
+                        pass
+                child_fd = os.open(name, flags, dir_fd=fd)
+                os.close(fd)
+                fd = child_fd
+            yield fd
+        finally:
+            os.close(fd)
 
     @classmethod
     def _validate_fallback_path(cls, path: Path) -> None:
         """Recheck persisted-run components before path-based access."""
-        cls._reject_symlink(path.parent.parent, ".specify/workflows/runs")
+        cls._validate_runs_path(path.parents[4])
         cls._reject_symlink(path.parent, "workflow run")
         cls._reject_symlink(path, f"workflow run artifact {path.name!r}")
 
@@ -702,23 +749,17 @@ class RunState:
     @contextmanager
     def _open_run_directory(cls, project_root: Path, run_id: str, *, create=False):
         """Open a run directory without following a replacement symlink."""
-        run_path = cls._run_directory(project_root, run_id, create=create)
+        cls._run_directory(project_root, run_id, create=create)
         if not cls._supports_descriptor_access():
             yield None
             return
 
-        directory_flag = os.O_DIRECTORY
-        nofollow = os.O_NOFOLLOW
-        runs_path = run_path.parent
-        runs_fd = os.open(runs_path, os.O_RDONLY | directory_flag | nofollow)
-        try:
+        with cls._open_runs_directory(project_root) as runs_fd:
             run_fd = os.open(
                 run_id,
-                os.O_RDONLY | directory_flag | nofollow,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=runs_fd,
             )
-        finally:
-            os.close(runs_fd)
         try:
             yield run_fd
         finally:
@@ -1665,12 +1706,15 @@ class WorkflowEngine:
     def list_runs(self) -> list[dict[str, Any]]:
         """List all workflow runs in the project."""
         runs_dir = self.project_root / ".specify" / "workflows" / "runs"
-        if not runs_dir.exists():
+        try:
+            with RunState._open_runs_directory(self.project_root) as runs_fd:
+                names = sorted(os.listdir(runs_dir if runs_fd is None else runs_fd))
+        except FileNotFoundError:
             return []
-        RunState._reject_symlink(runs_dir, ".specify/workflows/runs")
 
         runs: list[dict[str, Any]] = []
-        for run_dir in sorted(runs_dir.iterdir()):
+        for name in names:
+            run_dir = runs_dir / name
             if run_dir.is_symlink():
                 raise ValueError(
                     f"Refusing to use symlinked workflow run path: {run_dir}"

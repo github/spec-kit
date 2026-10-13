@@ -287,6 +287,10 @@ Every run directory and persisted artifact below it must be a real filesystem
 object rather than a symlink. `RunState` enforces this policy before reading or
 writing `state.json`, `inputs.json`, `workflow.yml`, or `log.jsonl`; artifact
 opens also use no-follow flags and directory descriptors where supported.
+The descriptor-backed path opens the project root and walks `.specify`,
+`workflows`, and `runs` one component at a time with no-follow directory opens.
+Directory creation and run enumeration use those descriptors too, preventing
+an ancestor replacement from redirecting access outside the project.
 Other platforms recheck path components before access and use atomic replacement
 for state writes; that fallback rejects existing symlinks but cannot prevent
 concurrent path replacement.
