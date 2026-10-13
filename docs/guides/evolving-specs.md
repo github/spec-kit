@@ -44,11 +44,15 @@ Converge is append-only: its only possible write is adding tasks to `tasks.md`.
 It does not choose a persistence strategy or rewrite the artifacts to accept
 code as a replacement for documented intent.
 
-No core command reconciles differences among `spec.md`, `plan.md`, and
-`tasks.md`. `/speckit.analyze` reports inconsistencies without changing the
-artifacts. A team can reconcile them directly, or an extension can provide
-commands or hooks that do so during or after delivery according to that
-extension's documented behavior. Those actions do not become core behavior.
+Core has no dedicated command that automatically reconciles differences among
+`spec.md`, `plan.md`, and `tasks.md`. `/speckit.analyze` reports inconsistencies
+without changing the artifacts, while contributors can return to
+`/speckit.specify` or `/speckit.clarify`, `/speckit.plan`, and `/speckit.tasks`
+to revise or regenerate the artifacts those commands own. A team can coordinate
+broader reconciliation directly, or an extension can provide commands or hooks
+that do so during or after delivery according to that extension's documented
+behavior. Those actions do not change the responsibilities of the core
+commands.
 
 Discoveries may arise during delivery under any model. If they lead to an
 agreed change of intent, make the revised contract explicit in the artifacts
@@ -114,9 +118,11 @@ alignment with that agreed direction:
 
 The implementation provides evidence for the team's decision; accepting code
 does not automatically make it the intended contract. Reconcile the artifacts
-directly or through an extension, not through analyze, converge, or a required
-core amendment command. If the agreed direction requires implementation, use
-the shared delivery loop above against explicit intended artifacts.
+directly or through an extension, using the artifact-owning core commands where
+appropriate. Analyze and converge do not provide automatic all-artifact
+reconciliation, and no core amendment command is required. If the agreed
+direction requires implementation, use the shared delivery loop above against
+explicit intended artifacts.
 
 Flow-back is flexible, but it requires discipline. Do not leave a lower-level
 change in `tasks.md` or code if `spec.md` still says something different and the

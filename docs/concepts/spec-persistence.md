@@ -19,17 +19,18 @@ is adding remaining work to `tasks.md`. It does not select a persistence model,
 rewrite intent to match code, or treat approval of code as agreement with
 documented intent.
 
-The core workflow does not reconcile differences among `spec.md`, `plan.md`,
-and `tasks.md`. Analyze reports inconsistencies without editing artifacts, and
-converge only appends missing implementation work to `tasks.md`. Teams can
-reconcile artifacts themselves, and extensions can provide their own commands
-or hooks to do so during or after delivery. That behavior belongs to the team
-or extension; it does not change the responsibilities of the core commands.
+The core workflow has no dedicated command that automatically reconciles
+differences among `spec.md`, `plan.md`, and `tasks.md`. Analyze reports
+inconsistencies without editing artifacts, and converge only appends missing
+implementation work to `tasks.md`. Contributors can return to the core command
+that owns an artifact to revise or regenerate it, while teams and extensions can
+coordinate broader reconciliation during or after delivery. Extension behavior
+does not change the responsibilities of the core commands.
 
 Persistence is the team's choice of how to maintain artifacts **after
 delivery**, not an alternative way to deliver or determine completeness.
 Discoveries can occur during implementation, but their timing does not define
-the persistence model. Reconciliation can also occur before delivery without
+the persistence model. Reconciliation can also occur during delivery without
 becoming part of the core workflow or the persistence strategy. If the team
 agrees to change the intended contract, make that intent explicit in the
 artifacts and deliver against it.
