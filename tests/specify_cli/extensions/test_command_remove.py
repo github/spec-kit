@@ -96,6 +96,46 @@ def test_mutations_preserve_state_on_hook_cache_file_collision(
     assert cache.read_text(encoding="utf-8") == "collision"
 
 
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+def test_mutations_preserve_state_on_dangling_config_symlink(
+    tmp_path, extension_dir, command
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    cache = project / ".specify/hook-dispatch"
+    projection = {p.name: p.read_bytes() for p in cache.iterdir()}
+    config = HookExecutor(project).config_file
+    config.unlink()
+    target = tmp_path / "missing-extensions.yml"
+    try:
+        config.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"file symlinks unavailable: {exc}")
+    assert not config.exists()
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "symlinked .specify/extensions.yml" in result.output
+    assert config.is_symlink() and not target.exists()
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert {p.name: p.read_bytes() for p in cache.iterdir()} == projection
+
+
 class TestExtensionRemoveCLI:
     """CLI tests for `specify extension remove` confirmation prompt wording."""
 

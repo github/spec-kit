@@ -5854,10 +5854,10 @@ class HookExecutor:
                 raise ValueError("Refusing to use symlinked hook dispatch cache")
         except OSError as exc:
             raise ValueError(f"Cannot inspect hook dispatch cache: {exc}") from exc
-        if not self.config_file.exists():
-            return {"installed": [], "settings": {"auto_execute_hooks": True}, "hooks": {}}
         if self.config_file.is_symlink():
             raise ValueError("Refusing to load symlinked .specify/extensions.yml")
+        if not self.config_file.exists():
+            return {"installed": [], "settings": {"auto_execute_hooks": True}, "hooks": {}}
         try:
             config = yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, yaml.YAMLError) as exc:

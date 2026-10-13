@@ -1180,7 +1180,7 @@ def test_canonical_writer_rejects_nul_without_touching_config(tmp_path):
     assert config.read_text(encoding="utf-8") == "hooks: {}\n"
 
 
-@pytest.mark.parametrize("symlinked", ["config", "directory"])
+@pytest.mark.parametrize("symlinked", ["config", "dangling-config", "directory"])
 def test_direct_save_rejects_symlinks_without_writing_outside_project(
     tmp_path, symlinked
 ):
@@ -1193,9 +1193,10 @@ def test_direct_save_rejects_symlinks_without_writing_outside_project(
     (outside / "extensions.yml").write_text("outside remains unchanged\n", encoding="utf-8")
     specify = project / ".specify"
     try:
-        if symlinked == "config":
+        if symlinked in ("config", "dangling-config"):
             specify.mkdir()
-            (specify / "extensions.yml").symlink_to(outside / "extensions.yml")
+            target = outside / ("missing.yml" if symlinked == "dangling-config" else "extensions.yml")
+            (specify / "extensions.yml").symlink_to(target)
         else:
             specify.symlink_to(outside, target_is_directory=True)
     except (OSError, NotImplementedError):
@@ -1209,6 +1210,8 @@ def test_direct_save_rejects_symlinks_without_writing_outside_project(
     assert (outside / "extensions.yml").read_text(encoding="utf-8") == (
         "outside remains unchanged\n"
     )
+    if symlinked == "dangling-config":
+        assert not (outside / "missing.yml").exists()
     assert not (outside / "hook-dispatch").exists()
 
 
