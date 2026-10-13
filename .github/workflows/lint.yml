@@ -15,6 +15,7 @@ jobs:
         docs/**/*.md
         README.md
         README.zh-CN.md
+        README.ja.md
         README.ko.md
         CODE_OF_CONDUCT.md
         CONTRIBUTING.md
