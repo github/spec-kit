@@ -1077,8 +1077,6 @@ def register(app: typer.Typer) -> None:
         muse_skill_mode = selected_ai == "muse" and _is_skills_integration
         grok_skill_mode = selected_ai == "grok" and _is_skills_integration
         dsh_skill_mode = selected_ai == "dsh" and _is_skills_integration
-        cline_skill_mode = selected_ai == "cline"
-        forge_skill_mode = selected_ai == "forge"
         bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         native_skill_mode = (
             codex_skill_mode
@@ -1155,28 +1153,18 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
-        from ._invocation_style import (
-            is_dollar_skills_agent as _is_dollar_skills_agent,
-            is_slash_skills_agent as _is_slash_skills_agent,
+        invoke_prefix = _invoke_prefix_for_integration(
+            resolved_integration,
+            resolved_integration.key,
+            integration_parsed_options or None,
+            project_path,
+        )
+        invoke_separator = resolved_integration.effective_invoke_separator(
+            integration_parsed_options or None, project_root=project_path
         )
 
-        # `_is_skills_integration` means the integration is installed in
-        # skills mode, which is the semantic equivalent of `ai_skills_enabled`
-        # used by `is_slash_skills_agent()`.
-        _ai_skills_enabled = _is_skills_integration
-
         def _display_cmd(name: str) -> str:
-            if _is_dollar_skills_agent(selected_ai, _ai_skills_enabled):
-                return f"$speckit-{name}"
-            if kimi_skill_mode:
-                return f"/skill:speckit-{name}"
-            if (
-                _is_slash_skills_agent(selected_ai, _ai_skills_enabled)
-                or cline_skill_mode
-                or forge_skill_mode
-            ):
-                return f"/speckit-{name}"
-            return f"/speckit.{name}"
+            return f"{invoke_prefix}speckit{invoke_separator}{name}"
 
         steps_lines.append(
             f"{step_num}. Start using {usage_label} with your coding agent:"
