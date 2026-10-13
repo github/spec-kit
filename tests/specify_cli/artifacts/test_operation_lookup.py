@@ -9,7 +9,11 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from specify_cli import artifacts
+from specify_cli import _project_policy, artifacts
+from specify_cli._project_policy import (
+    ProjectResolutionError,
+    preflight_project_policy,
+)
 from specify_cli.artifacts import (
     ArtifactCatalog,
     ArtifactResolutionError,
@@ -605,6 +609,59 @@ def test_lookup_maps_project_policy_failure_before_loader_and_catalog(
     catalog.assert_not_called()
 
 
+@pytest.mark.parametrize("marker_kind", ["symlink", "file"])
+def test_lookup_preserves_structural_project_policy_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    marker_kind: str,
+):
+    project_directory = tmp_path / "project"
+    project_directory.mkdir()
+    marker = project_directory / ".specify"
+    if marker_kind == "symlink":
+        target = tmp_path / "real-specify"
+        target.mkdir()
+        try:
+            marker.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"Symlinks unavailable: {exc}")
+    else:
+        marker.write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(ProjectResolutionError) as preflight_exc:
+        preflight_project_policy(project_directory)
+
+    loader = Mock(side_effect=AssertionError("loader reached"))
+    catalog = Mock(side_effect=AssertionError("catalog reached"))
+    monkeypatch.setattr(
+        _operation_lookup.installer,
+        "load_installed_integrations",
+        loader,
+    )
+    monkeypatch.setattr(_operation_lookup, "ArtifactCatalog", catalog)
+
+    with pytest.raises(ArtifactLookupProjectPolicyError) as operation_exc:
+        lookup_artifact(
+            ArtifactLookupRequest(
+                project_directory,
+                "malformed",
+            )
+        )
+
+    assert operation_exc.value.message == str(preflight_exc.value)
+    if marker_kind == "symlink":
+        assert operation_exc.value.message.startswith(
+            f"Refusing to use symlinked .specify path: {marker}."
+        )
+    else:
+        assert operation_exc.value.message == (
+            "Not a Spec Kit project: .specify path exists but is not a directory: "
+            f"{marker}"
+        )
+    loader.assert_not_called()
+    catalog.assert_not_called()
+
+
 def test_lookup_maps_corrupt_registry_before_malformed_identifier(
     spec_kit_project: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -979,6 +1036,7 @@ def test_operation_contract_is_transport_neutral():
     }
 
     assert forbidden_names.isdisjoint(_operation_lookup.__dict__)
+    assert forbidden_names.isdisjoint(_project_policy.__dict__)
     assert ArtifactLookupResult.__module__ == (
         "specify_cli.artifacts._operation_lookup"
     )

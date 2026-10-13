@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
-from .._file_policy import ProjectPolicyError, project_files
+from .._project_policy import ProjectResolutionError, preflight_project_policy
 from ..extensions import ExtensionRegistry
 from ..integrations import installer
 from ..presets import PresetError
@@ -408,8 +408,8 @@ def lookup_artifact(request: ArtifactLookupRequest) -> ArtifactLookupResult:
 
     try:
         if project_directory.is_dir():
-            project_files(project_directory)
-    except ProjectPolicyError as exc:
+            preflight_project_policy(project_directory)
+    except ProjectResolutionError as exc:
         raise ArtifactLookupProjectPolicyError(
             project_directory,
             str(exc),

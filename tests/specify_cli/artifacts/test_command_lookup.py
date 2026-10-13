@@ -11,6 +11,10 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._project_policy import (
+    ProjectResolutionError,
+    preflight_project_policy,
+)
 from specify_cli.artifacts import (
     ArtifactCatalog,
     _operation_lookup,
@@ -128,6 +132,46 @@ class TestCommandLookup:
         assert diagnostic in error["error"]
         loader.assert_not_called()
         catalog.assert_not_called()
+
+    @pytest.mark.parametrize("marker_kind", ["symlink", "file"])
+    def test_lookup_preserves_structural_project_policy_json_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        marker_kind: str,
+    ):
+        project_directory = tmp_path / "project"
+        project_directory.mkdir()
+        marker = project_directory / ".specify"
+        if marker_kind == "symlink":
+            target = tmp_path / "real-specify"
+            target.mkdir()
+            try:
+                marker.symlink_to(target, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                pytest.skip(f"Symlinks unavailable: {exc}")
+        else:
+            marker.write_text("not a directory", encoding="utf-8")
+
+        with pytest.raises(ProjectResolutionError) as preflight_exc:
+            preflight_project_policy(project_directory)
+
+        monkeypatch.chdir(project_directory)
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "malformed",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": str(preflight_exc.value)}
+        assert result.stderr.count("\n") == 1
+        assert "Traceback" not in result.stderr
 
     def test_lookup_json_rejects_unknown_contribution(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
