@@ -330,6 +330,20 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         return manager.installed_version(component)
 
+    def bundled_patch_warning(self, component: ComponentRef, actual: str) -> str | None:
+        from .primitives import _bundled_component_version, _bundled_pin_warning
+        from .versioning import is_newer_patch, same_version
+
+        packaged = _bundled_component_version(component)
+        if (
+            component.version
+            and packaged
+            and same_version(actual, packaged)
+            and is_newer_patch(actual, component.version)
+        ):
+            return _bundled_pin_warning(component.kind[:-1].capitalize(), component, actual)
+        return None
+
     def validate_source(self, project_root: Path, component: ComponentRef) -> None:
         if not self._allow_network:
             raise BundlerError(

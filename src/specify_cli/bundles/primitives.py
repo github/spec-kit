@@ -132,6 +132,40 @@ def _selected_catalog_info(kind: str, component: ComponentRef, catalog) -> dict:
     return selected
 
 
+def _bundled_pin_warning(
+    kind: str, component: ComponentRef, advertised: object,
+) -> str | None:
+    """Allow packaged stable patch upgrades without weakening catalog pins."""
+    from .versioning import is_newer_patch
+
+    if (
+        component.source is None
+        and component.version
+        and isinstance(advertised, str)
+        and is_newer_patch(advertised.strip(), component.version)
+    ):
+        return (
+            f"{kind} '{component.id}' is pinned to version {component.version}, "
+            f"but Spec Kit ships {advertised.strip()}; using the newer packaged patch. "
+            "Bundle installation records the actual installed version "
+            "alongside the requested pin."
+        )
+    _assert_pinned_version(kind, component.id, component.version, advertised)
+    return None
+
+
+def _assert_bundled_pin(
+    kind: str, component: ComponentRef, advertised: object,
+) -> None:
+    from rich.markup import escape
+
+    from .._console import err_console
+
+    warning = _bundled_pin_warning(kind, component, advertised)
+    if warning:
+        err_console.print(f"[yellow]Warning:[/yellow] {escape(warning)}")
+
+
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     """Best-effort read of a bundled asset's declared version from its manifest.
 
@@ -154,6 +188,29 @@ def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
     except Exception:  # noqa: BLE001 - unreadable manifest: version unknown
         return None
     return None
+
+
+def _bundled_component_version(component: ComponentRef) -> str | None:
+    from .._assets import (
+        _locate_bundled_extension,
+        _locate_bundled_preset,
+        _locate_bundled_workflow,
+    )
+
+    if component.source is not None:
+        return None
+    locate = {
+        "extensions": _locate_bundled_extension,
+        "presets": _locate_bundled_preset,
+        "workflows": _locate_bundled_workflow,
+    }.get(component.kind)
+    if locate is None:
+        return None
+    bundled = locate(component.id)
+    if bundled is None:
+        return None
+    kind = component.kind[:-1]
+    return _bundled_manifest_version(bundled / f"{kind}.yml", kind)
 
 
 def _registry_version(registry, component_id: str) -> str | None:
@@ -263,13 +320,9 @@ class _PresetKindManager:
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
-            # Enforce the manifest pin against the bundled asset's own version,
-            # mirroring the catalog path below (the bundled path previously
-            # skipped the pin entirely).
-            _assert_pinned_version(
+            _assert_bundled_pin(
                 "Preset",
-                component.id,
-                component.version,
+                component,
                 _bundled_manifest_version(bundled / "preset.yml", "preset"),
             )
             self._manager.install_from_directory(
@@ -356,13 +409,9 @@ class _ExtensionKindManager:
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:
-            # Enforce the manifest pin against the bundled asset's own version,
-            # mirroring the catalog path below (the bundled path previously
-            # skipped the pin entirely).
-            _assert_pinned_version(
+            _assert_bundled_pin(
                 "Extension",
-                component.id,
-                component.version,
+                component,
                 _bundled_manifest_version(bundled / "extension.yml", "extension"),
             )
             manifest = self._manager.install_from_directory(
@@ -457,9 +506,15 @@ class _WorkflowKindManager:
                     f"Bundled workflow at {workflow_file} declares ID "
                     f"'{definition.id}', expected '{component.id}'."
                 )
+            from .versioning import is_newer_patch
+
             if component.version is None or (
-                definition.version and same_version(definition.version, component.version)
+                definition.version and (
+                    same_version(definition.version, component.version)
+                    or is_newer_patch(definition.version, component.version)
+                )
             ):
+                _assert_bundled_pin("Workflow", component, definition.version)
                 from .. import workflow_add
 
                 with _chdir(self._root):

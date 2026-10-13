@@ -29,6 +29,79 @@ runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
 
 
+@pytest.mark.parametrize("refresh", [False, True])
+def test_bundled_patch_upgrade_warns_and_records_actual_version(
+    project: Path, monkeypatch, refresh: bool,
+):
+    import specify_cli._assets as assets
+    from specify_cli.bundles.records import load_records
+
+    source = project / "packaged-bug"
+    shutil.copytree(REPO_ROOT / "extensions" / "bug", source)
+    source_manifest = source / "extension.yml"
+    data = yaml.safe_load(source_manifest.read_text(encoding="utf-8"))
+    data["extension"]["version"] = "1.0.0" if refresh else "1.0.1"
+    source_manifest.write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: source)
+    bundle = write_manifest(
+        project / "custom-bundle",
+        valid_manifest_dict(provides={"extensions": [{"id": "bug", "version": "1.0.0"}]}),
+    )
+    args = ["bundle", "install", str(bundle), "--offline"]
+    if refresh:
+        initial = runner.invoke(app, args)
+        assert initial.exit_code == 0, initial.output
+        data["extension"]["version"] = "1.0.1"
+        source_manifest.write_text(yaml.safe_dump(data), encoding="utf-8")
+        args.append("--refresh")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Warning:" in output
+    assert "1.0.0" in output and "1.0.1" in output
+    record = load_records(project)[0]
+    assert record.contributed_components[0].version == "1.0.0"
+    assert record.installed_versions == {"extensions:bug": "1.0.1"}
+    installed = yaml.safe_load(
+        (project / ".specify/extensions/bug/extension.yml").read_text(encoding="utf-8")
+    )
+    assert installed["extension"]["version"] == "1.0.1"
+    listed = runner.invoke(app, ["bundle", "list", "--json"])
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout)[0]["installed_versions"] == record.installed_versions
+    repeated = runner.invoke(app, ["bundle", "install", str(bundle), "--offline"])
+    assert repeated.exit_code == 0, repeated.output
+    assert load_records(project)[0].installed_versions == record.installed_versions
+    shared_data = valid_manifest_dict(
+        provides={"extensions": [{"id": "bug", "version": "1.0.0"}]},
+    )
+    shared_data["bundle"]["id"] = "shared-bundle"
+    shared = write_manifest(project / "shared-bundle", shared_data)
+    shared_result = runner.invoke(app, ["bundle", "install", str(shared), "--offline"])
+    assert shared_result.exit_code == 0, shared_result.output
+    shared_refresh = runner.invoke(
+        app, ["bundle", "install", str(bundle), "--offline", "--refresh"],
+    )
+    assert shared_refresh.exit_code == 0, shared_refresh.output
+    shared_data["bundle"]["id"] = "conflicting-bundle"
+    shared_data["provides"]["extensions"][0]["version"] = "1.0.1"
+    conflicting = write_manifest(project / "conflicting-bundle", shared_data)
+    rejected = runner.invoke(
+        app, ["bundle", "install", str(conflicting), "--offline"],
+    )
+    assert rejected.exit_code == 1, rejected.output
+    assert {r.bundle_id for r in load_records(project)} == {"demo-bundle", "shared-bundle"}
+    removed = runner.invoke(app, ["bundle", "remove", "demo-bundle"])
+    assert removed.exit_code == 0, removed.output
+    assert (project / ".specify/extensions/bug").exists()
+    assert load_records(project)[0].installed_versions == record.installed_versions
+    removed_shared = runner.invoke(app, ["bundle", "remove", "shared-bundle"])
+    assert removed_shared.exit_code == 0, removed_shared.output
+    assert not (project / ".specify/extensions/bug").exists()
+
+
 def _bundled_workflow_manifest(workflow_id: str, version: str = "1.0.0") -> dict:
     return valid_manifest_dict(
         provides={"workflows": [{"id": workflow_id, "version": version}]}

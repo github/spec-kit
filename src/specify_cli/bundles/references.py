@@ -226,28 +226,24 @@ def make_reference_checker(
         if _resolved_locally(project_root, component):
             return None
 
-        if component.kind in ("presets", "extensions") and component.source is None:
-            from .._assets import _locate_bundled_extension, _locate_bundled_preset
+        if component.kind in ("presets", "extensions", "workflows") and component.source is None:
             from . import BundlerError
-            from .primitives import _assert_pinned_version, _bundled_manifest_version
+            from .primitives import _bundled_component_version, _bundled_pin_warning
+            from .versioning import is_newer_patch
 
             kind = component.kind[:-1]
-            locate = (
-                _locate_bundled_preset
-                if component.kind == "presets"
-                else _locate_bundled_extension
-            )
-            bundled = locate(component.id)
-            if bundled is not None:
+            actual = _bundled_component_version(component)
+            if actual is not None and (
+                component.kind != "workflows"
+                or (component.version and is_newer_patch(actual, component.version))
+            ):
                 try:
-                    _assert_pinned_version(
-                        kind.capitalize(),
-                        component.id,
-                        component.version,
-                        _bundled_manifest_version(bundled / f"{kind}.yml", kind),
-                    )
+                    warning = _bundled_pin_warning(kind.capitalize(), component, actual)
                 except BundlerError as exc:
                     return str(exc)
+                if warning:
+                    warnings.append(warning)
+                    return None
 
         if allow_network:
             in_catalog = _resolved_in_catalog(project_root, component)
