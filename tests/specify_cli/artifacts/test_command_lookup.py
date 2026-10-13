@@ -398,15 +398,24 @@ class TestCommandLookup:
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
         assert "Traceback" not in result.stderr
 
-    def test_lookup_unexpected_operation_filesystem_failure_is_json_error(
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            OSError("unreadable catalog"),
+            RuntimeError("unexpected catalog failure"),
+        ],
+        ids=["filesystem", "non-filesystem"],
+    )
+    def test_lookup_unexpected_operation_failure_is_json_error(
         self,
         spec_kit_project: Path,
         monkeypatch: pytest.MonkeyPatch,
+        failure: Exception,
     ):
         monkeypatch.setattr(
             command_lookup,
             "lookup_artifact",
-            Mock(side_effect=OSError("unreadable catalog")),
+            Mock(side_effect=failure),
         )
         monkeypatch.chdir(spec_kit_project)
 

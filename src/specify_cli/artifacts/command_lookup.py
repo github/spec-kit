@@ -65,7 +65,7 @@ def artifact_lookup(
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
-    except OSError:
+    except Exception:  # noqa: BLE001 - preserve the sanitized JSON error contract
         _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
         return  # pragma: no cover
 
