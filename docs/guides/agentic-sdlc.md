@@ -244,6 +244,10 @@ and [workflow steps](https://github.com/github/spec-kit/blob/main/.github/workfl
 validate submission metadata and propose catalog changes in draft PRs for
 maintainer review.
 
+Extension, preset, and bundle submission titles require the `[Extension]:`,
+`[Preset]:`, and `[Bundle]:` prefixes respectively. A mismatch receives a comment
+and run link, then processing stops without validation or other changes.
+
 Catalog discovery does not audit or endorse community code; users must
 review third-party components before use.
 
