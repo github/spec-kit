@@ -99,7 +99,10 @@ class TestExtensionCatalogRemoveCLI:
 
         remove = self._invoke(["extension", "catalog", "remove", "only"], project)
         assert remove.exit_code == 0, remove.output
-        assert "Built-in defaults will be used" in _normalize_cli_output(remove.output)
+        assert (
+            "Project catalog override removed; user configuration or built-in "
+            "defaults will be used." in _normalize_cli_output(remove.output)
+        )
 
         listing = self._invoke(["extension", "catalog", "list"], project)
         assert listing.exit_code == 0, listing.output
@@ -108,6 +111,57 @@ class TestExtensionCatalogRemoveCLI:
         assert "community (priority 2)" in output
         assert "Using built-in default catalog stack" in output
         assert not (project / ".specify" / "extension-catalogs.yml").exists()
+
+    def test_extension_catalog_remove_final_entry_falls_back_to_user_config(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        home = tmp_path / "home"
+        (home / ".specify").mkdir(parents=True)
+        (home / ".specify" / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "user-catalog",
+                            "url": "https://user.example.com/catalog.json",
+                            "priority": 5,
+                            "install_allowed": True,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.delenv("SPECKIT_CATALOG_URL", raising=False)
+
+        add = self._invoke(
+            [
+                "extension",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(["extension", "catalog", "remove", "only"], project)
+        assert remove.exit_code == 0, remove.output
+
+        listing = self._invoke(["extension", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        output = _normalize_cli_output(listing.output)
+        assert "user-catalog (priority 5)" in output
+        assert "Config: ~/.specify/extension-catalogs.yml" in output
+        assert "only (priority" not in output
+        assert "default (priority 1)" not in output
 
     def test_extension_catalog_remove_keeps_config_with_remaining_entries(
         self, tmp_path
@@ -143,7 +197,9 @@ class TestExtensionCatalogRemoveCLI:
         result = self._invoke(["extension", "catalog", "remove", "drop"], project)
 
         assert result.exit_code == 0, result.output
-        assert "No catalogs remain" not in _normalize_cli_output(result.output)
+        assert "Project catalog override removed" not in _normalize_cli_output(
+            result.output
+        )
         assert yaml.safe_load(cfg_path.read_text(encoding="utf-8")) == {
             "catalogs": [keep]
         }

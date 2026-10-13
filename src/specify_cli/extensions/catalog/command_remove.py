@@ -67,5 +67,6 @@ def catalog_remove(
     _commands.console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
         _commands.console.print(
-            "\n[dim]No catalogs remain in config. Built-in defaults will be used.[/dim]"
+            "\n[dim]Project catalog override removed; user configuration or "
+            "built-in defaults will be used.[/dim]"
         )
