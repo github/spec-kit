@@ -4,7 +4,7 @@ This edition covers Spec Kit activity in April 2026. Seventeen releases shipped 
 
 | **Spec Kit Core (Apr 2026)** | **Community & Content** | **SDD Ecosystem & Next** |
 | --- | --- | --- |
-| Seventeen releases shipped with major features: integration plugin architecture, workflow engine, preset composition, integration catalog, bundled lean preset, documentation site, and academic citation support. Three new agents added (Forgecode, Goose, Devin for Terminal). The repo grew from ~82k to **92,038 stars**. [\[github.com\]](https://github.com/github/spec-kit/releases) | Thoughtworks Technology Radar placed Spec Kit in the "Assess" ring. Community catalog grew from 26 to **83 extensions** and from 2 to **12 presets**. 12 substantive external articles published. XB Software documented a real legacy project. Fabián Silva shipped the Caramelo VS Code extension. | Matt Rickard argued for "smaller specs, harder checks." Will Torber's three-framework comparison recommended OpenSpec for most teams. The "Spec Layer" debate emerged: specs as constraint surfaces for AI agents. Spec Kit leads in breadth and portability; competitors differentiate on drift detection and orchestration depth. |
+| Seventeen releases shipped with major features: integration plugin architecture, workflow engine, preset composition, integration catalog, bundled lean preset, documentation site, and academic citation support. Three new agents added (Forgecode, Goose, Devin for Terminal). The repo grew from ~82k to **92,038 stars**. [\[github.com\]](https://github.com/github/spec-kit/releases) | Thoughtworks Technology Radar placed Spec Kit in the "Assess" ring. Community catalog grew from 26 to **83 extensions** and from 2 to **12 presets**. External coverage continued across developer blogs and industry press. XB Software documented a real legacy project. Fabián Silva shipped the Caramelo VS Code extension. | Matt Rickard argued for "smaller specs, harder checks." Will Torber's three-framework comparison recommended OpenSpec for most teams. The "Spec Layer" debate emerged: specs as constraint surfaces for AI agents. Spec Kit leads in breadth and portability; competitors differentiate on drift detection and orchestration depth. |
 
 ***
 
@@ -94,7 +94,7 @@ On **April 15**, the **Thoughtworks Technology Radar Volume 34** placed GitHub S
 
 ### Developer Articles and Blog Posts
 
-April produced 12 substantive external articles (plus one excluded as AI-generated SEO spam).
+April produced a steady stream of external articles.
 
 **Matt Rickard** published *"The Spec Layer: Why Spec-Driven Development (SDD) Works"* on April 1. His thesis: specs reduce execution freedom for AI agents, functioning as constraint surfaces. He compared Spec Kit, Kiro, OpenSpec, Tessl, Intent, and Symphony, and advocated for **"smaller specs, harder checks, less guessing."** [\[blog.matt-rickard.com\]](https://blog.matt-rickard.com/p/the-spec-layer)
 

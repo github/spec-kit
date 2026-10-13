@@ -5,6 +5,10 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 """
 
 from __future__ import annotations
+from pathlib import Path
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
 
@@ -29,16 +33,31 @@ class CodexIntegration(SkillsIntegration):
     dev_no_symlink = True
     multi_install_safe = True
 
+    CANONICAL_TO_NATIVE = {
+        "session_start": "SessionStart",
+        "pre_tool_use": "PreToolUse",
+        "post_tool_use": "PostToolUse",
+        "session_end": "SessionEnd",
+        "user_prompt_submit": "UserPromptSubmit",
+        "stop": "Stop",
+    }
+    events_config_file = ".codex/config.toml"
+    events_format = "toml"
+
     def build_exec_args(
         self,
         prompt: str,
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         # Codex uses ``codex exec "prompt"`` for non-interactive mode.
         # Resolve argv[0] via the shared executable resolver so operators can
         # override the binary with SPECKIT_INTEGRATION_CODEX_EXECUTABLE.
+        self.validate_runtime_config(integration_args, integration_options)
         args: list[str] = [self._resolve_executable(), "exec", prompt]
         self._apply_extra_args_env_var(args)
         if model:
@@ -49,11 +68,13 @@ class CodexIntegration(SkillsIntegration):
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
-        return [
+        opts = super().options()
+        opts.append(
             IntegrationOption(
                 "--skills",
                 is_flag=True,
                 default=True,
                 help="Install as agent skills (default for Codex)",
-            ),
-        ]
+            )
+        )
+        return opts

@@ -1,0 +1,1510 @@
+"""Parity tests for composed runtime template resolution."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pytest
+
+from scripts.python import common as python_common
+from tests.conftest import requires_bash
+from tests.parity_helpers import (
+    HAS_POWERSHELL,
+    bash_cmd,
+    clean_env,
+    install_composition_stack,
+    install_scripts,
+    json_stdout,
+    make_python3_path_shim,
+    make_repo,
+    make_yaml_less_venv,
+    ps_cmd,
+    py_cmd,
+    run,
+)
+
+SCRIPT = "resolve-template"
+TEMPLATE = "constitution-template"
+
+
+def _setup_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, "# Core\n")
+    return repo, expected
+
+
+@requires_bash
+def test_all_variants_emit_composed_template_content(tmp_path: Path) -> None:
+    repo, expected = _setup_repo(tmp_path)
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(result.stderr == "" for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "without_registry,core_content",
+    [
+        (True, "# Core\n"),
+        (False, "# Café ✓\n"),
+    ],
+    ids=["directory_fallback", "unicode"],
+)
+def test_all_variants_preserve_composition_parity(
+    tmp_path: Path, without_registry: bool, core_content: str
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, core_content)
+    if without_registry:
+        (repo / ".specify" / "presets" / ".registry").unlink()
+        expected = (
+            "# Prepended\n\n\n"
+            "## Wrapper\n"
+            f"{core_content}\n"
+            "## End\n\n\n"
+            "# Appended\n"
+        )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_treat_core_token_in_core_content_as_literal(
+    tmp_path: Path,
+) -> None:
+    """Core content holding a literal ``{CORE_TEMPLATE}`` must not be re-expanded.
+
+    The wrap strategy fills the placeholders present in the *wrapper*. A token
+    that arrives as part of the composed core content is data, not a slot, so it
+    survives into the output untouched. Rescanning the substituted string instead
+    reintroduces a token on every pass and never terminates, so the regression
+    mode here is a hang rather than a wrong value -- hence the timeout, without
+    which a reintroduced bug would stall the suite instead of failing it.
+    """
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, "# Core {CORE_TEMPLATE}\n")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, timeout=30),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, timeout=30),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, timeout=30))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(result.stderr == "" for result in results)
+    # The wrapper contributes exactly one placeholder, so exactly one literal
+    # token -- the one carried in by the core content -- remains in the output.
+    assert expected.count("{CORE_TEMPLATE}") == 1
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_read_utf8_registry_under_ascii_locale(
+    tmp_path: Path,
+) -> None:
+    """Registry/manifest reads must force UTF-8, not the process locale.
+
+    With UTF-8 mode disabled and a C locale, the interpreter's default text
+    encoding is ASCII. Non-ASCII *metadata* in the registry or a manifest must
+    still resolve, because the resolvers open those files as UTF-8 explicitly.
+    Template content stays ASCII so the pure-Python variant can emit it on the
+    ASCII stdout this configuration forces.
+    """
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = install_composition_stack(repo, TEMPLATE, "# Core\n")
+
+    # Inject non-ASCII metadata into the preset registry and a manifest so a
+    # locale-dependent decode would raise instead of resolving cleanly.
+    registry = repo / ".specify" / "presets" / ".registry"
+    registry_data = json.loads(registry.read_text(encoding="utf-8"))
+    registry_data["presets"]["wrap-pack"]["description"] = "Café ✓ wrapper"
+    registry.write_text(
+        json.dumps(registry_data, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '      description: "Café ✓"\n',
+        encoding="utf-8",
+    )
+
+    env = clean_env()
+    # Force the interpreter's default text encoding to ASCII so an unqualified
+    # open() would fail on the non-ASCII metadata above.
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONCOERCECLOCALE"] = "0"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "template_name",
+    ["missing-template", "../../../outside"],
+    ids=["missing", "path_traversal"],
+)
+def test_all_variants_reject_unresolvable_template(
+    tmp_path: Path, template_name: str
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    (repo / "outside.md").write_text("sensitive content\n", encoding="utf-8")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, template_name, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, template_name, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, template_name, "-Json"), repo))
+
+    assert all(result.returncode == 1 for result in results)
+    assert all(result.stdout == "" for result in results)
+    assert all("sensitive content" not in result.stderr for result in results)
+
+
+@requires_bash
+def test_all_variants_ignore_traversing_preset_registry_ids(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    outside = repo.parent / "outside"
+    outside.mkdir()
+    (outside / f"{TEMPLATE}.md").write_text("sensitive content\n", encoding="utf-8")
+    presets = repo / ".specify" / "presets"
+    presets.mkdir(parents=True)
+    (presets / ".registry").write_text(
+        '{"presets":{"../../../outside":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 1 for result in results)
+    assert all("sensitive content" not in result.stdout for result in results)
+
+
+@requires_bash
+def test_all_variants_support_root_level_preset_convention(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    preset = repo / ".specify" / "presets" / "root-pack"
+    preset.mkdir(parents=True)
+    (preset / f"{TEMPLATE}.md").write_text("# Root convention\n", encoding="utf-8")
+    (repo / ".specify" / "presets" / ".registry").write_text(
+        '{"presets":{"root-pack":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Root convention\n"
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_honor_extension_registry_state_and_priority(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    for extension_id, content in (
+        ("disabled-ext", "# Disabled\n"),
+        ("low-priority", "# Low priority\n"),
+        ("high-priority", "# High priority\n"),
+    ):
+        template_dir = extensions / extension_id / "templates"
+        template_dir.mkdir(parents=True)
+        (template_dir / f"{TEMPLATE}.md").write_text(content, encoding="utf-8")
+    (extensions / ".registry").write_text(
+        '{"extensions":{'
+        '"disabled-ext":{"enabled":null,"priority":1},'
+        '"low-priority":{"enabled":true,"priority":20},'
+        '"high-priority":{"enabled":true,"priority":5}'
+        "}}\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# High priority\n"
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_support_root_level_extension_convention(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extension = repo / ".specify" / "extensions" / "root-extension"
+    extension.mkdir(parents=True)
+    (extension / f"{TEMPLATE}.md").write_text(
+        "# Root extension\n",
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "extensions" / ".registry").write_text(
+        '{"extensions":{"root-extension":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Root extension\n"
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_treat_extension_registry_ids_case_sensitively(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extension = repo / ".specify" / "extensions" / "foo" / "templates"
+    extension.mkdir(parents=True)
+    (extension / f"{TEMPLATE}.md").write_text(
+        "# Lowercase extension\n",
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "extensions" / ".registry").write_text(
+        '{"extensions":{"FOO":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == "# Lowercase extension\n"
+        for result in results
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "registry_content",
+    ["{ not valid json", '{"extensions":[]}\n', "[]\n"],
+    ids=["invalid_json", "non_mapping_extensions", "non_mapping_root"],
+)
+def test_all_variants_fail_for_malformed_extension_registry(
+    tmp_path: Path, registry_content: str
+) -> None:
+    """A corrupt extension registry must fail closed, not silently enable
+    every on-disk extension directory as unregistered."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    (extensions / ".registry").write_text(registry_content, encoding="utf-8")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+    assert all(
+        "Should not be served" not in result.stdout for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_fail_when_registry_is_a_directory(
+    tmp_path: Path,
+) -> None:
+    """A directory at the extension registry path must fail closed, not be
+    treated as an absent registry that enables every on-disk extension."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    # Create ``.registry`` as a directory rather than a regular file.
+    (extensions / ".registry").mkdir()
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_all_variants_fail_when_registry_is_broken_symlink(
+    tmp_path: Path,
+) -> None:
+    """A broken symlink at the extension registry path must fail closed across
+    Bash, Python, and PowerShell resolvers rather than being treated as absent."""
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    extensions = repo / ".specify" / "extensions"
+    template_dir = extensions / "sneaky-ext" / "templates"
+    template_dir.mkdir(parents=True)
+    (template_dir / f"{TEMPLATE}.md").write_text(
+        "# Should not be served\n", encoding="utf-8"
+    )
+    (extensions / ".registry").symlink_to(extensions / "does-not-exist")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+@pytest.mark.parametrize("base_kind", ["override", "preset"])
+def test_all_variants_ignore_malformed_layers_below_replace_base(
+    tmp_path: Path,
+    base_kind: str,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    expected = "# Winning base\r\nBody\r\n"
+    presets = repo / ".specify" / "presets"
+
+    if base_kind == "override":
+        override = repo / ".specify" / "templates" / "overrides"
+        override.mkdir(parents=True)
+        (override / f"{TEMPLATE}.md").write_bytes(expected.encode("utf-8"))
+        registry = {"presets": {"broken-pack": {"enabled": True, "priority": 1}}}
+    else:
+        winning = presets / "winning-pack" / "templates"
+        winning.mkdir(parents=True)
+        (winning / f"{TEMPLATE}.md").write_bytes(expected.encode("utf-8"))
+        registry = {
+            "presets": {
+                "winning-pack": {"enabled": True, "priority": 1},
+                "broken-pack": {"enabled": True, "priority": 2},
+            }
+        }
+
+    broken = presets / "broken-pack"
+    broken.mkdir(parents=True)
+    (broken / "preset.yml").write_text("provides: [\n", encoding="utf-8")
+    (presets / ".registry").write_text(
+        json.dumps(registry, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        (
+            [
+                ("disabled-pack", {"enabled": False, "priority": 0}),
+                ("numeric-pack", {"enabled": True, "priority": 2}),
+                ("string-pack", {"enabled": True, "priority": "1"}),
+            ],
+            "# string-pack\n",
+        ),
+        (
+            [
+                ("z-pack", {"enabled": True}),
+                ("a-pack", {"enabled": True}),
+            ],
+            "# a-pack\n",
+        ),
+        (
+            [
+                ("float-pack", {"enabled": True, "priority": 5.9}),
+                ("six-pack", {"enabled": True, "priority": 6}),
+            ],
+            "# float-pack\n",
+        ),
+        (
+            [
+                ("a-huge-pack", {"enabled": True, "priority": 2147483648}),
+                ("z-default-pack", {"enabled": True, "priority": "invalid"}),
+            ],
+            "# z-default-pack\n",
+        ),
+        (
+            [
+                ("decimal-string-pack", {"enabled": True, "priority": "5.9"}),
+                ("exponent-string-pack", {"enabled": True, "priority": "1e3"}),
+                ("hex-string-pack", {"enabled": True, "priority": "0x10"}),
+                ("six-pack", {"enabled": True, "priority": 6}),
+            ],
+            "# six-pack\n",
+        ),
+    ],
+    ids=[
+        "mixed_priorities",
+        "equal_priority_id_tiebreaker",
+        "float_priority",
+        "large_integer_priority",
+        "non_integer_numeric_strings",
+    ],
+)
+def test_all_variants_normalize_and_tiebreak_preset_priorities(
+    tmp_path: Path,
+    entries: list[tuple[str, dict[str, object]]],
+    expected: str,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    presets = repo / ".specify" / "presets"
+    registry: dict[str, object] = {"presets": {}}
+    registry_presets = registry["presets"]
+    assert isinstance(registry_presets, dict)
+    for preset_id, metadata in entries:
+        template_dir = presets / preset_id / "templates"
+        template_dir.mkdir(parents=True)
+        (template_dir / f"{TEMPLATE}.md").write_text(
+            f"# {preset_id}\n",
+            encoding="utf-8",
+        )
+        registry_presets[preset_id] = metadata
+    (presets / ".registry").write_text(
+        json.dumps(registry, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)["TEMPLATE_CONTENT"] == expected
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_fail_when_wrap_placeholder_is_missing(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    templates = repo / ".specify" / "templates"
+    templates.mkdir(parents=True)
+    (templates / f"{TEMPLATE}.md").write_text("# Core\n", encoding="utf-8")
+    preset = repo / ".specify" / "presets" / "wrap-pack"
+    (preset / "templates").mkdir(parents=True)
+    (preset / "templates" / f"{TEMPLATE}.md").write_text(
+        "# Broken wrapper\n", encoding="utf-8"
+    )
+    (preset / "preset.yml").write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n",
+        encoding="utf-8",
+    )
+    (repo / ".specify" / "presets" / ".registry").write_text(
+        '{"presets":{"wrap-pack":{"enabled":true,"priority":1}}}\n',
+        encoding="utf-8",
+    )
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_all_variants_fail_when_yaml_parser_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    repo, _ = _setup_repo(tmp_path)
+    blocker = tmp_path / "blocker"
+    blocker.mkdir()
+    (blocker / "yaml.py").write_text(
+        "raise ImportError('simulated missing PyYAML')\n",
+        encoding="utf-8",
+    )
+    env = clean_env()
+    env["PYTHONPATH"] = str(blocker)
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env)
+        )
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)
+
+
+@requires_bash
+def test_all_variants_honor_speckit_python_override_when_yaml_missing(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON can name an interpreter with PyYAML when the default
+    one lacks it, e.g. a `uv tool install` venv invisible to bare `python3`
+    on PATH (#4443)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    no_yaml_python3_shim = make_python3_path_shim(
+        tmp_path / "no-yaml-python3-shim", no_yaml_exe
+    )
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    baseline_env = clean_env()
+    baseline_env.pop("SPECKIT_PYTHON", None)
+    baseline_env["PATH"] = (
+        f"{no_yaml_python3_shim}{os.pathsep}{baseline_env.get('PATH', '')}"
+    )
+    baseline_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, baseline_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, baseline_env),
+    ]
+    if HAS_POWERSHELL:
+        baseline_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, baseline_env)
+        )
+    assert all(result.returncode != 0 for result in baseline_results)
+
+    override_env = dict(baseline_env)
+    override_env["SPECKIT_PYTHON"] = sys.executable
+    override_results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, override_env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, override_env),
+    ]
+    if HAS_POWERSHELL:
+        override_results.append(
+            run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, override_env)
+        )
+
+    assert all(result.returncode == 0 for result in override_results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in override_results
+    )
+
+
+@requires_bash
+def test_all_variants_fall_back_when_speckit_python_lacks_pyyaml(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON naming a Python-3 interpreter without PyYAML must not
+    break composition that a PATH interpreter can already serve.
+
+    SPECKIT_PYTHON is an override for *expanding* what's available (#4443),
+    not a way to narrow it: falling through to a working PATH interpreter
+    when the override lacks PyYAML must behave the same as if SPECKIT_PYTHON
+    had never been set.
+
+    `clean_env()` preserves the host PATH, which may hold nothing but a
+    PyYAML-less system `python3` even when pytest itself was launched with a
+    PyYAML-equipped `.venv/bin/python`. A deterministic `python3` shim put
+    first on PATH keeps the fallback precondition true regardless of the
+    host environment.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    python3_shim = make_python3_path_shim(tmp_path / "python3-shim")
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    env["PATH"] = f"{python3_shim}{os.pathsep}{env.get('PATH', '')}"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
+@requires_bash
+def test_all_variants_prefer_speckit_python_executable_when_both_set(
+    tmp_path: Path,
+) -> None:
+    """SPECKIT_PYTHON_EXECUTABLE is the canonical override and must take
+    precedence over the deprecated SPECKIT_PYTHON alias when both are set
+    (#4445). PATH's own `python3` is also PyYAML-less, so composition can
+    only succeed if SPECKIT_PYTHON_EXECUTABLE (not the PyYAML-less
+    SPECKIT_PYTHON) is the interpreter actually selected.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+    no_yaml_bin = no_yaml_exe.parent
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+
+    env = clean_env()
+    env["SPECKIT_PYTHON_EXECUTABLE"] = sys.executable
+    env["SPECKIT_PYTHON"] = str(no_yaml_exe)
+    env["PATH"] = f"{no_yaml_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env),
+        run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo, env))
+
+    assert all(result.returncode == 0 for result in results)
+    assert all(
+        json_stdout(result)
+        == {"TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected}
+        for result in results
+    )
+
+
+def test_clean_env_strips_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ``--without-pip`` venv still honors an inherited `PYTHONPATH`, so a
+    leaked `PYTHONPATH` pointing at a directory with PyYAML would let the
+    "no-PyYAML" interpreters used above import it anyway, silently making
+    those tests pass without exercising the `SPECKIT_PYTHON`/delegated-YAML
+    path they claim to cover (#4445)."""
+    monkeypatch.setenv("PYTHONPATH", "/somewhere/with/yaml")
+    assert "PYTHONPATH" not in clean_env()
+
+
+def test_clean_env_strips_speckit_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ambient `SPECKIT_PYTHON`/`SPECKIT_PYTHON_EXECUTABLE` in the
+    host/CI environment would otherwise survive into every baseline built
+    from `clean_env()`, silently bypassing the blocked/default interpreter
+    that tests like `test_all_variants_fail_when_yaml_parser_is_unavailable`
+    rely on. Tests that exercise the override set it explicitly after
+    calling `clean_env()` (#4445)."""
+    monkeypatch.setenv("SPECKIT_PYTHON", "/somewhere/with/yaml")
+    monkeypatch.setenv("SPECKIT_PYTHON_EXECUTABLE", "/somewhere/else/with/yaml")
+    env = clean_env()
+    assert "SPECKIT_PYTHON" not in env
+    assert "SPECKIT_PYTHON_EXECUTABLE" not in env
+
+
+@requires_bash
+def test_bash_honors_speckit_python_path_containing_spaces(tmp_path: Path) -> None:
+    """SPECKIT_PYTHON may be an absolute path containing spaces (e.g. a venv
+    named "tool env"); callers must treat it as one argv element rather than
+    splitting it on whitespace (#4445).
+
+    A shim script that execs `sys.executable` guarantees the spaced path
+    actually has PyYAML: a symlink would not do, since `sys.executable` may
+    itself be a venv-relative symlink (e.g. under `uv run`), and invoking it
+    through a second symlink placed outside that venv's directory tree
+    breaks Python's `pyvenv.cfg` discovery, silently hiding the venv's
+    site-packages (and PyYAML with it). Exec'ing the real path from a shim
+    keeps `argv[0]` at its original, correctly-resolvable location. PATH's
+    `python3` is a PyYAML-less venv, so success is only possible if
+    `_python3_command` selects the spaced override intact.
+    """
+    repo, expected = _setup_repo(tmp_path)
+
+    spaced_dir = tmp_path / "tool env"
+    spaced_dir.mkdir()
+    spaced_exe = spaced_dir / Path(sys.executable).name
+    spaced_exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    spaced_exe.chmod(0o755)
+
+    no_yaml_bin = make_yaml_less_venv(tmp_path / "no-yaml-venv").parent
+
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = str(spaced_exe)
+    env["PATH"] = f"{no_yaml_bin}{os.pathsep}{env.get('PATH', '')}"
+
+    result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_yaml_value(
+    tmp_path: Path,
+) -> None:
+    """A manifest holding a value PyYAML parses into a non-JSON-native type
+    (e.g. an unquoted date) must still resolve when the Python twin delegates
+    parsing to SPECKIT_PYTHON because its own interpreter lacks PyYAML."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "created_at: 2026-09-08\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_rejects_delegated_manifest_with_non_string_validated_field(
+    tmp_path: Path,
+) -> None:
+    """A validated field (``file``) holding a value PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must be rejected via
+    delegation exactly as the in-process parser rejects it, not silently
+    coerced to a string that passes the ``isinstance(str)`` check (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        "      file: 2026-09-08\n"
+        "      strategy: wrap\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_ascii_metadata_under_ascii_locale(
+    tmp_path: Path,
+) -> None:
+    """Delegated manifest parsing must force UTF-8 on the subprocess pipe and
+    the child's own stdio, not the process locale, so non-ASCII metadata in a
+    manifest still resolves when this interpreter lacks PyYAML and the
+    process is running under a forced ASCII locale (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '      description: "Café ✓"\n',
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+    env["PYTHONUTF8"] = "0"
+    env["PYTHONCOERCECLOCALE"] = "0"
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_non_json_native_mapping_key(
+    tmp_path: Path,
+) -> None:
+    """An otherwise-ignored mapping whose key PyYAML parses into a
+    non-JSON-native type (e.g. an unquoted date) must not break delegation:
+    `json.dump`'s `default` hook only applies to values, never to keys, so
+    such a key must be stringified before serialization instead of raising
+    `TypeError` (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata:\n  2026-09-08: value\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+def test_python_variant_delegates_manifest_with_omap_metadata(
+    tmp_path: Path,
+) -> None:
+    """An ignored `!!omap` metadata value must not break delegation:
+    PyYAML's safe loader represents `!!omap`/`!!pairs` entries as tuples,
+    which naive recursive normalization returns unchanged, so a nested
+    non-JSON-native mapping key inside one (e.g. an unquoted date) still
+    reaches `json.dump` unstringified and raises `TypeError`, even though
+    the in-process parser accepts and ignores the same metadata (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata: !!omap\n  - entry:\n      2026-09-08: value\n"
+        + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_recursive_yaml_alias(
+    tmp_path: Path,
+) -> None:
+    """An ignored `metadata` mapping containing a self-referential YAML alias
+    (`&m {self: *m}`) must not break delegation: `yaml.safe_load` supports
+    this via a shared reference, so naive recursive serialization of the
+    same object forever revisits it and raises `RecursionError` instead of
+    ignoring the unused field the way the in-process parser does (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata: &m\n  self: *m\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_shared_non_recursive_alias(
+    tmp_path: Path,
+) -> None:
+    """A YAML alias shared between two locations (not a self-reference) must
+    not be treated as a cycle: marking a container as seen for the rest of
+    the document -- rather than only while its own subtree is being walked
+    -- makes a second, unrelated reference to the same anchor look like a
+    recursive structure, so delegation replaces `provides.templates` with
+    the non-native marker even though `yaml.safe_load` resolves it to the
+    same plain list the in-process parser accepts (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "metadata:\n"
+        "  shared_templates: &shared_templates\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n"
+        "provides:\n"
+        "  templates: *shared_templates\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """An ignored `metadata` value built from nested, non-recursive YAML
+    aliases (a DAG, not a cycle) must not make delegation blow up:
+    normalizing every occurrence of a shared reference independently turns
+    a document with O(depth) YAML nodes into an O(2**depth) JSON payload,
+    even though cycle detection alone lets it terminate. Restricting what
+    the child serializes to the `provides.templates` fields resolution
+    actually needs avoids expanding unused aliases like this one at all
+    (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    depth = 20
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+    lines.append(f"metadata: *x{depth - 1}")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n" + manifest.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+@requires_bash
+def test_python_variant_delegates_manifest_with_exponential_alias_dag_in_entry(
+    tmp_path: Path,
+) -> None:
+    """An ignored per-entry field (e.g. `description`) built from nested,
+    non-recursive YAML aliases must not make delegation blow up either:
+    pruning unused top-level manifest fields alone still leaves every other
+    field of a `provides.templates` entry in place, so a DAG placed there
+    instead of in top-level `metadata` still turns into an O(2**depth) JSON
+    payload during normalization (#4445)."""
+    repo, expected = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: templates/{TEMPLATE}.md\n"
+        "      strategy: wrap\n"
+        f"      description: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+@requires_bash
+def test_python_variant_rejects_malformed_templates_container_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """A malformed `provides.templates` value (not a list) must be rejected
+    immediately, even when it's built from nested, non-recursive YAML
+    aliases: the in-process parser already fails on the isinstance check
+    without inspecting the value's contents, so delegation must replace it
+    with the non-native marker up front instead of copying it through
+    `_stringify_keys`, which would otherwise turn an O(depth) aliased DAG
+    into an O(2**depth) JSON payload before the check ever runs (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        f"  templates: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+@requires_bash
+def test_python_variant_rejects_malformed_template_entry_field_with_exponential_alias_dag(
+    tmp_path: Path,
+) -> None:
+    """A `provides.templates` entry field that fails the "must be a string"
+    check must be rejected immediately even when it's built from nested,
+    non-recursive YAML aliases: `_only_entry_fields` used to copy a
+    wrong-typed field value through unchanged, so `_stringify_keys` still
+    expanded the aliased DAG into an exponential JSON payload before the
+    later isinstance check could reject it (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    depth = 24
+    lines = ["x0: &x0 [a]"]
+    for i in range(1, depth):
+        lines.append(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]")
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text(
+        "\n".join(lines) + "\n"
+        "provides:\n"
+        "  templates:\n"
+        "    - type: template\n"
+        f"      name: {TEMPLATE}\n"
+        f"      file: *x{depth - 1}\n",
+        encoding="utf-8",
+    )
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    start = time.monotonic()
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+    elapsed = time.monotonic() - start
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert elapsed < 5, f"delegated parsing took {elapsed:.2f}s; expected well under the 10s child timeout"
+
+
+def test_python_variant_rejects_speckit_python_override_without_python_3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `SPECKIT_PYTHON` override that can `import yaml` but is not a
+    Python 3 interpreter (e.g. Python 2 with PyYAML installed) must not be
+    accepted: probing only `import yaml` lets it through, and the later
+    delegated subprocess then fails with syntax/runtime errors instead of
+    falling back to a working interpreter (#4445)."""
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setenv("SPECKIT_PYTHON", "/fake/python2")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        code = cmd[2]
+        returncode = 1 if "version_info" in code else 0
+        return subprocess.CompletedProcess(cmd, returncode)
+
+    monkeypatch.setattr(python_common.subprocess, "run", fake_run)
+
+    assert python_common._import_yaml() is None
+
+
+def test_python_variant_prefers_speckit_python_executable_over_deprecated_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`SPECKIT_PYTHON_EXECUTABLE` is the canonical override; the deprecated
+    `SPECKIT_PYTHON` alias must only be consulted when it is unset (#4445)."""
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.setenv("SPECKIT_PYTHON_EXECUTABLE", "/canonical/python3")
+    monkeypatch.setenv("SPECKIT_PYTHON", "/deprecated/python3")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(python_common.subprocess, "run", fake_run)
+
+    delegate = python_common._import_yaml()
+
+    assert isinstance(delegate, python_common._DelegatedYAML)
+    assert delegate._python_exe == "/canonical/python3"
+
+
+def test_python_variant_skips_yaml_probe_for_manifest_less_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A preset with no preset.yml only needs the conventional template
+    fallback; importing/probing PyYAML for it (which can spawn a
+    SPECKIT_PYTHON child process) is unnecessary per-preset overhead that
+    `resolve_template_content` would otherwise pay for every manifest-less
+    preset (#4445)."""
+    preset_dir = tmp_path / "preset"
+    (preset_dir / "templates").mkdir(parents=True)
+    conventional = preset_dir / "templates" / f"{TEMPLATE}.md"
+    conventional.write_text("# Preset\n", encoding="utf-8")
+
+    def fail_if_called() -> object:
+        raise AssertionError("_import_yaml should not be called without a manifest")
+
+    monkeypatch.setattr(python_common, "_import_yaml", fail_if_called)
+
+    assert python_common._preset_template_layer(preset_dir, TEMPLATE) == (
+        conventional,
+        "replace",
+    )
+
+
+@requires_bash
+def test_python_variant_reports_concise_error_for_malformed_delegated_manifest(
+    tmp_path: Path,
+) -> None:
+    """A syntactically invalid manifest parsed via delegation must fail with
+    a concise message, matching the in-process parser, instead of leaking
+    the child interpreter's raw Python traceback into the user-facing
+    error (#4445)."""
+    repo, _ = _setup_repo(tmp_path)
+
+    manifest = repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    manifest.write_text("provides: [\n", encoding="utf-8")
+
+    no_yaml_exe = make_yaml_less_venv(tmp_path / "no-yaml-venv")
+
+    py_script = repo / ".specify" / "scripts" / "python" / "resolve_template.py"
+    env = clean_env()
+    env["SPECKIT_PYTHON"] = sys.executable
+
+    result = run([str(no_yaml_exe), str(py_script), TEMPLATE, "--json"], repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "Traceback" not in result.stderr
+
+
+@requires_bash
+def test_bash_resolves_composed_template_without_bash4_mapfile_builtin(
+    tmp_path: Path,
+) -> None:
+    """`resolve_template_content` must not rely on `mapfile`, a Bash 4+
+    builtin unavailable on macOS's system Bash 3.2 (#4445). Disabling the
+    builtin for this process reproduces that environment without requiring
+    an actual Bash 3.2 install."""
+    repo, expected = _setup_repo(tmp_path)
+
+    script = repo / ".specify" / "scripts" / "bash" / f"{SCRIPT}.sh"
+    result = run(
+        ["bash", "-c", 'enable -n mapfile; source "$0" "$@"', str(script), TEMPLATE, "--json"],
+        repo,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE,
+        "TEMPLATE_CONTENT": expected,
+    }
+
+
+@requires_bash
+def test_bash_fails_when_override_read_fails(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    override = repo / ".specify" / "templates" / "overrides"
+    override.mkdir(parents=True)
+    (override / f"{TEMPLATE}.md").write_text("# Override\n", encoding="utf-8")
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    cat_shim = shim_dir / "cat"
+    cat_shim.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  */.specify/templates/overrides/*) exit 1 ;;\n"
+        "esac\n"
+        "exec /bin/cat \"$@\"\n",
+        encoding="utf-8",
+    )
+    cat_shim.chmod(0o755)
+    env = clean_env()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    result = run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "manifest_content",
+    [
+        "provides: [\n",
+        "",
+        "provides:\n  templates:\n    - null\n",
+        "provides:\n  templates: {}\n",
+        "preset:\n  id: wrap-pack\n",
+        "provides:\n  templates: []\n",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: null
+      strategy: wrap
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: 123
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: null
+      strategy: append
+""",
+        f"""provides:
+  templates:
+    - name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: templates/other.md
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: bogus
+      name: unrelated-template
+      file: templates/other.md
+""",
+        f"""provides:
+  templates:
+    - type: template
+      name: {TEMPLATE}
+      file: templates/{TEMPLATE}.md
+      strategy: wrap
+    - type: template
+      name: unrelated-template
+      file: templates/other.md
+      strategy: merge
+""",
+    ],
+    ids=[
+        "invalid_yaml",
+        "empty_document",
+        "non_mapping_template_entry",
+        "non_list_templates",
+        "missing_provides",
+        "empty_templates",
+        "non_string_file",
+        "non_string_strategy",
+        "malformed_entry_after_match",
+        "entry_missing_type",
+        "entry_missing_file",
+        "unsupported_type",
+        "unsupported_strategy",
+    ],
+)
+def test_all_variants_fail_for_malformed_preset_manifest(
+    tmp_path: Path,
+    manifest_content: str,
+) -> None:
+    repo, _ = _setup_repo(tmp_path)
+    (
+        repo / ".specify" / "presets" / "wrap-pack" / "preset.yml"
+    ).write_text(manifest_content, encoding="utf-8")
+
+    results = [
+        run(bash_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+        run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo),
+    ]
+    if HAS_POWERSHELL:
+        results.append(run(ps_cmd(repo, SCRIPT, TEMPLATE, "-Json"), repo))
+
+    assert all(result.returncode != 0 for result in results)
+    assert all(result.stdout == "" for result in results)

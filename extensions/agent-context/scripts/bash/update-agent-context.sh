@@ -176,13 +176,18 @@ _opts_lines=()
 while IFS= read -r _line || [[ -n "$_line" ]]; do
   _opts_lines+=("$_line")
 done < <(printf '%s\n' "$_raw_opts")
-if (( ${#_opts_lines[@]} < 3 )); then
-  echo "agent-context: malformed config parser output; expected 3 lines (context_files, marker_start, marker_end), got ${#_opts_lines[@]}; skipping update." >&2
+if (( ${#_opts_lines[@]} < 1 )); then
+  echo "agent-context: malformed config parser output; expected at least the context_files line, got ${#_opts_lines[@]}; skipping update." >&2
   exit 0
 fi
+# The marker lines may be absent: the $(...) capture above strips trailing
+# newlines, so blank markers (the config omitting context_markers and relying on
+# defaults) collapse the 3-line output to fewer lines. Default them to empty here
+# and let the DEFAULT_START/END substitution below fill them in, matching the
+# Python and PowerShell ports.
 CONTEXT_FILES_JSON="${_opts_lines[0]}"
-MARKER_START="${_opts_lines[1]}"
-MARKER_END="${_opts_lines[2]}"
+MARKER_START="${_opts_lines[1]:-}"
+MARKER_END="${_opts_lines[2]:-}"
 
 if ! _context_files_raw="$("$_python" - "$CONTEXT_FILES_JSON" <<'PY'
 import json

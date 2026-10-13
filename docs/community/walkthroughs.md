@@ -3,7 +3,7 @@
 > [!NOTE]
 > Community walkthroughs are independently created and maintained by their respective authors. They are **not reviewed, nor endorsed, nor supported by GitHub**. Review their content before following along and use at your own discretion.
 
-See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs:
+See Spec-Driven Development in action across different scenarios with these community-contributed walkthroughs. They are useful read-only examples of completed flows, but they are not official golden outputs for generated specs, plans, or tasks.
 
 - **[Greenfield .NET CLI tool](https://github.com/mnriem/spec-kit-dotnet-cli-demo)** — Builds a Timezone Utility as a .NET single-binary CLI tool from a blank directory, covering the full spec-kit workflow: constitution, specify, plan, tasks, and multi-pass implement using GitHub Copilot agents.
 

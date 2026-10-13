@@ -2,15 +2,18 @@
 
 import re
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 import yaml
 
 from specify_cli import AGENT_CONFIG
+from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 from specify_cli.extensions import CommandRegistrar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ISSUE_TEMPLATE_AGENT_KEYS = [
+    "alquimia",
     "amp",
     "agy",
     "auggie",
@@ -18,9 +21,12 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "cline",
     "codebuddy",
     "codex",
+    "command-code",
     "cursor-agent",
     "devin",
+    "docker-agent",
     "droid",
+    "dsh",
     "firebender",
     "forge",
     "gemini",
@@ -34,7 +40,9 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "kimi",
     "kiro-cli",
     "lingma",
+    "mcode",
     "vibe",
+    "muse",
     "omp",
     "opencode",
     "pi",
@@ -102,6 +110,14 @@ def _supported_agent_names_from_agent_request_template() -> list[str]:
 
 class TestAgentConfigConsistency:
     """Ensure agent configuration stays synchronized across key surfaces."""
+
+    def test_register_commands_resolved_dir_annotation_accepts_none(self):
+        """The internal resolved-directory override defaults to None."""
+        resolved_dir_type = get_type_hints(
+            AgentCommandRegistrar.register_commands
+        )["_resolved_dir"]
+
+        assert type(None) in get_args(resolved_dir_type)
 
     def test_issue_template_agent_lists_match_runtime_integrations(self):
         """GitHub issue templates should list all concrete built-in agents."""
@@ -427,3 +443,27 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_rovodev(self):
         """AGENT_CONFIG should include rovodev."""
         assert "rovodev" in AGENT_CONFIG
+
+    # --- MiniMax Code consistency checks ---
+
+    def test_mcode_in_agent_config(self):
+        """AGENT_CONFIG should include mcode with skills-based scaffold metadata."""
+        assert "mcode" in AGENT_CONFIG
+        assert AGENT_CONFIG["mcode"]["folder"] == ".minimax/"
+        assert AGENT_CONFIG["mcode"]["commands_subdir"] == "skills"
+        assert AGENT_CONFIG["mcode"]["requires_cli"] is True
+
+    def test_mcode_in_extension_registrar(self):
+        """CommandRegistrar.AGENT_CONFIGS should include mcode skill scaffold metadata."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert "mcode" in cfg
+        mcode_cfg = cfg["mcode"]
+        assert mcode_cfg["dir"] == ".minimax/skills"
+        assert mcode_cfg["format"] == "markdown"
+        assert mcode_cfg["args"] == "$ARGUMENTS"
+        assert mcode_cfg["extension"] == "/SKILL.md"
+
+    def test_agent_config_includes_mcode(self):
+        """AGENT_CONFIG should include mcode."""
+        assert "mcode" in AGENT_CONFIG

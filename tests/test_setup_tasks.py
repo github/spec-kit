@@ -466,6 +466,42 @@ def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -
     assert result.stdout.strip() == "/speckit.jira.sync-status"
 
 
+@requires_bash
+def test_installed_bash_formatter_uses_dollar_prefix(tmp_path: Path) -> None:
+    from specify_cli import _install_shared_infra
+
+    project = tmp_path / "bash-dollar-prefix"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    _install_shared_infra(
+        project, "sh", invoke_separator="-", invoke_prefix="$"
+    )
+    _write_integration_state(project, "codex", "-")
+
+    result = _run_bash_format_command(project, "plan")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "$speckit-plan"
+
+
+@requires_bash
+def test_installed_bash_formatter_uses_skill_colon_prefix(tmp_path: Path) -> None:
+    from specify_cli import _install_shared_infra
+
+    project = tmp_path / "bash-skill-colon-prefix"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    _install_shared_infra(
+        project, "sh", invoke_separator="-", invoke_prefix="/skill:"
+    )
+    _write_integration_state(project, "kimi", "-")
+
+    result = _run_bash_format_command(project, "plan")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/skill:speckit-plan"
+
+
 def _install_broken_json_tool_stubs(repo: Path) -> Path:
     """Create a bin dir with `jq` and `python3` stubs that exist but fail.
 
@@ -683,7 +719,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=tasks_repo,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         check=False,
         env=_clean_env(),
     )
@@ -761,6 +797,39 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_setup_tasks_ps_text_output_lists_available_docs(tasks_repo: Path) -> None:
+    """Text mode must print a status line per document, like the bash/Python twins.
+
+    `Test-FileExists` / `Test-DirHasFiles` report their line with `Write-Output`
+    and ALSO `return $true/$false`, both on the Success stream. Piping the whole
+    call to `| Out-Null` discarded the boolean AND the report line, so
+    `AVAILABLE_DOCS:` was emitted with nothing under it.
+    """
+    feat = _minimal_feature(tasks_repo)
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script)],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "AVAILABLE_DOCS:" in result.stdout
+    for doc in ("research.md", "data-model.md", "contracts/", "quickstart.md"):
+        assert doc in result.stdout, (doc, result.stdout)
+    normalized = result.stdout.replace("\r\n", "\n")
+    assert "[OK] research.md" in normalized, normalized
+    assert "[FAIL] data-model.md" in normalized, normalized
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_normalizes_mixed_separators(
     tasks_repo: Path,
 ) -> None:
@@ -777,6 +846,24 @@ def test_powershell_command_hint_normalizes_mixed_separators(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/speckit-git-commit"
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_installed_powershell_formatter_uses_dollar_prefix(tmp_path: Path) -> None:
+    from specify_cli import _install_shared_infra
+
+    project = tmp_path / "powershell-dollar-prefix"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    _install_shared_infra(
+        project, "ps", invoke_separator="-", invoke_prefix="$"
+    )
+    _write_integration_state(project, "codex", "-")
+
+    result = _run_powershell_format_command(project, "plan")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "$speckit-plan"
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")

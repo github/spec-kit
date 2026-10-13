@@ -1,0 +1,129 @@
+"""Command handler for ``specify workflow step remove``."""
+
+from __future__ import annotations
+
+from .. import _commands as cli
+from . import step_app
+
+from . import _helpers as step_helpers
+
+
+def _remove_step_locked(project_root: cli.Path, step_id: str) -> None:
+    """Remove a step's registry entry and directory while the lock is held.
+
+    The registry and step directory are resolved here, after the lock is
+    acquired, so a concurrent install cannot be lost or resurrected by a stale
+    registry snapshot.
+    """
+    import shutil
+
+    from .catalog import StepRegistry, StepValidationError
+
+    safe_step_id = cli._escape_markup(step_id)
+    registry = StepRegistry(project_root)
+    in_registry = registry.is_installed(step_id)
+
+    steps_base_dir = step_helpers._resolve_steps_base_dir_or_exit(project_root)
+    step_dir = (steps_base_dir / step_id).resolve()
+    # Defense-in-depth: even though step_helpers._validate_step_id_or_exit rejects path
+    # separators, ensure that the resolved directory is a single child of
+    # steps_base_dir and is not steps_base_dir itself.
+    try:
+        rel_parts = step_dir.relative_to(steps_base_dir).parts
+    except ValueError:
+        cli.console.print(f"[red]Error:[/red] Invalid step id '{safe_step_id}'")
+        raise cli.typer.Exit(1)
+    if rel_parts != (step_id,):
+        cli.console.print(f"[red]Error:[/red] Invalid step id '{safe_step_id}'")
+        raise cli.typer.Exit(1)
+
+    dir_exists = step_dir.exists()
+
+    if not in_registry and not dir_exists:
+        cli.console.print(f"[red]Error:[/red] Step type '{safe_step_id}' is not installed")
+        raise cli.typer.Exit(1)
+
+    if not in_registry and dir_exists:
+        # The registry was likely reset due to corruption.  Warn the user that the
+        # directory is being removed even though there is no registry entry, so
+        # the orphaned package can be cleaned up and a fresh install attempted.
+        cli.console.print(
+            f"[yellow]Warning:[/yellow] '{safe_step_id}' has no registry entry "
+            "(registry may have been reset). Removing the orphaned directory."
+        )
+
+    if dir_exists and not in_registry:
+        # No registry write needed; just delete the orphaned directory.
+        try:
+            shutil.rmtree(step_dir)
+        except OSError as exc:
+            cli.console.print(
+                "[red]Error:[/red] Failed to remove step directory "
+                f"{cli._escape_markup(str(step_dir))}: {cli._escape_markup(str(exc))}"
+            )
+            raise cli.typer.Exit(1)
+    elif in_registry:
+        # Remove the registry entry, then the directory. If the directory
+        # delete fails, restore the registry entry so state stays consistent
+        # and a future `step add` isn't blocked by an orphaned directory
+        # with no registry entry.
+        registry_metadata = registry.get(step_id)
+        try:
+            registry.remove(step_id)
+        except StepValidationError as exc:
+            cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+            raise cli.typer.Exit(1)
+        if dir_exists:
+            try:
+                shutil.rmtree(step_dir)
+            except OSError as exc:
+                # Restore the original registry entry verbatim (bypass add()
+                # which would overwrite timestamps).
+                try:
+                    if registry_metadata is not None:
+                        registry.data["steps"][step_id] = registry_metadata
+                        registry.save()
+                except Exception as restore_exc:  # noqa: BLE001
+                    cli.console.print(
+                        f"[yellow]Warning:[/yellow] Failed to restore registry entry "
+                        f"for '{safe_step_id}' after directory removal failure: "
+                        f"{cli._escape_markup(str(restore_exc))}"
+                    )
+                cli.console.print(
+                    "[red]Error:[/red] Failed to remove step directory "
+                    f"{cli._escape_markup(str(step_dir))}: "
+                    f"{cli._escape_markup(str(exc))}"
+                )
+                raise cli.typer.Exit(1)
+
+
+@step_app.command("remove")
+def workflow_step_remove(
+    step_id: str = cli.typer.Argument(..., help="Step type ID to uninstall"),
+):
+    """Uninstall a custom step type."""
+    from .installer import StepInstallError, _step_install_transaction
+
+    project_root = cli._require_specify_project()
+
+    step_helpers._validate_step_id_or_exit(step_id)
+
+    # Removal mutates the same directory and registry as `step add`, so it
+    # shares the install lock to prevent lost or resurrected registry entries.
+    try:
+        with _step_install_transaction(project_root):
+            _remove_step_locked(project_root, step_id)
+    except StepInstallError as exc:
+        # Report the underlying acquisition error so the message is not
+        # prefixed twice by the helper's own lock-failure text.
+        cause = exc.__cause__ or exc
+        cli.console.print(
+            "[red]Error:[/red] Failed to lock step removal "
+            f"'{cli._escape_markup(step_id)}': "
+            f"{cli._escape_markup(str(cause))}"
+        )
+        raise cli.typer.Exit(1)
+
+    cli.console.print(
+        f"[green]✓[/green] Step type '{cli._escape_markup(step_id)}' uninstalled"
+    )

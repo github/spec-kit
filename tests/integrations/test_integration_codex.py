@@ -12,7 +12,6 @@ class TestCodexIntegration(SkillsIntegrationTests):
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
 
-
 class TestCodexInitFlow:
     """--integration codex creates expected files."""
 
@@ -98,6 +97,8 @@ class TestCodexHookCommandNote:
         assert "replace dots" in content, (
             "speckit-specify should have dot-to-hyphen hook note"
         )
+        assert "constructing command invocations" in content
+        assert "constructing slash commands" not in content
 
     def test_hook_note_not_in_skills_without_hooks(self):
         """Skills without hook sections should not get the note."""

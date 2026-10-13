@@ -1,0 +1,50 @@
+schema_version: "1.0"
+workflow:
+  id: "bugfix"
+  name: "Guided Bug Fix"
+  version: "1.0.0"
+  author: "GitHub"
+  description: "Runs bug assess → human review gate → bug fix → bug test on a bug report"
+
+requires:
+  # Matches the composed bug extension's requirement (extensions/bug/extension.yml).
+  speckit_version: ">=0.9.0"
+
+inputs:
+  report:
+    type: string
+    required: true
+    prompt: "Bug report (pasted text or URL)"
+  slug:
+    type: string
+    required: true
+    prompt: "Bug slug (short kebab-case name, e.g. login-timeout)"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+
+steps:
+  - id: assess
+    command: speckit.bug.assess
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.report }} slug={{ inputs.slug }}"
+
+  - id: review-assessment
+    type: gate
+    message: "Review the assessment before any code change."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: fix
+    command: speckit.bug.fix
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"
+
+  - id: test
+    command: speckit.bug.test
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.slug }}"

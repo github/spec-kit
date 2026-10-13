@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -15,6 +16,27 @@ from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
+
+# Managed ``.specify/.gitignore``. Keeps machine-local Spec Kit state out of
+# version control while leaving shareable project files (specs, constitution,
+# templates, scripts, extension config) tracked. Patterns are relative to the
+# ``.specify/`` directory the file lives in.
+SPECIFY_GITIGNORE_CONTENT = """\
+# Machine-local Spec Kit state — not meant to be shared.
+# Managed by the Specify CLI; safe to edit (your changes are preserved on refresh).
+
+# Local pointer to the current feature directory. Rewritten every time you
+# switch features, so it is per-checkout state rather than something to share.
+feature.json
+
+# Per-machine extension config overrides.
+extensions/*/local-config.yml
+
+# Executable adapter packages and their per-checkout provenance registry.
+# Execution consent is stored separately in the user's local trust registry.
+integrations/packages/
+integrations/packages.json
+"""
 
 # Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
 # characters. Callers lowercase the declared value before matching (see
@@ -217,6 +239,60 @@ def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None
             raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
 
 
+@contextlib.contextmanager
+def _exclusive_project_lock(project_root: Path, lock_name: str, *, context: str):
+    """Hold an exclusive inter-process lock on ``.specify/<lock_name>``.
+
+    Callers use one lock file per mutable project resource so that its
+    directory and registry changes are serialized across processes. Every
+    failure to acquire the lock is raised as ``OSError``.
+    """
+    project_root = Path(project_root)
+    lock_dir = project_root / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            project_root, lock_dir, context=f"{context} lock directory"
+        )
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
+    lock_file = lock_dir / lock_name
+    if lock_file.is_symlink():
+        raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_file, flags, 0o600)
+    try:
+        if lock_file.is_symlink():
+            raise OSError(f"Refusing to use symlinked {context} lock: {lock_file}")
+        # Call the lock primitives through their modules so tests can observe
+        # contention by patching ``msvcrt.locking`` / ``fcntl.flock``.
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def _ensure_safe_shared_destination(
     project_path: Path,
     dest: Path,
@@ -253,6 +329,9 @@ def _write_shared_bytes(
     mode: int = 0o644,
 ) -> None:
     _ensure_safe_shared_destination(project_path, dest)
+    from .integrations._file_changes import after_file_change, before_file_change
+
+    before_file_change(dest)
     fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
     temp_path = Path(temp_name)
     try:
@@ -261,9 +340,9 @@ def _write_shared_bytes(
         temp_path.chmod(mode)
         _ensure_safe_shared_destination(project_path, dest)
         os.replace(temp_path, dest)
+        after_file_change(dest)
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path.unlink(missing_ok=True)
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
@@ -272,27 +351,56 @@ _BASH_FORMAT_COMMAND_RE = re.compile(
 _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
     r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
 )
+_PYTHON_FORMAT_COMMAND_RETURN_RE = re.compile(
+    r'return f"/speckit\{separator\}\{name\}"'
+)
+_BASH_FORMATTER_RETURN_RE = re.compile(
+    r'''printf '/speckit%s%s\\n' "\$separator" "\$command_name"'''
+)
+_POWERSHELL_FORMATTER_RETURN_RE = re.compile(
+    r'return "/speckit\$separator\$name"'
+)
 
 
-def _format_speckit_command(command_name: str, separator: str) -> str:
+def _format_speckit_command(
+    command_name: str, separator: str, prefix: str = "/"
+) -> str:
     name = command_name.strip().lstrip("/")
     if name.startswith("speckit."):
         name = name[len("speckit.") :]
     elif name.startswith("speckit-"):
         name = name[len("speckit-") :]
     name = name.replace(".", separator)
-    return f"/speckit{separator}{name}"
+    return f"{prefix}speckit{separator}{name}"
 
 
-def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
+def _resolve_dynamic_command_refs(
+    content: str, separator: str, prefix: str = "/"
+) -> str:
     """Render script runtime command helpers for managed shared infra copies."""
 
+    bash_prefix = r"\$" if prefix == "$" else prefix
     content = _BASH_FORMAT_COMMAND_RE.sub(
-        lambda match: _format_speckit_command(match.group(2), separator),
+        lambda match: _format_speckit_command(
+            match.group(2), separator, bash_prefix
+        ),
         content,
     )
-    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
-        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
+    content = _POWERSHELL_FORMAT_COMMAND_RE.sub(
+        lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
+        content,
+    )
+    content = _BASH_FORMATTER_RETURN_RE.sub(
+        f'''printf '{prefix}speckit%s%s\\\\n' "$separator" "$command_name"''',
+        content,
+    )
+    powershell_prefix = "`$" if prefix == "$" else prefix
+    content = _POWERSHELL_FORMATTER_RETURN_RE.sub(
+        f'return "{powershell_prefix}speckit$separator$name"',
+        content,
+    )
+    return _PYTHON_FORMAT_COMMAND_RETURN_RE.sub(
+        f'return f"{prefix}speckit{{separator}}{{name}}"',
         content,
     )
 
@@ -305,6 +413,7 @@ def refresh_shared_templates(
     repo_root: Path,
     console: Any,
     invoke_separator: str,
+    invoke_prefix: str = "/",
     force: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
@@ -336,7 +445,9 @@ def refresh_shared_templates(
                 continue
 
         content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        content = IntegrationBase.resolve_command_refs(
+            content, invoke_separator, invoke_prefix
+        )
         planned_updates.append((dst, rel, content))
 
     for dst, rel, content in planned_updates:
@@ -363,6 +474,7 @@ def install_shared_infra(
     console: Any,
     force: bool = False,
     invoke_separator: str = ".",
+    invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
 ) -> bool:
@@ -516,8 +628,12 @@ def install_shared_infra(
                     if not _ensure_or_bucket_dir(dst_path.parent):
                         continue
                     content = src_path.read_text(encoding="utf-8")
-                    content = IntegrationBase.resolve_command_refs(content, invoke_separator)
-                    content = _resolve_dynamic_command_refs(content, invoke_separator)
+                    content = IntegrationBase.resolve_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
+                    content = _resolve_dynamic_command_refs(
+                        content, invoke_separator, invoke_prefix
+                    )
                     planned_copies.append(
                         (
                             dst_path,
@@ -566,8 +682,40 @@ def install_shared_infra(
                     continue
 
                 content = src.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                content = IntegrationBase.resolve_command_refs(
+                    content, invoke_separator, invoke_prefix
+                )
                 planned_templates.append((dst, rel, content))
+
+    # Managed ``.specify/.gitignore`` — keeps machine-local state (the
+    # ``feature.json`` pointer and per-machine ``local-config.yml`` overrides)
+    # out of git while leaving everything else shareable. Routed through the
+    # same overwrite/skip/preserve policy as templates so ``--force`` refreshes
+    # it and user edits are preserved. Like every other shared-infra file it is
+    # tracked in ``speckit.manifest.json`` (not the per-integration manifest) and
+    # is therefore intentionally left in place by ``integration uninstall``.
+    specify_dir = project_path / ".specify"
+    if _ensure_or_bucket_dir(specify_dir):
+        gitignore_dst = specify_dir / ".gitignore"
+        gitignore_rel = gitignore_dst.relative_to(project_path).as_posix()
+        seen_rels.add(gitignore_rel)
+        if _safe_dest_or_bucket(gitignore_dst, gitignore_rel):
+            write, bucket = _decide_overwrite(gitignore_rel, gitignore_dst)
+            if write:
+                planned_templates.append(
+                    (gitignore_dst, gitignore_rel, SPECIFY_GITIGNORE_CONTENT)
+                )
+            elif bucket == "preserved":
+                preserved_user_files.append(gitignore_rel)
+            else:
+                skipped_files.append(gitignore_rel)
+                if gitignore_dst.is_file() and gitignore_rel not in prior_hashes:
+                    try:
+                        manifest.record_existing(gitignore_rel, recovered=True)
+                    except (OSError, ValueError) as exc:
+                        console.print(
+                            f"[yellow]⚠[/yellow]  could not record {gitignore_rel} in manifest: {exc}"
+                        )
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):
@@ -662,7 +810,11 @@ def install_shared_infra(
             if not _safe_dest_or_bucket(dst, rel):
                 continue
             try:
+                from .integrations._file_changes import after_file_change, before_file_change
+
+                before_file_change(dst, removal=True)
                 dst.unlink()
+                after_file_change(dst)
             except OSError as exc:
                 console.print(f"[yellow]⚠[/yellow]  could not remove stale {rel}: {exc}")
                 continue

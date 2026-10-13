@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-24T00:00:00Z",
+  "updated_at": "2026-08-04T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
@@ -24,6 +24,29 @@
         "minimal",
         "workflow",
         "core"
+      ]
+    },
+    "constitution-sync": {
+      "name": "Constitution Template Sync",
+      "id": "constitution-sync",
+      "version": "1.0.0",
+      "description": "Opt-in: restores guarded install-time constitution seeding and /constitution propagation for teams that treat materialized templates as reviewed artifacts.",
+      "author": "github",
+      "repository": "https://github.com/github/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.14.4"
+      },
+      "provides": {
+        "commands": 1,
+        "templates": 0
+      },
+      "tags": [
+        "constitution",
+        "governance",
+        "templates",
+        "compatibility"
       ]
     }
   }

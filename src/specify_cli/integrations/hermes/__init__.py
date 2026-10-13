@@ -12,6 +12,7 @@ Usage::
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from shutil import rmtree
 from typing import Any
@@ -121,13 +122,27 @@ class HermesIntegration(SkillsIntegration):
             command_name = src_file.stem  # e.g. "plan"
             skill_name = f"speckit-{command_name.replace('.', '-')}"
 
-            # Parse frontmatter for description
+            # Parse frontmatter for description. Locate the closing ``---`` on
+            # its own line rather than with ``raw.split("---", 2)`` — a bare
+            # substring split stops at the first ``---`` *anywhere*, including
+            # one inside a value such as ``description: Separate sections
+            # with ---``, which truncates the frontmatter and drops later keys.
+            # The block between the delimiters is parsed unstripped so trailing
+            # newlines in literal (``|``) block scalars survive.
             frontmatter: dict[str, Any] = {}
             if raw.startswith("---"):
-                parts = raw.split("---", 2)
-                if len(parts) >= 3:
+                fm_lines = raw.splitlines(keepends=True)
+                fm_close = next(
+                    (
+                        i
+                        for i in range(1, len(fm_lines))
+                        if fm_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if fm_close is not None:
                     try:
-                        fm = yaml.safe_load(parts[1])
+                        fm = yaml.safe_load("".join(fm_lines[1:fm_close]))
                         if isinstance(fm, dict):
                             frontmatter = fm
                     except yaml.YAMLError:
@@ -143,10 +158,26 @@ class HermesIntegration(SkillsIntegration):
                 project_root=project_root,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
+            # Scan for the closing ``---`` on its own line rather than
+            # ``split("---", 2)`` so a ``---`` embedded in a value does not
+            # truncate the frontmatter and spill it into the body.
             if processed_body.startswith("---"):
-                parts = processed_body.split("---", 2)
-                if len(parts) >= 3:
-                    processed_body = parts[2]
+                body_lines = processed_body.splitlines(keepends=True)
+                close_idx = next(
+                    (
+                        i
+                        for i in range(1, len(body_lines))
+                        if body_lines[i].rstrip() == "---"
+                    ),
+                    None,
+                )
+                if close_idx is not None:
+                    # Keep whatever trails the ``---`` marker on the closing
+                    # line so the body stays byte-for-byte identical to
+                    # ``split("---", 2)[2]`` for well-formed templates.
+                    processed_body = body_lines[close_idx][3:] + "".join(
+                        body_lines[close_idx + 1 :]
+                    )
 
             # Select description
             description = frontmatter.get("description", "")
@@ -173,17 +204,25 @@ class HermesIntegration(SkillsIntegration):
 
             # Write directly to global ~/.hermes/skills/speckit-<name>/SKILL.md
             skill_dir = global_skills_dir / skill_name
-            skill_dir.mkdir(parents=True, exist_ok=True)
             skill_file = skill_dir / "SKILL.md"
             normalized = skill_content.replace("\r\n", "\n")
-            skill_file.write_bytes(normalized.encode("utf-8"))
+            from .._file_changes import changing_file
+
+            with changing_file(skill_file):
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                skill_file.write_bytes(normalized.encode("utf-8"))
             created.append(skill_file)
 
 
         # Create project-local marker directory so extension commands
         # (e.g. git) can detect Hermes as an active integration.
         # Hermes itself ignores this directory — skills live globally.
-        (project_root / ".hermes" / "skills").mkdir(parents=True, exist_ok=True)
+        marker = project_root / ".hermes" / "skills"
+        if not marker.exists():
+            from .._file_changes import changing_file
+
+            with changing_file(marker):
+                marker.mkdir(parents=True, exist_ok=True)
 
         return created
 
@@ -214,10 +253,14 @@ class HermesIntegration(SkillsIntegration):
         # Remove project-local marker directory if empty
         local_skills_dir = project_root / ".hermes" / "skills"
         if local_skills_dir.is_dir() and not any(local_skills_dir.iterdir()):
-            local_skills_dir.rmdir()
+            from .._file_changes import changing_file
+
+            with changing_file(local_skills_dir, removal=True):
+                local_skills_dir.rmdir()
             hermes_dir = project_root / ".hermes"
             if hermes_dir.is_dir() and not any(hermes_dir.iterdir()):
-                hermes_dir.rmdir()
+                with changing_file(hermes_dir, removal=True):
+                    hermes_dir.rmdir()
 
         # Remove all global Hermes skills for speckit — these are always
         # removed on uninstall regardless of the force flag, matching the
@@ -227,7 +270,10 @@ class HermesIntegration(SkillsIntegration):
             for skill_dir in sorted(global_skills_dir.iterdir()):
                 if skill_dir.is_dir() and skill_dir.name.startswith("speckit-"):
                     try:
-                        rmtree(skill_dir)
+                        from .._file_changes import changing_file
+
+                        with changing_file(skill_dir, removal=True):
+                            rmtree(skill_dir)
                         removed.append(skill_dir)
                     except OSError:
                         skipped.append(skill_dir)
@@ -242,6 +288,9 @@ class HermesIntegration(SkillsIntegration):
         *,
         model: str | None = None,
         output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> list[str] | None:
         """Build Hermes CLI invocation for programmatic dispatch.
 
@@ -249,6 +298,7 @@ class HermesIntegration(SkillsIntegration):
         mapping slash-command invocations to the appropriate skill-based
         dispatch.
         """
+        self.validate_runtime_config(integration_args, integration_options)
         args = [self._resolve_executable(), "chat", "-Q"]
 
         # Operator-supplied SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS go here —

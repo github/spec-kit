@@ -1,0 +1,57 @@
+name: Extension Version Guard
+
+permissions:
+  contents: read
+
+# Bundled extensions only reach existing installs through a version bump:
+# `specify extension update` compares the semver in extensions/catalog.json
+# against the installed copy and reports "Up to date" whenever they match.
+# Content changes shipped without a bump go silently stale on every
+# project that already installed the extension (#4345). This guard turns
+# "please remember to bump" into a merge requirement.
+#
+# Deliberately no `paths:` filter: a required status check that is skipped
+# by path filtering stays in "Expected" state and blocks every PR that does
+# not touch extensions/**. The check runs on every pull request instead and
+# the script reports success when nothing under extensions/ changed.
+on:
+  pull_request:
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull_request checkout is GitHub's merge of the PR head into
+          # the base tip. Depth 2 also fetches both parents of that merge
+          # commit, so HEAD^1 - the base the merge was actually built on -
+          # is available to diff against.
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install check dependencies
+        run: python -m pip install --quiet pyyaml packaging
+
+      # Diff against the merge commit's first parent, NOT against
+      # github.event.pull_request.base.sha. The payload SHA is the base tip
+      # from when the PR was opened and is not refreshed when the base branch
+      # moves, while refs/pull/N/merge is rebuilt against the current tip.
+      # Diffing the stale SHA against the fresh merge commit attributes
+      # unrelated base-branch drift to the PR (observed on #4395: two
+      # unbumped extension changes merged to main were blamed on a PR that
+      # never touched them). HEAD^1 is by construction the base the merge
+      # was built on.
+      - name: Check bundled extension version bumps
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "::error::HEAD is not the pull request merge commit; cannot determine the PR base"
+            exit 1
+          fi
+          python .github/scripts/check_extension_version_bump.py HEAD^1

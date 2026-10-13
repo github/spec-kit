@@ -56,6 +56,9 @@ class StepContext:
     #: Current fan-out item (set only inside fan-out iterations).
     item: Any = None
 
+    #: Whether the current step is executing inside a fan-out template.
+    inside_fan_out: bool = False
+
     #: Fan-in aggregated results (set only for fan-in steps).
     fan_in: dict[str, Any] = field(default_factory=dict)
 
@@ -73,6 +76,9 @@ class StepContext:
 
     #: Current run ID.
     run_id: str | None = None
+
+    #: Whether the engine is re-executing the current step during resume.
+    is_resume: bool = False
 
     #: Source directory of the workflow definition file.
     workflow_dir: str | None = None

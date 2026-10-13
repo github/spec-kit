@@ -1,0 +1,30 @@
+schema_version: "1.0"
+
+preset:
+  id: "constitution-sync"
+  name: "Constitution Template Sync"
+  version: "1.0.0"
+  description: "Opt-in: restores guarded install-time constitution seeding and /constitution propagation for teams that treat materialized templates as reviewed artifacts."
+  author: "github"
+  repository: "https://github.com/github/spec-kit"
+  license: "MIT"
+
+requires:
+  # Requires the runtime-resolution baseline (#3790, shipped in 0.14.4) where the
+  # core /constitution command no longer propagates. Installing this preset on an
+  # older core would double-apply propagation.
+  speckit_version: ">=0.14.4"
+
+provides:
+  templates:
+    - type: "command"
+      name: "speckit.constitution"
+      file: "commands/speckit.constitution.md"
+      description: "Wrap /constitution to also propagate guidance into dependent templates and command files"
+      strategy: "wrap"
+
+tags:
+  - "constitution"
+  - "governance"
+  - "templates"
+  - "compatibility"
