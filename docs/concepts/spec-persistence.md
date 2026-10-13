@@ -22,10 +22,10 @@ documented intent.
 The core workflow has no dedicated command that automatically reconciles
 differences among `spec.md`, `plan.md`, and `tasks.md`. Analyze reports
 inconsistencies without editing artifacts, and converge only appends remaining
-work to `tasks.md`. Contributors can return to the core command
-that owns an artifact to revise or regenerate it, while teams and extensions can
-coordinate broader reconciliation during or after delivery. Extension behavior
-does not change the responsibilities of the core commands.
+work to `tasks.md`. Teams can reconcile artifacts directly, and extensions can
+provide their own commands or hooks to coordinate reconciliation during or
+after delivery. Extension behavior does not change the responsibilities of the
+core commands.
 
 Persistence is the team's choice of how to maintain artifacts **after
 delivery**, not an alternative way to deliver or determine completeness.

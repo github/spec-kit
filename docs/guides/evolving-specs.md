@@ -46,15 +46,10 @@ code as a replacement for documented intent.
 
 Core has no dedicated command that automatically reconciles differences among
 `spec.md`, `plan.md`, and `tasks.md`. `/speckit.analyze` reports inconsistencies
-without changing the artifacts, while contributors can return to
-`/speckit.specify` while targeting the existing `SPECIFY_FEATURE_DIRECTORY`, or
-use `/speckit.clarify`, `/speckit.plan`, and `/speckit.tasks`, to revise or
-regenerate the artifacts those commands own. Without an explicit existing
-feature directory, `/speckit.specify` creates a new one. A team can coordinate
-broader reconciliation directly, or an extension can provide commands or hooks
-that do so during or after delivery according to that extension's documented
-behavior. Those actions do not change the responsibilities of the core
-commands.
+without changing the artifacts. A team can reconcile them directly, or an
+extension can provide commands or hooks that do so during or after delivery
+according to that extension's documented behavior. Those actions do not change
+the responsibilities of the core commands.
 
 Discoveries may arise during delivery under any model. If they lead to an
 agreed change of intent, make the revised contract explicit in the artifacts
@@ -81,17 +76,16 @@ Use living spec when `spec.md` is the contract and `plan.md` and `tasks.md` are
 derived from it.
 
 After delivery, maintain `spec.md` as the contract. When intended behavior
-changes, revise the existing `spec.md` first. Then regenerate or manually revise
-downstream artifacts so they match the updated spec:
+changes, revise the existing `spec.md` first. Then reconcile downstream
+artifacts so they match the updated spec:
 
-1. Start from a clean working tree or a dedicated branch so every generated
+1. Start from a clean working tree or a dedicated branch so every artifact
    change is reviewable.
-2. Update `spec.md` with `/speckit.clarify` or an explicit edit.
-3. Rerun `/speckit.plan` or revise `plan.md` so the technical approach matches
-   the revised spec.
-4. Rerun `/speckit.tasks` or revise `tasks.md` so implementation work matches
-   the revised plan.
-5. Run `/speckit.analyze` to catch gaps between the spec, plan, and tasks.
+2. Update `spec.md` with the intended contract.
+3. Reconcile `plan.md` and `tasks.md` directly or through an extension according
+   to the team's documented convention.
+4. Run `/speckit.analyze` to report any remaining gaps between the spec, plan,
+   and tasks.
 
 These steps maintain the artifact set; they do not deliver changed behavior.
 If the revised contract requires implementation, use the shared delivery loop
@@ -120,11 +114,10 @@ alignment with that agreed direction:
 
 The implementation provides evidence for the team's decision; accepting code
 does not automatically make it the intended contract. Reconcile the artifacts
-directly or through an extension, using the artifact-owning core commands where
-appropriate. Analyze and converge do not provide automatic all-artifact
-reconciliation, and no core amendment command is required. If the agreed
-direction requires implementation, use the shared delivery loop above against
-explicit intended artifacts.
+directly or through an extension. Analyze and converge do not provide automatic
+all-artifact reconciliation, and no core amendment command is required. If the
+agreed direction requires implementation, use the shared delivery loop above
+against explicit intended artifacts.
 
 Flow-back is flexible, but it requires discipline. Do not leave a lower-level
 change in `tasks.md` or code if `spec.md` still says something different and the
