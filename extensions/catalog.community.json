@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-09T00:00:00Z",
+  "updated_at": "2026-10-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -8,8 +8,9 @@
       "id": "adrkit",
       "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
       "author": "Mark Beacom (@mbeacom)",
-      "version": "0.1.4",
-      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.4/adrkit.zip",
+      "version": "0.1.5",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.5/adrkit.zip",
+      "sha256": "c6392238470d50ca75153606aea26905c776c339f7ec9da41395671a035e608f",
       "repository": "https://github.com/mbeacom/adrkit",
       "homepage": "https://adrkit.dev",
       "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
@@ -18,7 +19,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.13.0,<1.1.0",
+        "speckit_version": ">=0.13.0,<1.2.0",
         "tools": [
           {
             "name": "adr",
@@ -42,16 +43,16 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
-      "updated_at": "2026-09-15T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "aee": {
       "name": "Applied Epistemic Engineering",
       "id": "aee",
-      "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
+      "description": "Checks the claims in a spec-driven project against their evidence at every stage, and shows plainly what is verified, what is not, and what remains not understood.",
       "author": "ElectroHire",
-      "version": "1.2.0",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.2.0.zip",
-      "sha256": "74b5c99c547540acd191c1a0acc4b9c404cd8a25e36f0684f676d2aac2fd3cf5",
+      "version": "1.3.0",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.3.0.zip",
+      "sha256": "e6da266c4736e454a1eb1a2cfb85590835586866a81a2dbd269b2993ac30b603",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -60,7 +61,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=1.0.0",
+        "speckit_version": ">=1.0.0,<2",
         "tools": [
           {
             "name": "python",
@@ -69,13 +70,13 @@
           },
           {
             "name": "aee",
-            "version": ">=1.4.0,<2",
+            "version": ">=1.5.0,<2",
             "required": true
           },
           {
             "name": "spec-kit-evaluator",
             "version": ">=1.0.0,<2",
-            "required": true
+            "required": false
           },
           {
             "name": "rtk",
@@ -96,7 +97,7 @@
         ]
       },
       "provides": {
-        "commands": 9,
+        "commands": 10,
         "hooks": 5
       },
       "tags": [
@@ -110,7 +111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-10-09T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -1810,17 +1811,18 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.41.6",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.41.6/spec-kit-docguard-v0.41.6.zip",
+      "version": "0.44.3",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.44.3/spec-kit-docguard-v0.44.3.zip",
+      "sha256": "6e8d9eeb7a436038dad1dfb19a521cf073c57a38227a43a43841abd0c33564f8",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
-      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
+      "documentation": "https://raccioly.github.io/docguard/guides/spec-kit.html",
       "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "node",
@@ -1852,7 +1854,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-09-18T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -3908,12 +3910,12 @@
       "id": "openproject",
       "description": "Sync fields, status, docs, versions and time between spec-kit and OpenProject via MCP",
       "author": "Daniel Ring",
-      "version": "0.1.0",
-      "download_url": "https://github.com/Nachklang-io/speckit-openproject/releases/download/extension-v0.1.0/openproject-extension-0.1.0.zip",
-      "sha256": "68011188bd41cfd98f8ea1590a3a7a63862696eede938bb17c6652745ba2f2a4",
+      "version": "0.2.0",
+      "download_url": "https://github.com/Nachklang-io/speckit-openproject/releases/download/extension-v0.2.0/openproject-extension-0.2.0.zip",
+      "sha256": "252d0d822d76fa8ba942aa3b8078ca074d47ec783b841210b40057e599fbd23f",
       "repository": "https://github.com/Nachklang-io/speckit-openproject",
       "homepage": "https://github.com/Nachklang-io/speckit-openproject",
-      "documentation": "https://github.com/Nachklang-io/speckit-openproject/blob/extension-v0.1.0/extension/README.md",
+      "documentation": "https://github.com/Nachklang-io/speckit-openproject/blob/extension-v0.2.0/extension/README.md",
       "changelog": "https://github.com/Nachklang-io/speckit-openproject/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "integration",
@@ -3941,7 +3943,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-10-09T00:00:00Z",
-      "updated_at": "2026-10-09T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "openspec": {
       "name": "OpenSpec",

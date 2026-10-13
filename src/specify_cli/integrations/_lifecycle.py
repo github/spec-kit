@@ -298,6 +298,7 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
 def _transaction(
     root: Path, target: str | None,
     expected_state: dict[str, Any] | None, expected_records: dict[str, dict[str, Any]],
+    *, creation_root: Path | None = None,
 ):
     """Journal operation-owned writes under an inter-process integration lock."""
     from ..shared_infra import _exclusive_project_lock
@@ -353,7 +354,12 @@ def _transaction(
     try:
         # Keep the stable project-keyed lock outside an uninitialized target.
         with _exclusive_project_lock(lock_root, f".integration-install-{lock_id}.lock", context="integration"):
-            root.mkdir(parents=True, exist_ok=True)
+            if creation_root is None:
+                root.mkdir(parents=True, exist_ok=True)
+            else:
+                from .._file_policy import prepare_init_root
+
+                prepare_init_root(creation_root)
             current_state, state_error = try_read_integration_json(root)
             if state_error or current_state != expected_state or installer.read_records(root) != expected_records:
                 raise installer.IntegrationInstallError(
@@ -415,7 +421,8 @@ def external_lifecycle(operation: str):
                 here = values.get("here", False) or project_name == "."
                 if (here and project_name not in (None, ".")) or (not here and not project_name):
                     return handler(*args, **kwargs)
-                root = Path.cwd() if here else Path(project_name).resolve()
+                creation_root = Path.cwd() if here else Path(project_name).absolute()
+                root = creation_root
                 key = values.get("integration")
             else:
                 from .. import _require_specify_project
@@ -425,6 +432,10 @@ def external_lifecycle(operation: str):
             recovery_token = None
             recovery_binding = None
             try:
+                if operation == "init":
+                    from .._file_policy import preflight_init_root
+
+                    root = preflight_init_root(creation_root)
                 records = installer.read_records(root)
                 state, error = try_read_integration_json(root)
                 if error:
@@ -473,10 +484,15 @@ def external_lifecycle(operation: str):
                             installer.recovery_exclusion.set(None)
                     if operation == "init":
                         token = _init_directory.set(
-                            (root, root.exists(), list(root.iterdir()) if root.is_dir() else [])
+                            (creation_root, root.exists(), list(root.iterdir()) if root.is_dir() else [])
                         )
                         stack.callback(_init_directory.reset, token)
-                    with _transaction(root, key, state, records):
+                    transaction = (
+                        _transaction(root, key, state, records, creation_root=creation_root)
+                        if operation == "init"
+                        else _transaction(root, key, state, records)
+                    )
+                    with transaction:
                         if recovery_token is not None and recovery_binding is None:
                             from .manifest import IntegrationManifest
 

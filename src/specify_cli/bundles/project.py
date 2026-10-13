@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .._project import _resolve_init_dir_override
+from .._project import (
+    ProjectResolutionError,
+    _resolve_init_dir_override_unrendered,
+    render_project_error,
+)
+from .._file_policy import ProjectPolicyError, project_files
 from ..integration_state import clean_integration_key, dedupe_integration_keys
 from . import BundlerError
 from .yamlio import ensure_within, load_json
@@ -14,9 +19,10 @@ DEFAULT_INTEGRATION = "copilot"
 def find_project_root(start: Path | None = None) -> Path | None:
     """Return the nearest ancestor (incl. *start*) containing a ``.specify/`` dir, or None.
 
-    A symlinked ``.specify`` is not accepted as a project root: following it
-    could read/write outside the intended tree, and other CLI surfaces refuse
-    it for the same reason.
+    A present ``.specify`` entry establishes the candidate boundary. Forbidden
+    links/reparse entries, non-directory markers and corrupt policy fail there
+    instead of silently selecting an ancestor. Only absent markers continue
+    ancestor discovery.
 
     When *start* is ``None`` the ``SPECIFY_INIT_DIR`` override is honored first
     (see :func:`specify_cli._project._resolve_init_dir_override`). With an
@@ -26,23 +32,37 @@ def find_project_root(start: Path | None = None) -> Path | None:
     ``bundle init``/``install`` silently fall back to the current directory.
     """
     if start is None:
-        override = _resolve_init_dir_override()
+        try:
+            override = _resolve_init_dir_override_unrendered()
+        except ProjectResolutionError as exc:
+            if isinstance(exc.__cause__, ProjectPolicyError):
+                raise BundlerError(str(exc)) from exc.__cause__
+            render_project_error(exc)
         if override is not None:
             # An explicit override is strict: do not return None here, because
             # bundle install treats None as "init the current directory".
-            if (override / ".specify").is_symlink():
-                raise BundlerError(
-                    "SPECIFY_INIT_DIR is not a safe Spec Kit project "
-                    f"(symlinked .specify/ directory is not allowed): {override}"
-                )
             return override
 
     current = Path(start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
         marker = candidate / ".specify"
-        if marker.is_dir() and not marker.is_symlink():
-            return candidate
+        try:
+            marker.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            error = ProjectPolicyError(f"Cannot inspect project marker {marker}: {exc}")
+            raise BundlerError(str(error)) from error
+        _preflight_policy(candidate)
+        return candidate
     return None
+
+
+def _preflight_policy(root: Path) -> None:
+    try:
+        project_files(root)
+    except ProjectPolicyError as exc:
+        raise BundlerError(str(exc)) from exc
 
 
 def require_project_root(start: Path | None = None) -> Path:

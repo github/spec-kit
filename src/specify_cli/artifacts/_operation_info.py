@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from .._file_policy import ProjectPolicyError, project_files
 from ..presets import PresetError
 from . import (
     AmbiguousArtifactError,
@@ -508,6 +509,13 @@ def get_artifact_info(request: ArtifactInfoRequest) -> ArtifactInfoResult:
     if not isinstance(request.identifier, str) or not request.identifier:
         raise ArtifactInfoIdentifierError(request.identifier)
     _validate_identifier(request.identifier, request.kind)
+    try:
+        if project_directory.is_dir():
+            project_files(project_directory)
+    except ProjectPolicyError as exc:
+        raise ArtifactInfoResolutionError(
+            project_directory, request.identifier, message=str(exc),
+        ) from exc
     if not (project_directory / ".specify").is_dir():
         raise ArtifactInfoProjectError(project_directory)
 

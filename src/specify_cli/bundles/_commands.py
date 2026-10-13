@@ -24,8 +24,13 @@ bundle_app = typer.Typer(
 )
 
 
-def _fail(message: str) -> None:
+def _fail(message: str, *, as_json: bool = False) -> None:
     """Print an actionable error to stderr and exit non-zero."""
+    if as_json:
+        import json
+
+        typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
+        raise typer.Exit(code=1)
     # Use the stderr console so the error never lands on stdout, which under
     # ``--json`` carries the machine-readable payload and must stay parseable.
     # Escape the message: every caller passes ``str(exc)`` from a BundlerError
@@ -96,6 +101,7 @@ def _run_init(integration: str, *, script_type: str, offline: bool = False) -> N
             ignore_agent_tools=True,
             here=True,
             force=True,
+            allow_symlinks=False,
             skip_tls=False,
             debug=False,
             github_token=None,

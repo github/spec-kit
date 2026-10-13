@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from ..base import SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
+from ..manifest import IntegrationManifest
 from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -64,6 +66,49 @@ class ClaudeIntegration(SkillsIntegration):
     }
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
+
+    # Set by ``setup()`` from ``--no-model-invocation``; applies to core
+    # command skills only, since mandatory extension hooks rely on the model
+    # invoking the hook skill. Integrations are process-wide singletons, so
+    # preset overrides re-registered later in the same run (init, upgrade,
+    # or a switch that installs Claude) see the same value. Commands that
+    # rewrite skills without calling setup() (e.g. ``preset add``,
+    # ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        opts = super().options()
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true)"
+                ),
+            )
+        )
+        return opts
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        self._disable_model_invocation = (
+            (parsed_options or {}).get("no_model_invocation") is True
+        )
+        try:
+            return super().setup(
+                project_root, manifest, parsed_options=parsed_options, **opts
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -200,12 +245,8 @@ class ClaudeIntegration(SkillsIntegration):
         return "".join(out)
 
     @staticmethod
-    def _skill_stem_from_content(content: str) -> str | None:
-        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
-
-        Reads the ``name:`` field of the first frontmatter block and strips
-        the ``speckit-`` prefix. Returns ``None`` when no name is present.
-        """
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
         dash_count = 0
         for line in content.splitlines():
             stripped = line.rstrip("\r\n")
@@ -216,10 +257,16 @@ class ClaudeIntegration(SkillsIntegration):
                 continue
             if dash_count == 1 and stripped.startswith("name:"):
                 name = stripped[len("name:"):].strip().strip('"').strip("'")
-                if name.startswith("speckit-"):
-                    return name[len("speckit-"):]
                 return name or None
         return None
+
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Claude-specific frontmatter flags, hook notes, and any
@@ -228,12 +275,20 @@ class ClaudeIntegration(SkillsIntegration):
         Applied by every skill-generation path (setup, presets, extensions),
         so command-specific frontmatter (argument-hint, fork context) stays
         consistent however the SKILL.md was produced.
+
+        ``disable-model-invocation`` is ``true`` for core command skills when
+        the last ``setup()`` in this process was given
+        ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        name = self._skill_name_from_content(updated)
+        disable = self._disable_model_invocation and self._is_core_command_skill(name)
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "true" if disable else "false"
+        )
 
-        stem = self._skill_stem_from_content(updated)
+        stem = name.removeprefix("speckit-") if name else None
         if stem:
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:

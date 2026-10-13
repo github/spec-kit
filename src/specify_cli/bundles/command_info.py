@@ -9,6 +9,7 @@ import typer
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from .._file_policy import ProjectPolicyError
 from . import BundlerError
 from ._commands import (
     _build_stack,
@@ -77,7 +78,7 @@ def bundle_info(
         # unverifiable bundle for a known/installable one.
         manifest = _download_manifest(resolved, offline=offline)
     except BundlerError as exc:
-        _fail(str(exc))
+        _fail(str(exc), as_json=as_json and isinstance(exc.__cause__, ProjectPolicyError))
         return
 
     overlaps = _bundle_overlaps(project_root, manifest, offline=offline)

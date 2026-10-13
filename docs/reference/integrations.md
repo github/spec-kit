@@ -10,7 +10,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Amp](https://ampcode.com/)                                                          | `amp`            |                                                                                                                                           |
 | [Antigravity (agy)](https://antigravity.google/)                                     | `agy`            | Skills-based integration; installs skills into `.agents/skills/` and invokes them as `/speckit-<command>`. In headless non-interactive runs, automatic tool approval via `--dangerously-skip-permissions` can be enabled by setting `SPECKIT_AGY_ALLOW_ALL_TOOLS=1` or `SPECKIT_INTEGRATION_AGY_ALLOW_ALL_TOOLS=1`. |
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
-| [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
+| [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`. Pass `--integration-options="--no-model-invocation"` to make the core command skills user-invocable only (see [Claude: user-invocable-only skills](#claude-user-invocable-only-skills)). |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
 | [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation)                      | `codebuddy`      |                                                                                                                                           |
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
@@ -440,6 +440,7 @@ Some integrations accept additional options via `--integration-options`:
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
+| `claude`    | `--no-model-invocation` | Write `disable-model-invocation: true` into the core Spec Kit command skills so Claude Code runs them only when invoked as `/speckit-<command>` and keeps their descriptions out of its context. See [Claude: user-invocable-only skills](#claude-user-invocable-only-skills). |
 
 Example:
 
@@ -460,6 +461,38 @@ integrations use `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code
 skills use `$speckit-github-taskstoissues`; Kimi uses
 `/skill:speckit-github-taskstoissues`. The core command continues its existing
 workflow and does not install or enable the extension automatically.
+
+### Claude: user-invocable-only skills
+
+By default every Spec Kit skill installed for Claude Code is model-invocable, so
+its description is always in Claude's context and counts toward the
+skill-listing budget. In projects with many skills this can push other skills
+out of the listing. To make the core Spec Kit command skills user-invocable
+only:
+
+```bash
+specify init my-project --integration claude --integration-options="--no-model-invocation"
+```
+
+- Extension skills stay model-invocable, because mandatory extension hooks rely
+  on the model invoking them. If an extension's mandatory hook runs a core
+  command (its `command:` is a core `speckit.<command>`), leave this option off:
+  the model cannot run that hook while the core skill is user-invocable only.
+- The option is stored with the integration's other options and reapplied by
+  `specify integration upgrade claude`. Passing `--integration-options` to
+  `upgrade` replaces all stored options, so repeat any you want to keep (for
+  example `--integration-options="--events false --no-model-invocation"`);
+  `--integration-options=""` clears them. Re-running `specify init` likewise
+  stores only the options passed to it.
+- Core command skills that a preset overrides, or stops overriding, are reverted
+  to the default by commands that re-register preset skills without reinstalling
+  Claude: commands that install, remove or update presets (including `specify
+  bundle` commands that carry presets), `specify integration use claude`, and
+  `specify integration switch claude` when Claude is installed but not the
+  default. To reapply the option, run `specify integration upgrade claude
+  --force` while Claude is the default integration (`--force` is needed because
+  those commands modify installed skill files, and it overwrites local edits to
+  Spec Kit-managed files).
 
 ## Scaffold a New Integration
 

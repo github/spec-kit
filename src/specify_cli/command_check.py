@@ -44,13 +44,21 @@ def _check_external_tools(
 def check() -> None:
     """Check that all required tools are installed."""
     from . import check_tool
-    from ._project import _resolve_init_dir_override
+    from ._project import (
+        ProjectResolutionError, _resolve_init_dir_override,
+        preflight_project_policy, render_project_error,
+    )
     from .integrations.installer import IntegrationInstallError, load_installed_integrations, read_records
 
     try:
-        project_root = _resolve_init_dir_override() or Path.cwd()
+        project_root = _resolve_init_dir_override()
+        if project_root is None:
+            project_root = Path.cwd()
+            preflight_project_policy(project_root)
         load_installed_integrations(project_root)
         records = read_records(project_root)
+    except ProjectResolutionError as exc:
+        render_project_error(exc)
     except (IntegrationInstallError, OSError) as exc:
         console.print(f"[red]Error:[/red] {escape(str(exc))}")
         raise typer.Exit(1) from exc
