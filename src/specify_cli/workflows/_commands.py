@@ -1059,9 +1059,13 @@ def _run_outcome_exit_code(status_value: str) -> int:
 
 
 # Real workflow definitions are tiny (largest shipped: ~67 nodes); this leaves
-# >1000x headroom while capping worst-case memory and stdout. Callers that
+# >1000x headroom while capping the expansion of alias graphs. Callers that
 # emit user-authored definitions pass it as ``max_nodes``.
 _MAX_JSON_NODES = 100000
+
+# Byte cap on the emitted definition. Nodes do not bound size: one alias can
+# repeat a large string many times, so strings are charged by their JSON length.
+_MAX_JSON_BYTES = 5 * 1024 * 1024
 
 
 def _emit_workflow_json(
@@ -1085,6 +1089,7 @@ def _emit_workflow_json(
     depth is always reported as ``ValueError``.
     """
     remaining_nodes = max_nodes
+    remaining_bytes = _MAX_JSON_BYTES if max_nodes is not None else None
 
     def json_key(key: Any) -> str:
         """Canonicalize a mapping key to the property name json.dumps emits."""
@@ -1094,16 +1099,29 @@ def _emit_workflow_json(
             return json.dumps(key)
         return str(key)
 
+    def charge(text: str) -> None:
+        """Debit the byte budget by the length of *text* as emitted JSON."""
+        nonlocal remaining_bytes
+        if remaining_bytes is None:
+            return
+        remaining_bytes -= len(json.dumps(text))
+        if remaining_bytes < 0:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: it "
+                f"exceeds {_MAX_JSON_BYTES} bytes"
+            )
+
     def plain_json(value: Any, active_containers: set[int]) -> Any:
         nonlocal remaining_nodes
         if remaining_nodes is not None:
             remaining_nodes -= 1
             if remaining_nodes < 0:
                 raise ValueError(
-                    "Workflow JSON output is too large to represent: the "
-                    f"definition expands past {max_nodes} nodes "
-                    "(nested YAML aliases)"
+                    "Workflow JSON output is too large to represent: it "
+                    f"exceeds {max_nodes} nodes"
                 )
+        if isinstance(value, str):
+            charge(value)
         if isinstance(value, dict):
             container_id = id(value)
             if container_id in active_containers:
@@ -1120,6 +1138,7 @@ def _emit_workflow_json(
                             "Workflow JSON output cannot represent duplicate "
                             f"mapping key {canonical!r}"
                         )
+                    charge(canonical)
                     result[canonical] = plain_json(item, active_containers)
                 return result
             finally:

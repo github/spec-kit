@@ -644,6 +644,42 @@ class TestNegative:
                 payload, max_nodes=_commands._MAX_JSON_NODES
             )
 
+    def test_byte_budget_stops_repeated_large_scalar(self, capsys):
+        # One 200 KB string referenced 50 times is ~10 MB of JSON, above the
+        # 5 MiB cap, while the node count stays far below the node budget. Only
+        # the byte budget can stop it.
+        from specify_cli.workflows import _commands
+
+        big = "x" * 200_000
+        payload = {"big": big, "refs": [big] * 50}
+
+        with pytest.raises(ValueError, match="exceeds 5242880 bytes"):
+            _commands._emit_workflow_json(payload, max_nodes=_commands._MAX_JSON_NODES)
+        assert capsys.readouterr().out == ""
+
+        # A small definition with the same shape stays within the budget.
+        _commands._emit_workflow_json(
+            {"big": big[:1000], "refs": [big[:1000]] * 50},
+            max_nodes=_commands._MAX_JSON_NODES,
+        )
+        assert len(json.loads(capsys.readouterr().out)["refs"]) == 50
+
+    def test_node_budget_message_does_not_blame_aliases(self):
+        # A large alias-free payload hits the budget too; the message must not
+        # attribute that to YAML aliases.
+        from specify_cli.workflows import _commands
+
+        payload = {"runs": [{"run_id": str(i)} for i in range(60000)]}
+
+        with pytest.raises(ValueError) as excinfo:
+            _commands._emit_workflow_json(
+                payload, max_nodes=_commands._MAX_JSON_NODES
+            )
+
+        message = str(excinfo.value)
+        assert "too large to represent" in message
+        assert "alias" not in message.lower()
+
     @pytest.mark.parametrize(
         "mapping",
         [
