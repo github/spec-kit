@@ -491,6 +491,105 @@ def test_stale_leaf_links_are_never_hash_promoted_or_deleted(shared_project, tmp
         assert target.read_text() == "managed stale\n"
 
 
+@pytest.mark.parametrize("operation", ["force", "managed", "builtin-init"])
+@pytest.mark.parametrize("kind", ["denied-leaf", "denied-parent", "external-parent", "dangling-parent", "cyclic-parent"])
+def test_stale_policy_failure_precedes_shared_file_updates(
+    shared_project, tmp_path, monkeypatch, operation, kind,
+):
+    from typer.testing import CliRunner
+
+    import specify_cli
+
+    project, core = shared_project
+    allow_links = kind not in {"denied-leaf", "denied-parent"}
+    files = allow(project) if allow_links else FileHelper(project)
+    install(project, core, files=files)
+    relative = ".specify/scripts/bash/obsolete/stale.sh"
+    stale = project / relative
+    stale.parent.mkdir()
+    stale.write_text("managed stale\n")
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(relative)
+    manifest.save()
+    if kind == "denied-leaf":
+        target = project / "stale-target"
+        stale.rename(target)
+        stale.symlink_to(target)
+        error = SymlinkDeniedError
+        message = "Refusing symlink"
+    else:
+        parent = stale.parent
+        if kind == "denied-parent":
+            target = project / "stale-target"
+            parent.rename(target)
+            error, message = SymlinkDeniedError, "Refusing symlink"
+        elif kind == "external-parent":
+            target = tmp_path / "outside"
+            parent.rename(target)
+            error, message = PathEscapeError, "outside root"
+        else:
+            stale.unlink()
+            parent.rmdir()
+            if kind == "dangling-parent":
+                target = project / "missing"
+                error, message = FileNotFoundError, "No such file"
+            else:
+                target = parent
+                error, message = UnsupportedPathError, "Symlink cycle"
+        parent.symlink_to(target, target_is_directory=True)
+    protected = [
+        project / ".specify/scripts/bash/common.sh",
+        project / ".specify/templates/plan-template.md",
+        project / ".specify/.gitignore",
+        project / ".specify/integrations/speckit.manifest.json",
+    ]
+    for path in protected:
+        path.chmod(0o600)
+    before = [(path.read_bytes(), path.stat().st_mode) for path in protected]
+    (core / "scripts/bash/common.sh").write_text("# replacement common\n")
+    (core / "templates/plan-template.md").write_text("# replacement plan\n")
+
+    if operation == "builtin-init":
+        monkeypatch.setattr(specify_cli, "_locate_core_pack", lambda: core)
+        arguments = [
+            "init", str(project), "--force", "--integration", "copilot",
+            "--ignore-agent-tools", "--script", "sh",
+        ]
+        if allow_links:
+            arguments.append("--allow-symlinks")
+        result = CliRunner().invoke(specify_cli.app, arguments, catch_exceptions=False)
+        assert result.exit_code == 1, result.output
+        assert message in result.output
+    else:
+        with pytest.raises(error):
+            install(
+                project, core, files=files, force=operation == "force",
+                refresh_managed=operation == "managed",
+            )
+
+    assert [(path.read_bytes(), path.stat().st_mode) for path in protected] == before
+
+
+def test_stale_plan_rechecks_managed_hash_after_shared_writes(shared_project):
+    project, core = shared_project
+    files = allow(project)
+    install(project, core, files=files)
+    directory = project / ".specify/scripts/bash"
+    alias = directory / "obsolete"
+    alias.symlink_to(directory, target_is_directory=True)
+    relative = ".specify/scripts/bash/obsolete/common.sh"
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(relative)
+    manifest.save()
+    (core / "scripts/bash/common.sh").write_text("# replacement common\n")
+
+    install(project, core, files=files, refresh_managed=True)
+
+    assert (directory / "common.sh").read_text() == "# replacement common\n"
+    assert alias.is_symlink()
+    assert relative in IntegrationManifest.load("speckit", project, files=files).files
+
+
 @pytest.mark.parametrize("customized,recovered", [(False, False), (True, False), (False, True)])
 def test_stale_cleanup_through_allowed_parent_obeys_ownership(shared_project, customized, recovered):
     project, core = shared_project

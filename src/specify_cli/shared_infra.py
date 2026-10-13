@@ -505,7 +505,8 @@ def install_shared_infra(
     version. Files whose hash diverges are treated as user customizations and
     preserved with a warning. ``force=True`` overwrites every regular file
     permitted by the operation's FileHelper policy, preserving allowed links.
-    Denied or invalid accessed links fail explicitly. ``refresh_hint`` is shown after the
+    Denied or invalid accessed links fail explicitly. Stale cleanup paths are
+    policy-checked before planned file writes. ``refresh_hint`` is shown after the
     customization warning to tell the user which flag would overwrite their
     customizations.
     """
@@ -535,6 +536,7 @@ def install_shared_infra(
     preserved_user_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
+    planned_stale: list[tuple[str, Path]] = []
     # Track every shared path the current bundle produces so we can detect
     # manifest entries the core no longer ships (stale-script cleanup, #3076).
     seen_rels: set[str] = set()
@@ -659,6 +661,22 @@ def install_shared_infra(
             (gitignore_dst, gitignore_rel, SPECIFY_GITIGNORE_CONTENT)
         )
 
+    # Validate stale paths before overwriting shared files. Ownership is checked
+    # again during cleanup because writes through aliases can change the bytes.
+    if scanned_variant_dirs:
+        script_prefixes = tuple(
+            f".specify/scripts/{variant_dir}/" for variant_dir in scanned_variant_dirs
+        )
+        for rel in prior_hashes:
+            if rel in seen_rels or not rel.startswith(script_prefixes):
+                continue
+            rel_path = Path(rel)
+            if rel_path.anchor or ".." in rel_path.parts:
+                continue
+            dst = project_path / rel_path
+            files.stat(dst, follow_symlinks=False, missing_ok=True)
+            planned_stale.append((rel, dst))
+
     for dst_path, rel, content, mode in planned_copies:
         _ensure_dir(dst_path.parent)
         files.write_bytes(dst_path, content, mode=mode, observer=observe_file_change)
@@ -702,20 +720,9 @@ def install_shared_infra(
     # deletion), scoped to the selected variants, and only for *managed* copies —
     # a user-customized file (hash diverges), a symlink, or a recovered entry is
     # preserved by the leaf-identity and managed-hash checks.
-    if scanned_variant_dirs:
+    if planned_stale:
         stale_removed: list[str] = []
-        script_prefixes = tuple(
-            f".specify/scripts/{variant_dir}/" for variant_dir in scanned_variant_dirs
-        )
-        for rel in list(prior_hashes):
-            if rel in seen_rels or not rel.startswith(script_prefixes):
-                continue
-            # Guard corrupted/hand-edited manifest keys BEFORE any filesystem
-            # access. Invalid keys are ignored; accessed paths obey helper policy.
-            rel_path = Path(rel)
-            if rel_path.anchor or ".." in rel_path.parts:
-                continue
-            dst = project_path / rel_path
+        for rel, dst in planned_stale:
             entry = files.stat(dst, follow_symlinks=False, missing_ok=True)
             # Already gone from disk but still tracked: drop the orphaned manifest
             # entry so the manifest stays consistent (nothing to unlink).
