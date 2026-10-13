@@ -630,12 +630,16 @@ def test_bundled_newer_patch_warns(
             monkeypatch.setattr(manager_type, "scaffold_config", lambda *a: None)
     manager = primitive_manager(kind, tmp_path, allow_network=False)
 
-    getattr(manager, action)(ComponentRef(kind=kind, id="x", version="1.0.0"))
+    warning = getattr(manager, action)(ComponentRef(kind=kind, id="x", version="1.0.0"))
 
     assert len(calls) == 1
-    warning = " ".join(capsys.readouterr().err.split())
-    assert "Warning:" in warning
-    assert "1.0.0" in warning and "1.0.1" in warning
+    assert warning is not None
+    assert warning.code == "bundled_patch_upgrade"
+    assert warning.details.kind == kind
+    assert warning.details.component_id == "x"
+    assert warning.details.requested_version == "1.0.0"
+    assert warning.details.installed_version == "1.0.1"
+    assert capsys.readouterr() == ("", "")
 
 
 @pytest.mark.parametrize("actual", [

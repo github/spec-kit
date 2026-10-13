@@ -16,6 +16,7 @@ import ssl
 import urllib.error
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
@@ -25,6 +26,9 @@ from . import BundlerError
 from .catalogs import CatalogSource
 from .manifest import ComponentRef
 from .yamlio import loads_json
+
+if TYPE_CHECKING:
+    from .primitives import BundledPatchWarning
 
 COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
@@ -330,7 +334,9 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         return manager.installed_version(component)
 
-    def bundled_patch_warning(self, component: ComponentRef, actual: str) -> str | None:
+    def bundled_patch_warning(
+        self, component: ComponentRef, actual: str,
+    ) -> BundledPatchWarning | None:
         from .primitives import _bundled_component_version, _bundled_pin_warning
         from .versioning import is_newer_patch, same_version
 
@@ -368,13 +374,17 @@ class DefaultPrimitiveInstaller:
             f"'{component.source}': {detail}."
         )
 
-    def install(self, project_root: Path, component: ComponentRef) -> None:
+    def install(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
-        manager.install(component)
+        return manager.install(component)
 
-    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+    def refresh(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
-        manager.refresh(component)
+        return manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)

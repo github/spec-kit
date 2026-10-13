@@ -242,7 +242,7 @@ def make_reference_checker(
                 except BundlerError as exc:
                     return str(exc)
                 if warning:
-                    warnings.append(warning)
+                    warnings.append(warning.message)
                     return None
 
         if allow_network:

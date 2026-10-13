@@ -7,7 +7,13 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from . import BundlerError
-from ._commands import _build_stack, _fail, _speckit_version, bundle_app
+from ._commands import (
+    _build_stack,
+    _fail,
+    _render_install_warnings,
+    _speckit_version,
+    bundle_app,
+)
 from .project import active_integration, require_project_root
 from .records import load_records
 from .sources import _download_manifest
@@ -57,9 +63,10 @@ def bundle_update(
                 active_integration=detected if detected is not None else integration,
                 integration_explicit=bool(integration) and detected is None,
             )
-            install_bundle(
+            result = install_bundle(
                 project_root, plan, installer, manifest=manifest, refresh=True
             )
+            _render_install_warnings(result)
             console.print(
                 f"[green]✓[/green] Updated '{_escape_markup(str(target))}' "
                 f"to v{_escape_markup(str(plan.version))}."

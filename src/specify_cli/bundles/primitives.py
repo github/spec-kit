@@ -21,14 +21,30 @@ from __future__ import annotations
 
 import contextlib
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from . import BundlerError
 from .manifest import ComponentRef
 from .versioning import same_version
 
 DEFAULT_PRIORITY = 10
+
+
+@dataclass(frozen=True)
+class BundledPatchDetails:
+    kind: str
+    component_id: str
+    requested_version: str
+    installed_version: str
+
+
+@dataclass(frozen=True)
+class BundledPatchWarning:
+    message: str
+    details: BundledPatchDetails
+    code: Literal["bundled_patch_upgrade"] = "bundled_patch_upgrade"
 
 
 def _assert_pinned_version(
@@ -134,7 +150,7 @@ def _selected_catalog_info(kind: str, component: ComponentRef, catalog) -> dict:
 
 def _bundled_pin_warning(
     kind: str, component: ComponentRef, advertised: object,
-) -> str | None:
+) -> BundledPatchWarning | None:
     """Allow packaged stable patch upgrades without weakening catalog pins."""
     from .versioning import is_newer_patch
 
@@ -144,26 +160,22 @@ def _bundled_pin_warning(
         and isinstance(advertised, str)
         and is_newer_patch(advertised.strip(), component.version)
     ):
-        return (
-            f"{kind} '{component.id}' is pinned to version {component.version}, "
-            f"but Spec Kit ships {advertised.strip()}; using the newer packaged patch. "
-            "Bundle installation records the actual installed version "
-            "alongside the requested pin."
+        return BundledPatchWarning(
+            message=(
+                f"{kind} '{component.id}' is pinned to version {component.version}, "
+                f"but Spec Kit ships {advertised.strip()}; using the newer packaged patch. "
+                "Bundle installation records the actual installed version "
+                "alongside the requested pin."
+            ),
+            details=BundledPatchDetails(
+                kind=component.kind,
+                component_id=component.id,
+                requested_version=component.version,
+                installed_version=advertised.strip(),
+            ),
         )
     _assert_pinned_version(kind, component.id, component.version, advertised)
     return None
-
-
-def _assert_bundled_pin(
-    kind: str, component: ComponentRef, advertised: object,
-) -> None:
-    from rich.markup import escape
-
-    from .._console import err_console
-
-    warning = _bundled_pin_warning(kind, component, advertised)
-    if warning:
-        err_console.print(f"[yellow]Warning:[/yellow] {escape(warning)}")
 
 
 def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
@@ -234,10 +246,10 @@ class _KindManager(Protocol):
     def installed_version(self, component: ComponentRef) -> str | None:
         pass
 
-    def install(self, component: ComponentRef) -> None:
+    def install(self, component: ComponentRef) -> BundledPatchWarning | None:
         pass
 
-    def refresh(self, component: ComponentRef) -> None:
+    def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
         pass
 
     def remove(self, component: ComponentRef) -> None:
@@ -305,13 +317,15 @@ class _PresetKindManager:
     def installed_version(self, component: ComponentRef) -> str | None:
         return _registry_version(self._manager.registry, component.id)
 
-    def install(self, component: ComponentRef) -> None:
-        self._do_install(component, force=False)
+    def install(self, component: ComponentRef) -> BundledPatchWarning | None:
+        return self._do_install(component, force=False)
 
-    def refresh(self, component: ComponentRef) -> None:
-        self._do_install(component, force=True)
+    def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
+        return self._do_install(component, force=True)
 
-    def _do_install(self, component: ComponentRef, *, force: bool) -> None:
+    def _do_install(
+        self, component: ComponentRef, *, force: bool,
+    ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_preset
 
@@ -320,7 +334,7 @@ class _PresetKindManager:
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None and component.source is None:
-            _assert_bundled_pin(
+            warning = _bundled_pin_warning(
                 "Preset",
                 component,
                 _bundled_manifest_version(bundled / "preset.yml", "preset"),
@@ -328,7 +342,7 @@ class _PresetKindManager:
             self._manager.install_from_directory(
                 bundled, speckit_version, priority, **({"force": True} if force else {})
             )
-            return
+            return warning
 
         if not self._allow_network:
             raise BundlerError(
@@ -394,13 +408,15 @@ class _ExtensionKindManager:
     def installed_version(self, component: ComponentRef) -> str | None:
         return _registry_version(self._manager.registry, component.id)
 
-    def install(self, component: ComponentRef) -> None:
-        self._do_install(component, force=False)
+    def install(self, component: ComponentRef) -> BundledPatchWarning | None:
+        return self._do_install(component, force=False)
 
-    def refresh(self, component: ComponentRef) -> None:
-        self._do_install(component, force=True)
+    def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
+        return self._do_install(component, force=True)
 
-    def _do_install(self, component: ComponentRef, *, force: bool) -> None:
+    def _do_install(
+        self, component: ComponentRef, *, force: bool,
+    ) -> BundledPatchWarning | None:
         from .. import get_speckit_version
         from .._assets import _locate_bundled_extension
 
@@ -409,7 +425,7 @@ class _ExtensionKindManager:
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None and component.source is None:
-            _assert_bundled_pin(
+            warning = _bundled_pin_warning(
                 "Extension",
                 component,
                 _bundled_manifest_version(bundled / "extension.yml", "extension"),
@@ -418,7 +434,7 @@ class _ExtensionKindManager:
                 bundled, speckit_version, priority=priority, force=force
             )
             self._manager.scaffold_config(manifest.id)
-            return
+            return warning
 
         if not self._allow_network:
             raise BundlerError(
@@ -487,7 +503,7 @@ class _WorkflowKindManager:
     def installed_version(self, component: ComponentRef) -> str | None:
         return _registry_version(self._registry, component.id)
 
-    def install(self, component: ComponentRef) -> None:
+    def install(self, component: ComponentRef) -> BundledPatchWarning | None:
         from .._assets import _locate_bundled_workflow
 
         bundled = _locate_bundled_workflow(component.id)
@@ -514,7 +530,7 @@ class _WorkflowKindManager:
                     or is_newer_patch(definition.version, component.version)
                 )
             ):
-                _assert_bundled_pin("Workflow", component, definition.version)
+                warning = _bundled_pin_warning("Workflow", component, definition.version)
                 from .. import workflow_add
 
                 with _chdir(self._root):
@@ -523,7 +539,7 @@ class _WorkflowKindManager:
                         f"workflow '{component.id}'",
                         lambda: workflow_add(str(workflow_file), dev=True, from_url=None),
                     )
-                return
+                return warning
             if not self._allow_network:
                 _assert_pinned_version(
                     "Workflow", component.id, component.version, definition.version
@@ -551,10 +567,10 @@ class _WorkflowKindManager:
                 ),
             )
 
-    def refresh(self, component: ComponentRef) -> None:
+    def refresh(self, component: ComponentRef) -> BundledPatchWarning | None:
         # workflow_add is idempotent for already-installed workflows; delegate
         # to the standard install path which handles version refresh correctly.
-        self.install(component)
+        return self.install(component)
 
     def remove(self, component: ComponentRef) -> None:
         from .. import workflow_remove
