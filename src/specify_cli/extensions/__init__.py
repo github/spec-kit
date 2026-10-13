@@ -5846,13 +5846,14 @@ class HookExecutor:
             raise ValueError("Refusing to load symlinked .specify/extensions.yml")
         cache = self.config_file.parent / "hook-dispatch"
         try:
-            invalid_cache = cache.is_symlink() or (
-                cache.is_dir() and any(p.is_symlink() for p in cache.iterdir())
-            )
+            if cache.is_symlink():
+                raise ValueError("Refusing to use symlinked hook dispatch cache")
+            if cache.exists() and not cache.is_dir():
+                raise ValueError("Refusing to use non-directory hook dispatch cache")
+            if cache.is_dir() and any(p.is_symlink() for p in cache.iterdir()):
+                raise ValueError("Refusing to use symlinked hook dispatch cache")
         except OSError as exc:
             raise ValueError(f"Cannot inspect hook dispatch cache: {exc}") from exc
-        if invalid_cache:
-            raise ValueError("Refusing to use symlinked hook dispatch cache")
         if not self.config_file.exists():
             return {"installed": [], "settings": {"auto_execute_hooks": True}, "hooks": {}}
         if self.config_file.is_symlink():

@@ -5,6 +5,7 @@ Mirrors ``specify_cli.extensions.command_remove``.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -58,6 +59,41 @@ def test_mutations_preserve_state_on_invalid_hook_config(
     assert {p.relative_to(extension_path): p.read_bytes()
             for p in extension_path.rglob("*") if p.is_file()} == files
     assert {p.name: p.read_bytes() for p in cache.iterdir()} == projection
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+def test_mutations_preserve_state_on_hook_cache_file_collision(
+    tmp_path, extension_dir, command
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    config = HookExecutor(project).config_file
+    original = config.read_bytes()
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    cache = project / ".specify/hook-dispatch"
+    shutil.rmtree(cache)
+    cache.write_text("collision", encoding="utf-8")
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "hook dispatch cache" in result.output
+    assert config.read_bytes() == original
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert cache.read_text(encoding="utf-8") == "collision"
 
 
 class TestExtensionRemoveCLI:
