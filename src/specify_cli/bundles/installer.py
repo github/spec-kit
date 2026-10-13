@@ -18,6 +18,7 @@ from typing import Protocol
 from . import BundlerError
 from .conflict import detect_conflicts
 from .manifest import BundleManifest, ComponentRef
+from .primitives import BundledPatchWarning
 from .records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -43,18 +44,23 @@ class PrimitiveInstaller(Protocol):
 
     def validate_source(self, project_root: Path, component: ComponentRef) -> None: ...
 
-    def install(self, project_root: Path, component: ComponentRef) -> None: ...
+    def install(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None: ...
 
     def remove(self, project_root: Path, component: ComponentRef) -> None: ...
 
 
 @dataclass
 class InstallResult:
+    """Bundle changes and structured warnings for presentation by the caller."""
+
     bundle_id: str
     installed: list[ComponentRef] = field(default_factory=list)
     skipped: list[ComponentRef] = field(default_factory=list)
     refreshed: list[ComponentRef] = field(default_factory=list)
     uninstalled: list[ComponentRef] = field(default_factory=list)
+    warnings: list[BundledPatchWarning] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -81,9 +87,9 @@ def install_bundle(
 
     When *refresh* is True (used by ``specify bundle update``), components that
     are already installed are re-applied through the primitive machinery so they
-    are brought up to the plan's pinned versions, rather than skipped. Primitive
-    config (e.g. preset priority overrides) is preserved by the underlying
-    machinery.
+    are brought up to the plan's pinned versions, or compatible newer packaged
+    patches with a warning, rather than skipped. Primitive config (e.g. preset
+    priority overrides) is preserved by the underlying machinery.
 
     Already-installed components must match their pins before they can be
     skipped. A refresh may repair drift in components owned exclusively by
@@ -91,6 +97,8 @@ def install_bundle(
     independently installed component. Changes to owned component metadata
     still require refresh. Other bundles' source and preset settings cannot be
     changed by sharing or refreshing a component.
+    Compatible packaged patch substitutions are accepted for bundle-owned
+    components, with requested and installed versions recorded separately.
     """
     records = load_records(project_root)
 
@@ -149,11 +157,12 @@ def install_bundle(
                 other_pins.setdefault(key, set()).add(component.version)
     contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
+    installed_versions: dict[str, str] = {}
     try:
-        _check_installed_pins(
+        result.warnings.extend(_check_installed_pins(
             project_root, plan, installer, prior_ours, other_tracked,
             other_pins, other_requirements, refresh=refresh,
-        )
+        ))
         for component in plan.components:
             key = (component.kind, component.id)
             if installer.is_installed(project_root, component):
@@ -164,14 +173,18 @@ def install_bundle(
                 # does not own (FR-022).
                 owned = key in prior_ours or key in other_tracked
                 if refresh and owned:
-                    _refresh_component(project_root, installer, component)
+                    warning = _refresh_component(project_root, installer, component)
+                    if warning is not None:
+                        result.warnings.append(warning)
                     result.refreshed.append(component)
                 else:
                     result.skipped.append(component)
                 if owned:
                     contributed.append(component)
                 continue
-            installer.install(project_root, component)
+            warning = installer.install(project_root, component)
+            if warning is not None:
+                result.warnings.append(warning)
             done.append(component)
             result.installed.append(component)
             contributed.append(component)
@@ -197,6 +210,12 @@ def install_bundle(
                 if installer.is_installed(project_root, component):
                     installer.remove(project_root, component)
                     result.uninstalled.append(component)
+        version_reader = getattr(installer, "installed_version", None)
+        if callable(version_reader):
+            for component in plan.components:
+                actual = version_reader(project_root, component)
+                if actual is not None:
+                    installed_versions[f"{component.kind}:{component.id}"] = actual
     except BundlerError:
         _rollback(project_root, installer, done)
         raise
@@ -215,6 +234,7 @@ def install_bundle(
         # Preserve the original install time across refresh/update so
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,
+        installed_versions=installed_versions,
     )
     updated = upsert_record(records, record)
     if refresh and existing is not None:
@@ -294,9 +314,10 @@ def _check_installed_pins(
     other_requirements: dict[tuple[str, str], list[tuple[str, ComponentRef]]],
     *,
     refresh: bool,
-) -> None:
+) -> list[BundledPatchWarning]:
     """Check installed pins and other bundles' requirements before mutation."""
     mismatches = []
+    warnings: list[BundledPatchWarning] = []
     for component in plan.components:
         key = component.kind, component.id
         for bundle_id, required in other_requirements.get(key, []):
@@ -348,6 +369,13 @@ def _check_installed_pins(
         actual = installer.installed_version(project_root, component)
         if actual and same_version(actual, component.version):
             continue
+        patch_warning = getattr(installer, "bundled_patch_warning", None)
+        if actual and key in prior_ours | other_tracked and callable(patch_warning):
+            warning = patch_warning(component, actual)
+            if warning:
+                if not refresh:
+                    warnings.append(warning)
+                continue
         if refresh and key in prior_ours and key not in other_tracked:
             continue
         pinned = f"{component.kind[:-1]} '{component.id}' to {component.version}"
@@ -361,13 +389,14 @@ def _check_installed_pins(
             "version can be installed per ID; independently installed and "
             "other bundles' components cannot be replaced by this bundle."
         )
+    return warnings
 
 
 def _refresh_component(
     project_root: Path,
     installer: PrimitiveInstaller,
     component: ComponentRef,
-) -> None:
+) -> BundledPatchWarning | None:
     """Re-apply an already-installed component to bring it up to its pinned version.
 
     Prefers a primitive-provided ``refresh`` hook when available; otherwise falls
@@ -375,9 +404,8 @@ def _refresh_component(
     """
     op = getattr(installer, "refresh", None)
     if callable(op):
-        op(project_root, component)
-    else:
-        installer.install(project_root, component)
+        return op(project_root, component)
+    return installer.install(project_root, component)
 
 
 def _rollback(

@@ -4,7 +4,29 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.versioning import is_semver, satisfies
+from specify_cli.bundles.versioning import is_newer_patch, is_semver, satisfies
+
+
+@pytest.mark.parametrize("actual,pinned,expected", [
+    ("1.0.1", "1.0.0", True),
+    ("1.0.10", "1.0.2", True),
+    ("V1.0.1", "v1.0.0", True),
+    ("1.0.1+build-2", "1.0.0+build-1", True),
+    ("0.0.2", "0.0.1", True),
+    ("1.0.0", "1.0.0", False),
+    ("1.0.0+new", "1.0.0+old", False),
+    ("1.0.0", "1.0.1", False),
+    ("1.1.0", "1.0.0", False),
+    ("2.0.0", "1.0.0", False),
+    ("1.0.1-rc1", "1.0.0", False),
+    ("1.0.1", "1.0.0-rc1", False),
+    ("1.0.1-rc2", "1.0.0-rc1", False),
+    ("1.0", "1.0.0", False),
+    ("1.0.1", "invalid", False),
+    ("invalid", "1.0.0", False),
+])
+def test_is_newer_patch(actual: str, pinned: str, expected: bool):
+    assert is_newer_patch(actual, pinned) is expected
 
 
 @pytest.mark.parametrize("value,expected", [
