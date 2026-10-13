@@ -481,6 +481,42 @@ def test_projection_missing_entry_fails_instead_of_skipping_hook(tmp_path, varia
 
 
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("priority,valid", [
+    (1, True), (2147483647, True), (2147483648, False),
+    (999999999999999999999, False),
+])
+def test_projection_priority_bounds_match_across_runtimes(
+    tmp_path, variant, phase, priority, valid
+):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    from specify_cli.extensions import HookExecutor
+
+    event = f"{'before' if phase == 'pre' else 'after'}_plan"
+    HookExecutor(tmp_path).save_project_config({"hooks": {event: [
+        {"extension": "git", "command": "speckit.git.commit"},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    projection = cache / f"{event}.json"
+    response = json.loads(projection.read_text(encoding="utf-8"))
+    response["hooks"][0]["priority"] = priority
+    payload = (json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n").encode("utf-8")
+    projection.write_bytes(payload)
+    (cache / f"{event}.sha256").write_text(
+        hashlib.sha256(payload).hexdigest() + "\n", encoding="ascii"
+    )
+
+    code, result = run_hook(tmp_path, phase, variant=variant)
+    assert code == (0 if valid else 1), result
+    if valid:
+        assert result["hooks"][0]["priority"] == priority
+    else:
+        assert result["hooks"] == []
+        assert "Invalid hook projection" in result["error"]
+
+
+@pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 def test_projection_missing_cache_fails_instead_of_using_legacy_yaml(tmp_path, variant):
     if variant == "ps" and not shutil.which("pwsh"):
         pytest.skip("PowerShell not installed")

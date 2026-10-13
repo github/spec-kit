@@ -89,7 +89,7 @@ class TestIntegrationUpgradeDetailed:
 
         result = _run_in_project(project, ["integration", "upgrade", "copilot", "--script", "sh"])
         assert result.exit_code != 0
-        assert "Refusing to migrate symlinked" in result.output
+        assert "Refusing to load symlinked" in result.output
         assert external.read_text(encoding="utf-8") == legacy
 
     def test_hook_config_migration_rejects_symlinked_parent(self, tmp_path):

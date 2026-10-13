@@ -826,6 +826,23 @@ class TestInitIntegrationFlag:
         assert "Could not read shared infrastructure manifest" in captured.out
         assert "A new shared manifest will be created" in captured.out
 
+    @pytest.mark.parametrize("invalid", ["hooks: [broken]\n", "hooks: [\n"])
+    def test_shared_infra_validates_hooks_before_writing(self, tmp_path, invalid):
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "invalid-hooks"
+        specify = project / ".specify"
+        specify.mkdir(parents=True)
+        config = specify / "extensions.yml"
+        config.write_text(invalid, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="extensions.yml"):
+            _install_shared_infra(project, "sh", force=True)
+
+        assert config.read_text(encoding="utf-8") == invalid
+        assert not (specify / "scripts").exists()
+        assert not (specify / "integrations/speckit.manifest.json").exists()
+
     def test_shared_infra_warns_when_manifest_cannot_be_decoded(self, tmp_path, capsys):
         """Non-UTF-8 shared manifests warn before falling back to a new manifest."""
         from specify_cli import _install_shared_infra

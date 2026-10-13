@@ -288,12 +288,18 @@ hook_digest_valid() {
 }
 
 hook_projection_shape_valid() {
-    local response=$1 event=$2
+    local response=$1 event=$2 rest priority
     local string='"([^"\\[:cntrl:]]|\\(["\\/bfnrt]|u[[:xdigit:]]{4}))*"'
     local required='"([^"\\[:cntrl:]]|\\(["\\/bfnrt]|u[[:xdigit:]]{4}))+"'
     local entry='\{"extension":'"$required"',"command":'"$required"',"optional":(true|false),"description":'"$string"',"prompt":'"$string"',"priority":[1-9][0-9]*\}'
     local shape='^\{"event":"'"$event"'","hooks":\[('"$entry"'(,'"$entry"')*)?\]\}$'
-    [[ $response =~ $shape ]]
+    [[ $response =~ $shape ]] || return 1
+    rest=$response
+    while [[ $rest =~ \"priority\":([1-9][0-9]*) ]]; do
+        priority=${BASH_REMATCH[1]}
+        (( ${#priority} < 10 || (${#priority} == 10 && priority <= 2147483647) )) || return 1
+        rest=${rest#*${BASH_REMATCH[0]}}
+    done
 }
 
 resolve_hooks() {

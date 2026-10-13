@@ -60,7 +60,7 @@ def resolve(event: str, project_root: Path) -> dict:
                 or not isinstance(hook.get("prompt"), str)
                 or not isinstance(hook.get("priority"), int)
                 or isinstance(hook["priority"], bool)
-                or hook["priority"] < 1):
+                or not 1 <= hook["priority"] <= 2147483647):
                 raise ValueError("Invalid hook projection; reinstall the extension or refresh the project")
         return result
     if config_file.exists():
