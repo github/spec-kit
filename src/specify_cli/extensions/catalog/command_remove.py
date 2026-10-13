@@ -5,6 +5,8 @@ Registered by ``catalog.register()``; shared catalog helpers live in
 """
 from __future__ import annotations
 
+import os
+
 import typer
 from rich.markup import escape as _escape_markup
 
@@ -62,11 +64,24 @@ def catalog_remove(
     else:
         # The catalog loader rejects an existing config with no entries, so
         # delete the file instead of writing ``catalogs: []``.
-        config_path.unlink(missing_ok=True)
+        try:
+            config_path.unlink(missing_ok=True)
+        except OSError as error:
+            config_label = _escape_markup(
+                str(_commands._display_project_path(project_root, config_path))
+            )
+            _commands.console.print(
+                f"[red]Error:[/red] Failed to delete {config_label}: "
+                f"{_escape_markup(str(error))}"
+            )
+            raise typer.Exit(1)
 
     _commands.console.print(f"[green]✓[/green] Removed catalog '{safe_name}'")
     if not catalogs:
+        if os.environ.get("SPECKIT_CATALOG_URL"):
+            fallback = "the SPECKIT_CATALOG_URL environment variable still takes precedence"
+        else:
+            fallback = "user configuration or built-in defaults will be used"
         _commands.console.print(
-            "\n[dim]Project catalog override removed; user configuration or "
-            "built-in defaults will be used.[/dim]"
+            f"\n[dim]Project catalog override removed; {fallback}.[/dim]"
         )

@@ -6,6 +6,7 @@ Mirrors ``specify_cli.extensions.catalog.command_remove``.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import yaml
 
@@ -162,6 +163,81 @@ class TestExtensionCatalogRemoveCLI:
         assert "Config: ~/.specify/extension-catalogs.yml" in output
         assert "only (priority" not in output
         assert "default (priority 1)" not in output
+
+    def test_extension_catalog_remove_final_entry_notes_env_catalog_precedence(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("SPECKIT_CATALOG_URL", "https://env.example.com/catalog.json")
+
+        add = self._invoke(
+            [
+                "extension",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(["extension", "catalog", "remove", "only"], project)
+        assert remove.exit_code == 0, remove.output
+        output = _normalize_cli_output(remove.output)
+        assert (
+            "Project catalog override removed; the SPECKIT_CATALOG_URL environment "
+            "variable still takes precedence." in output
+        )
+        assert "built-in defaults will be used" not in output
+
+        listing = self._invoke(["extension", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        output = _normalize_cli_output(listing.output)
+        assert "https://env.example.com/catalog.json" in output
+        assert "Catalog configured via SPECKIT_CATALOG_URL environment variable." in output
+
+    def test_extension_catalog_remove_final_entry_reports_unlink_failure(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "only",
+                            "url": "https://only.example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        before = cfg_path.read_text(encoding="utf-8")
+
+        def fail_unlink(self, *args, **kwargs):
+            raise OSError("simulated unlink failure")
+
+        monkeypatch.setattr(Path, "unlink", fail_unlink)
+        result = self._invoke(["extension", "catalog", "remove", "only"], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert (
+            "Failed to delete .specify/extension-catalogs.yml: simulated unlink failure"
+            in output
+        )
+        assert "Removed catalog" not in output
+        assert cfg_path.read_text(encoding="utf-8") == before
 
     def test_extension_catalog_remove_keeps_config_with_remaining_entries(
         self, tmp_path
