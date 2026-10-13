@@ -927,6 +927,7 @@ class RunState:
                     RunState._validate_fallback_path(tmp_path)
                     tmp_path.unlink()
                 except (OSError, ValueError):
+                    # Preserve the original write failure if cleanup is unsafe or fails.
                     pass
                 raise
             return

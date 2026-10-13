@@ -84,9 +84,10 @@ def test_portable_storage_fallback_rechecks_artifact_symlinks(
         artifact.unlink()
         artifact.symlink_to(external)
         with pytest.raises(ValueError, match="symlinked workflow run artifact"):
-            RunState._open_artifact(
+            with RunState._open_artifact(
                 artifact, "r", dir_fd=run_fd, encoding="utf-8"
-            )
+            ):
+                pass
 
     assert external.read_text(encoding="utf-8") == "external state"
 
