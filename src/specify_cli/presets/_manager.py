@@ -621,6 +621,38 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         return manifest
 
+    def _write_script_provenance(self, provenance: Path, canonical: Path) -> None:
+        """Record the canonical file's current content hash as this manager's.
+
+        Read back before any future unlink so an edit made to the canonical
+        file after materialization is detected rather than silently deleted.
+        """
+        sha256 = _content_sha256(canonical.read_bytes())
+        _write_shared_text(
+            self.project_root, provenance, json.dumps({"sha256": sha256})
+        )
+
+    @staticmethod
+    def _script_provenance_matches(provenance: Path, canonical: Path) -> bool:
+        """Return whether ``canonical`` is still exactly the generated content.
+
+        A provenance sidecar only proves a path was generated at some earlier
+        point, not that it still is -- a user may have hand-edited a
+        replace-strategy script (written verbatim, with no in-content
+        marker) after materialization. Compare the recorded hash against the
+        file's current content before treating it as safe to remove.
+        """
+        if not canonical.is_file():
+            return False
+        try:
+            metadata = json.loads(provenance.read_text(encoding="utf-8"))
+            stored_sha256 = metadata["sha256"]
+        except (OSError, ValueError, KeyError, TypeError):
+            # Older or malformed sidecar predating hash tracking: without a
+            # hash to check against, assume the file may have been edited.
+            return False
+        return stored_sha256 == _content_sha256(canonical.read_bytes())
+
     def _cleanup_stale_script_layers(
         self, scripts_dir: Path, script_name: str, keep: Set[Path]
     ) -> None:
@@ -727,7 +759,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             if os.name != "nt":
                 for path in generated:
                     path.chmod(path.stat().st_mode | 0o111)
-            _write_shared_text(self.project_root, provenance, "")
+            self._write_script_provenance(provenance, canonical)
             self._cleanup_stale_script_layers(
                 scripts_dir, script_name, keep=set(generated)
             )
@@ -741,7 +773,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             )
             if os.name != "nt":
                 canonical.chmod(canonical.stat().st_mode | 0o111)
-            _write_shared_text(self.project_root, provenance, "")
+            self._write_script_provenance(provenance, canonical)
             self._cleanup_stale_script_layers(scripts_dir, script_name, keep=set())
             return
 
@@ -754,12 +786,13 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # _write_shared_text writes 0644.
             if os.name != "nt":
                 canonical.chmod(canonical.stat().st_mode | 0o111)
-            _write_shared_text(self.project_root, provenance, "")
+            self._write_script_provenance(provenance, canonical)
         elif provenance.is_file():
-            # Only ever unlink a canonical file this manager generated --
-            # detected via the sidecar, since a verbatim-written single
-            # layer or core restore carries no in-content marker.
-            if canonical.is_file():
+            # Only unlink a canonical file whose content still matches the
+            # hash recorded when this manager generated it -- a hash
+            # mismatch means the user edited it after the fact, so preserve
+            # their edits and just drop the now-stale ownership metadata.
+            if self._script_provenance_matches(provenance, canonical):
                 canonical.unlink()
             provenance.unlink()
         self._cleanup_stale_script_layers(scripts_dir, script_name, keep=set())

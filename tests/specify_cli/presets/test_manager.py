@@ -1695,6 +1695,27 @@ class TestScriptChainReconciliation:
         manager.remove("solo-pack")
         assert not canonical.exists()
 
+    def test_remove_only_provider_preserves_user_edited_dispatcher(
+        self, project_dir, temp_dir, valid_pack_data
+    ):
+        """A hash mismatch against the provenance sidecar means the user
+        edited the generated file after the fact: removing the last
+        provider must preserve those edits rather than delete them."""
+        manager = PresetManager(project_dir)
+        pack_dir = _create_pack(
+            temp_dir, valid_pack_data, "edited-pack", "echo x\n",
+            template_type="script", template_name="user-edited-script",
+        )
+        manager.install_from_directory(pack_dir, "0.1.5")
+        canonical = self._canonical(project_dir, "user-edited-script")
+        assert canonical.is_file()
+
+        canonical.write_text("echo hand-edited after install\n")
+
+        manager.remove("edited-pack")
+        assert canonical.is_file()
+        assert canonical.read_text() == "echo hand-edited after install\n"
+
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX execute bits")
     def test_remove_last_provider_restores_executable_core_script(
         self, project_dir, temp_dir, valid_pack_data
