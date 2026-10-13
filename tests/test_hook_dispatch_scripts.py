@@ -1312,6 +1312,29 @@ def test_direct_save_symlink_preserves_existing_projection(tmp_path):
     assert {path.name: path.read_bytes() for path in cache.iterdir()} == original
 
 
+@pytest.mark.parametrize("entry", ["orphan.json", "orphan.sha256", "unrelated"])
+def test_direct_save_rejects_cache_directory_without_touching_projection(tmp_path, entry):
+    from specify_cli.extensions import HookExecutor
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config({"hooks": {"before_plan": [
+        {"extension": "old", "command": "speckit.old.run"},
+    ]}})
+    cache = tmp_path / ".specify/hook-dispatch"
+    (cache / entry).mkdir()
+    original = {path.name: path.read_bytes() for path in cache.iterdir() if path.is_file()}
+    config = executor.config_file.read_bytes()
+
+    with pytest.raises(ValueError, match="non-file hook dispatch cache entry"):
+        executor.save_project_config({"hooks": {"before_plan": [
+            {"extension": "new", "command": "speckit.new.run"},
+        ]}})
+
+    assert executor.config_file.read_bytes() == config
+    assert (cache / entry).is_dir()
+    assert {path.name: path.read_bytes() for path in cache.iterdir() if path.is_file()} == original
+
+
 @pytest.mark.parametrize("variant", ["sh", "ps", "py"])
 @pytest.mark.parametrize("value", [
     "JSvjEuqRsqs$tn]X", "N1Y'dombB*Afj9e;SO}^0^S'", "prefix{suffix",

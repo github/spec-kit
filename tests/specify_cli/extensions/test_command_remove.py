@@ -97,6 +97,44 @@ def test_mutations_preserve_state_on_hook_cache_file_collision(
 
 
 @pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+@pytest.mark.parametrize("entry", ["orphan.json", "orphan.sha256", "unrelated"])
+def test_mutations_preserve_projection_on_cache_directory_entry(
+    tmp_path, extension_dir, command, entry
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    executor = HookExecutor(project)
+    config = executor.config_file
+    original = config.read_bytes()
+    cache = project / ".specify/hook-dispatch"
+    (cache / entry).mkdir()
+    projection = {p.name: p.read_bytes() for p in cache.iterdir() if p.is_file()}
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "non-file hook dispatch cache entry" in result.output
+    assert config.read_bytes() == original
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert (cache / entry).is_dir()
+    assert {p.name: p.read_bytes() for p in cache.iterdir() if p.is_file()} == projection
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
 def test_mutations_preserve_state_on_dangling_config_symlink(
     tmp_path, extension_dir, command
 ):

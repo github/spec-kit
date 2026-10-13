@@ -5840,20 +5840,29 @@ class HookExecutor:
                 "hooks": {},
             }
 
-    def load_project_config_for_update(self) -> Dict[str, Any]:
-        """Load and validate hook configuration before any extension mutation."""
-        if self.config_file.parent.is_symlink():
-            raise ValueError("Refusing to load symlinked .specify/extensions.yml")
-        cache = self.config_file.parent / "hook-dispatch"
+    @staticmethod
+    def _validate_hook_dispatch_cache(cache: Path) -> None:
+        """Reject cache paths that cannot be safely replaced by regular files."""
         try:
             if cache.is_symlink():
                 raise ValueError("Refusing to use symlinked hook dispatch cache")
             if cache.exists() and not cache.is_dir():
                 raise ValueError("Refusing to use non-directory hook dispatch cache")
-            if cache.is_dir() and any(p.is_symlink() for p in cache.iterdir()):
-                raise ValueError("Refusing to use symlinked hook dispatch cache")
+            if cache.is_dir():
+                for path in cache.iterdir():
+                    if path.is_symlink():
+                        raise ValueError("Refusing to use symlinked hook dispatch cache entry")
+                    if not path.is_file():
+                        raise ValueError(f"Refusing to use non-file hook dispatch cache entry: {path.name}")
         except OSError as exc:
             raise ValueError(f"Cannot inspect hook dispatch cache: {exc}") from exc
+
+    def load_project_config_for_update(self) -> Dict[str, Any]:
+        """Load and validate hook configuration before any extension mutation."""
+        if self.config_file.parent.is_symlink():
+            raise ValueError("Refusing to load symlinked .specify/extensions.yml")
+        cache = self.config_file.parent / "hook-dispatch"
+        self._validate_hook_dispatch_cache(cache)
         if self.config_file.is_symlink():
             raise ValueError("Refusing to load symlinked .specify/extensions.yml")
         if not self.config_file.exists():
@@ -5947,14 +5956,10 @@ class HookExecutor:
                 if self.config_file.parent.is_symlink() or self.config_file.is_symlink():
                     raise ValueError("Refusing to save symlinked .specify/extensions.yml")
                 cache = self.config_file.parent / "hook-dispatch"
-                if cache.is_symlink():
-                    raise ValueError("Refusing to write symlinked hook dispatch cache")
+                self._validate_hook_dispatch_cache(cache)
                 if not cache.exists():
                     with changing_file(cache):
                         cache.mkdir(parents=True)
-                for path in cache.iterdir():
-                    if path.is_symlink():
-                        raise ValueError("Refusing to write symlinked hook dispatch cache entry")
                 snapshot = cache / "source.yml"
                 unlink(snapshot, missing_ok=True)
                 for pattern in ("*.json", "*.sha256"):
