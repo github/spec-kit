@@ -402,6 +402,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 f"Preset '{manifest.id}' is already installed. "
                 f"Use 'specify preset remove {manifest.id}' first."
             )
+        self._ensure_hook_dispatchers_for_core_commands([
+            t["name"] for t in manifest.templates if t.get("type") == "command"
+        ])
         before_file_change(dest_dir, removal=True)
         try:
             if installed:
@@ -781,6 +784,8 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 # Invalid manifest — skip alias extraction; primary command
                 # names from registered_commands are still unregistered.
                 pass
+
+        self._ensure_hook_dispatchers_for_core_commands(sorted(removed_cmd_names))
 
         affected_skill_dirs: Dict[
             Path, tuple[Optional[str], List[str]]

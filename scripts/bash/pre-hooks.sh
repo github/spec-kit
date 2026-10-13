@@ -304,7 +304,7 @@ hook_projection_shape_valid() {
 
 resolve_hooks() {
     local phase=$1 command=$2 event config line spaces indent text key value
-    local section="" target=false empty=false hooks_empty=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false
+    local section="" target=false empty=false hooks_empty=false pending_hooks=false item_indent=-1 installed_indent=-1 index=0 seen=false seen_hooks=false seen_event=false pending_event=""
     local i n chosen first=true
     local -a HOOK_EXT HOOK_CMD HOOK_ENABLED HOOK_OPTIONAL HOOK_CONDITION
     local -a HOOK_PRIORITY HOOK_PRIORITY_QUOTED HOOK_DESCRIPTION HOOK_PROMPT HOOK_RANKS HOOK_USED HOOK_EVENTS HOOK_TARGETS
@@ -396,6 +396,8 @@ resolve_hooks() {
             continue
         fi
         if (( indent == 0 )); then
+            if [[ -n $pending_event ]]; then HOOK_ERROR="hooks.$pending_event must be a list"; break; fi
+            if [[ $pending_hooks == true ]]; then HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"; break; fi
             target=false
             item_indent=-1
             installed_indent=-1
@@ -406,6 +408,8 @@ resolve_hooks() {
                 empty=false
                 hooks_empty=false
                 [[ $text == 'hooks: {}' ]] && hooks_empty=true
+                pending_hooks=false
+                [[ $text == 'hooks:' ]] && pending_hooks=true
             elif [[ $text == hooks:* ]]; then
                 HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"
             elif [[ $text == 'installed:' || $text == 'installed: []' ]]; then
@@ -435,7 +439,9 @@ resolve_hooks() {
         fi
         if [[ $hooks_empty == true ]]; then HOOK_ERROR="Unsupported YAML hook layout"; break; fi
         if (( indent == 2 )) && [[ $text != '- '* && $text =~ ^([^:]+):([[:space:]]|$) ]]; then
+            if [[ -n $pending_event ]]; then HOOK_ERROR="hooks.$pending_event must be a list"; break; fi
             key=${BASH_REMATCH[1]}
+            pending_hooks=false
             if [[ ! $key =~ ^(before|after)_[a-z][a-z0-9_]*$ ]]; then
                 HOOK_ERROR="Invalid hook event: $key"; break
             fi
@@ -452,10 +458,13 @@ resolve_hooks() {
             fi
             empty=false
             [[ $value == '[]' ]] && empty=true
+            pending_event=""
+            [[ -z $value ]] && pending_event=$key
             item_indent=-1
             continue
         fi
         if [[ $text == '- '* && ( $indent == 2 || $indent == 4 ) && $empty == false ]]; then
+            pending_event=""
             item_indent=$indent
             index=$((index+1))
             HOOK_EVENTS[index]=$key
@@ -472,6 +481,8 @@ resolve_hooks() {
         [[ -z $HOOK_ERROR ]] || break
     done < "$config"
     [[ $seen == true ]] || HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"
+    if [[ -z $HOOK_ERROR && $pending_hooks == true ]]; then HOOK_ERROR="Invalid .specify/extensions.yml: expected a hooks mapping"; fi
+    if [[ -z $HOOK_ERROR && -n $pending_event ]]; then HOOK_ERROR="hooks.$pending_event must be a list"; fi
     if [[ -z $HOOK_ERROR ]]; then
         for ((i=1; i<=index; i++)); do
             if [[ -z ${HOOK_EXT[i]} || -z ${HOOK_CMD[i]} ]]; then

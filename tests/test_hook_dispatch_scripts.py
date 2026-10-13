@@ -199,6 +199,38 @@ def test_invalid_config_reports_error(tmp_path, text, part, phase):
 
 @pytest.mark.parametrize("variant", ["py", "sh", "ps"])
 @pytest.mark.parametrize("phase", ["pre", "post"])
+@pytest.mark.parametrize("text", [
+    "hooks:\n  before_plan:\n",
+    "hooks:\n  before_plan:\n  after_tasks: []\n",
+    "hooks:\n  before_tasks:\n  before_plan: []\n",
+    "hooks:\n  before_plan:\nsettings: {}\n",
+])
+def test_legacy_null_hook_event_rejected(tmp_path, variant, phase, text):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    if phase == "post":
+        text = text.replace("before_plan", "after_plan")
+    write_config(tmp_path, text)
+    code, data = run_hook(tmp_path, phase, variant=variant)
+    assert code == 1, data
+    assert "must be a list" in data["error"]
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+@pytest.mark.parametrize("text", ["hooks:\n", "hooks:\nsettings: {}\n"])
+def test_legacy_null_hooks_mapping_rejected(tmp_path, variant, text):
+    if variant == "ps" and not shutil.which("pwsh"):
+        pytest.skip("PowerShell not installed")
+    write_config(tmp_path, text)
+    code, data = run_hook(tmp_path, variant=variant)
+    assert code == 1, data
+    assert "hooks mapping" in data["error"]
+    assert data["hooks"] == []
+
+
+@pytest.mark.parametrize("variant", ["py", "sh", "ps"])
+@pytest.mark.parametrize("phase", ["pre", "post"])
 def test_legacy_empty_hooks_map_rejects_nested_entries(tmp_path, variant, phase):
     if variant == "ps" and not shutil.which("pwsh"):
         pytest.skip("PowerShell not installed")

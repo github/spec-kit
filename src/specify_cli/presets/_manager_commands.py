@@ -1,6 +1,7 @@
 """Agent command registration and reconciliation for installed presets."""
 
 import copy
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -15,8 +16,9 @@ from .._init_options import (
     resolve_active_agent_for_registration,
 )
 from ..extensions import ExtensionRegistry
+from ..integrations.base import IntegrationBase
 from ..integrations._file_changes import write_text as _write_text
-from ._manifest import PresetManifest
+from ._manifest import PresetError, PresetManifest
 from ._resolver import PresetResolver
 
 
@@ -91,6 +93,52 @@ def _substitute_core_template(
 
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
+
+    def _ensure_hook_dispatchers_for_core_commands(self, command_names: List[str]) -> None:
+        """Provision dispatchers before a preset can render a core command."""
+        if not command_names:
+            return
+        registrar = self._command_registrar()
+        options = load_init_options(self.project_root)
+        requested = options.get("script") or ("ps" if os.name == "nt" else "sh")
+        variants = set()
+        for name in command_names:
+            body, frontmatter = _substitute_core_template(
+                "{CORE_TEMPLATE}", name, self.project_root, registrar
+            )
+            if "{PRE_HOOK_SCRIPT}" not in body and "{POST_HOOK_SCRIPT}" not in body:
+                continue
+            scripts = frontmatter.get("scripts")
+            if not isinstance(scripts, dict):
+                scripts = {}
+            try:
+                variant = (
+                    IntegrationBase.select_script_variant(requested, scripts)
+                    if scripts else requested
+                )
+            except ValueError as exc:
+                raise PresetError(f"Cannot select hook dispatcher: {exc}") from exc
+            if variant not in ("sh", "ps", "py"):
+                raise PresetError(f"Unsupported hook dispatcher script type: {variant}")
+            variants.add(variant)
+
+        from .. import _install_shared_infra
+
+        for variant in sorted(variants):
+            directory = {"sh": "bash", "ps": "powershell", "py": "python"}[variant]
+            suffix = {"sh": ".sh", "ps": ".ps1", "py": ".py"}[variant]
+            paths = [
+                self.project_root / ".specify" / "scripts" / directory
+                / (f"{phase}_hooks.py" if variant == "py" else f"{phase}-hooks{suffix}")
+                for phase in ("pre", "post")
+            ]
+            if any(path.is_symlink() or not path.is_file() for path in paths):
+                _install_shared_infra(
+                    self.project_root, variant, hook_dispatchers_only=True,
+                    refresh_managed=True,
+                )
+            if any(path.is_symlink() or not path.is_file() for path in paths):
+                raise PresetError(f"Cannot render preset command: missing hook dispatcher for {variant}")
 
     def _register_commands(
         self,

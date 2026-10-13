@@ -92,7 +92,9 @@ or on runtime PyYAML; it rejects stale, corrupt, or missing projections.
 The legacy YAML resolver remains for projects not yet refreshed. The resolver
 returns ordered hook metadata as JSON; agent commands themselves remain the
 responsibility of the agent. The command/skill registrar resolves these
-placeholders too when a preset wraps a core command.
+placeholders too when a preset wraps a core command. Preset install and removal
+provision the selected dispatchers before rendering such commands in older
+projects that lack them.
 
 ## External adapter package contract
 

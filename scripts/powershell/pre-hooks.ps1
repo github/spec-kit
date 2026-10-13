@@ -155,10 +155,12 @@ function Resolve-HookConfig {
     $inHooks = $false
     $section = ''
     $hooksEmpty = $false
+    $pendingHooks = $false
     $seenHooks = $false
     $seenEvent = $false
     $target = $false
     $empty = $false
+    $pendingEvent = ''
     $itemIndent = -1
     $installedIndent = -1
     $hook = $null
@@ -179,6 +181,8 @@ function Resolve-HookConfig {
             continue
         }
         if ($indent -eq 0) {
+            if ($pendingEvent) { throw "hooks.$pendingEvent must be a list" }
+            if ($pendingHooks) { throw "Invalid .specify/extensions.yml: expected a hooks mapping" }
             $target = $false
             $installedIndent = -1
             if ($body -in @('hooks:', 'hooks: {}')) {
@@ -187,6 +191,7 @@ function Resolve-HookConfig {
                 $inHooks = $true
                 $section = 'hooks'
                 $hooksEmpty = $body -eq 'hooks: {}'
+                $pendingHooks = $body -eq 'hooks:'
             } elseif ($body -match '^hooks:') {
                 throw "Invalid .specify/extensions.yml: expected a hooks mapping"
             } elseif ($body -in @('installed:', 'installed: []')) {
@@ -215,7 +220,9 @@ function Resolve-HookConfig {
         if ($hooksEmpty) { throw "Unsupported YAML hook layout" }
         if ($indent -eq 2 -and -not $body.StartsWith('- ') -and
             $body -match '^([^:]+):(?:\s|$)(.*)$') {
+            if ($pendingEvent) { throw "hooks.$pendingEvent must be a list" }
             $key = $Matches[1]
+            $pendingHooks = $false
             $value = $Matches[2].Trim()
             if ($key -cnotmatch '^(before|after)_[a-z][a-z0-9_]*$') {
                 throw "Invalid hook event: $key"
@@ -227,10 +234,12 @@ function Resolve-HookConfig {
             }
             if ($value -notin @('', '[]')) { throw "hooks.$key must be a list" }
             $empty = $value -eq '[]'
+            $pendingEvent = if ($value -eq '') { $key } else { '' }
             $itemIndent = -1
             continue
         }
         if ($indent -in @(2, 4) -and $body.StartsWith('- ') -and -not $empty) {
+            $pendingEvent = ''
             $itemIndent = $indent
             $hook = @{ enabled = 'true'; optional = 'true'; priority = '10'; priority_quoted = $false
                        target = $target; hook_event = $key }
@@ -244,6 +253,8 @@ function Resolve-HookConfig {
         }
         throw "Unsupported YAML hook layout"
     }
+    if ($pendingEvent) { throw "hooks.$pendingEvent must be a list" }
+    if ($pendingHooks) { throw "Invalid .specify/extensions.yml: expected a hooks mapping" }
     $ordered = [Collections.Generic.List[hashtable]]::new()
     for ($i = 0; $i -lt $hooks.Count; $i++) {
         $hook = $hooks[$i]
