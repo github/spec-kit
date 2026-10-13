@@ -536,6 +536,23 @@ def external_lifecycle(operation: str):
                             installer.unload_installed_integrations()
                             installer.persist_package(root, key, *candidate)
                         for removed in records.keys() - set(remaining):
+                            # The uninstall command cleans up its own key. A stale
+                            # record's contributions must go here, while its adapter
+                            # is still loaded.
+                            if operation == "uninstall" and removed != key:
+                                from ._helpers import (
+                                    _unregister_extensions_for_agent,
+                                    _unregister_presets_for_agent,
+                                )
+
+                                _unregister_extensions_for_agent(
+                                    root, removed,
+                                    continuing="The adapter was removed, but extension artifacts may need manual cleanup.",
+                                )
+                                _unregister_presets_for_agent(
+                                    root, removed,
+                                    continuing="The adapter was removed, but preset artifacts may need manual cleanup.",
+                                )
                             installer.remove_package(root, removed)
                         if not candidate:
                             installer.load_installed_integrations(root)
