@@ -694,6 +694,38 @@ def test_other_issue_forms_do_not_apply_automatic_intake_verdict():
         assert "triage-must-have" not in form["labels"]
 
 
+@pytest.mark.parametrize("kind", [item[0] for item in ARCHIVE_SUBMISSION_WORKFLOWS])
+def test_community_submission_title_mismatch_reports_stop(kind):
+    """Guard written requirements, not hosted agent behavior."""
+    source_text, _, _, compiled = _agentic_workflow(f"add-community-{kind}")
+    trigger = source_text.split("## Triggering Conditions\n", 1)[1].split(
+        "\n## Step 1", 1
+    )[0]
+    prose = " ".join(trigger.split())
+    assert f"verify that the issue title starts with `[{kind.title()}]:`" in prose
+    assert "If it does not, emit one `add_comment` on the issue" in prose
+    assert (
+        f"The {kind}-submission workflow stopped before validation because "
+        f"the issue title does not start with `[{kind.title()}]:`."
+    ) in prose
+    assert "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" in trigger
+    assert (
+        "stop without validation, label changes, catalog/docs edits, or PR creation."
+    ) in prose
+    assert "Do not substitute `noop` for this comment" in prose
+    assert "Otherwise, continue to Step 1" in prose
+    assert "stop without commenting" not in source_text
+    run_context = _workflow_step(
+        compiled["jobs"]["activation"]["steps"], "Interpolate variables and render templates"
+    )["env"]
+    for variable, expression in (
+        ("GH_AW_GITHUB_SERVER_URL", "${{ github.server_url }}"),
+        ("GH_AW_GITHUB_REPOSITORY", "${{ github.repository }}"),
+        ("GH_AW_GITHUB_RUN_ID", "${{ github.run_id }}"),
+    ):
+        assert run_context[variable] == expression
+
+
 @pytest.mark.parametrize("kind", [item[0] for item in COMMUNITY_SUBMISSION_WORKFLOWS])
 def test_community_upgrade_uses_established_runtime_defaults(kind):
     _, compiled_text, source, compiled = _agentic_workflow(f"add-community-{kind}")
