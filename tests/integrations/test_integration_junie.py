@@ -109,6 +109,105 @@ class TestJunieIntegration(MarkdownIntegrationTests):
         # Instruction stays on its own line rather than being mashed onto the note.
         assert "\n- For each executable hook, output the following:" in injected
 
+    def test_junie_transformations(self):
+        """Verify junie-specific transformations for frontmatter and body."""
+        junie = get_integration("junie")
+        content = "---\ndescription: Test\n---\n$ARGUMENTS\n$speckit-plan\n"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: true" in updated
+        assert "$prompt" in updated
+        assert "$ARGUMENTS" not in updated
+        assert "$$speckit-plan" in updated
+
+    def test_junie_frontmatter_uniqueness(self):
+        """Verify allowPromptArgument is unique and overwritten. (US1)"""
+        junie = get_integration("junie")
+        # With $ARGUMENTS -> true
+        content = "---\nallowPromptArgument: false\ndescription: Test\n---\n$ARGUMENTS"
+        updated = junie.post_process_command_content(content)
+        assert updated.count("allowPromptArgument:") == 1
+        assert "allowPromptArgument: true" in updated
+
+        # Without $ARGUMENTS -> false
+        content = "---\nallowPromptArgument: true\ndescription: Test\n---\nBody"
+        updated = junie.post_process_command_content(content)
+        assert updated.count("allowPromptArgument:") == 1
+        assert "allowPromptArgument: false" in updated
+
+    def test_junie_variable_escaping_regex(self):
+        """Verify generic variable escaping using regex. (US2)"""
+        junie = get_integration("junie")
+        content = "Hook: $speckit-git-branch, User: $user_name, Prompt: $prompt"
+        # Note: $prompt should also be escaped to $$prompt to isolate Junie's reserved token
+        updated = junie.post_process_command_content(content)
+        assert "$$speckit-git-branch" in updated
+        assert "$$user_name" in updated
+        assert "$$prompt" in updated
+        assert "$prompt" in updated  # Still matches because $$prompt contains $prompt
+        # More specific check:
+        assert "Prompt: $$prompt" in updated
+
+    def test_junie_token_isolation(self):
+        """Verify $ARGUMENTS is isolated from substrings like $ARGUMENTS_SUFFIX."""
+        junie = get_integration("junie")
+        content = "Use $ARGUMENTS but not $ARGUMENTS_SUFFIX"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: true" in updated
+        assert "$prompt" in updated
+        assert "$$ARGUMENTS_SUFFIX" in updated
+        assert "$prompt_SUFFIX" not in updated
+
+        content = "Only $ARGUMENTS_SUFFIX"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: false" in updated
+        assert "$$ARGUMENTS_SUFFIX" in updated
+        assert "$prompt" not in updated
+
+    def test_junie_missing_frontmatter(self):
+        """Verify frontmatter is created if missing."""
+        junie = get_integration("junie")
+        # With $ARGUMENTS
+        content = "$ARGUMENTS"
+        updated = junie.post_process_command_content(content)
+        assert updated.startswith("---\nallowPromptArgument: true\n---\n\n")
+        assert "$prompt" in updated
+
+        # Without $ARGUMENTS
+        content = "Body"
+        updated = junie.post_process_command_content(content)
+        assert updated.startswith("---\nallowPromptArgument: false\n---\n\n")
+
+    def test_junie_malformed_frontmatter(self):
+        """Verify malformed frontmatter is handled gracefully (returned as is)."""
+        junie = get_integration("junie")
+        content = "---\nMalformed frontmatter (missing closing dashes)\nBody"
+        updated = junie.post_process_command_content(content)
+        assert updated == content
+
+    def test_junie_frontmatter_non_standalone_delimiter(self):
+        """Verify --- not on standalone line is NOT identified as delimiter."""
+        junie = get_integration("junie")
+        content = "---\ntitle: Foo\n--- not a delimiter\nbody"
+        updated = junie.post_process_command_content(content)
+        assert updated == content
+
+    def test_junie_frontmatter_with_horizontal_rule_in_body(self):
+        """Verify valid frontmatter is preserved and horizontal rule in body is untouched."""
+        junie = get_integration("junie")
+        content = "---\ntitle: Foo\n---\nBody with\n---\nhorizontal rule"
+        updated = junie.post_process_command_content(content)
+        assert "---" in updated
+        assert "horizontal rule" in updated
+        assert updated.count("---") == 3
+
+    def test_junie_nested_yaml_protection(self):
+        """Verify regex does not match nested allowPromptArgument."""
+        junie = get_integration("junie")
+        content = "---\nconfig:\n  allowPromptArgument: nested\n---\nBody"
+        updated = junie.post_process_command_content(content)
+        assert "allowPromptArgument: nested" in updated
+        assert "allowPromptArgument: false" not in updated
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):
