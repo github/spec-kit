@@ -21,8 +21,8 @@ documented intent.
 
 The core workflow has no dedicated command that automatically reconciles
 differences among `spec.md`, `plan.md`, and `tasks.md`. Analyze reports
-inconsistencies without editing artifacts, and converge only appends missing
-implementation work to `tasks.md`. Contributors can return to the core command
+inconsistencies without editing artifacts, and converge only appends remaining
+work to `tasks.md`. Contributors can return to the core command
 that owns an artifact to revise or regenerate it, while teams and extensions can
 coordinate broader reconciliation during or after delivery. Extension behavior
 does not change the responsibilities of the core commands.
