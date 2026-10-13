@@ -84,6 +84,17 @@ def integration_upgrade(
 
     selected_script = _resolve_integration_script_type(project_root, current, key, script)
 
+    from ..presets import PresetManager as _ExistingPresetManager
+    from ..presets import PresetValidationError
+
+    try:
+        _ExistingPresetManager(project_root).reject_unsupported_script_runtime_change(
+            selected_script
+        )
+    except PresetValidationError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
     # Build parsed options from --integration-options so the integration
     # can determine its effective invoke separator before shared infra
     # is installed.

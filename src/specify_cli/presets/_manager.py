@@ -312,6 +312,58 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 f"(--script sh) projects."
             )
 
+    def _script_providing_preset_ids(self) -> List[str]:
+        """Return ids of installed presets that provide a script template.
+
+        Also considers a project-local override (``.specify/templates/
+        overrides/scripts/<name>.sh``) with no owning preset as "provided",
+        mirroring ``reconcile_all_script_chains``'s override scan -- the
+        resulting ``[\"(override)\"]`` entry is only ever used for a
+        human-readable error, never looked up in the registry.
+        """
+        ids = []
+        for pack_id, _metadata in self.registry.list_by_priority():
+            manifest = PresetResolver(self.project_root)._get_manifest(
+                self.presets_dir / pack_id
+            )
+            if manifest is None:
+                continue
+            if any(t.get("type") == "script" for t in manifest.templates):
+                ids.append(pack_id)
+        overrides_scripts_dir = (
+            self.project_root / ".specify" / "templates" / "overrides" / "scripts"
+        )
+        if overrides_scripts_dir.is_dir() and any(
+            overrides_scripts_dir.glob("*.sh")
+        ):
+            ids.append("(project-local override)")
+        return ids
+
+    def reject_unsupported_script_runtime_change(
+        self, new_script_type: Optional[str]
+    ) -> None:
+        """Reject switching a project to a non-Bash runtime with a script preset installed.
+
+        Mirrors ``_reject_script_preset_for_unsupported_runtime`` (which guards
+        installing a new script preset into an already non-Bash project) for
+        the opposite direction: changing an existing project's runtime via
+        ``init --here --force --script``, ``integration upgrade --script``, or
+        ``integration switch --script`` while a Bash-only generated dispatcher
+        chain is already in place. Without this, the transition succeeds and
+        the installed preset silently becomes inert, since the project now
+        executes the restored PowerShell/Python variant instead.
+        """
+        if new_script_type in (None, "sh"):
+            return
+        offending = self._script_providing_preset_ids()
+        if offending:
+            raise PresetValidationError(
+                f"Cannot switch to --script {new_script_type}: script-providing "
+                f"preset(s) {', '.join(offending)} are installed and only "
+                f"support Bash (--script sh) projects. Remove them first, or "
+                f"keep --script sh."
+            )
+
     def find_unmet_extension_dependencies(
         self,
         manifest: PresetManifest

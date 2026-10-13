@@ -614,6 +614,18 @@ def register(app: typer.Typer) -> None:
             else:
                 selected_script = default_script
 
+        if here and (project_path / ".specify").is_dir():
+            from .presets import PresetManager as _ExistingPresetManager
+            from .presets import PresetValidationError
+
+            try:
+                _ExistingPresetManager(
+                    project_path
+                ).reject_unsupported_script_runtime_change(selected_script)
+            except PresetValidationError as exc:
+                console.print(f"[red]Error:[/red] {exc}")
+                raise typer.Exit(1)
+
         console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 

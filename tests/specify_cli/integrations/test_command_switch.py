@@ -152,6 +152,53 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
         assert canonical.read_text(encoding="utf-8") == "echo custom\n"
 
+    def test_switch_rejects_script_change_with_script_preset_installed(self, tmp_path):
+        """A script-providing preset's dispatcher chain is Bash-only: switching
+        the project to --script ps|py via switch would leave it silently
+        inert, so the runtime change must be rejected instead."""
+        from specify_cli.presets import PresetManager
+        from tests.specify_cli.presets._helpers import create_pack
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = create_pack(
+            tmp_path,
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "switch-ps-reject-pack",
+                    "name": "Switch PS Reject Pack",
+                    "version": "1.0.0",
+                    "description": "A test preset with a script",
+                    "author": "Test Author",
+                    "repository": "https://github.com/test/switch-ps-reject-pack",
+                    "license": "MIT",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": []},
+                "tags": ["testing"],
+            },
+            "switch-ps-reject-pack",
+            "echo custom\n",
+            strategy="replace",
+            template_type="script",
+            template_name="switch-me-ps",
+        )
+        PresetManager(project).install_from_directory(pack_dir, "0.1.5")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "ps",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "switch-ps-reject-pack" in result.output
+
     def test_switch_to_different_target_refresh_shared_infra_restores_script_preset_launcher(
         self, tmp_path
     ):

@@ -528,6 +528,53 @@ class TestIntegrationUpgradeDetailed:
             "script preset's dispatcher chain restored after the first refresh"
         )
 
+    def test_upgrade_rejects_script_change_with_script_preset_installed(
+        self, tmp_path
+    ):
+        """A script-providing preset's dispatcher chain is Bash-only: switching
+        the project to --script ps|py via upgrade would leave it silently
+        inert, so the runtime change must be rejected instead."""
+        import yaml
+
+        from specify_cli.presets import PresetManager
+
+        project = _init_project(tmp_path, "claude")
+
+        pack_dir = tmp_path / "ps-reject-pack"
+        (pack_dir / "scripts").mkdir(parents=True)
+        (pack_dir / "scripts" / "setup-plan.sh").write_text(
+            "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ps-reject-pack",
+                "name": "ps-reject-pack",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "script",
+                        "name": "setup-plan",
+                        "file": "scripts/setup-plan.sh",
+                    },
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "claude", "--script", "ps"]
+        )
+        assert result.exit_code == 1, result.output
+        assert "ps-reject-pack" in result.output
+
     def test_upgrade_secondary_kilocode_legacy_dir_cleans_commands_without_backfill(
         self, tmp_path
     ):

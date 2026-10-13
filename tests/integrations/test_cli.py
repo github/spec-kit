@@ -1236,6 +1236,74 @@ class TestInitIntegrationFlag:
             "chain instead of restoring it after the shared-infra refresh"
         )
 
+    def test_init_here_force_rejects_script_change_with_script_preset_installed(
+        self, tmp_path
+    ):
+        """A script-providing preset's dispatcher chain is Bash-only:
+        re-initializing with --script ps|py would leave it silently inert,
+        so the runtime change must be rejected instead."""
+        import yaml
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        project = tmp_path / "e2e-reject-script-change"
+        project.mkdir()
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+            assert result.exit_code == 0, result.output
+
+            pack_dir = tmp_path / "ps-reject-init-pack"
+            (pack_dir / "scripts").mkdir(parents=True)
+            (pack_dir / "scripts" / "setup-plan.sh").write_text(
+                "#!/usr/bin/env bash\necho WRAPPED-BY-PRESET\n", encoding="utf-8"
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "ps-reject-init-pack",
+                    "name": "ps-reject-init-pack",
+                    "version": "1.0.0",
+                    "description": "Test",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "script",
+                            "name": "setup-plan",
+                            "file": "scripts/setup-plan.sh",
+                        },
+                    ]
+                },
+            }
+            with open(pack_dir / "preset.yml", "w") as f:
+                yaml.dump(manifest_data, f)
+
+            PresetManager(project).install_from_directory(pack_dir, "0.1.0")
+
+            result2 = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "claude",
+                "--script", "ps",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result2.exit_code == 1, result2.output
+        assert "ps-reject-init-pack" in result2.output
+
     def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
         """E2E: confirming the merge with piped "y" (no --force) preserves
         existing shared infra files (unlike --force, which overwrites them)."""
