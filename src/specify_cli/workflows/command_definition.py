@@ -46,7 +46,7 @@ def workflow_definition(
         scopes = state.load_workflow_scopes()
     except FileNotFoundError:
         emit_json_error(ValueError(f"Run {state.run_id} has no persisted workflow definition"))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         emit_json_error(ValueError(f"Invalid workflow definition for run {state.run_id}: {exc}"))
 
     try:
@@ -58,7 +58,8 @@ def workflow_definition(
                     {"scope_path": path, "workflow_id": workflow_id, "definition": d.data}
                     for path, workflow_id, d in scopes
                 ],
-            }
+            },
+            max_nodes=cli._MAX_JSON_NODES,
         )
     except ValueError as exc:
         emit_json_error(exc)

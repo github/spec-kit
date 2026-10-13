@@ -594,6 +594,56 @@ class TestNegative:
 
         _assert_json_error(result, "too large to represent")
 
+    def test_emitter_rejects_excessive_nesting(self, capsys):
+        # Not reachable through the CLI: YAML parsing fails before the emitter
+        # recurses, and the node budget bounds alias chains. The emitter still
+        # must honour the ValueError contract for any payload it is given.
+        from specify_cli.workflows import _commands
+
+        value: list = []
+        for _ in range(5000):
+            value = [value]
+
+        with pytest.raises(ValueError, match="nested too deeply"):
+            _commands._emit_workflow_json({"d": value})
+        assert capsys.readouterr().out == ""
+
+    def test_deeply_nested_snapshot_returns_json_error(self, project_dir):
+        run = _run(project_dir, GATE_WF)
+        _snapshot(project_dir, run["run_id"]).write_text(
+            GATE_WF + "metadata: " + "[" * 5000 + "]" * 5000 + "\n",
+            encoding="utf-8",
+        )
+
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "Invalid workflow definition"
+        )
+
+    def test_deeply_nested_state_returns_json_error(self, project_dir):
+        run = _run(project_dir, GATE_WF)
+        state = (
+            project_dir / ".specify" / "workflows" / "runs" / run["run_id"] / "state.json"
+        )
+        state.write_text("[" * 100000, encoding="utf-8")
+
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "nested too deeply"
+        )
+
+    def test_node_budget_is_opt_in(self, capsys):
+        from specify_cli.workflows import _commands
+
+        payload = {"runs": [{"run_id": str(i)} for i in range(60000)]}
+        assert _commands._MAX_JSON_NODES < 2 * len(payload["runs"])
+
+        _commands._emit_workflow_json(payload)
+
+        assert len(json.loads(capsys.readouterr().out)["runs"]) == 60000
+        with pytest.raises(ValueError, match="too large to represent"):
+            _commands._emit_workflow_json(
+                payload, max_nodes=_commands._MAX_JSON_NODES
+            )
+
     @pytest.mark.parametrize(
         "mapping",
         [
@@ -658,3 +708,36 @@ class TestNegative:
         _assert_json_error(
             _definition(project_dir, run["run_id"]), "Invalid bound workflow definition"
         )
+
+
+class TestScopeSummaries:
+    def test_status_scopes_use_a_single_tree_walk(self, project_dir, monkeypatch):
+        # scope_summaries must not walk the execution tree once to index nodes
+        # and again to find bound calls; every walk reparses nested sources.
+        from specify_cli.workflows import _execution
+
+        _install(project_dir, "child", CHILD)
+        run = _run(project_dir, PARENT, "parent")
+        state = json.loads(
+            (
+                project_dir / ".specify" / "workflows" / "runs" / run["run_id"] / "state.json"
+            ).read_text()
+        )
+        tree = state["execution"]
+        real_walk = _execution.walk_execution
+        calls = []
+
+        def counting_walk(seq, *args, **kwargs):
+            # Recursive descent passes ``steps``; count only top-level walks
+            # that start from the full tree (``active_step`` is a separate,
+            # pruned walk).
+            if "steps" not in kwargs and not kwargs.get("skip_done"):
+                calls.append(1)
+            return real_walk(seq, *args, **kwargs)
+
+        monkeypatch.setattr(_execution, "walk_execution", counting_walk)
+
+        summaries = _execution.scope_summaries(tree, state["status"])
+
+        assert summaries
+        assert len(calls) == 1

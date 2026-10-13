@@ -332,10 +332,10 @@ def active_step(tree):
 
 
 def bound_scopes(tree):
-    """Yield (path, binding) for every bound workflow call, in execution order."""
+    """Yield (path, binding, node) for every bound workflow call, in execution order."""
     for _, node, path, _ in walk_execution(tree["sequence"]):
         if binding := node.get("binding"):
-            yield path, binding
+            yield path, binding, node
 
 
 def scope_summaries(tree, run_status="running"):
@@ -347,11 +347,8 @@ def scope_summaries(tree, run_status="running"):
     summaries = []
     active = active_step(tree)
     active_path = active[0] if active is not None else ()
-    nodes_by_path = {
-        tuple(path): node for _, node, path, _ in walk_execution(tree["sequence"])
-    }
-    for path, binding in bound_scopes(tree):
-        output = nodes_by_path[tuple(path)].get("result", {}).get("output", {})
+    for path, binding, node in bound_scopes(tree):
+        output = node.get("result", {}).get("output", {})
         status = output.get("status")
         if status is None:
             status = (

@@ -1059,11 +1059,14 @@ def _run_outcome_exit_code(status_value: str) -> int:
 
 
 # Real workflow definitions are tiny (largest shipped: ~67 nodes); this leaves
-# >1000x headroom while capping worst-case memory and stdout.
+# >1000x headroom while capping worst-case memory and stdout. Callers that
+# emit user-authored definitions pass it as ``max_nodes``.
 _MAX_JSON_NODES = 100000
 
 
-def _emit_workflow_json(payload: dict[str, Any]) -> None:
+def _emit_workflow_json(
+    payload: dict[str, Any], *, max_nodes: int | None = None
+) -> None:
     """Write a workflow payload as machine-readable JSON to stdout.
 
     Uses the builtin ``print`` rather than ``console.print`` so Rich
@@ -1075,10 +1078,13 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
     JSON has no way to share a reference, so a YAML alias graph must be
     duplicated into a tree; a non-recursive alias DAG can therefore expand
     exponentially even though it is linear on disk. Cycle detection alone
-    lets that terminate, so ``_MAX_JSON_NODES`` bounds the expansion instead
-    of rejecting every reused alias.
+    lets that terminate, so a caller emitting user-authored definitions passes
+    ``max_nodes`` to bound the expansion instead of rejecting every reused
+    alias. The budget is opt-in: payloads such as ``workflow status --json``
+    grow with the number of runs and must not be capped. Excessive nesting
+    depth is always reported as ``ValueError``.
     """
-    remaining_nodes = _MAX_JSON_NODES
+    remaining_nodes = max_nodes
 
     def json_key(key: Any) -> str:
         """Canonicalize a mapping key to the property name json.dumps emits."""
@@ -1090,12 +1096,14 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
 
     def plain_json(value: Any, active_containers: set[int]) -> Any:
         nonlocal remaining_nodes
-        remaining_nodes -= 1
-        if remaining_nodes < 0:
-            raise ValueError(
-                "Workflow JSON output is too large to represent: the definition "
-                f"expands past {_MAX_JSON_NODES} nodes (nested YAML aliases)"
-            )
+        if remaining_nodes is not None:
+            remaining_nodes -= 1
+            if remaining_nodes < 0:
+                raise ValueError(
+                    "Workflow JSON output is too large to represent: the "
+                    f"definition expands past {max_nodes} nodes "
+                    "(nested YAML aliases)"
+                )
         if isinstance(value, dict):
             container_id = id(value)
             if container_id in active_containers:
@@ -1131,7 +1139,13 @@ def _emit_workflow_json(payload: dict[str, Any]) -> None:
                 active_containers.remove(container_id)
         return value
 
-    print(json.dumps(plain_json(payload, set()), indent=2, default=str))
+    try:
+        text = json.dumps(plain_json(payload, set()), indent=2, default=str)
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+    print(text)
 
 
 def _load_run_state(run_id: str, project_root: Path) -> RunState:
@@ -1144,6 +1158,10 @@ def _load_run_state(run_id: str, project_root: Path) -> RunState:
         raise ValueError(f"Run not found: {run_id}") from None
     except OSError as exc:
         raise ValueError(str(exc)) from exc
+    except RecursionError:
+        raise ValueError(
+            f"Invalid run state for {run_id}: nested too deeply"
+        ) from None
 
 
 @contextlib.contextmanager

@@ -772,7 +772,7 @@ class RunState:
 
         validate_execution(tree)
         scopes = []
-        for path, binding in bound_scopes(tree):
+        for path, binding, _ in bound_scopes(tree):
             scopes.append(
                 (
                     path,
