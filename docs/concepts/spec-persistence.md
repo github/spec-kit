@@ -19,11 +19,21 @@ is adding remaining work to `tasks.md`. It does not select a persistence model,
 rewrite intent to match code, or treat approval of code as agreement with
 documented intent.
 
+The core workflow has no dedicated command that automatically reconciles
+differences among `spec.md`, `plan.md`, and `tasks.md`. Analyze reports
+inconsistencies without editing artifacts, and converge only appends remaining
+work to `tasks.md`. Teams can reconcile artifacts directly, and extensions can
+provide their own commands or hooks to coordinate reconciliation during or
+after delivery. Extension behavior does not change the responsibilities of the
+core commands.
+
 Persistence is the team's choice of how to maintain artifacts **after
 delivery**, not an alternative way to deliver or determine completeness.
 Discoveries can occur during implementation, but their timing does not define
-the persistence model. If the team agrees to change the intended contract,
-make that intent explicit in the artifacts and deliver against it.
+the persistence model. Reconciliation can also occur during delivery without
+becoming part of the core workflow or the persistence strategy. If the team
+agrees to change the intended contract, make that intent explicit in the
+artifacts and deliver against it.
 
 A later change requiring implementation still goes through the shared delivery
 process and convergence against its explicit intended artifacts, whether those
@@ -55,14 +65,17 @@ all allowed to inform each other.
 
 After delivery, accepted discoveries can inform maintenance edits to any
 artifact. The team decides what those discoveries mean for intended behavior,
-technical approach, or task breakdown, then manually reconciles `spec.md`,
-`plan.md`, and `tasks.md` with that agreed direction. The implementation is
-evidence for that discussion, not a replacement source of intent.
+technical approach, or task breakdown. The team can reconcile `spec.md`,
+`plan.md`, and `tasks.md` itself or use an extension whose documented behavior
+does so. The implementation is evidence for that discussion, not a replacement
+source of intent.
 
 This is a team-owned maintenance convention, not a requirement for a new core
-amendment command or an artifact-rewriting role for converge. If reconciliation
-identifies implementation work, deliver that change through the shared process
-against the explicit intended artifacts.
+amendment command or an artifact-rewriting role for analyze or converge.
+Extension-provided reconciliation remains extension behavior, whether it runs
+during or after delivery. If reconciliation identifies implementation work,
+deliver that change through the shared process against the explicit intended
+artifacts.
 
 Flow-back works well when:
 
