@@ -1623,6 +1623,48 @@ def test_extension_and_preset_contributions_follow_active_external_adapter(
     assert json.loads((project / ".specify/integration.json").read_text())["integration"] == "claude"
 
 
+def test_uninstall_cleans_up_contributions_of_stale_adapter_record(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    assert run(project, ["integration", "install", "claude"]).exit_code == 0
+    install(project)
+    extension = run(project, ["extension", "add", "git"])
+    assert extension.exit_code == 0, extension.output
+    preset = tmp_path / "sample-preset"
+    (preset / "commands").mkdir(parents=True)
+    (preset / "commands/speckit.specify.md").write_text(
+        "---\ndescription: Sample preset command\n---\nSample preset guidance\n"
+    )
+    (preset / "preset.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "preset": {"id": "sample-preset", "name": "Sample Preset", "version": "1.0.0", "description": "Sample guidance"},
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"templates": [{"type": "command", "name": "speckit.specify", "file": "commands/speckit.specify.md"}]},
+    }))
+    added = run(project, ["preset", "add", "--dev", str(preset)])
+    assert added.exit_code == 0, added.output
+    activated = run(project, ["integration", "use", KEY])
+    assert activated.exit_code == 0, activated.output
+    git_commit = project / ".sample-agent/skills/speckit-git-commit/SKILL.md"
+    specify = project / ".sample-agent/skills/speckit-specify/SKILL.md"
+    assert git_commit.is_file()
+    assert "Sample preset guidance" in specify.read_text(encoding="utf-8")
+    state_path = project / ".specify/integration.json"
+    state = json.loads(state_path.read_text())
+    state.update(integration="claude", default_integration="claude", installed_integrations=["claude"])
+    state_path.write_text(json.dumps(state))
+
+    removed = run(project, ["integration", "uninstall", "claude"])
+    assert removed.exit_code == 0, removed.output
+    assert KEY not in read_records(project)
+    assert not git_commit.exists()
+    assert not specify.exists()
+    extensions = json.loads((project / ".specify/extensions/.registry").read_text())["extensions"]
+    assert KEY not in extensions["git"]["registered_commands"]
+    presets = json.loads((project / ".specify/presets/.registry").read_text())["presets"]
+    assert KEY not in presets["sample-preset"]["registered_commands"]
+
+
 def test_builtin_generic_can_coexist_with_external_adapter(tmp_path, server):
     publish(server)
     project = catalog_project(tmp_path, server)
