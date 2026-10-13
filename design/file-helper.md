@@ -205,6 +205,11 @@ entries, not reject a whole project for excluded/unrelated links.
 
 ## Shared infrastructure ownership
 
+FileHelper owns symlink-aware filesystem CRUD and metadata access, not project
+configuration, file ownership, overwrite decisions or transaction/rollback
+policy. Callers select the paths they actually need to access; the helper
+enforces symlink policy on those operations, not on unrelated project entries.
+
 `install_shared_infra` and `refresh_shared_templates` receive an explicit
 `files: FileHelper` from init and integration lifecycle callers. Compatibility
 callers that omit it resolve the selected project's current policy afresh.

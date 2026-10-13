@@ -426,7 +426,11 @@ def refresh_shared_templates(
     force: bool = False,
     files: FileHelper | None = None,
 ) -> None:
-    """Refresh default-sensitive shared templates without touching scripts."""
+    """Refresh selected bundled templates without inspecting other tracked files.
+
+    Modification checks cover only the destinations this refresh produces;
+    unrelated manifest entries retain their hashes and ownership records.
+    """
     project_path = Path(project_path).absolute()
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if not templates_src.is_dir():
@@ -435,16 +439,19 @@ def refresh_shared_templates(
     files = files if files is not None else project_files(project_path)
     manifest = load_speckit_manifest(project_path, version=version, console=console, files=files)
     tracked_files = manifest.files
-    modified = set(manifest.check_modified())
+    templates = [
+        src for src in templates_src.iterdir()
+        if src.is_file() and src.name != "vscode-settings.json" and not src.name.startswith(".")
+    ]
+    modified = set(manifest.check_modified(
+        paths={f".specify/templates/{src.name}" for src in templates},
+    ))
     skipped_files: list[str] = []
     planned_updates: list[tuple[Path, str, str]] = []
 
     dest_templates = project_path / ".specify" / "templates"
     files.mkdir(dest_templates, parents=True, exist_ok=True, observer=observe_directory_change)
-    for src in templates_src.iterdir():
-        if not src.is_file() or src.name == "vscode-settings.json" or src.name.startswith("."):
-            continue
-
+    for src in templates:
         dst = dest_templates / src.name
         entry = files.stat(dst, missing_ok=True)
         rel = dst.relative_to(project_path).as_posix()

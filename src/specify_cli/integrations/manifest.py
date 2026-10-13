@@ -371,10 +371,12 @@ class IntegrationManifest:
             return False
         return normalized in self._recovered_files
 
-    def check_modified(self) -> list[str]:
-        """Return relative paths of tracked files whose content changed on disk."""
+    def check_modified(self, *, paths: set[str] | None = None) -> list[str]:
+        """Check tracked content, optionally restricted to selected lexical keys."""
         modified: list[str] = []
         for rel, expected_hash in self._files.items():
+            if paths is not None and rel not in paths:
+                continue
             rel_path = Path(rel)
             # Skip paths that are absolute or attempt to escape the project root
             if rel_path.is_absolute() or ".." in rel_path.parts:

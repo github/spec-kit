@@ -167,6 +167,106 @@ def test_template_only_refresh_preserves_allowed_link_and_ownership(shared_proje
     assert manifest.is_recovered(relative) == (mode == "recovered")
 
 
+@pytest.mark.parametrize("allow_links", [False, True])
+@pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("relative", [
+    ".specify/scripts/bash/common.sh",
+    ".specify/scripts/bash/stale.sh",
+    ".specify/scripts/powershell/common.ps1",
+    ".specify/templates/obsolete-template.md",
+    ".specify/templates/vscode-settings.json",
+    ".specify/templates/.hidden-template.md",
+    ".specify/.gitignore",
+])
+@pytest.mark.parametrize("kind", ["contained", "dangling", "external", "cycle"])
+def test_template_refresh_does_not_access_unselected_manifest_entries(
+    shared_project, tmp_path, monkeypatch, allow_links, force, relative, kind,
+):
+    from pathlib import Path
+
+    project, core = shared_project
+    files = FileHelper(project, allow_symlinks=allow_links)
+    install(project, core, files=files)
+    destination = project / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text("original unrelated\n")
+    manifest = IntegrationManifest.load("speckit", project, files=files)
+    manifest.record_existing(relative, recovered=True)
+    manifest.save()
+    before_hashes = manifest.files
+    before_recovered = manifest.recovered_files
+    destination.unlink()
+    target = project / "unrelated-target"
+    if kind == "contained":
+        target.write_text("original unrelated\n")
+    elif kind == "external":
+        target = tmp_path / "outside"
+        target.write_text("original unrelated\n")
+    elif kind == "cycle":
+        target = destination
+    destination.symlink_to(target)
+    link_identity = destination.lstat().st_ino
+    link_target = os.readlink(destination)
+    (core / "templates/plan-template.md").write_text("replacement plan\n")
+    (core / "templates/vscode-settings.json").write_text("{}")
+    (core / "templates/.hidden-template.md").write_text("hidden\n")
+    original_stat = FileHelper.stat
+    original_read = FileHelper.read_bytes
+
+    def check_selected(path):
+        absolute = Path(path) if Path(path).is_absolute() else project / path
+        assert absolute != destination, "Template refresh accessed an unrelated entry"
+
+    def checked_stat(helper, path, **kwargs):
+        check_selected(path)
+        return original_stat(helper, path, **kwargs)
+
+    def checked_read(helper, path):
+        check_selected(path)
+        return original_read(helper, path)
+
+    monkeypatch.setattr(FileHelper, "stat", checked_stat)
+    monkeypatch.setattr(FileHelper, "read_bytes", checked_read)
+    refresh_shared_templates(
+        project, version="test", core_pack=core, repo_root=core, console=Console(),
+        invoke_separator=".", files=files, force=force,
+    )
+
+    assert (project / ".specify/templates/plan-template.md").read_text() == "replacement plan\n"
+    assert destination.is_symlink()
+    assert destination.lstat().st_ino == link_identity
+    assert os.readlink(destination) == link_target
+    if kind in {"contained", "external"}:
+        assert target.read_text() == "original unrelated\n"
+    after = IntegrationManifest.load("speckit", project, files=files)
+    assert after.files[relative] == before_hashes[relative]
+    assert after.recovered_files == before_recovered
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_template_refresh_still_rejects_selected_denied_link(shared_project, force):
+    project, core = shared_project
+    files = FileHelper(project)
+    install(project, core, files=files)
+    manifest = project / ".specify/integrations/speckit.manifest.json"
+    before_manifest = manifest.read_bytes()
+    destination = project / ".specify/templates/plan-template.md"
+    target = project / "selected-target"
+    destination.rename(target)
+    destination.symlink_to(target)
+    before_content = target.read_bytes()
+
+    with pytest.raises(SymlinkDeniedError):
+        refresh_shared_templates(
+            project, version="test", core_pack=core, repo_root=core, console=Console(),
+            invoke_separator=".", files=files, force=force,
+        )
+
+    assert target.read_bytes() == before_content
+    assert destination.is_symlink()
+    assert manifest.read_bytes() == before_manifest
+
+
 def test_wrapper_reads_policy_afresh_between_invocations(shared_project, monkeypatch):
     import specify_cli
     project, core = shared_project
