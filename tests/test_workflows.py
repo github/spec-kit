@@ -11514,16 +11514,30 @@ class TestStepRegistryAtomicSaveRegression:
         assert "corrupted" in result.output.lower() or "error" in result.output.lower()
         assert "Traceback" not in result.output
 
-    def test_installer_translates_oserror_before_mutation(self, project_dir, monkeypatch):
-        """A corrupted registry must raise StepInstallError before any
-        package/destination mutation occurs."""
-        from specify_cli.workflows.step.installer import StepInstallError, _load_step_registry
+    def test_installer_rejects_corrupted_registry_before_mutation(self, project_dir):
+        """install_step_package() must raise StepInstallError on a corrupted
+        registry before any destination or staging directory is created."""
+        from specify_cli.workflows.step.installer import StepInstallError, install_step_package
         from specify_cli.workflows.step.catalog import StepRegistry
 
+        # Corrupt the registry file.
         steps_dir = project_dir / ".specify" / "workflows" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         registry_path = steps_dir / StepRegistry.REGISTRY_FILE
         registry_path.write_text("corrupted {{{", encoding="utf-8")
 
+        # Create a valid step package.
+        pkg = project_dir / "pkg"
+        pkg.mkdir()
+        (pkg / "step.yml").write_text(
+            "step:\n  type_key: my-step\n  name: My Step\n", encoding="utf-8"
+        )
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+
         with pytest.raises(StepInstallError, match="corrupted"):
-            _load_step_registry(project_dir)
+            install_step_package(project_dir, "my-step", pkg, source="local")
+
+        # No destination directory or staging artifacts should exist.
+        assert not (steps_dir / "my-step").exists()
+        assert not list(steps_dir.glob("tmp*"))
+        assert not list(steps_dir.glob(".*.tmp"))
