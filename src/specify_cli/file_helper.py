@@ -1,6 +1,7 @@
 """Scoped filesystem operations; see design/file-helper.md for the contract."""
 
 from dataclasses import dataclass, field
+from collections.abc import Callable
 import codecs
 import errno
 import os
@@ -11,6 +12,7 @@ from typing import TypeVar
 
 
 _PathType = TypeVar("_PathType", bound=PurePath)
+MutationObserver = Callable[[Path, bool, bool], None]
 
 
 def _strip_extended_length_prefix(path: _PathType) -> _PathType:
@@ -153,11 +155,26 @@ class FileHelper:
             raise UnsupportedPathError(f"Expected a regular file: {path}")
 
     def mkdir(
-        self, path: Path | str, *, parents: bool = False, exist_ok: bool = False
+        self, path: Path | str, *, parents: bool = False, exist_ok: bool = False,
+        observer: MutationObserver | None = None,
     ) -> None:
         """Create a directory, preflighting the entire requested hierarchy."""
         destination = self._path(path, allow_missing=True)
-        destination.mkdir(parents=parents, exist_ok=exist_ok)
+        if observer is None or destination.exists() or (not parents and not destination.parent.exists()):
+            destination.mkdir(parents=parents, exist_ok=exist_ok)
+            return
+        missing = [destination]
+        if parents:
+            current = destination.parent
+            while not current.exists():
+                missing.append(current)
+                current = current.parent
+        for directory in reversed(missing):
+            if self._path(path, allow_missing=True) != destination:
+                raise FileHelperError(f"Destination changed during mkdir: {path}")
+            observer(directory, True, False)
+            directory.mkdir(exist_ok=exist_ok if directory == destination else True)
+            observer(directory, False, False)
 
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)
@@ -166,6 +183,20 @@ class FileHelper:
 
     def read_text(self, path: Path | str, *, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding)
+
+    def stat(
+        self, path: Path | str, *, follow_symlinks: bool = True, missing_ok: bool = False
+    ) -> os.stat_result | None:
+        """Inspect an entry under policy; missing link targets always fail."""
+        destination = self._path(path, allow_missing=True, follow_leaf=follow_symlinks)
+        try:
+            entry = destination.stat(follow_symlinks=follow_symlinks)
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise
+        self._entry_mode(destination)
+        return entry
 
     def create_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
         """Exclusively create a file; never overwrite an existing entry."""
@@ -187,11 +218,16 @@ class FileHelper:
     ) -> None:
         self.create_bytes(path, content.encode(encoding), mode=mode)
 
-    def write_bytes(self, path: Path | str, content: bytes, *, mode: int = 0o644) -> None:
+    def write_bytes(
+        self, path: Path | str, content: bytes, *, mode: int = 0o644,
+        observer: MutationObserver | None = None,
+    ) -> None:
         """Atomically create/replace a file, preserving any allowed leaf link."""
         destination = self._path(path, allow_missing=True)
         if destination.exists():
             self._require_file(destination)
+        if observer is not None:
+            observer(destination, True, False)
         fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
         temporary_path = Path(temporary)
         try:
@@ -201,13 +237,16 @@ class FileHelper:
             if self._path(path, allow_missing=True) != destination:
                 raise FileHelperError(f"Destination changed during write: {path}")
             os.replace(temporary_path, destination)
+            if observer is not None:
+                observer(destination, False, False)
         finally:
             temporary_path.unlink(missing_ok=True)
 
     def write_text(
-        self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644
+        self, path: Path | str, content: str, *, encoding: str = "utf-8", mode: int = 0o644,
+        observer: MutationObserver | None = None,
     ) -> None:
-        self.write_bytes(path, content.encode(encoding), mode=mode)
+        self.write_bytes(path, content.encode(encoding), mode=mode, observer=observer)
 
     def overwrite_text(
         self, path: Path | str, content: str, *, encoding: str = "utf-8"
@@ -257,7 +296,10 @@ class FileHelper:
         plan.append((path, True))
         return plan
 
-    def delete(self, path: Path | str, *, recursive: bool = False) -> None:
+    def delete(
+        self, path: Path | str, *, recursive: bool = False,
+        observer: MutationObserver | None = None,
+    ) -> None:
         """Delete an entry; recursive deletion never follows descendant links."""
         destination = self._path(path, follow_leaf=False)
         if destination == self._canonical_root:
@@ -268,7 +310,11 @@ class FileHelper:
             checked = self._path(entry, follow_leaf=False)
             if checked != entry:
                 raise FileHelperError(f"Destination changed during deletion: {entry}")
+            if observer is not None:
+                observer(entry, True, True)
             if directory:
                 entry.rmdir()
             else:
                 entry.unlink()
+            if observer is not None:
+                observer(entry, False, False)

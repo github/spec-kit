@@ -38,6 +38,8 @@ def integration_install(
     from .. import _require_specify_project, _install_shared_infra_or_exit
 
     project_root = _require_specify_project()
+    from .._file_policy import project_files
+    files = project_files(project_root)
     integration = get_integration(key)
     if integration is None:
         console.print(f"[red]Error:[/red] Unknown integration '{key}'")
@@ -116,6 +118,7 @@ def integration_install(
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        files=files,
         invoke_separator=_invoke_separator_for_integration(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,

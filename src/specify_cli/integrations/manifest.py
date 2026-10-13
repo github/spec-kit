@@ -11,12 +11,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ._file_changes import after_file_change, before_file_change
+from ..file_helper import FileHelper, FileHelperError
+from ._file_changes import (
+    after_file_change,
+    before_file_change,
+    observe_directory_change,
+    observe_file_change,
+)
 
 OWNERSHIP_MODES = frozenset({"whole", "partial", "shared"})
 
@@ -160,6 +167,7 @@ class IntegrationManifest:
         version: str = "",
         *,
         resolve_project_root: bool = True,
+        files: FileHelper | None = None,
     ) -> None:
         self.key = key
         self.project_root = (
@@ -168,6 +176,9 @@ class IntegrationManifest:
             else project_root.absolute()
         )
         self.version = version
+        if files is not None and files.root.resolve() != self.project_root.resolve():
+            raise ValueError("Manifest FileHelper must own the selected project root")
+        self._file_helper = files
         self._files: dict[str, str] = {}  # rel_path → sha256 hex
         self._ownership_modes: dict[str, str] = {}
         self._recovered_files: set[str] = set()
@@ -244,6 +255,18 @@ class IntegrationManifest:
         if ownership is not None:
             _validate_ownership_mode(ownership)
         rel = Path(rel_path)
+        if self._file_helper is not None:
+            normalized = self._scoped_key(rel)
+            self._files[normalized] = hashlib.sha256(
+                self._file_helper.read_bytes(rel)
+            ).hexdigest()
+            if ownership is not None:
+                self._ownership_modes[normalized] = ownership
+            if recovered:
+                self._recovered_files.add(normalized)
+            else:
+                self._recovered_files.discard(normalized)
+            return
         abs_path = _validate_record_path(rel, self.project_root)
         if not abs_path.is_file():
             raise ValueError(
@@ -280,6 +303,13 @@ class IntegrationManifest:
         rel = Path(rel_path)
         if rel.is_absolute() or ".." in rel.parts:
             return False
+        if self._file_helper is not None:
+            if rel.anchor:
+                return False
+            normalized = self._scoped_key(rel)
+            self._recovered_files.discard(normalized)
+            self._ownership_modes.pop(normalized, None)
+            return self._files.pop(normalized, None) is not None
         try:
             abs_path = _validate_rel_path(rel, self.project_root)
             normalized = abs_path.relative_to(self.project_root).as_posix()
@@ -330,6 +360,10 @@ class IntegrationManifest:
         rel = Path(rel_path)
         if rel.is_absolute() or ".." in rel.parts:
             return False
+        if self._file_helper is not None:
+            if rel.anchor:
+                return False
+            return self._scoped_key(rel) in self._recovered_files
         try:
             abs_path = _validate_rel_path(rel, self.project_root)
             normalized = abs_path.relative_to(self.project_root).as_posix()
@@ -344,6 +378,24 @@ class IntegrationManifest:
             rel_path = Path(rel)
             # Skip paths that are absolute or attempt to escape the project root
             if rel_path.is_absolute() or ".." in rel_path.parts:
+                continue
+            if self._file_helper is not None:
+                if rel_path.anchor:
+                    continue
+                entry = self._file_helper.stat(rel_path, missing_ok=True)
+                if entry is None:
+                    continue
+                if not stat.S_ISREG(entry.st_mode):
+                    modified.append(rel)
+                    continue
+                try:
+                    changed = hashlib.sha256(self._file_helper.read_bytes(rel_path)).hexdigest() != expected_hash
+                except (FileHelperError, FileNotFoundError):
+                    raise
+                except OSError:
+                    changed = True
+                if changed:
+                    modified.append(rel)
                 continue
             abs_path = self.project_root / rel_path
             if not abs_path.exists() and not abs_path.is_symlink():
@@ -481,6 +533,12 @@ class IntegrationManifest:
 
     # -- Persistence ------------------------------------------------------
 
+    @staticmethod
+    def _scoped_key(rel: Path) -> str:
+        if rel.anchor or ".." in rel.parts:
+            raise ValueError(f"Manifest paths must be canonical and relative: {rel}")
+        return rel.as_posix()
+
     def save(self) -> Path:
         """Write the manifest to disk.  Returns the manifest path."""
         self._installed_at = self._installed_at or datetime.now(timezone.utc).isoformat()
@@ -501,6 +559,13 @@ class IntegrationManifest:
         }
         path = self.manifest_path
         content = json.dumps(data, indent=2) + "\n"
+        if self._file_helper is not None:
+            self._file_helper.stat(path, missing_ok=True)
+            self._file_helper.mkdir(path.parent, parents=True, exist_ok=True, observer=observe_directory_change)
+            self._file_helper.write_text(
+                path, content.replace("\n", os.linesep), observer=observe_file_change,
+            )
+            return path
         before_file_change(path)
         _ensure_safe_manifest_destination(self.project_root, path)
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -523,15 +588,17 @@ class IntegrationManifest:
         project_root: Path,
         *,
         resolve_project_root: bool = True,
+        files: FileHelper | None = None,
     ) -> IntegrationManifest:
         """Load an existing manifest from disk.
 
         Raises ``FileNotFoundError`` if the manifest does not exist.
         """
-        inst = cls(key, project_root, resolve_project_root=resolve_project_root)
+        inst = cls(key, project_root, resolve_project_root=resolve_project_root, files=files)
         path = inst.manifest_path
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            text = files.read_text(path) if files is not None else path.read_text(encoding="utf-8")
+            data = json.loads(text)
         except UnicodeDecodeError as exc:
             raise ValueError(
                 f"Integration manifest at {path} is not valid UTF-8"

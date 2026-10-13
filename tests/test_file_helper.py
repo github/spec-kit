@@ -3,6 +3,7 @@
 from dataclasses import FrozenInstanceError
 import errno
 import os
+import stat
 from pathlib import Path, PureWindowsPath
 import subprocess
 from types import SimpleNamespace
@@ -40,6 +41,194 @@ def link(root):
         return path
 
     return create
+
+
+@pytest.mark.parametrize("follow", [False, True])
+def test_stat_missing_and_nondirectory_parents(root, follow):
+    files = FileHelper(root)
+    assert files.stat("absent/child", follow_symlinks=follow, missing_ok=True) is None
+    with pytest.raises(FileNotFoundError):
+        files.stat("absent/child", follow_symlinks=follow)
+    (root / "file").write_text("existing")
+    with pytest.raises(NotADirectoryError):
+        files.stat("file/child", follow_symlinks=follow, missing_ok=True)
+    assert stat.S_ISREG(files.stat("file", follow_symlinks=follow).st_mode)
+
+
+@pytest.mark.parametrize("kind", ["contained", "dangling", "external", "cycle"])
+@pytest.mark.parametrize("follow", [False, True])
+@pytest.mark.parametrize("allow", [False, True])
+def test_stat_link_targets_never_become_missing_defaults(root, link, tmp_path, kind, follow, allow):
+    target = root / "target"
+    if kind == "contained":
+        target.write_text("content")
+    elif kind == "external":
+        target = tmp_path / "outside"
+        target.write_text("outside")
+    elif kind == "cycle":
+        target = root / "alias"
+    alias = link(root / "alias", target)
+    files = FileHelper(root, allow_symlinks=allow)
+    if not allow:
+        with pytest.raises(SymlinkDeniedError):
+            files.stat(alias, follow_symlinks=follow, missing_ok=True)
+    elif not follow:
+        assert stat.S_ISLNK(files.stat(alias, follow_symlinks=False, missing_ok=True).st_mode)
+    elif kind == "contained":
+        assert stat.S_ISREG(files.stat(alias, missing_ok=True).st_mode)
+    else:
+        error = {"dangling": FileNotFoundError, "external": PathEscapeError, "cycle": UnsupportedPathError}[kind]
+        with pytest.raises(error):
+            files.stat(alias, missing_ok=True)
+
+
+@pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("follow", [False, True])
+def test_stat_rejects_unsupported_reparse_entries(root, monkeypatch, allow, follow):
+    path = root / "junction"
+    path.mkdir()
+    original = Path.lstat
+
+    def lstat(entry, *args, **kwargs):
+        result = original(entry, *args, **kwargs)
+        if entry == path:
+            return SimpleNamespace(st_mode=result.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        return result
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    with pytest.raises(UnsupportedPathError):
+        FileHelper(root, allow_symlinks=allow).stat(path, follow_symlinks=follow)
+
+
+def test_stat_permission_errors_propagate(root, monkeypatch):
+    path = root / "file"
+    path.write_text("existing")
+    original = Path.stat
+
+    def denied(entry, *args, **kwargs):
+        if entry == path:
+            raise PermissionError("metadata denied")
+        return original(entry, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", denied)
+    with pytest.raises(PermissionError, match="metadata denied"):
+        FileHelper(root).stat(path, missing_ok=True)
+
+
+@pytest.mark.parametrize("failure", ["none", "before", "replace", "after"])
+def test_atomic_write_observes_actual_target_and_cleans_temporary(root, link, monkeypatch, failure):
+    target = root / "target"
+    target.write_text("old")
+    alias = link(root / "alias", target)
+    events = []
+
+    def observer(path, before, removal):
+        events.append((path, before, removal))
+        assert path == target
+        assert path.read_text() == ("old" if before else "new")
+        if failure == ("before" if before else "after"):
+            raise RuntimeError("observer failure")
+
+    if failure == "replace":
+        def fail_replace(*args):
+            raise RuntimeError("replace failure")
+        monkeypatch.setattr(os, "replace", fail_replace)
+    files = FileHelper(root, allow_symlinks=True)
+    if failure == "none":
+        files.write_text(alias, "new", observer=observer)
+    else:
+        with pytest.raises(RuntimeError):
+            files.write_text(alias, "new", observer=observer)
+    assert alias.is_symlink()
+    assert target.read_text() == ("old" if failure in {"before", "replace"} else "new")
+    assert events == [(target, True, False)] + (
+        [(target, False, False)] if failure in {"none", "after"} else []
+    )
+    assert sorted(path.name for path in root.iterdir()) == ["alias", "target"]
+
+
+def test_mkdir_observes_only_new_actual_directories_in_order(root, link):
+    target = root / "target"
+    target.mkdir()
+    alias = link(root / "alias", target)
+    events = []
+    files = FileHelper(root, allow_symlinks=True)
+    def observer(*event):
+        events.append(event)
+    files.mkdir(alias / "new/nested", parents=True, observer=observer)
+    files.mkdir(alias, exist_ok=True, observer=observer)
+    assert events == [
+        (target / "new", True, False), (target / "new", False, False),
+        (target / "new/nested", True, False), (target / "new/nested", False, False),
+    ]
+    with pytest.raises(FileExistsError):
+        files.mkdir(alias, observer=observer)
+    with pytest.raises(FileNotFoundError):
+        files.mkdir("missing/child", observer=observer)
+    assert len(events) == 4
+
+
+def test_delete_observes_leaf_link_not_external_target(root, link, tmp_path):
+    target = tmp_path / "outside"
+    target.write_text("keep")
+    alias = link(root / "alias", target)
+    events = []
+    FileHelper(root, allow_symlinks=True).delete(alias, observer=lambda *event: events.append(event))
+    assert events == [(alias, True, True), (alias, False, False)]
+    assert target.read_text() == "keep"
+    assert not alias.is_symlink()
+
+
+@pytest.mark.parametrize("operation", ["mkdir", "delete"])
+@pytest.mark.parametrize("failure", ["before", "after"])
+def test_directory_and_delete_callback_failures_propagate(root, link, operation, failure):
+    target = root / "target"
+    target.mkdir()
+    alias = link(root / "alias", target)
+    path = alias / "entry"
+    if operation == "delete":
+        (target / "entry").write_text("old")
+    events = []
+
+    def observer(entry, before, removal):
+        assert entry == target / "entry"
+        assert removal == (before and operation == "delete")
+        events.append(before)
+        if failure == ("before" if before else "after"):
+            raise RuntimeError("observer failure")
+
+    with pytest.raises(RuntimeError, match="observer failure"):
+        getattr(FileHelper(root, allow_symlinks=True), operation)(path, observer=observer)
+    assert events == ([True] if failure == "before" else [True, False])
+    assert (target / "entry").exists() == (
+        (operation == "delete" and failure == "before") or (operation == "mkdir" and failure == "after")
+    )
+    assert alias.is_symlink()
+
+
+def test_recursive_delete_observation_follows_preflight_and_mutation_order(root):
+    tree = root / "tree"
+    (tree / "nested").mkdir(parents=True)
+    (tree / "nested/file").write_text("old")
+    events = []
+    FileHelper(root).delete(tree, recursive=True, observer=lambda *event: events.append(event))
+    assert events == [
+        (tree / "nested/file", True, True), (tree / "nested/file", False, False),
+        (tree / "nested", True, True), (tree / "nested", False, False),
+        (tree, True, True), (tree, False, False),
+    ]
+
+
+@pytest.mark.parametrize("operation", ["write_text", "mkdir", "delete"])
+def test_denied_mutations_never_call_observer(root, link, operation):
+    target = root / "target"
+    target.write_text("keep")
+    alias = link(root / "alias", target)
+    events = []
+    args = (alias, "new") if operation == "write_text" else (alias,)
+    with pytest.raises(SymlinkDeniedError):
+        getattr(FileHelper(root), operation)(*args, observer=lambda *event: events.append(event))
+    assert events == []
 
 
 @pytest.mark.parametrize("allow", [False, True])
@@ -164,7 +353,7 @@ def test_overwrite_text_rejects_invalid_destination(root, path, allow):
     assert (root / "directory").is_dir()
 
 
-@pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "create_bytes", "mkdir", "delete"])
+@pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "create_bytes", "mkdir", "delete", "stat"])
 @pytest.mark.parametrize("kind", ["leaf", "parent", "dangling"])
 def test_deny_rejects_accessed_links_without_mutation(root, link, operation, kind):
     target = root / "target"
@@ -269,7 +458,7 @@ def test_multi_link_cycle_and_excessive_chain_fail_explicitly(root, link):
         files.read_bytes("chain-0")
 
 
-@pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "mkdir", "create_bytes", "delete"])
+@pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "mkdir", "create_bytes", "delete", "stat"])
 def test_external_parent_is_never_traversed(root, link, operation):
     outside = root.parent / "outside"
     outside.mkdir()
@@ -898,7 +1087,7 @@ def test_native_windows_extended_symlink_read_update_and_creation(
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows path semantics required")
 @pytest.mark.parametrize("spelling", ["/outside/file", r"\outside\file", "C:outside/file", "C:"])
-@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "write_bytes", "mkdir", "delete"])
+@pytest.mark.parametrize("operation", ["read_bytes", "create_bytes", "write_bytes", "mkdir", "delete", "stat"])
 @pytest.mark.parametrize("allow", [False, True])
 def test_native_windows_anchored_relative_operations_rejected(root, spelling, operation, allow):
     args = (spelling, b"bad") if operation in ("create_bytes", "write_bytes") else (spelling,)
@@ -1037,6 +1226,8 @@ def test_native_windows_junctions_never_traversed_or_deleted(root, junction, all
     files = FileHelper(root, allow_symlinks=allow)
     for operation in (
         lambda: files.read_text(alias / "keep"),
+        lambda: files.stat(alias),
+        lambda: files.stat(alias, follow_symlinks=False),
         lambda: files.write_text(alias / "keep", "bad"),
         lambda: files.create_text(alias / "new", "bad"),
         lambda: files.mkdir(alias / "new-directory"),
