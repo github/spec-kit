@@ -295,7 +295,21 @@ Host settings merges, native event updates/removal, legacy migrations, and
 extension/preset rendering caches participate in the journal without becoming
 uninstall-owned files. Existing built-in home-scoped destinations are journaled
 only for participating built-ins; external adapters remain project-local.
-Host write helpers reject symlinked destinations and ancestors before creating
+FileHelper-owned shared infrastructure follows the selected symlink setting
+for `.specify/scripts/`, `.specify/templates/`, `.specify/.gitignore`, and the
+shared `speckit.manifest.json` I/O. Deny rejects accessed links; allow uses
+supported contained targets while preserving link identity. Init supplies its
+current requested setting; install/upgrade/switch read persisted project policy.
+FileHelper performs filesystem operations, not ownership or overwrite decisions.
+Shared callers retain their existing customization/recovery rules, and allow
+mode preserves stale leaf links without following their targets. Helper-mode
+manifest policy failures propagate rather than becoming tolerant recovery or preserved-file
+success. This does not relax adapter-package/registry scope validation, config
+bootstrap, legacy manifest consumers, or uninstall.
+External adapter transactions still reject linked `.specify/integrations` scope
+roots; shared manifest leaf links are supported.
+
+Other host write helpers reject symlinked destinations and ancestors before creating
 directories or writing. Manifest recording validates lexical paths before
 resolution, including project-local and dangling symlinks, so resolution cannot
 hide a link to an unrelated project file. Removing an owned leaf symlink unlinks

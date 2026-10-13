@@ -188,6 +188,108 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("operation", ["install", "switch"])
+@pytest.mark.parametrize("kind", ["leaf", "scripts-root", "templates-root", "nested-parent"])
+@pytest.mark.parametrize("allow_links", [False, True])
+def test_public_install_switch_honor_persisted_shared_symlink_policy(
+    tmp_path, server, monkeypatch, operation, kind, allow_links,
+):
+    import specify_cli
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    core = tmp_path / "shared-core"
+    scripts = core / "scripts/bash"
+    scripts.mkdir(parents=True)
+    (scripts / "common.sh").write_text("# original common\n")
+    templates = core / "templates"
+    templates.mkdir()
+    (templates / "plan-template.md").write_text("# original plan\n")
+    monkeypatch.setattr(specify_cli, "_locate_core_pack", lambda: core)
+    if operation == "switch":
+        installed = run(project, ["integration", "install", "claude", "--script", "sh"])
+        assert installed.exit_code == 0, installed.output
+
+    options_path = project / ".specify/init-options.json"
+    options = json.loads(options_path.read_text()) if options_path.exists() else {}
+    options["allow_symlinks"] = allow_links
+    options_path.write_text(json.dumps(options))
+    target = project / "shared-target"
+    target.mkdir()
+    (target / "unrelated.txt").write_text("user content\n")
+    if kind == "leaf":
+        relative = ".specify/scripts/bash/common.sh"
+        link = project / relative
+        target_file = target / "common.sh"
+        if operation == "switch":
+            link.rename(target_file)
+        else:
+            link.parent.mkdir(parents=True)
+            target_file.write_text("# user common\n")
+        link.symlink_to(target_file)
+    else:
+        relative = {
+            "scripts-root": ".specify/scripts",
+            "templates-root": ".specify/templates",
+            "nested-parent": ".specify/scripts/bash",
+        }[kind]
+        link = project / relative
+        moved = target / "managed"
+        if operation == "switch":
+            link.rename(moved)
+        else:
+            moved.mkdir()
+            link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(moved, target_is_directory=True)
+        target_file = moved / (
+            "bash/common.sh" if kind == "scripts-root" else
+            "plan-template.md" if kind == "templates-root" else "common.sh"
+        )
+        relative = (
+            ".specify/templates/plan-template.md"
+            if kind == "templates-root" else ".specify/scripts/bash/common.sh"
+        )
+    identity = (link.lstat().st_dev, link.lstat().st_ino, os.readlink(link))
+    if operation == "switch":
+        (scripts / "common.sh").write_text("# replacement common\n")
+        (templates / "plan-template.md").write_text("# replacement plan\n")
+    nested = scripts / "new/nested"
+    nested.mkdir(parents=True)
+    (nested / "added.sh").write_text("# newly bundled\n")
+    before = snapshot(project)
+
+    result = run(project, [
+        "integration", operation, KEY, "--trust-integration", "--script", "sh",
+    ])
+
+    assert link.is_symlink()
+    assert (link.lstat().st_dev, link.lstat().st_ino, os.readlink(link)) == identity
+    assert (target / "unrelated.txt").read_text() == "user content\n"
+    assert json.loads(options_path.read_text())["allow_symlinks"] is allow_links
+    if not allow_links:
+        assert result.exit_code == 1, result.output
+        assert "Refusing symlink" in result.output
+        assert snapshot(project) == before
+        assert KEY not in read_records(project)
+        return
+
+    assert result.exit_code == 0, result.output
+    if operation == "switch":
+        expected = "# replacement plan\n" if kind == "templates-root" else "# replacement common\n"
+    else:
+        expected = (
+            "# user common\n" if kind == "leaf" else
+            "# original plan\n" if kind == "templates-root" else "# original common\n"
+        )
+    assert target_file.read_text() == expected
+    assert (project / ".specify/scripts/bash/new/nested/added.sh").read_text() == "# newly bundled\n"
+    manifest = json.loads((project / ".specify/integrations/speckit.manifest.json").read_text())
+    assert manifest["files"][relative] == hashlib.sha256(target_file.read_bytes()).hexdigest()
+    assert (relative in manifest.get("recovered_files", [])) == (operation == "install" and kind == "leaf")
+    assert KEY in read_records(project)
+    assert json.loads((project / ".specify/integration.json").read_text())["integration"] == KEY
+
+
 @pytest.mark.parametrize("operation", ["init", "upgrade"])
 @pytest.mark.parametrize("kind", ["leaf", "gitignore", "scripts-root", "templates-root", "nested-parent"])
 def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
