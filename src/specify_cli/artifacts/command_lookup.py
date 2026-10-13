@@ -50,9 +50,15 @@ def artifact_lookup(
     """Resolve a stack lookupId to its effective preset or extension contribution."""
     _require_json_flag(json_flag)
     try:
+        project_directory = _resolve_project_root()
+    except (OSError, RuntimeError):
+        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
+        return  # pragma: no cover
+
+    try:
         result = lookup_artifact(
             ArtifactLookupRequest(
-                project_directory=_resolve_project_root(),
+                project_directory=project_directory,
                 lookup_id=lookup_id,
             )
         )

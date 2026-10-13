@@ -326,6 +326,61 @@ class TestCommandLookup:
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
+    def test_lookup_cli_context_path_resolution_runtime_error_is_json_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", "cyclic-project")
+        monkeypatch.setattr(
+            Path,
+            "resolve",
+            Mock(side_effect=RuntimeError("Symlink loop from path resolution")),
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert "Traceback" not in result.stderr
+
+    def test_lookup_unexpected_operation_filesystem_failure_is_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            command_lookup,
+            "lookup_artifact",
+            Mock(side_effect=OSError("unreadable catalog")),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert "Traceback" not in result.stderr
+
     def test_lookup_cli_context_resolves_init_dir_override(
         self,
         spec_kit_project: Path,
