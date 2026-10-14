@@ -38,6 +38,45 @@ from tests.specify_cli.extensions._helpers import (
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
 
+    def test_add_publishes_hooks_without_changing_command_content(self, extension_dir, project_dir):
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"] = {
+            "before_plan": [
+                {"command": "speckit.test-ext.hello", "optional": False, "priority": 30},
+                {"command": "speckit.test-ext.skip", "condition": "env.DISABLED is set"},
+            ]
+        }
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 0, result.output
+        cache = project_dir / ".specify/hook-dispatch"
+        assert (cache / "source.yml").read_bytes() == (
+            project_dir / ".specify/extensions.yml"
+        ).read_bytes()
+        hooks = json.loads((cache / "before_plan.json").read_text(encoding="utf-8"))["hooks"]
+        assert len(hooks) == 1
+        assert hooks[0]["command"] == "speckit.test-ext.hello"
+        assert hooks[0]["optional"] is False
+        rendered = (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").read_text()
+        assert "hook-dispatch" not in rendered
+
+    def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
+        config = project_dir / ".specify/extensions.yml"
+        config.write_text("hooks:\n  before_plan: invalid\n", encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 1
+        assert "expected a list" in result.output
+        assert config.read_text() == "hooks:\n  before_plan: invalid\n"
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

@@ -2461,6 +2461,12 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
+        from ._hook_projection import _EVENT
+
+        for event in manifest.hooks:
+            if not isinstance(event, str) or not _EVENT.fullmatch(event):
+                raise ValidationError(f"Invalid extension hook event: {event}")
+        HookExecutor(self.project_root).load_project_config_for_update()
 
         # Check compatibility
         self.check_compatibility(manifest, speckit_version)
@@ -3542,6 +3548,8 @@ class ExtensionManager:
         """
         if not self.registry.is_installed(extension_id):
             return False
+
+        HookExecutor(self.project_root).load_project_config_for_update()
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
@@ -5759,16 +5767,22 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
-        from ..integrations._file_changes import write_text
+        from ._hook_projection import publish
 
-        self.config_file.parent.mkdir(parents=True, exist_ok=True)
-        write_text(
-            self.config_file,
-            yaml.dump(
-                config, default_flow_style=False, sort_keys=False, allow_unicode=True
-            ),
-            encoding="utf-8",
-        )
+        publish(self.config_file, config)
+
+    def load_project_config_for_update(self) -> Dict[str, Any]:
+        from ._hook_projection import load_for_update
+
+        return load_for_update(self.config_file)
+
+    def migrate_project_config(self) -> None:
+        """Refresh the projection of an existing configuration without rewriting it."""
+        from ._hook_projection import publish
+
+        if self.config_file.exists() or self.config_file.is_symlink():
+            config = self.load_project_config_for_update()
+            publish(self.config_file, config, preserve_source=True)
 
     def register_extension(self, extension_id: str):
         """Add extension to the installed list in project config.
@@ -5776,7 +5790,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to register
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         if not isinstance(config, dict):
@@ -5795,7 +5809,7 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
@@ -5872,7 +5886,7 @@ class HookExecutor:
         # Always ensure the extension is in the installed list
         self.register_extension(manifest.id)
 
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
         changed = False
@@ -5975,7 +5989,7 @@ class HookExecutor:
         # Always remove from installed list (Feedback from review)
         self.unregister_extension(extension_id)
 
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
@@ -6251,7 +6265,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return
@@ -6270,7 +6284,7 @@ class HookExecutor:
         Args:
             extension_id: Extension ID
         """
-        config = self.get_project_config()
+        config = self.load_project_config_for_update()
 
         if "hooks" not in config:
             return

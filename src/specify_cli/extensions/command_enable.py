@@ -29,6 +29,12 @@ def extension_enable(
         extension, installed, "enable"
     )
 
+    try:
+        config = hook_executor.load_project_config_for_update()
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
+
     # Update registry
     metadata = manager.registry.get(extension_id)
     if metadata is None or not isinstance(metadata, dict):
@@ -83,13 +89,27 @@ def extension_enable(
             raise typer.Exit(1) from exc
 
     # Enable hooks in extensions.yml
-    config = hook_executor.get_project_config()
     if "hooks" in config:
         for hook_name in config["hooks"]:
             for hook in config["hooks"][hook_name]:
                 if hook.get("extension") == extension_id:
                     hook["enabled"] = True
-        hook_executor.save_project_config(config)
+        try:
+            hook_executor.save_project_config(config)
+        except (ValueError, OSError) as exc:
+            try:
+                if init_options.get("ai") == "generic":
+                    manager.disable_generic_extension_artifacts(extension_id)
+                else:
+                    manager.registry.update(extension_id, {"enabled": False})
+            except (ExtensionError, ValueError, OSError) as rollback_exc:
+                console.print(
+                    f"[red]Error:[/red] {_escape_markup(str(exc))}; "
+                    f"rollback failed: {_escape_markup(str(rollback_exc))}"
+                )
+                raise typer.Exit(1) from exc
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
 
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled")
 

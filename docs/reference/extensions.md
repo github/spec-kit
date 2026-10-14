@@ -304,6 +304,20 @@ Spec Kit stores project-level extension registration and hook configuration in:
 
 The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
 
+Extension configuration saves also publish a validated projection in
+`.specify/hook-dispatch/`: one `<event>.json` response and SHA-256 digest per
+event, an `events.txt` index and digest, and a `source.yml` copy of the
+configuration. Only enabled hooks with no condition appear in the projection,
+in their YAML declaration order (regardless of priority). Each response
+includes `extension`, `command`, `optional`, `description`, `prompt`, and
+`priority`. Existing projects receive a projection when their shared
+infrastructure is refreshed; configuration writes regenerate it. Invalid
+hook entries and unsafe projection paths prevent publication. Current installed
+commands continue using their existing hook resolution; the projection does
+not change execution behavior. For projection portability, missing or invalid
+priorities and values above `2147483647` use the default `10`; the current
+in-process hook reader retains its existing priority handling.
+
 ```yaml
 installed:
   - git

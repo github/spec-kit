@@ -17,7 +17,7 @@ def extension_disable(
     extension: str = typer.Argument(help="Extension ID or name to disable"),
 ):
     """Disable an extension without removing it."""
-    from . import ExtensionManager, HookExecutor
+    from . import ExtensionError, ExtensionManager, HookExecutor
 
     project_root = _commands._require_specify_project()
     manager = ExtensionManager(project_root)
@@ -28,6 +28,12 @@ def extension_disable(
     extension_id, display_name = _commands._resolve_installed_extension(
         extension, installed, "disable"
     )
+
+    try:
+        config = hook_executor.load_project_config_for_update()
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
 
     # Update registry
     metadata = manager.registry.get(extension_id)
@@ -45,8 +51,6 @@ def extension_disable(
     from .. import load_init_options
 
     if load_init_options(project_root).get("ai") == "generic":
-        from . import ExtensionError
-
         try:
             manager.disable_generic_extension_artifacts(extension_id)
         except (ExtensionError, ValueError, OSError) as exc:
@@ -56,13 +60,26 @@ def extension_disable(
         manager.registry.update(extension_id, {"enabled": False})
 
     # Disable hooks in extensions.yml
-    config = hook_executor.get_project_config()
     if "hooks" in config:
         for hook_name in config["hooks"]:
             for hook in config["hooks"][hook_name]:
                 if hook.get("extension") == extension_id:
                     hook["enabled"] = False
-        hook_executor.save_project_config(config)
+        try:
+            hook_executor.save_project_config(config)
+        except (ValueError, OSError) as exc:
+            try:
+                manager.registry.update(extension_id, {"enabled": True})
+                if load_init_options(project_root).get("ai") == "generic":
+                    manager.register_enabled_extensions_for_agent("generic")
+            except (ExtensionError, ValueError, OSError) as rollback_exc:
+                console.print(
+                    f"[red]Error:[/red] {_escape_markup(str(exc))}; "
+                    f"rollback failed: {_escape_markup(str(rollback_exc))}"
+                )
+                raise typer.Exit(1) from exc
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
 
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")

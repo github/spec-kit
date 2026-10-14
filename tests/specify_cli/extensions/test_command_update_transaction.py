@@ -153,21 +153,16 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
-    """Regression: extension update rollback must handle corrupted extensions.yml."""
+    """Malformed hooks must prevent update before any destructive phase."""
     monkeypatch.chdir(project_dir)
 
     config_path = project_dir / ".specify" / "extensions.yml"
-    # Write config with hooks: null; get_project_config() normalizes this to {}
-    # so the backup captures {} and the restored config will have hooks: {}.
+    # Read-only queries tolerate this, but mutations must not discard it.
     config_path.write_text(yaml.dump({"installed": ["test-ext"], "hooks": None}))
 
-    # Mock update process to fail after backup
     monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
     monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {"version": "1.0.0", "enabled": True})
 
-    # Reach the destructive update phase, then fail the install so rollback is
-    # both necessary and safe to exercise. Download/preflight failures leave
-    # the installation untouched and deliberately skip destructive rollback.
     mock_zip = project_dir / "mock.zip"
     _write_update_zip(mock_zip)
     monkeypatch.setattr(
@@ -175,32 +170,23 @@ def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
         "download_extension",
         lambda self, ext_id: mock_zip,
     )
-    monkeypatch.setattr(
-        ExtensionManager,
-        "remove",
-        lambda self, ext_id, keep_config=False: None,
-    )
-
-    def mock_install_fail(*args, **kwargs):
-        config_path.write_text(yaml.dump("CORRUPTED"))
-        raise Exception("Install failed")
+    def unexpected_mutation(*args, **kwargs):
+        pytest.fail("invalid hook config must fail before mutation")
 
     monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
-    monkeypatch.setattr(ExtensionManager, "install_from_zip", mock_install_fail)
+    monkeypatch.setattr(ExtensionManager, "install_from_zip", unexpected_mutation)
+    monkeypatch.setattr(ExtensionManager, "remove", unexpected_mutation)
     monkeypatch.setattr("typer.confirm", lambda _: True)
 
     result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
 
-    # Should handle Exception and NOT crash with AttributeError during rollback
     assert result.exit_code == 1
-    assert "Install failed" in result.output
+    assert "expected a mapping" in result.output
     assert not isinstance(result.exception, AttributeError)
 
-    # Verify hooks key was preserved (normalized to {} if it was null/corrupted)
     restored_config = yaml.safe_load(config_path.read_text())
     assert isinstance(restored_config, dict)
-    assert "hooks" in restored_config
-    assert restored_config["hooks"] == {}
+    assert restored_config["hooks"] is None
 
 
 def test_extension_update_skills_backup_no_collision(project_dir, monkeypatch):

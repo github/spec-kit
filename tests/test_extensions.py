@@ -8154,8 +8154,7 @@ class TestHookExecutorRegistration:
         assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
 
     def test_register_hooks_empty_hooks_purge_survives_corrupt_entry(self, project_dir):
-        """A corrupt non-dict entry already on disk does not break the
-        empty-hooks orphan purge; it is dropped and valid entries survive."""
+        """A corrupt on-disk entry cannot be silently discarded by reinstall."""
         executor = HookExecutor(project_dir)
         executor.register_hooks(
             _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
@@ -8165,12 +8164,13 @@ class TestHookExecutorRegistration:
         )
         config = executor.get_project_config()
         config["hooks"]["after_tasks"].append("corrupt-non-dict-entry")
-        executor.save_project_config(config)
+        executor.config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+        original = executor.config_file.read_bytes()
 
-        executor.register_hooks(_StubManifest("ext-a", {}))
+        with pytest.raises(ValueError, match="expected a mapping"):
+            executor.register_hooks(_StubManifest("ext-a", {}))
 
-        hooks = executor.get_project_config()["hooks"]
-        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
+        assert executor.config_file.read_bytes() == original
 
     def test_register_hooks_duplicate_command_moves_to_end(self, project_dir):
         """A command repeated in one manifest keeps the last value and the last

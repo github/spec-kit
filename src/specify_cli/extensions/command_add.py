@@ -357,3 +357,6 @@ def extension_add(
     except ExtensionError as e:
         console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
+    except (ValueError, OSError) as e:
+        console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
+        raise typer.Exit(1) from e
