@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 from unittest.mock import Mock
@@ -346,7 +347,7 @@ class TestCommandLookup:
         assert "\x1b[" not in result.stderr
         assert "Traceback" not in result.stderr
 
-    def test_lookup_cli_context_filesystem_failure_is_json_error(
+    def test_lookup_cli_context_filesystem_failure_preserves_project_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
@@ -368,9 +369,11 @@ class TestCommandLookup:
 
         assert result.exit_code == 1
         assert result.stdout == ""
-        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert json.loads(result.stderr) == {
+            "error": "not a Spec Kit project: no .specify/ directory found"
+        }
 
-    def test_lookup_cli_context_path_resolution_runtime_error_is_json_error(
+    def test_lookup_cli_context_path_resolution_runtime_error_preserves_project_error(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -395,7 +398,9 @@ class TestCommandLookup:
 
         assert result.exit_code == 1
         assert result.stdout == ""
-        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert json.loads(result.stderr) == {
+            "error": "not a Spec Kit project: no .specify/ directory found"
+        }
         assert "Traceback" not in result.stderr
 
     @pytest.mark.parametrize(
@@ -410,6 +415,7 @@ class TestCommandLookup:
         self,
         spec_kit_project: Path,
         monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
         failure: Exception,
     ):
         monkeypatch.setattr(
@@ -419,20 +425,30 @@ class TestCommandLookup:
         )
         monkeypatch.chdir(spec_kit_project)
 
-        result = CliRunner().invoke(
-            app,
-            [
-                "artifact",
-                "lookup",
-                "preset:sample:template:sample",
-                "--json",
-            ],
-        )
+        with caplog.at_level(
+            logging.ERROR,
+            logger="specify_cli.artifacts.command_lookup",
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "artifact",
+                    "lookup",
+                    "preset:sample:template:sample",
+                    "--json",
+                ],
+            )
 
         assert result.exit_code == 1
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert str(failure) not in result.stderr
         assert "Traceback" not in result.stderr
+        assert len(caplog.records) == 1
+        assert caplog.records[0].message == (
+            "Unexpected failure in the artifact lookup CLI adapter."
+        )
+        assert caplog.records[0].exc_info is not None
 
     def test_lookup_cli_context_resolves_init_dir_override(
         self,

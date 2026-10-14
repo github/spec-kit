@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -16,10 +17,14 @@ from ._commands import (
     artifact_app,
 )
 from ._operation_lookup import (
+    ArtifactLookupProjectError,
     ArtifactLookupRequest,
     ArtifactLookupResolutionError,
     lookup_artifact,
 )
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def _project_directory_from_cli_context() -> Path:
@@ -52,7 +57,7 @@ def artifact_lookup(
     try:
         project_directory = _resolve_project_root()
     except (OSError, RuntimeError):
-        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
+        _emit_error_and_exit(ArtifactLookupProjectError(Path(".")))
         return  # pragma: no cover
 
     try:
@@ -65,7 +70,8 @@ def artifact_lookup(
     except ArtifactError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
-    except Exception:  # noqa: BLE001 - preserve the sanitized JSON error contract
+    except Exception:
+        logger.exception("Unexpected failure in the artifact lookup CLI adapter.")
         _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
         return  # pragma: no cover
 
