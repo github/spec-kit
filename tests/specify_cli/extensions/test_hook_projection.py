@@ -134,6 +134,8 @@ def test_save_projects_only_unconditional_enabled_hooks_in_yaml_order(tmp_path):
     {"hooks": {"custom:after": []}},
     {"hooks": {"../before_plan": []}},
     {"hooks": {"before_speckit.bug.assess": []}},
+    {"hooks": {"before_my-extension_assess": []}},
+    {"hooks": {"after_bug-assess": []}},
     {"hooks": {"before_": []}},
     {"hooks": {"after_Bug": []}},
     {"hooks": {"before_" + "a" * 250: []}},
@@ -338,6 +340,7 @@ def test_arbitrary_command_event_refresh_preserves_hook_reader_behavior(tmp_path
         "after_bug_assess": [
             {"extension": "example", "command": "speckit.example.extension"}
         ],
+        "before_my_extension_assess": [],
         "before_2fa_assess": [],
     }}
     executor.config_file.write_text(yaml.safe_dump(existing, sort_keys=False))
@@ -353,7 +356,7 @@ def test_arbitrary_command_event_refresh_preserves_hook_reader_behavior(tmp_path
     cache = tmp_path / ".specify/hook-dispatch"
     assert json.loads((cache / "before_my_command.json").read_text())["event"] == "before_my_command"
     assert (cache / "events.txt").read_bytes() == (
-        b"before_my_command\nafter_bug_assess\nbefore_2fa_assess\n"
+        b"before_my_command\nafter_bug_assess\nbefore_my_extension_assess\nbefore_2fa_assess\n"
     )
     assert json.loads((cache / "after_bug_assess.json").read_text())["event"] == "after_bug_assess"
 

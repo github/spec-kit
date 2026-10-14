@@ -385,8 +385,10 @@ targets use `before_<command>` / `after_<command>` (for example,
 `after_<target-extension>_<command>` (for example, `before_bug_assess` for
 `speckit.bug.assess`). The suffix identifies the command **being observed**,
 not the extension providing the hook. It starts with a lowercase letter or
-digit and contains lowercase letters, digits, underscores, or hyphens; the
-full event name must fit in a projection filename.
+digit and contains only lowercase letters, digits, or underscores. Normalize
+hyphens in target extension and command names to underscores (for example,
+`my-extension` becomes `my_extension`); names are never rewritten implicitly.
+The full event name must fit in a projection filename.
 
 **Opt-in migration:** Legacy names such as `custom:after` remain accepted by
 default, but are rejected during extension installation, update, or

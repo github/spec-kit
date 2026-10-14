@@ -19,7 +19,7 @@ from ..integrations._file_changes import changing_file
 from ..shared_infra import _exclusive_project_lock
 from . import DEFAULT_HOOK_PRIORITY, normalize_priority
 
-_EVENT = re.compile(r"(before|after)_[a-z0-9][a-z0-9_-]*\Z")
+_EVENT = re.compile(r"(before|after)_[a-z0-9][a-z0-9_]*\Z")
 
 
 def projection_enabled(project_root: Path) -> bool:
@@ -42,8 +42,9 @@ def validate_event_name(event: object) -> None:
         raise ValueError(
             f"Invalid extension hook event {event!r}: use before_<command_name> "
             "or after_<command_name> with a lowercase command name containing "
-            "letters, digits, underscores, or hyphens. "
-            "Rename legacy events such as custom:after before installing or refreshing."
+            "only letters, digits, or underscores. Normalize hyphens to underscores "
+            "(for example, my-extension -> my_extension). Rename legacy events such "
+            "as custom:after before installing or refreshing."
         )
 
 

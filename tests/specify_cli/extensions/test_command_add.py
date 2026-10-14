@@ -124,10 +124,13 @@ class TestExtensionAddCLI:
         if cache.exists():
             assert (cache / "source.yml").read_bytes() == config.read_bytes()
 
-    def test_default_add_accepts_legacy_hook_event_without_projection(self, extension_dir, project_dir):
+    @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
+    def test_default_add_accepts_legacy_hook_event_without_projection(
+        self, extension_dir, project_dir, event
+    ):
         manifest_path = extension_dir / "extension.yml"
         manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        manifest["hooks"] = {"custom:after": {"command": "speckit.test-ext.hello"}}
+        manifest["hooks"] = {event: {"command": "speckit.test-ext.hello"}}
         manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
         with patch.object(Path, "cwd", return_value=project_dir):
             result = CliRunner().invoke(
@@ -138,13 +141,14 @@ class TestExtensionAddCLI:
         assert (project_dir / ".specify/extensions/test-ext").exists()
         assert not (project_dir / ".specify/hook-dispatch").exists()
 
+    @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
     def test_opted_in_add_rejects_legacy_hook_event_before_mutation(
-        self, extension_dir, project_dir
+        self, extension_dir, project_dir, event
     ):
         enable_native_hooks(project_dir)
         manifest_path = extension_dir / "extension.yml"
         manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        manifest["hooks"] = {"custom:after": {"command": "speckit.test-ext.hello"}}
+        manifest["hooks"] = {event: {"command": "speckit.test-ext.hello"}}
         manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
         with patch.object(Path, "cwd", return_value=project_dir):
             result = CliRunner().invoke(
@@ -152,6 +156,8 @@ class TestExtensionAddCLI:
             )
         assert result.exit_code == 1
         assert "Rename legacy events" in result.output
+        if "-" in event:
+            assert "my-extension -> my_extension" in result.output.replace("\n", " ")
         assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
         assert not (project_dir / ".specify/extensions/test-ext").exists()
 
