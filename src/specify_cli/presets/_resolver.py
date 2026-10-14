@@ -10,6 +10,31 @@ from .._utils import dump_frontmatter
 from ..extensions import ExtensionRegistry, normalize_priority
 from ._manifest import VALID_PRESET_STRATEGIES, PresetManifest, PresetValidationError
 from ._registry import PresetRegistry
+from ._selectors import is_regex_selector, selector_matches
+
+
+#: Conventional subdirectories per resource type.  ``templates/commands`` is a
+#: conventional lower-preset command location in its own right (the eligibility check and
+#: selector expansion both enumerate it), so resolution and layer collection must search
+#: it too -- otherwise a matched resource is eligible yet never offered as a layer, and a
+#: selector materializes nothing.
+_RESOURCE_SUBDIRS: dict[str, tuple[str, ...]] = {
+    "template": ("templates", ""),
+    "command": ("commands", "templates/commands"),
+    "script": ("scripts",),
+}
+
+
+def _conventional_command_names(root: Path) -> set[str]:
+    """Enumerate logical names from the resolver's conventional command locations."""
+    names: set[str] = set()
+    for subdir in _RESOURCE_SUBDIRS["command"]:
+        for path in (root / subdir).glob("*.md"):
+            if path.is_file() and path.stem and not is_regex_selector(path.stem):
+                names.add(path.stem)
+                if not path.stem.startswith("speckit."):
+                    names.add(f"speckit.{path.stem}")
+    return names
 
 
 class PresetResolver:
@@ -43,7 +68,16 @@ class PresetResolver:
             if manifest_path.exists():
                 try:
                     self._manifest_cache[key] = PresetManifest(manifest_path)
-                except PresetValidationError:
+                except PresetValidationError as exc:
+                    from ._selectors import SelectorSafetyError
+
+                    if isinstance(exc.__cause__, SelectorSafetyError):
+                        import warnings
+
+                        warnings.warn(
+                            f"Ignoring unsafe preset manifest {manifest_path}: {exc}",
+                            stacklevel=2,
+                        )
                     self._manifest_cache[key] = None
             else:
                 self._manifest_cache[key] = None
@@ -84,7 +118,13 @@ class PresetResolver:
         if not manifest:
             return None, None
         for tmpl in manifest.templates:
-            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+            declared_name = tmpl.get("name")
+            if (
+                isinstance(declared_name, str)
+                and not is_regex_selector(declared_name)
+                and declared_name == template_name
+                and tmpl.get("type") == template_type
+            ):
                 file_path = tmpl.get("file")
                 if file_path:
                     manifest_candidate = pack_dir / file_path
@@ -152,6 +192,38 @@ class PresetResolver:
                 return entry, None
             return entry, (candidate if candidate.is_file() else None)
         return None, None
+
+    def _find_unregistered_extension_command(
+        self, template_name: str, ext_dir: Path | None = None
+    ) -> Path | None:
+        """Find a legacy command filename within its matching extension only."""
+        extension_template_name = template_name.removeprefix("speckit.")
+        namespace = extension_template_name.split(".", 1)[0]
+        expected_dir = self.extensions_dir / namespace
+        if ext_dir is not None and ext_dir.resolve() != expected_dir.resolve():
+            return None
+        ext_dir = expected_dir
+        registry = ExtensionRegistry(self.extensions_dir)
+        if namespace in registry.keys():
+            metadata = registry.get(namespace)
+            if metadata is None or not metadata.get("enabled", True):
+                return None
+        manifest_path = ext_dir / "extension.yml"
+        if manifest_path.is_file():
+            entry, candidate = self._extension_manifest_declared_template(
+                ext_dir, template_name, "command"
+            )
+            if entry is not None:
+                return candidate
+        fallback_name = extension_template_name
+        alternate_candidates = (
+            ext_dir / "commands" / f"{fallback_name}.md",
+            ext_dir / "templates" / "commands" / f"{fallback_name}.md",
+        )
+        for candidate in alternate_candidates:
+            if candidate.is_file():
+                return candidate
+        return None
 
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
@@ -266,6 +338,19 @@ class PresetResolver:
         if not skip_presets and self.presets_dir.exists():
             for pack_id, _metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
+                if template_type == "command":
+                    declarations = self._preset_declarations_for_resource(
+                        pack_dir, template_name, template_type
+                    )
+                    if declarations:
+                        for _declaration, candidate in declarations:
+                            if candidate is not None:
+                                return candidate
+                        continue
+                    candidate = self._conventional_resource(pack_dir, template_name, template_type)
+                    if candidate is not None:
+                        return candidate
+                    continue
                 # The preset manifest is authoritative: if it declares this
                 # template with an explicit ``file:``, resolve to that path —
                 # and do NOT fall back to convention when it's missing, to
@@ -299,6 +384,11 @@ class PresetResolver:
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
+                continue
+            if template_type == "command":
+                candidate = self._extension_resource(ext_dir, template_name, template_type)
+                if candidate is not None:
+                    return candidate
                 continue
             # The extension manifest is authoritative, same as preset manifests
             # above: check it before convention-based lookup so a declared entry
@@ -504,6 +594,158 @@ class PresetResolver:
 
         return {"path": resolved_str, "source": "core"}
 
+    def _preset_declarations_for_resource(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> list[tuple[dict, Path | None]]:
+        """Collect exact and matching regex declarations in manifest order."""
+        if template_type != "command":
+            return []
+        manifest = self._get_manifest(pack_dir)
+        if manifest is None:
+            return []
+        presets = self._get_all_presets_by_priority()
+        pack_ids = [pack_id for pack_id, _ in presets]
+        try:
+            current_index = pack_ids.index(pack_dir.name)
+        except ValueError:
+            return []
+        has_lower_resource = any(
+            self._preset_has_concrete_resource(
+                self.presets_dir / lower_id, template_name, template_type
+            )
+            for lower_id, _metadata in presets[current_index + 1 :]
+        )
+        if not has_lower_resource:
+            has_lower_resource = any(
+                self._extension_has_concrete_resource(
+                    self.extensions_dir / ext_id, template_name, template_type
+                )
+                for _priority, ext_id, _meta in self._get_all_extensions_by_priority()
+            )
+        if not has_lower_resource:
+            has_lower_resource = self._core_has_concrete_resource(
+                template_name, template_type
+            )
+        matches = []
+        for declaration in manifest.templates:
+            name = declaration.get("name")
+            if declaration.get("type") != template_type or not isinstance(name, str):
+                continue
+            exact = not is_regex_selector(name) and name == template_name
+            regex = (
+                has_lower_resource
+                and is_regex_selector(name)
+                and selector_matches(name, template_name)
+            )
+            if exact or regex:
+                file_value = declaration.get("file")
+                path = pack_dir / file_value if isinstance(file_value, str) else None
+                matches.append(
+                    (declaration, path if path is not None and path.is_file() else None)
+                )
+        return matches
+
+    def _has_concrete_resource(
+        self,
+        base_dir: Path,
+        name: str,
+        template_type: str,
+        *,
+        is_extension: bool = False,
+    ) -> bool:
+        """Check concrete-resource existence using the same lookups as resolve()."""
+        if is_extension:
+            entry, candidate = self._extension_manifest_declared_template(
+                base_dir, name, template_type
+            )
+        else:
+            entry, candidate = self._manifest_declared_template(
+                base_dir, name, template_type
+            )
+        if candidate is not None:
+            return True
+        if entry is not None:
+            return False
+        return self._conventional_resource(base_dir, name, template_type) is not None
+
+    def _preset_has_concrete_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> bool:
+        return self._has_concrete_resource(base_dir, name, template_type)
+
+    def _extension_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> Path | None:
+        """Discover one candidate per enabled provider, honoring declarations.
+
+        Legacy namespace filenames are command-only and scoped to base_dir;
+        they must never rediscover another provider's file or bypass a missing
+        manifest declaration. Share this lookup with regex eligibility so every
+        eligible base can actually be resolved and collected.
+        """
+        entry, candidate = self._extension_manifest_declared_template(
+            base_dir, name, template_type
+        )
+        if entry is not None:
+            return candidate
+        candidate = self._conventional_resource(base_dir, name, template_type)
+        if candidate is None and template_type == "command":
+            candidate = self._conventional_resource(
+                base_dir / "templates", name, template_type
+            )
+        if candidate is None and template_type == "command":
+            candidate = self._find_unregistered_extension_command(name, base_dir)
+        return candidate
+
+    def _extension_has_concrete_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> bool:
+        return self._extension_resource(base_dir, name, template_type) is not None
+
+    def _core_has_concrete_resource(self, name: str, template_type: str) -> bool:
+        return self._core_resource(name, template_type) is not None
+
+    def _conventional_resource(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> Optional[Path]:
+        # ``templates/commands`` is a conventional command location in its own
+        # right: _conventional_command_names and _expand_command_selectors both
+        # enumerate it, for lower presets as well as for extensions. Searching it
+        # here — at the single shared lookup — is what keeps the preset-side
+        # eligibility check that calls this method directly in agreement with
+        # selector expansion; otherwise a matched resource is never offered as a
+        # layer and the selector materializes nothing.
+        subdirs = _RESOURCE_SUBDIRS.get(template_type, ("",))
+        extension = ".sh" if template_type == "script" else ".md"
+        for subdir in subdirs:
+            candidate = (
+                base_dir / subdir / f"{name}{extension}"
+                if subdir
+                else base_dir / f"{name}{extension}"
+            )
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _core_resource(self, name: str, template_type: str) -> Optional[Path]:
+        extension = ".sh" if template_type == "script" else ".md"
+        if template_type == "template":
+            candidates = [self.templates_dir / f"{name}{extension}"]
+        elif template_type == "command":
+            candidates = [self.templates_dir / "commands" / f"{name}{extension}"]
+            stem = self._core_stem(name)
+            if stem:
+                candidates.append(
+                    self.templates_dir / "commands" / f"{stem}{extension}"
+                )
+        else:
+            candidates = [self.templates_dir / "scripts" / f"{name}{extension}"]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        bundled = self._find_bundled_core(name, template_type, extension)
+        return bundled if bundled is not None and bundled.is_file() else None
+
     def collect_all_layers(
         self,
         template_name: str,
@@ -512,7 +754,10 @@ class PresetResolver:
         """Collect all layers in the priority stack for a template.
 
         Returns layers from highest priority (checked first) to lowest priority.
-        Each layer is a dict with 'path', 'source', and 'strategy' keys.
+        Each layer is a dict with 'path', 'source', and 'strategy' keys; preset
+        layers additionally carry 'declaration', the manifest name that matched
+        the requested resource (a ``regex:`` selector or an exact name), so
+        diagnostics can attribute a contributing layer to its declaration.
 
         Args:
             template_name: Template name (e.g., "spec-template")
@@ -546,101 +791,126 @@ class PresetResolver:
                     return candidate
             return None
 
-        # Priority 1: Project-local overrides (always "replace" strategy)
         if template_type == "script":
             override = self.overrides_dir / "scripts" / f"{template_name}{ext}"
         else:
             override = self.overrides_dir / f"{template_name}{ext}"
         if override.exists():
-            layers.append({
-                "path": override,
-                "source": "project override",
-                "strategy": "replace",
-            })
+            layers.append(
+                {
+                    "path": override,
+                    "source": "project override",
+                    "strategy": "replace",
+                }
+            )
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
             for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
-                # Read strategy and manifest file path from preset manifest
-                strategy = "replace"
-                manifest_has_strategy = False
-                entry, manifest_candidate = self._manifest_declared_template(
+                preset_declarations = self._preset_declarations_for_resource(
                     pack_dir, template_name, template_type
                 )
-                if entry is not None:
-                    strategy = entry.get("strategy", "replace")
-                    manifest_has_strategy = "strategy" in entry
-                # Use the manifest's declared file when it's a usable regular file;
-                # only fall back to convention-based lookup when the manifest
-                # doesn't list this template at all, so preset.yml stays
-                # authoritative (a declared-but-unusable file skips convention —
-                # parity with resolve()).
-                candidate = None
-                if manifest_candidate is not None:
-                    candidate = manifest_candidate
-                elif entry is None:
-                    candidate = _find_in_subdirs(pack_dir)
-                if candidate:
-                    # Legacy fallback: if manifest doesn't explicitly declare a
-                    # strategy, check the command file's frontmatter for any valid
-                    # strategy. Skip when the manifest entry includes strategy key
-                    # (even if it's "replace") to avoid overriding explicit declarations.
-                    if not manifest_has_strategy and strategy == "replace" and template_type == "command":
+                if not preset_declarations:
+                    entry, candidate = self._manifest_declared_template(
+                        pack_dir, template_name, template_type
+                    )
+                    if entry is None:
+                        candidate = _find_in_subdirs(pack_dir)
+                    preset_declarations = [(entry, candidate)]
+                for layer_entry, candidate in preset_declarations:
+                    strategy = "replace"
+                    manifest_has_strategy = False
+                    if layer_entry is not None:
+                        strategy = layer_entry.get("strategy", "replace")
+                        manifest_has_strategy = "strategy" in layer_entry
+                    if candidate is None:
+                        continue
+                    if (
+                        not manifest_has_strategy
+                        and strategy == "replace"
+                        and template_type == "command"
+                    ):
                         try:
                             cmd_content = candidate.read_text(encoding="utf-8")
                             lines = cmd_content.splitlines(keepends=True)
                             if lines and lines[0].rstrip("\r\n") == "---":
-                                fence_end = -1
-                                for fi, fline in enumerate(lines[1:], start=1):
-                                    if fline.rstrip("\r\n") == "---":
-                                        fence_end = fi
-                                        break
+                                fence_end = next(
+                                    (
+                                        i
+                                        for i, line in enumerate(lines[1:], 1)
+                                        if line.rstrip("\r\n") == "---"
+                                    ),
+                                    -1,
+                                )
                                 if fence_end > 0:
-                                    fm_text = "".join(lines[1:fence_end])
-                                    fm_data = yaml.safe_load(fm_text)
-                                    if isinstance(fm_data, dict):
-                                        fm_strategy = fm_data.get("strategy")
-                                        if isinstance(fm_strategy, str) and fm_strategy.lower() in VALID_PRESET_STRATEGIES:
-                                            strategy = fm_strategy.lower()
+                                    fm_data = yaml.safe_load(
+                                        "".join(lines[1:fence_end])
+                                    )
+                                    fm_strategy = (
+                                        fm_data.get("strategy")
+                                        if isinstance(fm_data, dict)
+                                        else None
+                                    )
+                                    if (
+                                        isinstance(fm_strategy, str)
+                                        and fm_strategy.lower()
+                                        in VALID_PRESET_STRATEGIES
+                                    ):
+                                        strategy = fm_strategy.lower()
                         except (UnicodeDecodeError, yaml.YAMLError, OSError):
-                            # Best-effort legacy frontmatter parsing: keep default
-                            # strategy ("replace") when content is unreadable/invalid.
                             pass
                     version = metadata.get("version", "?") if metadata else "?"
-                    layers.append({
-                        "path": candidate,
-                        "source": f"{pack_id} v{version}",
-                        "strategy": strategy,
-                    })
+                    layers.append(
+                        {
+                            "path": candidate,
+                            "source": f"{pack_id} v{version}",
+                            "strategy": strategy,
+                            # Attribution for diagnostics: the manifest
+                            # declaration that produced this concrete layer. A
+                            # ``regex:`` value identifies the selector that
+                            # matched the requested name; an exact declaration
+                            # keeps its literal name. Extension, override, and
+                            # core layers have no declaration.
+                            "declaration": (
+                                layer_entry.get("name")
+                                if isinstance(layer_entry, dict)
+                                else None
+                            ),
+                        }
+                    )
 
         # Priority 3: Extension-provided templates (always "replace")
         for _priority, ext_id, ext_meta in self._get_all_extensions_by_priority():
             ext_dir = self.extensions_dir / ext_id
             if not ext_dir.is_dir():
                 continue
-            # The extension manifest is authoritative, same as preset manifests
-            # above: check it before convention-based lookup so a declared entry
-            # at a non-conventional path wins over a stale conventional file, and
-            # a declared-but-missing file isn't silently masked by convention.
-            entry, candidate = self._extension_manifest_declared_template(
-                ext_dir, template_name, template_type
-            )
-            if entry is None:
-                candidate = _find_in_subdirs(ext_dir)
+            if template_type == "command":
+                candidate = self._extension_resource(ext_dir, template_name, template_type)
+            else:
+                entry, candidate = self._extension_manifest_declared_template(
+                    ext_dir, template_name, template_type
+                )
+                if entry is None:
+                    candidate = _find_in_subdirs(ext_dir)
             if candidate:
                 if ext_meta:
                     version = ext_meta.get("version", "?")
                     source = f"extension:{ext_id} v{version}"
                 else:
                     source = f"extension:{ext_id} (unregistered)"
-                layers.append({
-                    "path": candidate,
-                    "source": source,
-                    "strategy": "replace",
-                    "extension_id": ext_id,
-                    "extension_dir": ext_dir,
-                })
+                layers.append(
+                    {
+                        "path": candidate,
+                        "source": source,
+                        "strategy": "replace",
+                        "extension_id": ext_id,
+                        "extension_dir": ext_dir,
+                    }
+                )
+
+        # No separate namespace fallback: the scoped extension loop above is
+        # the only path that can append a legacy alternate command filename.
 
         # Priority 4: Core templates (always "replace")
         core = None

@@ -15,7 +15,7 @@ from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
-from ._manager_commands import _substitute_core_template
+from ._manager_commands import _PresetCommandMethods, _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
 
@@ -30,9 +30,10 @@ class _PresetSkillMethods:
         that aren't being reconciled.
         """
 
-        def __init__(self, manifest: "PresetManifest", cmd_names: set):
+        def __init__(self, manifest: "PresetManifest", cmd_names: set, commands: List[Dict[str, Any]]):
             self._manifest = manifest
             self._cmd_names = cmd_names
+            self._commands = commands
 
         def __getattr__(self, name: str):
             return getattr(self._manifest, name)
@@ -40,7 +41,7 @@ class _PresetSkillMethods:
         @property
         def templates(self) -> List[Dict[str, Any]]:
             return [
-                t for t in self._manifest.templates
+                t for t in self._commands
                 if t.get("name") in self._cmd_names
             ]
 
@@ -72,7 +73,7 @@ class _PresetSkillMethods:
             return  # pack_id no longer installed (e.g. removed mid-loop)
         raw_existing_skills = metadata.get("registered_skills")
         if isinstance(raw_existing_skills, list) and raw_existing_skills:
-            # Legacy flat-list value: infer real per-agent ownership from
+            # Legacy flat-list value: infer real per-agent provenance from
             # on-disk provenance rather than guessing (#2948).
             fallback_agent = next(iter(written)) if written else None
             existing_skills = self._infer_legacy_skill_provenance(
@@ -338,7 +339,11 @@ class _PresetSkillMethods:
                 except PresetValidationError:
                     continue
                 cmds_set = set(dir_cmds)
-                filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+                concrete_declarations = _PresetCommandMethods._expand_command_selectors(
+                    resolver, pack_dir,
+                    [t for t in manifest.templates if t.get("type") == "command"],
+                )
+                filtered_manifest = self._FilteredManifest(manifest, cmds_set, concrete_declarations)
                 # Not dead code: _register_skills only *overwrites* skill
                 # subdirectories that already exist (plus brand-new ones for
                 # the active ai_skills agent). For a restore into a
@@ -626,6 +631,7 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        command_templates: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -658,9 +664,11 @@ class _PresetSkillMethods:
             matching the shape ``registered_commands`` already uses so the
             two can be tracked/restored consistently (#2948).
         """
-        command_templates = [
-            t for t in manifest.templates if t.get("type") == "command"
-        ]
+        if command_templates is None:
+            command_templates = _PresetCommandMethods._expand_command_selectors(
+                PresetResolver(self.project_root), preset_dir,
+                [t for t in manifest.templates if t.get("type") == "command"],
+            )
         if not command_templates:
             return {}
 
@@ -703,12 +711,16 @@ class _PresetSkillMethods:
 
         written: List[str] = []
 
+        rendered_commands: Set[str] = set()
         for cmd_tmpl in command_templates:
             cmd_name = cmd_tmpl["name"]
+            if cmd_name in rendered_commands:
+                continue
             cmd_file_rel = cmd_tmpl["file"]
             source_file = preset_dir / cmd_file_rel
-            if not source_file.exists():
+            if not source_file.is_file():
                 continue
+            rendered_commands.add(cmd_name)
 
             # Use composed content if available (written by _register_commands
             # for commands with non-replace strategies), otherwise the original.
@@ -832,7 +844,7 @@ class _PresetSkillMethods:
     def _infer_legacy_skill_provenance(
         self, skill_names: List[str], pack_id: str, fallback_agent: str
     ) -> Dict[str, List[str]]:
-        """Infer per-agent ownership of a legacy flat-list ``registered_skills`` value.
+        """Infer per-agent provenance of a legacy flat-list ``registered_skills`` value.
 
         Pre-#2948 registries recorded ``registered_skills`` as a flat list
         with no record of which agent directory each name was actually
@@ -858,7 +870,7 @@ class _PresetSkillMethods:
         ``SKILL.md`` whose frontmatter records this exact preset as the
         owner (``metadata.source == "preset:<pack_id>"``, the same marker
         :meth:`_register_skills` writes) — this marker check is what keeps
-        the broadened probe from falsely attributing ownership to an
+        the broadened probe from falsely attributing provenance to an
         agent's directory that never actually held this preset's override
         (e.g. a command-mode agent that never rendered skills, or an
         unrelated skill of the same name). A name can legitimately be

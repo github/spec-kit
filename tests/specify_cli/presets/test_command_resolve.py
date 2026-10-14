@@ -3,11 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from typer.testing import CliRunner
 
+from specify_cli import app
 from specify_cli.presets import (
     PresetManager,
 )
 from tests.conftest import strip_ansi
+from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
 
 
 class TestPresetResolve:
@@ -214,3 +217,24 @@ class TestPresetResolve:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+
+def test_resolve_reports_command_selector_declaration(project_dir):
+    from unittest.mock import patch
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "attributed-command",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.plan$",
+                "file": "commands/overlay.md",
+                "strategy": "append",
+            }
+        ],
+    )
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, ["preset", "resolve", "speckit.plan"])
+    assert result.exit_code == 0, result.output
+    assert r"regex:^speckit\.plan$" in strip_ansi(result.output)

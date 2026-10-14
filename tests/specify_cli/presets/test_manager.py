@@ -1,7 +1,10 @@
 """Tests for preset installation and removal in specify_cli.presets._manager."""
 
 import json
+import subprocess
+import sys
 import tarfile
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -21,6 +24,7 @@ from tests.specify_cli.presets._helpers import (
     PresetArtifactTestHelpers,
     install_constitution_sync_preset,
     install_self_test_preset,
+    write_selector_preset,
 )
 from tests.specify_cli.presets._helpers import (
     make_convention_constitution_preset as _make_convention_constitution_preset,
@@ -1607,3 +1611,96 @@ class TestRemoveReconciliation:
         cmd_files = list(gemini_dir.glob("*specify*"))
         assert cmd_files, "Command file should still exist after removal"
         assert "Lo content" in cmd_files[0].read_text()
+
+
+def test_unmatched_selector_with_own_exact_declaration_does_not_warn(project_dir, tmp_path):
+    """An exact declaration still takes effect without a spurious no-match warning."""
+
+    from specify_cli import save_init_options
+    from specify_cli.presets import PresetResolver
+    from tests.specify_cli.presets._helpers import write_command_declarations as _write_command_declarations
+
+    save_init_options(project_dir, {"ai": "amp", "script": "sh"})
+    commands = project_dir / ".agents/commands"
+    commands.mkdir(parents=True)
+    source = _write_command_declarations(tmp_path / "source", "same-target", [
+        {"type": "command", "name": "regex:^new$", "body": "INELIGIBLE SELECTOR"},
+        {"type": "command", "name": "new", "body": "EXACT DECLARATION"},
+    ])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        PresetManager(project_dir).install_from_directory(source, "0.1.0")
+    assert not any("matches no command resources" in str(w.message) for w in caught)
+    assert "EXACT DECLARATION" in (commands / "new.md").read_text()
+    assert "INELIGIBLE SELECTOR" not in (commands / "new.md").read_text()
+    layers = PresetResolver(project_dir).collect_all_layers("new", "command")
+    assert len(layers) == 1
+    assert layers[0]["path"].name == "command-1.md"
+
+
+@pytest.mark.parametrize("entry", ["install", "info", "resolve"])
+def test_persisted_unsafe_manifest_is_bounded(project_dir, entry):
+    pack = write_selector_preset(
+        project_dir, "unsafe", "regex:(a+)+$", priority=1, resource_type="command"
+    )
+    code = f"""
+import os
+import warnings
+from pathlib import Path
+from typer.testing import CliRunner
+from specify_cli import app
+from specify_cli.presets import PresetManager, PresetResolver, PresetValidationError
+root = Path({str(project_dir)!r})
+pack = Path({str(pack)!r})
+entry = {entry!r}
+if entry == "install":
+    try:
+        PresetManager(root).install_from_directory(pack, "0.1.5")
+    except PresetValidationError as exc:
+        assert "safety boundary" in str(exc)
+    else:
+        raise AssertionError("unsafe selector installed")
+elif entry == "info":
+    os.chdir(root)
+    result = CliRunner().invoke(app, ["preset", "info", "unsafe"])
+    assert result.exit_code != 0
+    assert "safety boundary" in result.output + str(result.exception), result.output
+else:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert PresetResolver(root).resolve_content("a" * 100 + "!", "command") is None
+    assert any("Ignoring unsafe preset manifest" in str(w.message) and "safety boundary" in str(w.message) for w in caught)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_persisted_unsafe_manifest_keeps_read_only_paths_usable(project_dir):
+    """A rejected selector must not break consumers that read "None" as unreadable.
+
+    ``PresetManager.get_pack`` is an Optional accessor. The artifact inventory and
+    the bundle reference checks all treat "manifest failed validation" as ``None``;
+    only ``preset info`` re-reads the manifest to report the precise reason. A
+    persisted unsafe selector must therefore not turn every other read-only
+    command into an unhandled validation error — and the preset must stay
+    removable, or the project could not recover.
+    """
+    write_selector_preset(
+        project_dir, "unsafe", "regex:(a+)+$", priority=1, resource_type="command"
+    )
+    manager = PresetManager(project_dir)
+    assert manager.registry.is_installed("unsafe")
+
+    # Optional contract preserved: no raise (this raised before the fix).
+    assert manager.get_pack("unsafe") is None
+
+    # The real read-only consumer keeps enumerating the project.
+    from specify_cli.artifacts.catalog import ArtifactCatalog
+
+    assert isinstance(ArtifactCatalog(project_dir).list_artifacts(), list)
+
+    # Recovery must still be possible.
+    assert manager.remove("unsafe") is True
+    assert not (project_dir / ".specify" / "presets" / "unsafe").exists()

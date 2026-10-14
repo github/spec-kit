@@ -264,8 +264,28 @@ class PresetManifest:
                     f"scripts only support {sorted(VALID_SCRIPT_STRATEGIES)}"
                 )
 
+            # A regex selector is validated here, before installation or resolution.
+            from ._selectors import (
+                REGEX_COMPILE_ERRORS,
+                compile_name_selector,
+                is_regex_selector,
+            )
+
+            if is_regex_selector(tmpl["name"]):
+                if tmpl["type"] != "command":
+                    # Only command declarations support selectors in this change.
+                    raise PresetValidationError(
+                        f"regex: selectors are only supported for command "
+                        f"declarations, not {tmpl['type']!r}"
+                    )
+                try:
+                    compile_name_selector(tmpl["name"])
+                except REGEX_COMPILE_ERRORS as exc:
+                    raise PresetValidationError(
+                        f"Invalid regex selector in template name {tmpl['name']!r}: {exc}"
+                    ) from exc
             # Validate template name format
-            if tmpl["type"] == "command":
+            elif tmpl["type"] == "command":
                 # Commands use dot notation (e.g. speckit.specify)
                 if not re.match(r'^[a-z0-9.-]+$', tmpl["name"]):
                     raise PresetValidationError(

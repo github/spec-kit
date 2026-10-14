@@ -30,6 +30,7 @@ from ._manifest import (
 )
 from ._registry import PresetRegistry
 from ._resolver import PresetResolver
+from ._selectors import is_regex_selector, selector_matches
 
 _CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 _CONSTITUTION_SYNC_PRESET_ID = "constitution-sync"
@@ -435,20 +436,32 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}
         try:
+            command_templates = self._expand_command_selectors(
+                PresetResolver(self.project_root), dest_dir,
+                [t for t in manifest.templates if t.get("type") == "command"],
+            )
+            self._warn_unmatched_command_selectors(manifest, command_templates)
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.
-            registered_commands = self._register_commands(manifest, dest_dir)
+            registered_commands = self._register_commands(
+                manifest, dest_dir, command_templates=command_templates
+            )
             self.registry.update(manifest.id, {
                 "registered_commands": registered_commands,
             })
 
             # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
-            registered_skills = self._register_skills(manifest, dest_dir)
+            registered_skills = self._register_skills(
+                manifest, dest_dir, command_templates=command_templates
+            )
             self.registry.update(manifest.id, {
                 "registered_skills": registered_skills,
             })
+            if any(t.get("_selector") for t in command_templates):
+                for agent in registered_commands.keys() | registered_skills.keys():
+                    self._refresh_selector_matches(manifest.id, agent, command_templates)
         except Exception:
             # Roll back all side effects. _register_skills persists each
             # successful write immediately, so reload that partial map when
@@ -474,11 +487,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
         # Reconcile all affected commands from the full priority stack so that
         # install order doesn't determine the winning command file.
-        cmd_names = [
-            t["name"]
-            for t in manifest.templates
-            if t.get("type") == "command"
-        ]
+        cmd_names = [t["name"] for t in command_templates]
         if cmd_names:
             try:
                 self._reconcile_composed_commands(cmd_names)
@@ -501,6 +510,24 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         self._seed_constitution_from_preset(manifest, dest_dir)
 
         return manifest
+
+    @staticmethod
+    def _warn_unmatched_command_selectors(
+        manifest: PresetManifest, command_templates: List[Dict[str, Any]]
+    ) -> None:
+        """Warn for valid command selectors with no concrete lower-layer match."""
+        import warnings
+
+        for declaration in manifest.templates:
+            selector = declaration["name"]
+            if declaration["type"] != "command" or not is_regex_selector(selector):
+                continue
+            if not any(selector_matches(selector, t["name"]) for t in command_templates):
+                warnings.warn(
+                    f"Preset '{manifest.id}' selector '{selector}' currently matches no command resources. "
+                    "Regex selectors only match concrete commands from lower layers.",
+                    stacklevel=2,
+                )
 
     def _seed_constitution_from_preset(
         self, manifest: PresetManifest, preset_dir: Path
@@ -689,7 +716,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
             # branch of _unregister_skills restores only the currently
             # active agent's directory, leaving this preset's overrides in
             # every previously active agent's directory orphaned. Infer
-            # real per-agent ownership from the on-disk preset marker now,
+            # real per-agent provenance from the on-disk preset marker now,
             # while pack_id is still known, and hand the resulting mapping
             # through the same dict-based cleanup path already used for
             # non-legacy registries (#2948).
@@ -759,12 +786,20 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 )
             )
         for cmd_names in registered_commands.values():
-            removed_cmd_names.update(cmd_names)
+            removed_cmd_names.update(
+                name for name in cmd_names
+                if isinstance(name, str) and not is_regex_selector(name)
+            )
         manifest_path = pack_dir / "preset.yml"
         if manifest_path.exists():
             try:
                 manifest = PresetManifest(manifest_path)
-                for tmpl in manifest.templates:
+                declarations = [t for t in manifest.templates if t.get("type") != "command"]
+                declarations += self._expand_command_selectors(
+                    PresetResolver(self.project_root), pack_dir,
+                    [t for t in manifest.templates if t.get("type") == "command"],
+                )
+                for tmpl in declarations:
                     if (
                         tmpl.get("type") == "template"
                         and tmpl.get("name") == "constitution-template"
