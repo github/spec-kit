@@ -104,6 +104,101 @@ class TestExtensionAddCLI:
         else:
             assert not cache.exists()
 
+    def test_install_publication_failure_keeps_preexisting_same_id_hooks(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        import specify_cli.extensions._hook_projection as projection
+
+        enable_native_hooks(project_dir)
+        config = project_dir / ".specify/extensions.yml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_bytes(
+            b"# existing project hooks\r\ninstalled:\r\n  - test-ext\r\n"
+            b"hooks:\r\n  before_plan:\r\n"
+            b"    - extension: test-ext\r\n"
+            b"      command: speckit.test-ext.hello\r\n"
+            b"      enabled: true\r\n"
+        )
+        HookExecutor(project_dir).migrate_project_config()
+        cache = project_dir / ".specify/hook-dispatch"
+        original = config.read_bytes()
+        prior_cache = {entry.name: entry.read_bytes() for entry in cache.iterdir()}
+        real_replace = projection.os.replace
+        failed = False
+
+        def fail_config_write(source, target):
+            nonlocal failed
+            if Path(target) == config and not failed:
+                failed = True
+                raise OSError("simulated hook publication failure")
+            return real_replace(source, target)
+
+        monkeypatch.setattr(projection.os, "replace", fail_config_write)
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(OSError, match="simulated hook publication failure"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+        assert not manager.registry.is_installed("test-ext")
+        assert config.read_bytes() == original
+        assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == prior_cache
+
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    def test_install_replaces_preexisting_same_id_hooks_on_success(
+        self, extension_dir, project_dir, native_hooks
+    ):
+        if native_hooks:
+            enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {
+            "before_plan": {"command": "speckit.test-ext.hello"}
+        }
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        config = project_dir / ".specify/extensions.yml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            "installed:\n  - test-ext\nhooks:\n  before_plan:\n"
+            "    - extension: test-ext\n      command: speckit.test-ext.old\n",
+            encoding="utf-8",
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+        stored = yaml.safe_load(config.read_text(encoding="utf-8"))
+        assert stored["installed"] == ["test-ext"]
+        assert [entry["command"] for entry in stored["hooks"]["before_plan"]] == [
+            "speckit.test-ext.hello"
+        ]
+        cache = project_dir / ".specify/hook-dispatch"
+        if native_hooks:
+            assert cache.is_dir()
+            assert json.loads((cache / "before_plan.json").read_text())["hooks"][0]["command"] == (
+                "speckit.test-ext.hello"
+            )
+        else:
+            assert not cache.exists()
+
+    def test_install_reports_failed_hook_snapshot_restoration(
+        self, extension_dir, project_dir
+    ):
+        enable_native_hooks(project_dir)
+        manager = ExtensionManager(project_dir)
+        with patch.object(
+            HookExecutor, "register_hooks", side_effect=OSError("publication failed")
+        ), patch(
+            "specify_cli.extensions._hook_projection.restore",
+            side_effect=OSError("restore failed"),
+        ):
+            with pytest.raises(ExtensionError) as error:
+                manager.install_from_directory(
+                    extension_dir, "0.1.0", register_commands=False
+                )
+        assert "publication failed" in str(error.value)
+        assert "rollback failed: hooks: restore failed" in str(error.value)
+        assert not manager.registry.is_installed("test-ext")
+
     def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
         enable_native_hooks(project_dir)
         config = project_dir / ".specify/extensions.yml"

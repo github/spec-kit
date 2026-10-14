@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,99 @@ def validate_event_name(event: object) -> None:
 
 def _cache_path(config_file: Path) -> Path:
     return config_file.parent / "hook-dispatch"
+
+
+@dataclass(frozen=True)
+class HookState:
+    source: bytes | None
+    cache: dict[str, bytes] | None
+
+
+def _read_state(config_file: Path) -> HookState:
+    _check_paths(config_file)
+    cache = _cache_path(config_file)
+    return HookState(
+        config_file.read_bytes() if config_file.exists() else None,
+        {entry.name: entry.read_bytes() for entry in cache.iterdir()}
+        if cache.exists() else None,
+    )
+
+
+def snapshot(config_file: Path) -> HookState:
+    """Capture the exact on-disk YAML and projection under the publication lock."""
+    root = config_file.parent
+    with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
+        root.parent, ".hook-dispatch.lock", context="hook projection"
+    ):
+        return _read_state(config_file)
+
+
+def restore(config_file: Path, previous: HookState) -> None:
+    """Restore an exact hook snapshot, including absent files and cache contents."""
+    root = config_file.parent
+    cache = _cache_path(config_file)
+    with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
+        root.parent, ".hook-dispatch.lock", context="hook projection"
+    ):
+        current = _read_state(config_file)
+        if current == previous:
+            return
+        stage = Path(tempfile.mkdtemp(prefix=".hook-restore-", dir=root))
+        retain_stage = False
+        moved = False
+        installed = False
+        try:
+            if previous.cache is not None:
+                staged_cache = stage / "cache"
+                staged_cache.mkdir()
+                for name, content in previous.cache.items():
+                    (staged_cache / name).write_bytes(content)
+            if previous.source is not None:
+                (stage / "source.yml").write_bytes(previous.source)
+            with changing_file(cache, removal=previous.cache is None):
+                if cache.exists():
+                    os.replace(cache, stage / "previous-cache")
+                    moved = True
+                if previous.cache is not None:
+                    os.replace(stage / "cache", cache)
+                    installed = True
+            if previous.source is None:
+                with changing_file(config_file, removal=True):
+                    config_file.unlink(missing_ok=True)
+            else:
+                with changing_file(config_file):
+                    os.replace(stage / "source.yml", config_file)
+        except Exception as exc:
+            try:
+                if installed:
+                    with changing_file(cache, removal=True):
+                        shutil.rmtree(cache)
+                if moved:
+                    with changing_file(cache):
+                        os.replace(stage / "previous-cache", cache)
+                if current.source is None:
+                    with changing_file(config_file, removal=True):
+                        config_file.unlink(missing_ok=True)
+                elif not config_file.is_file() or config_file.read_bytes() != current.source:
+                    (stage / "rollback.yml").write_bytes(current.source)
+                    with changing_file(config_file):
+                        os.replace(stage / "rollback.yml", config_file)
+            except Exception as rollback_exc:
+                retain_stage = True
+                raise OSError(
+                    f"Hook snapshot restoration failed ({exc}); rollback failed "
+                    f"({rollback_exc}); backup retained at {stage}"
+                ) from exc
+            raise
+        finally:
+            if not retain_stage:
+                try:
+                    shutil.rmtree(stage)
+                except OSError as exc:
+                    logging.getLogger(__name__).warning(
+                        "Could not remove hook snapshot staging %s: %s",
+                        stage, exc,
+                    )
 
 
 def _check_paths(config_file: Path) -> None:

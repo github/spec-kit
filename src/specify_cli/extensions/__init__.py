@@ -2463,7 +2463,8 @@ class ExtensionManager:
         manifest = ExtensionManifest(manifest_path)
         from ._hook_projection import projection_enabled, project_hooks
 
-        if projection_enabled(self.project_root):
+        native_hooks = projection_enabled(self.project_root)
+        if native_hooks:
             try:
                 project_hooks({"hooks": {
                     event: [
@@ -3124,6 +3125,7 @@ class ExtensionManager:
 
         hooks_started = False
         hooks_finished = False
+        hook_snapshot = None
         registry_started = False
         registered_commands = {}
         registered_skills = []
@@ -3157,6 +3159,10 @@ class ExtensionManager:
 
             # Register hooks and update installed list in extensions.yml
             hook_executor = HookExecutor(self.project_root)
+            if native_hooks:
+                from ._hook_projection import snapshot
+
+                hook_snapshot = snapshot(hook_executor.config_file)
             hooks_started = True
             hook_executor.register_hooks(manifest)
             hooks_finished = True
@@ -3220,7 +3226,12 @@ class ExtensionManager:
                         rollback_errors.append(f"registry: {error}")
                 if hooks_started:
                     try:
-                        hook_executor.unregister_hooks(manifest.id)
+                        if hook_snapshot is not None and not hooks_finished:
+                            from ._hook_projection import restore
+
+                            restore(hook_executor.config_file, hook_snapshot)
+                        else:
+                            hook_executor.unregister_hooks(manifest.id)
                     except Exception as error:
                         rollback_errors.append(f"hooks: {error}")
                 if registered_commands:
@@ -3582,11 +3593,11 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
-        from ._hook_projection import projection_enabled
+        from ._hook_projection import projection_enabled, restore, snapshot
 
         hook_executor = HookExecutor(self.project_root)
         projection_active = projection_enabled(self.project_root)
-        original_hook_config = hook_executor.load_project_config_for_update()
+        hook_executor.load_project_config_for_update()
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
@@ -3601,14 +3612,15 @@ class ExtensionManager:
             registered_skills = []
 
         extension_dir = self.extensions_dir / extension_id
+        hook_snapshot = snapshot(hook_executor.config_file) if projection_active else None
 
         # Publication can fail even after preflight (for example, on a disk
         # error). Keep all invocation artifacts and sources intact until the
         # extension has been removed from the hook configuration.
-        if projection_active:
-            hook_executor.unregister_hooks(extension_id)
-
         try:
+            if projection_active:
+                hook_executor.unregister_hooks(extension_id)
+
             # Unregister commands from all AI agents
             if registered_commands:
                 safe_commands = dict(registered_commands)
@@ -3674,9 +3686,9 @@ class ExtensionManager:
             # Update registry
             self.registry.remove(extension_id)
         except Exception as exc:
-            if projection_active:
+            if hook_snapshot is not None:
                 try:
-                    hook_executor.save_project_config(original_hook_config)
+                    restore(hook_executor.config_file, hook_snapshot)
                 except (ValueError, OSError) as rollback_exc:
                     raise ExtensionError(
                         f"Extension removal failed ({exc}); hook rollback failed: {rollback_exc}"

@@ -5,10 +5,12 @@ Mirrors ``specify_cli.extensions.command_remove``.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 import yaml
 
@@ -209,22 +211,58 @@ class TestExtensionRemoveCLI:
         assert (config.read_bytes(), (cache / "before_plan.json").read_bytes()) == original
         assert (cache / "source.yml").read_bytes() == config.read_bytes()
 
+    def test_remove_cleanup_failure_preserves_exact_yaml_and_cache(
+        self, tmp_path, extension_dir
+    ):
+        project, manager, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
+        config = project / ".specify/extensions.yml"
+        config.write_bytes(b"# preserve this comment\r\n" + config.read_bytes().replace(b"\n", b"\r\n"))
+        HookExecutor(project).migrate_project_config()
+        cache = project / ".specify/hook-dispatch"
+        original_yaml = config.read_bytes()
+        original_cache = {entry.name: entry.read_bytes() for entry in cache.iterdir()}
+
+        with patch.object(
+            manager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")
+        ):
+            with pytest.raises(OSError, match="cleanup failed"):
+                manager.remove("test-ext")
+        assert manager.registry.is_installed("test-ext")
+        assert artifact.exists()
+        assert config.read_bytes() == original_yaml
+        assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == original_cache
+
+    def test_remove_cleanup_failure_restores_absent_yaml_and_cache(
+        self, tmp_path, extension_dir
+    ):
+        project, manager, _ = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
+        config = project / ".specify/extensions.yml"
+        cache = project / ".specify/hook-dispatch"
+        config.unlink()
+        shutil.rmtree(cache)
+        with patch.object(
+            manager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")
+        ):
+            with pytest.raises(OSError, match="cleanup failed"):
+                manager.remove("test-ext")
+        assert manager.registry.is_installed("test-ext")
+        assert not config.exists()
+        assert not cache.exists()
+
     def test_remove_reports_failed_hook_restoration(
         self, tmp_path, extension_dir
     ):
         project, _, _ = installed_generic_hook_extension(
             tmp_path, extension_dir, native_hooks=True
         )
-        original_save = HookExecutor.save_project_config
-
-        def fail_restore(executor, updated):
-            if updated.get("hooks", {}).get("before_plan"):
-                raise OSError("restore failed")
-            return original_save(executor, updated)
 
         with patch.object(Path, "cwd", return_value=project), \
              patch.object(ExtensionManager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")), \
-             patch.object(HookExecutor, "save_project_config", fail_restore):
+             patch("specify_cli.extensions._hook_projection.restore", side_effect=OSError("restore failed")):
             result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
         assert result.exit_code == 1
         assert "cleanup failed" in result.output

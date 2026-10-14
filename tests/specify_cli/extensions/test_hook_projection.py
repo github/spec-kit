@@ -253,6 +253,30 @@ def test_publication_failure_restores_prior_pair(tmp_path, monkeypatch):
     _assert_snapshot(tmp_path)
     assert not list((tmp_path / ".specify").glob(".hook-stage-*"))
 
+def test_snapshot_restoration_failure_retains_current_pair(tmp_path, monkeypatch):
+    import specify_cli.extensions._hook_projection as projection
+
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    original = projection.snapshot(executor.config_file)
+    executor.save_project_config({"installed": [], "hooks": {}})
+    current = projection.snapshot(executor.config_file)
+    real_replace = projection.os.replace
+    failed = False
+
+    def fail_restore_write(source, target):
+        nonlocal failed
+        if Path(target) == executor.config_file and not failed:
+            failed = True
+            raise OSError("restore write failed")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(projection.os, "replace", fail_restore_write)
+    with pytest.raises(OSError, match="restore write failed"):
+        projection.restore(executor.config_file, original)
+    assert projection.snapshot(executor.config_file) == current
+    assert not list(executor.config_file.parent.glob(".hook-restore-*"))
+
 
 def test_unreadable_existing_config_does_not_allocate_stage(tmp_path):
     executor = _enabled_executor(tmp_path)

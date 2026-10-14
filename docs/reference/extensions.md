@@ -330,10 +330,13 @@ not change execution behavior. For projection portability, missing or invalid
 priorities and values above `2147483647` use the default `10`; the current
 in-process hook reader retains its existing priority handling.
 
-If an opted-in removal fails during subsequent cleanup, Spec Kit restores the
-prior hook configuration and projection or reports a rollback failure. This
-does not make removal of command artifacts and extension sources atomic;
-cleanup already completed may not be reversed.
+If hook publication fails during an opted-in install, Spec Kit restores the
+prior hook configuration and projection, including pre-existing hooks for the
+same extension ID. If an opted-in removal fails during subsequent cleanup,
+it restores the original YAML and complete projection bytes (including
+comments and line endings) or reports a rollback failure. This does not make
+removal of command artifacts and extension sources atomic; cleanup already
+completed may not be reversed.
 
 ```yaml
 installed:
