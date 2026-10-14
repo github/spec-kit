@@ -48,6 +48,13 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
 } else {
     $content = Resolve-TemplateContent -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
     if ($null -ne $content) {
+        if ($content.Length -eq 0) {
+            [Console]::Error.WriteLine(
+                "ERROR: Plan template is empty; no new plan.md was created."
+            )
+            [Console]::Error.WriteLine("Restore a valid plan template and rerun plan setup.")
+            exit 1
+        }
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
@@ -58,16 +65,11 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
             Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
         }
     } else {
-        # Match the bash twin's wording and stream routing (stderr in -Json so
-        # stdout stays pure JSON, stdout otherwise), consistent with the sibling
-        # "Copied plan template" message above.
-        if ($Json) {
-            [Console]::Error.WriteLine("Warning: Plan template not found")
-        } else {
-            Write-Output "Warning: Plan template not found"
-        }
-        # Create a basic plan file if template doesn't exist
-        New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
+        [Console]::Error.WriteLine(
+            "ERROR: Plan template not found; no new plan.md was created."
+        )
+        [Console]::Error.WriteLine("Restore a valid plan template and rerun plan setup.")
+        exit 1
     }
 }
 
