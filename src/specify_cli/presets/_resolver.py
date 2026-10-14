@@ -647,6 +647,13 @@ class PresetResolver:
                 matches.append(
                     (declaration, path if path is not None and path.is_file() else None)
                 )
+            else:
+                # The selector matched this name but no lower-layer resource makes
+                # it eligible. Keep the declaration with no candidate so callers
+                # suppress their convention fallback: collapsing it to nothing
+                # would read as "undeclared" and let a selector resolve (and so
+                # create) a conventional file it was only meant to augment.
+                matches.append((declaration, None))
         return matches
 
     def _has_concrete_resource(
@@ -670,7 +677,41 @@ class PresetResolver:
             return True
         if entry is not None:
             return False
+        if template_type == "command" and self._declares_command_name(base_dir, name):
+            # The manifest declares this command - possibly through a selector
+            # that matches it - so the declaration is authoritative even when its
+            # own payload is unusable. Falling back to the convention lookup here
+            # would treat a selector's payload as a concrete lower resource and
+            # let regex declarations chain, which the contract forbids.
+            return False
         return self._conventional_resource(base_dir, name, template_type) is not None
+
+    def _declares_command_name(self, pack_dir: Path, name: str) -> bool:
+        """Whether this preset's manifest declares ``name`` as a command.
+
+        True for an exact ``command`` declaration and for a selector declaration
+        whose pattern matches ``name``; used only to decide whether the
+        convention lookup may be consulted.
+        """
+        manifest = self._get_manifest(pack_dir)
+        if manifest is None:
+            return False
+        for declaration in manifest.templates:
+            if declaration.get("type") != "command":
+                continue
+            declared_name = declaration.get("name")
+            if not isinstance(declared_name, str):
+                continue
+            if not is_regex_selector(declared_name):
+                if declared_name == name:
+                    return True
+                continue
+            try:
+                if selector_matches(declared_name, name):
+                    return True
+            except Exception:  # noqa: BLE001 - a malformed selector declares nothing
+                continue
+        return False
 
     def _preset_has_concrete_resource(
         self, base_dir: Path, name: str, template_type: str

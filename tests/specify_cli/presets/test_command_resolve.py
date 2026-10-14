@@ -238,3 +238,41 @@ def test_resolve_reports_command_selector_declaration(project_dir):
         result = CliRunner().invoke(app, ["preset", "resolve", "speckit.plan"])
     assert result.exit_code == 0, result.output
     assert r"regex:^speckit\.plan$" in strip_ansi(result.output)
+
+
+def test_resolve_reports_selector_attribution_for_dotless_command(
+    project_dir, temp_dir
+):
+    """A dotless command name must resolve as a command, not as a template.
+
+    Command manifests accept names such as ``new``, so the presence of a dot cannot
+    decide the resource type. Before the fix ``preset resolve new`` classified the
+    name as a template, leaving the selector-attribution branch unreachable and
+    reporting the command as missing even though a selector declared it.
+    """
+    from tests.specify_cli.presets._helpers import (
+        install_selector_fixture,
+        write_command_declarations,
+    )
+
+    lower = write_command_declarations(
+        temp_dir / "lower-exact",
+        "lower-exact",
+        [{"type": "command", "name": "new", "body": "LOWER NEW\n"}],
+    )
+    install_selector_fixture(project_dir, "lower-exact", lower, 20)
+    higher = write_command_declarations(
+        temp_dir / "higher-selector",
+        "higher-selector",
+        [{"type": "command", "name": r"regex:^new$", "body": "SELECTOR NEW\n"}],
+    )
+    install_selector_fixture(project_dir, "higher-selector", higher, 10)
+
+    from unittest.mock import patch
+
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, ["preset", "resolve", "new"])
+
+    assert result.exit_code == 0, (result.output, result.exception)
+    output = strip_ansi(result.output)
+    assert r"regex:^new$" in output, output

@@ -2655,3 +2655,67 @@ def test_three_overlapping_command_regexes_keep_declaration_order_and_compose(
     assert content.index("Declared third start") < content.index("Core command")
     assert content.index("Core command") < content.index("Declared third end")
     assert content.index("Declared third end") < content.index("Declared second")
+
+
+def test_ineligible_selector_declaration_does_not_create_its_conventional_payload(
+    project_dir,
+):
+    """A selector that matches no lower provider must not fabricate the resource.
+
+    Copilot's previously-missed finding: an ineligible matching selector was
+    collapsed to nothing, which callers read as "undeclared" and then satisfied
+    through the convention lookup. A declaration whose payload sits at the
+    conventional location ``commands/foo.md`` therefore resolved that file even
+    though no lower ``foo`` command exists, so the selector created the very
+    resource it was only meant to augment.
+    """
+    from specify_cli.presets import PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "selector-no-lower",
+        [{"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"}],
+    )
+    resolver = PresetResolver(project_dir)
+    pack = project_dir / ".specify" / "presets" / "selector-no-lower"
+
+    declarations = resolver._preset_declarations_for_resource(pack, "foo", "command")
+    assert declarations, "the matching declaration must be preserved, not dropped"
+    assert [candidate for _declaration, candidate in declarations] == [None]
+    assert resolver.resolve("foo", "command") is None
+    assert resolver.collect_all_layers("foo", "command") == []
+
+
+def test_unmatched_selector_payload_is_not_evidence_for_a_higher_selector(project_dir):
+    """Selector declarations must not chain through their own conventional payload.
+
+    A lower preset declaring ``regex:^foo$`` with its payload at ``commands/foo.md``
+    was discovered by the convention lookup, so it counted as a concrete lower
+    resource and made a higher ``regex:^foo$`` eligible - even though the contract
+    forbids using another selector declaration as evidence of existence.
+    """
+    from specify_cli.presets import PresetRegistry, PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    for preset_id in ("selector-lower", "selector-higher"):
+        write_diagnostic_selector_preset(
+            project_dir,
+            preset_id,
+            [{"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"}],
+        )
+    registry = PresetRegistry(project_dir / ".specify" / "presets")
+    registry.add("selector-lower", {"enabled": True, "priority": 20, "version": "1.0.0"})
+    registry.add("selector-higher", {"enabled": True, "priority": 10, "version": "1.0.0"})
+
+    resolver = PresetResolver(project_dir)
+    presets_dir = project_dir / ".specify" / "presets"
+    assert (
+        resolver._has_concrete_resource(presets_dir / "selector-lower", "foo", "command")
+        is False
+    )
+    higher = resolver._preset_declarations_for_resource(
+        presets_dir / "selector-higher", "foo", "command"
+    )
+    assert [candidate for _declaration, candidate in higher] == [None]
+    assert resolver.resolve("foo", "command") is None

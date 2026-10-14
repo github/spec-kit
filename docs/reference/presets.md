@@ -337,8 +337,12 @@ Zero-match and invalid patterns are handled as follows:
 
 A `regex:` selector pattern is validated when a preset is installed, and again
 whenever a selector is evaluated — including a selector found in a manifest that is
-already on disk. Validation enforces these limits, and a pattern past one of them is
-rejected with a `PresetValidationError` that names the limit it broke:
+already on disk. The pattern, compiled-state and compiled-edge limits are enforced when the manifest
+is validated, and a pattern past one of them is rejected with a
+`PresetValidationError` that names the limit it broke. The resource-name limit applies
+to the names a selector is matched against, not to the manifest: an oversized concrete
+name is a warned non-match (`selector_matches` returns `False`) rather than an invalid
+preset:
 
 | Limit | Value |
 | --- | --- |
