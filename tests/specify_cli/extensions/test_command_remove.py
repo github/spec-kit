@@ -136,7 +136,7 @@ class TestExtensionRemoveCLI:
         assert (project_dir / ".specify/extensions/test-ext").exists()
         assert config.read_text(encoding="utf-8") == "hooks:\n  before_plan: invalid\n"
 
-    def test_remove_publication_failure_retains_generic_installation(
+    def test_remove_publication_failure_reports_partial_cleanup_and_recovery(
         self, tmp_path, extension_dir
     ):
         project, _, artifact = installed_generic_hook_extension(
@@ -146,24 +146,27 @@ class TestExtensionRemoveCLI:
         extension_dir = project / ".specify/extensions/test-ext"
         config = project / ".specify/extensions.yml"
         cache = project / ".specify/hook-dispatch"
-        original = (artifact.read_bytes(), config.read_bytes(), (cache / "source.yml").read_bytes())
-        original_save = HookExecutor.save_project_config
+        original_source = (cache / "source.yml").read_bytes()
+        real_write = Path.write_bytes
 
-        def fail_hook_removal(executor, updated):
-            if not updated.get("hooks", {}).get("before_plan"):
+        def fail_index(path, content):
+            if path == cache / "events.txt":
                 raise OSError("projection failed")
-            return original_save(executor, updated)
+            return real_write(path, content)
 
         with patch.object(Path, "cwd", return_value=project), \
-             patch.object(HookExecutor, "save_project_config", fail_hook_removal):
+             patch.object(Path, "write_bytes", fail_index):
             result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
         assert result.exit_code == 1
         assert "projection failed" in result.output
+        assert "refresh-shared-infra" in result.output
         assert manager.registry.is_installed("test-ext")
-        assert extension_dir.is_dir()
-        assert (artifact.read_bytes(), config.read_bytes(), (cache / "source.yml").read_bytes()) == original
+        assert not extension_dir.exists()
+        assert not artifact.exists()
+        assert config.read_bytes() != original_source
+        assert (cache / "source.yml").read_bytes() == original_source
 
-    def test_remove_artifact_failure_restores_published_hooks(
+    def test_remove_artifact_failure_leaves_published_hooks_untouched(
         self, tmp_path, extension_dir
     ):
         project, _, artifact = installed_generic_hook_extension(
@@ -185,7 +188,7 @@ class TestExtensionRemoveCLI:
         assert yaml.safe_load(config.read_text())["hooks"]["before_plan"][0]["extension"] == "test-ext"
         assert (cache / "before_plan.json").is_file()
 
-    def test_remove_partial_cleanup_restores_hooks_not_artifacts(
+    def test_remove_partial_cleanup_leaves_hooks_untouched_not_artifacts(
         self, tmp_path, extension_dir
     ):
         project, _, artifact = installed_generic_hook_extension(
@@ -234,7 +237,7 @@ class TestExtensionRemoveCLI:
         assert config.read_bytes() == original_yaml
         assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == original_cache
 
-    def test_remove_cleanup_failure_restores_absent_yaml_and_cache(
+    def test_remove_cleanup_failure_leaves_absent_yaml_and_cache_untouched(
         self, tmp_path, extension_dir
     ):
         project, manager, _ = installed_generic_hook_extension(
@@ -253,18 +256,18 @@ class TestExtensionRemoveCLI:
         assert not config.exists()
         assert not cache.exists()
 
-    def test_remove_reports_failed_hook_restoration(
+    def test_default_remove_cleanup_failure_keeps_legacy_hook(
         self, tmp_path, extension_dir
     ):
-        project, _, _ = installed_generic_hook_extension(
-            tmp_path, extension_dir, native_hooks=True
+        project, manager, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=False
         )
-
-        with patch.object(Path, "cwd", return_value=project), \
-             patch.object(ExtensionManager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")), \
-             patch("specify_cli.extensions._hook_projection.restore", side_effect=OSError("restore failed")):
-            result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
-        assert result.exit_code == 1
-        assert "cleanup failed" in result.output
-        assert "hook rollback failed" in result.output
-        assert "restore failed" in " ".join(result.output.split())
+        config = project / ".specify/extensions.yml"
+        original = config.read_bytes()
+        with patch.object(manager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")):
+            with pytest.raises(OSError, match="cleanup failed"):
+                manager.remove("test-ext")
+        assert artifact.exists()
+        assert manager.registry.is_installed("test-ext")
+        assert config.read_bytes() == original
+        assert not (project / ".specify/hook-dispatch").exists()

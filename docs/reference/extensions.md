@@ -331,13 +331,18 @@ not change execution behavior. For projection portability, missing or invalid
 priorities and values above `2147483647` use the default `10`; the current
 in-process hook reader retains its existing priority handling.
 
-If hook publication fails during an opted-in install, Spec Kit restores the
-prior hook configuration and projection, including pre-existing hooks for the
-same extension ID. If an opted-in removal fails during subsequent cleanup,
-it restores the original YAML and complete projection bytes (including
-comments and line endings) or reports a rollback failure. This does not make
-removal of command artifacts and extension sources atomic; cleanup already
-completed may not be reversed.
+Opted-in hook configuration and projection writes are direct, not atomic. If
+an I/O error interrupts a write, Spec Kit reports the failure, but
+`.specify/extensions.yml` or `.specify/hook-dispatch/` may be incomplete.
+Fix the filesystem error, inspect and repair `extensions.yml` if needed, then
+retry the extension operation or refresh shared infrastructure with
+`specify integration switch <current-key> --refresh-shared-infra`. A failed
+install publication does not automatically unregister pre-existing hooks for
+the same extension ID. Removal cleans up invocation artifacts and sources
+before unregistering hooks; a cleanup failure can leave partially removed
+artifacts but does not itself remove hooks. If hook publication then fails,
+manual repair may be necessary. Git cannot recover uncommitted changes to
+these files.
 
 ```yaml
 installed:

@@ -1,22 +1,18 @@
-"""Validated, transactional projection of extension hooks for future dispatchers."""
+"""Validated projection of extension hooks for future dispatchers."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import logging
-import os
 import re
 import shutil
-import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from .._init_options import load_init_options
-from ..integrations._file_changes import changing_file
+from ..integrations._file_changes import changing_file, unlink, write_bytes
 from . import DEFAULT_HOOK_PRIORITY, normalize_priority
 
 _EVENT = re.compile(r"(before|after)_[a-z0-9][a-z0-9_]*\Z")
@@ -50,92 +46,6 @@ def validate_event_name(event: object) -> None:
 
 def _cache_path(config_file: Path) -> Path:
     return config_file.parent / "hook-dispatch"
-
-
-@dataclass(frozen=True)
-class HookState:
-    source: bytes | None
-    cache: dict[str, bytes] | None
-
-
-def _read_state(config_file: Path) -> HookState:
-    _check_paths(config_file)
-    cache = _cache_path(config_file)
-    return HookState(
-        config_file.read_bytes() if config_file.exists() else None,
-        {entry.name: entry.read_bytes() for entry in cache.iterdir()}
-        if cache.exists() else None,
-    )
-
-
-def snapshot(config_file: Path) -> HookState:
-    """Capture the exact on-disk YAML and projection for lifecycle rollback."""
-    return _read_state(config_file)
-
-
-def restore(config_file: Path, previous: HookState) -> None:
-    """Restore an exact hook snapshot, including absent files and cache contents."""
-    root = config_file.parent
-    cache = _cache_path(config_file)
-    current = _read_state(config_file)
-    if current == previous:
-        return
-    stage = Path(tempfile.mkdtemp(prefix=".hook-restore-", dir=root))
-    retain_stage = False
-    moved = False
-    installed = False
-    try:
-        if previous.cache is not None:
-            staged_cache = stage / "cache"
-            staged_cache.mkdir()
-            for name, content in previous.cache.items():
-                (staged_cache / name).write_bytes(content)
-        if previous.source is not None:
-            (stage / "source.yml").write_bytes(previous.source)
-        with changing_file(cache, removal=previous.cache is None):
-            if cache.exists():
-                os.replace(cache, stage / "previous-cache")
-                moved = True
-            if previous.cache is not None:
-                os.replace(stage / "cache", cache)
-                installed = True
-        if previous.source is None:
-            with changing_file(config_file, removal=True):
-                config_file.unlink(missing_ok=True)
-        else:
-            with changing_file(config_file):
-                os.replace(stage / "source.yml", config_file)
-    except Exception as exc:
-        try:
-            if installed:
-                with changing_file(cache, removal=True):
-                    shutil.rmtree(cache)
-            if moved:
-                with changing_file(cache):
-                    os.replace(stage / "previous-cache", cache)
-            if current.source is None:
-                with changing_file(config_file, removal=True):
-                    config_file.unlink(missing_ok=True)
-            elif not config_file.is_file() or config_file.read_bytes() != current.source:
-                (stage / "rollback.yml").write_bytes(current.source)
-                with changing_file(config_file):
-                    os.replace(stage / "rollback.yml", config_file)
-        except Exception as rollback_exc:
-            retain_stage = True
-            raise OSError(
-                f"Hook snapshot restoration failed ({exc}); rollback failed "
-                f"({rollback_exc}); backup retained at {stage}"
-            ) from exc
-        raise
-    finally:
-        if not retain_stage:
-            try:
-                shutil.rmtree(stage)
-            except OSError as exc:
-                logging.getLogger(__name__).warning(
-                    "Could not remove hook snapshot staging %s: %s",
-                    stage, exc,
-                )
 
 
 def _check_paths(config_file: Path) -> None:
@@ -223,19 +133,19 @@ def retire(config_file: Path) -> None:
 
 
 def _write_digest(directory: Path, name: str, payload: bytes) -> None:
-    (directory / name).write_bytes(payload)
-    (directory / f"{name}.sha256").write_text(
-        hashlib.sha256(payload).hexdigest() + "\n", encoding="ascii"
+    write_bytes(directory / name, payload)
+    write_bytes(
+        directory / f"{name}.sha256",
+        (hashlib.sha256(payload).hexdigest() + "\n").encode("ascii"),
     )
 
 
 def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool = False) -> None:
-    """Publish one complete projection and its YAML source, or restore the prior pair."""
+    """Write the validated hook configuration and projection directly."""
     if not preserve_source:
         projected = project_hooks(config)
         rendered = yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True).encode("utf-8")
     root = config_file.parent
-    root.mkdir(parents=True, exist_ok=True)
     _check_paths(config_file)
     if preserve_source:
         source = config_file.read_bytes()
@@ -249,61 +159,25 @@ def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool 
     else:
         source = rendered
     cache = _cache_path(config_file)
-    old_config = config_file.read_bytes() if config_file.exists() else None
-    stage = Path(tempfile.mkdtemp(prefix=".hook-stage-", dir=root))
-    backup = root / f"{stage.name}.backup"
-    moved = False
-    installed = False
     try:
-        if cache.exists():
-            for child in cache.iterdir():
-                if child.name not in {"source.yml", "events.txt", "events.txt.sha256"} and not child.name.endswith((".json", ".sha256")):
-                    shutil.copy2(child, stage / child.name)
-        for event, payload in projected.items():
-            _write_digest(stage, f"{event}.json", payload)
-        _write_digest(stage, "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
-        (stage / "source.yml").write_bytes(source)
-        with changing_file(cache):
-            if cache.exists():
-                os.replace(cache, backup)
-                moved = True
-            os.replace(stage, cache)
-            installed = True
+        root.mkdir(parents=True, exist_ok=True)
         if not preserve_source:
-            temporary = root / f"{stage.name}.yml"
-            try:
-                temporary.write_bytes(rendered)
-                with changing_file(config_file):
-                    os.replace(temporary, config_file)
-            finally:
-                temporary.unlink(missing_ok=True)
-    except Exception as exc:
-        try:
-            if installed:
-                with changing_file(cache, removal=True):
-                    shutil.rmtree(cache)
-            if moved:
-                with changing_file(cache):
-                    os.replace(backup, cache)
-            if not preserve_source:
-                if old_config is None:
-                    with changing_file(config_file, removal=True):
-                        config_file.unlink(missing_ok=True)
-                elif config_file.read_bytes() != old_config:
-                    with changing_file(config_file):
-                        config_file.write_bytes(old_config)
-        except Exception as rollback_exc:
-            raise OSError(f"Hook projection publication failed ({exc}); rollback failed: {rollback_exc}") from exc
-        raise
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    if moved:
-        try:
-            shutil.rmtree(backup)
-        except OSError as exc:
-            logging.getLogger(__name__).warning(
-                "Hook projection committed; could not remove backup %s: %s",
-                backup,
-                exc,
-            )
+            write_bytes(config_file, rendered)
+        cache.mkdir(exist_ok=True)
+        retained = {"source.yml", "events.txt", "events.txt.sha256"}
+        for event, payload in projected.items():
+            name = f"{event}.json"
+            _write_digest(cache, name, payload)
+            retained.update((name, f"{name}.sha256"))
+        _write_digest(cache, "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
+        write_bytes(cache / "source.yml", source)
+        for child in cache.iterdir():
+            if child.name not in retained and child.name.endswith((".json", ".sha256")):
+                unlink(child)
+    except OSError as exc:
+        raise OSError(
+            f"Hook projection write failed ({exc}); .specify/extensions.yml or "
+            ".specify/hook-dispatch/ may be incomplete. Repair the filesystem and "
+            "extensions.yml if needed, then retry the extension operation or run "
+            "`specify integration switch <current-key> --refresh-shared-infra`."
+        ) from exc

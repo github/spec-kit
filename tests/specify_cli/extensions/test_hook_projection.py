@@ -226,82 +226,93 @@ def test_refuse_symlinked_config_and_cache_before_mutation(tmp_path):
     assert executor.config_file.read_text() == "hooks: {}\n"
 
 
-def test_publication_failure_restores_prior_pair(tmp_path, monkeypatch):
-    import specify_cli.extensions._hook_projection as projection
-
+def test_partial_direct_config_write_requires_manual_repair_and_refresh(tmp_path, monkeypatch):
     executor = _enabled_executor(tmp_path)
     executor.save_project_config(_config())
     source = executor.config_file.read_bytes()
     payload = (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes()
-    real_replace = projection.os.replace
+    real_write = Path.write_bytes
 
-    def fail_config_write(src, dst):
-        if Path(dst) == executor.config_file:
+    def fail_config_write(path, content):
+        if path == executor.config_file:
+            real_write(path, b"hooks:\n  before_plan: [\n")
             raise OSError("simulated config write failure")
-        return real_replace(src, dst)
+        return real_write(path, content)
 
-    monkeypatch.setattr(projection.os, "replace", fail_config_write)
-    with pytest.raises(OSError, match="simulated config"):
+    monkeypatch.setattr(Path, "write_bytes", fail_config_write)
+    with pytest.raises(OSError, match="simulated config write failure.*refresh-shared-infra"):
         executor.save_project_config({"installed": [], "hooks": {}})
-    assert executor.config_file.read_bytes() == source
+    assert executor.config_file.read_bytes() != source
     assert (tmp_path / ".specify/hook-dispatch/before_plan.json").read_bytes() == payload
+    with pytest.raises(ValueError, match="Invalid extension configuration"):
+        executor.migrate_project_config()
+    monkeypatch.setattr(Path, "write_bytes", real_write)
+    executor.config_file.write_bytes(source)
+    executor.migrate_project_config()
     _assert_snapshot(tmp_path)
-    assert not list((tmp_path / ".specify").glob(".hook-stage-*"))
 
-def test_snapshot_restoration_failure_retains_current_pair(tmp_path, monkeypatch):
+
+def test_direct_cache_write_failure_leaves_partial_state_then_refresh_repairs(tmp_path, monkeypatch):
     import specify_cli.extensions._hook_projection as projection
 
     executor = _enabled_executor(tmp_path)
     executor.save_project_config(_config())
-    original = projection.snapshot(executor.config_file)
-    executor.save_project_config({"installed": [], "hooks": {}})
-    current = projection.snapshot(executor.config_file)
-    real_replace = projection.os.replace
-    failed = False
+    cache = tmp_path / ".specify/hook-dispatch"
+    old_source = executor.config_file.read_bytes()
+    old_index = (cache / "events.txt").read_bytes()
+    updated = {"installed": ["example"], "hooks": {"after_tasks": []}}
+    real_write = projection.write_bytes
 
-    def fail_restore_write(source, target):
-        nonlocal failed
-        if Path(target) == executor.config_file and not failed:
-            failed = True
-            raise OSError("restore write failed")
-        return real_replace(source, target)
+    def fail_index(path, content):
+        if path == cache / "events.txt":
+            raise OSError("disk full")
+        return real_write(path, content)
 
-    monkeypatch.setattr(projection.os, "replace", fail_restore_write)
-    with pytest.raises(OSError, match="restore write failed"):
-        projection.restore(executor.config_file, original)
-    assert projection.snapshot(executor.config_file) == current
-    assert not list(executor.config_file.parent.glob(".hook-restore-*"))
+    monkeypatch.setattr(projection, "write_bytes", fail_index)
+    with pytest.raises(OSError, match="disk full.*refresh-shared-infra"):
+        executor.save_project_config(updated)
+    assert executor.config_file.read_bytes() != old_source
+    assert (cache / "source.yml").read_bytes() == old_source
+    assert (cache / "events.txt").read_bytes() == old_index
+    monkeypatch.setattr(projection, "write_bytes", real_write)
+    executor.migrate_project_config()
+    assert (cache / "source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert (cache / "events.txt").read_bytes() == b"after_tasks\n"
+    assert not (cache / "before_plan.json").exists()
 
 
-def test_unreadable_existing_config_does_not_allocate_stage(tmp_path):
+def test_unreadable_existing_config_does_not_create_projection(tmp_path):
     executor = _enabled_executor(tmp_path)
     executor.config_file.parent.mkdir(exist_ok=True)
     executor.config_file.mkdir()
     with pytest.raises(OSError):
         executor.save_project_config(_config())
-    assert not list(executor.config_file.parent.glob(".hook-stage-*"))
     assert not (tmp_path / ".specify/hook-dispatch").exists()
 
 
-def test_backup_cleanup_failure_warns_after_successful_publication(tmp_path, monkeypatch, caplog):
+def test_direct_stale_event_cleanup_failure_reports_and_refresh_repairs(tmp_path, monkeypatch):
     import specify_cli.extensions._hook_projection as projection
 
     executor = _enabled_executor(tmp_path)
     executor.save_project_config(_config())
-    real_rmtree = projection.shutil.rmtree
+    cache = tmp_path / ".specify/hook-dispatch"
+    real_unlink = projection.unlink
 
-    def fail_backup_cleanup(path, *args, **kwargs):
-        if str(path).endswith(".backup"):
-            raise OSError("backup cleanup failed")
-        return real_rmtree(path, *args, **kwargs)
+    def fail_stale_cleanup(path):
+        if path == cache / "before_plan.json":
+            raise OSError("cannot remove stale event")
+        return real_unlink(path)
 
-    monkeypatch.setattr(projection.shutil, "rmtree", fail_backup_cleanup)
+    monkeypatch.setattr(projection, "unlink", fail_stale_cleanup)
     updated = {"installed": ["example"], "hooks": {"after_plan": []}}
-    executor.save_project_config(updated)
-    assert "backup cleanup failed" in caplog.text
+    with pytest.raises(OSError, match="cannot remove stale event.*refresh-shared-infra"):
+        executor.save_project_config(updated)
     assert yaml.safe_load(executor.config_file.read_text(encoding="utf-8")) == updated
     assert (tmp_path / ".specify/hook-dispatch/source.yml").read_bytes() == executor.config_file.read_bytes()
     assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"after_plan\n"
+    assert (cache / "before_plan.json").exists()
+    monkeypatch.setattr(projection, "unlink", real_unlink)
+    executor.migrate_project_config()
     assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
 
 

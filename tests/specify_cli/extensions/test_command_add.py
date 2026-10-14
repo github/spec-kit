@@ -107,8 +107,6 @@ class TestExtensionAddCLI:
     def test_install_publication_failure_keeps_preexisting_same_id_hooks(
         self, extension_dir, project_dir, monkeypatch
     ):
-        import specify_cli.extensions._hook_projection as projection
-
         enable_native_hooks(project_dir)
         config = project_dir / ".specify/extensions.yml"
         config.parent.mkdir(parents=True, exist_ok=True)
@@ -123,19 +121,16 @@ class TestExtensionAddCLI:
         cache = project_dir / ".specify/hook-dispatch"
         original = config.read_bytes()
         prior_cache = {entry.name: entry.read_bytes() for entry in cache.iterdir()}
-        real_replace = projection.os.replace
-        failed = False
+        real_write = Path.write_bytes
 
-        def fail_config_write(source, target):
-            nonlocal failed
-            if Path(target) == config and not failed:
-                failed = True
+        def fail_config_write(path, content):
+            if path == config:
                 raise OSError("simulated hook publication failure")
-            return real_replace(source, target)
+            return real_write(path, content)
 
-        monkeypatch.setattr(projection.os, "replace", fail_config_write)
+        monkeypatch.setattr(Path, "write_bytes", fail_config_write)
         manager = ExtensionManager(project_dir)
-        with pytest.raises(OSError, match="simulated hook publication failure"):
+        with pytest.raises(OSError, match="simulated hook publication failure.*refresh-shared-infra"):
             manager.install_from_directory(
                 extension_dir, "0.1.0", register_commands=False
             )
@@ -180,23 +175,17 @@ class TestExtensionAddCLI:
         else:
             assert not cache.exists()
 
-    def test_install_reports_failed_hook_snapshot_restoration(
+    def test_install_publication_failure_reports_error_without_unregistration(
         self, extension_dir, project_dir
     ):
         enable_native_hooks(project_dir)
         manager = ExtensionManager(project_dir)
-        with patch.object(
-            HookExecutor, "register_hooks", side_effect=OSError("publication failed")
-        ), patch(
-            "specify_cli.extensions._hook_projection.restore",
-            side_effect=OSError("restore failed"),
-        ):
-            with pytest.raises(ExtensionError) as error:
+        with patch.object(HookExecutor, "register_hooks", side_effect=OSError("publication failed")), \
+             patch.object(HookExecutor, "unregister_hooks", side_effect=AssertionError("must not unregister")):
+            with pytest.raises(OSError, match="publication failed"):
                 manager.install_from_directory(
                     extension_dir, "0.1.0", register_commands=False
                 )
-        assert "publication failed" in str(error.value)
-        assert "rollback failed: hooks: restore failed" in str(error.value)
         assert not manager.registry.is_installed("test-ext")
 
     def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
@@ -241,12 +230,7 @@ class TestExtensionAddCLI:
         assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
         assert not (project_dir / ".specify/extensions/test-ext").exists()
         assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
-        config = project_dir / ".specify/extensions.yml"
-        if config.exists():
-            assert "test-ext" not in (config.read_text(encoding="utf-8"))
-        cache = project_dir / ".specify/hook-dispatch"
-        if cache.exists():
-            assert (cache / "source.yml").read_bytes() == config.read_bytes()
+        assert not (project_dir / ".specify/extensions.yml").exists()
 
     @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
     def test_default_add_accepts_legacy_hook_event_without_projection(

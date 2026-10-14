@@ -64,3 +64,11 @@ before acting.
   worktree's own virtualenv (`uv sync --extra test` then
   `.venv/bin/python -m pytest`). A bare `uv run pytest` can pick up an
   editable install from another worktree and fail to import new subpackages.
+- **Mutating CLI workflows:** Assume the project directory is writable and
+  only one Specify CLI invocation mutates a project at a time. Prefer simple
+  direct writes and report exceptional filesystem failures plainly. Do not
+  introduce speculative locks, staging, compare-and-swap, or elaborate
+  recovery for concurrent invocations, read-only destinations, or disk
+  exhaustion without a concrete supported use case. Preserve semantic
+  validation and ordinary supported-workflow invariants; this guidance does
+  not call for removing existing safeguards in unrelated commands.
