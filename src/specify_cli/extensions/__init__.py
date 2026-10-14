@@ -3671,6 +3671,7 @@ class ExtensionManager:
         Returns False when the extension is already disabled.
         """
         from .. import load_init_options
+        from ._hook_projection import projection_enabled
 
         hook_executor = HookExecutor(self.project_root)
         config = hook_executor.load_project_config_for_update()
@@ -3682,32 +3683,165 @@ class ExtensionManager:
         if not metadata.get("enabled", True):
             return False
 
+        native_hooks = projection_enabled(self.project_root)
+        previous_hook_states = [
+            {"event": event, "command": hook["command"], "enabled": hook.get("enabled", True)}
+            for event, hooks in config.get("hooks", {}).items()
+            for hook in hooks
+            if hook.get("extension") == extension_id
+        ] if native_hooks else []
         generic = load_init_options(self.project_root).get("ai") == "generic"
         if generic:
             self.disable_generic_extension_artifacts(extension_id)
         else:
             self.registry.update(extension_id, {"enabled": False})
 
+        try:
+            if native_hooks:
+                self.registry.update(extension_id, {"disabled_hook_states": previous_hook_states})
+            if "hooks" in config:
+                for hooks in config["hooks"].values():
+                    for hook in hooks:
+                        if hook.get("extension") == extension_id:
+                            hook["enabled"] = False
+                hook_executor.save_project_config(config)
+        except (ValueError, OSError, ExtensionError) as exc:
+            try:
+                if generic:
+                    self.restore_generic_extension_after_failed_disable(
+                        extension_id, metadata
+                    )
+                if native_hooks:
+                    self.registry.restore(extension_id, metadata)
+                elif not generic:
+                    self.registry.update(extension_id, {"enabled": True})
+            except (ExtensionError, ValueError, OSError) as rollback_exc:
+                raise ExtensionError(
+                    f"{exc}; rollback failed: {rollback_exc}"
+                ) from exc
+            raise
+        return True
+
+    def enable(self, extension_id: str) -> bool:
+        """Enable an installed extension, its generic invocations, and prior hooks.
+
+        Returns False when the extension is already enabled.
+        """
+        from .. import load_init_options
+        from .._init_options import is_ai_skills_enabled
+        from ._hook_projection import projection_enabled
+
+        hook_executor = HookExecutor(self.project_root)
+        config = hook_executor.load_project_config_for_update()
+        metadata = self.registry.get(extension_id)
+        if not isinstance(metadata, dict):
+            raise ExtensionError(
+                f"Extension '{extension_id}' not found in registry (corrupted state)"
+            )
+        if metadata.get("enabled", True):
+            return False
+
+        native_hooks = projection_enabled(self.project_root)
+        if native_hooks:
+            previous = metadata.get("disabled_hook_states")
+            if previous is None:
+                manifest = self.get_extension(extension_id)
+                if manifest is None:
+                    raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+                previous = [
+                    {"event": event, "command": entry["command"], "enabled": entry.get("enabled", True)}
+                    for event, entries in manifest.hooks.items()
+                    for entry in coerce_hook_entries(entries)
+                    if isinstance(entry, dict) and entry.get("command")
+                ]
+            owned = [
+                (event, hook)
+                for event, hooks in config.get("hooks", {}).items()
+                for hook in hooks
+                if hook.get("extension") == extension_id
+            ]
+            if (
+                not isinstance(previous, list)
+                or len(previous) != len(owned)
+                or any(
+                    not isinstance(state, dict)
+                    or state.get("event") != event
+                    or state.get("command") != hook.get("command")
+                    or not isinstance(state.get("enabled"), bool)
+                    for state, (event, hook) in zip(previous, owned)
+                )
+            ):
+                raise ExtensionError(
+                    f"Cannot enable '{extension_id}': owned hooks changed since disable; "
+                    "review the hook configuration before enabling"
+                )
+
+        init_options = load_init_options(self.project_root)
+        generic = init_options.get("ai") == "generic"
+        self.registry.update(extension_id, {"enabled": True})
+        if generic:
+            try:
+                manifest = self.get_extension(extension_id)
+                if manifest is None:
+                    raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+                if manifest.commands:
+                    self.register_enabled_extensions_for_agent("generic")
+                    refreshed = self.registry.get(extension_id) or {}
+                    skills = is_ai_skills_enabled(init_options)
+                    expected = (
+                        {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+                        if skills else set(self._collect_manifest_command_names(manifest))
+                    )
+                    owned_names = set(self._generic_owned_names(
+                        refreshed, list(expected), skills=skills, extension_id=extension_id,
+                    ))
+                    missing = expected - owned_names
+                    if missing:
+                        self.disable_generic_extension_artifacts(extension_id)
+                        raise ExtensionError(
+                            "Missing invocation artifacts: " + ", ".join(sorted(missing))
+                        )
+            except (ExtensionError, OSError, ValueError) as exc:
+                try:
+                    self.registry.update(extension_id, {"enabled": False})
+                except (ExtensionError, OSError, ValueError) as rollback_exc:
+                    raise ExtensionError(
+                        f"Could not register generic invocations for '{extension_id}': "
+                        f"{exc}; rollback failed: {rollback_exc}"
+                    ) from exc
+                raise ExtensionError(
+                    f"Could not register generic invocations for '{extension_id}': {exc}"
+                ) from exc
+
         if "hooks" in config:
-            for hooks in config["hooks"].values():
-                for hook in hooks:
-                    if hook.get("extension") == extension_id:
-                        hook["enabled"] = False
+            if native_hooks:
+                for state, (_, hook) in zip(previous, owned):
+                    hook["enabled"] = state["enabled"]
+            else:
+                for hooks in config["hooks"].values():
+                    for hook in hooks:
+                        if hook.get("extension") == extension_id:
+                            hook["enabled"] = True
             try:
                 hook_executor.save_project_config(config)
             except (ValueError, OSError) as exc:
                 try:
                     if generic:
-                        self.restore_generic_extension_after_failed_disable(
-                            extension_id, metadata
-                        )
-                    else:
-                        self.registry.update(extension_id, {"enabled": True})
+                        self.disable_generic_extension_artifacts(extension_id)
+                    if native_hooks:
+                        self.registry.restore(extension_id, metadata)
+                    elif not generic:
+                        self.registry.update(extension_id, {"enabled": False})
                 except (ExtensionError, ValueError, OSError) as rollback_exc:
                     raise ExtensionError(
                         f"{exc}; rollback failed: {rollback_exc}"
                     ) from exc
                 raise
+        if native_hooks:
+            updated = self.registry.get(extension_id) or {}
+            if "disabled_hook_states" in updated:
+                updated.pop("disabled_hook_states")
+                self.registry.restore(extension_id, updated)
         return True
 
     def restore_generic_extension_after_failed_disable(

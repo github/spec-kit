@@ -181,6 +181,13 @@ specify extension disable <name>
 
 Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
 
+For opted-in native hook projection, disabling remembers each owned hook's
+effective enabled value; enabling restores those values rather than activating
+hooks that were individually disabled before the extension was disabled. For
+extensions disabled before this state was recorded, enabling uses the
+declarations in their installed manifest. Without the opt-in, the legacy
+enable behavior continues to activate all owned hooks.
+
 For `generic`, disabling removes hash-owned invocations even after the output directory moves, but preserves unrelated same-named files in the new directory.
 
 ## Set Extension Priority
