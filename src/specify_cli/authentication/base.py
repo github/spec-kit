@@ -62,3 +62,17 @@ class AuthProvider(ABC):
                 if val:
                     return val
         return None
+
+    def can_reuse_token_for_host(
+        self,
+        entry: AuthConfigEntry,
+        source_hostname: str | None,
+        target_hostname: str,
+    ) -> bool:
+        """Return whether a resolved token may follow a redirect.
+
+        Static credentials are scoped by the entry's declared hosts, so the
+        default allows reuse within those hosts. Providers with host-selected
+        credentials can narrow that scope.
+        """
+        return True

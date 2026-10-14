@@ -99,6 +99,22 @@ class GitHubAuth(AuthProvider):
                     return instance_host
         return request_host
 
+    def can_reuse_token_for_host(
+        self,
+        entry: AuthConfigEntry,
+        source_hostname: str | None,
+        target_hostname: str,
+    ) -> bool:
+        """Allow redirects only within one GitHub CLI credential scope."""
+        if entry.auth != "github-cli":
+            return True
+        if source_hostname is None:
+            return False
+        return self._credential_hostname(
+            entry,
+            source_hostname,
+        ) == self._credential_hostname(entry, target_hostname)
+
     @staticmethod
     def _acquire_via_gh_cli(hostname: str) -> str:
         """Run the fixed GitHub CLI token command for *hostname*."""

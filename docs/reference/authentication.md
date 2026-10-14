@@ -319,7 +319,9 @@ You can configure multiple entries for different hosts or organizations:
    is attempted as a final fallback.
 5. On redirects, the `Authorization` header is stripped if the redirect
    target leaves the entry's declared hosts — preventing credential
-   leakage to CDNs or third-party services.
+   leakage to CDNs or third-party services. For `github-cli`, the header is
+   also stripped when the target maps to a different GitHub CLI credential
+   host, even if both hosts appear in the same provider entry.
 
 ## Template
 

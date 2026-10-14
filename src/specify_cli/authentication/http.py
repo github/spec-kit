@@ -63,6 +63,7 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 
 
 RedirectValidator = Callable[[str, str], None]
+AuthHostnameValidator = Callable[[str], bool]
 
 
 class RedirectPolicyError(urllib.error.URLError):
@@ -99,10 +100,12 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self,
         hosts: tuple[str, ...],
         redirect_validator: RedirectValidator | None = None,
+        auth_hostname_validator: AuthHostnameValidator | None = None,
     ) -> None:
         super().__init__()
         self._hosts = hosts
         self._redirect_validator = redirect_validator
+        self._auth_hostname_validator = auth_hostname_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:
@@ -127,7 +130,15 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
             old_scheme = urlparse(req.full_url).scheme
             hostname = (new_parsed.hostname or "").lower()
             is_https_downgrade = old_scheme == "https" and new_parsed.scheme != "https"
-            if _hostname_in_hosts(hostname, self._hosts) and not is_https_downgrade:
+            is_auth_hostname_allowed = (
+                self._auth_hostname_validator is None
+                or self._auth_hostname_validator(hostname)
+            )
+            if (
+                _hostname_in_hosts(hostname, self._hosts)
+                and not is_https_downgrade
+                and is_auth_hostname_allowed
+            ):
                 if original_auth:
                     new_req.add_unredirected_header("Authorization", original_auth)
             else:
@@ -220,7 +231,20 @@ def open_url(
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
+        def auth_hostname_validator(target_hostname: str) -> bool:
+            return provider.can_reuse_token_for_host(
+                entry,
+                hostname,
+                target_hostname,
+            )
+
+        opener = urllib.request.build_opener(
+            _StripAuthOnRedirect(
+                entry.hosts,
+                redirect_validator,
+                auth_hostname_validator,
+            )
+        )
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:

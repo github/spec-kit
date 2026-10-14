@@ -772,6 +772,54 @@ class TestGitHubAuth:
             "raw.ghes.example.com",
         ]
 
+    @pytest.mark.parametrize(
+        ("source", "target"),
+        [
+            ("github.com", "api.github.com"),
+            ("github.com", "codeload.github.com"),
+            ("ghes.example.com", "api.ghes.example.com"),
+            ("ghes.example.com", "raw.ghes.example.com"),
+            ("ghes.example.com", "codeload.ghes.example.com"),
+        ],
+    )
+    def test_github_cli_reuses_token_within_credential_host(
+        self,
+        source,
+        target,
+    ):
+        provider = GitHubAuth()
+        entry = _github_cli_entry((
+            "github.com",
+            "api.github.com",
+            "codeload.github.com",
+            "ghes.example.com",
+            "api.ghes.example.com",
+            "raw.ghes.example.com",
+            "codeload.ghes.example.com",
+        ))
+
+        assert provider.can_reuse_token_for_host(entry, source, target)
+
+    def test_github_cli_does_not_reuse_token_across_instances(self):
+        provider = GitHubAuth()
+        entry = _github_cli_entry((
+            "github.com",
+            "api.github.com",
+            "ghes.example.com",
+            "raw.ghes.example.com",
+        ))
+
+        assert not provider.can_reuse_token_for_host(
+            entry,
+            "github.com",
+            "ghes.example.com",
+        )
+        assert not provider.can_reuse_token_for_host(
+            entry,
+            "raw.ghes.example.com",
+            "api.github.com",
+        )
+
     def test_resolve_token_github_cli_caches_per_credential_host(self):
         from unittest.mock import MagicMock, patch
 
@@ -1649,6 +1697,75 @@ class TestRedirectStripping:
         assert new_req is not None
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
+
+    def test_redirect_across_credential_scopes_strips_auth(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        provider = GitHubAuth()
+        entry = _github_cli_entry(("github.com", "ghes.example.com"))
+        handler = _StripAuthOnRedirect(
+            entry.hosts,
+            auth_hostname_validator=lambda target: provider.can_reuse_token_for_host(
+                entry,
+                "github.com",
+                target,
+            ),
+        )
+        req = Request(
+            "https://github.com/org/repo",
+            headers={"Authorization": "Bearer public-token"},
+        )
+
+        new_req = handler.redirect_request(
+            req,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            "https://ghes.example.com/org/repo",
+        )
+
+        assert new_req is not None
+        assert new_req.get_header("Authorization") is None
+        assert new_req.unredirected_hdrs.get("Authorization") is None
+
+    def test_redirect_within_credential_scope_preserves_auth(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        provider = GitHubAuth()
+        entry = _github_cli_entry(("ghes.example.com", "raw.ghes.example.com"))
+        handler = _StripAuthOnRedirect(
+            entry.hosts,
+            auth_hostname_validator=lambda target: provider.can_reuse_token_for_host(
+                entry,
+                "ghes.example.com",
+                target,
+            ),
+        )
+        req = Request(
+            "https://ghes.example.com/org/repo",
+            headers={"Authorization": "Bearer enterprise-token"},
+        )
+
+        new_req = handler.redirect_request(
+            req,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            "https://raw.ghes.example.com/org/repo/file",
+        )
+
+        assert new_req is not None
+        auth = (
+            new_req.get_header("Authorization")
+            or new_req.unredirected_hdrs.get("Authorization")
+        )
+        assert auth == "Bearer enterprise-token"
 
     @pytest.mark.parametrize(
         ("hosts", "target", "expected_auth"),
