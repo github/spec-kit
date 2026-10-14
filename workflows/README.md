@@ -151,6 +151,32 @@ Send an arbitrary inline prompt to an integration CLI (no command file needed):
   integration: claude
 ```
 
+### Capturing Command and Prompt Output
+
+Command and prompt steps stream the CLI's output to the terminal, so their
+`output.stdout` and `output.stderr` are empty. Set `capture: true` to retain the
+output for later steps instead:
+
+```yaml
+- id: verdict
+  type: prompt
+  prompt: "Reply with exactly READY or BLOCKED for {{ inputs.spec }}"
+  capture: true
+  capture_max_bytes: 4096   # Optional: per-stream limit (default 1 MiB, -1 = no limit)
+  timeout: 120              # Optional: seconds before the CLI is killed
+```
+
+A captured step prints nothing while it runs. Output past the limit is
+discarded and reported in `output.stdout_truncated` / `output.stderr_truncated`;
+a timeout or interruption fails the step, sets `output.timed_out` or
+`output.interrupted`, and keeps the partial output. Check those fields before
+parsing the text.
+
+> ⚠️ Captured output is stored unredacted in the run's `state.json`, and it is
+> untrusted agent text. See
+> [Capturing Command and Prompt Output](../docs/reference/workflows.md#capturing-command-and-prompt-output)
+> for the full contract.
+
 ### Shell Steps
 
 Run a shell command and capture output:

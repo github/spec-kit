@@ -32,6 +32,7 @@ from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ..events import install_integration_events, remove_integration_events
+from ._capture import run_captured
 
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
@@ -413,6 +414,8 @@ class IntegrationBase(ABC):
         stream: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        output_json: bool | None = None,
+        capture_max_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Dispatch a Spec Kit command through this integration's CLI.
 
@@ -429,20 +432,40 @@ class IntegrationBase(ABC):
         piped directly to the terminal so the user sees live output.
         When ``False``, output is captured and returned in the dict.
 
+        *output_json* selects the CLI's output format independently of
+        *stream*. ``None`` (the default) keeps the historical coupling:
+        text when streaming, structured output when capturing. Pass
+        ``False`` with ``stream=False`` to capture the CLI's textual
+        stdout.
+
+        *capture_max_bytes* selects bounded capture and requires
+        ``stream=False``: each stream is capped at that many raw bytes
+        (``-1`` for no cap) and decoded as UTF-8. The result then also
+        carries ``stdout_truncated``, ``stderr_truncated``, ``timed_out``,
+        and ``interrupted``, and a timeout or interruption is reported
+        there with the output read so far instead of being raised.
+        ``None`` (the default) keeps the unbounded capture, which raises
+        ``subprocess.TimeoutExpired``.
+
         Returns a dict with ``exit_code``, ``stdout``, and ``stderr``.
         Raises ``NotImplementedError`` if the integration does not
         support CLI dispatch.
         """
         import subprocess
 
+        if stream and capture_max_bytes is not None:
+            raise ValueError("capture_max_bytes requires stream=False.")
+
         self.validate_runtime_config(integration_args, integration_options)
         prompt = self._build_dispatch_prompt(command_name, args, project_root)
         # When streaming to the terminal, request text output so the
         # user sees readable output instead of raw JSONL events.
+        if output_json is None:
+            output_json = not stream
         exec_args = self.build_exec_args(
             prompt,
             model=model,
-            output_json=not stream,
+            output_json=output_json,
             integration_args=integration_args,
             integration_options=integration_options,
             project_root=project_root,
@@ -488,6 +511,14 @@ class IntegrationBase(ABC):
                 "stdout": "",
                 "stderr": "",
             }
+
+        if capture_max_bytes is not None:
+            return run_captured(
+                exec_args,
+                cwd=cwd,
+                timeout=timeout,
+                max_bytes=capture_max_bytes,
+            ).as_dispatch_result()
 
         result = subprocess.run(
             exec_args,
