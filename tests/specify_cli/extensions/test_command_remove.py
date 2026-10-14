@@ -16,7 +16,6 @@ import yaml
 
 from specify_cli import app
 from specify_cli.extensions import (
-    ExtensionError,
     ExtensionManager,
     ExtensionRegistry,
     HookExecutor,
@@ -150,10 +149,10 @@ class TestExtensionRemoveCLI:
         original = (artifact.read_bytes(), config.read_bytes(), (cache / "source.yml").read_bytes())
         original_save = HookExecutor.save_project_config
 
-        def fail_hook_removal(executor, updated, **kwargs):
+        def fail_hook_removal(executor, updated):
             if not updated.get("hooks", {}).get("before_plan"):
                 raise OSError("projection failed")
-            return original_save(executor, updated, **kwargs)
+            return original_save(executor, updated)
 
         with patch.object(Path, "cwd", return_value=project), \
              patch.object(HookExecutor, "save_project_config", fail_hook_removal):
@@ -253,91 +252,6 @@ class TestExtensionRemoveCLI:
         assert manager.registry.is_installed("test-ext")
         assert not config.exists()
         assert not cache.exists()
-
-    def test_remove_conflicting_hook_save_does_not_overwrite_concurrent_update(
-        self, tmp_path, extension_dir
-    ):
-        project, manager, _ = installed_generic_hook_extension(
-            tmp_path, extension_dir, native_hooks=True
-        )
-        executor = HookExecutor(project)
-        cache = project / ".specify/hook-dispatch"
-        concurrent = {}
-
-        def save_then_fail(extension_id, metadata):
-            updated = executor.load_project_config_for_update()
-            updated["hooks"]["after_plan"] = [
-                {"extension": "another-ext", "command": "speckit.another-ext.run"}
-            ]
-            executor.save_project_config(updated)
-            concurrent["yaml"] = executor.config_file.read_bytes()
-            concurrent["cache"] = {
-                entry.name: entry.read_bytes() for entry in cache.iterdir()
-            }
-            raise OSError("cleanup failed")
-
-        with patch.object(manager, "_remove_generic_artifact_paths", save_then_fail):
-            with pytest.raises((ExtensionError, OSError)) as error:
-                manager.remove("test-ext")
-        assert executor.config_file.read_bytes() == concurrent["yaml"]
-        assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == concurrent["cache"]
-        assert "cleanup failed" in str(error.value)
-        assert "rollback failed" in str(error.value)
-        assert "refusing to overwrite a concurrent update" in str(error.value)
-        assert manager.registry.is_installed("test-ext")
-
-    def test_remove_detects_hook_save_before_publisher_commit(
-        self, tmp_path, extension_dir
-    ):
-        project, manager, _ = installed_generic_hook_extension(
-            tmp_path, extension_dir, native_hooks=True
-        )
-        original_unregister = HookExecutor.unregister_hooks
-        concurrent = {}
-
-        def save_then_unregister(executor, extension_id, **kwargs):
-            updated = executor.load_project_config_for_update()
-            updated["hooks"]["after_plan"] = [
-                {"extension": "another-ext", "command": "speckit.another-ext.run"}
-            ]
-            executor.save_project_config(updated)
-            concurrent["yaml"] = executor.config_file.read_bytes()
-            return original_unregister(executor, extension_id, **kwargs)
-
-        with patch.object(HookExecutor, "unregister_hooks", save_then_unregister):
-            with pytest.raises(ExtensionError, match="rollback failed") as error:
-                manager.remove("test-ext")
-        assert "changed before publication" in str(error.value)
-        assert "refusing to overwrite a concurrent update" in str(error.value)
-        assert (project / ".specify/extensions.yml").read_bytes() == concurrent["yaml"]
-        assert manager.registry.is_installed("test-ext")
-
-    def test_remove_detects_hook_save_after_publisher_commit(
-        self, tmp_path, extension_dir
-    ):
-        project, manager, _ = installed_generic_hook_extension(
-            tmp_path, extension_dir, native_hooks=True
-        )
-        original_unregister = HookExecutor.unregister_hooks
-        concurrent = {}
-
-        def unregister_then_save(executor, extension_id, **kwargs):
-            committed = original_unregister(executor, extension_id, **kwargs)
-            updated = executor.load_project_config_for_update()
-            updated["hooks"]["after_plan"] = [
-                {"extension": "another-ext", "command": "speckit.another-ext.run"}
-            ]
-            executor.save_project_config(updated)
-            concurrent["yaml"] = executor.config_file.read_bytes()
-            return committed
-
-        with patch.object(HookExecutor, "unregister_hooks", unregister_then_save), \
-             patch.object(manager, "_remove_generic_artifact_paths", side_effect=OSError("cleanup failed")):
-            with pytest.raises(ExtensionError, match="rollback failed") as error:
-                manager.remove("test-ext")
-        assert "refusing to overwrite a concurrent update" in str(error.value)
-        assert (project / ".specify/extensions.yml").read_bytes() == concurrent["yaml"]
-        assert manager.registry.is_installed("test-ext")
 
     def test_remove_reports_failed_hook_restoration(
         self, tmp_path, extension_dir

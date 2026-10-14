@@ -24,15 +24,12 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Dict, List, Optional, Set
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Set
 
 import pathspec
 import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
-
-if TYPE_CHECKING:
-    from ._hook_projection import HookState
 
 from .._assets import _locate_core_pack, _repo_root
 from .._download_security import (
@@ -3167,10 +3164,7 @@ class ExtensionManager:
 
                 hook_snapshot = snapshot(hook_executor.config_file)
             hooks_started = True
-            if native_hooks:
-                hook_executor.register_hooks(manifest, expected_state=hook_snapshot)
-            else:
-                hook_executor.register_hooks(manifest)
+            hook_executor.register_hooks(manifest)
             hooks_finished = True
 
             # Restore config files from backup when --force triggered a removal.
@@ -3235,10 +3229,7 @@ class ExtensionManager:
                         if hook_snapshot is not None and not hooks_finished:
                             from ._hook_projection import restore
 
-                            restore(
-                                hook_executor.config_file, hook_snapshot,
-                                expected=hook_snapshot,
-                            )
+                            restore(hook_executor.config_file, hook_snapshot)
                         else:
                             hook_executor.unregister_hooks(manifest.id)
                     except Exception as error:
@@ -3622,16 +3613,13 @@ class ExtensionManager:
 
         extension_dir = self.extensions_dir / extension_id
         hook_snapshot = snapshot(hook_executor.config_file) if projection_active else None
-        post_hook_snapshot = hook_snapshot
 
         # Publication can fail even after preflight (for example, on a disk
         # error). Keep all invocation artifacts and sources intact until the
         # extension has been removed from the hook configuration.
         try:
             if projection_active:
-                post_hook_snapshot = hook_executor.unregister_hooks(
-                    extension_id, expected_state=hook_snapshot
-                )
+                hook_executor.unregister_hooks(extension_id)
 
             # Unregister commands from all AI agents
             if registered_commands:
@@ -3700,10 +3688,7 @@ class ExtensionManager:
         except Exception as exc:
             if hook_snapshot is not None:
                 try:
-                    restore(
-                        hook_executor.config_file, hook_snapshot,
-                        expected=post_hook_snapshot,
-                    )
+                    restore(hook_executor.config_file, hook_snapshot)
                 except (ValueError, OSError) as rollback_exc:
                     raise ExtensionError(
                         f"Extension removal failed ({exc}); hook rollback failed: {rollback_exc}"
@@ -5930,9 +5915,7 @@ class HookExecutor:
                 "hooks": {},
             }
 
-    def save_project_config(
-        self, config: Dict[str, Any], *, expected_state: HookState | None = None
-    ) -> HookState | None:
+    def save_project_config(self, config: Dict[str, Any]):
         """Save project-level extension configuration.
 
         Args:
@@ -5941,7 +5924,7 @@ class HookExecutor:
         from ._hook_projection import projection_enabled, publish, retire
 
         if projection_enabled(self.project_root):
-            return publish(self.config_file, config, expected=expected_state)
+            publish(self.config_file, config)
         else:
             from ..integrations._file_changes import write_text
 
@@ -6068,10 +6051,7 @@ class HookExecutor:
 
         return sorted(seen.values(), key=_sort_key)
 
-    def register_hooks(
-        self, manifest: ExtensionManifest, *,
-        expected_state: HookState | None = None,
-    ) -> HookState | None:
+    def register_hooks(self, manifest: ExtensionManifest):
         """Register extension hooks in project config.
 
         Args:
@@ -6179,11 +6159,9 @@ class HookExecutor:
             changed = True
 
         if changed:
-            return self.save_project_config(config, expected_state=expected_state)
+            self.save_project_config(config)
 
-    def unregister_hooks(
-        self, extension_id: str, *, expected_state: HookState | None = None
-    ) -> HookState | None:
+    def unregister_hooks(self, extension_id: str):
         """Remove extension hooks from project config.
 
         Args:
@@ -6207,8 +6185,8 @@ class HookExecutor:
 
         if "hooks" not in config or not isinstance(config["hooks"], dict):
             if installed_changed:
-                return self.save_project_config(config, expected_state=expected_state)
-            return expected_state
+                self.save_project_config(config)
+            return
 
         # Remove hooks for this extension
         for hook_name in list(config["hooks"].keys()):
@@ -6227,7 +6205,7 @@ class HookExecutor:
             name: hooks for name, hooks in config["hooks"].items() if hooks
         }
 
-        return self.save_project_config(config, expected_state=expected_state)
+        self.save_project_config(config)
 
     def get_hooks_for_event(self, event_name: str) -> List[Dict[str, Any]]:
         """Get all enabled hooks for a specific event, sorted by priority ascending.

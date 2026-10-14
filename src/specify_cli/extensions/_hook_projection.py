@@ -78,10 +78,8 @@ def snapshot(config_file: Path) -> HookState:
         return _read_state(config_file)
 
 
-def restore(
-    config_file: Path, previous: HookState, *, expected: HookState
-) -> None:
-    """Restore exact hook state only if the published pair is still unchanged."""
+def restore(config_file: Path, previous: HookState) -> None:
+    """Restore an exact hook snapshot, including absent files and cache contents."""
     root = config_file.parent
     cache = _cache_path(config_file)
     with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
@@ -90,11 +88,6 @@ def restore(
         current = _read_state(config_file)
         if current == previous:
             return
-        if current != expected:
-            raise ValueError(
-                "Hook configuration or projection changed since the lifecycle "
-                "operation; refusing to overwrite a concurrent update"
-            )
         stage = Path(tempfile.mkdtemp(prefix=".hook-restore-", dir=root))
         retain_stage = False
         moved = False
@@ -248,10 +241,7 @@ def _write_digest(directory: Path, name: str, payload: bytes) -> None:
     )
 
 
-def publish(
-    config_file: Path, config: dict[str, Any], *,
-    preserve_source: bool = False, expected: HookState | None = None,
-) -> HookState | None:
+def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool = False) -> None:
     """Publish one complete projection and its YAML source, or restore the prior pair."""
     if not preserve_source:
         projected = project_hooks(config)
@@ -262,11 +252,6 @@ def publish(
         root.parent, ".hook-dispatch.lock", context="hook projection"
     ):
         _check_paths(config_file)
-        if expected is not None and _read_state(config_file) != expected:
-            raise ValueError(
-                "Hook configuration or projection changed before publication; "
-                "refusing to overwrite a concurrent update"
-            )
         if preserve_source:
             source = config_file.read_bytes()
             try:
@@ -293,10 +278,6 @@ def publish(
                 _write_digest(stage, f"{event}.json", payload)
             _write_digest(stage, "events.txt", "".join(f"{event}\n" for event in projected).encode("utf-8"))
             (stage / "source.yml").write_bytes(source)
-            committed_cache = (
-                {entry.name: entry.read_bytes() for entry in stage.iterdir()}
-                if expected is not None else None
-            )
             with changing_file(cache):
                 if cache.exists():
                     os.replace(cache, backup)
@@ -341,4 +322,3 @@ def publish(
                     backup,
                     exc,
                 )
-        return HookState(source, committed_cache) if committed_cache is not None else None

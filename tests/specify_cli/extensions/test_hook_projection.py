@@ -273,7 +273,7 @@ def test_snapshot_restoration_failure_retains_current_pair(tmp_path, monkeypatch
 
     monkeypatch.setattr(projection.os, "replace", fail_restore_write)
     with pytest.raises(OSError, match="restore write failed"):
-        projection.restore(executor.config_file, original, expected=current)
+        projection.restore(executor.config_file, original)
     assert projection.snapshot(executor.config_file) == current
     assert not list(executor.config_file.parent.glob(".hook-restore-*"))
 
