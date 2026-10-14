@@ -24,6 +24,20 @@ _GITHUB_PUBLIC_HOSTS = frozenset({
 _GITHUB_ENTERPRISE_SERVICE_PREFIXES = ("api.", "raw.", "codeload.")
 
 
+def _is_safe_cli_hostname(hostname: str) -> bool:
+    """Return whether *hostname* is a shell-safe DNS hostname."""
+    if not hostname or len(hostname) > 253 or not hostname.isascii():
+        return False
+    labels = hostname.split(".")
+    return all(
+        0 < len(label) <= 63
+        and label[0].isalnum()
+        and label[-1].isalnum()
+        and all(char.isalnum() or char == "-" for char in label)
+        for label in labels
+    )
+
+
 class GitHubCliAuthError(urllib.error.URLError):
     """Raised when GitHub CLI cannot provide a configured credential."""
 
@@ -118,6 +132,12 @@ class GitHubAuth(AuthProvider):
     @staticmethod
     def _acquire_via_gh_cli(hostname: str) -> str:
         """Run the fixed GitHub CLI token command for *hostname*."""
+        if not _is_safe_cli_hostname(hostname):
+            raise GitHubCliAuthError(
+                "GitHub authentication failed for provider 'github': "
+                "the request hostname is not valid for GitHub CLI authentication."
+            )
+
         resolved = shutil.which("gh")
         if not resolved or not os.path.isabs(resolved):
             raise GitHubCliAuthError(

@@ -139,6 +139,10 @@ GitHub instance host:
 gh auth token --hostname ghes.example.com
 ```
 
+Before invoking GitHub CLI, Specify requires the selected credential host to be
+an ASCII DNS hostname made of letters, digits, hyphens, and dots. Invalid hosts
+are rejected without invoking `gh` or including the rejected value in the error.
+
 When a request targets an `api.`, `raw.`, or `codeload.` host, Specify uses the
 bare instance host only when that exact host is also listed in the same
 provider entry. For example, `raw.ghes.example.com` maps to

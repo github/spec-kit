@@ -1581,6 +1581,37 @@ class TestAuthenticatedHttp:
             open_url("https://example.com/file.json")
         assert captured["req"].get_header("Authorization") is None
 
+    def test_open_url_rejects_shell_unsafe_github_cli_hostname(self, monkeypatch):
+        from unittest.mock import patch
+
+        from specify_cli.authentication.http import open_url
+
+        attacker_host = "a&whoami&b.ghes.example.com"
+        provider = get_provider("github")
+        assert isinstance(provider, GitHubAuth)
+        monkeypatch.setattr(provider, "_github_cli_cache", {})
+        self._set_config(
+            monkeypatch,
+            [_github_cli_entry(("*.ghes.example.com",))],
+        )
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value="/opt/github-cli/gh.cmd",
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+        ) as run, patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener, pytest.raises(
+            GitHubCliAuthError,
+            match="hostname is not valid",
+        ) as exc_info:
+            open_url(f"https://{attacker_host}/archive.zip")
+
+        assert attacker_host not in str(exc_info.value)
+        run.assert_not_called()
+        build_opener.assert_not_called()
+
     def test_open_url_no_auth_when_no_config(self, monkeypatch):
         from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
