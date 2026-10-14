@@ -199,6 +199,67 @@ class TestExtensionAddCLI:
         assert "rollback failed: hooks: restore failed" in str(error.value)
         assert not manager.registry.is_installed("test-ext")
 
+    def test_install_failed_publication_does_not_erase_concurrent_hook_save(
+        self, extension_dir, project_dir
+    ):
+        enable_native_hooks(project_dir)
+        manager = ExtensionManager(project_dir)
+        concurrent = {}
+
+        def save_then_fail(executor, manifest, **kwargs):
+            updated = executor.load_project_config_for_update()
+            updated["hooks"]["after_plan"] = [
+                {"extension": "another-ext", "command": "speckit.another-ext.run"}
+            ]
+            executor.save_project_config(updated)
+            cache = project_dir / ".specify/hook-dispatch"
+            concurrent["yaml"] = executor.config_file.read_bytes()
+            concurrent["cache"] = {
+                entry.name: entry.read_bytes() for entry in cache.iterdir()
+            }
+            raise OSError("publication failed")
+
+        with patch.object(HookExecutor, "register_hooks", save_then_fail):
+            with pytest.raises((ExtensionError, OSError)) as error:
+                manager.install_from_directory(
+                    extension_dir, "0.1.0", register_commands=False
+                )
+        config = project_dir / ".specify/extensions.yml"
+        cache = project_dir / ".specify/hook-dispatch"
+        assert config.read_bytes() == concurrent["yaml"]
+        assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == concurrent["cache"]
+        assert "publication failed" in str(error.value)
+        assert "rollback failed" in str(error.value)
+        assert "refusing to overwrite a concurrent update" in str(error.value)
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_install_detects_hook_save_before_publisher_commit(
+        self, extension_dir, project_dir
+    ):
+        enable_native_hooks(project_dir)
+        manager = ExtensionManager(project_dir)
+        original_register = HookExecutor.register_hooks
+        concurrent = {}
+
+        def save_then_register(executor, manifest, **kwargs):
+            updated = executor.load_project_config_for_update()
+            updated["hooks"]["after_plan"] = [
+                {"extension": "another-ext", "command": "speckit.another-ext.run"}
+            ]
+            executor.save_project_config(updated)
+            concurrent["yaml"] = executor.config_file.read_bytes()
+            return original_register(executor, manifest, **kwargs)
+
+        with patch.object(HookExecutor, "register_hooks", save_then_register):
+            with pytest.raises(ExtensionError, match="rollback failed") as error:
+                manager.install_from_directory(
+                    extension_dir, "0.1.0", register_commands=False
+                )
+        assert "changed before publication" in str(error.value)
+        assert "refusing to overwrite a concurrent update" in str(error.value)
+        assert (project_dir / ".specify/extensions.yml").read_bytes() == concurrent["yaml"]
+        assert not manager.registry.is_installed("test-ext")
+
     def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
         enable_native_hooks(project_dir)
         config = project_dir / ".specify/extensions.yml"
@@ -226,10 +287,10 @@ class TestExtensionAddCLI:
         (project_dir / ".github/agents").mkdir(parents=True)
         original_save = HookExecutor.save_project_config
 
-        def fail_hook_save(executor, config):
+        def fail_hook_save(executor, config, **kwargs):
             if config.get("hooks", {}).get("before_plan"):
                 raise OSError("projection failed")
-            return original_save(executor, config)
+            return original_save(executor, config, **kwargs)
 
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch.object(HookExecutor, "save_project_config", fail_hook_save):

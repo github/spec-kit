@@ -336,7 +336,9 @@ same extension ID. If an opted-in removal fails during subsequent cleanup,
 it restores the original YAML and complete projection bytes (including
 comments and line endings) or reports a rollback failure. This does not make
 removal of command artifacts and extension sources atomic; cleanup already
-completed may not be reversed.
+completed may not be reversed. If another hook publication wins before this
+operation commits or publishes during cleanup, the conflicting write is
+reported rather than overwritten by rollback.
 
 ```yaml
 installed:
