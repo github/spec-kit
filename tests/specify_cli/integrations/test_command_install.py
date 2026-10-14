@@ -585,16 +585,9 @@ class TestIntegrationInstall:
         init_options_path.write_text("{not valid json", encoding="utf-8")
 
         result = _run_in_project(project, ["extension", "add", "git"])
-        assert result.exit_code == 0, f"extension add failed: {result.output}"
-
-        registry_path = project / ".specify" / "extensions" / ".registry"
-        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
-            "extensions"
-        ]["git"]["registered_commands"]
-        assert registered == {}, (
-            "a corrupted init-options.json must fail closed, not be "
-            "treated like a legacy project missing the file entirely (#2948)"
-        )
+        assert result.exit_code == 1, result.output
+        assert "Invalid JSON" in result.output
+        assert not (project / ".specify/extensions/git").exists()
 
     def test_extension_add_dangling_init_options_symlink_fails_closed(self, tmp_path):
         """A dangling init-options.json symlink must fail closed too, not be
@@ -620,16 +613,10 @@ class TestIntegrationInstall:
         assert init_options_path.is_symlink()
 
         result = _run_in_project(project, ["extension", "add", "git"])
-        assert result.exit_code == 0, f"extension add failed: {result.output}"
-
-        registry_path = project / ".specify" / "extensions" / ".registry"
-        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
-            "extensions"
-        ]["git"]["registered_commands"]
-        assert registered == {}, (
-            "a dangling init-options.json symlink must fail closed, not be "
-            "treated like a legacy project missing the file entirely (#2948)"
-        )
+        assert result.exit_code == 1, result.output
+        assert "symlink" in result.output
+        assert init_options_path.is_symlink()
+        assert not (project / ".specify/extensions/git").exists()
 
 
 class TestScriptTypeValidation:

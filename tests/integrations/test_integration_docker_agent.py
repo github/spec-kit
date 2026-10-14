@@ -16,6 +16,30 @@ class TestDockerAgentIntegration(SkillsIntegrationTests):
     def test_multi_install_is_opt_in(self):
         assert DockerAgentIntegration().multi_install_safe is False
 
+    def test_is_slash_skills_agent(self):
+        """Docker Agent only installs `speckit-<name>/SKILL.md` skills, so the
+        helper must agree with its own renderer with or without `ai_skills`
+        (always slash, like Zed and Muse Code, which share that layout)."""
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert DockerAgentIntegration().build_command_invocation("plan") == "/speckit-plan"
+        assert is_slash_skills_agent("docker-agent", True) is True
+        assert is_slash_skills_agent("docker-agent", False) is True
+
+    def test_hook_invocation_renders_the_hyphenated_form(self, tmp_path, monkeypatch):
+        import specify_cli
+        from specify_cli.extensions import HookExecutor
+
+        monkeypatch.setattr(
+            specify_cli,
+            "load_init_options",
+            lambda _root: {"ai": "docker-agent", "ai_skills": True},
+        )
+
+        rendered = HookExecutor(tmp_path)._render_hook_invocation("speckit.git.commit")
+
+        assert rendered == "/speckit-git-commit"
+
 
 def test_extra_args_are_applied_to_build_exec_args(monkeypatch):
     monkeypatch.setenv(

@@ -100,7 +100,13 @@ This workflow is triggered by any `issues: labeled` event, but a job-level
 condition gates the agent run so it only proceeds when the label that was just
 added is `preset-submission`. By the time you run, that condition has already
 passed. Before processing, verify that the issue title starts with `[Preset]:`.
-If it does not, stop without commenting.
+If it does not, emit one `add_comment` on the issue:
+
+> The preset-submission workflow stopped before validation because the issue title does not start with `[Preset]:`.
+
+Include `[Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+then stop without validation, label changes, catalog/docs edits, or PR creation.
+Do not substitute `noop` for this comment. Otherwise, continue to Step 1.
 
 ## Step 1 — Read and Parse the Issue
 

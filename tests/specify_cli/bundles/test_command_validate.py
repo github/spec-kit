@@ -5,18 +5,82 @@ import json  # noqa: F401
 from pathlib import Path
 from unittest.mock import patch  # noqa: F401
 
-import yaml  # noqa: F401
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.bundles.packager import build_bundle  # noqa: F401
-from tests.conftest import strip_ansi  # noqa: F401
+from tests.conftest import strip_ansi
 from tests.specify_cli.bundles.helpers import (
+    bundled_extension_version,
     valid_manifest_dict,
 )
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize(
+    "actual,exit_code,warning",
+    [("1.0.1", 0, True), ("1.0.0", 0, False), ("0.9.9", 1, False),
+     ("1.1.0", 1, False), ("2.0.0", 1, False), ("1.0.1-rc1", 1, False)],
+)
+def test_validate_bundled_patch_compatibility(
+    project: Path, monkeypatch, actual: str, exit_code: int, warning: bool,
+):
+    import specify_cli._assets as assets
+
+    payload = project / "packaged-extension"
+    payload.mkdir()
+    (payload / "extension.yml").write_text(
+        yaml.safe_dump({"extension": {"id": "x", "version": actual}}), encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: payload)
+    data = valid_manifest_dict(
+        provides={"extensions": [{"id": "x", "version": "1.0.0"}]},
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == exit_code, result.output
+    assert ("newer packaged patch" in " ".join(result.output.split())) is warning
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_validate_bundled_workflow_patch_warns_without_catalog_lookup(
+    project: Path, monkeypatch, offline: bool,
+):
+    import specify_cli._assets as assets
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    payload = project / "packaged-workflow"
+    payload.mkdir()
+    (payload / "workflow.yml").write_text(
+        yaml.safe_dump({"workflow": {"id": "x", "version": "1.0.1"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda cid: payload)
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_active_catalogs",
+        lambda self: pytest.fail("a compatible packaged patch must not consult catalogs"),
+    )
+    data = valid_manifest_dict(
+        provides={"workflows": [{"id": "x", "version": "1.0.0"}]},
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    args = ["bundle", "validate"]
+    if offline:
+        args.append("--offline")
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Workflow 'x' is pinned to version 1.0.0" in output
+    assert "Spec Kit ships 1.0.1" in output
+    assert output.count("newer packaged patch") == 1
+    assert "well-formed and valid" in output
 
 
 def test_validate_reports_invalid_manifest(project: Path):
@@ -96,10 +160,85 @@ def test_validate_rejects_broken_reference(project: Path):
     assert "preset-a" in result.output or "ext-a" in result.output
 
 
+def test_validate_warns_instead_of_rejecting_reference_during_partial_outage(
+    project: Path, monkeypatch,
+):
+    from urllib.error import URLError
+
+    from specify_cli.workflows.catalog import (
+        StepCatalog,
+        StepCatalogEntry,
+    )
+
+    data = valid_manifest_dict(
+        provides={"steps": [{"id": "requested", "version": "1.0.0"}]}
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    sources = [
+        StepCatalogEntry("https://example.com/high.json", "high", 1, True),
+        StepCatalogEntry("https://example.com/low.json", "low", 2, True),
+    ]
+    monkeypatch.setattr(StepCatalog, "get_active_catalogs", lambda self: sources)
+
+    def fetch(self, entry, force_refresh=False):
+        if entry.name == "low":
+            raise URLError("catalog timed out")
+        return {"steps": {"other-step": {"version": "1.0.0"}}}
+
+    monkeypatch.setattr(StepCatalog, "_fetch_single_catalog", fetch)
+
+    result = runner.invoke(app, ["bundle", "validate"])
+
+    assert result.exit_code == 0, result.output
+    assert "unreachable" in result.output
+    assert "not available" not in result.output
+
+
 def test_validate_accepts_bundled_reference(project: Path):
     data = valid_manifest_dict()
-    data["provides"] = {"extensions": [{"id": "agent-context", "version": "1.0.0"}]}
+    data["provides"] = {"extensions": [{
+        "id": "agent-context", "version": bundled_extension_version("agent-context")
+    }]}
     (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
     result = runner.invoke(app, ["bundle", "validate"])
     assert result.exit_code == 0, result.output
     assert "valid" in result.output
+
+
+@pytest.mark.parametrize("kind,id,version", [
+    ("presets", "lean", "1.0.0"),
+    ("extensions", "agent-context", bundled_extension_version("agent-context")),
+])
+@pytest.mark.parametrize("offline", [False, True])
+def test_validate_rejects_mismatched_bundled_component(
+    project: Path, monkeypatch, kind: str, id: str, version: str, offline: bool,
+):
+    from specify_cli.extensions import ExtensionCatalog
+    from specify_cli.presets import PresetCatalog
+
+    data = valid_manifest_dict(
+        provides={kind: [{"id": id, "version": "9.9.9"}]}
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr(
+        PresetCatalog, "get_pack_info",
+        lambda self, _id, version=None: {
+            "version": version or "9.9.9",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+    monkeypatch.setattr(
+        ExtensionCatalog, "get_extension_info",
+        lambda self, _id, version=None: {
+            "version": version or "9.9.9",
+            "_catalog_name": "trusted",
+            "_install_allowed": True,
+        },
+    )
+
+    command = ["bundle", "validate", *(["--offline"] if offline else [])]
+    result = runner.invoke(app, command)
+
+    assert result.exit_code == 1, result.output
+    assert f"resolved version is {version}" in result.output

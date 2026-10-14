@@ -6,6 +6,7 @@ Mirrors ``specify_cli.extensions.catalog.command_remove``.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import yaml
 
@@ -73,3 +74,208 @@ class TestExtensionCatalogRemoveCLI:
         assert result.exit_code == 0, result.output
         output = _normalize_cli_output(result.output)
         assert f"Removed catalog '{catalog_name}'" in output
+
+    def test_extension_catalog_remove_final_entry_restores_defaults(
+        self, tmp_path, monkeypatch
+    ):
+        """The loader rejects an empty ``catalogs`` list, so removing the last
+        entry must not leave one behind for follow-up commands to trip on."""
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_CATALOG_URL", raising=False)
+
+        add = self._invoke(
+            [
+                "extension",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(["extension", "catalog", "remove", "only"], project)
+        assert remove.exit_code == 0, remove.output
+        assert (
+            "Project catalog override removed; user configuration or built-in "
+            "defaults will be used." in _normalize_cli_output(remove.output)
+        )
+
+        listing = self._invoke(["extension", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        output = _normalize_cli_output(listing.output)
+        assert "default (priority 1)" in output
+        assert "community (priority 2)" in output
+        assert "Using built-in default catalog stack" in output
+        assert not (project / ".specify" / "extension-catalogs.yml").exists()
+
+    def test_extension_catalog_remove_final_entry_falls_back_to_user_config(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        home = tmp_path / "home"
+        (home / ".specify").mkdir(parents=True)
+        (home / ".specify" / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "user-catalog",
+                            "url": "https://user.example.com/catalog.json",
+                            "priority": 5,
+                            "install_allowed": True,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.delenv("SPECKIT_CATALOG_URL", raising=False)
+
+        add = self._invoke(
+            [
+                "extension",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(["extension", "catalog", "remove", "only"], project)
+        assert remove.exit_code == 0, remove.output
+
+        listing = self._invoke(["extension", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        output = _normalize_cli_output(listing.output)
+        assert "user-catalog (priority 5)" in output
+        assert "Config: ~/.specify/extension-catalogs.yml" in output
+        assert "only (priority" not in output
+        assert "default (priority 1)" not in output
+
+    def test_extension_catalog_remove_final_entry_notes_env_catalog_precedence(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("SPECKIT_CATALOG_URL", "https://env.example.com/catalog.json")
+
+        add = self._invoke(
+            [
+                "extension",
+                "catalog",
+                "add",
+                "https://only.example.com/catalog.json",
+                "--name",
+                "only",
+            ],
+            project,
+        )
+        assert add.exit_code == 0, add.output
+
+        remove = self._invoke(["extension", "catalog", "remove", "only"], project)
+        assert remove.exit_code == 0, remove.output
+        output = _normalize_cli_output(remove.output)
+        assert (
+            "Project catalog override removed; the SPECKIT_CATALOG_URL environment "
+            "variable still takes precedence." in output
+        )
+        assert "built-in defaults will be used" not in output
+
+        listing = self._invoke(["extension", "catalog", "list"], project)
+        assert listing.exit_code == 0, listing.output
+        output = _normalize_cli_output(listing.output)
+        assert "https://env.example.com/catalog.json" in output
+        assert "Catalog configured via SPECKIT_CATALOG_URL environment variable." in output
+
+    def test_extension_catalog_remove_final_entry_reports_unlink_failure(
+        self, tmp_path, monkeypatch
+    ):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "only",
+                            "url": "https://only.example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        before = cfg_path.read_text(encoding="utf-8")
+
+        def fail_unlink(self, *args, **kwargs):
+            raise OSError("simulated unlink failure")
+
+        monkeypatch.setattr(Path, "unlink", fail_unlink)
+        result = self._invoke(["extension", "catalog", "remove", "only"], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert (
+            "Failed to delete .specify/extension-catalogs.yml: simulated unlink failure"
+            in output
+        )
+        assert "Removed catalog" not in output
+        assert cfg_path.read_text(encoding="utf-8") == before
+
+    def test_extension_catalog_remove_keeps_config_with_remaining_entries(
+        self, tmp_path
+    ):
+        project = self._make_project(tmp_path)
+        keep = {
+            "name": "keep",
+            "url": "https://keep.example.com/catalog.json",
+            "priority": 20,
+            "install_allowed": False,
+            "description": "",
+        }
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "drop",
+                            "url": "https://drop.example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        },
+                        keep,
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["extension", "catalog", "remove", "drop"], project)
+
+        assert result.exit_code == 0, result.output
+        assert "Project catalog override removed" not in _normalize_cli_output(
+            result.output
+        )
+        assert yaml.safe_load(cfg_path.read_text(encoding="utf-8")) == {
+            "catalogs": [keep]
+        }

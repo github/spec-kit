@@ -9,6 +9,11 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._operation_version import (
+    VersionResult,
+    VersionRuntime,
+    VersionSystem,
+)
 
 runner = CliRunner()
 
@@ -82,6 +87,43 @@ class TestVersionCommand:
         assert result.stdout == f"{json.dumps(expected, indent=2)}\n"
         assert result.stderr == ""
         assert json.loads(result.stdout) == expected
+
+    def test_version_json_renders_shared_operation_result(self):
+        """The CLI adapter maps the shared typed result to its JSON contract."""
+        operation_result = VersionResult(
+            cli_version="1.2.3",
+            runtime=VersionRuntime(
+                python="3.13.1",
+                openssl="OpenSSL 3.4.0",
+            ),
+            system=VersionSystem(
+                platform="ExampleOS",
+                architecture="example64",
+                os_version="ExampleOS 4.5",
+            ),
+            features=EXPECTED_FEATURES,
+        )
+        with patch(
+            "specify_cli.command_version.collect_version_result",
+            return_value=operation_result,
+        ) as collect:
+            result = runner.invoke(app, ["version", "--json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {
+            "cli_version": operation_result.cli_version,
+            "runtime": {
+                "python": operation_result.runtime.python,
+                "openssl": operation_result.runtime.openssl,
+            },
+            "system": {
+                "platform": operation_result.system.platform,
+                "architecture": operation_result.system.architecture,
+                "os_version": operation_result.system.os_version,
+            },
+            "features": operation_result.features,
+        }
+        collect.assert_called_once()
 
     def test_version_features_json_is_exact_alias(self):
         """--features does not filter JSON output or change its bytes."""

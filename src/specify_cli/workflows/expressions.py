@@ -884,12 +884,17 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     or_idx = _find_top_level(expr, " or ")
     if or_idx != -1:
         left = _evaluate_simple_expression(expr[:or_idx].strip(), namespace)
+        # Validation probes must still visit operands that runtime can skip.
+        if bool(left) and not isinstance(namespace, _ProbeNamespace):
+            return True
         right = _evaluate_simple_expression(expr[or_idx + 4:].strip(), namespace)
         return bool(left) or bool(right)
 
     and_idx = _find_top_level(expr, " and ")
     if and_idx != -1:
         left = _evaluate_simple_expression(expr[:and_idx].strip(), namespace)
+        if not bool(left) and not isinstance(namespace, _ProbeNamespace):
+            return False
         right = _evaluate_simple_expression(expr[and_idx + 5:].strip(), namespace)
         return bool(left) and bool(right)
 
@@ -1392,6 +1397,11 @@ class _ProbeNamespace(dict):
     real inputs. Deliberately *not* resolving leaves to a sentinel value: a probe
     that answers every lookup also answers ``inputs.count+1``, which is the
     malformed shape the probe is meant to expose.
+
+    The probes also pass one as the outer namespace, which tells
+    ``_evaluate_simple_expression`` to evaluate both operands of ``and``/``or``
+    instead of short-circuiting, so a leaf or filter in a skipped operand is
+    still checked.
     """
 
     def __missing__(self, key: str) -> "_ProbeNamespace":  # noqa: UP037  # pragma: no cover
@@ -1414,7 +1424,7 @@ def _evaluator_rejects(text: str) -> str | None:
     """
     try:
         _evaluate_simple_expression(
-            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
+            text, _ProbeNamespace({root: _ProbeNamespace() for root in _NAMESPACE_ROOTS})
         )
     except ValueError as exc:
         message = str(exc)
@@ -1436,8 +1446,8 @@ def _collect_leaves(text: str) -> list[str]:
 
     Runs the same probe ``_evaluator_rejects`` uses, with the leaf sink armed.
     Literals never reach the dot-path resolution, and operands, filter arguments
-    and list elements all do -- ``_evaluate_simple_expression`` evaluates both
-    sides of ``or``/``and`` eagerly rather than short-circuiting, so a leaf is
+    and list elements all do -- probe evaluation visits both sides of
+    ``or``/``and`` eagerly rather than short-circuiting, so a leaf is
     recorded whatever the other side is worth.
 
     A probe run can still raise on its own placeholder values, which is what
@@ -1450,7 +1460,7 @@ def _collect_leaves(text: str) -> list[str]:
     token = _leaf_sink.set(leaves)
     try:
         _evaluate_simple_expression(
-            text, {root: _ProbeNamespace() for root in _NAMESPACE_ROOTS}
+            text, _ProbeNamespace({root: _ProbeNamespace() for root in _NAMESPACE_ROOTS})
         )
     except Exception:  # noqa: BLE001 - probe values, reported by _evaluator_rejects
         pass

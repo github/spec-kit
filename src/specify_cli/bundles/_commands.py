@@ -8,6 +8,7 @@ Typer-free modules in this package.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.markup import escape as _escape_markup
@@ -17,6 +18,9 @@ from . import BundlerError
 from .project import active_integration
 from .records import load_records
 
+if TYPE_CHECKING:
+    from .installer import InstallResult
+
 bundle_app = typer.Typer(
     name="bundle",
     help="Discover, install, and author Spec Kit bundles",
@@ -24,8 +28,13 @@ bundle_app = typer.Typer(
 )
 
 
-def _fail(message: str) -> None:
+def _fail(message: str, *, as_json: bool = False) -> None:
     """Print an actionable error to stderr and exit non-zero."""
+    if as_json:
+        import json
+
+        typer.echo(json.dumps({"error": message}, ensure_ascii=False), err=True)
+        raise typer.Exit(code=1)
     # Use the stderr console so the error never lands on stdout, which under
     # ``--json`` carries the machine-readable payload and must stay parseable.
     # Escape the message: every caller passes ``str(exc)`` from a BundlerError
@@ -35,6 +44,11 @@ def _fail(message: str) -> None:
     # closer and replacing the whole message with a traceback.
     err_console.print(f"[red]Error:[/red] {_escape_markup(message)}", style=None)
     raise typer.Exit(code=1)
+
+
+def _render_install_warnings(result: InstallResult) -> None:
+    for warning in result.warnings:
+        err_console.print(f"[yellow]Warning:[/yellow] {_escape_markup(warning.message)}")
 
 
 def _user_config_dir() -> Path:
@@ -96,6 +110,7 @@ def _run_init(integration: str, *, script_type: str, offline: bool = False) -> N
             ignore_agent_tools=True,
             here=True,
             force=True,
+            allow_symlinks=False,
             skip_tls=False,
             debug=False,
             github_token=None,
@@ -136,7 +151,7 @@ def _bundle_overlaps(project_root: Path, manifest, *, offline: bool) -> list[str
             active_integration(project_root),
             load_records(project_root),
         )
-        return list(report.overlaps)
+        return [*report.overlaps, *report.version_clashes]
     except BundlerError:
         return []
 
