@@ -6329,6 +6329,69 @@ class TestExtensionCatalog:
         # silently dropped rather than raising or crashing.
         assert [ext["id"] for ext in merged] == ["good"]
 
+    def test_merged_extensions_skips_github_cli_credential_failure(
+        self,
+        temp_dir,
+        capsys,
+    ):
+        """A failed GitHub CLI login must not hide healthy catalogs."""
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli.authentication.github import GitHubCliAuthError
+
+        catalog = self._make_catalog(temp_dir)
+        failed_entry = CatalogEntry(
+            url="https://github.example.com/catalog.json",
+            name="private",
+            priority=1,
+            install_allowed=True,
+        )
+        healthy_entry = CatalogEntry(
+            url="https://healthy.example.com/catalog.json",
+            name="healthy",
+            priority=2,
+            install_allowed=True,
+        )
+        healthy_payload = {
+            "schema_version": "1.0",
+            "extensions": {
+                "healthy-ext": {
+                    "name": "Healthy",
+                    "version": "1.0.0",
+                }
+            },
+        }
+        healthy_response = MagicMock()
+        healthy_response.read.side_effect = io.BytesIO(
+            json.dumps(healthy_payload).encode()
+        ).read
+        healthy_response.__enter__ = lambda response: response
+        healthy_response.__exit__ = MagicMock(return_value=False)
+        healthy_response.geturl.return_value = healthy_entry.url
+
+        def open_catalog(url, **_kwargs):
+            if url == failed_entry.url:
+                raise GitHubCliAuthError(
+                    "GitHub authentication failed for provider 'github'"
+                )
+            return healthy_response
+
+        with patch.object(
+            catalog,
+            "_open_url",
+            side_effect=open_catalog,
+        ), patch.object(
+            catalog,
+            "get_active_catalogs",
+            return_value=[failed_entry, healthy_entry],
+        ):
+            merged = catalog._get_merged_extensions(force_refresh=True)
+
+        assert [extension["id"] for extension in merged] == ["healthy-ext"]
+        warning = capsys.readouterr().err
+        assert "Could not fetch catalog 'private'" in warning
+        assert "<urlopen error" not in warning
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""
         from unittest.mock import patch, MagicMock

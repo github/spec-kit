@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import urllib.error
 from typing import TYPE_CHECKING
 
 from .base import AuthProvider
@@ -20,10 +21,15 @@ _GITHUB_PUBLIC_HOSTS = frozenset({
     "raw.githubusercontent.com",
     "codeload.github.com",
 })
+_GITHUB_ENTERPRISE_SERVICE_PREFIXES = ("api.", "raw.", "codeload.")
 
 
-class GitHubCliAuthError(RuntimeError):
+class GitHubCliAuthError(urllib.error.URLError):
     """Raised when GitHub CLI cannot provide a configured credential."""
+
+    def __str__(self) -> str:
+        """Return the sanitized reason without URLError's wrapper."""
+        return str(self.reason)
 
 
 class GitHubAuth(AuthProvider):
@@ -57,9 +63,7 @@ class GitHubAuth(AuthProvider):
             return super().resolve_token(entry, hostname)
 
         request_host = (hostname or entry.hosts[0]).lower()
-        credential_host = (
-            "github.com" if request_host in _GITHUB_PUBLIC_HOSTS else request_host
-        )
+        credential_host = self._credential_hostname(entry, request_host)
         cached = self._github_cli_cache.get(credential_host)
         if cached is not None:
             succeeded, value = cached
@@ -78,6 +82,24 @@ class GitHubAuth(AuthProvider):
         return token
 
     @staticmethod
+    def _credential_hostname(entry: AuthConfigEntry, request_host: str) -> str:
+        """Map a request host to the GitHub CLI login host."""
+        if request_host in _GITHUB_PUBLIC_HOSTS:
+            return "github.com"
+
+        exact_hosts = {
+            configured_host.lower()
+            for configured_host in entry.hosts
+            if "*" not in configured_host
+        }
+        for prefix in _GITHUB_ENTERPRISE_SERVICE_PREFIXES:
+            if request_host.startswith(prefix):
+                instance_host = request_host.removeprefix(prefix)
+                if instance_host in exact_hosts:
+                    return instance_host
+        return request_host
+
+    @staticmethod
     def _acquire_via_gh_cli(hostname: str) -> str:
         """Run the fixed GitHub CLI token command for *hostname*."""
         resolved = shutil.which("gh")
@@ -87,9 +109,7 @@ class GitHubAuth(AuthProvider):
                 "GitHub CLI ('gh') was not found."
             )
 
-        argv = [resolved, "auth", "token"]
-        if hostname != "github.com":
-            argv.extend(["--hostname", hostname])
+        argv = [resolved, "auth", "token", "--hostname", hostname]
 
         try:
             result = subprocess.run(  # noqa: S603

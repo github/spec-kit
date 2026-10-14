@@ -92,9 +92,10 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 ```
 
 Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
-using this mode. Specify invokes the fixed command `gh auth token` directly,
-without a shell, and caches the resulting token in memory for the current
-process. The token is not written to disk by Specify.
+using this mode. Specify invokes the fixed command
+`gh auth token --hostname github.com` directly, without a shell, and caches
+the resulting token in memory for the current process. The token is not
+written to disk by Specify.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -123,17 +124,20 @@ and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
 
-With `auth: "github-cli"`, Specify requests the credential for the exact
-enterprise request host by running:
+With `auth: "github-cli"`, Specify requests the credential for the configured
+GitHub instance host:
 
 ```bash
 gh auth token --hostname ghes.example.com
 ```
 
-The host must already be configured in GitHub CLI. If it is not configured,
-or GitHub CLI is not authenticated for it, Specify fails the request and
-suggests `gh auth login --hostname ghes.example.com`. GitHub CLI command output
-is not included in the error.
+When a request targets an `api.`, `raw.`, or `codeload.` host, Specify uses the
+bare instance host only when that exact host is also listed in the same
+provider entry. For example, `raw.ghes.example.com` maps to
+`ghes.example.com` in the configuration above. Otherwise, the request host is
+used unchanged. The selected host must already be configured and authenticated
+in GitHub CLI; failures suggest `gh auth login --hostname <host>` without
+including GitHub CLI command output in the error.
 
 ### GitHub Enterprise Cloud with data residency (GHE.com)
 
