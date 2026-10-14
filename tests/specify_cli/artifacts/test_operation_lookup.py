@@ -739,6 +739,35 @@ def test_lookup_maps_integration_loader_failure(
     assert exc_info.value.__cause__ is failure
 
 
+def test_lookup_normalizes_filesystem_derived_error_message(
+    spec_kit_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    failure = IntegrationInstallError("unregistered child \ud800")
+    monkeypatch.setattr(
+        _operation_lookup.installer,
+        "load_installed_integrations",
+        Mock(side_effect=failure),
+    )
+
+    with pytest.raises(ArtifactLookupIntegrationError) as exc_info:
+        lookup_artifact(
+            ArtifactLookupRequest(
+                spec_kit_project,
+                "preset:sample:template:sample",
+            )
+        )
+
+    assert exc_info.value.message == (
+        "artifact resolution failed: unregistered child \\ud800"
+    )
+    json.dumps(
+        {"error": exc_info.value.message},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    assert exc_info.value.__cause__ is failure
+
+
 @pytest.mark.parametrize(
     ("failure", "error_type", "code"),
     [

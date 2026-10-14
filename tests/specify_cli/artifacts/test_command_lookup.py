@@ -432,6 +432,41 @@ class TestCommandLookup:
         assert result.stderr.count("\n") == 1
         assert "Traceback" not in result.stderr
 
+    def test_lookup_filesystem_derived_message_is_utf8_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            installer,
+            "load_installed_integrations",
+            Mock(
+                side_effect=installer.IntegrationInstallError(
+                    "unregistered child \ud800"
+                )
+            ),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        result.stderr.encode("utf-8")
+        assert json.loads(result.stderr) == {
+            "error": "artifact resolution failed: unregistered child \\ud800"
+        }
+        assert result.stderr.count("\n") == 1
+        assert "Traceback" not in result.stderr
+
     @pytest.mark.parametrize(
         "failure",
         [

@@ -95,11 +95,12 @@ class ArtifactLookupError(ArtifactError):
         details: dict[str, Any],
         retryable: bool = False,
     ) -> None:
+        safe_message = _json_safe_error_text(message)
         self.code = code
-        self.message = message
+        self.message = safe_message
         self.details = details
         self.retryable = retryable
-        super().__init__(message)
+        super().__init__(safe_message)
 
 
 class ArtifactLookupProjectDirectoryError(ArtifactLookupError):
