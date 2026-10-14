@@ -227,6 +227,19 @@ class TestRunCaptured:
         assert result.exit_code == 130
         _assert_stopped(heartbeat)
 
+    def test_interrupt_during_process_setup_is_reported_not_raised(
+        self, monkeypatch
+    ):
+        class InterruptedSetup:
+            def __init__(self, args, cwd):
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(_capture, "_ProcessTree", InterruptedSetup)
+        result = run_captured(_python("pass"))
+        assert result == CapturedProcess(
+            exit_code=130, stdout="", stderr="", interrupted=True
+        )
+
     def test_completed_process_is_not_killed(self, monkeypatch):
         def fail(self):
             raise AssertionError("a completed process must not be killed")
@@ -277,8 +290,9 @@ class TestRunCaptured:
 
         heartbeat = tmp_path / "heartbeat"
         monkeypatch.setattr(_capture, "_resume_threads", resume_then_interrupt)
-        with pytest.raises(KeyboardInterrupt):
-            run_captured(_spawn_descendant(heartbeat, "time.sleep(60)"))
+        result = run_captured(_spawn_descendant(heartbeat, "time.sleep(60)"))
+        assert result.interrupted is True
+        assert result.exit_code == 130
         _assert_stopped(heartbeat)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")

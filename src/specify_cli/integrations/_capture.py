@@ -339,7 +339,12 @@ def run_captured(
             f"max_bytes must be a positive integer or -1, got {max_bytes!r}."
         )
 
-    tree = _ProcessTree(args, cwd)
+    try:
+        tree = _ProcessTree(args, cwd)
+    except KeyboardInterrupt:
+        # The constructor has already killed the process it started, so this
+        # is reported like any other interruption, with nothing captured.
+        return CapturedProcess(exit_code=130, stdout="", stderr="", interrupted=True)
     proc = tree.proc
     sinks = (_Sink(max_bytes), _Sink(max_bytes))
     readers: list[threading.Thread] = []
@@ -350,9 +355,7 @@ def run_captured(
             # Starting the readers is inside the try, so an interruption here
             # still kills the process group or job below.
             for pipe, sink in zip((proc.stdout, proc.stderr), sinks):
-                reader = threading.Thread(
-                    target=_drain, args=(pipe, sink), daemon=True
-                )
+                reader = threading.Thread(target=_drain, args=(pipe, sink), daemon=True)
                 reader.start()
                 readers.append(reader)
             try:
