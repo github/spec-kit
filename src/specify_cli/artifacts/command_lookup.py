@@ -10,13 +10,13 @@ from pathlib import Path
 
 import typer
 
-from . import ArtifactError
 from ._commands import (
     _emit_error_and_exit,
     _require_json_flag,
     artifact_app,
 )
 from ._operation_lookup import (
+    ArtifactLookupError,
     ArtifactLookupProjectError,
     ArtifactLookupRequest,
     ArtifactLookupResolutionError,
@@ -59,7 +59,7 @@ def artifact_lookup(
     _require_json_flag(json_flag)
     try:
         project_directory = _resolve_project_root()
-    except ArtifactError as exc:
+    except ArtifactLookupError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
     except (OSError, RuntimeError):
@@ -73,7 +73,7 @@ def artifact_lookup(
                 lookup_id=lookup_id,
             )
         )
-    except ArtifactError as exc:
+    except ArtifactLookupError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
     except Exception:

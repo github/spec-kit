@@ -18,6 +18,7 @@ from specify_cli._project_policy import (
 )
 from specify_cli.artifacts import (
     ArtifactCatalog,
+    ArtifactResolutionError,
     _operation_lookup,
     command_lookup,
 )
@@ -472,8 +473,9 @@ class TestCommandLookup:
         [
             OSError("unreadable catalog"),
             RuntimeError("unexpected catalog failure"),
+            ArtifactResolutionError("unexpected catalog detail"),
         ],
-        ids=["filesystem", "non-filesystem"],
+        ids=["filesystem", "non-filesystem", "sibling-artifact-error"],
     )
     def test_lookup_unexpected_operation_failure_is_json_error(
         self,
