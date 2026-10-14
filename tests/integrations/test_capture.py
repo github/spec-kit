@@ -218,6 +218,36 @@ class TestRunCaptured:
         result = run_captured(_python("print('done')"), timeout=30)
         assert result == CapturedProcess(exit_code=0, stdout="done\n", stderr="")
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
+    def test_windows_cli_is_in_the_job_before_its_first_instruction(self):
+        """The CLI starts suspended, so it cannot spawn outside the job."""
+        result = run_captured(
+            _python(
+                "import ctypes\n"
+                "in_job = ctypes.c_int()\n"
+                "ctypes.windll.kernel32.IsProcessInJob(\n"
+                "    ctypes.windll.kernel32.GetCurrentProcess(), None,\n"
+                "    ctypes.byref(in_job))\n"
+                "print(bool(in_job.value))\n"
+            ),
+            timeout=60,
+        )
+        assert result.stdout == "True\n"
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
+    def test_windows_cli_never_runs_without_a_job(self, tmp_path, monkeypatch):
+        def fail(proc):
+            raise OSError("job assignment failed")
+
+        marker = tmp_path / "ran"
+        monkeypatch.setattr(_capture, "_start_in_job", fail)
+        with pytest.raises(OSError, match="job assignment failed"):
+            run_captured(
+                _python("import sys; open(sys.argv[1], 'w').close()", str(marker))
+            )
+        time.sleep(1)
+        assert not marker.exists()
+
     @pytest.mark.parametrize("max_bytes", [0, -2, True, False, 1.5, "10", None])
     def test_invalid_limit_is_rejected_before_starting_a_process(
         self, max_bytes, monkeypatch

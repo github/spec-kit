@@ -119,20 +119,24 @@ def _join(readers: Sequence[threading.Thread], deadline: float | None) -> bool:
     return not any(reader.is_alive() for reader in readers)
 
 
+# Windows process creation flag; not exported by ``subprocess``.
+_CREATE_SUSPENDED = 0x00000004
+
+
 class _ProcessTree:
     """Run a process so that it and every descendant can be killed together.
 
     Killing only the CLI would leave the tools it started running, still
     changing the project and holding the pipes open after the step has
     failed. On POSIX the CLI leads a new session and the whole process group
-    is killed; on Windows it is assigned to a job object that is terminated.
+    is killed; on Windows it runs inside a job object that is terminated.
     A separate session also keeps the terminal's Ctrl+C from reaching the CLI
     directly: the interrupt is handled here, by killing the tree.
     """
 
     def __init__(self, args: Sequence[str], cwd: str | None) -> None:
         isolation: dict[str, Any] = (
-            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | _CREATE_SUSPENDED}
             if os.name == "nt"
             else {"start_new_session": True}
         )
@@ -143,13 +147,25 @@ class _ProcessTree:
             cwd=cwd,
             **isolation,
         )
-        self._job = _assign_job(self.proc) if os.name == "nt" else None
+        self._job: Any = None
+        if os.name == "nt":
+            try:
+                self._job = _start_in_job(self.proc)
+            except BaseException:
+                # Fail closed: a CLI whose descendants could not be killed
+                # never runs.
+                self.proc.kill()
+                self.proc.wait()
+                for pipe in (self.proc.stdout, self.proc.stderr):
+                    if pipe is not None:
+                        pipe.close()
+                raise
 
     def kill(self) -> None:
         """Kill the process and its descendants, then reap the process."""
         if self._job is not None:
-            _terminate_job(self._job)
-        elif os.name != "nt":
+            _windows().TerminateJobObject(self._job, 1)
+        else:
             try:
                 os.killpg(self.proc.pid, signal.SIGKILL)
             except OSError:
@@ -162,57 +178,124 @@ class _ProcessTree:
 
     def close(self) -> None:
         if self._job is not None:
-            _close_handle(self._job)
+            _windows().CloseHandle(self._job)
             self._job = None
 
 
-def _kernel32() -> Any:
+_kernel32: Any = None
+
+
+def _windows() -> Any:
+    """Return kernel32 with the signatures the job-object helpers use."""
+    global _kernel32
+    if _kernel32 is None:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        signatures = {
+            "CreateJobObjectW": ((wintypes.LPVOID, wintypes.LPCWSTR), wintypes.HANDLE),
+            "AssignProcessToJobObject": (
+                (wintypes.HANDLE, wintypes.HANDLE),
+                wintypes.BOOL,
+            ),
+            "TerminateJobObject": ((wintypes.HANDLE, wintypes.UINT), wintypes.BOOL),
+            "CreateToolhelp32Snapshot": (
+                (wintypes.DWORD, wintypes.DWORD),
+                wintypes.HANDLE,
+            ),
+            "Thread32First": ((wintypes.HANDLE, ctypes.c_void_p), wintypes.BOOL),
+            "Thread32Next": ((wintypes.HANDLE, ctypes.c_void_p), wintypes.BOOL),
+            "OpenThread": (
+                (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD),
+                wintypes.HANDLE,
+            ),
+            "ResumeThread": ((wintypes.HANDLE,), wintypes.DWORD),
+            "CloseHandle": ((wintypes.HANDLE,), wintypes.BOOL),
+        }
+        for name, (argtypes, restype) in signatures.items():
+            function = getattr(kernel32, name)
+            function.argtypes = argtypes
+            function.restype = restype
+        _kernel32 = kernel32
+    return _kernel32
+
+
+def _start_in_job(proc: subprocess.Popen) -> Any:
+    """Put the suspended *proc* in a new job object, then resume it.
+
+    *proc* was created suspended, so it cannot start a descendant before it
+    is in the job; every process it starts afterwards joins the job too.
+    Returns the job handle. Raises OSError if any step fails.
+    """
+    import ctypes
+
+    kernel32 = _windows()
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not kernel32.AssignProcessToJobObject(job, int(proc._handle)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        _resume_threads(proc.pid)
+    except BaseException:
+        kernel32.CloseHandle(job)
+        raise
+    return job
+
+
+def _resume_threads(pid: int) -> None:
+    """Resume the threads of the suspended process *pid*.
+
+    ``subprocess`` closes the main thread's handle, so the thread is found
+    through a thread snapshot.
+    """
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
-    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
-    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
-    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
-    kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
-    kernel32.TerminateJobObject.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    return kernel32
+    class THREADENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ThreadID", wintypes.DWORD),
+            ("th32OwnerProcessID", wintypes.DWORD),
+            ("tpBasePri", wintypes.LONG),
+            ("tpDeltaPri", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+        ]
 
+    th32cs_snapthread = 0x00000004
+    thread_suspend_resume = 0x0002
+    resume_failed = 0xFFFFFFFF
+    invalid_handle = wintypes.HANDLE(-1).value
 
-def _assign_job(proc: subprocess.Popen) -> Any:
-    """Put *proc* in a new job object; return the job, or None on failure.
-
-    Processes the CLI starts later join the job automatically. Without a job
-    only the CLI itself can be killed.
-    """
+    kernel32 = _windows()
+    snapshot = kernel32.CreateToolhelp32Snapshot(th32cs_snapthread, 0)
+    if not snapshot or snapshot == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    resumed = 0
     try:
-        kernel32 = _kernel32()
-        job = kernel32.CreateJobObjectW(None, None)
-        if not job:
-            return None
-        if not kernel32.AssignProcessToJobObject(job, int(proc._handle)):
-            kernel32.CloseHandle(job)
-            return None
-        return job
-    except (AttributeError, OSError):
-        return None
-
-
-def _terminate_job(job: Any) -> None:
-    try:
-        _kernel32().TerminateJobObject(job, 1)
-    except OSError:
-        pass
-
-
-def _close_handle(handle: Any) -> None:
-    try:
-        _kernel32().CloseHandle(handle)
-    except OSError:
-        pass
+        entry = THREADENTRY32()
+        entry.dwSize = ctypes.sizeof(THREADENTRY32)
+        more = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                thread = kernel32.OpenThread(
+                    thread_suspend_resume, False, entry.th32ThreadID
+                )
+                if not thread:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                try:
+                    if kernel32.ResumeThread(thread) == resume_failed:
+                        raise ctypes.WinError(ctypes.get_last_error())
+                finally:
+                    kernel32.CloseHandle(thread)
+                resumed += 1
+            more = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    if not resumed:
+        raise OSError(f"Could not find the threads of process {pid} to resume.")
 
 
 def _decode(data: bytes, *, complete: bool) -> str:
