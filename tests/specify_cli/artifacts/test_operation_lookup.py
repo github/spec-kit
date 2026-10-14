@@ -689,6 +689,70 @@ def test_lookup_maps_corrupt_registry_before_malformed_identifier(
         )
 
     assert exc_info.value.code == "corrupt_extension_registry"
+
+
+def test_lookup_normalizes_prevalidation_identifier_error_details(
+    spec_kit_project: Path,
+):
+    lookup_id = "extension:source:template:\ud800"
+    registry = spec_kit_project / ".specify" / "extensions" / ".registry"
+    registry.write_text("{invalid", encoding="utf-8")
+
+    with pytest.raises(ArtifactLookupRegistryError) as exc_info:
+        lookup_artifact(ArtifactLookupRequest(spec_kit_project, lookup_id))
+
+    assert exc_info.value.details["lookup_id"] == ("extension:source:template:\\ud800")
+    json.dumps(
+        {"details": exc_info.value.details},
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "probe_results",
+    [
+        [OSError("project probe failed")],
+        [True, OSError("marker probe failed")],
+    ],
+    ids=["project-directory", "project-marker"],
+)
+def test_lookup_maps_project_probe_filesystem_failures(
+    spec_kit_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_results: list[bool | OSError],
+):
+    failure = next(value for value in probe_results if isinstance(value, OSError))
+    results = iter(probe_results)
+    loader = Mock(side_effect=AssertionError("loader reached"))
+    catalog = Mock(side_effect=AssertionError("catalog reached"))
+
+    def probe_is_dir(_path: Path) -> bool:
+        result = next(results)
+        if isinstance(result, OSError):
+            raise result
+        return result
+
+    monkeypatch.setattr(Path, "is_dir", probe_is_dir)
+    monkeypatch.setattr(_operation_lookup, "preflight_project_policy", Mock())
+    monkeypatch.setattr(
+        _operation_lookup.installer,
+        "load_installed_integrations",
+        loader,
+    )
+    monkeypatch.setattr(_operation_lookup, "ArtifactCatalog", catalog)
+
+    with pytest.raises(ArtifactLookupFilesystemError) as exc_info:
+        lookup_artifact(
+            ArtifactLookupRequest(
+                spec_kit_project,
+                "preset:sample:template:sample",
+            )
+        )
+
+    assert exc_info.value.code == "filesystem_error"
+    assert exc_info.value.__cause__ is failure
+    loader.assert_not_called()
+    catalog.assert_not_called()
     catalog.assert_not_called()
 
 

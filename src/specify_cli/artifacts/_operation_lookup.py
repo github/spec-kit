@@ -45,6 +45,14 @@ def _json_safe_error_text(value: object) -> str:
     return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
+def _json_safe_error_details(details: dict[str, Any]) -> dict[str, Any]:
+    """Normalize string detail values without changing their declared types."""
+    return {
+        key: _json_safe_error_text(value) if type(value) is str else value
+        for key, value in details.items()
+    }
+
+
 @dataclass(frozen=True)
 class ArtifactLookupRequest:
     """Explicit project context and contribution identifier."""
@@ -98,7 +106,7 @@ class ArtifactLookupError(ArtifactError):
         safe_message = _json_safe_error_text(message)
         self.code = code
         self.message = safe_message
-        self.details = details
+        self.details = _json_safe_error_details(details)
         self.retryable = retryable
         super().__init__(safe_message)
 
@@ -415,14 +423,21 @@ def lookup_artifact(request: ArtifactLookupRequest) -> ArtifactLookupResult:
         raise ArtifactLookupProjectDirectoryError(project_directory)
 
     try:
-        if project_directory.is_dir():
+        project_is_directory = project_directory.is_dir()
+        if project_is_directory:
             preflight_project_policy(project_directory)
+        has_project_marker = (project_directory / ".specify").is_dir()
     except ProjectResolutionError as exc:
         raise ArtifactLookupProjectPolicyError(
             project_directory,
             str(exc),
         ) from exc
-    if not (project_directory / ".specify").is_dir():
+    except OSError as exc:
+        raise ArtifactLookupFilesystemError(
+            project_directory,
+            request.lookup_id,
+        ) from exc
+    if not has_project_marker:
         raise ArtifactLookupProjectError(project_directory)
 
     try:
