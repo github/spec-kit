@@ -3586,7 +3586,7 @@ class ExtensionManager:
 
         hook_executor = HookExecutor(self.project_root)
         projection_active = projection_enabled(self.project_root)
-        hook_executor.load_project_config_for_update()
+        original_hook_config = hook_executor.load_project_config_for_update()
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
@@ -3608,72 +3608,127 @@ class ExtensionManager:
         if projection_active:
             hook_executor.unregister_hooks(extension_id)
 
-        # Unregister commands from all AI agents
-        if registered_commands:
-            safe_commands = dict(registered_commands)
-            if "generic" in safe_commands:
-                safe_commands.pop("generic")
-            if safe_commands:
-                CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
-                    safe_commands, self.project_root
-                )
-        if metadata:
-            self._remove_generic_artifact_paths(extension_id, metadata)
+        try:
+            # Unregister commands from all AI agents
+            if registered_commands:
+                safe_commands = dict(registered_commands)
+                if "generic" in safe_commands:
+                    safe_commands.pop("generic")
+                if safe_commands:
+                    CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
+                        safe_commands, self.project_root
+                    )
+            if metadata:
+                self._remove_generic_artifact_paths(extension_id, metadata)
 
-        # Unregister agent skills
-        self._unregister_extension_skills(
-            registered_skills,
-            extension_id,
-            generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
-        )
+            # Unregister agent skills
+            self._unregister_extension_skills(
+                registered_skills,
+                extension_id,
+                generic_hashes=metadata.get("generic_artifact_hashes") if metadata else None,
+            )
 
-        if keep_config:
-            # Preserve config files, only remove non-config files
-            if extension_dir.exists():
-                for child in extension_dir.iterdir():
-                    # Keep top-level *-config.yml and *-config.local.yml files
-                    if child.is_file() and (
-                        child.name.endswith("-config.yml")
-                        or child.name.endswith("-config.local.yml")
-                    ):
-                        continue
-                    if child.is_dir():
-                        shutil.rmtree(child)
-                    else:
-                        child.unlink()
-                # Write a provenance marker so install_from_directory can
-                # distinguish this --keep-config leftover from a directory left
-                # by a partially-failed install (which must not have its
-                # packaged default configs treated as user-preserved data).
-                # Content is intentionally empty — only presence matters.
-                (extension_dir / ".keep-config").write_text("")
-        else:
-            # Backup config files before deleting
-            if extension_dir.exists():
-                # Use subdirectory per extension to avoid name accumulation
-                # (e.g., jira-jira-config.yml on repeated remove/install cycles)
-                backup_dir = self.extensions_dir / ".backup" / extension_id
-                backup_dir.mkdir(parents=True, exist_ok=True)
+            if keep_config:
+                # Preserve config files, only remove non-config files
+                if extension_dir.exists():
+                    for child in extension_dir.iterdir():
+                        # Keep top-level *-config.yml and *-config.local.yml files
+                        if child.is_file() and (
+                            child.name.endswith("-config.yml")
+                            or child.name.endswith("-config.local.yml")
+                        ):
+                            continue
+                        if child.is_dir():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
+                    # Write a provenance marker so install_from_directory can
+                    # distinguish this --keep-config leftover from a directory left
+                    # by a partially-failed install (which must not have its
+                    # packaged default configs treated as user-preserved data).
+                    # Content is intentionally empty — only presence matters.
+                    (extension_dir / ".keep-config").write_text("")
+            else:
+                # Backup config files before deleting
+                if extension_dir.exists():
+                    # Use subdirectory per extension to avoid name accumulation
+                    # (e.g., jira-jira-config.yml on repeated remove/install cycles)
+                    backup_dir = self.extensions_dir / ".backup" / extension_id
+                    backup_dir.mkdir(parents=True, exist_ok=True)
 
-                # Backup both primary and local override config files
-                config_files = list(extension_dir.glob("*-config.yml")) + list(
-                    extension_dir.glob("*-config.local.yml")
-                )
-                for config_file in config_files:
-                    backup_path = backup_dir / config_file.name
-                    shutil.copy2(config_file, backup_path)
+                    # Backup both primary and local override config files
+                    config_files = list(extension_dir.glob("*-config.yml")) + list(
+                        extension_dir.glob("*-config.local.yml")
+                    )
+                    for config_file in config_files:
+                        backup_path = backup_dir / config_file.name
+                        shutil.copy2(config_file, backup_path)
 
-            # Remove extension directory
-            if extension_dir.exists():
-                shutil.rmtree(extension_dir)
+                # Remove extension directory
+                if extension_dir.exists():
+                    shutil.rmtree(extension_dir)
 
-        if not projection_active:
-            hook_executor.unregister_hooks(extension_id)
+            if not projection_active:
+                hook_executor.unregister_hooks(extension_id)
 
-        # Update registry
-        self.registry.remove(extension_id)
+            # Update registry
+            self.registry.remove(extension_id)
+        except Exception as exc:
+            if projection_active:
+                try:
+                    hook_executor.save_project_config(original_hook_config)
+                except (ValueError, OSError) as rollback_exc:
+                    raise ExtensionError(
+                        f"Extension removal failed ({exc}); hook rollback failed: {rollback_exc}"
+                    ) from exc
+            raise
 
         return True
+
+    def restore_generic_extension_after_failed_disable(
+        self, extension_id: str, previous: Dict[str, Any]
+    ) -> None:
+        """Restore generic invocations and verify the registry and owned files."""
+        self.registry.update(extension_id, {"enabled": True})
+        self.register_enabled_extensions_for_agent("generic")
+        restored = self.registry.get(extension_id) or {}
+        if restored.get("enabled") is not True:
+            raise ExtensionError("Rollback did not restore enabled registry state")
+        previous_commands = previous.get("registered_commands", {})
+        commands = (
+            previous_commands.get("generic", [])
+            if isinstance(previous_commands, dict) else []
+        )
+        for names, skills in (
+            (commands, False), (previous.get("registered_skills", []), True)
+        ):
+            if not isinstance(names, list) or any(
+                not isinstance(name, str) for name in names
+            ):
+                raise ExtensionError("Invalid generic artifact metadata during rollback")
+            restored_commands = restored.get("registered_commands", {})
+            registered = (
+                restored.get("registered_skills", [])
+                if skills else (
+                    restored_commands.get("generic", [])
+                    if isinstance(restored_commands, dict) else None
+                )
+            )
+            if (
+                not isinstance(registered, list)
+                or any(not isinstance(name, str) for name in registered)
+                or set(names) - set(registered)
+            ):
+                raise ExtensionError("Rollback did not restore generic artifact registry")
+            owned = self._generic_owned_names(
+                restored, names, skills=skills, extension_id=extension_id
+            )
+            missing = set(names) - set(owned)
+            if missing:
+                raise ExtensionError(
+                    "Rollback did not restore generic invocation artifacts: "
+                    + ", ".join(sorted(missing))
+                )
 
     def disable_generic_extension_artifacts(self, extension_id: str) -> None:
         """Disable and retire generic invocations without removing sources."""
@@ -6017,7 +6072,7 @@ class HookExecutor:
                 new_entries[command] = {
                     "extension": manifest.id,
                     "command": command,
-                    "enabled": True,
+                    "enabled": entry.get("enabled", True) if native_hooks else True,
                     "optional": entry.get("optional", True),
                     "priority": normalize_priority(
                         entry.get("priority"), DEFAULT_HOOK_PRIORITY

@@ -75,6 +75,35 @@ class TestExtensionAddCLI:
         rendered = (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").read_text()
         assert "hook-dispatch" not in rendered
 
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    def test_add_disabled_manifest_hook_respects_opt_in(
+        self, extension_dir, project_dir, native_hooks
+    ):
+        if native_hooks:
+            enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {
+            "before_plan": {
+                "command": "speckit.test-ext.hello", "enabled": False,
+            }
+        }
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"]
+            )
+        assert result.exit_code == 0, result.output
+        config = yaml.safe_load(
+            (project_dir / ".specify/extensions.yml").read_text(encoding="utf-8")
+        )
+        assert config["hooks"]["before_plan"][0]["enabled"] is not native_hooks
+        cache = project_dir / ".specify/hook-dispatch"
+        if native_hooks:
+            assert json.loads((cache / "before_plan.json").read_text())["hooks"] == []
+        else:
+            assert not cache.exists()
+
     def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
         enable_native_hooks(project_dir)
         config = project_dir / ".specify/extensions.yml"

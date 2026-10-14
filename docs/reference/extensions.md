@@ -330,6 +330,11 @@ not change execution behavior. For projection portability, missing or invalid
 priorities and values above `2147483647` use the default `10`; the current
 in-process hook reader retains its existing priority handling.
 
+If an opted-in removal fails during subsequent cleanup, Spec Kit restores the
+prior hook configuration and projection or reports a rollback failure. This
+does not make removal of command artifacts and extension sources atomic;
+cleanup already completed may not be reversed.
+
 ```yaml
 installed:
   - git
@@ -376,9 +381,10 @@ Each hook entry supports the following fields:
 | `description` | Human-readable explanation of what the hook does. |
 | `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
 
-Hook event names identify when a hook is invoked. New manifests and project
-configuration writes require `before_<command_name>` or
-`after_<command_name>`, including commands beyond the built-in set. Core
+Hook event names identify when a hook is invoked. When native hook projection
+is enabled, new manifests and project configuration writes require
+`before_<command_name>` or `after_<command_name>`, including commands beyond
+the built-in set. Core
 targets use `before_<command>` / `after_<command>` (for example,
 `before_plan`); extension-owned targets use
 `before_<target-extension>_<command>` /

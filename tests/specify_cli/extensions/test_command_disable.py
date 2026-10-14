@@ -8,10 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.extensions import (
+    ExtensionError,
     ExtensionManager,
     ExtensionRegistry,
     HookExecutor,
@@ -85,3 +87,19 @@ class TestExtensionDisableCLI:
         assert "rollback failed" in result.output
         assert "did not restore generic" in result.output
         assert not artifact.exists()
+
+    def test_generic_rollback_verifies_owned_artifacts_at_domain_boundary(
+        self, tmp_path, extension_dir
+    ):
+        project, _, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
+        manager = ExtensionManager(project)
+        previous = manager.registry.get("test-ext")
+        manager.disable_generic_extension_artifacts("test-ext")
+        assert not artifact.exists()
+        with patch.object(manager, "register_enabled_extensions_for_agent"):
+            with pytest.raises(ExtensionError, match="did not restore generic"):
+                manager.restore_generic_extension_after_failed_disable(
+                    "test-ext", previous
+                )

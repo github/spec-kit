@@ -19,7 +19,7 @@ def extension_remove(
     force: bool = typer.Option(False, "--force", help="Skip confirmation"),
 ):
     """Uninstall an extension."""
-    from . import ExtensionManager
+    from . import ExtensionError, ExtensionManager
 
     project_root = _commands._require_specify_project()
     manager = ExtensionManager(project_root)
@@ -70,7 +70,7 @@ def extension_remove(
     # Remove extension
     try:
         success = manager.remove(extension_id, keep_config=keep_config)
-    except (ValueError, OSError) as exc:
+    except (ExtensionError, ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1) from exc
 
