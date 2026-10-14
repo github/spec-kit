@@ -111,7 +111,9 @@ def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool 
     rendered = yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True).encode("utf-8")
     root = config_file.parent
     root.mkdir(parents=True, exist_ok=True)
-    with _exclusive_project_lock(root.parent, ".hook-dispatch.lock", context="hook projection"):
+    with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
+        root.parent, ".hook-dispatch.lock", context="hook projection"
+    ):
         _check_paths(config_file)
         source = config_file.read_bytes() if preserve_source else rendered
         cache = _cache_path(config_file)
