@@ -39,7 +39,7 @@ if (-not $paths) {
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
 # Copy plan template if plan doesn't already exist
-if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
+if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
     if ($Json) {
         [Console]::Error.WriteLine("Plan already exists at $($paths.IMPL_PLAN), skipping template copy")
     } else {
