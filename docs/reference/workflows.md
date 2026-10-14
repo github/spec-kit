@@ -1081,7 +1081,7 @@ where later steps can read it:
 | ------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
 | `capture`           | `command`, `prompt` | `true` captures stdout and stderr instead of streaming them. Must be a literal boolean; default `false`. |
 | `capture_max_bytes` | `command`, `prompt` | Limit for each captured stream: a positive integer, or `-1` for no limit. Default `1048576` (1 MiB). Requires `capture: true`. |
-| `timeout`           | `command`, `prompt` | Seconds before the CLI is killed; with `capture: true`, every process it started is killed too. For `command` it applies only with `capture: true` (default `600`); a streaming `command` step has no timeout. For `prompt` it always applies (default `300`). |
+| `timeout`           | `command`, `prompt` | Seconds before the CLI is killed; with `capture: true`, its process group (POSIX) or job object (Windows) is killed, which includes the processes it started unless they detached from it, as a daemonising helper can. For `command` it applies only with `capture: true` (default `600`); a streaming `command` step has no timeout. For `prompt` it always applies (default `300`). |
 
 A captured step prints nothing while it runs. Its output gains these fields:
 

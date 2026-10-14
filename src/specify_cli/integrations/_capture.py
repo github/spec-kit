@@ -124,14 +124,17 @@ _CREATE_SUSPENDED = 0x00000004
 
 
 class _ProcessTree:
-    """Run a process so that it and every descendant can be killed together.
+    """Run a process so that it and its process group or job can be killed.
 
     Killing only the CLI would leave the tools it started running, still
     changing the project and holding the pipes open after the step has
-    failed. On POSIX the CLI leads a new session and the whole process group
-    is killed; on Windows it runs inside a job object that is terminated.
+    failed. On POSIX the CLI leads a new session and its process group is
+    killed; on Windows it runs inside a job object that is terminated. The
+    boundary is that group or job, not every descendant: a process that
+    moves to another session or process group (POSIX) or breaks away from
+    the job (Windows), as a daemonising helper can, survives the kill.
     A separate session also keeps the terminal's Ctrl+C from reaching the CLI
-    directly: the interrupt is handled here, by killing the tree.
+    directly: the interrupt is handled here, by killing the group or job.
     """
 
     def __init__(self, args: Sequence[str], cwd: str | None) -> None:
@@ -162,7 +165,7 @@ class _ProcessTree:
                 raise
 
     def kill(self) -> None:
-        """Kill the process and its descendants, then reap the process."""
+        """Kill the process group or job, then reap the process."""
         if self._job is not None:
             _windows().TerminateJobObject(self._job, 1)
         else:
@@ -323,8 +326,9 @@ def run_captured(
     *max_bytes* counts raw bytes before decoding; ``-1`` disables the cap. A
     timeout or ``KeyboardInterrupt`` kills the process and is reported on the
     result (exit code ``-1`` or ``130``) together with the output read so far,
-    instead of being raised, after the process and its descendants are killed.
-    ``OSError`` from starting the process propagates.
+    instead of being raised, after the process's group (POSIX) or job
+    (Windows) is killed; a descendant that left it is not killed. ``OSError``
+    from starting the process propagates.
     """
     if not capture_max_bytes_is_valid(max_bytes):
         raise ValueError(
@@ -358,10 +362,10 @@ def run_captured(
             interrupted = True
 
         if timed_out or interrupted:
-            # Killing the whole tree closes every write end of the pipes, so
-            # the readers reach end-of-file. Only a descendant that left the
-            # session or job could keep them open; the grace period bounds
-            # that wait.
+            # Killing the group or job closes the write ends of the pipes its
+            # processes hold, so the readers reach end-of-file. Only a
+            # descendant that left the group or job could keep them open; the
+            # grace period bounds that wait.
             tree.kill()
             _join(readers, time.monotonic() + _DRAIN_GRACE_SECONDS)
     finally:

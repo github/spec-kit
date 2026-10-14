@@ -219,20 +219,31 @@ class TestRunCaptured:
         assert result == CapturedProcess(exit_code=0, stdout="done\n", stderr="")
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
-    def test_windows_cli_is_in_the_job_before_its_first_instruction(self):
+    def test_windows_cli_does_not_run_before_it_is_in_the_job(
+        self, tmp_path, monkeypatch
+    ):
         """The CLI starts suspended, so it cannot spawn outside the job."""
+        marker = tmp_path / "ran"
+        start_in_job = _capture._start_in_job
+        ran_before_job: list[bool] = []
+
+        def observe(proc):
+            # A running CLI would create the marker well within this delay.
+            time.sleep(1)
+            ran_before_job.append(marker.exists())
+            return start_in_job(proc)
+
+        monkeypatch.setattr(_capture, "_start_in_job", observe)
         result = run_captured(
             _python(
-                "import ctypes\n"
-                "in_job = ctypes.c_int()\n"
-                "ctypes.windll.kernel32.IsProcessInJob(\n"
-                "    ctypes.windll.kernel32.GetCurrentProcess(), None,\n"
-                "    ctypes.byref(in_job))\n"
-                "print(bool(in_job.value))\n"
+                "import sys; open(sys.argv[1], 'w').close(); print('ran')",
+                str(marker),
             ),
             timeout=60,
         )
-        assert result.stdout == "True\n"
+        assert ran_before_job == [False]
+        assert result.stdout == "ran\n"
+        assert marker.exists()
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
     def test_windows_cli_never_runs_without_a_job(self, tmp_path, monkeypatch):
