@@ -3665,3 +3665,60 @@ def test_unusable_exact_fallback_does_not_suppress_selector_warning(project_dir,
     templates = [declaration for declaration in manifest.templates]
     with pytest.warns(UserWarning, match="currently matches no command resources"):
         PresetManager._warn_unmatched_command_selectors(manifest, templates, pack)
+
+
+@pytest.mark.parametrize("strategy", ["append", "prepend", "wrap"])
+def test_command_regex_expansion_requires_effective_replace_base(project_dir, strategy):
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    lower = write_diagnostic_selector_preset(
+        project_dir, "composition-only",
+        [{"type": "command", "name": "foo", "file": "commands/foo.md", "strategy": strategy}],
+    )
+    pack = write_diagnostic_selector_preset(
+        project_dir, "upper-selector",
+        [{"type": "command", "name": r"regex:^foo$", "file": "payload.md"}],
+    )
+    manager = PresetManager(project_dir)
+    manager.registry.update(lower.name, {"priority": 20})
+    manifest = PresetManifest(pack / "preset.yml")
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") is None
+    expanded = manager._expand_command_selectors(resolver, pack, manifest.templates)
+    assert expanded == []
+    with pytest.warns(UserWarning, match="currently matches no command resources"):
+        manager._warn_unmatched_command_selectors(manifest, expanded, pack)
+    manager._refresh_selector_matches(pack.name, "copilot", expanded)
+    assert manager.registry.get(pack.name)["selector_commands"]["copilot"] == []
+
+
+@pytest.mark.parametrize("missing_selector", [True, False])
+@pytest.mark.parametrize("usable_strategy", ["replace", "append"])
+def test_overlapping_composition_does_not_register_unusable_aliases(
+    project_dir, tmp_path, missing_selector, usable_strategy
+):
+    from specify_cli import save_init_options
+
+    output = project_dir / ".github" / "agents"
+    output.mkdir(parents=True)
+    save_init_options(project_dir, {"ai": "copilot", "ai_skills": False, "script": "sh"})
+    names = [r"regex:^speckit\.plan$", "speckit.plan"]
+    if not missing_selector:
+        names.reverse()
+    source = write_command_declarations(tmp_path / "overlap", "overlap", [
+        {"type": "command", "name": names[0], "strategy": "append",
+         "aliases": ["speckit.unusable"], "body": "MISSING BODY\n"},
+        {"type": "command", "name": names[1], "strategy": usable_strategy,
+         "aliases": ["speckit.usable"], "body": "USABLE BODY\n"},
+    ])
+    installed = install_selector_fixture(project_dir, "overlap", source, 1)
+    (installed / "command-0.md").unlink()
+    manager = PresetManager(project_dir)
+    manager.register_enabled_presets_for_agent("copilot")
+
+    assert not (output / "speckit.unusable.agent.md").exists()
+    assert "USABLE BODY" in (output / "speckit.plan.agent.md").read_text()
+    assert "USABLE BODY" in (output / "speckit.usable.agent.md").read_text()
+    tracked = manager.registry.get("overlap")["registered_commands"]["copilot"]
+    assert "speckit.unusable" not in tracked
+    assert "speckit.usable" in tracked

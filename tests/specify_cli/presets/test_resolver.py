@@ -2721,7 +2721,14 @@ def test_unmatched_selector_payload_is_not_evidence_for_a_higher_selector(projec
     assert resolver.resolve("foo", "command") is None
 
 
-def test_composition_only_lower_declaration_is_not_a_selector_base(project_dir):
+@pytest.mark.parametrize(
+    "middle_strategy,middle_file",
+    [(None, None), ("replace", "payload.md"), ("replace", "commands/foo.md"),
+     ("append", "commands/foo.md")],
+)
+def test_composition_only_lower_declaration_is_not_a_selector_base(
+    project_dir, middle_strategy, middle_file
+):
     """A lower layer that only composes cannot make a selector eligible.
 
     A lower preset declaring a name with ``append`` and nothing below it to replace
@@ -2748,6 +2755,14 @@ def test_composition_only_lower_declaration_is_not_a_selector_base(project_dir):
     registry = PresetRegistry(project_dir / ".specify" / "presets")
     registry.add("append-only-lower", {"enabled": True, "priority": 20, "version": "1.0.0"})
     registry.add("upper-selector", {"enabled": True, "priority": 10, "version": "1.0.0"})
+    if middle_strategy is not None:
+        write_diagnostic_selector_preset(
+            project_dir,
+            "middle-selector",
+            [{"type": "command", "name": r"regex:^foo$",
+              "file": middle_file, "strategy": middle_strategy}],
+        )
+        registry.add("middle-selector", {"enabled": True, "priority": 15, "version": "1.0.0"})
 
     resolver = PresetResolver(project_dir)
     assert (
@@ -2759,3 +2774,11 @@ def test_composition_only_lower_declaration_is_not_a_selector_base(project_dir):
     )
     # The exact declaration still resolves; the selector contributes no layer.
     assert [candidate is not None for _declaration, candidate in declarations] == [True, False]
+
+    if middle_strategy is not None:
+        middle = resolver._preset_declarations_for_resource(
+            project_dir / ".specify" / "presets" / "middle-selector", "foo", "command"
+        )
+        assert [candidate for _declaration, candidate in middle] == [None]
+        assert all("middle-selector" not in layer["source"]
+                   for layer in resolver.collect_all_layers("foo", "command"))

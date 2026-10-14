@@ -39,16 +39,13 @@ def preset_resolve(
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
-    # A dotless name is a valid command name too (command manifests allow names
-    # such as ``new``), so the presence of a dot cannot by itself decide the
-    # type. Prefer whichever surface actually resolves the name, so selector
-    # attribution is reachable for accepted dotless commands.
+    # Preserve exact-template precedence for dotless names, falling back to the
+    # command surface so command-only names still expose selector attribution.
     template_type = "command" if is_command else "template"
-    if not is_command:
-        if resolver.collect_all_layers(template_name, "command"):
-            template_type = "command"
-
     layers = resolver.collect_all_layers(template_name, template_type)
+    if not is_command and not layers:
+        template_type = "command"
+        layers = resolver.collect_all_layers(template_name, template_type)
     safe_template_name = _escape_markup(str(template_name))
 
     if layers:

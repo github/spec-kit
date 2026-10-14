@@ -724,34 +724,21 @@ class PresetResolver:
     def _declared_replace_resources(
         self, base_dir: Path, name: str, template_type: str
     ) -> list[dict]:
-        """Manifest declarations providing a usable ``replace`` payload for ``name``.
-
-        Pure manifest scan (no eligibility recursion): an entry counts only when it
-        matches the name exactly or through a selector and its ``file`` exists.
-        """
-        manifest = self._get_manifest(base_dir)
-        if manifest is None:
-            return []
-        found = []
-        for declaration in manifest.templates:
-            if declaration.get("type") != template_type:
-                continue
-            declared_name = declaration.get("name")
-            if not isinstance(declared_name, str):
-                continue
-            if is_regex_selector(declared_name):
-                try:
-                    matched = selector_matches(declared_name, name)
-                except Exception:  # noqa: BLE001 - a malformed selector declares nothing
-                    matched = False
-            else:
-                matched = declared_name == name
-            if not matched or str(declaration.get("strategy", "replace")) != "replace":
-                continue
-            file_value = declaration.get("file")
-            if isinstance(file_value, str) and (base_dir / file_value).is_file():
-                found.append(declaration)
-        return found
+        """Return usable replace declarations, including eligible selectors only."""
+        if template_type == "command":
+            # Selector eligibility checks strictly below base_dir's position in
+            # the priority stack, so recursive replace-base checks terminate.
+            declarations = self._preset_declarations_for_resource(
+                base_dir, name, template_type
+            )
+        else:
+            declarations = [self._manifest_declared_template(base_dir, name, template_type)]
+        return [
+            declaration
+            for declaration, candidate in declarations
+            if declaration is not None and candidate is not None
+            and declaration.get("strategy", "replace") == "replace"
+        ]
 
     def _has_effective_replace_base(
         self, name: str, template_type: str, *, below_pack_id: str | None = None
@@ -774,9 +761,11 @@ class PresetResolver:
             entry, _candidate = self._manifest_declared_template(
                 base_dir, name, template_type
             )
-            if entry is None and self._conventional_resource(
-                base_dir, name, template_type
-            ) is not None:
+            if (
+                entry is None
+                and not (template_type == "command" and self._declares_command_name(base_dir, name))
+                and self._conventional_resource(base_dir, name, template_type) is not None
+            ):
                 return True
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             base_dir = self.extensions_dir / ext_id

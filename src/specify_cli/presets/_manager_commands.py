@@ -165,6 +165,9 @@ class _PresetCommandMethods:
                 if _PresetCommandMethods._command_name_has_lower_layer(
                     resolver, name, lower_preset_ids, lower_extension_ids
                 )
+                and resolver._has_effective_replace_base(
+                    name, "command", below_pack_id=current_id
+                )
             }
         )
 
@@ -253,12 +256,14 @@ class _PresetCommandMethods:
         for cmd in command_templates:
             strategy = cmd.get("strategy", "replace")
             if strategy != "replace":
-                # Only pre-compose if this preset is the top composing layer.
+                # Only pre-compose this declaration if its payload is the top layer.
+                # Another declaration in this preset cannot make a missing payload
+                # usable or confer its aliases on the concrete command.
                 # If a higher-priority replace already wins, skip composition
                 # here — reconciliation will write the correct content.
                 layers = resolver.collect_all_layers(cmd["name"], "command")
                 top_layer_is_ours = (
-                    layers and layers[0]["path"].is_relative_to(preset_dir)
+                    layers and layers[0]["path"] == preset_dir / cmd["file"]
                 )
                 if top_layer_is_ours:
                     composed = resolver.resolve_content(cmd["name"], "command")
@@ -1371,7 +1376,10 @@ class _PresetCommandMethods:
                         resolver, pack_dir,
                         [t for t in manifest.templates if t.get("type") == "command"],
                     ):
-                        if tmpl.get("name") == cmd_name:
+                        if (
+                            tmpl.get("name") == cmd_name
+                            and pack_dir / tmpl["file"] == layers[0]["path"]
+                        ):
                             composed_dir = pack_dir / ".composed"
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"

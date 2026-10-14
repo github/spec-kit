@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -240,16 +241,11 @@ def test_resolve_reports_command_selector_declaration(project_dir):
     assert r"regex:^speckit\.plan$" in strip_ansi(result.output)
 
 
+@pytest.mark.parametrize("same_name_template", [False, True])
 def test_resolve_reports_selector_attribution_for_dotless_command(
-    project_dir, temp_dir
+    project_dir, temp_dir, same_name_template
 ):
-    """A dotless command name must resolve as a command, not as a template.
-
-    Command manifests accept names such as ``new``, so the presence of a dot cannot
-    decide the resource type. Before the fix ``preset resolve new`` classified the
-    name as a template, leaving the selector-attribution branch unreachable and
-    reporting the command as missing even though a selector declared it.
-    """
+    """Dotless commands expose selectors while same-name templates keep precedence."""
     from tests.specify_cli.presets._helpers import (
         install_selector_fixture,
         write_command_declarations,
@@ -267,6 +263,9 @@ def test_resolve_reports_selector_attribution_for_dotless_command(
         [{"type": "command", "name": r"regex:^new$", "body": "SELECTOR NEW\n"}],
     )
     install_selector_fixture(project_dir, "higher-selector", higher, 10)
+    if same_name_template:
+        template = project_dir / ".specify" / "templates" / "new.md"
+        template.write_text("EXACT TEMPLATE\n")
 
     from unittest.mock import patch
 
@@ -275,4 +274,9 @@ def test_resolve_reports_selector_attribution_for_dotless_command(
 
     assert result.exit_code == 0, (result.output, result.exception)
     output = strip_ansi(result.output)
-    assert r"regex:^new$" in output, output
+    if same_name_template:
+        assert str(template) in output.replace("\n", ""), output
+        assert "regex:^new$" not in output, output
+        assert "higher-selector" not in output, output
+    else:
+        assert r"regex:^new$" in output, output
