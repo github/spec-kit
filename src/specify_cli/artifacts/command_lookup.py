@@ -33,7 +33,10 @@ def _project_directory_from_cli_context() -> Path:
     override = os.environ.get("SPECIFY_INIT_DIR", "")
     if not override:
         return invocation_directory
-    return (invocation_directory / override).resolve()
+    try:
+        return (invocation_directory / override).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ArtifactLookupProjectError(Path(".")) from exc
 
 
 def _resolve_project_root() -> Path:
@@ -56,8 +59,11 @@ def artifact_lookup(
     _require_json_flag(json_flag)
     try:
         project_directory = _resolve_project_root()
+    except ArtifactError as exc:
+        _emit_error_and_exit(exc)
+        return  # pragma: no cover
     except (OSError, RuntimeError):
-        _emit_error_and_exit(ArtifactLookupProjectError(Path(".")))
+        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
         return  # pragma: no cover
 
     try:

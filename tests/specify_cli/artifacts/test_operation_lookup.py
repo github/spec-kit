@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 from unittest.mock import Mock
@@ -557,8 +558,16 @@ def test_lookup_maps_invalid_unicode_lookup_id_after_project_validation(
 ):
     lookup_id = "extension:source:template:\ud800"
 
-    with pytest.raises(ArtifactLookupIdentifierError):
+    with pytest.raises(ArtifactLookupIdentifierError) as exc_info:
         lookup_artifact(ArtifactLookupRequest(spec_kit_project, lookup_id))
+
+    escaped_lookup_id = "extension:source:template:\\ud800"
+    assert exc_info.value.message == f"unknown contribution {escaped_lookup_id}"
+    assert exc_info.value.details == {"lookup_id": escaped_lookup_id}
+    json.dumps(
+        {"error": exc_info.value.message},
+        ensure_ascii=False,
+    ).encode("utf-8")
 
 
 @pytest.mark.parametrize(

@@ -39,6 +39,12 @@ class ArtifactLookupJsonObject:
 JsonValue: TypeAlias = JsonScalar | tuple["JsonValue", ...] | ArtifactLookupJsonObject
 
 
+def _json_safe_error_text(value: object) -> str:
+    """Return diagnostic text that can always be encoded as UTF-8 JSON."""
+    text = value if type(value) is str else str(value)
+    return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
 @dataclass(frozen=True)
 class ArtifactLookupRequest:
     """Explicit project context and contribution identifier."""
@@ -133,10 +139,11 @@ class ArtifactLookupIdentifierError(ArtifactLookupError):
     """The contribution lookup identifier is structurally invalid."""
 
     def __init__(self, lookup_id: object) -> None:
+        safe_lookup_id = _json_safe_error_text(lookup_id)
         super().__init__(
             code="invalid_lookup_id",
-            message=f"unknown contribution {lookup_id}",
-            details={"lookup_id": lookup_id},
+            message=f"unknown contribution {safe_lookup_id}",
+            details={"lookup_id": safe_lookup_id},
         )
 
 

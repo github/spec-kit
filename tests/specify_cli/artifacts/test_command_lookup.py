@@ -347,7 +347,7 @@ class TestCommandLookup:
         assert "\x1b[" not in result.stderr
         assert "Traceback" not in result.stderr
 
-    def test_lookup_cli_context_filesystem_failure_preserves_project_error(
+    def test_lookup_cli_context_filesystem_failure_is_resolution_error(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
@@ -369,21 +369,28 @@ class TestCommandLookup:
 
         assert result.exit_code == 1
         assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": "not a Spec Kit project: no .specify/ directory found"
-        }
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
-    def test_lookup_cli_context_path_resolution_runtime_error_preserves_project_error(
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            OSError("unreadable override"),
+            RuntimeError("Symlink loop from path resolution"),
+        ],
+        ids=["filesystem", "runtime"],
+    )
+    def test_lookup_cli_override_resolution_failure_preserves_project_error(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        failure: Exception,
     ):
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SPECIFY_INIT_DIR", "cyclic-project")
         monkeypatch.setattr(
             Path,
             "resolve",
-            Mock(side_effect=RuntimeError("Symlink loop from path resolution")),
+            Mock(side_effect=failure),
         )
 
         result = CliRunner().invoke(
@@ -401,6 +408,28 @@ class TestCommandLookup:
         assert json.loads(result.stderr) == {
             "error": "not a Spec Kit project: no .specify/ directory found"
         }
+        assert "Traceback" not in result.stderr
+
+    def test_lookup_invalid_unicode_identifier_is_utf8_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        lookup_id = "extension:source:template:\ud800"
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", lookup_id, "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        result.stderr.encode("utf-8")
+        assert json.loads(result.stderr) == {
+            "error": "unknown contribution extension:source:template:\\ud800"
+        }
+        assert result.stderr.count("\n") == 1
         assert "Traceback" not in result.stderr
 
     @pytest.mark.parametrize(
