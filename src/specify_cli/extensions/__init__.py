@@ -2461,11 +2461,18 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
-        from ._hook_projection import _EVENT
+        from ._hook_projection import project_hooks
 
-        for event in manifest.hooks:
-            if not isinstance(event, str) or not _EVENT.fullmatch(event):
-                raise ValidationError(f"Invalid extension hook event: {event}")
+        try:
+            project_hooks({"hooks": {
+                event: [
+                    {**entry, "extension": manifest.id}
+                    for entry in coerce_hook_entries(entries)
+                ]
+                for event, entries in manifest.hooks.items()
+            }})
+        except ValueError as exc:
+            raise ValidationError(f"Invalid manifest hooks: {exc}") from exc
         HookExecutor(self.project_root).load_project_config_for_update()
 
         # Check compatibility

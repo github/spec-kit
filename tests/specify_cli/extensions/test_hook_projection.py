@@ -153,6 +153,38 @@ def test_publication_failure_restores_prior_pair(tmp_path, monkeypatch):
     assert not list((tmp_path / ".specify").glob(".hook-stage-*"))
 
 
+def test_unreadable_existing_config_does_not_allocate_stage(tmp_path):
+    executor = HookExecutor(tmp_path)
+    executor.config_file.parent.mkdir()
+    executor.config_file.mkdir()
+    with pytest.raises(OSError):
+        executor.save_project_config(_config())
+    assert not list(executor.config_file.parent.glob(".hook-stage-*"))
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+
+
+def test_backup_cleanup_failure_warns_after_successful_publication(tmp_path, monkeypatch, caplog):
+    import specify_cli.extensions._hook_projection as projection
+
+    executor = HookExecutor(tmp_path)
+    executor.save_project_config(_config())
+    real_rmtree = projection.shutil.rmtree
+
+    def fail_backup_cleanup(path, *args, **kwargs):
+        if str(path).endswith(".backup"):
+            raise OSError("backup cleanup failed")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(projection.shutil, "rmtree", fail_backup_cleanup)
+    updated = {"installed": ["example"], "hooks": {"after_plan": []}}
+    executor.save_project_config(updated)
+    assert "backup cleanup failed" in caplog.text
+    assert yaml.safe_load(executor.config_file.read_text(encoding="utf-8")) == updated
+    assert (tmp_path / ".specify/hook-dispatch/source.yml").read_bytes() == executor.config_file.read_bytes()
+    assert (tmp_path / ".specify/hook-dispatch/events.txt").read_bytes() == b"after_plan\n"
+    assert not (tmp_path / ".specify/hook-dispatch/before_plan.json").exists()
+
+
 def test_existing_yaml_refresh_keeps_legacy_read_semantics(tmp_path):
     executor = HookExecutor(tmp_path)
     executor.config_file.parent.mkdir()

@@ -100,3 +100,17 @@ class TestExtensionRemoveCLI:
         assert result.exit_code == 0, result.output
         assert ".specify/extensions/.backup/[red]bad[/red]/" in result.output
         assert "specify extension add [red]bad[/red]" in result.output
+
+    def test_remove_reports_invalid_hooks_without_mutating_installation(
+        self, project_dir, extension_dir
+    ):
+        manager = self._install_ext(project_dir, extension_dir)
+        config = project_dir / ".specify/extensions.yml"
+        config.write_text("hooks:\n  before_plan: invalid\n", encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
+        assert result.exit_code == 1
+        assert "expected a list" in result.output
+        assert manager.registry.is_installed("test-ext")
+        assert (project_dir / ".specify/extensions/test-ext").exists()
+        assert config.read_text(encoding="utf-8") == "hooks:\n  before_plan: invalid\n"

@@ -16,6 +16,7 @@ from specify_cli.extensions import (
     ExtensionRegistry,
     HookExecutor,
 )
+from tests.specify_cli.extensions._helpers import installed_generic_hook_extension
 
 
 class TestExtensionDisableCLI:
@@ -53,3 +54,19 @@ class TestExtensionDisableCLI:
 
         assert result.exit_code == 0, result.output
         assert "specify extension enable [red]bad[/red]" in result.output
+
+    def test_disable_publication_failure_restores_generic_registry_and_artifact(
+        self, tmp_path, extension_dir
+    ):
+        project, _, artifact = installed_generic_hook_extension(tmp_path, extension_dir)
+        original_artifact = artifact.read_bytes()
+        config = project / ".specify/extensions.yml"
+        original_config = config.read_bytes()
+        with patch.object(Path, "cwd", return_value=project), \
+             patch.object(HookExecutor, "save_project_config", side_effect=OSError("projection failed")):
+            result = CliRunner().invoke(app, ["extension", "disable", "test-ext"])
+        assert result.exit_code == 1
+        assert "projection failed" in result.output
+        assert ExtensionManager(project).registry.get("test-ext")["enabled"] is True
+        assert artifact.read_bytes() == original_artifact
+        assert config.read_bytes() == original_config

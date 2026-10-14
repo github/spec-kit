@@ -77,6 +77,27 @@ class TestExtensionAddCLI:
         assert config.read_text() == "hooks:\n  before_plan: invalid\n"
         assert not (project_dir / ".specify/extensions/test-ext").exists()
 
+    @pytest.mark.parametrize("field,value", [
+        ("command", 17), ("optional", "yes"), ("enabled", "yes"),
+        ("condition", 42), ("description", False), ("prompt", []),
+    ])
+    def test_add_rejects_invalid_manifest_hook_before_mutation(
+        self, extension_dir, project_dir, field, value
+    ):
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {"before_plan": {"command": "speckit.test-ext.hello", field: value}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 1
+        assert "hook" in result.output.lower()
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+        assert not (project_dir / ".specify/hook-dispatch").exists()
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):

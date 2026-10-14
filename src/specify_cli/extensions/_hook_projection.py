@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -117,9 +118,9 @@ def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool 
         _check_paths(config_file)
         source = config_file.read_bytes() if preserve_source else rendered
         cache = _cache_path(config_file)
+        old_config = config_file.read_bytes() if config_file.exists() else None
         stage = Path(tempfile.mkdtemp(prefix=".hook-stage-", dir=root))
         backup = root / f"{stage.name}.backup"
-        old_config = config_file.read_bytes() if config_file.exists() else None
         moved = False
         installed = False
         try:
@@ -167,4 +168,11 @@ def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool 
             if stage.exists():
                 shutil.rmtree(stage)
         if moved:
-            shutil.rmtree(backup)
+            try:
+                shutil.rmtree(backup)
+            except OSError as exc:
+                logging.getLogger(__name__).warning(
+                    "Hook projection committed; could not remove backup %s: %s",
+                    backup,
+                    exc,
+                )
