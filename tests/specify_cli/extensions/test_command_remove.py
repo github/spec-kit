@@ -10,11 +10,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from typer.testing import CliRunner
+import yaml
 
 from specify_cli import app
 from specify_cli.extensions import (
     ExtensionManager,
     ExtensionRegistry,
+    HookExecutor,
+)
+from tests.specify_cli.extensions._helpers import (
+    enable_native_hooks,
+    installed_generic_hook_extension,
 )
 
 
@@ -26,6 +32,18 @@ class TestExtensionRemoveCLI:
         manager = ExtensionManager(project_dir)
         manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
         return manager
+
+    def test_default_remove_legacy_hook_without_projection(self, project_dir, extension_dir):
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {"custom:after": {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        self._install_ext(project_dir, extension_dir)
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
+        assert result.exit_code == 0, result.output
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/hook-dispatch").exists()
 
     def test_remove_confirmation_singular_command(self, tmp_path, extension_dir):
         """Confirmation prompt should say '1 command' (singular) when one command registered."""
@@ -104,6 +122,7 @@ class TestExtensionRemoveCLI:
     def test_remove_reports_invalid_hooks_without_mutating_installation(
         self, project_dir, extension_dir
     ):
+        enable_native_hooks(project_dir)
         manager = self._install_ext(project_dir, extension_dir)
         config = project_dir / ".specify/extensions.yml"
         config.write_text("hooks:\n  before_plan: invalid\n", encoding="utf-8")
@@ -114,3 +133,30 @@ class TestExtensionRemoveCLI:
         assert manager.registry.is_installed("test-ext")
         assert (project_dir / ".specify/extensions/test-ext").exists()
         assert config.read_text(encoding="utf-8") == "hooks:\n  before_plan: invalid\n"
+
+    def test_remove_publication_failure_retains_generic_installation(
+        self, tmp_path, extension_dir
+    ):
+        project, _, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
+        manager = ExtensionManager(project)
+        extension_dir = project / ".specify/extensions/test-ext"
+        config = project / ".specify/extensions.yml"
+        cache = project / ".specify/hook-dispatch"
+        original = (artifact.read_bytes(), config.read_bytes(), (cache / "source.yml").read_bytes())
+        original_save = HookExecutor.save_project_config
+
+        def fail_hook_removal(executor, updated):
+            if not updated.get("hooks", {}).get("before_plan"):
+                raise OSError("projection failed")
+            return original_save(executor, updated)
+
+        with patch.object(Path, "cwd", return_value=project), \
+             patch.object(HookExecutor, "save_project_config", fail_hook_removal):
+            result = CliRunner().invoke(app, ["extension", "remove", "test-ext", "--force"])
+        assert result.exit_code == 1
+        assert "projection failed" in result.output
+        assert manager.registry.is_installed("test-ext")
+        assert extension_dir.is_dir()
+        assert (artifact.read_bytes(), config.read_bytes(), (cache / "source.yml").read_bytes()) == original

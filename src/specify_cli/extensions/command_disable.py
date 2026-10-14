@@ -72,6 +72,43 @@ def extension_disable(
                 manager.registry.update(extension_id, {"enabled": True})
                 if load_init_options(project_root).get("ai") == "generic":
                     manager.register_enabled_extensions_for_agent("generic")
+                    restored = manager.registry.get(extension_id) or {}
+                    if restored.get("enabled") is not True:
+                        raise ExtensionError("Rollback did not restore enabled registry state")
+                    previous_commands = metadata.get("registered_commands", {})
+                    command_names = (
+                        previous_commands.get("generic", [])
+                        if isinstance(previous_commands, dict) else []
+                    )
+                    skill_names = metadata.get("registered_skills", [])
+                    for names, skills in ((command_names, False), (skill_names, True)):
+                        if not isinstance(names, list) or any(
+                            not isinstance(name, str) for name in names
+                        ):
+                            raise ExtensionError("Invalid generic artifact metadata during rollback")
+                        restored_commands = restored.get("registered_commands", {})
+                        registered = (
+                            restored.get("registered_skills", [])
+                            if skills else (
+                                restored_commands.get("generic", [])
+                                if isinstance(restored_commands, dict) else None
+                            )
+                        )
+                        if (
+                            not isinstance(registered, list)
+                            or any(not isinstance(name, str) for name in registered)
+                            or set(names) - set(registered)
+                        ):
+                            raise ExtensionError("Rollback did not restore generic artifact registry")
+                        owned = manager._generic_owned_names(
+                            restored, names, skills=skills, extension_id=extension_id
+                        )
+                        missing = set(names) - set(owned)
+                        if missing:
+                            raise ExtensionError(
+                                "Rollback did not restore generic invocation artifacts: "
+                                + ", ".join(sorted(missing))
+                            )
             except (ExtensionError, ValueError, OSError) as rollback_exc:
                 console.print(
                     f"[red]Error:[/red] {_escape_markup(str(exc))}; "

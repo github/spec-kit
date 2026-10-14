@@ -2461,18 +2461,19 @@ class ExtensionManager:
         # Load and validate manifest
         manifest_path = source_dir / "extension.yml"
         manifest = ExtensionManifest(manifest_path)
-        from ._hook_projection import project_hooks
+        from ._hook_projection import projection_enabled, project_hooks
 
-        try:
-            project_hooks({"hooks": {
-                event: [
-                    {**entry, "extension": manifest.id}
-                    for entry in coerce_hook_entries(entries)
-                ]
-                for event, entries in manifest.hooks.items()
-            }})
-        except ValueError as exc:
-            raise ValidationError(f"Invalid manifest hooks: {exc}") from exc
+        if projection_enabled(self.project_root):
+            try:
+                project_hooks({"hooks": {
+                    event: [
+                        {**entry, "extension": manifest.id}
+                        for entry in coerce_hook_entries(entries)
+                    ]
+                    for event, entries in manifest.hooks.items()
+                }})
+            except ValueError as exc:
+                raise ValidationError(f"Invalid manifest hooks: {exc}") from exc
         HookExecutor(self.project_root).load_project_config_for_update()
 
         # Check compatibility
@@ -3068,33 +3069,34 @@ class ExtensionManager:
         # the restored user config with packaged defaults.  Cleanup is deferred
         # until after registry.add() succeeds (see post-commit cleanup below).
 
-        def rollback_generic_registration() -> None:
+        def rollback_installation_files() -> None:
             from ..shared_infra import _validate_safe_shared_directory
 
-            root = self.project_root.resolve()
-            installed_root = dest_dir.resolve()
-            for name in names:
-                path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
-                try:
-                    _validate_safe_shared_directory(root, path.parent)
-                except (OSError, ValueError):
-                    continue
-                if path.is_symlink():
-                    if not path.resolve().is_relative_to(installed_root):
+            if register_commands and generic_active and manifest.commands:
+                root = self.project_root.resolve()
+                installed_root = dest_dir.resolve()
+                for name in names:
+                    path = output_dir / name / "SKILL.md" if skills else output_dir / f"{name}.md"
+                    try:
+                        _validate_safe_shared_directory(root, path.parent)
+                    except (OSError, ValueError):
                         continue
-                elif not path.is_file():
-                    if skills and path.parent.is_dir():
+                    if path.is_symlink():
+                        if not path.resolve().is_relative_to(installed_root):
+                            continue
+                    elif not path.is_file():
+                        if skills and path.parent.is_dir():
+                            try:
+                                path.parent.rmdir()
+                            except OSError:
+                                pass
+                        continue
+                    path.unlink()
+                    if skills:
                         try:
                             path.parent.rmdir()
                         except OSError:
                             pass
-                    continue
-                path.unlink()
-                if skills:
-                    try:
-                        path.parent.rmdir()
-                    except OSError:
-                        pass
 
             preserved = set(stranded_configs)
             if did_remove:
@@ -3121,10 +3123,12 @@ class ExtensionManager:
                 shutil.rmtree(dest_dir)
 
         hooks_started = False
+        hooks_finished = False
         registry_started = False
+        registered_commands = {}
+        registered_skills = []
         try:
             # Register commands with AI agents (active integration only, #2948)
-            registered_commands = {}
             if register_commands:
                 registered_commands = self._register_commands_for_active_agent(
                     manifest, dest_dir, link_outputs=link_commands
@@ -3155,6 +3159,7 @@ class ExtensionManager:
             hook_executor = HookExecutor(self.project_root)
             hooks_started = True
             hook_executor.register_hooks(manifest)
+            hooks_finished = True
 
             # Restore config files from backup when --force triggered a removal.
             # Only restore *.yml config files to match what remove() backs up,
@@ -3200,9 +3205,13 @@ class ExtensionManager:
                 registry_entry["generic_artifact_hashes"] = generic_hashes
             self.registry.add(manifest.id, registry_entry)
         except Exception as exc:
-            # Any failed commit must retire outputs before the original error
-            # is re-raised, including errors from hook serialization.
-            if register_commands and generic_active and manifest.commands:
+            # Keep the existing non-generic retry semantics for failures after
+            # hooks have committed, but retire every agent's outputs when hook
+            # publication itself fails.
+            rollback_installation = (
+                register_commands and generic_active and bool(manifest.commands)
+            ) or (hooks_started and not hooks_finished)
+            if rollback_installation:
                 rollback_errors = []
                 if registry_started:
                     try:
@@ -3214,14 +3223,31 @@ class ExtensionManager:
                         hook_executor.unregister_hooks(manifest.id)
                     except Exception as error:
                         rollback_errors.append(f"hooks: {error}")
+                if registered_commands:
+                    try:
+                        non_generic = {
+                            agent: commands for agent, commands in registered_commands.items()
+                            if agent != "generic"
+                        }
+                        if non_generic:
+                            CommandRegistrar(self.project_root, include_generic=False).unregister_commands(
+                                non_generic, self.project_root
+                            )
+                    except Exception as error:
+                        rollback_errors.append(f"commands: {error}")
+                if registered_skills:
+                    try:
+                        self._unregister_extension_skills(registered_skills, manifest.id)
+                    except Exception as error:
+                        rollback_errors.append(f"skills: {error}")
                 try:
                     with changing_file(dest_dir, removal=True):
-                        rollback_generic_registration()
+                        rollback_installation_files()
                 except Exception as error:
                     rollback_errors.append(f"artifacts: {error}")
                 if rollback_errors:
                     raise ExtensionError(
-                        f"Generic registration failed ({exc}); rollback failed: "
+                        f"Extension installation failed ({exc}); rollback failed: "
                         + "; ".join(rollback_errors)
                     ) from exc
             raise
@@ -3556,7 +3582,11 @@ class ExtensionManager:
         if not self.registry.is_installed(extension_id):
             return False
 
-        HookExecutor(self.project_root).load_project_config_for_update()
+        from ._hook_projection import projection_enabled
+
+        hook_executor = HookExecutor(self.project_root)
+        projection_active = projection_enabled(self.project_root)
+        hook_executor.load_project_config_for_update()
 
         # Get registered commands and skills before removal
         metadata = self.registry.get(extension_id)
@@ -3571,6 +3601,12 @@ class ExtensionManager:
             registered_skills = []
 
         extension_dir = self.extensions_dir / extension_id
+
+        # Publication can fail even after preflight (for example, on a disk
+        # error). Keep all invocation artifacts and sources intact until the
+        # extension has been removed from the hook configuration.
+        if projection_active:
+            hook_executor.unregister_hooks(extension_id)
 
         # Unregister commands from all AI agents
         if registered_commands:
@@ -3631,9 +3667,8 @@ class ExtensionManager:
             if extension_dir.exists():
                 shutil.rmtree(extension_dir)
 
-        # Unregister hooks
-        hook_executor = HookExecutor(self.project_root)
-        hook_executor.unregister_hooks(extension_id)
+        if not projection_active:
+            hook_executor.unregister_hooks(extension_id)
 
         # Update registry
         self.registry.remove(extension_id)
@@ -5774,22 +5809,42 @@ class HookExecutor:
         Args:
             config: Configuration dictionary to save
         """
-        from ._hook_projection import publish
+        from ._hook_projection import projection_enabled, publish, retire
 
-        publish(self.config_file, config)
+        if projection_enabled(self.project_root):
+            publish(self.config_file, config)
+        else:
+            from ..integrations._file_changes import write_text
+
+            retire(self.config_file)
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            write_text(
+                self.config_file,
+                yaml.dump(
+                    config, default_flow_style=False, sort_keys=False, allow_unicode=True
+                ),
+                encoding="utf-8",
+            )
 
     def load_project_config_for_update(self) -> Dict[str, Any]:
-        from ._hook_projection import load_for_update
+        from ._hook_projection import load_for_update, projection_enabled
 
-        return load_for_update(self.config_file)
+        return (
+            load_for_update(self.config_file)
+            if projection_enabled(self.project_root) else self.get_project_config()
+        )
 
     def migrate_project_config(self) -> None:
         """Refresh the projection of an existing configuration without rewriting it."""
-        from ._hook_projection import publish
+        from ._hook_projection import projection_enabled, publish, retire
 
-        if self.config_file.exists() or self.config_file.is_symlink():
+        if projection_enabled(self.project_root) and (
+            self.config_file.exists() or self.config_file.is_symlink()
+        ):
             config = self.load_project_config_for_update()
             publish(self.config_file, config, preserve_source=True)
+        else:
+            retire(self.config_file)
 
     def register_extension(self, extension_id: str):
         """Add extension to the installed list in project config.
@@ -5890,9 +5945,11 @@ class HookExecutor:
         Args:
             manifest: Extension manifest with hooks to register
         """
-        # Always ensure the extension is in the installed list
-        self.register_extension(manifest.id)
+        from ._hook_projection import projection_enabled
 
+        native_hooks = projection_enabled(self.project_root)
+        if not native_hooks:
+            self.register_extension(manifest.id)
         config = self.load_project_config_for_update()
 
         # Ensure config is a dict (defensive)
@@ -5900,6 +5957,11 @@ class HookExecutor:
         if not isinstance(config, dict):
             config = {}
             changed = True
+        if native_hooks:
+            installed = self._sanitize_installed_list(config.get("installed"), add_id=manifest.id)
+            if installed != config.get("installed"):
+                config["installed"] = installed
+                changed = True
 
         # Ensure hooks dict exists and is a mapping
         if "hooks" not in config or not isinstance(config["hooks"], dict):
@@ -5993,18 +6055,25 @@ class HookExecutor:
         Args:
             extension_id: ID of extension to unregister
         """
-        # Always remove from installed list (Feedback from review)
-        self.unregister_extension(extension_id)
+        from ._hook_projection import projection_enabled
 
+        native_hooks = projection_enabled(self.project_root)
+        if not native_hooks:
+            self.unregister_extension(extension_id)
         config = self.load_project_config_for_update()
 
         if not isinstance(config, dict):
             config = {}
-            # We don't save yet, as there are no hooks to unregister,
-            # but unregister_extension above might have already saved a normalized config.
-            return
+        installed_changed = False
+        if native_hooks:
+            installed = self._sanitize_installed_list(config.get("installed"), remove_id=extension_id)
+            installed_changed = installed != config.get("installed")
+            if installed_changed:
+                config["installed"] = installed
 
         if "hooks" not in config or not isinstance(config["hooks"], dict):
+            if installed_changed:
+                self.save_project_config(config)
             return
 
         # Remove hooks for this extension

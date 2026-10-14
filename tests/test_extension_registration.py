@@ -10,6 +10,14 @@ def project_dir(tmp_path):
     (proj_dir / ".specify").mkdir()
     return proj_dir
 
+
+@pytest.fixture
+def native_hooks(project_dir):
+    from specify_cli import save_init_options
+
+    save_init_options(project_dir, {"native_extension_hooks": True})
+
+
 class TestExtensionRegistration:
     """Tests for the 'installed' list management in HookExecutor."""
 
@@ -170,8 +178,8 @@ class TestExtensionRegistration:
         config = executor.get_project_config()
         assert "ext-no-hooks" not in config["installed"]
 
-    def test_unregister_hooks_corrupted_config(self, project_dir):
-        """Invalid existing configuration must not be overwritten by removal."""
+    def test_unregister_hooks_corrupted_config(self, project_dir, native_hooks):
+        """Opted-in invalid configuration must not be overwritten by removal."""
         # Create a corrupted config (root is a list)
         config_path = project_dir / ".specify" / "extensions.yml"
         config_path.write_text(yaml.dump(["corrupted", "list"]))
@@ -296,7 +304,7 @@ class TestExtensionRegistration:
         assert 1 not in config["installed"]
         assert True not in config["installed"]
 
-    def test_unregister_hooks_null_hook_values(self, project_dir):
+    def test_unregister_hooks_null_hook_values(self, project_dir, native_hooks):
         """A null event list must block removal rather than lose registered hooks."""
         executor = HookExecutor(project_dir)
 
@@ -313,7 +321,7 @@ class TestExtensionRegistration:
 
         assert config_path.read_bytes() == original
 
-    def test_register_hooks_corrupted_hook_values(self, project_dir, tmp_path):
+    def test_register_hooks_corrupted_hook_values(self, project_dir, tmp_path, native_hooks):
         """A corrupt existing event list must prevent registration."""
         executor = HookExecutor(project_dir)
 
@@ -417,7 +425,7 @@ class TestExtensionRegistration:
 
         config = executor.get_project_config()
         assert config["installed"] == []
-    def test_register_hooks_mixed_type_hook_list(self, project_dir, tmp_path):
+    def test_register_hooks_mixed_type_hook_list(self, project_dir, tmp_path, native_hooks):
         """Malformed hook entries must not be silently dropped on registration."""
         executor = HookExecutor(project_dir)
 
@@ -454,7 +462,7 @@ class TestExtensionRegistration:
             executor.register_hooks(manifest)
         assert config_path.read_bytes() == original
 
-    def test_unregister_extension_scalar_root(self, project_dir):
+    def test_unregister_extension_scalar_root(self, project_dir, native_hooks):
         """A scalar root cannot be safely updated without losing configuration."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
@@ -465,7 +473,7 @@ class TestExtensionRegistration:
             executor.unregister_extension("any-ext")
         assert yaml.safe_load(config_path.read_text()) == 123
 
-    def test_unregister_hooks_scalar_hook_values(self, project_dir):
+    def test_unregister_hooks_scalar_hook_values(self, project_dir, native_hooks):
         """A scalar event list blocks removal without deleting the old state."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"

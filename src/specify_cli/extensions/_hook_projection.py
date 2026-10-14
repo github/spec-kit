@@ -14,11 +14,37 @@ from typing import Any
 
 import yaml
 
+from .._init_options import load_init_options
 from ..integrations._file_changes import changing_file
 from ..shared_infra import _exclusive_project_lock
 from . import DEFAULT_HOOK_PRIORITY, normalize_priority
 
-_EVENT = re.compile(r"(before|after)_[a-z][a-z0-9_]*\Z")
+_EVENT = re.compile(r"(before|after)_[a-z0-9][a-z0-9_-]*\Z")
+
+
+def projection_enabled(project_root: Path) -> bool:
+    options = load_init_options(project_root)
+    enabled = options.get("native_extension_hooks", False)
+    if not isinstance(enabled, bool):
+        raise ValueError(
+            "Invalid native_extension_hooks in .specify/init-options.json: "
+            "expected true or false"
+        )
+    return enabled
+
+
+def validate_event_name(event: object) -> None:
+    if (
+        not isinstance(event, str)
+        or not _EVENT.fullmatch(event)
+        or len(event) + len(".json.sha256") > 255
+    ):
+        raise ValueError(
+            f"Invalid extension hook event {event!r}: use before_<command_name> "
+            "or after_<command_name> with a lowercase command name containing "
+            "letters, digits, underscores, or hyphens. "
+            "Rename legacy events such as custom:after before installing or refreshing."
+        )
 
 
 def _cache_path(config_file: Path) -> Path:
@@ -45,8 +71,7 @@ def project_hooks(config: dict[str, Any]) -> dict[str, bytes]:
         raise ValueError("Invalid extension hooks: expected a mapping")
     projected: dict[str, bytes] = {}
     for event, entries in hooks.items():
-        if not isinstance(event, str) or not _EVENT.fullmatch(event):
-            raise ValueError(f"Invalid extension hook event: {event}")
+        validate_event_name(event)
         if not isinstance(entries, list):
             raise ValueError(f"Invalid extension hooks.{event}: expected a list")
         selected = []
@@ -99,6 +124,21 @@ def load_for_update(config_file: Path) -> dict[str, Any]:
     return config
 
 
+def retire(config_file: Path) -> None:
+    """Retire a prior projection when native hooks are no longer enabled."""
+    cache = _cache_path(config_file)
+    if not cache.exists() and not cache.is_symlink():
+        return
+    root = config_file.parent
+    with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
+        root.parent, ".hook-dispatch.lock", context="hook projection"
+    ):
+        _check_paths(config_file)
+        if cache.exists():
+            with changing_file(cache, removal=True):
+                shutil.rmtree(cache)
+
+
 def _write_digest(directory: Path, name: str, payload: bytes) -> None:
     (directory / name).write_bytes(payload)
     (directory / f"{name}.sha256").write_text(
@@ -108,15 +148,26 @@ def _write_digest(directory: Path, name: str, payload: bytes) -> None:
 
 def publish(config_file: Path, config: dict[str, Any], *, preserve_source: bool = False) -> None:
     """Publish one complete projection and its YAML source, or restore the prior pair."""
-    projected = project_hooks(config)
-    rendered = yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True).encode("utf-8")
+    if not preserve_source:
+        projected = project_hooks(config)
+        rendered = yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True).encode("utf-8")
     root = config_file.parent
     root.mkdir(parents=True, exist_ok=True)
     with changing_file(root / ".hook-dispatch.lock"), _exclusive_project_lock(
         root.parent, ".hook-dispatch.lock", context="hook projection"
     ):
         _check_paths(config_file)
-        source = config_file.read_bytes() if preserve_source else rendered
+        if preserve_source:
+            source = config_file.read_bytes()
+            try:
+                current = yaml.safe_load(source.decode("utf-8"))
+            except (UnicodeError, yaml.YAMLError) as exc:
+                raise ValueError(f"Invalid extension configuration: {exc}") from exc
+            if not isinstance(current, dict):
+                raise ValueError("Invalid extension configuration: expected a mapping")
+            projected = project_hooks(current)
+        else:
+            source = rendered
         cache = _cache_path(config_file)
         old_config = config_file.read_bytes() if config_file.exists() else None
         stage = Path(tempfile.mkdtemp(prefix=".hook-stage-", dir=root))

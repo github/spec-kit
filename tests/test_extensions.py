@@ -976,7 +976,7 @@ provides:
             ExtensionManifest(manifest_path)
 
     def test_hook_colons_remain_accepted(self, temp_dir, valid_manifest_data):
-        """Artifact identifiers must not narrow the existing hook manifest contract."""
+        """Legacy manifests remain valid unless scripted hook dispatch is enabled."""
         import yaml
 
         valid_manifest_data["hooks"] = {
@@ -987,7 +987,6 @@ provides:
             yaml.dump(valid_manifest_data, f)
 
         manifest = ExtensionManifest(manifest_path)
-
         assert manifest.hooks["custom:after"]["command"] == (
             "/skill:speckit-test-ext-hello"
         )
@@ -8154,7 +8153,10 @@ class TestHookExecutorRegistration:
         assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
 
     def test_register_hooks_empty_hooks_purge_survives_corrupt_entry(self, project_dir):
-        """A corrupt on-disk entry cannot be silently discarded by reinstall."""
+        """An opted-in project cannot silently discard corrupt hook entries."""
+        from specify_cli import save_init_options
+
+        save_init_options(project_dir, {"native_extension_hooks": True})
         executor = HookExecutor(project_dir)
         executor.register_hooks(
             _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})

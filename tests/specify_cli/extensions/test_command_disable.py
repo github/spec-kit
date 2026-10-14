@@ -58,7 +58,9 @@ class TestExtensionDisableCLI:
     def test_disable_publication_failure_restores_generic_registry_and_artifact(
         self, tmp_path, extension_dir
     ):
-        project, _, artifact = installed_generic_hook_extension(tmp_path, extension_dir)
+        project, _, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
         original_artifact = artifact.read_bytes()
         config = project / ".specify/extensions.yml"
         original_config = config.read_bytes()
@@ -70,3 +72,16 @@ class TestExtensionDisableCLI:
         assert ExtensionManager(project).registry.get("test-ext")["enabled"] is True
         assert artifact.read_bytes() == original_artifact
         assert config.read_bytes() == original_config
+
+    def test_disable_reports_failed_generic_artifact_rollback(self, tmp_path, extension_dir):
+        project, _, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
+        with patch.object(Path, "cwd", return_value=project), \
+             patch.object(HookExecutor, "save_project_config", side_effect=OSError("projection failed")), \
+             patch.object(ExtensionManager, "register_enabled_extensions_for_agent"):
+            result = CliRunner().invoke(app, ["extension", "disable", "test-ext"])
+        assert result.exit_code == 1
+        assert "rollback failed" in result.output
+        assert "did not restore generic" in result.output
+        assert not artifact.exists()

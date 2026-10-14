@@ -56,7 +56,9 @@ class TestExtensionEnableCLI:
     def test_enable_publication_failure_restores_generic_disabled_state(
         self, tmp_path, extension_dir
     ):
-        project, _, artifact = installed_generic_hook_extension(tmp_path, extension_dir)
+        project, _, artifact = installed_generic_hook_extension(
+            tmp_path, extension_dir, native_hooks=True
+        )
         with patch.object(Path, "cwd", return_value=project):
             disabled = CliRunner().invoke(app, ["extension", "disable", "test-ext"])
         assert disabled.exit_code == 0, disabled.output

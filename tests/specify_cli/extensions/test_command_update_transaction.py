@@ -153,8 +153,11 @@ def test_extension_update_corrupted_hooks_value(project_dir, monkeypatch):
     assert not isinstance(result.exception, AttributeError)
 
 def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
-    """Malformed hooks must prevent update before any destructive phase."""
+    """Opted-in malformed hooks must prevent update before mutation."""
+    from tests.specify_cli.extensions._helpers import enable_native_hooks
+
     monkeypatch.chdir(project_dir)
+    enable_native_hooks(project_dir)
 
     config_path = project_dir / ".specify" / "extensions.yml"
     # Read-only queries tolerate this, but mutations must not discard it.
