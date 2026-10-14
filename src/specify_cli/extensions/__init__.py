@@ -3685,6 +3685,51 @@ class ExtensionManager:
 
         return True
 
+    def disable(self, extension_id: str) -> bool:
+        """Disable an installed extension and its hooks, restoring invocations on failure.
+
+        Returns False when the extension is already disabled.
+        """
+        from .. import load_init_options
+
+        hook_executor = HookExecutor(self.project_root)
+        config = hook_executor.load_project_config_for_update()
+        metadata = self.registry.get(extension_id)
+        if not isinstance(metadata, dict):
+            raise ExtensionError(
+                f"Extension '{extension_id}' not found in registry (corrupted state)"
+            )
+        if not metadata.get("enabled", True):
+            return False
+
+        generic = load_init_options(self.project_root).get("ai") == "generic"
+        if generic:
+            self.disable_generic_extension_artifacts(extension_id)
+        else:
+            self.registry.update(extension_id, {"enabled": False})
+
+        if "hooks" in config:
+            for hooks in config["hooks"].values():
+                for hook in hooks:
+                    if hook.get("extension") == extension_id:
+                        hook["enabled"] = False
+            try:
+                hook_executor.save_project_config(config)
+            except (ValueError, OSError) as exc:
+                try:
+                    if generic:
+                        self.restore_generic_extension_after_failed_disable(
+                            extension_id, metadata
+                        )
+                    else:
+                        self.registry.update(extension_id, {"enabled": True})
+                except (ExtensionError, ValueError, OSError) as rollback_exc:
+                    raise ExtensionError(
+                        f"{exc}; rollback failed: {rollback_exc}"
+                    ) from exc
+                raise
+        return True
+
     def restore_generic_extension_after_failed_disable(
         self, extension_id: str, previous: Dict[str, Any]
     ) -> None:
