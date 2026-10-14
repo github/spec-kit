@@ -19,6 +19,7 @@ from .engine_current import (
     _has_incomplete_operand,
     _is_single_expression,
     _leaf_sink,
+    _syntax_error,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "_has_incomplete_operand",
     "_is_single_expression",
     "_leaf_sink",
+    "_syntax_error",
 ]

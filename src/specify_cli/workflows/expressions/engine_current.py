@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from .filters import (
+    _EXPECTED_FILTERS,
     _REGISTERED_FILTERS,
     _ZERO_ARG_FILTERS,
     _filter_contains,
@@ -50,6 +51,7 @@ __all__ = [
     "_has_incomplete_operand",
     "_is_single_expression",
     "_leaf_sink",
+    "_syntax_error",
 ]
 
 
@@ -133,11 +135,9 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # genuinely unknown filter name, so the message names the real problem
     # instead of calling a known filter "unknown".
     name = leading.group(0) if leading else filter_expr
-    expected = (
-        "expected one of default or default('x'), join('sep'), "
-        "map('attr'), contains('s'), split('sep'), from_json, upper, "
-        "lower, length, or to_json"
-    )
+    # Derived from the filter table, so the message lists exactly what is
+    # registered instead of a second copy of the set.
+    expected = _EXPECTED_FILTERS
     if name in _REGISTERED_FILTERS:
         raise ValueError(
             f"filter '{name}' used in an unsupported form (got "
@@ -546,3 +546,17 @@ def _has_incomplete_operand(text: str) -> bool:
     return _find_top_level(stripped, "|") != -1 and any(
         not segment.strip() for segment in _split_top_level(stripped, "|")
     )
+
+
+def _syntax_error(text: str) -> str | None:
+    """A parse-error message for *text*, or ``None``.
+
+    This engine has no syntax layer: an unknown shape falls through to the
+    dot-path resolution and becomes ``None``, and the diagnostics describe that
+    through ``_collect_leaves`` and ``_has_incomplete_operand``. Grammar-based
+    engines return the parser's complaint here, naming the character and column
+    instead of classifying the text by heuristics; the diagnostics prefer it
+    when it is present. Always ``None`` here, so the hook changes nothing for
+    this engine.
+    """
+    return None

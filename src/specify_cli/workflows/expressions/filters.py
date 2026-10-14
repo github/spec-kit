@@ -10,25 +10,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
-
-
-# The filters the expression evaluator recognizes. Used to tell a
-# *registered* filter used in an unsupported form (e.g. `| join` with no
-# argument) apart from a genuinely unknown filter name, so each raises an
-# error that names the real problem.
-_REGISTERED_FILTERS: tuple[str, ...] = (
-    "default",
-    "join",
-    "map",
-    "contains",
-    "from_json",
-    "upper",
-    "lower",
-    "split",
-    "length",
-    "to_json",
-)
 
 
 # -- Custom filters -------------------------------------------------------
@@ -277,15 +260,69 @@ def _check_json_keys(value: Any) -> None:
             stack.extend(item)
 
 
+# -- The filter table ------------------------------------------------------
+#
+# One entry per filter: the function, the call forms it accepts, and the usage
+# text the error messages advertise. ``_REGISTERED_FILTERS``, ``_ZERO_ARG_FILTERS``
+# and the "expected one of ..." sentence are derived from this table, so a new
+# filter is one row here — not a row here, a branch in the dispatcher and a
+# second edit to the message. The table order is the order the message lists.
+
+@dataclass(frozen=True)
+class FilterSpec:
+    """One pipe filter: its function and the call forms it accepts.
+
+    ``argument``: the filter takes exactly one parenthesised argument
+    (``join('sep')``). ``bare``: the unparenthesised form is also valid
+    (``default`` alone). Zero-argument filters (``from_json``, ``upper``, ...)
+    have ``argument=False`` and are only valid bare — the strictness that turns
+    ``from_json()``, ``from_json)`` and ``from_json extra`` into errors naming
+    the filter instead of a silent passthrough.
+    """
+
+    function: Callable[..., Any]
+    argument: bool
+    bare: bool = False
+    usage: str = ""
+
+
+FILTER_TABLE: dict[str, FilterSpec] = {
+    "default": FilterSpec(
+        _filter_default, argument=True, bare=True, usage="default or default('x')"
+    ),
+    "join": FilterSpec(_filter_join, argument=True, usage="join('sep')"),
+    "map": FilterSpec(_filter_map, argument=True, usage="map('attr')"),
+    "contains": FilterSpec(_filter_contains, argument=True, usage="contains('s')"),
+    "split": FilterSpec(_filter_split, argument=True, usage="split('sep')"),
+    "from_json": FilterSpec(_filter_from_json, argument=False, usage="from_json"),
+    "upper": FilterSpec(_filter_upper, argument=False, usage="upper"),
+    "lower": FilterSpec(_filter_lower, argument=False, usage="lower"),
+    "length": FilterSpec(_filter_length, argument=False, usage="length"),
+    "to_json": FilterSpec(_filter_to_json, argument=False, usage="to_json"),
+}
+
+
+# The filters the expression evaluator recognizes. Used to tell a
+# *registered* filter used in an unsupported form (e.g. `| join` with no
+# argument) apart from a genuinely unknown filter name, so each raises an
+# error that names the real problem.
+_REGISTERED_FILTERS: tuple[str, ...] = tuple(FILTER_TABLE)
+
+
+# The sentence every filter-wiring error ends with, derived from the table so
+# adding a filter cannot leave the message listing the old set.
+_EXPECTED_FILTERS = (
+    "expected one of "
+    + ", ".join(spec.usage for spec in list(FILTER_TABLE.values())[:-1])
+    + ", or "
+    + list(FILTER_TABLE.values())[-1].usage
+)
+
+
 # Filters that take no arguments and tolerate no trailing tokens. Keyed by name
-# so ``_apply_filter`` can recognize a mis-wired form of any of them from the
-# leading filter name alone, instead of each needing its own branch. ``default``
-# is deliberately absent: it is the one filter that is valid both bare and with
-# an argument, so it is dispatched by both of the branches below.
+# so a dispatcher can recognize a mis-wired form of any of them from the
+# leading filter name alone. ``default`` is deliberately absent: it is the one
+# filter that is valid both bare and with an argument.
 _ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
-    "from_json": _filter_from_json,
-    "upper": _filter_upper,
-    "lower": _filter_lower,
-    "length": _filter_length,
-    "to_json": _filter_to_json,
+    name: spec.function for name, spec in FILTER_TABLE.items() if not spec.argument
 }
