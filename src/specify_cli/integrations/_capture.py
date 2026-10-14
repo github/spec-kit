@@ -242,6 +242,10 @@ def _start_in_job(proc: subprocess.Popen) -> Any:
             raise ctypes.WinError(ctypes.get_last_error())
         _resume_threads(proc.pid)
     except BaseException:
+        # The CLI may already be running if the failure or interruption came
+        # after a thread was resumed: kill everything in the job before the
+        # handle goes, because closing it does not.
+        kernel32.TerminateJobObject(job, 1)
         kernel32.CloseHandle(job)
         raise
     return job
@@ -338,17 +342,19 @@ def run_captured(
     tree = _ProcessTree(args, cwd)
     proc = tree.proc
     sinks = (_Sink(max_bytes), _Sink(max_bytes))
-    readers = [
-        threading.Thread(target=_drain, args=(pipe, sink), daemon=True)
-        for pipe, sink in zip((proc.stdout, proc.stderr), sinks)
-    ]
-    for reader in readers:
-        reader.start()
-
+    readers: list[threading.Thread] = []
     deadline = None if timeout is None else time.monotonic() + timeout
     timed_out = interrupted = False
     try:
         try:
+            # Starting the readers is inside the try, so an interruption here
+            # still kills the process group or job below.
+            for pipe, sink in zip((proc.stdout, proc.stderr), sinks):
+                reader = threading.Thread(
+                    target=_drain, args=(pipe, sink), daemon=True
+                )
+                reader.start()
+                readers.append(reader)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -368,6 +374,9 @@ def run_captured(
             # grace period bounds that wait.
             tree.kill()
             _join(readers, time.monotonic() + _DRAIN_GRACE_SECONDS)
+            # A pipe whose reader never started is closed here instead.
+            for pipe in (proc.stdout, proc.stderr)[len(readers) :]:
+                pipe.close()
     finally:
         tree.close()
 

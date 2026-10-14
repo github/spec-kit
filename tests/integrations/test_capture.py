@@ -210,6 +210,23 @@ class TestRunCaptured:
         assert result.exit_code == 130
         _assert_stopped(heartbeat)
 
+    def test_interrupt_while_starting_the_readers_kills_descendants(
+        self, tmp_path, monkeypatch
+    ):
+        class InterruptedStart(threading.Thread):
+            def start(self):
+                # Interrupt once the CLI is running and has a descendant.
+                while not heartbeat.exists():
+                    time.sleep(0.05)
+                raise KeyboardInterrupt
+
+        heartbeat = tmp_path / "heartbeat"
+        monkeypatch.setattr(_capture.threading, "Thread", InterruptedStart)
+        result = run_captured(_spawn_descendant(heartbeat, "time.sleep(60)"))
+        assert result.interrupted is True
+        assert result.exit_code == 130
+        _assert_stopped(heartbeat)
+
     def test_completed_process_is_not_killed(self, monkeypatch):
         def fail(self):
             raise AssertionError("a completed process must not be killed")
@@ -244,6 +261,25 @@ class TestRunCaptured:
         assert ran_before_job == [False]
         assert result.stdout == "ran\n"
         assert marker.exists()
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
+    def test_windows_interrupt_after_resume_kills_the_job(
+        self, tmp_path, monkeypatch
+    ):
+        """Setup interrupted after the CLI was resumed still fails closed."""
+        resume_threads = _capture._resume_threads
+
+        def resume_then_interrupt(pid):
+            resume_threads(pid)
+            while not heartbeat.exists():
+                time.sleep(0.05)
+            raise KeyboardInterrupt
+
+        heartbeat = tmp_path / "heartbeat"
+        monkeypatch.setattr(_capture, "_resume_threads", resume_then_interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            run_captured(_spawn_descendant(heartbeat, "time.sleep(60)"))
+        _assert_stopped(heartbeat)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows job objects")
     def test_windows_cli_never_runs_without_a_job(self, tmp_path, monkeypatch):
