@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -169,29 +168,25 @@ def test_update_and_refresh_retire_stale_events_and_preserve_crlf(tmp_path):
     assert b"\r\n" in executor.config_file.read_bytes()
 
 
-def test_refresh_projects_exact_source_read_under_lock(tmp_path, monkeypatch):
-    import specify_cli.extensions._hook_projection as projection
-
+def test_refresh_replaces_stale_cache_after_manual_yaml_edit(tmp_path):
     executor = _enabled_executor(tmp_path)
     executor.save_project_config(_config())
     updated = {"installed": ["example"], "hooks": {"after_tasks": []}}
-    original_lock = projection._exclusive_project_lock
-
-    @contextmanager
-    def concurrent_save(*args, **kwargs):
-        with original_lock(*args, **kwargs):
-            executor.config_file.write_text(
-                yaml.safe_dump(updated, sort_keys=False), encoding="utf-8"
-            )
-            yield
-
-    monkeypatch.setattr(projection, "_exclusive_project_lock", concurrent_save)
-    executor.migrate_project_config()
     cache = tmp_path / ".specify/hook-dispatch"
+    executor.config_file.write_text(
+        yaml.safe_dump(updated, sort_keys=False), encoding="utf-8"
+    )
+    assert (cache / "source.yml").read_bytes() != executor.config_file.read_bytes()
+    assert (cache / "before_plan.json").exists()
+    executor.migrate_project_config()
     assert (cache / "source.yml").read_bytes() == executor.config_file.read_bytes()
     assert (cache / "events.txt").read_bytes() == b"after_tasks\n"
+    assert (cache / "events.txt.sha256").read_text().strip() == hashlib.sha256(
+        b"after_tasks\n"
+    ).hexdigest()
     assert json.loads((cache / "after_tasks.json").read_text())["hooks"] == []
     assert not (cache / "before_plan.json").exists()
+    assert not (tmp_path / ".specify/.hook-dispatch.lock").exists()
 
 
 def test_refuse_unsafe_cache_and_invalid_existing_config(tmp_path):

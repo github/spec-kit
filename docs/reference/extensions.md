@@ -312,7 +312,8 @@ or perform an extension configuration update. Only the literal JSON boolean
 markdown/YAML hook behavior unchanged, without producing a projection.
 Other values for this key are rejected. Turning the option off retires an
 existing projection on the next configuration save or shared-infrastructure
-refresh.
+refresh. Run only one Specify CLI mutation against a project at a time;
+simultaneous CLI changes to the same project are unsupported.
 
 When opted in, extension configuration saves publish a validated projection in
 `.specify/hook-dispatch/`: one `<event>.json` response and SHA-256 digest per
