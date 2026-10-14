@@ -3596,3 +3596,72 @@ def test_selector_refresh_keeps_available_matches_and_own_exact_command(project_
     assert "SELECTOR BODY" not in output.read_text()
     assert "SELECTOR BODY" in surviving.read_text()
     assert manager.registry.get("selector")["selector_commands"][agent] == ["speckit.plan"]
+
+
+def test_refresh_retires_names_whose_payload_disappeared(project_dir, temp_dir):
+    """A declaration with a missing payload is not a current match.
+
+    Copilot's open finding: after a selector lost its provider and a same-name exact
+    fallback pointed at a missing file, the unusable declaration still counted as
+    current, so ``stale`` stayed empty and the previously materialized command (or
+    skill) was left on disk.
+    """
+    from tests.specify_cli.presets._helpers import install_selector_fixture, write_command_declarations
+
+    pack = write_command_declarations(
+        temp_dir / "refresh-pack",
+        "refresh-pack",
+        [{"type": "command", "name": "speckit.foo", "body": "PAYLOAD\n"}],
+    )
+    install_selector_fixture(project_dir, "refresh-pack", pack, 10)
+    manager = PresetManager(project_dir)
+    modern_skill, legacy_skill = manager._skill_names_for_command("speckit.foo")
+    manager.registry.update(
+        "refresh-pack",
+        {
+            "registered_commands": {"copilot": ["speckit.foo"]},
+            "registered_skills": {"copilot": [modern_skill, legacy_skill]},
+            "selector_commands": {"copilot": ["speckit.foo"]},
+        },
+    )
+
+    # The payload is gone, so the declaration is unusable and must be retired.
+    (manager.presets_dir / "refresh-pack" / "command-0.md").unlink()
+    stale = manager._refresh_selector_matches(
+        "refresh-pack",
+        "copilot",
+        [{"type": "command", "name": "speckit.foo", "file": "command-0.md"}],
+    )
+
+    assert stale == {"speckit.foo"}
+    metadata = manager.registry.get("refresh-pack")
+    # Both reconciliation paths share this filter: the retired command and its
+    # skills must be dropped from tracking, not left because a same-name
+    # declaration exists without a payload.
+    assert metadata["registered_commands"].get("copilot", []) == []
+    assert metadata["registered_skills"].get("copilot", []) == []
+    assert metadata["selector_commands"]["copilot"] == []
+
+
+def test_unusable_exact_fallback_does_not_suppress_selector_warning(project_dir, tmp_path):
+    """The unmatched-selector warning survives a declared-but-missing fallback.
+
+    Suppressing it is only honest when the exact fallback actually materializes:
+    a missing payload registers nothing, so staying silent would hide that.
+    """
+    from specify_cli.presets._manifest import PresetManifest
+    from tests.specify_cli.presets._helpers import write_command_declarations
+
+    pack = write_command_declarations(
+        tmp_path / "warn-pack",
+        "warn-pack",
+        [
+            {"type": "command", "name": r"regex:^new$", "body": "SEL\n"},
+            {"type": "command", "name": "new", "body": "EXACT\n"},
+        ],
+    )
+    (pack / "command-1.md").unlink()
+    manifest = PresetManifest(pack / "preset.yml")
+    templates = [declaration for declaration in manifest.templates]
+    with pytest.warns(UserWarning, match="currently matches no command resources"):
+        PresetManager._warn_unmatched_command_selectors(manifest, templates, pack)

@@ -440,7 +440,7 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 PresetResolver(self.project_root), dest_dir,
                 [t for t in manifest.templates if t.get("type") == "command"],
             )
-            self._warn_unmatched_command_selectors(manifest, command_templates)
+            self._warn_unmatched_command_selectors(manifest, command_templates, dest_dir)
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.
@@ -513,16 +513,29 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
 
     @staticmethod
     def _warn_unmatched_command_selectors(
-        manifest: PresetManifest, command_templates: List[Dict[str, Any]]
+        manifest: PresetManifest,
+        command_templates: List[Dict[str, Any]],
+        preset_dir: Path,
     ) -> None:
-        """Warn for valid command selectors with no concrete lower-layer match."""
+        """Warn for valid command selectors with no concrete lower-layer match.
+
+        An exact declaration only suppresses the warning when its payload is still
+        usable: a declared-but-missing fallback registers nothing, so staying
+        silent about the unmatched selector would hide that nothing was written.
+        """
         import warnings
 
+        usable = [
+            template
+            for template in command_templates
+            if isinstance(template.get("file"), str)
+            and (preset_dir / template["file"]).is_file()
+        ]
         for declaration in manifest.templates:
             selector = declaration["name"]
             if declaration["type"] != "command" or not is_regex_selector(selector):
                 continue
-            if not any(selector_matches(selector, t["name"]) for t in command_templates):
+            if not any(selector_matches(selector, t["name"]) for t in usable):
                 warnings.warn(
                     f"Preset '{manifest.id}' selector '{selector}' currently matches no command resources. "
                     "Regex selectors only match concrete commands from lower layers.",

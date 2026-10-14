@@ -639,6 +639,14 @@ class PresetResolver:
                 has_lower_resource = self._core_has_concrete_resource(
                     template_name, template_type
                 )
+            if has_lower_resource and not self._has_effective_replace_base(
+                template_name, template_type, below_pack_id=pack_dir.name
+            ):
+                # A lower layer that only composes (append/prepend/wrap) cannot
+                # produce the command on its own: resolve_content() returns None
+                # for it. Such a layer must not make a selector eligible, or the
+                # selector would create a name that never existed below.
+                has_lower_resource = False
         matches = []
         for declaration, regex in candidates:
             if not regex or has_lower_resource:
@@ -711,6 +719,86 @@ class PresetResolver:
                     return True
             except Exception:  # noqa: BLE001 - a malformed selector declares nothing
                 continue
+        return False
+
+    def _declared_replace_resources(
+        self, base_dir: Path, name: str, template_type: str
+    ) -> list[dict]:
+        """Manifest declarations providing a usable ``replace`` payload for ``name``.
+
+        Pure manifest scan (no eligibility recursion): an entry counts only when it
+        matches the name exactly or through a selector and its ``file`` exists.
+        """
+        manifest = self._get_manifest(base_dir)
+        if manifest is None:
+            return []
+        found = []
+        for declaration in manifest.templates:
+            if declaration.get("type") != template_type:
+                continue
+            declared_name = declaration.get("name")
+            if not isinstance(declared_name, str):
+                continue
+            if is_regex_selector(declared_name):
+                try:
+                    matched = selector_matches(declared_name, name)
+                except Exception:  # noqa: BLE001 - a malformed selector declares nothing
+                    matched = False
+            else:
+                matched = declared_name == name
+            if not matched or str(declaration.get("strategy", "replace")) != "replace":
+                continue
+            file_value = declaration.get("file")
+            if isinstance(file_value, str) and (base_dir / file_value).is_file():
+                found.append(declaration)
+        return found
+
+    def _has_effective_replace_base(
+        self, name: str, template_type: str, *, below_pack_id: str | None = None
+    ) -> bool:
+        """Whether a layer below can produce ``name`` with an effective replace base."""
+        if self._core_has_concrete_resource(name, template_type):
+            return True
+        presets = self._get_all_presets_by_priority()
+        pack_ids = [pack_id for pack_id, _metadata in presets]
+        start = 0
+        if below_pack_id is not None and below_pack_id in pack_ids:
+            start = pack_ids.index(below_pack_id) + 1
+        for pack_id in pack_ids[start:]:
+            base_dir = self.presets_dir / pack_id
+            if self._declared_replace_resources(base_dir, name, template_type):
+                return True
+            # An undeclared conventional file is that layer's own content and
+            # defaults to ``replace``, so it is a valid base as well. Only a
+            # layer that declares the name purely for composition is not.
+            entry, _candidate = self._manifest_declared_template(
+                base_dir, name, template_type
+            )
+            if entry is None and self._conventional_resource(
+                base_dir, name, template_type
+            ) is not None:
+                return True
+        for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
+            base_dir = self.extensions_dir / ext_id
+            # Extensions carry ``extension.yml``, so their declarations come from
+            # their own manifest lookup rather than the preset one.
+            entry, candidate = self._extension_manifest_declared_template(
+                base_dir, name, template_type
+            )
+            if (
+                candidate is not None
+                and str((entry or {}).get("strategy", "replace")) == "replace"
+            ):
+                return True
+            if entry is None:
+                if self._conventional_resource(base_dir, name, template_type) is not None:
+                    return True
+                if (
+                    template_type == "command"
+                    and self._find_unregistered_extension_command(name, base_dir)
+                    is not None
+                ):
+                    return True
         return False
 
     def _preset_has_concrete_resource(

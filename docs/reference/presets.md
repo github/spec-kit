@@ -361,7 +361,9 @@ while producing millions of edges.
 A selector found in a manifest that is already on disk — written by an older version,
 or edited by hand — does not raise during resolution. It is reported with a warning
 and treated as matching nothing, so an unsafe manifest cannot break unrelated
-commands. Only the installation path fails hard.
+commands. Installation fails hard, and `specify preset info` revalidates an installed
+manifest and exits with status 1, so both surfaces report the validation error rather
+than silently using the preset.
 
 The supported syntax is a subset of Python's regular expressions: literal characters
 and escapes, `.`, character classes (`[a-z]`, `[^x]`), the predefined classes (`\d`,

@@ -374,9 +374,10 @@ class _PresetCommandMethods:
         metadata = self.registry.get(pack_id) or {}
         previous_by_agent = metadata.get("selector_commands", {})
         previous = set(previous_by_agent.get(agent_name, []))
+        usable = self._usable_command_declarations(pack_id, declarations)
         current = {
             name
-            for declaration in declarations
+            for declaration in usable
             for name in [declaration["name"], *declaration.get("aliases", [])]
         }
         stale = previous - current
@@ -404,13 +405,32 @@ class _PresetCommandMethods:
             self.registry.update(pack_id, {key: remaining})
         matches = sorted({
             name
-            for declaration in declarations if declaration.get("_selector")
+            for declaration in usable if declaration.get("_selector")
             for name in [declaration["name"], *declaration.get("aliases", [])]
         })
         self.registry.update(pack_id, {
             "selector_commands": {**previous_by_agent, agent_name: matches},
         })
         return previous
+
+    def _usable_command_declarations(
+        self, pack_id: str, declarations: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Keep only declarations whose payload still exists in the preset.
+
+        A declaration whose ``file`` has since disappeared materializes nothing, so
+        it must not count as a current match: treating it as current left a
+        previously materialized selector command (or skill) on disk after the
+        selector lost its provider and its exact fallback pointed at a missing
+        file, because nothing looked stale.
+        """
+        pack_dir = self.presets_dir / pack_id
+        usable = []
+        for declaration in declarations:
+            file_value = declaration.get("file")
+            if isinstance(file_value, str) and (pack_dir / file_value).is_file():
+                usable.append(declaration)
+        return usable
 
     def register_enabled_presets_for_agent(self, agent_name: str) -> None:
         """Re-register enabled presets' command overrides and skills for ``agent_name``.

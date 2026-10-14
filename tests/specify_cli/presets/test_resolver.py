@@ -2719,3 +2719,43 @@ def test_unmatched_selector_payload_is_not_evidence_for_a_higher_selector(projec
     )
     assert [candidate for _declaration, candidate in higher] == [None]
     assert resolver.resolve("foo", "command") is None
+
+
+def test_composition_only_lower_declaration_is_not_a_selector_base(project_dir):
+    """A lower layer that only composes cannot make a selector eligible.
+
+    A lower preset declaring a name with ``append`` and nothing below it to replace
+    produces no content (``resolve_content`` returns ``None``), so the name does not
+    exist as a command. Treating it as a concrete base let an upper ``replace``
+    selector create a name that never existed below.
+    """
+    from specify_cli.presets import PresetRegistry, PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "append-only-lower",
+        [{"type": "command", "name": "foo", "file": "commands/foo.md", "strategy": "append"}],
+    )
+    write_diagnostic_selector_preset(
+        project_dir,
+        "upper-selector",
+        [
+            {"type": "command", "name": "foo", "file": "commands/foo.md"},
+            {"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"},
+        ],
+    )
+    registry = PresetRegistry(project_dir / ".specify" / "presets")
+    registry.add("append-only-lower", {"enabled": True, "priority": 20, "version": "1.0.0"})
+    registry.add("upper-selector", {"enabled": True, "priority": 10, "version": "1.0.0"})
+
+    resolver = PresetResolver(project_dir)
+    assert (
+        resolver._has_effective_replace_base("foo", "command", below_pack_id="upper-selector")
+        is False
+    )
+    declarations = resolver._preset_declarations_for_resource(
+        project_dir / ".specify" / "presets" / "upper-selector", "foo", "command"
+    )
+    # The exact declaration still resolves; the selector contributes no layer.
+    assert [candidate is not None for _declaration, candidate in declarations] == [True, False]
