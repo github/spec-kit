@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from specify_cli.authentication.github import GitHubCliAuthError
 from specify_cli.authentication.http import _StripAuthOnRedirect
 from specify_cli.bundler import BundlerError
 from specify_cli.bundles.catalogs import CatalogSource, InstallPolicy
@@ -110,40 +109,6 @@ def test_http_get_json_marks_connection_error_unavailable(monkeypatch):
 
     with pytest.raises(adapters._CatalogUnavailable):
         adapters._http_get_json("team", "https://example.com/c.json")
-
-
-def test_http_get_json_preserves_github_cli_auth_error(monkeypatch):
-    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
-        raise GitHubCliAuthError(
-            "GitHub CLI authentication failed for github.com. "
-            "Run 'gh auth login --hostname github.com'."
-        )
-
-    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
-
-    with pytest.raises(BundlerError, match="gh auth login") as excinfo:
-        adapters._http_get_json("team", "https://example.com/c.json")
-    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
-
-
-def test_builtin_catalog_does_not_fall_back_for_github_cli_auth_error(monkeypatch):
-    def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
-        raise GitHubCliAuthError(
-            "GitHub CLI authentication failed for github.com. "
-            "Run 'gh auth login --hostname github.com'."
-        )
-
-    monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
-    monkeypatch.setattr(
-        adapters,
-        "_load_packaged_catalog",
-        lambda filename: pytest.fail("authentication errors must not use a snapshot"),
-    )
-
-    fetcher = adapters.make_catalog_fetcher(allow_network=True)
-    with pytest.raises(BundlerError, match="gh auth login") as excinfo:
-        fetcher(_source("builtin://community"))
-    assert not isinstance(excinfo.value, adapters._CatalogUnavailable)
 
 
 def test_http_get_json_marks_server_error_unavailable(monkeypatch):

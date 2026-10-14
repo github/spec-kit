@@ -58,17 +58,13 @@ class AzureDevOpsAuth(AuthProvider):
             f"AzureDevOpsAuth does not support auth scheme {auth_scheme!r}"
         )
 
-    def resolve_token(
-        self,
-        entry: AuthConfigEntry,
-        hostname: str | None = None,
-    ) -> str | None:
+    def resolve_token(self, entry: AuthConfigEntry) -> str | None:
         """Resolve token, with special handling for azure-cli and azure-ad."""
         if entry.auth == "azure-cli":
             return self._acquire_via_az_cli()
         if entry.auth == "azure-ad":
             return self._acquire_via_client_credentials(entry)
-        return super().resolve_token(entry, hostname)
+        return super().resolve_token(entry)
 
     # -- Token acquisition ------------------------------------------------
 

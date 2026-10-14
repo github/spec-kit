@@ -37,9 +37,6 @@ _RESOLUTION_FAILURE_RATE_LIMITED = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
 _RESOLUTION_FAILURE_HTTP_PREFIX = "HTTP "
-_RESOLUTION_FAILURE_GITHUB_AUTH_PREFIX = (
-    "GitHub authentication failed for provider 'github': "
-)
 _FAILURE_INSTALLER_MISSING = "installer-missing"
 _FAILURE_INSTALLER_INVALID = "installer-invalid"
 _FAILURE_TARGET_TAG_UNPARSEABLE = "target-tag-unparseable"
@@ -115,7 +112,6 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
-    from .authentication.github import GitHubCliAuthError
     from .authentication.http import open_url
 
     try:
@@ -143,8 +139,6 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
         if e.code in (403, 429):
             return None, _RESOLUTION_FAILURE_RATE_LIMITED
         return None, f"{_RESOLUTION_FAILURE_HTTP_PREFIX}{e.code}"
-    except GitHubCliAuthError as e:
-        return None, str(e)
     except (urllib.error.URLError, OSError):
         return None, _RESOLUTION_FAILURE_OFFLINE
 
@@ -1028,7 +1022,6 @@ def _emit_failure(
     if (
         category in _RESOLUTION_FAILURE_CATEGORIES
         or category.startswith(_RESOLUTION_FAILURE_HTTP_PREFIX)
-        or category.startswith(_RESOLUTION_FAILURE_GITHUB_AUTH_PREFIX)
     ):
         console.print(f"Upgrade aborted: {category}", soft_wrap=True)
         return

@@ -22,7 +22,6 @@ from urllib.request import url2pathname
 
 from .._assets import _locate_core_pack, _repo_root
 from .._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
-from ..authentication.github import GitHubCliAuthError
 from . import BundlerError
 from .catalogs import CatalogSource
 from .manifest import ComponentRef
@@ -277,8 +276,6 @@ def _http_get_json(source_id: str, url: str) -> dict:
         raise BundlerError(
             f"Failed to fetch catalog from {url}: HTTP {exc.code} {exc.reason}"
         ) from exc
-    except GitHubCliAuthError as exc:
-        raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
     except urllib.error.URLError as exc:
         # urllib wraps a TLS handshake failure as URLError(reason=<ssl error>);
         # a certificate-verification failure is a security failure, not a

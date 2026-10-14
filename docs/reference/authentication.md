@@ -59,7 +59,9 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 | Scheme | Header | Use for |
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
-| `github-cli` | `Authorization: Bearer <token>` | Token acquired on demand from `gh auth token` |
+
+The `github` provider supports `bearer` tokens and `github-cli` credentials
+acquired on demand from GitHub CLI.
 
 **Example — PAT via environment variable:**
 
@@ -72,7 +74,7 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 }
 ```
 
-**Example — GitHub CLI (recommended for interactive use):**
+**Example — GitHub CLI:**
 
 ```json
 {
@@ -92,18 +94,9 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 ```
 
 Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
-using this mode. Specify invokes the fixed command
-`gh auth token --hostname github.com` directly, without a shell, and caches
-the resulting token in memory for the current process. The token is not
-written to disk by Specify.
-
-A configured `github-cli` entry is authoritative for its matching hosts. If
-GitHub CLI cannot provide a token, Specify fails that credential lookup before
-making an HTTP request; it does not try later matching entries or an
-unauthenticated fallback for that request. Successful tokens and sanitized
-lookup failures are both cached per selected credential host for the current
-process. After correcting a GitHub CLI login, start a new Specify invocation
-to retry the lookup.
+using this mode. Specify runs the fixed command
+`gh auth token --hostname github.com` without a shell, caches the result in
+memory for the current process, and never writes the token to disk.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -132,24 +125,26 @@ and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
 
-With `auth: "github-cli"`, Specify requests the credential for the configured
-GitHub instance host:
+With `auth: "github-cli"`, one provider entry represents one GitHub instance.
+List exactly one bare enterprise host plus any service aliases that share its
+credential:
 
-```bash
-gh auth token --hostname ghes.example.com
+```json
+{
+  "hosts": [
+    "ghes.example.com",
+    "raw.ghes.example.com",
+    "codeload.ghes.example.com"
+  ],
+  "provider": "github",
+  "auth": "github-cli"
+}
 ```
 
-Before invoking GitHub CLI, Specify requires the selected credential host to be
-an ASCII DNS hostname made of letters, digits, hyphens, and dots. Invalid hosts
-are rejected without invoking `gh` or including the rejected value in the error.
-
-When a request targets an `api.`, `raw.`, or `codeload.` host, Specify uses the
-bare instance host only when that exact host is also listed in the same
-provider entry. For example, `raw.ghes.example.com` maps to
-`ghes.example.com` in the configuration above. Otherwise, the request host is
-used unchanged. The selected host must already be configured and authenticated
-in GitHub CLI; failures suggest `gh auth login --hostname <host>` without
-including GitHub CLI command output in the error.
+Specify runs `gh auth token --hostname ghes.example.com`. Use separate provider
+entries for separate GitHub instances. The selected host must already be
+authenticated in GitHub CLI; failures suggest `gh auth login --hostname <host>`
+without including GitHub CLI command output.
 
 ### GitHub Enterprise Cloud with data residency (GHE.com)
 
@@ -323,9 +318,7 @@ You can configure multiple entries for different hosts or organizations:
    is attempted as a final fallback.
 5. On redirects, the `Authorization` header is stripped if the redirect
    target leaves the entry's declared hosts — preventing credential
-   leakage to CDNs or third-party services. For `github-cli`, the header is
-   also stripped when the target maps to a different GitHub CLI credential
-   host, even if both hosts appear in the same provider entry.
+   leakage to CDNs or third-party services.
 
 ## Template
 

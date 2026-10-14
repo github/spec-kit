@@ -6,7 +6,6 @@ import ssl
 from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 
-from ..authentication.github import GitHubCliAuthError
 from ..authentication.http import RedirectPolicyError
 from . import BundlerError
 from .manifest import ComponentRef
@@ -20,8 +19,6 @@ def _is_unavailable(exc: BaseException) -> bool:
     seen: set[int] = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
-        if isinstance(exc, GitHubCliAuthError):
-            return False
         if isinstance(exc, RedirectPolicyError):
             return False
         if isinstance(exc, HTTPError):

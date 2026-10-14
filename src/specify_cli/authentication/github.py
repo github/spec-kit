@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import urllib.error
 from typing import TYPE_CHECKING
 
 from .base import AuthProvider
@@ -21,7 +20,7 @@ _GITHUB_PUBLIC_HOSTS = frozenset({
     "raw.githubusercontent.com",
     "codeload.github.com",
 })
-_GITHUB_ENTERPRISE_SERVICE_PREFIXES = ("api.", "raw.", "codeload.")
+_GITHUB_SERVICE_PREFIXES = ("api.", "raw.", "codeload.")
 
 
 def _is_safe_cli_hostname(hostname: str) -> bool:
@@ -38,20 +37,12 @@ def _is_safe_cli_hostname(hostname: str) -> bool:
     )
 
 
-class GitHubCliAuthError(urllib.error.URLError):
+class GitHubCliAuthError(RuntimeError):
     """Raised when GitHub CLI cannot provide a configured credential."""
-
-    def __str__(self) -> str:
-        """Return the sanitized reason without URLError's wrapper."""
-        return str(self.reason)
 
 
 class GitHubAuth(AuthProvider):
-    """GitHub authentication provider.
-
-    Supports ``bearer`` for PATs, OAuth tokens, and GitHub App installation
-    tokens, plus ``github-cli`` for credentials managed by GitHub CLI.
-    """
+    """GitHub authentication provider."""
 
     key = "github"
     supported_auth_schemes = ("bearer", "github-cli")
@@ -60,24 +51,19 @@ class GitHubAuth(AuthProvider):
         self._github_cli_cache: dict[str, tuple[bool, str]] = {}
 
     def auth_headers(self, token: str, auth_scheme: str) -> dict[str, str]:
-        """Return ``Authorization: Bearer <token>``."""
+        """Return a bearer authorization header."""
         if auth_scheme not in self.supported_auth_schemes:
             raise ValueError(
                 f"GitHubAuth does not support auth scheme {auth_scheme!r}"
             )
-        return {"Authorization": f"Bearer {token}"}
+        return {"Authorization": "Bearer " + token}
 
-    def resolve_token(
-        self,
-        entry: AuthConfigEntry,
-        hostname: str | None = None,
-    ) -> str | None:
-        """Resolve configured tokens or acquire one from GitHub CLI."""
+    def resolve_token(self, entry: AuthConfigEntry) -> str | None:
+        """Resolve a configured token or acquire one from GitHub CLI."""
         if entry.auth != "github-cli":
-            return super().resolve_token(entry, hostname)
+            return super().resolve_token(entry)
 
-        request_host = (hostname or entry.hosts[0]).lower()
-        credential_host = self._credential_hostname(entry, request_host)
+        credential_host = self._credential_hostname(entry)
         cached = self._github_cli_cache.get(credential_host)
         if cached is not None:
             succeeded, value = cached
@@ -96,38 +82,33 @@ class GitHubAuth(AuthProvider):
         return token
 
     @staticmethod
-    def _credential_hostname(entry: AuthConfigEntry, request_host: str) -> str:
-        """Map a request host to the GitHub CLI login host."""
-        if request_host in _GITHUB_PUBLIC_HOSTS:
+    def _credential_hostname(entry: AuthConfigEntry) -> str:
+        """Select the one GitHub CLI credential host represented by *entry*."""
+        exact_hosts = {
+            host.lower()
+            for host in entry.hosts
+            if "*" not in host
+        }
+        if exact_hosts & _GITHUB_PUBLIC_HOSTS:
+            if any(host not in _GITHUB_PUBLIC_HOSTS for host in exact_hosts):
+                raise GitHubCliAuthError(
+                    "GitHub authentication failed for provider 'github': "
+                    "a github-cli entry must describe one GitHub instance. "
+                    "Use separate provider entries for github.com and GitHub Enterprise."
+                )
             return "github.com"
 
-        exact_hosts = {
-            configured_host.lower()
-            for configured_host in entry.hosts
-            if "*" not in configured_host
+        bare_hosts = {
+            host
+            for host in exact_hosts
+            if not host.startswith(_GITHUB_SERVICE_PREFIXES)
         }
-        for prefix in _GITHUB_ENTERPRISE_SERVICE_PREFIXES:
-            if request_host.startswith(prefix):
-                instance_host = request_host.removeprefix(prefix)
-                if instance_host in exact_hosts:
-                    return instance_host
-        return request_host
-
-    def can_reuse_token_for_host(
-        self,
-        entry: AuthConfigEntry,
-        source_hostname: str | None,
-        target_hostname: str,
-    ) -> bool:
-        """Allow redirects only within one GitHub CLI credential scope."""
-        if entry.auth != "github-cli":
-            return True
-        if source_hostname is None:
-            return False
-        return self._credential_hostname(
-            entry,
-            source_hostname,
-        ) == self._credential_hostname(entry, target_hostname)
+        if len(bare_hosts) != 1:
+            raise GitHubCliAuthError(
+                "GitHub authentication failed for provider 'github': "
+                "a github-cli entry must list exactly one bare GitHub host."
+            )
+        return next(iter(bare_hosts))
 
     @staticmethod
     def _acquire_via_gh_cli(hostname: str) -> str:
@@ -135,7 +116,7 @@ class GitHubAuth(AuthProvider):
         if not _is_safe_cli_hostname(hostname):
             raise GitHubCliAuthError(
                 "GitHub authentication failed for provider 'github': "
-                "the request hostname is not valid for GitHub CLI authentication."
+                "the configured hostname is not valid for GitHub CLI authentication."
             )
 
         resolved = shutil.which("gh")
@@ -145,11 +126,9 @@ class GitHubAuth(AuthProvider):
                 "GitHub CLI ('gh') was not found."
             )
 
-        argv = [resolved, "auth", "token", "--hostname", hostname]
-
         try:
             result = subprocess.run(  # noqa: S603
-                argv,
+                [resolved, "auth", "token", "--hostname", hostname],
                 capture_output=True,
                 text=True,
                 timeout=_GITHUB_CLI_TIMEOUT_SECONDS,

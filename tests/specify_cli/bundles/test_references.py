@@ -492,36 +492,6 @@ def test_online_validation_warns_when_catalogs_are_unreachable(tmp_path, monkeyp
     assert "unreachable" in warnings[0]
 
 
-def test_online_validation_preserves_wrapped_github_cli_auth_error(
-    tmp_path, monkeypatch,
-):
-    from specify_cli.authentication.github import GitHubCliAuthError
-    from specify_cli.extensions import ExtensionCatalog, ExtensionError
-
-    _mock_catalog(monkeypatch, ExtensionCatalog, "extensions", "requested", {})
-
-    def auth_failure(self, source, force_refresh=False):
-        try:
-            raise GitHubCliAuthError(
-                "GitHub CLI authentication failed for github.com. "
-                "Run 'gh auth login --hostname github.com'."
-            )
-        except GitHubCliAuthError as exc:
-            raise ExtensionError(
-                "Failed to fetch catalog: "
-                "Run 'gh auth login --hostname github.com'."
-            ) from exc
-
-    monkeypatch.setattr(ExtensionCatalog, "_fetch_single_catalog", auth_failure)
-    warnings = []
-    check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
-
-    problem = check(_ref("extensions", "requested"))
-
-    assert problem is not None and "gh auth login" in problem
-    assert warnings == []
-
-
 @pytest.mark.parametrize("kind", ["extensions", "presets", "workflows", "steps"])
 @pytest.mark.parametrize(
     ("unreachable", "has_match"),

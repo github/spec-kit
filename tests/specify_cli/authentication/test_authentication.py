@@ -18,7 +18,6 @@ import base64
 import io
 import json
 import os
-import urllib.error
 
 import pytest
 
@@ -51,7 +50,12 @@ def _github_entry(token_env: str = "GH_TOKEN", token: str | None = None) -> Auth
 
 
 def _github_cli_entry(
-    hosts: tuple[str, ...] = ("github.com",),
+    hosts: tuple[str, ...] = (
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com",
+    ),
 ) -> AuthConfigEntry:
     """Build a GitHub CLI config entry."""
     return AuthConfigEntry(
@@ -105,6 +109,23 @@ class TestLoadAuthConfig:
         assert entries[0].provider == "github"
         assert entries[0].auth == "bearer"
         assert entries[0].token_env == "GH_TOKEN"
+
+    def test_valid_github_cli_config(self, tmp_path):
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["github.com", "api.github.com"],
+                "provider": "github",
+                "auth": "github-cli",
+            }]
+        }))
+
+        entries = load_auth_config(cfg)
+
+        assert len(entries) == 1
+        assert entries[0].auth == "github-cli"
+        assert entries[0].token is None
+        assert entries[0].token_env is None
 
     def test_padded_token_env_is_normalized_and_resolves(self, tmp_path, monkeypatch):
         # token_env is validated on its stripped form but was stored raw, so a
@@ -304,18 +325,6 @@ class TestLoadAuthConfig:
         }))
         entries = load_auth_config(cfg)
         assert entries[0].auth == "azure-cli"
-
-    def test_github_cli_config(self, tmp_path):
-        cfg = tmp_path / "auth.json"
-        cfg.write_text(json.dumps({
-            "providers": [{
-                "hosts": ["github.com"],
-                "provider": "github",
-                "auth": "github-cli",
-            }]
-        }))
-        entries = load_auth_config(cfg)
-        assert entries == [_github_cli_entry()]
 
     def test_multiple_entries(self, tmp_path):
         cfg = tmp_path / "auth.json"
@@ -613,6 +622,185 @@ class TestGitHubAuth:
     def test_bearer_headers(self):
         assert GitHubAuth().auth_headers("my-token", "bearer") == {"Authorization": "Bearer my-token"}
 
+    def test_github_cli_headers(self):
+        assert GitHubAuth().auth_headers("my-token", "github-cli") == {
+            "Authorization": "Bearer my-token"
+        }
+
+    def test_github_cli_resolves_token_with_fixed_command(self):
+        from unittest.mock import MagicMock, patch
+
+        result = MagicMock(returncode=0, stdout="  cli-token\n")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run:
+            token = GitHubAuth().resolve_token(_github_cli_entry())
+
+        assert token == "cli-token"
+        run.assert_called_once_with(
+            [executable, "auth", "token", "--hostname", "github.com"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+
+    def test_github_cli_uses_bare_enterprise_host(self):
+        from unittest.mock import MagicMock, patch
+
+        entry = _github_cli_entry((
+            "ghes.example.com",
+            "raw.ghes.example.com",
+            "codeload.ghes.example.com",
+        ))
+        result = MagicMock(returncode=0, stdout="enterprise-token")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert GitHubAuth().resolve_token(entry) == "enterprise-token"
+
+        assert run.call_args.args[0][-2:] == ["--hostname", "ghes.example.com"]
+
+    def test_github_cli_requires_one_instance_per_entry(self):
+        entry = _github_cli_entry(("github.com", "ghes.example.com"))
+
+        with pytest.raises(GitHubCliAuthError, match="separate provider entries"):
+            GitHubAuth().resolve_token(entry)
+
+    def test_github_cli_caches_token_per_process(self):
+        from unittest.mock import MagicMock, patch
+
+        provider = GitHubAuth()
+        result = MagicMock(returncode=0, stdout="cached-token")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert provider.resolve_token(_github_cli_entry()) == "cached-token"
+            assert provider.resolve_token(_github_cli_entry()) == "cached-token"
+
+        run.assert_called_once()
+
+    @pytest.mark.parametrize("executable", [None, r".\gh.exe", "gh.exe", "./gh"])
+    def test_github_cli_rejects_missing_or_relative_executable(self, executable):
+        from unittest.mock import patch
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+        ) as run, pytest.raises(GitHubCliAuthError, match="was not found"):
+            GitHubAuth().resolve_token(_github_cli_entry())
+
+        run.assert_not_called()
+
+    def test_github_cli_nonzero_suggests_login_without_command_output(self):
+        from unittest.mock import MagicMock, patch
+
+        secret = "ghp_must_not_leak"
+        result = MagicMock(returncode=1, stdout=secret, stderr=secret)
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ), pytest.raises(GitHubCliAuthError) as exc_info:
+            GitHubAuth().resolve_token(_github_cli_entry())
+
+        message = str(exc_info.value)
+        assert "gh auth login --hostname github.com" in message
+        assert secret not in message
+
+    def test_github_cli_empty_output_raises(self):
+        from unittest.mock import MagicMock, patch
+
+        result = MagicMock(returncode=0, stdout=" \n", stderr="")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ), pytest.raises(GitHubCliAuthError, match="empty token"):
+            GitHubAuth().resolve_token(_github_cli_entry())
+
+    def test_github_cli_timeout_raises(self):
+        import subprocess
+        from unittest.mock import patch
+
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["gh"], 10),
+        ), pytest.raises(GitHubCliAuthError, match="timed out"):
+            GitHubAuth().resolve_token(_github_cli_entry())
+
+    def test_github_cli_caches_sanitized_failure(self):
+        from unittest.mock import MagicMock, patch
+
+        provider = GitHubAuth()
+        result = MagicMock(returncode=1, stdout="secret", stderr="secret")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run:
+            for _ in range(2):
+                with pytest.raises(GitHubCliAuthError) as exc_info:
+                    provider.resolve_token(_github_cli_entry())
+                assert "secret" not in str(exc_info.value)
+
+        run.assert_called_once()
+
+    def test_github_cli_rejects_shell_unsafe_host_without_echoing_it(self):
+        from unittest.mock import patch
+
+        unsafe_host = "a&whoami&b.ghes.example.com"
+        entry = _github_cli_entry((unsafe_host,))
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+        ) as which, patch(
+            "specify_cli.authentication.github.subprocess.run",
+        ) as run, pytest.raises(GitHubCliAuthError) as exc_info:
+            GitHubAuth().resolve_token(entry)
+
+        assert unsafe_host not in str(exc_info.value)
+        which.assert_not_called()
+        run.assert_not_called()
+
     def test_unsupported_scheme_raises(self):
         with pytest.raises(ValueError, match="basic-pat"):
             GitHubAuth().auth_headers("tok", "basic-pat")
@@ -641,337 +829,6 @@ class TestGitHubAuth:
 
     def test_supported_schemes(self):
         assert GitHubAuth.supported_auth_schemes == ("bearer", "github-cli")
-
-    def test_github_cli_headers_use_bearer(self):
-        assert GitHubAuth().auth_headers("cli-token", "github-cli") == {
-            "Authorization": "Bearer cli-token"
-        }
-
-    def test_resolve_token_github_cli_success_without_shell(
-        self,
-        monkeypatch,
-    ):
-        from unittest.mock import MagicMock, patch
-
-        monkeypatch.setenv("GH_HOST", "enterprise.example.com")
-        provider = GitHubAuth()
-        result = MagicMock(returncode=0, stdout="  cli-token\n")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            assert provider.resolve_token(
-                _github_cli_entry(),
-                "github.com",
-            ) == "cli-token"
-
-        assert run.call_args.args[0] == [
-            executable,
-            "auth",
-            "token",
-            "--hostname",
-            "github.com",
-        ]
-        assert run.call_args.kwargs == {
-            "capture_output": True,
-            "text": True,
-            "timeout": 10,
-            "check": False,
-            "shell": False,
-        }
-
-    def test_resolve_token_github_cli_uses_enterprise_hostname(self):
-        from unittest.mock import MagicMock, patch
-
-        provider = GitHubAuth()
-        result = MagicMock(returncode=0, stdout="enterprise-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            assert provider.resolve_token(
-                _github_cli_entry(("ghes.example.com",)),
-                "ghes.example.com",
-            ) == "enterprise-token"
-
-        assert run.call_args.args[0] == [
-            executable,
-            "auth",
-            "token",
-            "--hostname",
-            "ghes.example.com",
-        ]
-
-    @pytest.mark.parametrize(
-        "request_host",
-        [
-            "api.ghes.example.com",
-            "raw.ghes.example.com",
-            "codeload.ghes.example.com",
-        ],
-    )
-    def test_resolve_token_github_cli_maps_enterprise_service_host(
-        self,
-        request_host,
-    ):
-        from unittest.mock import MagicMock, patch
-
-        provider = GitHubAuth()
-        result = MagicMock(returncode=0, stdout="enterprise-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-        entry = _github_cli_entry((
-            "ghes.example.com",
-            "api.ghes.example.com",
-            "raw.ghes.example.com",
-            "codeload.ghes.example.com",
-        ))
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            assert provider.resolve_token(entry, request_host) == "enterprise-token"
-
-        assert run.call_args.args[0][-2:] == ["--hostname", "ghes.example.com"]
-
-    def test_resolve_token_github_cli_does_not_infer_unconfigured_instance_host(self):
-        from unittest.mock import MagicMock, patch
-
-        provider = GitHubAuth()
-        result = MagicMock(returncode=0, stdout="enterprise-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-        entry = _github_cli_entry(("raw.ghes.example.com",))
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            assert provider.resolve_token(
-                entry,
-                "raw.ghes.example.com",
-            ) == "enterprise-token"
-
-        assert run.call_args.args[0][-2:] == [
-            "--hostname",
-            "raw.ghes.example.com",
-        ]
-
-    @pytest.mark.parametrize(
-        ("source", "target"),
-        [
-            ("github.com", "api.github.com"),
-            ("github.com", "codeload.github.com"),
-            ("ghes.example.com", "api.ghes.example.com"),
-            ("ghes.example.com", "raw.ghes.example.com"),
-            ("ghes.example.com", "codeload.ghes.example.com"),
-        ],
-    )
-    def test_github_cli_reuses_token_within_credential_host(
-        self,
-        source,
-        target,
-    ):
-        provider = GitHubAuth()
-        entry = _github_cli_entry((
-            "github.com",
-            "api.github.com",
-            "codeload.github.com",
-            "ghes.example.com",
-            "api.ghes.example.com",
-            "raw.ghes.example.com",
-            "codeload.ghes.example.com",
-        ))
-
-        assert provider.can_reuse_token_for_host(entry, source, target)
-
-    def test_github_cli_does_not_reuse_token_across_instances(self):
-        provider = GitHubAuth()
-        entry = _github_cli_entry((
-            "github.com",
-            "api.github.com",
-            "ghes.example.com",
-            "raw.ghes.example.com",
-        ))
-
-        assert not provider.can_reuse_token_for_host(
-            entry,
-            "github.com",
-            "ghes.example.com",
-        )
-        assert not provider.can_reuse_token_for_host(
-            entry,
-            "raw.ghes.example.com",
-            "api.github.com",
-        )
-
-    def test_resolve_token_github_cli_caches_per_credential_host(self):
-        from unittest.mock import MagicMock, patch
-
-        provider = GitHubAuth()
-        result = MagicMock(returncode=0, stdout="cached-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-        entry = _github_cli_entry((
-            "github.com",
-            "api.github.com",
-            "ghes.example.com",
-            "raw.ghes.example.com",
-        ))
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            assert provider.resolve_token(entry, "github.com") == "cached-token"
-            assert provider.resolve_token(entry, "api.github.com") == "cached-token"
-            assert provider.resolve_token(entry, "ghes.example.com") == "cached-token"
-            assert provider.resolve_token(entry, "raw.ghes.example.com") == "cached-token"
-
-        assert run.call_count == 2
-
-    def test_resolve_token_github_cli_missing_raises_clear_error(self):
-        from unittest.mock import patch
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=None,
-        ), pytest.raises(GitHubCliAuthError) as exc_info:
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-        message = str(exc_info.value)
-        assert isinstance(exc_info.value, urllib.error.URLError)
-        assert not message.startswith("<urlopen error")
-        assert "provider 'github'" in message
-        assert "GitHub CLI ('gh') was not found" in message
-
-    @pytest.mark.parametrize("executable", [r".\gh.exe", "gh.exe", "./gh"])
-    def test_resolve_token_github_cli_rejects_relative_executable(
-        self, executable
-    ):
-        from unittest.mock import patch
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-        ) as run, pytest.raises(GitHubCliAuthError, match="was not found"):
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-        run.assert_not_called()
-
-    def test_resolve_token_github_cli_unauthenticated_suggests_login(self):
-        from unittest.mock import MagicMock, patch
-
-        result = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="not logged into any GitHub hosts",
-        )
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ), pytest.raises(GitHubCliAuthError, match="gh auth login --hostname github.com"):
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-    def test_resolve_token_github_cli_failure_redacts_command_output(
-        self,
-        caplog,
-    ):
-        from unittest.mock import MagicMock, patch
-
-        secret = "ghp_must_not_leak"
-        result = MagicMock(returncode=2, stdout=secret, stderr=secret)
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ), pytest.raises(GitHubCliAuthError) as exc_info:
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-        assert secret not in str(exc_info.value)
-        assert secret not in caplog.text
-
-    def test_resolve_token_github_cli_empty_output_raises(self):
-        from unittest.mock import MagicMock, patch
-
-        result = MagicMock(returncode=0, stdout=" \n", stderr="")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ), pytest.raises(GitHubCliAuthError, match="returned an empty token"):
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-    def test_resolve_token_github_cli_timeout_raises_without_output(self):
-        import subprocess
-        from unittest.mock import patch
-
-        secret = b"ghp_timeout_secret"
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-        timeout = subprocess.TimeoutExpired(
-            cmd=[executable, "auth", "token"],
-            timeout=10,
-            output=secret,
-            stderr=secret,
-        )
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            side_effect=timeout,
-        ), pytest.raises(GitHubCliAuthError) as exc_info:
-            GitHubAuth().resolve_token(_github_cli_entry(), "github.com")
-
-        assert "timed out" in str(exc_info.value)
-        assert secret.decode() not in str(exc_info.value)
-
-    def test_resolve_token_github_cli_caches_failure(self):
-        from unittest.mock import patch
-
-        provider = GitHubAuth()
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=None,
-        ) as which:
-            for _ in range(2):
-                with pytest.raises(GitHubCliAuthError):
-                    provider.resolve_token(_github_cli_entry(), "github.com")
-
-        assert which.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1425,30 +1282,6 @@ class TestAuthenticatedHttp:
         req = build_request("https://github.com/org/repo")
         assert req.get_header("Authorization") == "Bearer my-token"
 
-    def test_build_request_resolves_github_cli_for_request_host(self, monkeypatch):
-        from unittest.mock import MagicMock, patch
-
-        from specify_cli.authentication.http import build_request
-
-        provider = get_provider("github")
-        assert isinstance(provider, GitHubAuth)
-        monkeypatch.setattr(provider, "_github_cli_cache", {})
-        self._set_config(monkeypatch, [_github_cli_entry(("ghes.example.com",))])
-        result = MagicMock(returncode=0, stdout="enterprise-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ) as run:
-            req = build_request("https://ghes.example.com/org/repo")
-
-        assert req.get_header("Authorization") == "Bearer enterprise-token"
-        assert run.call_args.args[0][-2:] == ["--hostname", "ghes.example.com"]
-
     def test_build_request_attaches_bitbucket_basic_auth(self, monkeypatch):
         from specify_cli.authentication.http import build_request
         monkeypatch.setenv("ATLASSIAN_API_TOKEN", "api-tok")
@@ -1498,71 +1331,6 @@ class TestAuthenticatedHttp:
             open_url("https://github.com/org/repo/catalog.json")
         assert captured["req"].get_header("Authorization") == "Bearer my-token"
 
-    def test_open_url_wires_github_cli_redirect_credential_scope(self, monkeypatch):
-        from unittest.mock import MagicMock, patch
-
-        from specify_cli.authentication.http import (
-            _StripAuthOnRedirect,
-            open_url,
-        )
-
-        provider = get_provider("github")
-        assert isinstance(provider, GitHubAuth)
-        monkeypatch.setattr(provider, "_github_cli_cache", {})
-        self._set_config(
-            monkeypatch,
-            [
-                _github_cli_entry(
-                    ("github.com", "codeload.github.com", "ghes.example.com")
-                )
-            ],
-        )
-        result = MagicMock(returncode=0, stdout="github-token")
-        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
-        response = MagicMock()
-        mock_opener = MagicMock()
-        mock_opener.open.return_value = response
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=executable,
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-            return_value=result,
-        ), patch(
-            "specify_cli.authentication.http.urllib.request.build_opener",
-            return_value=mock_opener,
-        ) as build_opener:
-            assert open_url("https://github.com/org/repo/archive.zip") is response
-
-        request = mock_opener.open.call_args.args[0]
-        handler = next(
-            argument
-            for argument in build_opener.call_args.args
-            if isinstance(argument, _StripAuthOnRedirect)
-        )
-        same_instance = handler.redirect_request(
-            request,
-            io.BytesIO(b""),
-            302,
-            "Found",
-            {},
-            "https://codeload.github.com/org/repo/archive.zip",
-        )
-        cross_instance = handler.redirect_request(
-            request,
-            io.BytesIO(b""),
-            302,
-            "Found",
-            {},
-            "https://ghes.example.com/org/repo/archive.zip",
-        )
-
-        assert same_instance is not None
-        assert same_instance.get_header("Authorization") == "Bearer github-token"
-        assert cross_instance is not None
-        assert cross_instance.get_header("Authorization") is None
-
     def test_open_url_no_auth_for_non_matching_host(self, monkeypatch):
         from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
@@ -1580,37 +1348,6 @@ class TestAuthenticatedHttp:
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://example.com/file.json")
         assert captured["req"].get_header("Authorization") is None
-
-    def test_open_url_rejects_shell_unsafe_github_cli_hostname(self, monkeypatch):
-        from unittest.mock import patch
-
-        from specify_cli.authentication.http import open_url
-
-        attacker_host = "a&whoami&b.ghes.example.com"
-        provider = get_provider("github")
-        assert isinstance(provider, GitHubAuth)
-        monkeypatch.setattr(provider, "_github_cli_cache", {})
-        self._set_config(
-            monkeypatch,
-            [_github_cli_entry(("*.ghes.example.com",))],
-        )
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value="/opt/github-cli/gh.cmd",
-        ), patch(
-            "specify_cli.authentication.github.subprocess.run",
-        ) as run, patch(
-            "specify_cli.authentication.http.urllib.request.build_opener",
-        ) as build_opener, pytest.raises(
-            GitHubCliAuthError,
-            match="hostname is not valid",
-        ) as exc_info:
-            open_url(f"https://{attacker_host}/archive.zip")
-
-        assert attacker_host not in str(exc_info.value)
-        run.assert_not_called()
-        build_opener.assert_not_called()
 
     def test_open_url_no_auth_when_no_config(self, monkeypatch):
         from unittest.mock import MagicMock, patch
@@ -1809,75 +1546,6 @@ class TestRedirectStripping:
         assert new_req is not None
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
-
-    def test_redirect_across_credential_scopes_strips_auth(self):
-        from specify_cli.authentication.http import _StripAuthOnRedirect
-        from urllib.request import Request
-        import io
-
-        provider = GitHubAuth()
-        entry = _github_cli_entry(("github.com", "ghes.example.com"))
-        handler = _StripAuthOnRedirect(
-            entry.hosts,
-            auth_hostname_validator=lambda target: provider.can_reuse_token_for_host(
-                entry,
-                "github.com",
-                target,
-            ),
-        )
-        req = Request(
-            "https://github.com/org/repo",
-            headers={"Authorization": "Bearer public-token"},
-        )
-
-        new_req = handler.redirect_request(
-            req,
-            io.BytesIO(b""),
-            302,
-            "Found",
-            {},
-            "https://ghes.example.com/org/repo",
-        )
-
-        assert new_req is not None
-        assert new_req.get_header("Authorization") is None
-        assert new_req.unredirected_hdrs.get("Authorization") is None
-
-    def test_redirect_within_credential_scope_preserves_auth(self):
-        from specify_cli.authentication.http import _StripAuthOnRedirect
-        from urllib.request import Request
-        import io
-
-        provider = GitHubAuth()
-        entry = _github_cli_entry(("ghes.example.com", "raw.ghes.example.com"))
-        handler = _StripAuthOnRedirect(
-            entry.hosts,
-            auth_hostname_validator=lambda target: provider.can_reuse_token_for_host(
-                entry,
-                "ghes.example.com",
-                target,
-            ),
-        )
-        req = Request(
-            "https://ghes.example.com/org/repo",
-            headers={"Authorization": "Bearer enterprise-token"},
-        )
-
-        new_req = handler.redirect_request(
-            req,
-            io.BytesIO(b""),
-            302,
-            "Found",
-            {},
-            "https://raw.ghes.example.com/org/repo/file",
-        )
-
-        assert new_req is not None
-        auth = (
-            new_req.get_header("Authorization")
-            or new_req.unredirected_hdrs.get("Authorization")
-        )
-        assert auth == "Bearer enterprise-token"
 
     @pytest.mark.parametrize(
         ("hosts", "target", "expected_auth"),
@@ -2212,37 +1880,6 @@ class TestFetchLatestReleaseTagDelegation:
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Accept") == "application/vnd.github+json"
-
-    def test_github_cli_failure_preserves_message_without_http(
-        self,
-        monkeypatch,
-    ):
-        from unittest.mock import patch
-
-        from specify_cli._version import _fetch_latest_release_tag
-
-        provider = get_provider("github")
-        assert isinstance(provider, GitHubAuth)
-        monkeypatch.setattr(provider, "_github_cli_cache", {})
-        self._set_config(
-            monkeypatch,
-            [_github_cli_entry(("github.com", "api.github.com"))],
-        )
-
-        with patch(
-            "specify_cli.authentication.github.shutil.which",
-            return_value=None,
-        ), patch(
-            "specify_cli.authentication.http.urllib.request.build_opener",
-        ) as build_opener:
-            tag, reason = _fetch_latest_release_tag()
-
-        assert tag is None
-        assert reason == (
-            "GitHub authentication failed for provider 'github': "
-            "GitHub CLI ('gh') was not found."
-        )
-        build_opener.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

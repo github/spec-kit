@@ -63,19 +63,10 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 
 
 RedirectValidator = Callable[[str, str], None]
-AuthHostnameValidator = Callable[[str], bool]
 
 
 class RedirectPolicyError(urllib.error.URLError):
     """A redirect rejected because it violates the client's security policy."""
-
-
-def _hostname_for_url(url: str) -> str | None:
-    """Return a normalized request hostname, or None for malformed URLs."""
-    try:
-        return (urlparse(url).hostname or "").lower() or None
-    except ValueError:
-        return None
 
 
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
@@ -100,12 +91,10 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self,
         hosts: tuple[str, ...],
         redirect_validator: RedirectValidator | None = None,
-        auth_hostname_validator: AuthHostnameValidator | None = None,
     ) -> None:
         super().__init__()
         self._hosts = hosts
         self._redirect_validator = redirect_validator
-        self._auth_hostname_validator = auth_hostname_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:
@@ -130,15 +119,7 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
             old_scheme = urlparse(req.full_url).scheme
             hostname = (new_parsed.hostname or "").lower()
             is_https_downgrade = old_scheme == "https" and new_parsed.scheme != "https"
-            is_auth_hostname_allowed = (
-                self._auth_hostname_validator is None
-                or self._auth_hostname_validator(hostname)
-            )
-            if (
-                _hostname_in_hosts(hostname, self._hosts)
-                and not is_https_downgrade
-                and is_auth_hostname_allowed
-            ):
+            if _hostname_in_hosts(hostname, self._hosts) and not is_https_downgrade:
                 if original_auth:
                     new_req.add_unredirected_header("Authorization", original_auth)
             else:
@@ -159,12 +140,11 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
         headers.update({k: v for k, v in extra_headers.items() if k.lower() != "authorization"})
     # Auth headers applied last — cannot be overridden by extra_headers
     entries = find_entries_for_url(url, _load_config())
-    hostname = _hostname_for_url(url)
     for entry in entries:
         provider = get_provider(entry.provider)
         if provider is None:
             continue
-        token = provider.resolve_token(entry, hostname)
+        token = provider.resolve_token(entry)
         if token:
             headers.update(provider.auth_headers(token, entry.auth))
             break
@@ -210,7 +190,6 @@ def open_url(
     HTTP between loopback URLs, and rejects remote-to-local redirects.
     """
     entries = find_entries_for_url(url, _load_config())
-    hostname = _hostname_for_url(url)
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -226,25 +205,12 @@ def open_url(
         provider = get_provider(entry.provider)
         if provider is None:
             continue
-        token = provider.resolve_token(entry, hostname)
+        token = provider.resolve_token(entry)
         if not token:
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        def auth_hostname_validator(target_hostname: str) -> bool:
-            return provider.can_reuse_token_for_host(
-                entry,
-                hostname,
-                target_hostname,
-            )
-
-        opener = urllib.request.build_opener(
-            _StripAuthOnRedirect(
-                entry.hosts,
-                redirect_validator,
-                auth_hostname_validator,
-            )
-        )
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
