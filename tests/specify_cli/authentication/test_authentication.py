@@ -1984,7 +1984,10 @@ class TestFetchLatestReleaseTagDelegation:
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Accept") == "application/vnd.github+json"
 
-    def test_github_cli_failure_maps_to_offline(self, monkeypatch):
+    def test_github_cli_failure_preserves_message_without_http(
+        self,
+        monkeypatch,
+    ):
         from unittest.mock import patch
 
         from specify_cli._version import _fetch_latest_release_tag
@@ -2000,11 +2003,17 @@ class TestFetchLatestReleaseTagDelegation:
         with patch(
             "specify_cli.authentication.github.shutil.which",
             return_value=None,
-        ):
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
             tag, reason = _fetch_latest_release_tag()
 
         assert tag is None
-        assert reason == "offline or timeout"
+        assert reason == (
+            "GitHub authentication failed for provider 'github': "
+            "GitHub CLI ('gh') was not found."
+        )
+        build_opener.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

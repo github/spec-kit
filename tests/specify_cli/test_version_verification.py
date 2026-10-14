@@ -285,6 +285,24 @@ class TestResolutionFailures:
         assert result.exit_code == 1
         assert "Upgrade aborted: offline or timeout" in strip_ansi(result.output)
 
+    def test_github_cli_auth_failure_preserves_actionable_message(
+        self,
+        uv_tool_argv0,
+        clean_environ,
+    ):
+        failure = (
+            "GitHub authentication failed for provider 'github': "
+            "GitHub CLI ('gh') was not found."
+        )
+        with patch(
+            "specify_cli._version._fetch_latest_release_tag",
+            return_value=(None, failure),
+        ):
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 1
+        assert f"Upgrade aborted: {failure}" in strip_ansi(result.output)
+
     def test_rate_limited_exits_1(self, uv_tool_argv0, clean_environ):
         err = urllib.error.HTTPError(
             url="https://api.github.com",

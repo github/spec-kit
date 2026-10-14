@@ -97,6 +97,14 @@ using this mode. Specify invokes the fixed command
 the resulting token in memory for the current process. The token is not
 written to disk by Specify.
 
+A configured `github-cli` entry is authoritative for its matching hosts. If
+GitHub CLI cannot provide a token, Specify fails that credential lookup before
+making an HTTP request; it does not try later matching entries or an
+unauthenticated fallback for that request. Successful tokens and sanitized
+lookup failures are both cached per selected credential host for the current
+process. After correcting a GitHub CLI login, start a new Specify invocation
+to retry the lookup.
+
 ### GitHub Enterprise Server (GHES)
 
 To use a private catalog or extension hosted on a GitHub Enterprise Server
