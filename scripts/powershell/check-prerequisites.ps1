@@ -101,18 +101,19 @@ if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
     exit 1
 }
 
-if (
-    -not (Test-Path $paths.IMPL_PLAN -PathType Leaf) -or
-    (Get-Item -LiteralPath $paths.IMPL_PLAN).Length -eq 0
-) {
+if (-not (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $($paths.FEATURE_DIR)")
-    if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
-        [Console]::Error.WriteLine(
-            "ERROR: plan.md is empty in $($paths.FEATURE_DIR); populate it or rerun plan setup."
-        )
-    }
     $planCommand = Format-SpecKitCommand -CommandName 'plan' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $planCommand first to create the implementation plan.")
+    exit 1
+}
+
+if ((Get-Item -LiteralPath $paths.IMPL_PLAN).Length -eq 0) {
+    [Console]::Error.WriteLine("ERROR: plan.md is empty in $($paths.FEATURE_DIR)")
+    $planCommand = Format-SpecKitCommand -CommandName 'plan' -RepoRoot $paths.REPO_ROOT
+    [Console]::Error.WriteLine(
+        "Populate it, or remove the empty file and rerun $planCommand with a valid plan template."
+    )
     exit 1
 }
 

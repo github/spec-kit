@@ -70,11 +70,25 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         if template_content is not None:
+            if template_content == "":
+                print(
+                    "ERROR: Plan template is empty; no new plan.md was created.",
+                    file=sys.stderr,
+                )
+                print(
+                    "Restore a valid plan template and rerun plan setup.",
+                    file=sys.stderr,
+                )
+                return 1
             paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
             print(
-                "ERROR: Plan template not found; cannot create plan.md",
+                "ERROR: Plan template not found; no new plan.md was created.",
+                file=sys.stderr,
+            )
+            print(
+                "Restore a valid plan template and rerun plan setup.",
                 file=sys.stderr,
             )
             return 1

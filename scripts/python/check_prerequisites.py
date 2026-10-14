@@ -228,16 +228,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if not paths.impl_plan.is_file() or paths.impl_plan.stat().st_size == 0:
+    if not paths.impl_plan.is_file():
         print(f"ERROR: plan.md not found in {paths.feature_dir}", file=sys.stderr)
-        if paths.impl_plan.is_file():
-            print(
-                f"ERROR: plan.md is empty in {paths.feature_dir}; "
-                "populate it or rerun plan setup.",
-                file=sys.stderr,
-            )
         print(
             f"Run {format_speckit_command('plan', paths.repo_root)} first to create the implementation plan.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if paths.impl_plan.stat().st_size == 0:
+        print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
+        print(
+            "Populate it, or remove the empty file and rerun "
+            f"{format_speckit_command('plan', paths.repo_root)} "
+            "with a valid plan template.",
             file=sys.stderr,
         )
         return 1

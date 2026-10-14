@@ -26,6 +26,21 @@ from tests.parity_helpers import (
 
 SCRIPT = "setup-plan"
 TEMPLATE_BODY = "# Plan Template\n\nBody.\n"
+PORTS = [
+    pytest.param("bash", marks=requires_bash),
+    pytest.param(
+        "powershell",
+        marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
+    ),
+    pytest.param("python"),
+]
+
+
+def _command(repo: Path, port: str, json_mode: bool) -> list[str]:
+    if port == "powershell":
+        return ps_cmd(repo, SCRIPT, *(("-Json",) if json_mode else ()))
+    command = bash_cmd if port == "bash" else py_cmd
+    return command(repo, SCRIPT, *(("--json",) if json_mode else ()))
 
 
 def _setup_repo(tmp_path: Path, name: str = "proj", template: bool = True) -> Path:
@@ -43,6 +58,91 @@ def _setup_repo(tmp_path: Path, name: str = "proj", template: bool = True) -> Pa
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize("template_state", ["missing", "empty", "empty_override"])
+def test_plan_template_failure_and_retry(
+    tmp_path: Path, port: str, json_mode: bool, template_state: str
+) -> None:
+    repo = _setup_repo(tmp_path, template=False)
+    template = repo / ".specify" / "templates" / "plan-template.md"
+    if template_state != "missing":
+        template.parent.mkdir(parents=True)
+        template.write_bytes(b"")
+        if template_state == "empty_override":
+            template.write_bytes(TEMPLATE_BODY.encode("utf-8"))
+            template = template.parent / "overrides" / template.name
+            template.parent.mkdir()
+            template.write_bytes(b"")
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+
+    result = run(_command(repo, port, json_mode), repo)
+
+    diagnostic = "not found" if template_state == "missing" else "is empty"
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == (
+        f"ERROR: Plan template {diagnostic}; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
+    assert not plan.exists()
+
+    template.parent.mkdir(parents=True, exist_ok=True)
+    template.write_bytes(TEMPLATE_BODY.encode("utf-8"))
+    retry = run(_command(repo, port, json_mode), repo)
+
+    assert retry.returncode == 0, retry.stderr
+    assert plan.read_bytes() == TEMPLATE_BODY.encode("utf-8")
+    if json_mode:
+        assert sorted(json_stdout(retry)) == [
+            "BRANCH", "FEATURE_DIR", "FEATURE_SPEC", "IMPL_PLAN"
+        ]
+    else:
+        assert "IMPL_PLAN: " in retry.stdout
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize("template_state", ["missing", "empty", "valid"])
+@pytest.mark.parametrize("body", [b"", b"# Existing plan\n"], ids=["empty", "nonempty"])
+def test_existing_plan_is_preserved(
+    tmp_path: Path, port: str, json_mode: bool, template_state: str, body: bytes
+) -> None:
+    repo = _setup_repo(tmp_path, template=False)
+    if template_state != "missing":
+        template = repo / ".specify" / "templates" / "plan-template.md"
+        template.parent.mkdir(parents=True)
+        template.write_bytes(b"" if template_state == "empty" else TEMPLATE_BODY.encode())
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+    plan.write_bytes(body)
+    before = plan.stat().st_mtime_ns
+
+    result = run(_command(repo, port, json_mode), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert plan.read_bytes() == body
+    assert plan.stat().st_mtime_ns == before
+    status = result.stderr if json_mode else result.stdout
+    assert "already exists" in status
+    assert "skipping template copy" in status
+    if json_mode:
+        assert "IMPL_PLAN" in json_stdout(result)
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_whitespace_plan_template_is_not_empty(
+    repo: Path, port: str, json_mode: bool
+) -> None:
+    body = b" \t\n\n"
+    (repo / ".specify" / "templates" / "plan-template.md").write_bytes(body)
+
+    result = run(_command(repo, port, json_mode), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "specs" / "001-my-feature" / "plan.md").read_bytes() == body
 
 
 @requires_bash

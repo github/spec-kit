@@ -296,5 +296,8 @@ def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) 
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "ERROR: Plan template not found; cannot create plan.md" in result.stderr
+    assert result.stderr == (
+        "ERROR: Plan template not found; no new plan.md was created.\n"
+        "Restore a valid plan template and rerun plan setup.\n"
+    )
     assert not (plan_repo / "specs" / "001-my-feature" / "plan.md").exists()

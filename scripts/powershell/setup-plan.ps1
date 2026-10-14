@@ -48,6 +48,13 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
 } else {
     $content = Resolve-TemplateContent -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
     if ($null -ne $content) {
+        if ($content.Length -eq 0) {
+            [Console]::Error.WriteLine(
+                "ERROR: Plan template is empty; no new plan.md was created."
+            )
+            [Console]::Error.WriteLine("Restore a valid plan template and rerun plan setup.")
+            exit 1
+        }
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
@@ -59,8 +66,9 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
         }
     } else {
         [Console]::Error.WriteLine(
-            "ERROR: Plan template not found; cannot create plan.md"
+            "ERROR: Plan template not found; no new plan.md was created."
         )
+        [Console]::Error.WriteLine("Restore a valid plan template and rerun plan setup.")
         exit 1
     }
 }
