@@ -191,6 +191,8 @@ specify bundle init [<bundle_id>]
 
 Ensures the current directory is a Spec Kit project (initializing it idempotently if needed), then optionally installs the given bundle. Useful as an explicit one-step bootstrap for a new checkout.
 
+Repeating `bundle init` skips components already installed by the bundle and preserves their local edits. To refresh them, use `bundle update <id>` for a catalog bundle or `bundle install <path> --refresh` for a local source.
+
 ## Validate a Bundle
 
 ```bash
