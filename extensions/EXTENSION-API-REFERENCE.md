@@ -684,6 +684,8 @@ Executing: `/{command}`
 EXECUTE_COMMAND: {command}
 ```
 
+Write the invocation in the generic `/{command}` form shown above. For agents whose native invocation prefix is not `/`, Spec Kit rewrites that prefix when it generates the agent's skill files. That rewriting is a temporary compatibility fix rather than a supported extension API, and it may change or be removed without backward compatibility, so do not introduce new dependencies on it.
+
 ---
 
 ## CLI Commands

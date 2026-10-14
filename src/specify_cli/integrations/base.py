@@ -756,6 +756,13 @@ class IntegrationBase(ABC):
 
         Idempotent, because the rewritten text no longer carries the bare
         ``/`` form that is matched.
+
+        This is a temporary compatibility shim for agents whose invocation
+        prefix is not ``/``, not a supported extension API.  Rewriting
+        ``/{command}`` may change or be removed without backward
+        compatibility, so extension authors should not introduce new
+        dependencies on this behaviour: keep writing the generic
+        ``/{command}`` form in hook blocks.
         """
         if prefix == "/":
             return content
