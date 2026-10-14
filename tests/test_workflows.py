@@ -451,16 +451,22 @@ class TestExpressions:
         same shape as a genuine single list literal. Naively stripping the
         outer brackets from ``[1,2,3][1]`` yields ``1,2,3][1``, which then
         silently evaluates to ``[1, 2, None]`` instead of raising or
-        resolving the index. It must not be misclassified as one literal;
-        falling through to unresolvable (``None``) is safe, unlike silently
-        returning a wrong-looking list.
+        resolving the index. It must not be misclassified as one literal.
+
+        The grammar-based engine (A2) refuses the shape at the parser, with
+        the position in the message; the hand-written engine fell through to
+        unresolvable (``None``). Both avoid the wrong-looking list; the parse
+        error is the louder signal, so this test pins it.
         """
+        import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext()
-        assert evaluate_expression("{{ [1,2,3][1] }}", ctx) is None
-        assert evaluate_expression("{{ [1,2][0] }}", ctx) is None
+        with pytest.raises(ValueError, match="invalid expression"):
+            evaluate_expression("{{ [1,2,3][1] }}", ctx)
+        with pytest.raises(ValueError, match="invalid expression"):
+            evaluate_expression("{{ [1,2][0] }}", ctx)
         # Genuine list literals -- including ones a bracket-depth scan must
         # still recognize as ending exactly at the final character -- are
         # unaffected.
@@ -604,25 +610,28 @@ class TestExpressions:
 
     def test_filter_from_json_rejects_malformed_forms(self):
         # `from_json` is strict: no arguments and no trailing tokens. Every
-        # mis-wired form — parenthesized, accidental arg, or trailing
-        # garbage — must raise rather than silently fall through to the
-        # unknown-filter path and return the unparsed value.
+        # mis-wired form must raise rather than silently fall through to the
+        # unknown-filter path and return the unparsed value. Parenthesized
+        # forms reach the strict dispatcher; trailing garbage after the filter
+        # name is refused by the parser instead (A2: the grammar, not a regex,
+        # is the strictness), so those carry the parse message.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(steps={"emit": {"output": {"stdout": '{"a": 1}'}}})
-        bad_forms = (
+        for bad in (
             "from_json()",
             "from_json('x')",
             "from_json ()",
             "from_json ('x')",
-            "from_json)",
-            "from_json extra",
-            "from_json 'x'",
-        )
-        for bad in bad_forms:
+        ):
             with pytest.raises(ValueError, match="from_json: expected"):
+                evaluate_expression(
+                    "{{ steps.emit.output.stdout | " + bad + " }}", ctx
+                )
+        for bad in ("from_json)", "from_json extra", "from_json 'x'"):
+            with pytest.raises(ValueError, match="invalid expression"):
                 evaluate_expression(
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
@@ -907,17 +916,23 @@ class TestExpressions:
 
     def test_zero_arg_filters_reject_miswired_forms(self):
         # The strict no-argument branch is shared by from_json/upper/lower/
-        # length/to_json. Every mis-wired form — parenthesized, accidental arg,
-        # or trailing garbage — must raise naming the filter, rather than
-        # silently falling through to the unknown-filter path.
+        # length/to_json. Every mis-wired form must raise naming the filter
+        # rather than silently falling through to the unknown-filter path.
+        # Parenthesized forms reach the strict dispatcher; trailing garbage
+        # after the name is a parse error (A2).
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"s": "hi", "items": ["a"]})
         for fname in ("from_json", "upper", "lower", "length", "to_json"):
-            for bad in (fname + "()", fname + "('x')", fname + ")", fname + " extra"):
+            for bad in (fname + "()", fname + "('x')"):
                 with pytest.raises(ValueError, match=fname + ": expected"):
+                    evaluate_expression(
+                        "{{ inputs.s | " + bad + " }}", ctx
+                    )
+            for bad in (fname + ")", fname + " extra"):
+                with pytest.raises(ValueError, match="invalid expression"):
                     evaluate_expression(
                         "{{ inputs.s | " + bad + " }}", ctx
                     )
@@ -1071,22 +1086,21 @@ class TestExpressions:
             evaluate_expression("{{ inputs.tags | contains }}", ctx)
 
     def test_filter_call_with_trailing_tokens_fails_loudly(self):
-        # A trailing operator/token after a filter's closing paren must not be
-        # silently discarded (the parser used an unanchored regex). It must
-        # fall through to the "unsupported form" ValueError, like the from_json
-        # branch's strict trailing-token handling.
+        # A trailing operator/token after a filter comes out as a parse error
+        # rather than being silently discarded. The grammar makes the filter
+        # chain a complete expression: a comparison after it and garbage after
+        # its closing paren both fail to parse (A2 — previously the hand-written
+        # parser routed these to an "unsupported form" ValueError instead).
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        # A comparison after a filter (binds looser than the pipe) was dropped,
-        # so `default('7') > '5'` silently returned '7'.
-        with pytest.raises(ValueError, match="unsupported form"):
+        with pytest.raises(ValueError, match="invalid expression"):
             evaluate_expression(
                 "{{ inputs.missing | default('7') > '5' }}", StepContext(inputs={})
             )
         # Trailing garbage after a valid filter call.
-        with pytest.raises(ValueError, match="unsupported form"):
+        with pytest.raises(ValueError, match="invalid expression"):
             evaluate_expression(
                 "{{ inputs.tags | join(',') extra }}",
                 StepContext(inputs={"tags": ["a", "b"]}),
