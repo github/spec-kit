@@ -562,6 +562,30 @@ def test_python_negative_errors_are_stderr_only(
     assert py.stdout.strip() == ""
 
 
+@requires_bash
+def test_all_variants_reject_empty_plan(tmp_path: Path) -> None:
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    _git_init(repo)
+    (repo / ".specify").mkdir()
+    _install_scripts(repo)
+    _write_feature_json(repo)
+    feature = repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    (feature / "plan.md").touch()
+
+    results = [
+        _run(_bash_cmd(repo, "--json", "--require-spec"), repo),
+        _run(_py_cmd(repo, "--json", "--require-spec"), repo),
+    ]
+    if HAS_PWSH or _WINDOWS_POWERSHELL:
+        results.append(_run(_ps_cmd(repo, "-Json", "-RequireSpec"), repo))
+
+    assert all(result.returncode == 1 for result in results)
+    assert all(result.stdout == "" for result in results)
+    assert all("plan.md is empty" in result.stderr for result in results)
+
+
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
     (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True)
     _write_feature_json(prereq_repo)

@@ -142,8 +142,11 @@ if [[ ! -d "$FEATURE_DIR" ]]; then
     exit 1
 fi
 
-if [[ ! -f "$IMPL_PLAN" ]]; then
+if [[ ! -f "$IMPL_PLAN" || ! -s "$IMPL_PLAN" ]]; then
     echo "ERROR: plan.md not found in $FEATURE_DIR" >&2
+    if [[ -f "$IMPL_PLAN" ]]; then
+        echo "ERROR: plan.md is empty in $FEATURE_DIR; populate it or rerun plan setup." >&2
+    fi
     echo "Run $(format_speckit_command plan "$REPO_ROOT") first to create the implementation plan." >&2
     exit 1
 fi

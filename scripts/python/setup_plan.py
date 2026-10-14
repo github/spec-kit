@@ -73,8 +73,11 @@ def main(argv: list[str] | None = None) -> int:
             paths.impl_plan.write_bytes(template_content.encode("utf-8"))
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
-            print("Warning: Plan template not found", file=status_stream)
-            paths.impl_plan.touch()
+            print(
+                "ERROR: Plan template not found; cannot create plan.md",
+                file=sys.stderr,
+            )
+            return 1
 
     if json_mode:
         sys.stdout.write(

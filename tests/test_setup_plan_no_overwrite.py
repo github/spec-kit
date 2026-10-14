@@ -281,10 +281,7 @@ def test_ps_setup_plan_copied_message_on_stderr_in_json_mode(plan_repo: Path) ->
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) -> None:
-    """When no plan template resolves, -Json mode must emit 'Warning: Plan template
-    not found' on stderr (matching the bash twin's wording and stream routing) while
-    keeping stdout pure JSON. Before the fix the PowerShell script used Write-Warning,
-    producing a different 'WARNING:' prefix on the warning stream instead."""
+    """When no plan template resolves, setup must fail without creating plan.md."""
     # Remove the template the fixture installs so resolution finds nothing.
     (plan_repo / ".specify" / "templates" / "plan-template.md").unlink()
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
@@ -297,7 +294,7 @@ def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) 
         check=False,
         env=_clean_env(),
     )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert "IMPL_PLAN" in data
-    assert "Warning: Plan template not found" in result.stderr
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "ERROR: Plan template not found; cannot create plan.md" in result.stderr
+    assert not (plan_repo / "specs" / "001-my-feature" / "plan.md").exists()

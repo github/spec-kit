@@ -55,12 +55,8 @@ else
         if [ "$resolve_status" -ne 1 ]; then
             exit "$resolve_status"
         fi
-        if $JSON_MODE; then
-            echo "Warning: Plan template not found" >&2
-        else
-            echo "Warning: Plan template not found"
-        fi
-        touch "$IMPL_PLAN"
+        echo "ERROR: Plan template not found; cannot create plan.md" >&2
+        exit 1
     fi
 fi
 

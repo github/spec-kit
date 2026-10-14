@@ -162,13 +162,27 @@ def test_python_missing_template_matches_bash(tmp_path: Path) -> None:
     bash = run(bash_cmd(repo_a, SCRIPT, "--json"), repo_a)
     py = run(py_cmd(repo_b, SCRIPT, "--json"), repo_b)
 
-    assert py.returncode == bash.returncode == 0
+    assert py.returncode == bash.returncode == 1
+    assert py.stdout == bash.stdout == ""
     assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
         bash.stderr, repo_a
     )
     for repo in (repo_a, repo_b):
         plan = repo / "specs" / "001-my-feature" / "plan.md"
-        assert plan.read_text(encoding="utf-8") == ""
+        assert not plan.exists()
+
+    for repo in (repo_a, repo_b):
+        templates = repo / ".specify" / "templates"
+        templates.mkdir(parents=True)
+        (templates / "plan-template.md").write_text(TEMPLATE_BODY, encoding="utf-8")
+
+    bash_retry = run(bash_cmd(repo_a, SCRIPT, "--json"), repo_a)
+    py_retry = run(py_cmd(repo_b, SCRIPT, "--json"), repo_b)
+    assert py_retry.returncode == bash_retry.returncode == 0
+    for repo in (repo_a, repo_b):
+        assert (
+            repo / "specs" / "001-my-feature" / "plan.md"
+        ).read_text(encoding="utf-8") == TEMPLATE_BODY
 
 
 @requires_bash
