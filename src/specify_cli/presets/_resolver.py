@@ -69,9 +69,9 @@ class PresetResolver:
                 try:
                     self._manifest_cache[key] = PresetManifest(manifest_path)
                 except PresetValidationError as exc:
-                    from ._selectors import SelectorSafetyError
+                    from ._selectors import REGEX_COMPILE_ERRORS
 
-                    if isinstance(exc.__cause__, SelectorSafetyError):
+                    if isinstance(exc.__cause__, REGEX_COMPILE_ERRORS):
                         import warnings
 
                         warnings.warn(
@@ -603,41 +603,45 @@ class PresetResolver:
         manifest = self._get_manifest(pack_dir)
         if manifest is None:
             return []
-        presets = self._get_all_presets_by_priority()
-        pack_ids = [pack_id for pack_id, _ in presets]
-        try:
-            current_index = pack_ids.index(pack_dir.name)
-        except ValueError:
-            return []
-        has_lower_resource = any(
-            self._preset_has_concrete_resource(
-                self.presets_dir / lower_id, template_name, template_type
-            )
-            for lower_id, _metadata in presets[current_index + 1 :]
-        )
-        if not has_lower_resource:
-            has_lower_resource = any(
-                self._extension_has_concrete_resource(
-                    self.extensions_dir / ext_id, template_name, template_type
-                )
-                for _priority, ext_id, _meta in self._get_all_extensions_by_priority()
-            )
-        if not has_lower_resource:
-            has_lower_resource = self._core_has_concrete_resource(
-                template_name, template_type
-            )
-        matches = []
+        candidates = []
         for declaration in manifest.templates:
             name = declaration.get("name")
             if declaration.get("type") != template_type or not isinstance(name, str):
                 continue
-            exact = not is_regex_selector(name) and name == template_name
-            regex = (
-                has_lower_resource
-                and is_regex_selector(name)
-                and selector_matches(name, template_name)
+            regex = is_regex_selector(name)
+            if (not regex and name == template_name) or (
+                regex and selector_matches(name, template_name)
+            ):
+                candidates.append((declaration, regex))
+
+        has_lower_resource = False
+        if any(regex for _declaration, regex in candidates):
+            presets = self._get_all_presets_by_priority()
+            pack_ids = [pack_id for pack_id, _ in presets]
+            try:
+                current_index = pack_ids.index(pack_dir.name)
+            except ValueError:
+                return []
+            has_lower_resource = any(
+                self._preset_has_concrete_resource(
+                    self.presets_dir / lower_id, template_name, template_type
+                )
+                for lower_id, _metadata in presets[current_index + 1 :]
             )
-            if exact or regex:
+            if not has_lower_resource:
+                has_lower_resource = any(
+                    self._extension_has_concrete_resource(
+                        self.extensions_dir / ext_id, template_name, template_type
+                    )
+                    for _priority, ext_id, _meta in self._get_all_extensions_by_priority()
+                )
+            if not has_lower_resource:
+                has_lower_resource = self._core_has_concrete_resource(
+                    template_name, template_type
+                )
+        matches = []
+        for declaration, regex in candidates:
+            if not regex or has_lower_resource:
                 file_value = declaration.get("file")
                 path = pack_dir / file_value if isinstance(file_value, str) else None
                 matches.append(
@@ -689,10 +693,6 @@ class PresetResolver:
         if entry is not None:
             return candidate
         candidate = self._conventional_resource(base_dir, name, template_type)
-        if candidate is None and template_type == "command":
-            candidate = self._conventional_resource(
-                base_dir / "templates", name, template_type
-            )
         if candidate is None and template_type == "command":
             candidate = self._find_unregistered_extension_command(name, base_dir)
         return candidate

@@ -2885,3 +2885,41 @@ def test_install_regex_commands_registers_concrete_ai_skills(project_dir):
         for names in metadata["registered_commands"].values()
         for name in names
     )
+
+
+def test_skills_ignore_stale_composition_after_selector_falls_back_to_exact(project_dir):
+    from specify_cli import save_init_options
+    from specify_cli.presets import PresetManifest
+    from tests.specify_cli.presets._helpers import write_selector_contract_preset
+
+    save_init_options(project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"})
+    (project_dir / ".claude" / "skills").mkdir(parents=True)
+    name = "speckit.fallback"
+    lower = write_selector_contract_preset(
+        project_dir, "lower", [(name, "command", "replace", "LOWER BODY\n")], 10
+    )
+    pack = write_selector_contract_preset(
+        project_dir,
+        "selector",
+        [
+            (r"regex:^speckit\.fallback$", "command", "prepend", "SELECTOR BODY\n"),
+            (name, "command", "replace", "EXACT FALLBACK\n"),
+        ],
+    )
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(pack / "preset.yml")
+    manager._register_commands(manifest, pack)
+    manager._register_skills(manifest, pack)
+    output = project_dir / ".claude" / "skills" / "speckit-fallback" / "SKILL.md"
+    assert "SELECTOR BODY" in output.read_text()
+    assert "EXACT FALLBACK" in output.read_text()
+    composed = pack / ".composed" / f"{name}.md"
+    assert "SELECTOR BODY" in composed.read_text()
+
+    (lower / "payload-0.md").unlink()
+    manager._register_commands(manifest, pack)
+    manager._register_skills(manifest, pack)
+
+    assert "EXACT FALLBACK" in output.read_text()
+    assert "SELECTOR BODY" not in output.read_text()
+    assert "LOWER BODY" not in output.read_text()

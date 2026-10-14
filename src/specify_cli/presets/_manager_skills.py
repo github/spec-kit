@@ -722,11 +722,17 @@ class _PresetSkillMethods:
                 continue
             rendered_commands.add(cmd_name)
 
-            # Use composed content if available (written by _register_commands
-            # for commands with non-replace strategies), otherwise the original.
+            # A previous selector match may have left composed content behind.
+            # Reuse it only while this preset still owns the top composing layer.
             composed_file = preset_dir / ".composed" / f"{cmd_name}.md"
             if composed_file.exists():
-                source_file = composed_file
+                layers = resolver.collect_all_layers(cmd_name, "command")
+                if (
+                    layers
+                    and layers[0]["strategy"] != "replace"
+                    and layers[0]["path"].is_relative_to(preset_dir)
+                ):
+                    source_file = composed_file
 
             # Derive the short command name (e.g. "specify" from "speckit.specify")
             raw_short_name = cmd_name
@@ -773,7 +779,7 @@ class _PresetSkillMethods:
             )
             if (
                 effective_strategy != "replace"
-                and not composed_file.exists()
+                and source_file != composed_file
                 and resolver.resolve_content(cmd_name, "command") is None
             ):
                 continue

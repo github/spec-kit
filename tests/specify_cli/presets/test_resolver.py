@@ -2,6 +2,7 @@
 
 import json
 import re
+import warnings
 from pathlib import Path
 
 import pytest
@@ -2147,6 +2148,79 @@ INVALID_PATTERNS = [
     pytest.param("a{999999999999999999999}", OverflowError, id="huge-repetition"),
     pytest.param("(" * 2000 + "a" + ")" * 2000, RecursionError, id="deep-nesting"),
 ]
+
+
+@pytest.mark.parametrize("pattern,compile_error", INVALID_PATTERNS)
+def test_malformed_selector_manifest_warns_once_but_unrelated_invalid_manifest_is_silent(
+    tmp_path, monkeypatch, pattern, compile_error
+):
+    from specify_cli.presets import _resolver
+
+    malformed = write_selector_contract_preset(
+        tmp_path, "malformed", [(f"regex:{pattern}", "command", "replace", "bad")]
+    )
+    errors = {}
+
+    def capture_validation_error(path):
+        try:
+            return PresetManifest(path)
+        except PresetValidationError as exc:
+            errors[path] = exc
+            raise
+
+    monkeypatch.setattr(_resolver, "PresetManifest", capture_validation_error)
+    invalid = write_selector_contract_preset(tmp_path, "invalid", [])
+    (invalid / "preset.yml").write_text("schema_version: invalid\n", encoding="utf-8")
+    resolver = PresetResolver(tmp_path)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert resolver._get_manifest(malformed) is None
+        assert resolver._get_manifest(malformed) is None
+        assert resolver._get_manifest(invalid) is None
+
+    assert len(caught) == 1
+    error = errors[malformed / "preset.yml"]
+    assert isinstance(error.__cause__, compile_error)
+    assert str(malformed / "preset.yml") in str(caught[0].message)
+    assert str(error) in str(caught[0].message)
+
+
+def test_exact_command_resolves_without_consulting_corrupt_extension_registry(tmp_path, monkeypatch):
+    name = "speckit.exact"
+    pack = write_selector_contract_preset(
+        tmp_path, "exact", [(name, "command", "replace", "EXACT BODY")]
+    )
+    extensions = tmp_path / ".specify" / "extensions"
+    extensions.mkdir()
+    (extensions / ".registry").write_text("{broken", encoding="utf-8")
+    resolver = PresetResolver(tmp_path)
+    assert resolver.resolve(name, "command") == pack / "payload-0.md"
+
+    def unexpected_scan():
+        pytest.fail("Exact declarations must not scan extensions")
+
+    monkeypatch.setattr(resolver, "_get_all_extensions_by_priority", unexpected_scan)
+    assert resolver.resolve(name, "command") == pack / "payload-0.md"
+
+
+@pytest.mark.parametrize(
+    "location,eligible",
+    [("commands", True), ("templates/commands", True), ("templates/templates/commands", False)],
+)
+def test_extension_conventional_command_locations_agree_with_selector_candidates(
+    tmp_path, location, eligible
+):
+    from specify_cli.presets._resolver import _conventional_command_names
+
+    name = "speckit.target.collect"
+    body = _extension(tmp_path, "target", f"{location}/{name}.md")
+    resolver = PresetResolver(tmp_path)
+    extension = resolver.extensions_dir / "target"
+
+    assert (name in _conventional_command_names(extension)) is eligible
+    assert resolver.resolve(name, "command") == (body if eligible else None)
+    assert resolver._extension_has_concrete_resource(extension, name, "command") is eligible
 
 
 @pytest.mark.parametrize("pattern,compile_error", INVALID_PATTERNS)
