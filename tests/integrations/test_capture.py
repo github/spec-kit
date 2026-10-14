@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -19,6 +20,43 @@ from specify_cli.integrations._capture import (
 
 def _python(source: str, *args: str) -> list[str]:
     return [sys.executable, "-u", "-c", source, *args]
+
+
+# Writes to the heartbeat file every 0.1s until it is killed.
+_HEARTBEAT = (
+    "import sys, time\n"
+    "while True:\n"
+    "    with open(sys.argv[1], 'a') as f: f.write('.')\n"
+    "    time.sleep(0.1)\n"
+)
+
+
+def _spawn_descendant(heartbeat, then: str) -> list[str]:
+    """Return a CLI that starts a heartbeat descendant, then runs *then*.
+
+    The descendant inherits stdout and stderr, so it also holds the pipes.
+    """
+    return _python(
+        "import subprocess, sys, time\n"
+        "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]])\n"
+        "while not __import__('os').path.exists(sys.argv[2]): time.sleep(0.05)\n"
+        "print('started')\n" + then,
+        _HEARTBEAT,
+        str(heartbeat),
+    )
+
+
+def _assert_stopped(heartbeat) -> None:
+    """Assert the heartbeat descendant is dead and no reader is left running."""
+    time.sleep(0.5)
+    size = heartbeat.stat().st_size
+    time.sleep(1)
+    assert heartbeat.stat().st_size == size, "descendant still running"
+    assert not [
+        thread
+        for thread in threading.enumerate()
+        if thread.name.endswith("(_drain)")
+    ], "reader threads still running"
 
 
 class TestRunCaptured:
@@ -134,6 +172,52 @@ class TestRunCaptured:
         assert result.stdout == "partial\n"
         assert result.timed_out is False
 
+    def test_timeout_kills_descendants_and_stops_readers(self, tmp_path):
+        heartbeat = tmp_path / "heartbeat"
+        result = run_captured(
+            _spawn_descendant(heartbeat, "time.sleep(60)"), timeout=5
+        )
+        assert result.timed_out is True
+        assert result.stdout == "started\n"
+        _assert_stopped(heartbeat)
+
+    def test_descendant_holding_the_pipes_after_exit_is_killed(self, tmp_path):
+        """The CLI exits, but its descendant keeps the pipes open."""
+        heartbeat = tmp_path / "heartbeat"
+        started = time.monotonic()
+        result = run_captured(_spawn_descendant(heartbeat, ""), timeout=5)
+        assert time.monotonic() - started < 30
+        assert result.timed_out is True
+        assert result.stdout == "started\n"
+        _assert_stopped(heartbeat)
+
+    def test_interrupt_kills_descendants_and_stops_readers(
+        self, tmp_path, monkeypatch
+    ):
+        class InterruptedOnce(subprocess.Popen):
+            def wait(self, timeout=None):
+                if not getattr(self, "_interrupt_raised", False):
+                    self._interrupt_raised = True
+                    while not heartbeat.exists():
+                        time.sleep(0.05)
+                    raise KeyboardInterrupt
+                return super().wait(timeout)
+
+        heartbeat = tmp_path / "heartbeat"
+        monkeypatch.setattr(_capture.subprocess, "Popen", InterruptedOnce)
+        result = run_captured(_spawn_descendant(heartbeat, "time.sleep(60)"))
+        assert result.interrupted is True
+        assert result.exit_code == 130
+        _assert_stopped(heartbeat)
+
+    def test_completed_process_is_not_killed(self, monkeypatch):
+        def fail(self):
+            raise AssertionError("a completed process must not be killed")
+
+        monkeypatch.setattr(_capture._ProcessTree, "kill", fail)
+        result = run_captured(_python("print('done')"), timeout=30)
+        assert result == CapturedProcess(exit_code=0, stdout="done\n", stderr="")
+
     @pytest.mark.parametrize("max_bytes", [0, -2, True, False, 1.5, "10", None])
     def test_invalid_limit_is_rejected_before_starting_a_process(
         self, max_bytes, monkeypatch
@@ -223,7 +307,8 @@ class TestDispatchCommandCapture:
     def test_streaming_dispatch_still_requests_text(self, claude, capfd):
         result = claude.dispatch_command("speckit.plan")
         assert result == {"exit_code": 0, "stdout": "", "stderr": ""}
-        assert capfd.readouterr().out == "text /speckit-plan\n"
+        printed = capfd.readouterr().out.replace("\r\n", "\n")
+        assert printed == "text /speckit-plan\n"
 
     def test_capture_limit_with_streaming_is_rejected(self, claude):
         with pytest.raises(ValueError, match="requires stream=False"):

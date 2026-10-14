@@ -1081,7 +1081,7 @@ where later steps can read it:
 | ------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
 | `capture`           | `command`, `prompt` | `true` captures stdout and stderr instead of streaming them. Must be a literal boolean; default `false`. |
 | `capture_max_bytes` | `command`, `prompt` | Limit for each captured stream: a positive integer, or `-1` for no limit. Default `1048576` (1 MiB). Requires `capture: true`. |
-| `timeout`           | `command`, `prompt` | Seconds before the CLI is killed. For `command` it applies only with `capture: true` (default `600`); a streaming `command` step has no timeout. For `prompt` it always applies (default `300`). |
+| `timeout`           | `command`, `prompt` | Seconds before the CLI is killed; with `capture: true`, every process it started is killed too. For `command` it applies only with `capture: true` (default `600`); a streaming `command` step has no timeout. For `prompt` it always applies (default `300`). |
 
 A captured step prints nothing while it runs. Its output gains these fields:
 
@@ -1090,7 +1090,7 @@ A captured step prints nothing while it runs. Its output gains these fields:
 | `stdout`, `stderr` | The captured text.                                                         |
 | `stdout_truncated` | `true` when stdout exceeded `capture_max_bytes` and the rest was discarded. |
 | `stderr_truncated` | The same for stderr.                                                       |
-| `timed_out`        | `true` when the CLI was killed at `timeout`; `exit_code` is `-1`.          |
+| `timed_out`        | `true` when the CLI and its processes were killed at `timeout`; `exit_code` is `-1`. |
 | `interrupted`      | `true` when the run was interrupted (Ctrl+C); `exit_code` is `130`.        |
 
 **What the text is.** Capture requests the integration CLI's normal text

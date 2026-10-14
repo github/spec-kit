@@ -174,7 +174,8 @@ class TestCaptureExecution:
         assert result.output["stderr"] == ""
         assert not set(CAPTURE_FIELDS) & set(result.output)
         printed = capfd.readouterr()
-        assert printed.out == "format=text\n"
+        # Windows writes \r\n to the terminal.
+        assert printed.out.replace("\r\n", "\n") == "format=text\n"
         assert printed.err == "note"
 
     def test_non_zero_exit_keeps_output_and_summarises_the_error(

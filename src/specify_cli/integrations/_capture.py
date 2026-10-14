@@ -9,6 +9,8 @@ fixed UTF-8 decoding, and whatever was read before a timeout or interruption.
 from __future__ import annotations
 
 import codecs
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -117,6 +119,102 @@ def _join(readers: Sequence[threading.Thread], deadline: float | None) -> bool:
     return not any(reader.is_alive() for reader in readers)
 
 
+class _ProcessTree:
+    """Run a process so that it and every descendant can be killed together.
+
+    Killing only the CLI would leave the tools it started running, still
+    changing the project and holding the pipes open after the step has
+    failed. On POSIX the CLI leads a new session and the whole process group
+    is killed; on Windows it is assigned to a job object that is terminated.
+    A separate session also keeps the terminal's Ctrl+C from reaching the CLI
+    directly: the interrupt is handled here, by killing the tree.
+    """
+
+    def __init__(self, args: Sequence[str], cwd: str | None) -> None:
+        isolation: dict[str, Any] = (
+            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+            if os.name == "nt"
+            else {"start_new_session": True}
+        )
+        self.proc = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            **isolation,
+        )
+        self._job = _assign_job(self.proc) if os.name == "nt" else None
+
+    def kill(self) -> None:
+        """Kill the process and its descendants, then reap the process."""
+        if self._job is not None:
+            _terminate_job(self._job)
+        elif os.name != "nt":
+            try:
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+        try:
+            self.proc.kill()
+        except OSError:
+            pass
+        self.proc.wait()
+
+    def close(self) -> None:
+        if self._job is not None:
+            _close_handle(self._job)
+            self._job = None
+
+
+def _kernel32() -> Any:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    kernel32.TerminateJobObject.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32
+
+
+def _assign_job(proc: subprocess.Popen) -> Any:
+    """Put *proc* in a new job object; return the job, or None on failure.
+
+    Processes the CLI starts later join the job automatically. Without a job
+    only the CLI itself can be killed.
+    """
+    try:
+        kernel32 = _kernel32()
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        if not kernel32.AssignProcessToJobObject(job, int(proc._handle)):
+            kernel32.CloseHandle(job)
+            return None
+        return job
+    except (AttributeError, OSError):
+        return None
+
+
+def _terminate_job(job: Any) -> None:
+    try:
+        _kernel32().TerminateJobObject(job, 1)
+    except OSError:
+        pass
+
+
+def _close_handle(handle: Any) -> None:
+    try:
+        _kernel32().CloseHandle(handle)
+    except OSError:
+        pass
+
+
 def _decode(data: bytes, *, complete: bool) -> str:
     """Decode captured bytes as UTF-8, replacing invalid sequences with U+FFFD.
 
@@ -142,19 +240,16 @@ def run_captured(
     *max_bytes* counts raw bytes before decoding; ``-1`` disables the cap. A
     timeout or ``KeyboardInterrupt`` kills the process and is reported on the
     result (exit code ``-1`` or ``130``) together with the output read so far,
-    instead of being raised. ``OSError`` from starting the process propagates.
+    instead of being raised, after the process and its descendants are killed.
+    ``OSError`` from starting the process propagates.
     """
     if not capture_max_bytes_is_valid(max_bytes):
         raise ValueError(
             f"max_bytes must be a positive integer or -1, got {max_bytes!r}."
         )
 
-    proc = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=cwd,
-    )
+    tree = _ProcessTree(args, cwd)
+    proc = tree.proc
     sinks = (_Sink(max_bytes), _Sink(max_bytes))
     readers = [
         threading.Thread(target=_drain, args=(pipe, sink), daemon=True)
@@ -167,20 +262,27 @@ def run_captured(
     timed_out = interrupted = False
     try:
         try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-        else:
-            # The process can exit while a descendant still holds the pipes
-            # open; the same deadline bounds the wait for end-of-file.
-            timed_out = not _join(readers, deadline)
-    except KeyboardInterrupt:
-        interrupted = True
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+            else:
+                # The process can exit while a descendant still holds the
+                # pipes open; the same deadline bounds the wait for
+                # end-of-file.
+                timed_out = not _join(readers, deadline)
+        except KeyboardInterrupt:
+            interrupted = True
 
-    if timed_out or interrupted:
-        proc.kill()
-        proc.wait()
-        _join(readers, time.monotonic() + _DRAIN_GRACE_SECONDS)
+        if timed_out or interrupted:
+            # Killing the whole tree closes every write end of the pipes, so
+            # the readers reach end-of-file. Only a descendant that left the
+            # session or job could keep them open; the grace period bounds
+            # that wait.
+            tree.kill()
+            _join(readers, time.monotonic() + _DRAIN_GRACE_SECONDS)
+    finally:
+        tree.close()
 
     (stdout, stdout_truncated), (stderr, stderr_truncated) = (
         sink.snapshot() for sink in sinks
