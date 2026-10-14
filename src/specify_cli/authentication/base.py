@@ -20,7 +20,7 @@ class AuthProvider(ABC):
     And implement:
 
     * ``auth_headers(token, auth_scheme)`` — build headers from a resolved token
-    * ``resolve_token(entry)`` — obtain the token for a config entry
+    * ``resolve_token(entry, hostname)`` — obtain the token for a config entry
     """
 
     key: str = ""
@@ -36,13 +36,20 @@ class AuthProvider(ABC):
         Must return a dict with at least an ``Authorization`` key.
         """
 
-    def resolve_token(self, entry: AuthConfigEntry) -> str | None:
+    def resolve_token(
+        self,
+        entry: AuthConfigEntry,
+        hostname: str | None = None,
+    ) -> str | None:
         """Resolve the token for *entry*.
 
         Default implementation reads from ``entry.token`` directly
         or from the environment variable named by ``entry.token_env``.
         Override for schemes that acquire tokens dynamically
         (e.g. ``azure-cli``, ``azure-ad``).
+
+        ``hostname`` identifies the request target for providers whose
+        credential helper selects credentials by host.
         """
         import os
 

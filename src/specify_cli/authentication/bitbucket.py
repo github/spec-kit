@@ -59,7 +59,11 @@ class BitbucketAuth(AuthProvider):
             f"BitbucketAuth does not support auth scheme {auth_scheme!r}"
         )
 
-    def resolve_token(self, entry: AuthConfigEntry) -> str | None:
+    def resolve_token(
+        self,
+        entry: AuthConfigEntry,
+        hostname: str | None = None,
+    ) -> str | None:
         """Resolve the credential, combining ``username`` for ``basic``.
 
         Returns ``None`` when the secret is missing, or — for ``basic`` —
@@ -69,7 +73,7 @@ class BitbucketAuth(AuthProvider):
         ``:<secret>`` credential or a ``user:name:<secret>`` one that the
         server would parse as user ``user`` (RFC 7617 §2).
         """
-        secret = super().resolve_token(entry)
+        secret = super().resolve_token(entry, hostname)
         if entry.auth != "basic":
             return secret
         username = (entry.username or "").strip()

@@ -59,6 +59,7 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 | Scheme | Header | Use for |
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
+| `github-cli` | `Authorization: Bearer <token>` | Token acquired on demand from `gh auth token` |
 
 **Example — PAT via environment variable:**
 
@@ -70,6 +71,30 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
   "token_env": "GH_TOKEN"
 }
 ```
+
+**Example — GitHub CLI (recommended for interactive use):**
+
+```json
+{
+  "providers": [
+    {
+      "hosts": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com"
+      ],
+      "provider": "github",
+      "auth": "github-cli"
+    }
+  ]
+}
+```
+
+Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
+using this mode. Specify invokes the fixed command `gh auth token` directly,
+without a shell, and caches the resulting token in memory for the current
+process. The token is not written to disk by Specify.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -97,6 +122,18 @@ live there. If your instance uses subdomain isolation, also list the `raw.`
 and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
+
+With `auth: "github-cli"`, Specify requests the credential for the exact
+enterprise request host by running:
+
+```bash
+gh auth token --hostname ghes.example.com
+```
+
+The host must already be configured in GitHub CLI. If it is not configured,
+or GitHub CLI is not authenticated for it, Specify fails the request and
+suggests `gh auth login --hostname ghes.example.com`. GitHub CLI command output
+is not included in the error.
 
 ### GitHub Enterprise Cloud with data residency (GHE.com)
 

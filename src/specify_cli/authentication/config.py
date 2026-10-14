@@ -220,7 +220,7 @@ def load_auth_config(
                     raise ValueError(
                         f"providers[{i}]: '{field_name}' must be a non-empty string"
                     )
-        # azure-cli needs no extra fields
+        # azure-cli and github-cli need no extra fields
 
         entries.append(
             AuthConfigEntry(

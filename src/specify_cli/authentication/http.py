@@ -69,6 +69,14 @@ class RedirectPolicyError(urllib.error.URLError):
     """A redirect rejected because it violates the client's security policy."""
 
 
+def _hostname_for_url(url: str) -> str | None:
+    """Return a normalized request hostname, or None for malformed URLs."""
+    try:
+        return (urlparse(url).hostname or "").lower() or None
+    except ValueError:
+        return None
+
+
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
     if not is_safe_download_redirect(old_url, new_url):
         raise RedirectPolicyError(
@@ -140,11 +148,12 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
         headers.update({k: v for k, v in extra_headers.items() if k.lower() != "authorization"})
     # Auth headers applied last — cannot be overridden by extra_headers
     entries = find_entries_for_url(url, _load_config())
+    hostname = _hostname_for_url(url)
     for entry in entries:
         provider = get_provider(entry.provider)
         if provider is None:
             continue
-        token = provider.resolve_token(entry)
+        token = provider.resolve_token(entry, hostname)
         if token:
             headers.update(provider.auth_headers(token, entry.auth))
             break
@@ -190,6 +199,7 @@ def open_url(
     HTTP between loopback URLs, and rejects remote-to-local redirects.
     """
     entries = find_entries_for_url(url, _load_config())
+    hostname = _hostname_for_url(url)
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -205,7 +215,7 @@ def open_url(
         provider = get_provider(entry.provider)
         if provider is None:
             continue
-        token = provider.resolve_token(entry)
+        token = provider.resolve_token(entry, hostname)
         if not token:
             continue
 
