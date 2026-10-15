@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import signal
 import sys
+import threading
+import time
 
 import pytest
 import yaml
@@ -456,3 +459,51 @@ class TestCaptureInWorkflows:
         assert state.step_results["ask"]["output"]["exit_code"] == -1
         report = state.step_results["report"]["output"]["stdout"]
         assert report.strip() == "partial=partial"
+
+
+@pytest.mark.skipif(
+    not hasattr(signal, "pthread_kill"), reason="needs a SIGINT to the main thread"
+)
+def test_ctrl_c_during_concurrent_fan_out_kills_the_captures(project_dir, fake_cli):
+    """Ctrl+C reaches only the main thread; worker captures must still stop."""
+    fake_cli(
+        "import os\n"
+        f"beat = os.path.join({str(project_dir)!r}, f'beat-{{os.getpid()}}')\n"
+        "while True:\n"
+        "    open(beat, 'a').write('.')\n"
+        "    time.sleep(0.1)\n"
+    )
+    engine, definition = _install_workflow(
+        project_dir,
+        [
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [1, 2],
+                "max_concurrency": 2,
+                "step": {**_config("prompt", capture=True, timeout=20)},
+            }
+        ],
+    )
+    main = threading.main_thread().ident
+
+    def interrupt_once_both_run():
+        while len(list(project_dir.glob("beat-*"))) < 2:
+            time.sleep(0.05)
+        signal.pthread_kill(main, signal.SIGINT)
+
+    threading.Thread(target=interrupt_once_both_run, daemon=True).start()
+    started = time.monotonic()
+    try:
+        engine.execute(definition, {})
+    except KeyboardInterrupt:
+        pass
+    # Without cancellation the pool waits for both captures' 20s timeout.
+    assert time.monotonic() - started < 15
+
+    beats = list(project_dir.glob("beat-*"))
+    assert len(beats) == 2
+    time.sleep(0.5)
+    sizes = [beat.stat().st_size for beat in beats]
+    time.sleep(1)
+    assert [beat.stat().st_size for beat in beats] == sizes, "a capture kept running"

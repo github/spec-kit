@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from specify_cli.integrations._capture import cancel_captures
+
 from .base import StepContext, StepResult, StepStatus
 from .composition import (
     CallError,
@@ -949,9 +951,15 @@ class Execution:
             for index in range(len(items)):
                 try:
                     outcome, error, value = futures.pop(index).result()
-                except BaseException:
+                except BaseException as exc:
                     for future in futures.values():
                         future.cancel()
+                    if isinstance(exc, KeyboardInterrupt):
+                        # Ctrl+C reaches only this thread, and captured CLIs
+                        # run in their own session or job: kill the workers'
+                        # captures before the pool waits for the workers.
+                        with cancel_captures():
+                            pool.shutdown(wait=True)
                     raise
                 results.append(value)
                 if outcome in HALTING:

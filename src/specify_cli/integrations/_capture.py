@@ -14,7 +14,8 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -164,11 +165,14 @@ class _ProcessTree:
                         pipe.close()
                 raise
 
-    def kill(self) -> None:
-        """Kill the process group or job, then reap the process."""
+        self._lock = threading.Lock()
+        # Set when another thread kills the tree through interrupt().
+        self.interrupted = False
+
+    def _send_kill(self) -> None:
         if self._job is not None:
             _windows().TerminateJobObject(self._job, 1)
-        else:
+        elif os.name != "nt":
             try:
                 os.killpg(self.proc.pid, signal.SIGKILL)
             except OSError:
@@ -177,12 +181,100 @@ class _ProcessTree:
             self.proc.kill()
         except OSError:
             pass
+
+    def interrupt(self) -> None:
+        """Kill the process group or job from another thread.
+
+        The thread running the capture sees the process exit and reports
+        the capture as interrupted.
+        """
+        with self._lock:
+            self.interrupted = True
+            self._send_kill()
+
+    def kill(self) -> None:
+        """Kill the process group or job, then reap the process."""
+        with self._lock:
+            self._send_kill()
         self.proc.wait()
 
     def close(self) -> None:
-        if self._job is not None:
-            _windows().CloseHandle(self._job)
-            self._job = None
+        with self._lock:
+            if self._job is not None:
+                _windows().CloseHandle(self._job)
+                self._job = None
+
+
+# Captures running in any thread, so an interrupt of the main thread can
+# reach the ones running in worker threads; see cancel_captures().
+_active_lock = threading.Lock()
+_active: set[_ProcessTree] = set()
+_cancelling = 0
+
+
+def _register(tree: _ProcessTree) -> None:
+    with _active_lock:
+        _active.add(tree)
+        cancelling = _cancelling > 0
+    if cancelling:
+        tree.interrupt()
+
+
+def _unregister(tree: _ProcessTree) -> None:
+    with _active_lock:
+        _active.discard(tree)
+
+
+@contextmanager
+def cancel_captures() -> Iterator[None]:
+    """Kill every running capture, and any that starts, until the block ends.
+
+    Ctrl+C raises ``KeyboardInterrupt`` in the main thread only, and a
+    captured CLI runs in its own session or job, so it does not receive the
+    terminal's Ctrl+C either. When the main thread is interrupted while
+    worker threads run captures, wait for those workers inside this block:
+    their captures are killed and report ``interrupted``, and a capture that
+    starts meanwhile is killed as soon as it is registered.
+    """
+    global _cancelling
+    with _active_lock:
+        _cancelling += 1
+        trees = list(_active)
+    try:
+        for tree in trees:
+            tree.interrupt()
+        yield
+    finally:
+        with _active_lock:
+            _cancelling -= 1
+
+
+@contextmanager
+def _deferred_interrupt() -> Iterator[list[int]]:
+    """Record Ctrl+C instead of raising it until cleanup is in place.
+
+    A ``KeyboardInterrupt`` raised after ``Popen`` returned but before the
+    code that kills the process on interruption would leave the CLI running
+    in its own session (POSIX) or suspended outside its job (Windows).
+    Within this block a SIGINT is appended to the yielded list; the caller
+    treats a non-empty list as an interruption. Only the main thread
+    receives SIGINT, and only Python's default handler is replaced, so a
+    custom or ignoring handler keeps its behaviour.
+    """
+    pending: list[int] = []
+    if (
+        threading.current_thread() is not threading.main_thread()
+        or signal.getsignal(signal.SIGINT) is not signal.default_int_handler
+    ):
+        yield pending
+        return
+    previous = signal.signal(
+        signal.SIGINT, lambda signum, frame: pending.append(signum)
+    )
+    try:
+        yield pending
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 _kernel32: Any = None
@@ -339,27 +431,27 @@ def run_captured(
             f"max_bytes must be a positive integer or -1, got {max_bytes!r}."
         )
 
-    try:
-        tree = _ProcessTree(args, cwd)
-    except KeyboardInterrupt:
-        # The constructor has already killed the process it started, so this
-        # is reported like any other interruption, with nothing captured.
-        return CapturedProcess(exit_code=130, stdout="", stderr="", interrupted=True)
-    proc = tree.proc
+    tree: _ProcessTree | None = None
     sinks = (_Sink(max_bytes), _Sink(max_bytes))
     readers: list[threading.Thread] = []
     deadline = None if timeout is None else time.monotonic() + timeout
     timed_out = interrupted = False
     try:
         try:
-            # Starting the readers is inside the try, so an interruption here
-            # still kills the process group or job below.
-            for pipe, sink in zip((proc.stdout, proc.stderr), sinks):
-                reader = threading.Thread(target=_drain, args=(pipe, sink), daemon=True)
-                reader.start()
-                readers.append(reader)
+            with _deferred_interrupt() as pending_interrupt:
+                tree = _ProcessTree(args, cwd)
+                _register(tree)
+                for pipe, sink in zip((tree.proc.stdout, tree.proc.stderr), sinks):
+                    reader = threading.Thread(
+                        target=_drain, args=(pipe, sink), daemon=True
+                    )
+                    reader.start()
+                    readers.append(reader)
+            # From here a Ctrl+C raises KeyboardInterrupt inside this try.
+            if pending_interrupt:
+                raise KeyboardInterrupt
             try:
-                proc.wait(timeout=timeout)
+                tree.proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
             else:
@@ -369,6 +461,19 @@ def run_captured(
                 timed_out = not _join(readers, deadline)
         except KeyboardInterrupt:
             interrupted = True
+            if tree is None:
+                # Setup was interrupted, and the constructor has already
+                # killed the process it started.
+                return CapturedProcess(
+                    exit_code=130, stdout="", stderr="", interrupted=True
+                )
+        except BaseException:
+            if tree is not None:
+                tree.kill()
+            raise
+        if tree.interrupted:
+            # Killed through cancel_captures() while this thread waited.
+            interrupted, timed_out = True, False
 
         if timed_out or interrupted:
             # Killing the group or job closes the write ends of the pipes its
@@ -378,10 +483,12 @@ def run_captured(
             tree.kill()
             _join(readers, time.monotonic() + _DRAIN_GRACE_SECONDS)
             # A pipe whose reader never started is closed here instead.
-            for pipe in (proc.stdout, proc.stderr)[len(readers) :]:
+            for pipe in (tree.proc.stdout, tree.proc.stderr)[len(readers) :]:
                 pipe.close()
     finally:
-        tree.close()
+        if tree is not None:
+            _unregister(tree)
+            tree.close()
 
     (stdout, stdout_truncated), (stderr, stderr_truncated) = (
         sink.snapshot() for sink in sinks
@@ -392,7 +499,7 @@ def run_captured(
     elif timed_out:
         exit_code = -1
     else:
-        exit_code = proc.returncode
+        exit_code = tree.proc.returncode
     return CapturedProcess(
         exit_code=exit_code,
         stdout=_decode(stdout, complete=not (stopped or stdout_truncated)),

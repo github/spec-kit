@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 import threading
@@ -14,6 +15,7 @@ from specify_cli.integrations import _capture
 from specify_cli.integrations._capture import (
     DEFAULT_CAPTURE_MAX_BYTES,
     CapturedProcess,
+    cancel_captures,
     run_captured,
 )
 
@@ -240,6 +242,26 @@ class TestRunCaptured:
             exit_code=130, stdout="", stderr="", interrupted=True
         )
 
+    def test_interrupt_right_after_the_process_starts_kills_it(self, monkeypatch):
+        """Ctrl+C after Popen returns, before cleanup is set up, still kills."""
+        spawned: list[subprocess.Popen] = []
+
+        class InterruptedAfterSpawn(subprocess.Popen):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                spawned.append(self)
+                signal.raise_signal(signal.SIGINT)
+
+        monkeypatch.setattr(_capture.subprocess, "Popen", InterruptedAfterSpawn)
+        started = time.monotonic()
+        result = run_captured(_python("import time; time.sleep(60)"))
+        assert time.monotonic() - started < 30
+        assert result.interrupted is True
+        assert result.exit_code == 130
+        (proc,) = spawned
+        assert proc.returncode is not None, "the CLI was left running"
+        assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+
     def test_completed_process_is_not_killed(self, monkeypatch):
         def fail(self):
             raise AssertionError("a completed process must not be killed")
@@ -463,3 +485,50 @@ class TestCopilotDispatchCapture:
                 "speckit.plan", capture_max_bytes=1024
             )
         assert recorded == []
+
+
+class TestCancelCaptures:
+    """Interrupting captures that run in worker threads."""
+
+    @staticmethod
+    def _in_thread(args):
+        results: list[CapturedProcess] = []
+        worker = threading.Thread(
+            target=lambda: results.append(run_captured(args, timeout=60))
+        )
+        worker.start()
+        return worker, results
+
+    def test_running_capture_is_killed_and_reports_interrupted(self, tmp_path):
+        heartbeat = tmp_path / "heartbeat"
+        worker, results = self._in_thread(
+            _spawn_descendant(heartbeat, "time.sleep(60)")
+        )
+        while not heartbeat.exists():
+            time.sleep(0.05)
+        started = time.monotonic()
+        with cancel_captures():
+            worker.join(30)
+        assert not worker.is_alive()
+        assert time.monotonic() - started < 30
+        (result,) = results
+        assert result.interrupted is True
+        assert result.timed_out is False
+        assert result.exit_code == 130
+        _assert_stopped(heartbeat)
+
+    def test_capture_started_while_cancelling_is_killed(self, tmp_path):
+        with cancel_captures():
+            worker, results = self._in_thread(
+                _python("import time; time.sleep(60)")
+            )
+            worker.join(30)
+        assert not worker.is_alive()
+        (result,) = results
+        assert result.interrupted is True
+
+    def test_captures_after_the_block_run_normally(self):
+        with cancel_captures():
+            pass
+        result = run_captured(_python("print('ok')"), timeout=30)
+        assert result == CapturedProcess(exit_code=0, stdout="ok\n", stderr="")
