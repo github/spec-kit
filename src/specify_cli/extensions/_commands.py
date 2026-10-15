@@ -121,6 +121,31 @@ def _refresh_events_and_warn(project_root: Path) -> None:
             console.print(f"    {key}: {_escape_markup(detail)}")
 
 
+def _registered_command_name(project_root: Path, command_name: str) -> str:
+    """Return *command_name* the way the project's active agent registers it.
+
+    Agents whose command references use ``-`` in the project's current mode
+    (skills layouts, and command layouts such as Cline, Forge, and Junie)
+    register ``speckit.<ext>.<cmd>`` as ``speckit-<ext>-<cmd>``; the others
+    keep the manifest's dotted name. Deriving this from the integration keeps
+    command listings in step with registration instead of a list of agents.
+    """
+    from .._init_options import is_ai_skills_enabled
+    from ..integrations import get_integration
+    from . import ExtensionManager
+
+    opts = load_init_options(project_root)
+    selected_ai = opts.get("ai") if isinstance(opts, dict) else None
+    integration = (
+        get_integration(selected_ai) if isinstance(selected_ai, str) else None
+    )
+    if integration is None:
+        return command_name
+    if integration.invoke_separator_for_mode(is_ai_skills_enabled(opts)) != "-":
+        return command_name
+    return ExtensionManager._skill_name_for_command(command_name)
+
+
 def install_extension_from_url(
     manager,
     project_root: Path,
