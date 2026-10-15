@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -516,6 +517,46 @@ class TestCancelCaptures:
         assert result.timed_out is False
         assert result.exit_code == 130
         _assert_stopped(heartbeat)
+
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="leaving the job needs breakaway rights"
+    )
+    def test_cancel_stops_waiting_for_a_detached_helper(self, tmp_path):
+        """The CLI exited, but a helper outside its group holds the pipes."""
+        pid_file = tmp_path / "helper.pid"
+        cli = _python(
+            "import os, subprocess, sys\n"
+            "helper = subprocess.Popen(\n"
+            "    [sys.executable, '-c', 'import time; time.sleep(60)'],\n"
+            "    start_new_session=True)\n"
+            "open(sys.argv[1] + '.tmp', 'w').write(str(helper.pid))\n"
+            "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n",
+            str(pid_file),
+        )
+        results: list[CapturedProcess] = []
+        worker = threading.Thread(
+            target=lambda: results.append(run_captured(cli, timeout=20))
+        )
+        worker.start()
+        try:
+            while not pid_file.exists():
+                time.sleep(0.05)
+            # Let the CLI exit, so the capture is waiting on its readers.
+            time.sleep(0.5)
+            started = time.monotonic()
+            with cancel_captures():
+                worker.join(30)
+            assert time.monotonic() - started < 10, "the join ignored cancellation"
+            (result,) = results
+            assert result.interrupted is True
+            assert result.timed_out is False
+        finally:
+            if pid_file.exists():
+                try:
+                    os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            worker.join(30)
 
     def test_capture_started_while_cancelling_is_killed(self, tmp_path):
         with cancel_captures():

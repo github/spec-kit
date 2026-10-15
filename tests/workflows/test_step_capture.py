@@ -507,3 +507,68 @@ def test_ctrl_c_during_concurrent_fan_out_kills_the_captures(project_dir, fake_c
     sizes = [beat.stat().st_size for beat in beats]
     time.sleep(1)
     assert [beat.stat().st_size for beat in beats] == sizes, "a capture kept running"
+
+
+@pytest.mark.skipif(
+    not hasattr(signal, "pthread_kill"), reason="needs a SIGINT to the main thread"
+)
+def test_ctrl_c_while_fan_out_shuts_down_after_a_failure_kills_the_captures(
+    project_dir, monkeypatch
+):
+    """Item 1 fails at once; Ctrl+C arrives while the pool waits for item 2."""
+    script = project_dir / "cli.py"
+    script.write_text(
+        "import os, sys, time\n"
+        "if 'item=1' in sys.argv[1]:\n"
+        "    sys.exit(1)\n"
+        f"beat = os.path.join({str(project_dir)!r}, f'beat-{{os.getpid()}}')\n"
+        "while True:\n"
+        "    open(beat, 'a').write('.')\n"
+        "    time.sleep(0.1)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        type(get_integration("claude")),
+        "build_exec_args",
+        lambda self, prompt, **kwargs: [sys.executable, "-u", str(script), prompt],
+    )
+    engine, definition = _install_workflow(
+        project_dir,
+        [
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [1, 2],
+                "max_concurrency": 2,
+                "step": {
+                    "id": "ask",
+                    "type": "prompt",
+                    "prompt": "item={{ item }}",
+                    "capture": True,
+                    "timeout": 20,
+                },
+            }
+        ],
+    )
+    main = threading.main_thread().ident
+
+    def interrupt_during_shutdown():
+        while not list(project_dir.glob("beat-*")):
+            time.sleep(0.05)
+        # Item 1 has failed by now and the fan-out is waiting for item 2.
+        time.sleep(1)
+        signal.pthread_kill(main, signal.SIGINT)
+
+    threading.Thread(target=interrupt_during_shutdown, daemon=True).start()
+    started = time.monotonic()
+    try:
+        engine.execute(definition, {})
+    except KeyboardInterrupt:
+        pass
+    assert time.monotonic() - started < 15
+
+    (beat,) = project_dir.glob("beat-*")
+    time.sleep(0.5)
+    size = beat.stat().st_size
+    time.sleep(1)
+    assert beat.stat().st_size == size, "the capture kept running"

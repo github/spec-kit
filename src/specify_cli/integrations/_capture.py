@@ -110,14 +110,37 @@ def _drain(pipe: Any, sink: _Sink) -> None:
             pass
 
 
-def _join(readers: Sequence[threading.Thread], deadline: float | None) -> bool:
-    """Join *readers* until *deadline*; return whether all reached end-of-file."""
+# How often a reader join checks whether the capture was cancelled.
+_JOIN_POLL_SECONDS = 0.1
+
+
+def _join(
+    readers: Sequence[threading.Thread],
+    deadline: float | None,
+    cancelled: Any = None,
+) -> bool:
+    """Join *readers* until *deadline*; return whether all reached end-of-file.
+
+    When *cancelled* is given, it is polled while waiting, and the join stops
+    early, returning False, once it returns true.
+    """
     for reader in readers:
-        if deadline is None:
-            reader.join()
-        else:
-            reader.join(max(0.0, deadline - time.monotonic()))
-    return not any(reader.is_alive() for reader in readers)
+        while reader.is_alive():
+            if cancelled is not None and cancelled():
+                return False
+            if deadline is None:
+                wait = None if cancelled is None else _JOIN_POLL_SECONDS
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                wait = (
+                    remaining
+                    if cancelled is None
+                    else min(remaining, _JOIN_POLL_SECONDS)
+                )
+            reader.join(wait)
+    return True
 
 
 # Windows process creation flag; not exported by ``subprocess``.
@@ -458,7 +481,9 @@ def run_captured(
                 # The process can exit while a descendant still holds the
                 # pipes open; the same deadline bounds the wait for
                 # end-of-file.
-                timed_out = not _join(readers, deadline)
+                # cancel_captures() kills the CLI, but a detached helper can
+                # still hold the pipes, so this wait also stops on it.
+                timed_out = not _join(readers, deadline, lambda: tree.interrupted)
         except KeyboardInterrupt:
             interrupted = True
             if tree is None:

@@ -398,6 +398,30 @@ def result_view(node):
     return result
 
 
+def _shutdown_workers(
+    pool: ThreadPoolExecutor, pending: Any, *, interrupted: bool
+) -> None:
+    """Cancel *pending* fan-out futures and wait for the running workers.
+
+    Ctrl+C raises ``KeyboardInterrupt`` in this thread only, and captured CLIs
+    run in their own session or job, so a worker's capture would run on while
+    the pool waits for it. After an interruption, before the wait or during
+    it, the workers' captures are killed and the wait is repeated.
+    """
+    for future in list(pending):
+        future.cancel()
+    if not interrupted:
+        try:
+            pool.shutdown(wait=True)
+            return
+        except KeyboardInterrupt:
+            with cancel_captures():
+                pool.shutdown(wait=True)
+            raise
+    with cancel_captures():
+        pool.shutdown(wait=True)
+
+
 @dataclass(frozen=True)
 class Occurrence:
     """One invocation, never stored on a shared step implementation."""
@@ -946,27 +970,25 @@ class Execution:
                 halted.set()
                 raise
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {i: pool.submit(run_item_guarded, i) for i in range(workers)}
+        pool = ThreadPoolExecutor(max_workers=workers)
+        futures = {}
+        interrupted = False
+        try:
+            futures.update(
+                (i, pool.submit(run_item_guarded, i)) for i in range(workers)
+            )
             for index in range(len(items)):
                 try:
                     outcome, error, value = futures.pop(index).result()
-                except BaseException as exc:
-                    for future in futures.values():
-                        future.cancel()
-                    if isinstance(exc, KeyboardInterrupt):
-                        # Ctrl+C reaches only this thread, and captured CLIs
-                        # run in their own session or job: kill the workers'
-                        # captures before the pool waits for the workers.
-                        with cancel_captures():
-                            pool.shutdown(wait=True)
+                except KeyboardInterrupt:
+                    interrupted = True
                     raise
                 results.append(value)
                 if outcome in HALTING:
-                    for future in futures.values():
-                        future.cancel()
                     return outcome, error, results
                 following = index + workers
                 if following < len(items) and not halted.is_set():
                     futures[following] = pool.submit(run_item_guarded, following)
+        finally:
+            _shutdown_workers(pool, futures.values(), interrupted=interrupted)
         return "completed", None, results
