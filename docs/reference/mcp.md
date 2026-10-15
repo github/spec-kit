@@ -17,20 +17,60 @@ Kit banner, Rich output, startup messages, warnings, or logs there.
 
 ## Tools
 
-The server exposes three generic tools:
+The server exposes first-class tools with typed inputs and results. All are
+read-only, local-only (no network access), and reject unexpected arguments.
 
 | Tool | Purpose |
 | --- | --- |
-| `specify_list_commands` | List CLI commands currently supported through MCP |
+| `specify_version` | Return the installed CLI version, runtime, system, and feature capabilities. Takes no arguments. |
+| `specify_artifact_list` | Return one paginated page of a project's artifact inventory (`command`, `template`, `script`, `hook`) |
+| `specify_artifact_info` | Return one artifact and its complete composition stack |
+
+The artifact tools take an optional absolute `project_directory`; it defaults
+to the directory the server was launched from.
+
+`specify_artifact_list` also takes `limit` (1-1000, default 100) and `cursor`.
+Its result has `rows`, `next_cursor`, and `truncated`; while `truncated` is
+true, pass `next_cursor` as `cursor` to get the next page.
+
+`specify_artifact_info` takes `identifier` (bare name or `kind:name`) and an
+optional `kind` (`command`, `template`, `script`, or `hook`).
+
+`specify artifact lookup` is not available through MCP: it does not yet have a
+shared typed operation, so no `specify_artifact_lookup` tool is registered.
+
+Three generic tools are also registered, and support only the dotted command
+`version`; every other command name is rejected with an `unavailable_command`
+tool error.
+
+| Tool | Purpose |
+| --- | --- |
+| `specify_list_commands` | List CLI commands supported by the generic tools |
 | `specify_describe_command` | Describe one supported dotted CLI command |
 | `specify_run_command` | Run one supported command through the real Specify CLI |
 
-This first experimental release supports only the dotted command `version`.
-Every other command name is rejected with an `unavailable_command` tool error.
-The server does not expose project discovery, artifacts, mutations,
-installation or update operations, workflows, confirmations, or access tiers.
+The server does not expose mutations, installation or update operations,
+workflows, confirmations, or access tiers.
 
-## Version result and errors
+## Artifact results and errors
+
+Artifact tools return their result as structured content. Failures are MCP tool
+errors with `error.code`, `error.message`, `error.details`, and
+`error.retryable`.
+Both artifact tools can return `invalid_project_directory`,
+`not_a_spec_kit_project`, `artifact_resolution_failed`,
+`invalid_operation_result`, and `internal_error`.
+`specify_artifact_list` can also return `invalid_pagination`.
+`specify_artifact_info` can also return `invalid_artifact_kind`,
+`invalid_artifact_identifier`, `unknown_artifact`, `unknown_hook`, and
+`ambiguous_artifact`. Results larger than 1 MiB return a retryable
+`response_too_large` error; for the list tool, retry with a smaller `limit`.
+
+## Generic version result and errors
+
+`specify_version` returns the result object directly; on failure it returns an
+`invalid_operation_result` or `internal_error` tool error. The details below
+describe the generic tools.
 
 `specify_run_command` invokes the canonical command below in an isolated child
 process using the same Python environment as the running CLI:

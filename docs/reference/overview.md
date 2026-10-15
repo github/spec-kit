@@ -11,8 +11,7 @@ The foundational commands for creating and managing Spec Kit projects. Initializ
 ## MCP Server
 
 The experimental `specify mcp` command exposes stable CLI JSON commands to MCP
-clients through a local stdio server. The initial surface is deliberately
-version-only.
+clients through a local stdio server.
 
 [MCP Server reference →](mcp.md)
 
