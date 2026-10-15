@@ -23,9 +23,26 @@ specify workflow step search <query>
 specify bundle search <query>
 ```
 
-Use the corresponding `info` command to inspect a result, its source, available
-versions, and whether it can be installed. You can also browse the maintained
-community lists for [extensions](../community/extensions.md),
+Use the corresponding version view to inspect advertised releases:
+
+```bash
+specify integration info <id> --versions
+specify extension info <id> --versions
+specify preset info <id> --versions
+specify workflow info <id> --versions
+specify workflow step info <id> --versions
+specify bundle info <id> --versions
+```
+
+Plain `info` output and the details shown by `--versions` vary by component
+type. The version view lists current and historical catalog releases and, where
+supported, labels the winning source as installable or discovery-only. A
+discovery-only release remains non-installable by ID even when it appears in
+the version list. Use the component's `catalog list` command to confirm the
+active source and install policy instead of relying on plain `info` output.
+
+You can also browse the maintained community lists for
+[extensions](../community/extensions.md),
 [presets](../community/presets.md), [bundles](../community/bundles.md), and
 [workflow step types](../community/workflow-steps.md).
 
