@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-13T00:00:00Z",
+  "updated_at": "2026-10-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2458,6 +2458,53 @@
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
       "updated_at": "2026-10-08T00:00:00Z"
+    },
+    "gh-address-cr": {
+      "name": "gh-address-cr",
+      "id": "gh-address-cr",
+      "description": "Auditable PR review-resolution & trust-gated address engine for Spec Kit workflows.",
+      "author": "RbBtSn0w",
+      "version": "0.1.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/gh-address-cr-v0.1.0/gh-address-cr.zip",
+      "sha256": "f9b4d641b2ac4e8466aa184ea8b738e4dee82ba992596dc52a4fd316c78cca1d",
+      "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "homepage": "https://github.com/RbBtSn0w/gh-address-cr",
+      "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/README.md",
+      "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "gh-address-cr",
+            "version": ">=3.16.0",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "code-review",
+        "pull-request",
+        "github",
+        "audit",
+        "verification"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-15T00:00:00Z",
+      "updated_at": "2026-10-15T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
