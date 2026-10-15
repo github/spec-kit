@@ -2096,8 +2096,9 @@
       "id": "evaluator",
       "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
       "author": "ElectroHire",
-      "version": "1.0.0",
-      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.1",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.1.1.zip",
+      "sha256": "79a54460d37ee2b760daf52b4f54a21ce30d43e763aba2c93901b24db7281151",
       "repository": "https://github.com/electrohire/spec-kit-evaluator",
       "homepage": "https://github.com/electrohire/spec-kit-evaluator",
       "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
@@ -2123,7 +2124,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-03T00:00:00Z",
-      "updated_at": "2026-09-03T00:00:00Z"
+      "updated_at": "2026-10-15T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
