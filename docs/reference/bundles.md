@@ -191,7 +191,7 @@ specify bundle init [<bundle_id>]
 
 Ensures the current directory is a Spec Kit project (initializing it idempotently if needed), then optionally installs the given bundle. Useful as an explicit one-step bootstrap for a new checkout.
 
-Repeating `bundle init` skips components already installed by the bundle and preserves their local edits. It does not apply manifest changes: as with a normal [`bundle install`](#install-a-bundle), it fails without changing the installed bundle if the manifest changes the recorded bundle version, changes an owned component's version, source, preset priority, or strategy, or removes an owned component. To refresh components or apply such changes, use `bundle update <id>` for a catalog bundle or `bundle install <path> --refresh` for a local source.
+Repeating `bundle init` skips components already installed by the bundle and preserves their local edits. It follows the same rules as a normal [`bundle install`](#install-a-bundle): components newly added to the manifest are installed and recorded, but it fails without changing the installed bundle if the manifest changes the recorded bundle version, changes an owned component's version, source, preset priority, or strategy, or removes an owned component. To refresh components or apply such changes, use `bundle update <id>` for a catalog bundle or `bundle install <path> --refresh` for a local source.
 
 ## Validate a Bundle
 
