@@ -438,9 +438,20 @@ class TestReadSkipWarning:
             project,
         )
 
+        expected_commands = ["speckit.myext.hello", "group/run"]
+        assert registered == expected_commands
+        for command_name in expected_commands:
+            assert (agents_dir / f"{command_name}.agent.md").is_file()
+            assert (
+                project
+                / ".github"
+                / "prompts"
+                / f"{command_name}.prompt.md"
+            ).is_file()
+
         registrar.unregister_commands({"copilot": registered}, project)
 
-        for command_name in registered:
+        for command_name in expected_commands:
             assert not (agents_dir / f"{command_name}.agent.md").exists()
             assert not (
                 project

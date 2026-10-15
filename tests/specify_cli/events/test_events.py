@@ -366,24 +366,59 @@ class TestValidateEvents:
 
 
 @pytest.mark.parametrize(
-    ("integration_key", "event_name", "native_artifact"),
+    (
+        "integration_key",
+        "event_name",
+        "handler_artifact",
+        "removal_artifact",
+    ),
     [
-        ("claude", "pre_tool_use", ".claude/settings.json"),
-        ("cursor-agent", "session_start", ".cursor/hooks.json"),
-        ("copilot", "session_start", ".github/hooks/speckit.json"),
-        ("codex", "pre_tool_use", ".codex/config.toml"),
-        ("vibe", "pre_tool_use", ".vibe/hooks.toml"),
-        ("devin", "pre_tool_use", ".devin/hooks.v1.json"),
-        ("opencode", "session_start", ".opencode/plugin/speckit-events.ts"),
+        (
+            "claude",
+            "pre_tool_use",
+            ".claude/settings.json",
+            ".claude/settings.json",
+        ),
+        (
+            "cursor-agent",
+            "session_start",
+            ".cursor/hooks.json",
+            ".cursor/hooks.json",
+        ),
+        (
+            "copilot",
+            "session_start",
+            ".github/hooks/speckit.json",
+            ".github/hooks/speckit.json",
+        ),
+        ("codex", "pre_tool_use", ".codex/config.toml", ".codex/config.toml"),
+        ("vibe", "pre_tool_use", ".vibe/hooks.toml", ".vibe/hooks.toml"),
+        (
+            "devin",
+            "pre_tool_use",
+            ".devin/hooks.v1.json",
+            ".devin/hooks.v1.json",
+        ),
+        (
+            "opencode",
+            "session_start",
+            ".opencode/plugin/speckit-events.ts",
+            "opencode.json",
+        ),
     ],
 )
 def test_native_event_formats_install_update_and_remove_owned_handlers(
-    tmp_path, integration_key, event_name, native_artifact
+    tmp_path,
+    integration_key,
+    event_name,
+    handler_artifact,
+    removal_artifact,
 ):
     """Every native format replaces stale handlers and removes owned output."""
     integration = type(get_integration(integration_key))()
     manifest = IntegrationManifest(integration_key, tmp_path)
-    artifact = tmp_path / native_artifact
+    handler_path = tmp_path / handler_artifact
+    removal_path = tmp_path / removal_artifact
 
     install_integration_events(
         integration,
@@ -391,7 +426,8 @@ def test_native_event_formats_install_update_and_remove_owned_handlers(
         manifest,
         {event_name: [{"command": "speckit.characterize.first"}]},
     )
-    assert "speckit.characterize.first" in artifact.read_text(encoding="utf-8")
+    assert "speckit.characterize.first" in handler_path.read_text(encoding="utf-8")
+    assert removal_path.is_file()
 
     install_integration_events(
         integration,
@@ -399,17 +435,15 @@ def test_native_event_formats_install_update_and_remove_owned_handlers(
         manifest,
         {event_name: [{"command": "speckit.characterize.second"}]},
     )
-    updated = artifact.read_text(encoding="utf-8")
+    updated = handler_path.read_text(encoding="utf-8")
     assert "speckit.characterize.first" not in updated
     assert "speckit.characterize.second" in updated
 
     remove_integration_events(integration, tmp_path, manifest)
+    assert not removal_path.exists()
+    assert not handler_path.exists()
     manifest.uninstall(force=True)
-    assert not artifact.exists() or (
-        "speckit.characterize.first" not in artifact.read_text(encoding="utf-8")
-        and "speckit.characterize.second"
-        not in artifact.read_text(encoding="utf-8")
-    )
+    assert not handler_path.exists()
 
 
 # -- Claude settings JSON merging -------------------------------------------
