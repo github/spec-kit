@@ -214,42 +214,39 @@ class TestBasePrimitives:
 class TestBuildCommandInvocation:
     """Tests for build_command_invocation across integration types."""
 
-    def test_base_core_command_dotted(self):
-        i = StubIntegration()
-        assert i.build_command_invocation("speckit.plan") == "/speckit.plan"
-
-    def test_base_core_command_bare(self):
-        i = StubIntegration()
-        assert i.build_command_invocation("plan") == "/speckit.plan"
-
-    def test_base_core_command_with_args(self):
-        i = StubIntegration()
-        assert i.build_command_invocation("plan", "my feature") == "/speckit.plan my feature"
-
-    def test_base_extension_command(self):
-        i = StubIntegration()
-        assert i.build_command_invocation("speckit.git.commit") == "/speckit.git.commit"
-
-    def test_base_extension_command_bare(self):
-        i = StubIntegration()
-        assert i.build_command_invocation("git.commit") == "/speckit.git.commit"
-
-    def test_skills_core_command(self):
+    @pytest.mark.parametrize(
+        ("integration_key", "command_name", "args", "expected"),
+        [
+            ("stub", "speckit.plan", "", "/speckit.plan"),
+            ("stub", "plan", "", "/speckit.plan"),
+            ("stub", "plan", "my feature", "/speckit.plan my feature"),
+            ("stub", "speckit.git.commit", "", "/speckit.git.commit"),
+            ("stub", "git.commit", "", "/speckit.git.commit"),
+            ("forge", "speckit.plan", "", "/speckit-plan"),
+            ("forge", "plan", "", "/speckit-plan"),
+            ("forge", "speckit.git.commit", "fix typo", "/speckit-git-commit fix typo"),
+            ("cline", "speckit.plan", "", "/speckit-plan"),
+            ("cline", "git.commit", "fix typo", "/speckit-git-commit fix typo"),
+            ("codex", "speckit.plan", "", "$speckit-plan"),
+            ("codex", "plan", "", "$speckit-plan"),
+            ("codex", "speckit.git.commit", "", "$speckit-git-commit"),
+            ("codex", "git.commit", "fix typo", "$speckit-git-commit fix typo"),
+            ("kimi", "speckit.plan", "", "/skill:speckit-plan"),
+            ("kimi", "git.commit", "fix typo", "/skill:speckit-git-commit fix typo"),
+        ],
+    )
+    def test_native_invocation_styles(
+        self, integration_key, command_name, args, expected
+    ):
         from specify_cli.integrations import get_integration
-        i = get_integration("codex")
-        assert i.build_command_invocation("speckit.plan") == "$speckit-plan"
-        assert i.build_command_invocation("plan") == "$speckit-plan"
 
-    def test_skills_extension_command(self):
-        from specify_cli.integrations import get_integration
-        i = get_integration("codex")
-        assert i.build_command_invocation("speckit.git.commit") == "$speckit-git-commit"
-        assert i.build_command_invocation("git.commit") == "$speckit-git-commit"
+        integration = (
+            StubIntegration()
+            if integration_key == "stub"
+            else get_integration(integration_key)
+        )
 
-    def test_skills_extension_command_with_args(self):
-        from specify_cli.integrations import get_integration
-        i = get_integration("codex")
-        assert i.build_command_invocation("speckit.git.commit", "fix typo") == "$speckit-git-commit fix typo"
+        assert integration.build_command_invocation(command_name, args) == expected
 
     @pytest.mark.parametrize("integration_key", ["codex", "zcode"])
     def test_dollar_skill_post_processing_is_idempotent(self, integration_key):
@@ -301,65 +298,40 @@ class TestBuildCommandInvocation:
         assert get_invocation_prefix("codex", True) == "$"
         assert get_invocation_prefix("claude", True) == "/"
 
-    def test_forge_core_command_hyphenated(self):
-        """Forge installs hyphenated slash-commands (/speckit-<name>), so the
-        dispatch invocation must be hyphenated too — not the dotted default it
-        would inherit from MarkdownIntegration."""
-        from specify_cli.integrations import get_integration
-        i = get_integration("forge")
-        assert i.build_command_invocation("speckit.plan") == "/speckit-plan"
-        assert i.build_command_invocation("plan") == "/speckit-plan"
-
-    def test_forge_extension_command_hyphenated(self):
-        from specify_cli.integrations import get_integration
-        i = get_integration("forge")
-        assert i.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
-        assert (
-            i.build_command_invocation("speckit.git.commit", "fix typo")
-            == "/speckit-git-commit fix typo"
-        )
-
-    def test_cline_core_command_hyphenated(self):
-        """Cline installs hyphenated slash-commands (/speckit-<name>), so the
-        dispatch invocation must be hyphenated too — not the dotted default it
-        would inherit from MarkdownIntegration."""
-        from specify_cli.integrations import get_integration
-        i = get_integration("cline")
-        assert i.build_command_invocation("speckit.plan") == "/speckit-plan"
-        assert i.build_command_invocation("plan") == "/speckit-plan"
-
-    def test_cline_extension_command_hyphenated(self):
-        from specify_cli.integrations import get_integration
-        i = get_integration("cline")
-        assert i.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
-        assert (
-            i.build_command_invocation("speckit.git.commit", "fix typo")
-            == "/speckit-git-commit fix typo"
-        )
-
-
 class TestResolveCommandRefs:
     """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
 
-    def test_dot_separator_core_command(self):
-        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
-        result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "Run `/speckit.plan` to plan."
+    @pytest.mark.parametrize(
+        ("placeholder", "separator", "prefix", "expected"),
+        [
+            ("PLAN", ".", "/", "/speckit.plan"),
+            ("PLAN", "-", "/", "/speckit-plan"),
+            ("PLAN", "-", "$", "$speckit-plan"),
+            ("PLAN", "-", "/skill:", "/skill:speckit-plan"),
+            ("GIT_COMMIT", ".", "/", "/speckit.git.commit"),
+            ("GIT_COMMIT", "-", "/", "/speckit-git-commit"),
+            (
+                "AGENT-CONTEXT_UPDATE",
+                ".",
+                "/",
+                "/speckit.agent-context.update",
+            ),
+            (
+                "AGENT-CONTEXT_UPDATE",
+                "-",
+                "/",
+                "/speckit-agent-context-update",
+            ),
+            ("V2_PLAN", ".", "/", "/speckit.v2.plan"),
+        ],
+    )
+    def test_command_reference_rendering(
+        self, placeholder, separator, prefix, expected
+    ):
+        text = f"Run __SPECKIT_COMMAND_{placeholder}__ now."
+        result = IntegrationBase.resolve_command_refs(text, separator, prefix)
 
-    def test_hyphen_separator_core_command(self):
-        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
-        result = IntegrationBase.resolve_command_refs(text, "-")
-        assert result == "Run `/speckit-plan` to plan."
-
-    def test_dollar_prefix_core_command(self):
-        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
-        result = IntegrationBase.resolve_command_refs(text, "-", "$")
-        assert result == "Run `$speckit-plan` to plan."
-
-    def test_skill_colon_prefix_core_command(self):
-        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
-        result = IntegrationBase.resolve_command_refs(text, "-", "/skill:")
-        assert result == "Run `/skill:speckit-plan` to plan."
+        assert result == f"Run {expected} now."
 
     def test_process_template_kimi_uses_skill_colon_prefix(self):
         """process_template must use /skill: prefix for Kimi without relying on
@@ -375,26 +347,6 @@ class TestResolveCommandRefs:
         text = "__SPECKIT_COMMAND_SPECIFY__ then __SPECKIT_COMMAND_PLAN__ then __SPECKIT_COMMAND_TASKS__"
         result = IntegrationBase.resolve_command_refs(text, ".")
         assert result == "/speckit.specify then /speckit.plan then /speckit.tasks"
-
-    def test_extension_command_dot(self):
-        text = "Run __SPECKIT_COMMAND_GIT_COMMIT__ to commit."
-        result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "Run /speckit.git.commit to commit."
-
-    def test_extension_command_hyphen(self):
-        text = "Run __SPECKIT_COMMAND_GIT_COMMIT__ to commit."
-        result = IntegrationBase.resolve_command_refs(text, "-")
-        assert result == "Run /speckit-git-commit to commit."
-
-    def test_hyphenated_command_dot(self):
-        text = "Run __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__ to refresh."
-        result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "Run /speckit.agent-context.update to refresh."
-
-    def test_hyphenated_command_hyphen(self):
-        text = "Run __SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__ to refresh."
-        result = IntegrationBase.resolve_command_refs(text, "-")
-        assert result == "Run /speckit-agent-context-update to refresh."
 
     def test_no_placeholders_unchanged(self):
         text = "No placeholders here."
@@ -451,11 +403,6 @@ class TestResolveCommandRefs:
         text = "foo__SPECKIT_COMMAND_PLAN__bar"
         result = IntegrationBase.resolve_command_refs(text, ".")
         assert result == "foo/speckit.planbar"
-
-    def test_placeholder_with_digits(self):
-        text = "__SPECKIT_COMMAND_V2_PLAN__"
-        result = IntegrationBase.resolve_command_refs(text, ".")
-        assert result == "/speckit.v2.plan"
 
 
 class TestResolvePythonInterpreter:

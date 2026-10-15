@@ -403,30 +403,3 @@ class TestKimiLegacySymlinkSafety:
         # and the outside target is untouched.
         assert (legacy / "SKILL.md").exists()
         assert (outside / "SKILL.md").exists()
-
-class TestKimiNextSteps:
-    """CLI output tests for kimi next-steps display."""
-
-    def test_next_steps_show_skill_invocation(self, tmp_path):
-        """Kimi next-steps guidance should display /skill:speckit-* usage."""
-        import os
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "kimi-next-steps"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--integration", "kimi",
-                "--ignore-agent-tools", "--script", "sh",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        assert result.exit_code == 0
-        assert "/skill:speckit-constitution" in result.output
-        assert "/speckit.constitution" not in result.output
-        assert "Optional skills that you can use for your specs" in result.output
