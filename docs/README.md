@@ -32,6 +32,7 @@ To build the documentation locally:
 - `guides/bugfix.md` - Bug-fixing walkthrough
 - `guides/assessment.md` - Idea assessment walkthrough
 - `guides/customization.md` - Choosing and combining customization building blocks
+- `reference/catalogs.md` - Catalog discovery, trust, private sources, and precedence
 - `reference/agentic-*.md` - Detailed process command references
 - `_site/` - Generated documentation output (ignored by git)
 

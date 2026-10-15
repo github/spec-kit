@@ -52,8 +52,8 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |
 | Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/reference/workflows.html#custom-step-packages) |
 | Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
-| Discover community components | Catalog |
-| Host a private catalog of approved components | Catalog |
+| Discover community components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
+| Host a private catalog of approved components | [Catalog](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
 | Work offline or behind a firewall | [Local sources and self-hosted catalogs](https://github.github.io/spec-kit/install/air-gapped.html) |
 | Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/reference/artifacts.html) |

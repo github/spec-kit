@@ -47,6 +47,8 @@
       href: reference/mcp.md
     - name: Integrations
       href: reference/integrations.md
+    - name: Catalogs
+      href: reference/catalogs.md
     - name: Extensions
       href: reference/extensions.md
     - name: Presets
