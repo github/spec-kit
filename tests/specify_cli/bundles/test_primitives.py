@@ -1132,6 +1132,16 @@ def test_step_refresh_restores_registry_entry_when_reinstall_fails(
     assert (steps_dir / "my-step" / "__init__.py").read_text(encoding="utf-8") == ""
 
 
+def _stub_step_reinstall(monkeypatch, install) -> None:
+    """Give refresh a winning catalog entry and stub the preselected installer."""
+    from specify_cli.workflows.step import command_add
+
+    _patch_winning_entry(monkeypatch, {
+        "_catalog_name": "trusted", "_install_allowed": True,
+    })
+    monkeypatch.setattr(command_add, "_install_preselected_step", install)
+
+
 def test_step_refresh_restores_null_registry_entry_when_reinstall_fails(
     tmp_path: Path, monkeypatch
 ):
@@ -1144,7 +1154,6 @@ def test_step_refresh_restores_null_registry_entry_when_reinstall_fails(
     """
     import json
 
-    import specify_cli
     from specify_cli.workflows.catalog import StepRegistry
 
     steps_dir = tmp_path / ".specify" / "workflows" / "steps"
@@ -1169,7 +1178,7 @@ def test_step_refresh_restores_null_registry_entry_when_reinstall_fails(
         assert not StepRegistry(tmp_path).is_installed(step_id)
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
@@ -1298,7 +1307,6 @@ def test_step_refresh_keeps_a_later_commit_when_reinstall_fails(
     """
     import json
 
-    import specify_cli
     from specify_cli.workflows.catalog import StepRegistry
 
     steps_dir, _entry = _seed_refresh_step(tmp_path)
@@ -1329,7 +1337,7 @@ def test_step_refresh_keeps_a_later_commit_when_reinstall_fails(
         )
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
@@ -1351,7 +1359,6 @@ def test_step_refresh_rollback_keeps_registry_keys_written_after_load(
     """
     import json
 
-    import specify_cli
     from specify_cli.workflows.catalog import StepRegistry
 
     steps_dir, entry = _seed_refresh_step(tmp_path)
@@ -1384,7 +1391,7 @@ def test_step_refresh_rollback_keeps_registry_keys_written_after_load(
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
     monkeypatch.setattr(StepRegistry, "_load", _load)
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
@@ -1403,7 +1410,6 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
     """A failed copy-back or registry write stays on the original install error."""
     import shutil
 
-    import specify_cli
     from specify_cli.workflows.catalog import StepRegistry, StepValidationError
 
     steps_dir, _entry = _seed_refresh_step(tmp_path)
@@ -1414,8 +1420,6 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
     def _boom(step_id, *args, **kwargs):
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
-
     if failure == "copy":
         real_copytree = shutil.copytree
 
@@ -1425,6 +1429,7 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
             return real_copytree(src, dst, *args, **kwargs)
 
         monkeypatch.setattr(shutil, "copytree", _copytree)
+        _stub_step_reinstall(monkeypatch, _boom)
         failure_text = "restore copy failed"
     else:
         real_save = StepRegistry.save
@@ -1439,7 +1444,7 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
                 raise StepValidationError("registry write failed")
             return real_save(self)
 
-        monkeypatch.setattr(specify_cli, "workflow_step_add", _boom_then_arm)
+        _stub_step_reinstall(monkeypatch, _boom_then_arm)
         monkeypatch.setattr(StepRegistry, "save", _save)
         failure_text = "registry write failed"
 
@@ -1472,12 +1477,11 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
     """
     import tempfile
 
-    import specify_cli
     import specify_cli.workflows.step.installer as step_installer
 
     calls: list[tuple[str, Path]] = []
 
-    def _add(step_id: str) -> None:
+    def _add(step_id: str, **_kwargs) -> None:
         calls.append((step_id, Path.cwd()))
 
     def _forbid_step_lock(*_args, **_kwargs):
@@ -1491,7 +1495,7 @@ def test_step_refresh_skips_backup_when_offline_or_not_installed(
             raise AssertionError("step refresh took the backup path")
         return real_mkdtemp(*args, **kwargs)
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    _stub_step_reinstall(monkeypatch, _add)
     monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
 
     missing = primitive_manager("steps", tmp_path, allow_network=True)
@@ -1524,7 +1528,6 @@ def test_step_refresh_installs_when_removed_before_locked_snapshot(
     import shutil
     import tempfile
 
-    import specify_cli
     import specify_cli.workflows.step.command_remove as command_remove
     import specify_cli.workflows.step.installer as step_installer
 
@@ -1583,7 +1586,7 @@ def test_step_refresh_installs_when_removed_before_locked_snapshot(
         step_installer, "_step_install_transaction", _remove_before_first_lock
     )
     monkeypatch.setattr(command_remove, "_remove_step_locked", _tracking_remove)
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    _stub_step_reinstall(monkeypatch, _add)
     monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
@@ -1611,7 +1614,6 @@ def test_step_refresh_snapshots_step_added_after_manager_construction(
     import contextlib
     import tempfile
 
-    import specify_cli
     import specify_cli.workflows.step.command_remove as command_remove
     import specify_cli.workflows.step.installer as step_installer
     import typer
@@ -1667,7 +1669,7 @@ def test_step_refresh_snapshots_step_added_after_manager_construction(
         step_installer, "_step_install_transaction", _tracking_transaction
     )
     monkeypatch.setattr(command_remove, "_remove_step_locked", _tracking_remove)
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _add)
+    _stub_step_reinstall(monkeypatch, _add)
     monkeypatch.setattr(tempfile, "mkdtemp", _mkdtemp)
 
     manager.refresh(component)
@@ -1742,7 +1744,6 @@ def test_step_refresh_notes_rollback_lock_failure_and_keeps_backup(
     import contextlib
     import shutil
 
-    import specify_cli
     import specify_cli.workflows.step.installer as step_installer
 
     steps_dir, _entry = _seed_refresh_step(tmp_path)
@@ -1753,7 +1754,7 @@ def test_step_refresh_notes_rollback_lock_failure_and_keeps_backup(
     def _boom(step_id, *args, **kwargs):
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     real_txn = step_installer._step_install_transaction
     calls = {"n": 0}
@@ -1809,8 +1810,6 @@ def test_step_refresh_rollback_refuses_swapped_steps_symlink(
     import json
     import shutil
 
-    import specify_cli
-
     _require_directory_symlink(tmp_path)
     steps_dir, _entry = _seed_refresh_step(tmp_path)
     outside = tmp_path / "outside"
@@ -1832,7 +1831,7 @@ def test_step_refresh_rollback_refuses_swapped_steps_symlink(
         steps_dir.symlink_to(outside, target_is_directory=True)
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError) as caught:
@@ -1863,8 +1862,6 @@ def test_step_refresh_rollback_refuses_symlinked_step_directory(
     """Rollback must not delete a step directory that is itself a symlink."""
     import shutil
 
-    import specify_cli
-
     _require_directory_symlink(tmp_path)
     steps_dir, _entry = _seed_refresh_step(tmp_path)
     external_step = tmp_path / "outside-step"
@@ -1876,7 +1873,7 @@ def test_step_refresh_rollback_refuses_symlinked_step_directory(
         link.symlink_to(external_step, target_is_directory=True)
         raise BundlerError(f"Failed to install step '{step_id}'.")
 
-    monkeypatch.setattr(specify_cli, "workflow_step_add", _boom)
+    _stub_step_reinstall(monkeypatch, _boom)
 
     manager = primitive_manager("steps", tmp_path, allow_network=True)
     with pytest.raises(BundlerError) as caught:
