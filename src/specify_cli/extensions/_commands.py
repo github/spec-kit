@@ -125,10 +125,12 @@ def _registered_command_name(project_root: Path, command_name: str) -> str:
     """Return *command_name* the way the project's active agent registers it.
 
     Skills projects register extension commands as ``speckit-<ext>-<cmd>``
-    skills. In command mode, agents whose command references use ``-`` (such
-    as Cline, Forge, and Junie) register the same hyphenated name; the others
-    keep the manifest's dotted name. Deriving this from the integration keeps
-    command listings in step with registration instead of a list of agents.
+    skills, which needs no integration lookup, so installed adapters stay
+    unloaded. In command mode, agents whose command references use ``-``
+    (such as Cline, Forge, and Junie) register the same hyphenated name; the
+    others, and agents that are not loaded, keep the manifest's dotted name.
+    Deriving this from the integration keeps command listings in step with
+    registration instead of a list of agents.
     """
     from .._init_options import is_ai_skills_enabled
     from ..integrations import get_integration
@@ -136,14 +138,15 @@ def _registered_command_name(project_root: Path, command_name: str) -> str:
 
     opts = load_init_options(project_root)
     selected_ai = opts.get("ai") if isinstance(opts, dict) else None
-    integration = (
-        get_integration(selected_ai) if isinstance(selected_ai, str) else None
-    )
-    if integration is None:
+    if not isinstance(selected_ai, str) or not selected_ai:
         return command_name
-    # Generic's command-mode separator applies to both of its layouts, so
-    # the separator alone cannot tell that a skills project hyphenates.
-    if not is_ai_skills_enabled(opts) and (
+    # Check skills mode before the integration: generic's command-mode
+    # separator applies to both of its layouts, and inspection commands such
+    # as `extension info` do not load installed adapters.
+    if is_ai_skills_enabled(opts):
+        return ExtensionManager._skill_name_for_command(command_name)
+    integration = get_integration(selected_ai)
+    if integration is None or (
         integration.invoke_separator_for_mode(False) != "-"
     ):
         return command_name
