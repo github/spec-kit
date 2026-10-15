@@ -978,17 +978,17 @@ class Execution:
                 (i, pool.submit(run_item_guarded, i)) for i in range(workers)
             )
             for index in range(len(items)):
-                try:
-                    outcome, error, value = futures.pop(index).result()
-                except KeyboardInterrupt:
-                    interrupted = True
-                    raise
+                outcome, error, value = futures.pop(index).result()
                 results.append(value)
                 if outcome in HALTING:
                     return outcome, error, results
                 following = index + workers
                 if following < len(items) and not halted.is_set():
                     futures[following] = pool.submit(run_item_guarded, following)
+        except KeyboardInterrupt:
+            # Anywhere in submission or collection, not only in result().
+            interrupted = True
+            raise
         finally:
             _shutdown_workers(pool, futures.values(), interrupted=interrupted)
         return "completed", None, results

@@ -572,3 +572,75 @@ def test_ctrl_c_while_fan_out_shuts_down_after_a_failure_kills_the_captures(
     size = beat.stat().st_size
     time.sleep(1)
     assert beat.stat().st_size == size, "the capture kept running"
+
+
+def test_ctrl_c_while_fan_out_submits_an_item_kills_the_running_captures(
+    project_dir, monkeypatch
+):
+    """Ctrl+C lands in submit(), not result(), while item 2's capture runs."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from specify_cli.workflows import _execution
+
+    script = project_dir / "cli.py"
+    script.write_text(
+        "import os, sys, time\n"
+        "if 'item=1' in sys.argv[1]:\n"
+        "    sys.exit(0)\n"
+        f"beat = os.path.join({str(project_dir)!r}, f'beat-{{os.getpid()}}')\n"
+        "while True:\n"
+        "    open(beat, 'a').write('.')\n"
+        "    time.sleep(0.1)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        type(get_integration("claude")),
+        "build_exec_args",
+        lambda self, prompt, **kwargs: [sys.executable, "-u", str(script), prompt],
+    )
+
+    class InterruptedThirdSubmit(ThreadPoolExecutor):
+        submitted = 0
+
+        def submit(self, *args, **kwargs):
+            type(self).submitted += 1
+            if type(self).submitted == 3:
+                # Item 1 has completed and item 2's capture is running.
+                while not list(project_dir.glob("beat-*")):
+                    time.sleep(0.05)
+                raise KeyboardInterrupt
+            return super().submit(*args, **kwargs)
+
+    monkeypatch.setattr(_execution, "ThreadPoolExecutor", InterruptedThirdSubmit)
+    engine, definition = _install_workflow(
+        project_dir,
+        [
+            {
+                "id": "fan",
+                "type": "fan-out",
+                "items": [1, 2, 3],
+                "max_concurrency": 2,
+                "step": {
+                    "id": "ask",
+                    "type": "prompt",
+                    "prompt": "item={{ item }}",
+                    "capture": True,
+                    "timeout": 20,
+                },
+            }
+        ],
+    )
+    started = time.monotonic()
+    try:
+        engine.execute(definition, {})
+    except KeyboardInterrupt:
+        pass
+    # Without cancellation the pool waits for item 2's 20s timeout.
+    assert time.monotonic() - started < 15
+    assert InterruptedThirdSubmit.submitted == 3
+
+    (beat,) = project_dir.glob("beat-*")
+    time.sleep(0.5)
+    size = beat.stat().st_size
+    time.sleep(1)
+    assert beat.stat().st_size == size, "the capture kept running"
