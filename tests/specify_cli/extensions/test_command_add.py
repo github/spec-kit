@@ -33,6 +33,7 @@ from tests.specify_cli.extensions._helpers import (
     can_create_symlink,
     open_test_download_zip as _open_test_download_zip,
     validate_safe_cache_dir as _validate_safe_cache_dir_test_stand_in,
+    write_listing_project_options,
 )
 
 
@@ -1280,10 +1281,7 @@ def test_extension_install_listing_matches_registered_command_names(
     """The post-install 'Provided commands' listing must show each command the
     way the active agent registers it, for every integration rather than only
     the agents special-cased by name."""
-    init_options_file = project_dir / ".specify" / "init-options.json"
-    init_options_file.write_text(
-        json.dumps({**init_options, "script": "sh"}), encoding="utf-8"
-    )
+    write_listing_project_options(project_dir, init_options)
 
     old_cwd = os.getcwd()
     try:

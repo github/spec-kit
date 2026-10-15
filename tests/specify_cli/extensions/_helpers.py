@@ -1,10 +1,15 @@
 """Shared helpers for extension command tests."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import pytest
+
+from specify_cli.integration_state import write_integration_json
+from specify_cli.integrations import get_integration
+from specify_cli.integrations.manifest import IntegrationManifest
 
 
 MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
@@ -29,7 +34,37 @@ LISTED_COMMAND_NAME_CASES = [
     pytest.param({"ai": "copilot"}, _DOTTED, _HYPHENATED, id="copilot-commands"),
     # .gemini/commands/speckit.test-ext.hello.toml
     pytest.param({"ai": "gemini"}, _DOTTED, _HYPHENATED, id="gemini"),
+    # <commands-dir>/speckit-test-ext-hello/SKILL.md
+    pytest.param({"ai": "generic", "ai_skills": True}, _HYPHENATED, _DOTTED, id="generic-skills"),
+    # <commands-dir>/speckit.test-ext.hello.md
+    pytest.param({"ai": "generic"}, _DOTTED, _HYPHENATED, id="generic-commands"),
 ]
+
+
+def write_listing_project_options(project_dir, init_options):
+    """Record *init_options* as the project's init options for a listing case.
+
+    Generic resolves its output directory from ``integration.json`` and
+    registers extension commands next to its core commands, so its cases also
+    set up the integration the way ``specify init`` does.
+    """
+    (project_dir / ".specify" / "init-options.json").write_text(
+        json.dumps({**init_options, "script": "sh"}), encoding="utf-8"
+    )
+    if init_options["ai"] == "generic":
+        parsed_options = {
+            "commands_dir": ".myagent/commands",
+            "skills": bool(init_options.get("ai_skills")),
+        }
+        manifest = IntegrationManifest("generic", project_dir)
+        get_integration("generic").setup(
+            project_dir, manifest, parsed_options=parsed_options
+        )
+        manifest.save()
+        write_integration_json(
+            project_dir, version="1.0.0", integration_key="generic",
+            settings={"generic": {"parsed_options": parsed_options}},
+        )
 
 
 def open_test_download_zip(project_root, download_dir, zip_filename):

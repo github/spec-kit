@@ -18,7 +18,10 @@ from specify_cli import app
 from specify_cli.extensions import (
     ExtensionManager,
 )
-from tests.specify_cli.extensions._helpers import LISTED_COMMAND_NAME_CASES
+from tests.specify_cli.extensions._helpers import (
+    LISTED_COMMAND_NAME_CASES,
+    write_listing_project_options,
+)
 
 
 class TestExtensionInfoRendering:
@@ -256,10 +259,7 @@ def test_extension_info_listing_matches_registered_command_names(
 
     from specify_cli.extensions import _commands
 
-    init_options_file = project_dir / ".specify" / "init-options.json"
-    init_options_file.write_text(
-        json.dumps({**init_options, "script": "sh"}), encoding="utf-8"
-    )
+    write_listing_project_options(project_dir, init_options)
 
     manager = ExtensionManager(project_dir)
     manager.install_from_directory(
