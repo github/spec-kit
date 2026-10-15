@@ -15,6 +15,8 @@ class ZcodeIntegration(SkillsIntegration):
     """Integration for ZCode CLI (Z.AI)."""
 
     key = "zcode"
+    invocation_prefix = "$"
+    skills_invocation_only = True
     config = {
         "name": "ZCode",
         "folder": ".zcode/",

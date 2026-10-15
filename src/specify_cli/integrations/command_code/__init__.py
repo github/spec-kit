@@ -14,6 +14,8 @@ class CommandCodeIntegration(SkillsIntegration):
     """Integration for Command Code CLI."""
 
     key = "command-code"
+    invocation_prefix = "$"
+    skills_invocation_only = True
     config = {
         "name": "Command Code",
         "folder": ".commandcode/",

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ._invocation_style import get_invocation_prefix
 from .integration_state import integration_setting, integration_settings
 
 
@@ -110,4 +109,4 @@ def invoke_prefix_for_integration(
 ) -> str:
     """Resolve the native invocation prefix for an integration's output mode."""
     skills_mode = integration.is_skills_mode(parsed_options, project_root)
-    return get_invocation_prefix(key, skills_mode)
+    return integration.invocation_prefix_for_mode(skills_mode)

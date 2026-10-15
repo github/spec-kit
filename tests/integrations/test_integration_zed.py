@@ -118,8 +118,8 @@ class TestZedHookInvocations:
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
 
 
-class TestSlashSkillsSets:
-    """Parameterized coverage for ALWAYS_SLASH_AGENTS / CONDITIONAL_SLASH_AGENTS."""
+class TestIntegrationOwnedInvocationStyles:
+    """Parameterized coverage for integration-owned hook invocation styles."""
 
     @staticmethod
     def _render_invocation(project_path, ai: str, ai_skills: bool) -> str:
@@ -138,7 +138,7 @@ class TestSlashSkillsSets:
     @pytest.mark.parametrize(
         ("ai", "ai_skills", "expected"),
         [
-            # ALWAYS_SLASH_AGENTS — unconditional on ai_skills
+            # Integrations whose skill spelling is mode-independent.
             ("devin", True, "/speckit-plan"),
             ("devin", False, "/speckit-plan"),
             ("grok", True, "/speckit-plan"),
@@ -151,7 +151,7 @@ class TestSlashSkillsSets:
             ("trae", False, "/speckit-plan"),
             ("zed", True, "/speckit-plan"),
             ("zed", False, "/speckit-plan"),
-            # CONDITIONAL_SLASH_AGENTS — only when ai_skills is enabled
+            # Integrations whose skill spelling applies only in skills mode.
             ("agy", True, "/speckit-plan"),
             ("agy", False, "/speckit.plan"),
             ("claude", True, "/speckit-plan"),

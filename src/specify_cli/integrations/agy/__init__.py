@@ -42,6 +42,7 @@ class AgyIntegration(SkillsIntegration):
     """
 
     key: ClassVar[str] = "agy"
+    skills_invocation_only = True
     config: ClassVar[dict[str, Any]] = {
         "name": "Antigravity",
         "folder": ".agents/",

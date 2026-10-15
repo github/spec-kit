@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 
 from .._init_options import is_ai_skills_enabled
-from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
 from ..integrations._registration import project_registration
@@ -545,24 +544,30 @@ class _PresetSkillMethods:
         ``AGENT_CONFIGS`` value.
         """
         separator = None
-        if project_root is not None and isinstance(selected_ai, str):
+        if isinstance(selected_ai, str):
             try:
-                from .. import load_init_options
                 from ..integrations import get_integration
 
                 integration = get_integration(selected_ai)
                 if integration is not None:
-                    separator = integration.invoke_separator_for_mode(
-                        is_ai_skills_enabled(load_init_options(project_root))
+                    skills_enabled = True
+                    if project_root is not None:
+                        from .. import load_init_options
+
+                        skills_enabled = is_ai_skills_enabled(
+                            load_init_options(project_root)
+                        )
+                    return integration.resolve_command_refs_for_mode(
+                        body,
+                        skills_enabled=skills_enabled,
                     )
-            except Exception:
+            except (ImportError, KeyError, OSError, TypeError, ValueError):
                 separator = None
         if separator is None:
             separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
                 "invoke_separator", "."
             )
-        prefix = get_invocation_prefix(selected_ai, separator == "-")
-        return IntegrationBase.resolve_command_refs(body, separator, prefix)
+        return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""

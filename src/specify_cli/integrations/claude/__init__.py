@@ -41,6 +41,7 @@ class ClaudeIntegration(SkillsIntegration):
     """Integration for Claude Code skills."""
 
     key = "claude"
+    skills_invocation_only = True
     config = {
         "name": "Claude Code",
         "folder": ".claude/",
