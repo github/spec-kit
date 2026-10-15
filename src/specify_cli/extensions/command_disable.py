@@ -17,11 +17,10 @@ def extension_disable(
     extension: str = typer.Argument(help="Extension ID or name to disable"),
 ):
     """Disable an extension without removing it."""
-    from . import ExtensionManager, HookExecutor
+    from . import ExtensionError, ExtensionManager
 
     project_root = _commands._require_specify_project()
     manager = ExtensionManager(project_root)
-    hook_executor = HookExecutor(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)
     installed = manager.list_installed()
@@ -29,40 +28,14 @@ def extension_disable(
         extension, installed, "disable"
     )
 
-    # Update registry
-    metadata = manager.registry.get(extension_id)
-    if metadata is None or not isinstance(metadata, dict):
-        console.print(
-            f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
-            "not found in registry (corrupted state)"
-        )
-        raise typer.Exit(1)
-
-    if not metadata.get("enabled", True):
+    try:
+        disabled = manager.disable(extension_id)
+    except (ExtensionError, ValueError, OSError) as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
+    if not disabled:
         console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]")
         raise typer.Exit(0)
-
-    from .. import load_init_options
-
-    if load_init_options(project_root).get("ai") == "generic":
-        from . import ExtensionError
-
-        try:
-            manager.disable_generic_extension_artifacts(extension_id)
-        except (ExtensionError, ValueError, OSError) as exc:
-            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
-            raise typer.Exit(1) from exc
-    else:
-        manager.registry.update(extension_id, {"enabled": False})
-
-    # Disable hooks in extensions.yml
-    config = hook_executor.get_project_config()
-    if "hooks" in config:
-        for hook_name in config["hooks"]:
-            for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension_id:
-                    hook["enabled"] = False
-        hook_executor.save_project_config(config)
 
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")

@@ -181,6 +181,13 @@ specify extension disable <name>
 
 Disable an extension without removing it. Disabled extensions are not loaded and their commands are not available. Hook-only extensions can be installed, enabled, and disabled even if generic command-output settings are missing or invalid; extensions with commands still require valid settings. Re-enable with `enable`.
 
+For opted-in native hook projection, disabling remembers each owned hook's
+effective enabled value; enabling restores those values rather than activating
+hooks that were individually disabled before the extension was disabled. For
+extensions disabled before this state was recorded, enabling uses the
+declarations in their installed manifest. Without the opt-in, the legacy
+enable behavior continues to activate all owned hooks.
+
 For `generic`, disabling removes hash-owned invocations even after the output directory moves, but preserves unrelated same-named files in the new directory.
 
 ## Set Extension Priority
@@ -304,6 +311,46 @@ Spec Kit stores project-level extension registration and hook configuration in:
 
 The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
 
+Scripted extension hooks are **opt-in**. Set `"native_extension_hooks": true`
+in `.specify/init-options.json`, then refresh shared infrastructure (for
+example, with `specify integration switch <current-key> --refresh-shared-infra`)
+or perform an extension configuration update. Only the literal JSON boolean
+`true` enables native hook projection; `false` or an absent key leaves existing
+markdown/YAML hook behavior unchanged, without producing a projection.
+Other values for this key are rejected. Turning the option off retires an
+existing projection on the next configuration save or shared-infrastructure
+refresh. Run only one Specify CLI mutation against a project at a time;
+simultaneous CLI changes to the same project are unsupported.
+
+When opted in, extension configuration saves publish a validated projection in
+`.specify/hook-dispatch/`: one `<event>.json` response and SHA-256 digest per
+event, an `events.txt` index of response filename stems and digest, and a
+`source.yml` copy of the configuration. Each `events.txt` line is the name
+of an event whose `<event>.json` response contains the same `event` identity.
+Only enabled hooks with no condition appear in the projection,
+in their YAML declaration order (regardless of priority). Each response
+includes `extension`, `command`, `optional`, `description`, `prompt`, and
+`priority`. Existing projects receive a projection when their shared
+infrastructure is refreshed; configuration writes regenerate it. Invalid
+hook entries and unsafe projection paths prevent publication when opted in. Current installed
+commands continue using their existing hook resolution; the projection does
+not change execution behavior. For projection portability, missing or invalid
+priorities and values above `2147483647` use the default `10`; the current
+in-process hook reader retains its existing priority handling.
+
+Opted-in hook configuration and projection writes are direct, not atomic. If
+an I/O error interrupts a write, Spec Kit reports the failure, but
+`.specify/extensions.yml` or `.specify/hook-dispatch/` may be incomplete.
+Fix the filesystem error, inspect and repair `extensions.yml` if needed, then
+retry the extension operation or refresh shared infrastructure with
+`specify integration switch <current-key> --refresh-shared-infra`. A failed
+install publication does not automatically unregister pre-existing hooks for
+the same extension ID. Removal cleans up invocation artifacts and sources
+before unregistering hooks; a cleanup failure can leave partially removed
+artifacts but does not itself remove hooks. If hook publication then fails,
+manual repair may be necessary. Git cannot recover uncommitted changes to
+these files.
+
 ```yaml
 installed:
   - git
@@ -350,7 +397,27 @@ Each hook entry supports the following fields:
 | `description` | Human-readable explanation of what the hook does. |
 | `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
 
-Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
+Hook event names identify when a hook is invoked. When native hook projection
+is enabled, new manifests and project configuration writes require
+`before_<command_name>` or `after_<command_name>`, including commands beyond
+the built-in set. Core
+targets use `before_<command>` / `after_<command>` (for example,
+`before_plan`); extension-owned targets use
+`before_<target-extension>_<command>` /
+`after_<target-extension>_<command>` (for example, `before_bug_assess` for
+`speckit.bug.assess`). The suffix identifies the command **being observed**,
+not the extension providing the hook. It starts with a lowercase letter or
+digit and contains only lowercase letters, digits, or underscores. Normalize
+hyphens in target extension and command names to underscores (for example,
+`my-extension` becomes `my_extension`); names are never rewritten implicitly.
+The full event name must fit in a projection filename.
+
+**Opt-in migration:** Legacy names such as `custom:after` remain accepted by
+default, but are rejected during extension installation, update, or
+existing-project projection refresh after opting in. Rename the event in the extension's `extension.yml` and
+any corresponding `.specify/extensions.yml` hooks to a matching
+`before_<command_name>` or `after_<command_name>` name before retrying.
+Invalid names fail explicitly rather than being silently omitted.
 
 Extension manifests reject invalid hook priorities during installation. For existing `.specify/extensions.yml` entries, `HookExecutor.get_hooks_for_event()` sorts with `normalize_priority()`: missing values, booleans, non-numeric values rejected by `int()`, and values less than `1` fall back to `10`; numeric strings and finite floats are coerced with `int()`, while non-finite floats are unsupported and may fail instead of falling back.
 

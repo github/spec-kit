@@ -24,12 +24,14 @@ from specify_cli.extensions import (
     ExtensionError,
     ExtensionManager,
     ExtensionRegistry,
+    HookExecutor,
     ValidationError,
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.extensions._helpers import (
     MINIMAL_ZIP_BYTES as _MINIMAL_ZIP_BYTES,
     can_create_symlink,
+    enable_native_hooks,
     open_test_download_zip as _open_test_download_zip,
     validate_safe_cache_dir as _validate_safe_cache_dir_test_stand_in,
 )
@@ -37,6 +39,257 @@ from tests.specify_cli.extensions._helpers import (
 
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
+
+    def test_add_publishes_hooks_without_changing_command_content(self, extension_dir, project_dir):
+        enable_native_hooks(project_dir)
+        from specify_cli import load_init_options, save_init_options
+
+        save_init_options(project_dir, {**load_init_options(project_dir), "ai": "copilot"})
+        manifest = extension_dir / "extension.yml"
+        payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        payload["hooks"] = {
+            "before_plan": [
+                {"command": "speckit.test-ext.hello", "optional": False, "priority": 30},
+                {"command": "speckit.test-ext.skip", "condition": "env.DISABLED is set"},
+            ],
+            "before_bug_assess": {"command": "speckit.test-ext.hello"},
+        }
+        manifest.write_text(yaml.safe_dump(payload), encoding="utf-8")
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 0, result.output
+        cache = project_dir / ".specify/hook-dispatch"
+        assert (cache / "source.yml").read_bytes() == (
+            project_dir / ".specify/extensions.yml"
+        ).read_bytes()
+        hooks = json.loads((cache / "before_plan.json").read_text(encoding="utf-8"))["hooks"]
+        assert len(hooks) == 1
+        assert hooks[0]["command"] == "speckit.test-ext.hello"
+        assert hooks[0]["optional"] is False
+        assert json.loads((cache / "before_bug_assess.json").read_text())["event"] == (
+            "before_bug_assess"
+        )
+        rendered = (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").read_text()
+        assert "hook-dispatch" not in rendered
+
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    def test_add_disabled_manifest_hook_respects_opt_in(
+        self, extension_dir, project_dir, native_hooks
+    ):
+        if native_hooks:
+            enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {
+            "before_plan": {
+                "command": "speckit.test-ext.hello", "enabled": False,
+            }
+        }
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"]
+            )
+        assert result.exit_code == 0, result.output
+        config = yaml.safe_load(
+            (project_dir / ".specify/extensions.yml").read_text(encoding="utf-8")
+        )
+        assert config["hooks"]["before_plan"][0]["enabled"] is not native_hooks
+        cache = project_dir / ".specify/hook-dispatch"
+        if native_hooks:
+            assert json.loads((cache / "before_plan.json").read_text())["hooks"] == []
+        else:
+            assert not cache.exists()
+
+    def test_install_publication_failure_keeps_preexisting_same_id_hooks(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        enable_native_hooks(project_dir)
+        config = project_dir / ".specify/extensions.yml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_bytes(
+            b"# existing project hooks\r\ninstalled:\r\n  - test-ext\r\n"
+            b"hooks:\r\n  before_plan:\r\n"
+            b"    - extension: test-ext\r\n"
+            b"      command: speckit.test-ext.hello\r\n"
+            b"      enabled: true\r\n"
+        )
+        HookExecutor(project_dir).migrate_project_config()
+        cache = project_dir / ".specify/hook-dispatch"
+        original = config.read_bytes()
+        prior_cache = {entry.name: entry.read_bytes() for entry in cache.iterdir()}
+        real_write = Path.write_bytes
+
+        def fail_config_write(path, content):
+            if path == config:
+                raise OSError("simulated hook publication failure")
+            return real_write(path, content)
+
+        monkeypatch.setattr(Path, "write_bytes", fail_config_write)
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(OSError, match="simulated hook publication failure.*refresh-shared-infra"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+        assert not manager.registry.is_installed("test-ext")
+        assert config.read_bytes() == original
+        assert {entry.name: entry.read_bytes() for entry in cache.iterdir()} == prior_cache
+
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    def test_install_replaces_preexisting_same_id_hooks_on_success(
+        self, extension_dir, project_dir, native_hooks
+    ):
+        if native_hooks:
+            enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {
+            "before_plan": {"command": "speckit.test-ext.hello"}
+        }
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        config = project_dir / ".specify/extensions.yml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            "installed:\n  - test-ext\nhooks:\n  before_plan:\n"
+            "    - extension: test-ext\n      command: speckit.test-ext.old\n",
+            encoding="utf-8",
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+        stored = yaml.safe_load(config.read_text(encoding="utf-8"))
+        assert stored["installed"] == ["test-ext"]
+        assert [entry["command"] for entry in stored["hooks"]["before_plan"]] == [
+            "speckit.test-ext.hello"
+        ]
+        cache = project_dir / ".specify/hook-dispatch"
+        if native_hooks:
+            assert cache.is_dir()
+            assert json.loads((cache / "before_plan.json").read_text())["hooks"][0]["command"] == (
+                "speckit.test-ext.hello"
+            )
+        else:
+            assert not cache.exists()
+
+    def test_install_publication_failure_reports_error_without_unregistration(
+        self, extension_dir, project_dir
+    ):
+        enable_native_hooks(project_dir)
+        manager = ExtensionManager(project_dir)
+        with patch.object(HookExecutor, "register_hooks", side_effect=OSError("publication failed")), \
+             patch.object(HookExecutor, "unregister_hooks", side_effect=AssertionError("must not unregister")):
+            with pytest.raises(OSError, match="publication failed"):
+                manager.install_from_directory(
+                    extension_dir, "0.1.0", register_commands=False
+                )
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_add_rejects_invalid_existing_hooks_before_install(self, extension_dir, project_dir):
+        enable_native_hooks(project_dir)
+        config = project_dir / ".specify/extensions.yml"
+        config.write_text("hooks:\n  before_plan: invalid\n", encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 1
+        assert "expected a list" in result.output
+        assert config.read_text() == "hooks:\n  before_plan: invalid\n"
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+
+    def test_add_rolls_back_non_generic_artifacts_on_publication_failure(
+        self, extension_dir, project_dir
+    ):
+        enable_native_hooks(project_dir)
+        from specify_cli import load_init_options, save_init_options
+
+        save_init_options(project_dir, {**load_init_options(project_dir), "ai": "copilot"})
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {"before_plan": {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (project_dir / ".github/agents").mkdir(parents=True)
+        original_save = HookExecutor.save_project_config
+
+        def fail_hook_save(executor, config):
+            if config.get("hooks", {}).get("before_plan"):
+                raise OSError("projection failed")
+            return original_save(executor, config)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(HookExecutor, "save_project_config", fail_hook_save):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"]
+            )
+        assert result.exit_code == 1
+        assert "projection failed" in result.output
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".github/agents/speckit.test-ext.hello.agent.md").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+
+    @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
+    def test_default_add_accepts_legacy_hook_event_without_projection(
+        self, extension_dir, project_dir, event
+    ):
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {event: {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"]
+            )
+        assert result.exit_code == 0, result.output
+        assert ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/hook-dispatch").exists()
+
+    @pytest.mark.parametrize("event", ["custom:after", "before_my-extension_assess"])
+    def test_opted_in_add_rejects_legacy_hook_event_before_mutation(
+        self, extension_dir, project_dir, event
+    ):
+        enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {event: {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"]
+            )
+        assert result.exit_code == 1
+        assert "Rename legacy events" in result.output
+        if "-" in event:
+            assert "my-extension -> my_extension" in result.output.replace("\n", " ")
+        assert not ExtensionManager(project_dir).registry.is_installed("test-ext")
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+
+    @pytest.mark.parametrize("field,value", [
+        ("command", 17), ("optional", "yes"), ("enabled", "yes"),
+        ("condition", 42), ("description", False), ("prompt", []),
+    ])
+    def test_add_rejects_invalid_manifest_hook_before_mutation(
+        self, extension_dir, project_dir, field, value
+    ):
+        enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {"before_plan": {"command": "speckit.test-ext.hello", field: value}}
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app, ["extension", "add", str(extension_dir), "--dev"], catch_exceptions=True
+            )
+        assert result.exit_code == 1
+        assert "hook" in result.output.lower()
+        assert not (project_dir / ".specify/extensions/test-ext").exists()
+        assert not (project_dir / ".specify/extensions.yml").exists()
+        assert not (project_dir / ".specify/hook-dispatch").exists()
 
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir

@@ -20,6 +20,7 @@ from specify_cli.extensions import (
     ExtensionManager,
     HookExecutor,
 )
+from tests.specify_cli.extensions._helpers import enable_native_hooks
 
 
 class TestExtensionUpdateCLI:
@@ -93,6 +94,60 @@ class TestExtensionUpdateCLI:
             zf.writestr(manifest_path, manifest_text)
             if extra_manifest_path is not None:
                 zf.writestr(extra_manifest_path, manifest_text)
+
+    @pytest.mark.parametrize("native_hooks", [False, True])
+    def test_update_legacy_event_follows_opt_in_mode(self, tmp_path, native_hooks):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        (project / ".claude/skills").mkdir(parents=True)
+        if native_hooks:
+            enable_native_hooks(project)
+        manager = ExtensionManager(project)
+        original_source = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(
+            original_source, "0.1.0", catalog_name="original-catalog"
+        )
+        original_entry = manager.registry.get("test-ext")
+        original_config = yaml.safe_load((project / ".specify/extensions.yml").read_text())
+        updated_source = self._create_extension_source(tmp_path, "2.0.0")
+        manifest_path = updated_source / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["hooks"] = {"custom:after": {"command": "speckit.test-ext.hello"}}
+        manifest_path.write_text(yaml.safe_dump(manifest))
+        zip_path = tmp_path / "test-ext-update.zip"
+        self._create_catalog_zip(zip_path, "2.0.0")
+
+        def install_invalid_update(self_obj, _zip_path, version, *, catalog_name=None):
+            return self_obj.install_from_directory(
+                updated_source, version, catalog_name=catalog_name
+            )
+
+        with patch.object(Path, "cwd", return_value=project), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext", "name": "Test Extension", "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(ExtensionManager, "install_from_zip", install_invalid_update):
+            result = CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n"
+            )
+        if native_hooks:
+            assert result.exit_code == 1, result.output
+            assert "Rename legacy events" in result.output
+            assert ExtensionManager(project).registry.get("test-ext") == original_entry
+            assert yaml.safe_load(
+                (project / ".specify/extensions.yml").read_text()
+            ) == original_config
+            assert (project / ".specify/hook-dispatch").exists()
+        else:
+            assert result.exit_code == 0, result.output
+            assert ExtensionManager(project).registry.get("test-ext")["version"] == "2.0.0"
+            assert "custom:after" in yaml.safe_load(
+                (project / ".specify/extensions.yml").read_text()
+            )["hooks"]
+            assert not (project / ".specify/hook-dispatch").exists()
 
     @pytest.mark.parametrize(
         "manifest_path",

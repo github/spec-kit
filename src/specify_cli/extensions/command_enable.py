@@ -17,11 +17,10 @@ def extension_enable(
     extension: str = typer.Argument(help="Extension ID or name to enable"),
 ):
     """Enable a disabled extension."""
-    from . import ExtensionError, ExtensionManager, HookExecutor
+    from . import ExtensionError, ExtensionManager
 
     project_root = _commands._require_specify_project()
     manager = ExtensionManager(project_root)
-    hook_executor = HookExecutor(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)
     installed = manager.list_installed()
@@ -29,67 +28,14 @@ def extension_enable(
         extension, installed, "enable"
     )
 
-    # Update registry
-    metadata = manager.registry.get(extension_id)
-    if metadata is None or not isinstance(metadata, dict):
-        console.print(
-            f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
-            "not found in registry (corrupted state)"
-        )
-        raise typer.Exit(1)
-
-    if metadata.get("enabled", True):
+    try:
+        enabled = manager.enable(extension_id)
+    except (ExtensionError, ValueError, OSError) as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
+    if not enabled:
         console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]")
         raise typer.Exit(0)
-
-    manager.registry.update(extension_id, {"enabled": True})
-
-    from .. import load_init_options
-
-    init_options = load_init_options(project_root)
-    if init_options.get("ai") == "generic":
-        try:
-            manifest = manager.get_extension(extension_id)
-            if manifest is None:
-                raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
-            if manifest.commands:
-                manager.register_enabled_extensions_for_agent("generic")
-                refreshed = manager.registry.get(extension_id) or {}
-                from .._init_options import is_ai_skills_enabled
-
-                skills = is_ai_skills_enabled(init_options)
-                expected = (
-                    {
-                        manager._skill_name_for_command(command["name"])
-                        for command in manifest.commands
-                    }
-                    if skills else set(manager._collect_manifest_command_names(manifest))
-                )
-                owned = set(manager._generic_owned_names(
-                    refreshed, list(expected), skills=skills, extension_id=extension_id,
-                ))
-                missing = expected - owned
-                if missing:
-                    manager.disable_generic_extension_artifacts(extension_id)
-                    raise ExtensionError(
-                        "Missing invocation artifacts: " + ", ".join(sorted(missing))
-                    )
-        except (ExtensionError, OSError, ValueError) as exc:
-            manager.registry.update(extension_id, {"enabled": False})
-            console.print(
-                f"[red]Error:[/red] Could not register generic invocations "
-                f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
-            )
-            raise typer.Exit(1) from exc
-
-    # Enable hooks in extensions.yml
-    config = hook_executor.get_project_config()
-    if "hooks" in config:
-        for hook_name in config["hooks"]:
-            for hook in config["hooks"][hook_name]:
-                if hook.get("extension") == extension_id:
-                    hook["enabled"] = True
-        hook_executor.save_project_config(config)
 
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled")
 

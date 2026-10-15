@@ -366,7 +366,7 @@ def run_update_command(extension: str | None) -> None:
                 # 4. Backup hooks and installed list from extensions.yml
                 # get_project_config() always normalizes installed->[] and hooks->{},
                 # so no sentinel is needed to distinguish key-absent from key-empty.
-                config = hook_executor.get_project_config()
+                config = hook_executor.load_project_config_for_update()
                 if isinstance(config, dict):
                     import copy
                     # Deep-copy so nested mapping entries (e.g. version-pin dicts)
