@@ -91,10 +91,13 @@ always have `replace` semantics when they participate in artifact resolution;
 extensions cannot author preset composition strategies.
 
 Primary command names must use the extension's namespace. Installation rejects
-names and aliases that collide with core commands or another installed
-extension after normalizing them to the agent output form. A small set of
-legacy two-segment command names is normalized to the canonical form with a
-warning; hook and event command references are rewritten consistently.
+names and aliases that exactly match a name from another installed extension,
+and rejects names whose normalized agent output form conflicts with a core
+command. Installed-extension comparisons are not normalized, so differently
+spelled names can still converge on the same output path for a particular
+renderer. A small set of legacy two-segment command names is normalized to the
+canonical form with a warning; hook and event command references are rewritten
+consistently.
 
 ## Project state and filesystem layout
 
@@ -148,9 +151,9 @@ to an empty layer. Environment variables are nested by underscore-separated
 keys, and longer installed extension IDs win ambiguous prefix matches.
 
 Removal and force-reinstallation preserve only top-level files named
-`*-config.yml` or `*-config.local.yml`. Consequently, the runtime
-`local-config.yml` override is not covered by that destructive-lifecycle
-preservation convention.
+`*-config.yml` or `*-config.local.yml`. The runtime `local-config.yml`
+override matches the first suffix and is covered by that preservation
+convention.
 
 ## Lifecycle and data flow
 
@@ -198,10 +201,14 @@ symlinks receive ordinary files instead.
 
 ### Enablement and integration changes
 
-Disabled extensions remain installed but are excluded from normal command,
-hook, event, and artifact behavior. Enable and disable update registry state
-and hook bindings. For the generic integration, output ownership must be
-proven before generated artifacts are removed or replaced.
+Disabled extensions remain installed and are excluded from registry-driven
+artifact resolution, hook and event projection, and future integration
+registration. Enable and disable update registry state and hook bindings. For
+the generic integration, disablement also removes owned invocation artifacts
+after proving ownership. Other integrations retain already-generated command
+and skill files until an integration switch, uninstall, or other reconciliation
+removes them, so those stale files may remain invocable while the extension is
+disabled.
 
 An extension install targets the active integration recorded in project state.
 Projects predating that state may fall back to detected agent directories;
@@ -246,10 +253,17 @@ extension directory, resolves command references, and records the generated
 outputs in `.registry`. The output formats and integration ownership rules are
 defined in [Agent Integration Design](integration.md).
 
-When project initialization enabled skills, each primary extension command may
-be rendered as a `speckit-<extension>-<command>/SKILL.md` skill. Aliases are
-command outputs, not separate skills. Existing user-owned skill directories
-are not overwritten without a verified extension ownership path.
+Native registration follows the selected integration's output flavor. It
+renders primary names and aliases, so integrations whose native command format
+is `SKILL.md` create separate primary and alias skill directories. Non-generic
+native registration writes its selected destination and may replace an
+existing file; the generic integration applies its ownership checks first.
+
+Command-backed integrations configured to use skills take a separate
+supplemental path. That path renders only primary commands as
+`speckit-<extension>-<command>/SKILL.md`. A normal install skips an existing
+unverified skill file or directory, while an expected development symlink or a
+forced integration refresh may be replaced.
 
 Hooks are declarative AI-agent follow-up instructions, not direct subprocess
 execution. `HookExecutor` filters enabled bindings, evaluates the limited
@@ -340,7 +354,10 @@ them to user-facing messages and non-zero exits.
 The implementation provides targeted transactional guarantees rather than one
 global filesystem transaction:
 
-- validation and conflict checks precede destructive force removal;
+- manifest, compatibility, priority, namespace, conflict, and active-output
+  checks precede destructive force removal. `.extensionignore` is loaded
+  afterward, so an unreadable or invalid ignore file can still fail after the
+  prior package has been removed;
 - kept configuration is durably staged and restored across copy failures and
   interrupted retries;
 - generic integration registration rolls back generated outputs, hooks, and
