@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -351,7 +353,7 @@ def test_bundle_config_reader_defers_source_field_validation(tmp_path: Path) -> 
                     {
                         "id": "deferred",
                         "url": "ftp://example.com/catalog.json",
-                        "priority": 1.9,
+                        "priority": True,
                         "install_policy": "not-a-policy",
                     }
                 ]
@@ -364,10 +366,39 @@ def test_bundle_config_reader_defers_source_field_validation(tmp_path: Path) -> 
         {
             "id": "deferred",
             "url": "ftp://example.com/catalog.json",
-            "priority": 1.9,
+            "priority": True,
             "install_policy": "not-a-policy",
         }
     ]
+
+
+def test_bundle_catalog_remove_can_delete_invalid_raw_entry(tmp_path: Path) -> None:
+    from specify_cli.bundles import catalog_config
+
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    config_path = project / ".specify" / "bundle-catalogs.yml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "catalogs": [
+                    {
+                        "id": "invalid",
+                        "url": "ftp://example.com/catalog.json",
+                        "priority": True,
+                        "install_policy": "not-a-policy",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert catalog_config.remove_source(project, "invalid") == "invalid"
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8")) == {
+        "schema_version": "1.0",
+        "catalogs": [],
+    }
 
 
 def test_bundle_catalog_malformed_project_config_does_not_fall_back(
@@ -443,3 +474,43 @@ def test_integration_malformed_release_history_falls_through(
     assert result["version"] == "1.0.0"
     assert result["_catalog_name"] == "low"
     assert result["_install_allowed"] is True
+
+
+@pytest.mark.parametrize("catalog_kind", ["workflow", "workflow-step"])
+def test_workflow_catalogs_use_stale_cache_after_malformed_json(
+    catalog_kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from specify_cli.authentication import http as auth_http
+    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowCatalogEntry
+    from specify_cli.workflows.step.catalog import StepCatalog, StepCatalogEntry
+
+    if catalog_kind == "workflow":
+        catalog = WorkflowCatalog(tmp_path)
+        entry = WorkflowCatalogEntry(
+            "https://example.com/workflows.json", "test", 1, True
+        )
+        payload = {"schema_version": "1.0", "workflows": {}}
+    else:
+        catalog = StepCatalog(tmp_path)
+        entry = StepCatalogEntry(
+            "https://example.com/steps.json", "test", 1, True
+        )
+        payload = {"schema_version": "1.0", "steps": {}}
+
+    cache_path, _ = catalog._get_cache_paths(entry.url)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    class MalformedResponse(io.BytesIO):
+        def geturl(self):
+            return entry.url
+
+    monkeypatch.setattr(
+        auth_http,
+        "open_url",
+        lambda *args, **kwargs: MalformedResponse(b"not-json"),
+    )
+
+    assert catalog._fetch_single_catalog(entry, force_refresh=True) == payload

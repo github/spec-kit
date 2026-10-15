@@ -120,12 +120,16 @@ phase and accepted values otherwise differ:
 - Replacement-layer loaders validate remote URLs while reading the active
   stack. Bundle resolution validates source structure while materializing
   `CatalogSource` values, but the bundle catalog command reader's `_read()`
-  only validates the outer configuration shape and schema version; commands
-  materialize and validate entries afterward.
+  only validates the outer configuration shape and schema version.
+  `add_source()` materializes and validates existing entries before appending,
+  while `remove_source()` intentionally filters raw mappings by ID or URL
+  without validating their other fields. This lets users remove a hand-edited
+  invalid source instead of being trapped by the invalid entry.
 - All readers reject boolean priorities. Replacement-layer loaders otherwise
   call `int(value)`, so a fractional numeric value such as `1.9` is truncated
-  to `1`. Bundle `CatalogSource` materialization rejects floats rather than
-  truncating them.
+  to `1`. Bundle `CatalogSource` materialization rejects booleans and floats
+  rather than coercing them, but `_read()` and `remove_source()` can carry or
+  remove those raw values without materializing them.
 - Replacement-layer loaders reject malformed remote URLs and non-localhost
   HTTP while resolving the active stack. Bundle source validation depends on
   the path: catalog commands validate supported schemes and remote security
@@ -167,15 +171,22 @@ Current behavior differs by primitive:
 - Extensions and presets use one-hour per-URL caches, retain legacy cache names
   for the official source, validate every redirect hop, validate cached payload
   shape, and treat cache read/write failures as best-effort.
-- Integrations use one-hour per-URL caches, validate the terminal redirect URL,
-  validate cached payload shape, discard invalid cache entries when possible,
-  and treat cache writes as best-effort.
+- Integrations use one-hour per-URL caches. The shared HTTP redirect handler
+  applies its strict scheme, host, and remote-to-local policy on every hop;
+  integrations do not add their catalog-specific URL validator per hop, but do
+  apply it to a changed terminal URL. They validate cached payload shape,
+  discard invalid cache entries when possible, and treat cache writes as
+  best-effort.
 - Workflows use one-hour per-URL caches, validate every redirect hop, fall back
-  to any readable stale cache after a fetch failure, and currently require only
-  a mapping at the payload root before merge.
+  to any readable stale cache after errors while opening, redirecting, bounded
+  reading, UTF-8 decoding, or JSON parsing, and currently require only a mapping
+  at the payload root before merge. A freshly parsed non-object payload is
+  rejected after that fallback boundary.
 - Workflow steps follow the workflow cache/fallback model, validate every
-  redirect hop, reject duplicate JSON fields, and disable cache use when the
-  cache path contains a symlink.
+  redirect hop, and disable cache use when the cache path contains a symlink.
+  Duplicate JSON fields are re-raised as fatal validation errors before stale
+  fallback; a freshly parsed non-object payload is also rejected after the
+  fallback boundary.
 - Bundle catalog fetchers do not maintain a general remote TTL cache. Built-in
   sources fetch repository catalogs when online and fall back to packaged
   snapshots only for catalog-unavailable failures; malformed or unsafe content
@@ -223,8 +234,10 @@ usable. Validation errors are not uniformly recoverable:
 - Workflow and step merges count source failures and raise when every source
   fails. Workflow-step duplicate JSON fields and duplicate IDs are fatal
   validation errors rather than skippable source-fetch errors.
-- Workflow and step fetches may use readable stale cache data after a network
-  failure.
+- Workflow and step fetches may use readable stale cache data after broad
+  fetch-path failures, including rejected redirects, bounded-read failures,
+  decoding failures, and malformed JSON. Fresh non-object payloads and step
+  duplicate-field errors remain outside that fallback.
 
 Bundle lookup is fail-fast in precedence order: loading a source error stops
 the operation. Built-in fetch fallback is handled inside the bundle fetcher,
