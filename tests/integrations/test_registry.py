@@ -162,6 +162,24 @@ class TestRegistrarKeyAlignment:
         from specify_cli.agents import CommandRegistrar
         assert "cursor" not in CommandRegistrar.AGENT_CONFIGS
 
+    @pytest.mark.parametrize(
+        "key", sorted(k for k in INTEGRATION_REGISTRY if k != "generic")
+    )
+    def test_command_mode_separator_matches_registered_names(self, key):
+        """A ``-`` command-mode separator must mean hyphenated registration.
+
+        Extension listings derive the command names they show from the
+        separator, so an integration that registered dotted names under ``-``
+        (or the reverse) would list commands the user cannot invoke.
+        """
+        from specify_cli.agents import CommandRegistrar
+
+        registered = CommandRegistrar._compute_output_name(
+            key, "speckit.ext.cmd", CommandRegistrar.AGENT_CONFIGS[key]
+        )
+        hyphenated = INTEGRATION_REGISTRY[key].invoke_separator_for_mode(False) == "-"
+        assert registered == ("speckit-ext-cmd" if hyphenated else "speckit.ext.cmd")
+
 
 class TestMultiInstallSafeContracts:
     """Declared safe integrations must stay isolated from each other."""

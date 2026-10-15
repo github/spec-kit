@@ -4679,3 +4679,52 @@ def test_forced_package_recovery_still_rejects_symlinked_ancestors(tmp_path, ser
     assert "symlinked" in result.output.lower()
     assert packages.is_symlink()
     assert snapshot(outside) == before
+
+
+@pytest.mark.parametrize(("flavor", "registered", "listed", "not_listed"), [
+    ("skills", ".sample-agent/skills/speckit-sample-ext-hello/SKILL.md",
+     "speckit-sample-ext-hello", "speckit.sample-ext.hello"),
+    ("commands", ".sample-agent/commands/speckit.sample-ext.hello.md",
+     "speckit.sample-ext.hello", "speckit-sample-ext-hello"),
+], ids=["skills", "commands"])
+def test_extension_info_lists_registered_names_without_loading_adapter(
+    tmp_path, server, monkeypatch, flavor, registered, listed, not_listed,
+):
+    """A fresh `extension info` leaves the adapter unloaded, yet must still
+    list the names `extension add` registered for its commands."""
+    from specify_cli.extensions import _commands
+
+    extension = tmp_path / "sample-ext"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "extension.yml").write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "extension": {
+            "id": "sample-ext", "name": "Sample Extension", "version": "1.0.0",
+            "description": "Sample extension",
+        },
+        "requires": {"speckit_version": ">=0.1"},
+        "provides": {"commands": [{
+            "name": "speckit.sample-ext.hello", "file": "commands/hello.md",
+            "description": "Say hello",
+        }]},
+    }))
+    (extension / "commands" / "hello.md").write_text(
+        "---\ndescription: Say hello\n---\nHello\n"
+    )
+    publish(server, code=implementation(flavor=flavor))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    added = run(project, ["extension", "add", "--dev", str(extension)])
+    assert added.exit_code == 0, added.output
+    assert (project / registered).is_file()
+
+    unload_installed_integrations()
+    monkeypatch.setattr(
+        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
+    )
+    info = run(project, ["extension", "info", "sample-ext"])
+
+    assert info.exit_code == 0, info.output
+    assert f"• {listed}: " in info.output, info.output
+    assert f"• {not_listed}: " not in info.output, info.output
+    assert KEY not in INTEGRATION_REGISTRY
