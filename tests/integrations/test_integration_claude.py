@@ -79,6 +79,22 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
+    def test_setup_tracks_every_skill_in_manifest(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        created = integration.setup(tmp_path, manifest, script_type="sh")
+
+        created_skill_files = {
+            path.relative_to(tmp_path).as_posix()
+            for path in created
+            if path.name == "SKILL.md"
+        }
+        tracked_skill_files = {
+            path for path in manifest.files if path.endswith("/SKILL.md")
+        }
+        assert tracked_skill_files == created_skill_files
+        assert ".claude/skills/speckit-converge/SKILL.md" in manifest.files
+
     def test_render_skill_unicode(self):
         """Test rendering a skill preserves non-ASCII characters."""
         integration = get_integration("claude")

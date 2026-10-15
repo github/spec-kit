@@ -680,15 +680,8 @@ class IntegrationBase(ABC):
         writing.  Returns *dest*.
         """
         normalized = content.replace("\r\n", "\n")
-        from ._file_changes import after_file_change, before_file_change
-
-        before_file_change(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(normalized.encode("utf-8"))
-        after_file_change(dest)
         rel = dest.resolve().relative_to(project_root.resolve())
-        manifest.record_existing(rel)
-        return dest
+        return manifest.record_file(rel, normalized.encode("utf-8"))
 
     def integration_scripts_dir(self) -> Path | None:
         """Return path to this integration's bundled ``scripts/`` directory.
@@ -1951,6 +1944,19 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
+        created_skill_files = {
+            path.resolve().relative_to(project_root_resolved).as_posix()
+            for path in created
+            if path.name == "SKILL.md"
+        }
+        tracked_skill_files = {
+            path for path in manifest.files if path.endswith("/SKILL.md")
+        }
+        if created_skill_files != tracked_skill_files:
+            raise RuntimeError(
+                "Skills setup produced a manifest that does not track every "
+                "generated SKILL.md file"
+            )
 
         # Install agent runtime events
         event_files = self.emit_events(
