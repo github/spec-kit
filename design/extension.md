@@ -183,17 +183,21 @@ archive extraction when applicable. The manager:
 
 1. validates the manifest, compatibility, priority, command namespace, and
    install conflicts;
-2. validates active-integration registration settings and unsafe existing
-   output collisions;
+2. when the generic integration is active, validates its registration
+   settings, command sources, and unsafe existing output collisions;
 3. preserves eligible configuration before any destructive force reinstall;
 4. copies the extension under `.specify/extensions/<id>/`, honoring
    `.extensionignore`;
 5. renders commands or skills for the active integration;
 6. registers hooks and the installed projection in `extensions.yml`;
 7. commits lifecycle and ownership metadata to `.registry`;
-8. restores executable bits for project scripts; and
-9. lets the CLI scaffold declared configuration templates without overwriting
-   existing targets.
+8. restores executable bits for project scripts.
+
+Configuration scaffolding is a caller-owned follow-up rather than a shared
+manager step. `extension add`, `extension enable`, and bundle installation call
+`scaffold_config()` without overwriting existing targets. Extension
+installation during `init` and extension update paths do not scaffold declared
+configuration templates.
 
 Development installs may use symlinks to rendered caches where the selected
 integration and platform support them. Integrations that prohibit such
@@ -266,10 +270,17 @@ unverified skill file or directory, while an expected development symlink or a
 forced integration refresh may be replaced.
 
 Hooks are declarative AI-agent follow-up instructions, not direct subprocess
-execution. `HookExecutor` filters enabled bindings, evaluates the limited
-`config.*` and `env.*` condition grammar, orders hooks by priority, and renders
-the invocation syntax for the active integration. `execute_hook()` returns
-execution metadata; the calling AI agent performs the command.
+execution. `HookExecutor` is a helper API that filters enabled bindings,
+evaluates the limited `config.*` and `env.*` condition grammar, orders hooks by
+priority, and renders the invocation syntax for the active integration.
+`execute_hook()` returns execution metadata; the calling AI agent performs the
+command.
+
+The shipped core command templates do not call `HookExecutor`. They read
+`.specify/extensions.yml` directly, preserve configured YAML order, skip
+disabled hooks, and skip every hook with a non-empty condition rather than
+evaluating it. For remaining hooks they emit optional or mandatory agent
+instructions, and the active AI agent performs any mandatory command.
 
 Runtime `events` are a distinct mechanism. The events domain validates their
 shape, merges enabled extension declarations with integration defaults and
@@ -340,10 +351,14 @@ Network and package trust rules are:
 - catalog `install_allowed` controls whether metadata is an install source,
   but does not certify extension safety.
 
-Filesystem operations validate containment and reject unsafe symlinked roots
-for sensitive writes. Removal and refresh use registry records, generated
-frontmatter, hashes, or expected symlink targets to prove ownership before
-deleting user-adjacent command and skill artifacts.
+Guarded archive, package, integration, removal, and refresh paths validate
+containment or prove ownership with registry records, generated frontmatter,
+hashes, or expected symlink targets before mutating user-adjacent artifacts.
+This is not a universal property of registry persistence:
+`ExtensionRegistry._save()` does not itself validate containment of the
+`.specify/extensions` root. Without an active integration file-change observer,
+a symlinked root is followed and `.registry` can be written outside the
+project.
 
 ## Failure and transactional guarantees
 
@@ -354,10 +369,10 @@ them to user-facing messages and non-zero exits.
 The implementation provides targeted transactional guarantees rather than one
 global filesystem transaction:
 
-- manifest, compatibility, priority, namespace, conflict, and active-output
-  checks precede destructive force removal. `.extensionignore` is loaded
-  afterward, so an unreadable or invalid ignore file can still fail after the
-  prior package has been removed;
+- manifest, compatibility, priority, namespace, conflict, and generic
+  active-output checks precede destructive force removal. `.extensionignore`
+  is loaded afterward, so an unreadable or invalid ignore file can still fail
+  after the prior package has been removed;
 - kept configuration is durably staged and restored across copy failures and
   interrupted retries;
 - generic integration registration rolls back generated outputs, hooks, and
