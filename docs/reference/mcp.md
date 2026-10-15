@@ -52,25 +52,34 @@ tool error.
 The server does not expose mutations, installation or update operations,
 workflows, confirmations, or access tiers.
 
+## Input validation errors
+
+The first-class tools validate arguments against their input schema before
+running. Unexpected arguments, an out-of-range `limit`, a malformed `cursor`,
+or an unsupported `kind` are rejected as a text-only MCP tool error with no
+structured content, so clients cannot read an `error.code` from it.
+
+## Version tool result and errors
+
+`specify_version` returns the result object directly. If the operation fails,
+it returns an MCP tool error whose structured content has `error.code`
+(`invalid_operation_result` or `internal_error`), `error.message`, and
+`error.details`.
+
 ## Artifact results and errors
 
-Artifact tools return their result as structured content. Failures are MCP tool
-errors with `error.code`, `error.message`, `error.details`, and
-`error.retryable`.
+Artifact tools return their result as structured content. Operation failures
+are MCP tool errors whose structured content has `error.code`,
+`error.message`, `error.details`, and `error.retryable`.
 Both artifact tools can return `invalid_project_directory`,
 `not_a_spec_kit_project`, `artifact_resolution_failed`,
 `invalid_operation_result`, and `internal_error`.
-`specify_artifact_list` can also return `invalid_pagination`.
-`specify_artifact_info` can also return `invalid_artifact_kind`,
-`invalid_artifact_identifier`, `unknown_artifact`, `unknown_hook`, and
-`ambiguous_artifact`. Results larger than 1 MiB return a retryable
-`response_too_large` error; for the list tool, retry with a smaller `limit`.
+`specify_artifact_info` can also return `invalid_artifact_identifier`,
+`unknown_artifact`, `unknown_hook`, and `ambiguous_artifact`. Results larger
+than 1 MiB return a retryable `response_too_large` error; for the list tool,
+retry with a smaller `limit`.
 
-## Generic version result and errors
-
-`specify_version` returns the result object directly; on failure it returns an
-`invalid_operation_result` or `internal_error` tool error. The details below
-describe the generic tools.
+## Generic tool result and errors
 
 `specify_run_command` invokes the canonical command below in an isolated child
 process using the same Python environment as the running CLI:
