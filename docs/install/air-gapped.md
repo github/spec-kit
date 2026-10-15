@@ -44,10 +44,11 @@ specify init my-project --integration copilot
 ## Component catalogs and sources
 
 Built-in integrations and bundled components remain available without network
-access. Catalog-based installation of additional extensions, presets,
-workflows, workflow steps, and bundles needs both the catalog metadata and the
-referenced release artifacts. A supported direct or local source install does
-not require catalog metadata.
+access. Catalog-based installation of external integration adapters,
+extensions, presets, workflows, workflow steps, and bundles needs both the
+catalog metadata and the referenced release artifacts. For component types
+that support a direct or local source, that installation route does not require
+catalog metadata.
 
 For a restricted network that can reach approved internal services, host
 reviewed catalogs and artifacts on internal HTTPS endpoints, then register each
@@ -55,6 +56,13 @@ component-specific source with its `catalog add` command. For a fully
 disconnected network, transfer reviewed component artifacts through your
 approved process and install them from their supported direct or local source
 instead of relying on an unreachable remote catalog.
+
+External integration adapters are an exception. `specify integration install`
+has no direct or local source option: it must resolve the adapter through an
+install-allowed integration catalog and download its archive. To add an
+external adapter inside an isolated environment, keep both an approved internal
+catalog and its adapter archive reachable there, or install the adapter before
+disconnecting the target. Transferring the archive alone is not sufficient.
 
 Treat bundles separately: a transferred bundle directory or ZIP supplies the
 bundle manifest, not the component payloads it names. Before disconnecting,

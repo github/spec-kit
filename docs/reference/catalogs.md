@@ -171,6 +171,11 @@ artifacts through your approved process; built-in assets remain available
 without network access. See [Enterprise / Air-Gapped Installation](../install/air-gapped.md)
 for installing the CLI offline.
 
+External integration adapters have no direct or local installation route.
+Installing one requires both an install-allowed integration catalog and its
+referenced archive to remain reachable. See
+[Catalog-installed external adapters](integrations.md#catalog-installed-external-adapters).
+
 Catalog metadata alone is not enough for offline installation: every selected
 release artifact and any bundle-provided dependency must also be reachable or
 transferred into the environment.
