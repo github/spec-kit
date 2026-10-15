@@ -21,6 +21,7 @@ from specify_cli.events import (
     validate_events,
     resolve_and_run_event_command,
 )
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integrations.claude import ClaudeIntegration
 from specify_cli.integrations.cursor_agent import CursorAgentIntegration
@@ -362,6 +363,87 @@ class TestValidateEvents:
             }
         }
         validate_events(data)  # no raise
+
+
+@pytest.mark.parametrize(
+    (
+        "integration_key",
+        "event_name",
+        "handler_artifact",
+        "removal_artifact",
+    ),
+    [
+        (
+            "claude",
+            "pre_tool_use",
+            ".claude/settings.json",
+            ".claude/settings.json",
+        ),
+        (
+            "cursor-agent",
+            "session_start",
+            ".cursor/hooks.json",
+            ".cursor/hooks.json",
+        ),
+        (
+            "copilot",
+            "session_start",
+            ".github/hooks/speckit.json",
+            ".github/hooks/speckit.json",
+        ),
+        ("codex", "pre_tool_use", ".codex/config.toml", ".codex/config.toml"),
+        ("vibe", "pre_tool_use", ".vibe/hooks.toml", ".vibe/hooks.toml"),
+        (
+            "devin",
+            "pre_tool_use",
+            ".devin/hooks.v1.json",
+            ".devin/hooks.v1.json",
+        ),
+        (
+            "opencode",
+            "session_start",
+            ".opencode/plugin/speckit-events.ts",
+            "opencode.json",
+        ),
+    ],
+)
+def test_native_event_formats_install_update_and_remove_owned_handlers(
+    tmp_path,
+    integration_key,
+    event_name,
+    handler_artifact,
+    removal_artifact,
+):
+    """Every native format replaces stale handlers and removes owned output."""
+    integration = type(get_integration(integration_key))()
+    manifest = IntegrationManifest(integration_key, tmp_path)
+    handler_path = tmp_path / handler_artifact
+    removal_path = tmp_path / removal_artifact
+
+    install_integration_events(
+        integration,
+        tmp_path,
+        manifest,
+        {event_name: [{"command": "speckit.characterize.first"}]},
+    )
+    assert "speckit.characterize.first" in handler_path.read_text(encoding="utf-8")
+    assert removal_path.is_file()
+
+    install_integration_events(
+        integration,
+        tmp_path,
+        manifest,
+        {event_name: [{"command": "speckit.characterize.second"}]},
+    )
+    updated = handler_path.read_text(encoding="utf-8")
+    assert "speckit.characterize.first" not in updated
+    assert "speckit.characterize.second" in updated
+
+    remove_integration_events(integration, tmp_path, manifest)
+    assert not removal_path.exists()
+    assert not handler_path.exists()
+    manifest.uninstall(force=True)
+    assert not handler_path.exists()
 
 
 # -- Claude settings JSON merging -------------------------------------------

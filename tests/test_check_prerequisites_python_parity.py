@@ -562,6 +562,70 @@ def test_python_negative_errors_are_stderr_only(
     assert py.stdout.strip() == ""
 
 
+@pytest.mark.parametrize(
+    "port",
+    [
+        pytest.param("bash", marks=requires_bash),
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+            ),
+        ),
+        pytest.param("python"),
+    ],
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize("plan_state", ["missing", "empty", "nonempty", "whitespace"])
+def test_plan_prerequisite_diagnostics(
+    tmp_path: Path, port: str, json_mode: bool, plan_state: str
+) -> None:
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    _git_init(repo)
+    (repo / ".specify").mkdir()
+    _install_scripts(repo)
+    _write_feature_json(repo)
+    feature = repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    bodies = {"empty": b"", "nonempty": b"# Plan\n", "whitespace": b" \t\n"}
+    if plan_state != "missing":
+        plan.write_bytes(bodies[plan_state])
+        before = plan.stat().st_mtime_ns
+    if port == "powershell":
+        command = _ps_cmd(repo, *(("-Json",) if json_mode else ()))
+    else:
+        command_fn = _bash_cmd if port == "bash" else _py_cmd
+        command = command_fn(repo, *(("--json",) if json_mode else ()))
+
+    result = _run(command, repo)
+
+    if plan_state in {"missing", "empty"}:
+        assert result.returncode == 1
+        assert result.stdout == ""
+        lines = result.stderr.replace("\\", "/").splitlines()
+        diagnostic = "not found" if plan_state == "missing" else "is empty"
+        assert lines[0].startswith(f"ERROR: plan.md {diagnostic} in ")
+        assert lines[0].endswith("/specs/001-my-feature")
+        guidance = (
+            "Run /speckit.plan first to create the implementation plan."
+            if plan_state == "missing"
+            else "Populate it, or remove the empty file and rerun /speckit.plan "
+            "with a valid plan template."
+        )
+        assert lines[1:] == [guidance]
+    else:
+        assert result.returncode == 0, result.stderr
+        if json_mode:
+            assert "FEATURE_DIR" in _json_stdout(result)
+    if plan_state == "missing":
+        assert not plan.exists()
+    else:
+        assert plan.read_bytes() == bodies[plan_state]
+        assert plan.stat().st_mtime_ns == before
+
+
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
     (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True)
     _write_feature_json(prereq_repo)

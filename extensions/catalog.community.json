@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-06T00:00:00Z",
+  "updated_at": "2026-10-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -8,8 +8,9 @@
       "id": "adrkit",
       "description": "Pulls the decisions governing this work into agent context, checks produced plans against them, and drafts an ADR from a plan artifact.",
       "author": "Mark Beacom (@mbeacom)",
-      "version": "0.1.4",
-      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.4/adrkit.zip",
+      "version": "0.1.5",
+      "download_url": "https://github.com/mbeacom/adrkit/releases/download/spec-kit-v0.1.5/adrkit.zip",
+      "sha256": "c6392238470d50ca75153606aea26905c776c339f7ec9da41395671a035e608f",
       "repository": "https://github.com/mbeacom/adrkit",
       "homepage": "https://adrkit.dev",
       "documentation": "https://github.com/mbeacom/adrkit/blob/main/packages/adapters/spec-kit/README.md",
@@ -18,7 +19,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.13.0,<1.1.0",
+        "speckit_version": ">=0.13.0,<1.2.0",
         "tools": [
           {
             "name": "adr",
@@ -42,16 +43,16 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-03T00:00:00Z",
-      "updated_at": "2026-09-15T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "aee": {
       "name": "Applied Epistemic Engineering",
       "id": "aee",
-      "description": "Challenge claims, trace evidence, propagate uncertainty, and route epistemic failures across phases",
+      "description": "Checks the claims in a spec-driven project against their evidence at every stage, and shows plainly what is verified, what is not, and what remains not understood.",
       "author": "ElectroHire",
-      "version": "1.0.1",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.0.1.zip",
-      "sha256": "691d860ffade54e2fb5dd17f34cc72784ad65ca23ff61281313bb4366d46d47b",
+      "version": "1.4.0",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.4.0.zip",
+      "sha256": "14e02e74f65acd1d5f9360694315f7201aa753c82246f508426d9d39ecfd5464",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -60,7 +61,7 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=1.0.0",
+        "speckit_version": ">=1.0.0,<2",
         "tools": [
           {
             "name": "python",
@@ -69,18 +70,34 @@
           },
           {
             "name": "aee",
-            "version": ">=1.0.2,<2",
+            "version": ">=1.5.0,<2",
             "required": true
           },
           {
             "name": "spec-kit-evaluator",
             "version": ">=1.0.0,<2",
             "required": true
+          },
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
           }
         ]
       },
       "provides": {
-        "commands": 6,
+        "commands": 10,
         "hooks": 5
       },
       "tags": [
@@ -94,7 +111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-09-23T00:00:00Z"
+      "updated_at": "2026-10-13T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -711,6 +728,56 @@
       "stars": 0,
       "created_at": "2026-08-13T00:00:00Z",
       "updated_at": "2026-08-19T00:00:00Z"
+    },
+    "attacktree": {
+      "name": "AttackTree — Attack Tree Modeling & Control Simulation",
+      "id": "attacktree",
+      "description": "Attack trees with attacker profiles, AND/OR path simulation, control roadmaps, and control-to-test traceability",
+      "author": "hupe1980",
+      "version": "0.1.0",
+      "download_url": "https://github.com/hupe1980/spec-kit-attacktree/archive/refs/tags/v0.1.0.zip",
+      "sha256": "84e53a92be77ba387b851c39da621223e3a98927f392af3cdcec2828367cfd3e",
+      "repository": "https://github.com/hupe1980/spec-kit-attacktree",
+      "homepage": "https://hupe1980.github.io/spec-kit-attacktree/",
+      "documentation": "https://hupe1980.github.io/spec-kit-attacktree/docs/",
+      "changelog": "https://github.com/hupe1980/spec-kit-attacktree/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.0.0",
+        "tools": [
+          {
+            "name": "python + pyyaml (or uv instead)",
+            "version": ">=3.11",
+            "required": true
+          },
+          {
+            "name": "uv (instead of python + pyyaml)",
+            "required": false
+          },
+          {
+            "name": "jsonschema (python package, full schema validation)",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 7
+      },
+      "tags": [
+        "security",
+        "attack-trees",
+        "threat-modeling",
+        "risk-simulation",
+        "traceability"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-06T00:00:00Z",
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "axi": {
       "name": "Axi Extension",
@@ -1355,14 +1422,15 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, living specs, and composable commands you can customize with hooks and recipes.",
+      "description": "Records your spec-kit runs live: status, resume, and a health check for what actually happened.",
       "author": "alfredoperez",
-      "version": "0.20.2",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.20.2/companion-0.20.2.zip",
+      "version": "0.24.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.24.0/companion-0.24.0.zip",
+      "sha256": "8bfbe27dbe2d67e525820f83340c053341836f108d2ff087c10fdc8295b07da9",
       "repository": "https://github.com/alfredoperez/speckit-companion",
-      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
-      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
-      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
+      "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/apps/speckit-extension",
+      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/README.md",
+      "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/apps/speckit-extension/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -1376,8 +1444,8 @@
         ]
       },
       "provides": {
-        "commands": 18,
-        "hooks": 4
+        "commands": 23,
+        "hooks": 6
       },
       "tags": [
         "vscode",
@@ -1390,7 +1458,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-08-20T00:00:00Z"
+      "updated_at": "2026-10-06T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1743,17 +1811,18 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.41.6",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.41.6/spec-kit-docguard-v0.41.6.zip",
+      "version": "0.44.3",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.44.3/spec-kit-docguard-v0.44.3.zip",
+      "sha256": "6e8d9eeb7a436038dad1dfb19a521cf073c57a38227a43a43841abd0c33564f8",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
-      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
+      "documentation": "https://raccioly.github.io/docguard/guides/spec-kit.html",
       "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.11.2",
         "tools": [
           {
             "name": "node",
@@ -1785,7 +1854,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-09-18T00:00:00Z"
+      "updated_at": "2026-10-12T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1982,13 +2051,54 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "epic": {
+      "name": "Epic",
+      "id": "epic",
+      "description": "Break work too big for one feature into many, delivered in order, with decisions that hold across them.",
+      "author": "Paul McKeown",
+      "version": "0.1.5",
+      "download_url": "https://github.com/pmckeown/spec-kit-epic/archive/refs/tags/v0.1.5.zip",
+      "sha256": "734b9a75671802aa8f768765cba32bd2104fec11863c5621896d2c4eb9cc2f46",
+      "repository": "https://github.com/pmckeown/spec-kit-epic",
+      "homepage": "https://github.com/pmckeown/spec-kit-epic",
+      "documentation": "https://github.com/pmckeown/spec-kit-epic/blob/main/README.md",
+      "changelog": "https://github.com/pmckeown/spec-kit-epic/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.9.dev0,<1.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 0
+      },
+      "tags": [
+        "epic",
+        "planning",
+        "decisions",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-09T00:00:00Z"
+    },
     "evaluator": {
       "name": "Evaluator Contract",
       "id": "evaluator",
       "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
       "author": "ElectroHire",
-      "version": "1.0.0",
-      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.1",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.1.1.zip",
+      "sha256": "79a54460d37ee2b760daf52b4f54a21ce30d43e763aba2c93901b24db7281151",
       "repository": "https://github.com/electrohire/spec-kit-evaluator",
       "homepage": "https://github.com/electrohire/spec-kit-evaluator",
       "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
@@ -2014,7 +2124,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-03T00:00:00Z",
-      "updated_at": "2026-09-03T00:00:00Z"
+      "updated_at": "2026-10-15T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
@@ -2292,11 +2402,11 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.3.6",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.6/gates-0.3.6.zip",
-      "sha256": "74390f742a1a24dadb0bde15d2a555a2c6db51ee85f2a7a0557511bacec2444f",
+      "version": "0.4.1",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.1/gates-0.4.1.zip",
+      "sha256": "ecf445653d71d96b50480e04b741b142f08f2857f42e915ea76f7d64f1800f80",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2313,7 +2423,15 @@
           },
           {
             "name": "git",
-            "required": false
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          },
+          {
+            "name": "cmp",
+            "required": true
           },
           {
             "name": "node",
@@ -2340,7 +2458,54 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-05T00:00:00Z"
+      "updated_at": "2026-10-08T00:00:00Z"
+    },
+    "gh-address-cr": {
+      "name": "gh-address-cr",
+      "id": "gh-address-cr",
+      "description": "Auditable PR review-resolution & trust-gated address engine for Spec Kit workflows.",
+      "author": "RbBtSn0w",
+      "version": "0.1.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/gh-address-cr-v0.1.0/gh-address-cr.zip",
+      "sha256": "f9b4d641b2ac4e8466aa184ea8b738e4dee82ba992596dc52a4fd316c78cca1d",
+      "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
+      "homepage": "https://github.com/RbBtSn0w/gh-address-cr",
+      "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/README.md",
+      "changelog": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/gh-address-cr/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "gh-address-cr",
+            "version": ">=3.16.0",
+            "required": false
+          },
+          {
+            "name": "gh",
+            "version": ">=2.0.0",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "code-review",
+        "pull-request",
+        "github",
+        "audit",
+        "verification"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-15T00:00:00Z",
+      "updated_at": "2026-10-15T00:00:00Z"
     },
     "gh-triage": {
       "name": "GitHub Issue Triage",
@@ -3788,6 +3953,46 @@
       "created_at": "2026-03-26T00:00:00Z",
       "updated_at": "2026-03-26T00:00:00Z"
     },
+    "openproject": {
+      "name": "OpenProject Integration",
+      "id": "openproject",
+      "description": "Sync fields, status, docs, versions and time between spec-kit and OpenProject via MCP",
+      "author": "Daniel Ring",
+      "version": "0.2.0",
+      "download_url": "https://github.com/Nachklang-io/speckit-openproject/releases/download/extension-v0.2.0/openproject-extension-0.2.0.zip",
+      "sha256": "252d0d822d76fa8ba942aa3b8078ca074d47ec783b841210b40057e599fbd23f",
+      "repository": "https://github.com/Nachklang-io/speckit-openproject",
+      "homepage": "https://github.com/Nachklang-io/speckit-openproject",
+      "documentation": "https://github.com/Nachklang-io/speckit-openproject/blob/extension-v0.2.0/extension/README.md",
+      "changelog": "https://github.com/Nachklang-io/speckit-openproject/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.0",
+        "tools": [
+          {
+            "name": "openproject-ce-mcp",
+            "version": ">=0.4.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "openproject",
+        "project-management",
+        "mcp"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-09T00:00:00Z",
+      "updated_at": "2026-10-12T00:00:00Z"
+    },
     "openspec": {
       "name": "OpenSpec",
       "id": "openspec",
@@ -4533,8 +4738,9 @@
       "id": "reconcile",
       "description": "Reconcile implementation drift by surgically updating the feature's own spec, plan, and tasks.",
       "author": "Stanislav Deviatov",
-      "version": "1.2.1",
-      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.2.1.zip",
+      "version": "1.3.1",
+      "download_url": "https://github.com/stn1slv/spec-kit-reconcile/archive/refs/tags/v1.3.1.zip",
+      "sha256": "651537ba453f519b33c61ceb0c63d30bea04bd7fd81b83a4f7bdde86eb39adb5",
       "repository": "https://github.com/stn1slv/spec-kit-reconcile",
       "homepage": "https://github.com/stn1slv/spec-kit-reconcile",
       "documentation": "https://github.com/stn1slv/spec-kit-reconcile/blob/main/README.md",
@@ -4559,7 +4765,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-14T00:00:00Z",
-      "updated_at": "2026-08-24T00:00:00Z"
+      "updated_at": "2026-10-13T00:00:00Z"
     },
     "red-team": {
       "name": "Red Team",

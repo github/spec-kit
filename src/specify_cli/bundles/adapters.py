@@ -16,15 +16,19 @@ import ssl
 import urllib.error
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
 from .._assets import _locate_core_pack, _repo_root
 from .._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
 from . import BundlerError
-from .yamlio import loads_json
 from .catalogs import CatalogSource
 from .manifest import ComponentRef
+from .yamlio import loads_json
+
+if TYPE_CHECKING:
+    from .primitives import BundledPatchWarning
 
 COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
@@ -330,13 +334,57 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         return manager.installed_version(component)
 
-    def install(self, project_root: Path, component: ComponentRef) -> None:
-        manager = self._manager_for(component, project_root)
-        manager.install(component)
+    def bundled_patch_warning(
+        self, component: ComponentRef, actual: str,
+    ) -> BundledPatchWarning | None:
+        from .primitives import _bundled_component_version, _bundled_pin_warning
+        from .versioning import is_newer_patch, same_version
 
-    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+        packaged = _bundled_component_version(component)
+        if (
+            component.version
+            and packaged
+            and same_version(actual, packaged)
+            and is_newer_patch(actual, component.version)
+        ):
+            return _bundled_pin_warning(component.kind[:-1].capitalize(), component, actual)
+        return None
+
+    def validate_source(self, project_root: Path, component: ComponentRef) -> None:
+        if not self._allow_network:
+            raise BundlerError(
+                f"Cannot verify catalog source '{component.source}' for "
+                f"{component.kind[:-1]} '{component.id}' offline; "
+                "re-run without --offline."
+            )
+        from .references import _resolved_in_catalog
+
+        result = _resolved_in_catalog(project_root, component)
+        if result is True:
+            return
+        if result is None:
+            detail = "catalog unreachable"
+        elif result is False:
+            detail = "the winning install-allowed catalog has no matching release"
+        else:
+            detail = result
+        raise BundlerError(
+            f"Cannot verify {component.kind[:-1]} '{component.id}' at "
+            f"{component.version or 'current'} from catalog "
+            f"'{component.source}': {detail}."
+        )
+
+    def install(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
-        manager.refresh(component)
+        return manager.install(component)
+
+    def refresh(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
+        manager = self._manager_for(component, project_root)
+        return manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import stat
 import tempfile
@@ -18,6 +19,9 @@ import yaml
 from ...._download_security import (
     read_response_limited,
 )
+from ..._catalog_cache import read_cache_json, write_cache_json
+
+logger = logging.getLogger(__name__)
 
 
 def _max_json_catalog_bytes() -> int:
@@ -270,15 +274,6 @@ class StepCatalog:
         self.steps_dir = project_root / ".specify" / "workflows" / "steps"
         self.cache_dir = self.steps_dir / ".cache"
 
-    def _is_cache_path_safe(self) -> bool:
-        """Return False if any component of the cache path is a symlink."""
-        current = self.project_root
-        for part in (".specify", "workflows", "steps", ".cache"):
-            current = current / part
-            if current.is_symlink():
-                return False
-        return True
-
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
@@ -324,6 +319,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        indexed_entries = self._parse_catalog_config(data, config_path)
+        if indexed_entries is None:
+            return None
+        return [entry for _, entry in indexed_entries]
+
+    def _parse_catalog_config(
+        self, data: Any, config_path: Path
+    ) -> list[tuple[int, StepCatalogEntry]] | None:
+        """Validate and order sources, retaining their original YAML positions."""
         # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
         # lockstep: this is the step-catalog twin of that loader and read the
         # same way. Dropping ``or {}`` stops a falsy non-mapping top level from
@@ -347,7 +351,7 @@ class StepCatalog:
         if not catalogs_data:
             return None
 
-        entries: list[StepCatalogEntry] = []
+        entries: list[tuple[int, StepCatalogEntry]] = []
         for idx, item in enumerate(catalogs_data):
             if not isinstance(item, dict):
                 raise StepValidationError(
@@ -386,15 +390,18 @@ class StepCatalog:
             else:
                 install_allowed = bool(raw_install)
             entries.append(
-                StepCatalogEntry(
-                    url=url,
-                    name=str(item.get("name", f"catalog-{idx + 1}")),
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
+                (
+                    idx,
+                    StepCatalogEntry(
+                        url=url,
+                        name=str(item.get("name", f"catalog-{idx + 1}")),
+                        priority=priority,
+                        install_allowed=install_allowed,
+                        description=str(item.get("description", "")),
+                    ),
                 )
             )
-        entries.sort(key=lambda e: e.priority)
+        entries.sort(key=lambda item: item[1].priority)
         if not entries:
             raise StepValidationError(
                 f"Catalog config {config_path} contains {len(catalogs_data)} "
@@ -461,29 +468,26 @@ class StepCatalog:
     def _is_url_cache_valid(self, url: str) -> bool:
         """Check if cached data for a URL is still fresh."""
         _, meta_file = self._get_cache_paths(url)
-        if not meta_file.exists():
-            return False
         try:
-            with open(meta_file, encoding="utf-8") as f:
-                meta = json.load(f)
+            meta = read_cache_json(self.project_root, meta_file)
             if not isinstance(meta, dict):
                 return False
             fetched_at = float(meta.get("fetched_at", 0))
             return (time.time() - fetched_at) < self.CACHE_DURATION
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        except (UnicodeError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return False
 
     def _fetch_single_catalog(
         self, entry: StepCatalogEntry, force_refresh: bool = False
     ) -> dict[str, Any]:
         """Fetch a single catalog, using cache when possible."""
-        cache_safe = self._is_cache_path_safe()
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
+        if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                with open(cache_file, encoding="utf-8") as f:
-                    cached = json.load(f, object_pairs_hook=_unique_json_fields)
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
                 if isinstance(cached, dict):
                     return cached
             except _DuplicateCatalogField:
@@ -551,17 +555,17 @@ class StepCatalog:
         except _DuplicateCatalogField:
             raise
         except Exception as exc:
-            if cache_safe and cache_file.exists():
-                try:
-                    with open(cache_file, encoding="utf-8") as f:
-                        cached = json.load(f, object_pairs_hook=_unique_json_fields)
-                    if isinstance(cached, dict):
-                        return cached
-                except _DuplicateCatalogField:
-                    raise
-                except (json.JSONDecodeError, ValueError, OSError):
-                    # Stale-cache read failed; let the original fetch error propagate.
-                    pass
+            try:
+                cached = read_cache_json(
+                    self.project_root, cache_file, object_pairs_hook=_unique_json_fields,
+                )
+                if isinstance(cached, dict):
+                    return cached
+            except _DuplicateCatalogField:
+                raise
+            except (UnicodeError, json.JSONDecodeError, ValueError, OSError):
+                # Stale-cache read failed; let the original fetch error propagate.
+                pass
             raise StepCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
             ) from exc
@@ -571,15 +575,14 @@ class StepCatalog:
                 f"Catalog from {entry.url} is not a valid JSON object."
             )
 
-        if cache_safe:
-            try:
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-                with open(meta_file, "w", encoding="utf-8") as f:
-                    json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-            except OSError:
-                pass  # Proceed without caching if disk write fails
+        try:
+            write_cache_json(self.project_root, cache_file, data, indent=2)
+            write_cache_json(
+                self.project_root, meta_file,
+                {"url": entry.url, "fetched_at": time.time()},
+            )
+        except OSError as exc:
+            logger.warning("Could not safely cache step catalog %s: %s", entry.url, exc)
 
         return data
 
@@ -770,7 +773,12 @@ class StepCatalog:
         return "added"
 
     def remove_catalog(self, index: int) -> str:
-        """Remove a catalog source by index (0-based). Returns the removed name."""
+        """Remove a project source by its index in the active catalog list."""
+        if os.environ.get("SPECKIT_STEP_CATALOG_URL", "").strip():
+            raise StepValidationError(
+                "The active catalog comes from SPECKIT_STEP_CATALOG_URL. "
+                "Unset that variable to remove a project catalog source."
+            )
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
         if not config_path.exists():
             raise StepValidationError("No step catalog config file found.")
@@ -781,25 +789,15 @@ class StepCatalog:
             raise StepValidationError(
                 f"Catalog config file is unreadable or malformed: {exc}"
             ) from exc
-        if data is None:
-            data = {}
-        elif not isinstance(data, dict):
+        entries = self._parse_catalog_config(data, config_path) or []
+
+        if index < 0 or index >= len(entries):
             raise StepValidationError(
-                "Catalog config file is corrupted (expected a mapping)."
-            )
-        catalogs = data.get("catalogs", [])
-        if not isinstance(catalogs, list):
-            raise StepValidationError(
-                "Catalog config 'catalogs' must be a list."
+                f"Catalog index {index} out of range (0-{len(entries) - 1})."
             )
 
-        if index < 0 or index >= len(catalogs):
-            raise StepValidationError(
-                f"Catalog index {index} out of range (0-{len(catalogs) - 1})."
-            )
-
-        removed = catalogs.pop(index)
-        data["catalogs"] = catalogs
+        source_index, entry = entries[index]
+        data["catalogs"].pop(source_index)
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
@@ -811,6 +809,4 @@ class StepCatalog:
                 f"Failed to write catalog config {config_path}: {exc}"
             ) from exc
 
-        if isinstance(removed, dict):
-            return removed.get("name", f"catalog-{index + 1}")
-        return f"catalog-{index + 1}"
+        return entry.name

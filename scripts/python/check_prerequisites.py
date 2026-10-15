@@ -236,6 +236,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    if paths.impl_plan.stat().st_size == 0:
+        print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
+        print(
+            "Populate it, or remove the empty file and rerun "
+            f"{format_speckit_command('plan', paths.repo_root)} "
+            "with a valid plan template.",
+            file=sys.stderr,
+        )
+        return 1
+
     if args.require_spec and not paths.feature_spec.is_file():
         print(f"ERROR: spec.md not found in {paths.feature_dir}", file=sys.stderr)
         print(

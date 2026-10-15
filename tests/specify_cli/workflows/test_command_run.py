@@ -1392,3 +1392,42 @@ class TestWorkflowRunJsonErrorStream:
         assert result.exit_code == 1
         assert "Invalid input format" not in result.stdout
         assert "Invalid input format" in result.stderr
+
+
+@pytest.mark.parametrize(("condition", "empty_branch"), [
+    ("inputs.payload != '' and (inputs.payload | from_json | length)", "absent"),
+    ("inputs.payload == '' or (inputs.payload | from_json | length)", "provided"),
+])
+@pytest.mark.parametrize("payload", ["", "[1]", "broken"])
+def test_run_short_circuits_optional_json(tmp_path, monkeypatch, condition, empty_branch, payload):
+    from typer.testing import CliRunner
+    from specify_cli import app
+
+    workflow = tmp_path / "optional.yml"
+    workflow.write_text(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "optional", "name": "Optional payload", "version": "1.0.0"},
+        "inputs": {"payload": {"type": "string", "default": ""}},
+        "steps": [{
+            "id": "check", "type": "if", "condition": "{{ " + condition + " }}",
+            "then": [{"id": "provided", "type": "shell", "run": "echo provided"}],
+            "else": [{"id": "absent", "type": "shell", "run": "echo absent"}],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, [
+        "workflow", "run", str(workflow), "--json", "--input", f"payload={payload}",
+    ])
+    if payload == "broken":
+        assert result.exit_code == 1
+        assert "from_json: invalid JSON" in result.output
+        return
+    assert result.exit_code == 0, result.output
+    outcome = json.loads(result.stdout)
+    assert outcome["status"] == "completed"
+    state = json.loads((
+        tmp_path / ".specify" / "workflows" / "runs" / outcome["run_id"] / "state.json"
+    ).read_text(encoding="utf-8"))
+    branch = "provided" if payload else empty_branch
+    assert state["step_results"][branch]["output"]["stdout"].strip() == branch
+    assert set(state["step_results"]) == {"check", branch}

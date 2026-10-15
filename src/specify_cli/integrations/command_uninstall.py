@@ -3,15 +3,18 @@ from __future__ import annotations
 
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from .._utils import _display_project_path
 from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys, integration_settings as _integration_settings
 from ._commands import integration_app
-from ._helpers import _MANIFEST_READ_ERRORS, _clear_init_options_for_integration, _read_integration_json, _remove_integration_json, _resolve_integration_options, _set_default_integration_or_exit, _write_integration_json
+from ._lifecycle import external_lifecycle, lifecycle_success
+from ._helpers import _MANIFEST_READ_ERRORS, _clear_init_options_for_integration, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
 @integration_app.command("uninstall")
+@external_lifecycle("uninstall")
 def integration_uninstall(
     key: str = typer.Argument(None, help="Integration key to uninstall (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Remove files even if modified"),
@@ -41,6 +44,16 @@ def integration_uninstall(
     manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
     if not manifest_path.exists():
         console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to uninstall.[/yellow]")
+        _unregister_extensions_for_agent(
+            project_root,
+            key,
+            continuing="Continuing with integration uninstall; extension artifacts may need manual cleanup.",
+        )
+        _unregister_presets_for_agent(
+            project_root,
+            key,
+            continuing="Continuing with integration uninstall; preset artifacts may need manual cleanup.",
+        )
         remaining = [installed for installed in installed_keys if installed != key]
         new_default = default_key if default_key != key else (remaining[0] if remaining else None)
         if remaining:
@@ -56,6 +69,16 @@ def integration_uninstall(
                     remaining,
                     raw_options=raw_options,
                     parsed_options=parsed_options,
+                )
+                _register_extensions_for_agent(
+                    project_root,
+                    new_default,
+                    continuing="The fallback integration was selected, but extensions may need re-registration.",
+                )
+                _register_presets_for_agent(
+                    project_root,
+                    new_default,
+                    continuing="The fallback integration was selected, but presets may need re-registration.",
                 )
             else:
                 _write_integration_json(
@@ -89,6 +112,19 @@ def integration_uninstall(
     else:
         removed, skipped = integration.teardown(project_root, manifest, force=force)
 
+    # Extension/preset artifacts are tracked in their own registries, not the
+    # integration manifest, so teardown leaves them behind.
+    _unregister_extensions_for_agent(
+        project_root,
+        key,
+        continuing="Continuing with integration uninstall; extension artifacts may need manual cleanup.",
+    )
+    _unregister_presets_for_agent(
+        project_root,
+        key,
+        continuing="Continuing with integration uninstall; preset artifacts may need manual cleanup.",
+    )
+
     remaining = [installed for installed in installed_keys if installed != key]
     new_default = default_key if default_key != key else (remaining[0] if remaining else None)
     if remaining:
@@ -105,6 +141,16 @@ def integration_uninstall(
                 raw_options=raw_options,
                 parsed_options=parsed_options,
             )
+            _register_extensions_for_agent(
+                project_root,
+                new_default,
+                continuing="The fallback integration was selected, but extensions may need re-registration.",
+            )
+            _register_presets_for_agent(
+                project_root,
+                new_default,
+                continuing="The fallback integration was selected, but presets may need re-registration.",
+            )
         else:
             _write_integration_json(
                 project_root, new_default, remaining, _integration_settings(current)
@@ -116,7 +162,7 @@ def integration_uninstall(
         _clear_init_options_for_integration(project_root, key)
 
     name = (integration.config or {}).get("name", key) if integration else key
-    console.print(f"\n[green]✓[/green] Integration '{name}' uninstalled")
+    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' uninstalled")
     if removed:
         console.print(f"  Removed {len(removed)} file(s)")
     if skipped:

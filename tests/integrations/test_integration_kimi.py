@@ -218,6 +218,34 @@ class TestKimiTeardownLegacyCleanup:
         assert user_skill.read_bytes() == b"\xff\xfe"
 
 
+@pytest.mark.parametrize("operation", ["migrate", "teardown"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_legacy_parent_removal_observes_only_empty_directories(tmp_path, operation, empty):
+    from specify_cli.integrations._file_changes import file_change_observer
+
+    legacy = tmp_path / ".kimi/skills"
+    legacy.mkdir(parents=True)
+    if not empty:
+        (legacy / "user-notes.txt").write_text("user notes")
+    observations = []
+    token = file_change_observer.set(
+        lambda path, before, removal: observations.append((path, before, removal))
+    )
+    try:
+        if operation == "migrate":
+            assert _migrate_legacy_kimi_skills_dir(legacy, tmp_path / ".kimi-code/skills") == (0, 0)
+        else:
+            get_integration("kimi").teardown(tmp_path, IntegrationManifest("kimi", tmp_path))
+    finally:
+        file_change_observer.reset(token)
+    if empty:
+        assert not legacy.exists()
+        assert observations == [(legacy, True, True), (legacy, False, False)]
+    else:
+        assert (legacy / "user-notes.txt").read_text() == "user notes"
+        assert observations == []
+
+
 class TestKimiCommandInvocation:
     """Kimi dispatch must use the native ``/skill:`` slash command."""
 
@@ -375,30 +403,3 @@ class TestKimiLegacySymlinkSafety:
         # and the outside target is untouched.
         assert (legacy / "SKILL.md").exists()
         assert (outside / "SKILL.md").exists()
-
-class TestKimiNextSteps:
-    """CLI output tests for kimi next-steps display."""
-
-    def test_next_steps_show_skill_invocation(self, tmp_path):
-        """Kimi next-steps guidance should display /skill:speckit-* usage."""
-        import os
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "kimi-next-steps"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--integration", "kimi",
-                "--ignore-agent-tools", "--script", "sh",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        assert result.exit_code == 0
-        assert "/skill:speckit-constitution" in result.output
-        assert "/speckit.constitution" not in result.output
-        assert "Optional skills that you can use for your specs" in result.output

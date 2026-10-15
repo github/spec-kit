@@ -85,14 +85,14 @@ class BundleManifest:
     # -- construction ---------------------------------------------------------
 
     @classmethod
-    def from_file(cls, path: Path) -> "BundleManifest":
+    def from_file(cls, path: Path) -> BundleManifest:
         data = load_yaml(path)
         manifest = cls.from_dict(data)
         manifest.source_path = Path(path)
         return manifest
 
     @classmethod
-    def from_dict(cls, data: Any) -> "BundleManifest":
+    def from_dict(cls, data: Any) -> BundleManifest:
         if not isinstance(data, dict):
             raise BundlerError("Manifest must be a YAML mapping at the top level.")
 
@@ -192,9 +192,17 @@ class BundleManifest:
                 "(lowercase letters, digits, '.', '_', '-'; no path separators)."
             )
 
+        seen_components: set[tuple[str, str]] = set()
         for ref in self.components:
             if not ref.id:
                 errors.append(f"A {ref.kind[:-1]} entry is missing its 'id'.")
+            elif (ref.kind, ref.id) in seen_components:
+                errors.append(
+                    f"Duplicate {ref.kind[:-1]} '{ref.id}' in provides; "
+                    "declare each component ID only once per kind."
+                )
+            else:
+                seen_components.add((ref.kind, ref.id))
             if ref.kind != "steps" and not ref.version:
                 errors.append(
                     f"{ref.kind[:-1]} '{ref.id or '<unknown>'}' must be pinned to a 'version'."

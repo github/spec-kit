@@ -54,6 +54,19 @@ def _normalize_constraint(value: str) -> str:
         if not raw.strip():
             continue
         match = _SPECIFIER_CLAUSE.match(raw)
+        if match is None:
+            # ``_SPECIFIER_CLAUSE`` is anchored with ``^``/``$`` and ``.`` does
+            # not cross newlines, so a clause containing an EMBEDDED newline
+            # does not match at all and ``match.groups()`` raised a raw
+            # AttributeError -- escaping ``parse_constraint``'s contract to
+            # report bad input as a BundlerError. A YAML block literal is an
+            # ordinary way to reach this:
+            #     requires:
+            #       speckit_version: |
+            #         >=1.0.0
+            #         <2.0.0
+            # which loads as ">=1.0.0\n<2.0.0\n".
+            raise InvalidSpecifier(f"Invalid specifier: {raw!r}")
         operator, version = match.groups()
         clauses.append(f"{operator or ''}{_normalize_semver(version)}")
     return ",".join(clauses)
@@ -109,4 +122,18 @@ def is_semver(value: str) -> bool:
     """
     text = str(value)
     core = text[1:] if text[:1] in ("v", "V") else text
-    return bool(_SEMVER_RE.match(core))
+    return bool(_SEMVER_RE.fullmatch(core))
+
+
+def is_newer_patch(actual: str, pinned: str) -> bool:
+    """Accept only stable SemVer patch upgrades within the same major/minor."""
+    if not is_semver(actual) or not is_semver(pinned):
+        return False
+    cores = []
+    for value in (actual, pinned):
+        core = value.lstrip("vV").split("+", 1)[0]
+        if "-" in core:
+            return False
+        cores.append(tuple(int(part) for part in core.split(".")))
+    resolved, requested = cores
+    return resolved[:2] == requested[:2] and resolved[2] > requested[2]

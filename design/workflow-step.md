@@ -41,9 +41,30 @@ unless `continue_on_error: true` is set (an explicit abort always stops).
 The engine calls `validate()` during workflow validation but does not
 automatically validate a definition passed to `execute()`. Guard invalid
 configurations in `execute()` too, returning a failed result rather than a
-successful default or an unhandled exception. Resume restarts the current
-top-level step; a pause inside nested steps re-runs their parent and nested
-body. Design side effects accordingly.
+successful default or an unhandled exception.
+
+New runs persist an execution tree. Resume replays completed occurrences into
+their expression contexts without calling their implementations, then continues
+at the unfinished occurrence. Selected branches, custom expansions, loop
+iterations, fan-out items, and bound workflow definitions therefore remain
+frozen across resume. This is intentionally forward-only: new resume inputs do
+not reinterpret or repeat completed work. Legacy states enter the tree once
+through their saved top-level index.
+
+The common occurrence runner owns start, checkpoint, replay, and finalization.
+Step implementations return results or expansions; they do not manage persisted
+lifecycle state. Internal workflow-call and registered-step paths share the
+same checked transitions and post-checkpoint notifications. Per-occurrence
+activity belongs to the execution tree, never to the shared step instance.
+
+Fan-out items have independent expression contexts. Their internal results do
+not enter the shared parent context; the parent receives the qualified item
+result and the fan-out step's ordered `output.results`. Fan-out item aliases are
+reporting-only; a `fan-in` `wait_for` targets declared step IDs (the fan-out
+step's own `id`) and reads its ordered `output.results`, never a generated item
+alias. A side effect performed
+before its completion checkpoint can still repeat after an interruption, so the
+guarantee is at-least-once rather than exactly-once.
 
 The registry holds one shared instance per type. Concurrent `fan-out` can
 invoke that instance from multiple threads: keep execution stateless and

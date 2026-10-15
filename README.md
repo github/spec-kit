@@ -14,12 +14,13 @@
 <p align="center">
     <strong>English</strong> ·
     <a href="./README.zh-CN.md">简体中文</a> ·
-    <a href="./README.ja.md">日本語</a>
+    <a href="./README.ja.md">日本語</a> ·
+    <a href="./README.ko.md">한국어</a>
 </p>
 
 Spec Kit is an open source toolkit that gives AI coding agents structured
-processes, reusable templates, and documented outcomes. Start with one of the
-three processes below, customize it, or bring your own.
+processes, reusable templates, and documented outcomes. Start with a ready-made
+process, customize it, or bring your own.
 
 ## Choose your process
 
@@ -28,9 +29,40 @@ three processes below, customize it, or bring your own.
 | Build a feature or application | [Spec-Driven Development](#spec-driven-development) | A specification carried through planning, implementation, and convergence |
 | Diagnose and repair broken behavior | [Bug fixing](#bug-fixing) | An assessed cause, scoped fix, and recorded verification |
 | Decide whether an idea deserves investment | [Idea assessment](#idea-assessment) | An evidence-backed go, clarify, or stop decision |
+| Adopt or create a different process | [Your own process](#capabilities) | A process adapted or assembled from reusable primitives |
 
-These are **independent entry points**, not three mandatory phases. SDD ships in
-core; bug fixing and assessment are bundled extensions you install when needed.
+These are **independent entry points**, not mandatory phases. SDD ships in core;
+bug fixing and assessment are bundled extensions you install when needed, and
+the primitives below let you adopt or create other processes.
+
+## Capabilities
+
+Spec Kit combines ready-to-use processes with composable mechanisms:
+
+| Capability | Spec Kit mechanism |
+| --- | --- |
+| Connect to or switch between coding agents | [Integration](https://github.github.io/spec-kit/reference/integrations.html) |
+| Add a command, quality gate, or complete process | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
+| Connect a process to an external tool or service | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
+| React to coding-agent lifecycle events | [Extension event hook](https://github.github.io/spec-kit/reference/extensions.html#project-extension-and-hook-configuration) |
+| Adapt templates, commands, terminology, or methodology | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
+| Enforce organizational or regulatory standards | [Preset](https://github.github.io/spec-kit/reference/presets.html) |
+| Override a template for one project | [Project-local override](https://github.github.io/spec-kit/guides/customization.html#project-local-overrides-and-resolution) |
+| Automate prompts, commands, gates, and shell tasks | [Workflow](https://github.github.io/spec-kit/reference/workflows.html) |
+| Modify an installed workflow without forking it | [Workflow overlay](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |
+| Add reusable executable behavior to workflows | [Workflow step](https://github.github.io/spec-kit/reference/workflows.html#custom-step-packages) |
+| Install a curated setup for a role or team | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
+| Discover community components | Catalog |
+| Host a private catalog of approved components | Catalog |
+| Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
+| Work offline or behind a firewall | [Local sources and self-hosted catalogs](https://github.github.io/spec-kit/install/air-gapped.html) |
+| Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/reference/artifacts.html) |
+
+Search the active catalogs with commands such as `specify extension search`,
+`specify preset search`, `specify workflow search`, and `specify bundle search`.
+Spec Kit includes community catalogs, and organizations can add their own
+curated sources. Catalog listings are not audits or endorsements, so review
+community source code before installing or running it.
 
 <a id="-get-started"></a>
 <a id="-prerequisites"></a>

@@ -14,6 +14,7 @@ from ._commands import (
     _bundle_overlaps,
     _default_script_type,
     _fail,
+    _render_install_warnings,
     _resolve_init_integration,
     _run_init,
     _speckit_version,
@@ -41,6 +42,11 @@ def bundle_install(
         "--refresh",
         help="Refresh owned components from this bundle source",
     ),
+    version: str | None = typer.Option(
+        None,
+        "--version",
+        help="Install an exact bundle release from the catalog",
+    ),
 ) -> None:
     """Install a bundle's full component set through each primitive's machinery.
 
@@ -50,6 +56,19 @@ def bundle_install(
     ``--refresh`` to update owned components from a newer local source.
     """
     try:
+        # Direct callers such as ``bundle init`` receive Typer's OptionInfo
+        # default rather than a parsed option.
+        if not isinstance(version, str):
+            version = None
+        if version is not None:
+            if not version.strip():
+                raise BundlerError("--version must not be blank.")
+            if Path(bundle_id).expanduser().exists():
+                raise BundlerError(
+                    "--version requires a catalog bundle ID, not a local path."
+                )
+            if refresh:
+                raise BundlerError("--version cannot be used with --refresh.")
         from .project import find_project_root
         from .adapters import DefaultPrimitiveInstaller
         from .installer import install_bundle
@@ -66,7 +85,7 @@ def bundle_install(
             )
         else:
             stack = _build_stack(project_root or Path.cwd(), offline=offline)
-            resolved = stack.resolve(bundle_id)
+            resolved = stack.resolve(bundle_id, version)
 
             if not resolved.install_allowed:
                 raise BundlerError(
@@ -125,6 +144,7 @@ def bundle_install(
         _fail(str(exc))
         return
 
+    _render_install_warnings(result)
     refresh_summary = (
         f", {len(result.refreshed)} refreshed, {len(result.uninstalled)} removed"
         if refresh

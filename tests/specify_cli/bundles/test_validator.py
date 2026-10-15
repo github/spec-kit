@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles import validator as validator_mod
+from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles.validator import validate_manifest
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
 
@@ -18,6 +18,19 @@ def test_invalid_speckit_constraint_reported_as_error():
     report = validate_manifest(manifest)
     assert not report.ok
     assert any("speckit_version" in e for e in report.errors)
+
+
+def test_duplicate_component_id_cannot_request_two_versions():
+    data = valid_manifest_dict()
+    data["provides"]["extensions"].append({"id": "ext-a", "version": "2.0.0"})
+
+    report = validate_manifest(BundleManifest.from_dict(data))
+
+    assert not report.ok
+    assert any(
+        "ext-a" in error and "duplicate" in error.lower()
+        for error in report.errors
+    )
 
 
 def test_non_bundler_error_not_swallowed(monkeypatch):
