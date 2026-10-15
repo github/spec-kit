@@ -21,6 +21,7 @@ from specify_cli.events import (
     validate_events,
     resolve_and_run_event_command,
 )
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integrations.claude import ClaudeIntegration
 from specify_cli.integrations.cursor_agent import CursorAgentIntegration
@@ -362,6 +363,53 @@ class TestValidateEvents:
             }
         }
         validate_events(data)  # no raise
+
+
+@pytest.mark.parametrize(
+    ("integration_key", "event_name", "native_artifact"),
+    [
+        ("claude", "pre_tool_use", ".claude/settings.json"),
+        ("cursor-agent", "session_start", ".cursor/hooks.json"),
+        ("copilot", "session_start", ".github/hooks/speckit.json"),
+        ("codex", "pre_tool_use", ".codex/config.toml"),
+        ("vibe", "pre_tool_use", ".vibe/hooks.toml"),
+        ("devin", "pre_tool_use", ".devin/hooks.v1.json"),
+        ("opencode", "session_start", ".opencode/plugin/speckit-events.ts"),
+    ],
+)
+def test_native_event_formats_install_update_and_remove_owned_handlers(
+    tmp_path, integration_key, event_name, native_artifact
+):
+    """Every native format replaces stale handlers and removes owned output."""
+    integration = type(get_integration(integration_key))()
+    manifest = IntegrationManifest(integration_key, tmp_path)
+    artifact = tmp_path / native_artifact
+
+    install_integration_events(
+        integration,
+        tmp_path,
+        manifest,
+        {event_name: [{"command": "speckit.characterize.first"}]},
+    )
+    assert "speckit.characterize.first" in artifact.read_text(encoding="utf-8")
+
+    install_integration_events(
+        integration,
+        tmp_path,
+        manifest,
+        {event_name: [{"command": "speckit.characterize.second"}]},
+    )
+    updated = artifact.read_text(encoding="utf-8")
+    assert "speckit.characterize.first" not in updated
+    assert "speckit.characterize.second" in updated
+
+    remove_integration_events(integration, tmp_path, manifest)
+    manifest.uninstall(force=True)
+    assert not artifact.exists() or (
+        "speckit.characterize.first" not in artifact.read_text(encoding="utf-8")
+        and "speckit.characterize.second"
+        not in artifact.read_text(encoding="utf-8")
+    )
 
 
 # -- Claude settings JSON merging -------------------------------------------
