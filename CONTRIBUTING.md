@@ -234,6 +234,13 @@ core scripts, extensions, presets, and tooling; workflow step types; and
 execution wiring such as script selection, workflow shell steps, and CI `run:`
 steps. Existing tests count when they cover the changed behavior.
 
+Behavioral changes to repository-maintained or generated PowerShell
+functionality must include evidence from Windows PowerShell 5.1 or reproducible
+evidence that demonstrates 5.1 compatibility. All PowerShell scripts in the
+repository and all generated PowerShell functionality MUST target Windows
+PowerShell 5.1. Check syntax, cmdlet and parameter availability, .NET Framework
+APIs, encoding, and process/runtime behavior against that target.
+
 Bug fixes also need a regression test that fails before the fix and passes
 afterward. If a baseline or an execution path cannot be tested automatically,
 explain the limitation and provide reproducible evidence for the affected

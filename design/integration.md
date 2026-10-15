@@ -72,6 +72,14 @@ Core templates that call scripts declare `sh`, `ps`, and `py` commands in
 `scripts:` frontmatter; template processing replaces `{SCRIPT}` with the
 selected variant. `py` is opt-in; non-interactive init defaults to `sh` on
 POSIX or `ps` on Windows. Maintain equivalent stdout behavior across all three.
+All PowerShell scripts in the repository and all PowerShell functionality
+generated from repository templates MUST target Windows PowerShell 5.1. All
+such code must use only language features, cmdlets, parameters, and runtime
+APIs available in Windows PowerShell 5.1. Implementations must also account for
+encoding, .NET Framework, and process/runtime differences in Windows
+PowerShell 5.1 while preserving the required Bash and Python behavioral parity.
+Validation evidence for behavioral PowerShell changes must exercise Windows
+PowerShell 5.1 or otherwise demonstrate 5.1 compatibility.
 Bundled extension commands do not yet use this core-template script routing.
 `__AGENT__` and command references are resolved during rendering, not by
 adding per-agent wrapper scripts. For `generic`, extension registration
