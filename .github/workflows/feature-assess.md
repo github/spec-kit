@@ -69,6 +69,7 @@ safe-outputs:
   add-labels:
     allowed: [feature-go, feature-needs-clarification, feature-kill, feature-invalid]
     max: 1
+    issue-intent: false
   remove-labels:
     allowed: [feature-go, feature-needs-clarification, feature-kill, feature-invalid]
 ---
@@ -89,6 +90,15 @@ performed by the workflow's setup steps (see the `steps:` block), **not** by you
 — the agent container cannot reliably install or execute interpreters. You pick
 up from an already-provisioned checkout and follow the numbered steps below, in
 order.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+Follow the outcome rules below for label selection, stale-label removal, and
+environment blockers.
 
 ## Operating Conditions
 

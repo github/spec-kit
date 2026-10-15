@@ -1,15 +1,12 @@
 """Command-focused workflow tests."""
 
-from __future__ import annotations
-
-
-
+from typing import ClassVar
 
 
 class TestWorkflowStepRichMarkup:
     """Step discovery commands render metadata as literal text."""
 
-    METADATA = {
+    METADATA: ClassVar[dict[str, str]] = {
         "id": "[magenta]step-id[/magenta]",
         "name": "[red]Step Name[/red]",
         "version": "[green]1.0.0[/green]",
@@ -21,6 +18,7 @@ class TestWorkflowStepRichMarkup:
         self, project_dir, monkeypatch
     ):
         from typer.testing import CliRunner
+
         from specify_cli import app
         from specify_cli.workflows.step.catalog import StepRegistry
 

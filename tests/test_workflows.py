@@ -598,6 +598,301 @@ class TestExpressions:
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
 
+    def test_filter_upper_and_lower(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "Hello World", "empty": "", "mixed": "aBc"})
+        assert evaluate_expression("{{ inputs.s | upper }}", ctx) == "HELLO WORLD"
+        assert evaluate_expression("{{ inputs.s | lower }}", ctx) == "hello world"
+        # An empty string is valid input, not a missing value: it must come back
+        # empty rather than raising or falling through to `default`.
+        assert evaluate_expression("{{ inputs.empty | upper }}", ctx) == ""
+        assert evaluate_expression("{{ inputs.empty | lower }}", ctx) == ""
+        # Case-only transforms are no-ops on already-conforming input.
+        assert evaluate_expression("{{ inputs.mixed | upper }}", ctx) == "ABC"
+        # Non-ASCII text uses Unicode case mapping without transliteration or loss.
+        assert evaluate_expression("{{ inputs.uni | upper }}", StepContext(inputs={"uni": "café"})) == "CAFÉ"
+        # Filters compose left to right with the rest of the chain.
+        assert evaluate_expression("{{ inputs.s | upper | lower }}", ctx) == "hello world"
+
+    def test_filter_upper_rejects_non_string(self):
+        # A non-string value is an authoring mistake (e.g. `| upper` on an exit
+        # code). It must raise a ValueError naming the problem rather than
+        # coerce to "3" — which would look like a plausible result and hide the
+        # mis-wiring — or leak AttributeError and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "n": 3, "flag": True, "none": None})
+        for name in ("items", "n", "flag", "none"):
+            with pytest.raises(ValueError, match="upper: expected a string value"):
+                evaluate_expression("{{ inputs." + name + " | upper }}", ctx)
+
+    def test_filter_lower_rejects_non_string(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "n": 3, "flag": True, "none": None})
+        for name in ("items", "n", "flag", "none"):
+            with pytest.raises(ValueError, match="lower: expected a string value"):
+                evaluate_expression("{{ inputs." + name + " | lower }}", ctx)
+
+    def test_filter_split(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "csv": "a,b,c",
+                "multi": "x::y::z",
+                "empty": "",
+                "nodelim": "abc",
+                "trailing": "a,b,",
+            }
+        )
+        assert evaluate_expression("{{ inputs.csv | split(',') }}", ctx) == ["a", "b", "c"]
+        assert evaluate_expression("{{ inputs.multi | split('::') }}", ctx) == ["x", "y", "z"]
+        # An empty string is the one-element list [''], matching str.split. It
+        # must not be treated as a missing value or return [].
+        assert evaluate_expression("{{ inputs.empty | split(',') }}", ctx) == [""]
+        # A separator that never occurs yields the whole string, not [].
+        assert evaluate_expression("{{ inputs.nodelim | split(',') }}", ctx) == ["abc"]
+        # Trailing empty field is preserved, so round-tripping is lossless.
+        assert evaluate_expression("{{ inputs.trailing | split(',') }}", ctx) == ["a", "b", ""]
+        # split composes with join to convert delimiters.
+        assert evaluate_expression("{{ inputs.csv | split(',') | join('-') }}", ctx) == "a-b-c"
+
+    def test_filter_split_rejects_non_string_inputs(self):
+        # Both the value and the separator must be strings. A non-string
+        # separator would otherwise leak a TypeError/AttributeError from
+        # str.split and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a", "b"], "csv": "a,b", "n": 3})
+        with pytest.raises(ValueError, match="split: expected a string value"):
+            evaluate_expression("{{ inputs.items | split(',') }}", ctx)
+        with pytest.raises(ValueError, match="split: expected a string separator"):
+            evaluate_expression("{{ inputs.csv | split(5) }}", ctx)
+
+    def test_filter_split_rejects_empty_separator(self):
+        # `str.split("")` raises the bare `ValueError: empty separator`, which
+        # names neither the filter nor the expression and escapes the evaluator
+        # as a raw Python error. An empty separator has no meaning, so it must
+        # be reported by the filter itself like every other misuse.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"csv": "a,b"})
+        with pytest.raises(ValueError, match="split: separator must not be empty"):
+            evaluate_expression("{{ inputs.csv | split('') }}", ctx)
+
+    def test_filter_length(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "items": ["a", "b", "c"],
+                "empty_list": [],
+                "s": "hello",
+                "empty_str": "",
+            }
+        )
+        assert evaluate_expression("{{ inputs.items | length }}", ctx) == 3
+        assert evaluate_expression("{{ inputs.empty_list | length }}", ctx) == 0
+        # Strings count characters, as in Jinja2.
+        assert evaluate_expression("{{ inputs.s | length }}", ctx) == 5
+        assert evaluate_expression("{{ inputs.empty_str | length }}", ctx) == 0
+        # Composes with the rest of the chain, which is the motivating use.
+        assert evaluate_expression("{{ inputs.csv_len | length }}", StepContext(inputs={"csv_len": "a,b,c"})) == 5
+        assert evaluate_expression("{{ inputs.s | split('l') | length }}", ctx) == 3
+
+    def test_filter_length_drives_conditions(self):
+        # The motivating use: `length` makes an emptiness check expressible as a
+        # condition, because 0 is falsy and any non-zero count is truthy.
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": ["a"], "empty": []})
+        assert evaluate_condition("{{ inputs.items | length }}", ctx) is True
+        assert evaluate_condition("{{ inputs.empty | length }}", ctx) is False
+
+    def test_filter_length_rejects_unsupported_types(self):
+        # length accepts only list and str. Mappings are excluded on purpose so
+        # `{{ obj | length }}` cannot silently mean "key count" for one shape and
+        # "value count" for another; other types are mis-wiring and must raise
+        # rather than coerce to 0 (which is indistinguishable from "empty").
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"obj": {"a": 1}, "n": 3, "flag": True, "none": None, "ratio": 1.5}
+        )
+        with pytest.raises(ValueError, match="length: expected a list or string"):
+            evaluate_expression("{{ inputs.obj | length }}", ctx)
+        for name in ("n", "flag", "none", "ratio"):
+            with pytest.raises(ValueError, match="length: expected a list or string"):
+                evaluate_expression("{{ inputs." + name + " | length }}", ctx)
+
+    def test_filter_to_json(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "obj": {"b": 2, "a": 1},
+                "items": [1, 2, 3],
+                "s": "hi",
+                "n": 3,
+                "flag": False,
+                "none": None,
+                "uni": "café",
+            }
+        )
+        # sort_keys=True pins key order, so output does not depend on dict
+        # insertion order and stays byte-stable across runs.
+        assert evaluate_expression("{{ inputs.obj | to_json }}", ctx) == '{"a": 1, "b": 2}'
+        assert evaluate_expression("{{ inputs.items | to_json }}", ctx) == "[1, 2, 3]"
+        assert evaluate_expression("{{ inputs.s | to_json }}", ctx) == '"hi"'
+        assert evaluate_expression("{{ inputs.n | to_json }}", ctx) == "3"
+        assert evaluate_expression("{{ inputs.flag | to_json }}", ctx) == "false"
+        assert evaluate_expression("{{ inputs.none | to_json }}", ctx) == "null"
+        # ensure_ascii=False keeps non-ASCII readable instead of \uXXXX-escaped,
+        # so shell steps receive the original text.
+        assert evaluate_expression("{{ inputs.uni | to_json }}", ctx) == '"café"'
+
+    def test_filter_to_json_round_trips_from_json(self):
+        # to_json is the inverse of from_json: a structured value survives an
+        # evaluator-level round trip. Nothing here exercises a shell, and the
+        # round trip is not extended to one — interpolation adds no quoting, so
+        # the output is reproducible but not shell-safe (see docs/reference/
+        # workflows.md, "Interpolation and shell safety").
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"obj": {"items": [1, 2, 3]}},
+            steps={"emit": {"output": {"stdout": '{"items": [1, 2, 3]}'}}},
+        )
+        assert evaluate_expression(
+            "{{ steps.emit.output.stdout | from_json | to_json }}", ctx
+        ) == '{"items": [1, 2, 3]}'
+        assert evaluate_expression(
+            "{{ inputs.obj | to_json | from_json }}", ctx
+        ) == {"items": [1, 2, 3]}
+
+    def test_filter_to_json_rejects_non_serializable(self):
+        # A non-serializable value must raise a ValueError naming the filter,
+        # not leak a TypeError from json.dumps and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"obj": {"f": object()}, "step": object()})
+        with pytest.raises(ValueError, match="to_json: value is not JSON-serializable"):
+            evaluate_expression("{{ inputs.obj | to_json }}", ctx)
+        with pytest.raises(ValueError, match="to_json: value is not JSON-serializable"):
+            evaluate_expression("{{ inputs.step | to_json }}", ctx)
+
+    def test_filter_to_json_rejects_non_finite_floats(self):
+        # json.dumps defaults to allow_nan=True, which would emit bare
+        # NaN/Infinity/-Infinity — none of them valid JSON. All three must
+        # take the ValueError path instead, both at the top level and when
+        # they are buried inside a container.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "nan": float("nan"),
+                "inf": float("inf"),
+                "ninf": float("-inf"),
+                "nested": [float("nan")],
+            }
+        )
+        for name in ("nan", "inf", "ninf", "nested"):
+            with pytest.raises(
+                ValueError, match="to_json: value is not JSON-serializable"
+            ):
+                evaluate_expression(f"{{{{ inputs.{name} | to_json }}}}", ctx)
+
+    def test_filter_to_json_rejects_non_string_keys(self):
+        # JSON objects have string keys only. Without this check, json.dumps
+        # would coerce 1 to "1" -- colliding with an existing "1" key -- and
+        # sort_keys=True would raise an ordering TypeError on mixed key types,
+        # which surfaced as a generic "not JSON-serializable" hiding the real
+        # authoring mistake.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "mixed": {1: "a", "2": "b"},
+                "intkey": {1: "a"},
+                "nested": {"outer": {3: "deep"}},
+                "strkey": {"1": "a", "2": "b"},
+            }
+        )
+        for name in ("mixed", "intkey", "nested"):
+            with pytest.raises(
+                ValueError, match="to_json: mapping keys must be strings"
+            ):
+                evaluate_expression(f"{{{{ inputs.{name} | to_json }}}}", ctx)
+        # String keys, digit strings included, still serialize normally.
+        assert (
+            evaluate_expression("{{ inputs.strkey | to_json }}", ctx)
+            == '{"1": "a", "2": "b"}'
+        )
+
+    def test_split_with_extra_argument_reports_unsupported_form(self):
+        # split is new in this PR, so main's multi-argument guard has to cover
+        # it as well. Without that it evaluated the argument fragment first and
+        # reported "expected a string separator, got NoneType" -- the extra
+        # argument, which is what the author actually got wrong, never
+        # surfaced. main already pins default() and join() the same way; this
+        # pins the filter added here.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "a,b,c"})
+        with pytest.raises(
+            ValueError, match="filter 'split' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.s | split(',', 1) }}", ctx)
+        # A comma inside quotes is still a single argument.
+        assert evaluate_expression("{{ inputs.s | split(',') }}", ctx) == [
+            "a",
+            "b",
+            "c",
+        ]
+
+    def test_zero_arg_filters_reject_miswired_forms(self):
+        # The strict no-argument branch is shared by from_json/upper/lower/
+        # length/to_json. Every mis-wired form — parenthesized, accidental arg,
+        # or trailing garbage — must raise naming the filter, rather than
+        # silently falling through to the unknown-filter path.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "hi", "items": ["a"]})
+        for fname in ("from_json", "upper", "lower", "length", "to_json"):
+            for bad in (fname + "()", fname + "('x')", fname + ")", fname + " extra"):
+                with pytest.raises(ValueError, match=fname + ": expected"):
+                    evaluate_expression(
+                        "{{ inputs.s | " + bad + " }}", ctx
+                    )
+
     def test_filter_unknown_name_raises(self):
         # An unregistered filter name must fail loudly rather than silently
         # returning the unfiltered value (which hides a typo / unsupported
@@ -607,8 +902,8 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"items": [1, 2, 3]})
-        with pytest.raises(ValueError, match="unknown filter 'length'"):
-            evaluate_expression("{{ inputs.items | length }}", ctx)
+        with pytest.raises(ValueError, match="unknown filter 'truncate'"):
+            evaluate_expression("{{ inputs.items | truncate }}", ctx)
 
     def test_filter_unknown_name_with_args_raises(self):
         # The unknown-filter path must also catch the `name(arg)` form, which
@@ -618,8 +913,8 @@ class TestExpressions:
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"text": "hello"})
-        with pytest.raises(ValueError, match="unknown filter 'upper'"):
-            evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
+        with pytest.raises(ValueError, match="unknown filter 'truncate'"):
+            evaluate_expression("{{ inputs.text | truncate('x') }}", ctx)
 
     def test_filter_map_non_string_attr_raises(self):
         # A non-string attribute (authoring mistake like `map(5)`) must raise a
@@ -667,7 +962,7 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.nums | contains(9) }}", ctx) is False
 
     def test_registered_filters_unaffected(self):
-        # Regression: all five registered filters keep working unchanged.
+        # Regression: every registered filter keeps working unchanged.
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
@@ -677,6 +972,8 @@ class TestExpressions:
                 "text": "hello world",
                 "missing": "",
                 "rows": [{"id": "a"}, {"id": "b"}],
+                "csv": "a,b,c",
+                "obj": {"n": 1},
             },
             steps={"emit": {"output": {"stdout": '{"n": 1}'}}},
         )
@@ -691,6 +988,31 @@ class TestExpressions:
         assert evaluate_expression(
             "{{ steps.emit.output.stdout | from_json }}", ctx
         ) == {"n": 1}
+        assert evaluate_expression("{{ inputs.text | upper }}", ctx) == "HELLO WORLD"
+        assert evaluate_expression("{{ inputs.text | lower }}", ctx) == "hello world"
+        assert evaluate_expression("{{ inputs.csv | split(',') }}", ctx) == ["a", "b", "c"]
+        assert evaluate_expression("{{ inputs.tags | length }}", ctx) == 3
+        assert evaluate_expression("{{ inputs.obj | to_json }}", ctx) == '{"n": 1}'
+
+    def test_registered_filter_list_covers_every_implemented_filter(self):
+        # _REGISTERED_FILTERS drives the "known filter used in an unsupported
+        # form" message, so it must stay in sync with what is implemented: a
+        # registered-but-unimplemented name would be advertised in the expected
+        # list yet raise as unknown.
+        from specify_cli.workflows.expressions import _REGISTERED_FILTERS
+
+        assert set(_REGISTERED_FILTERS) == {
+            "default",
+            "join",
+            "map",
+            "contains",
+            "from_json",
+            "upper",
+            "lower",
+            "split",
+            "length",
+            "to_json",
+        }
 
     def test_registered_filter_unsupported_form_raises(self):
         # A *registered* filter used in an unsupported form (e.g. `| join` with
@@ -709,6 +1031,15 @@ class TestExpressions:
             ValueError, match="filter 'map' used in an unsupported form"
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
+        # An arg-taking filter must not silently accept the wrong arity.
+        with pytest.raises(
+            ValueError, match="filter 'split' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | split }}", ctx)
+        with pytest.raises(
+            ValueError, match="filter 'contains' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | contains }}", ctx)
 
     def test_filter_call_with_trailing_tokens_fails_loudly(self):
         # A trailing operator/token after a filter's closing paren must not be
@@ -730,6 +1061,71 @@ class TestExpressions:
             evaluate_expression(
                 "{{ inputs.tags | join(',') extra }}",
                 StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
+    def test_multi_argument_filter_call_fails_loudly(self):
+        """A second argument must be reported, not silently mis-evaluated.
+
+        The whole captured argument text was handed to
+        `_evaluate_simple_expression` as ONE expression. `"1, 2"` is not a valid
+        expression, so it evaluated to None — making `default(1, 2)` return None
+        (silently wrong) and `join(",", "extra")` raise a message blaming the
+        separator rather than the extra argument.
+        """
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default(1, 2) }}", StepContext(inputs={})
+            )
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                '{{ inputs.tags | join(",", "extra") }}',
+                StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
+    def test_single_argument_containing_a_comma_still_works(self):
+        """The multi-argument check must skip quotes AND nested brackets.
+
+        A single argument may legitimately contain a comma in two ways:
+
+        * inside quotes — `join(", ")`, `default("a, b")`
+        * inside a bracketed literal — `default([1, 2])`, which the expression
+          evaluator supports and which resolves to a real list
+
+        so the check uses `_find_top_level` (the same scanner the operator
+        splitting uses) rather than a quote-only scan.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"]})
+        assert evaluate_expression('{{ inputs.tags | join(", ") }}', ctx) == "a, b"
+        assert evaluate_expression('{{ inputs.tags | join(",") }}', ctx) == "a,b"
+        assert (
+            evaluate_expression('{{ inputs.missing | default("a, b") }}', ctx)
+            == "a, b"
+        )
+        # List literals: a comma inside brackets is not an argument separator.
+        assert evaluate_expression(
+            "{{ inputs.missing | default([1, 2]) }}", ctx
+        ) == [1, 2]
+        assert evaluate_expression(
+            "{{ inputs.missing | default([1,2]) }}", ctx
+        ) == [1, 2]
+        assert evaluate_expression("{{ inputs.missing | default([]) }}", ctx) == []
+
+    def test_multi_argument_after_a_literal_is_still_rejected(self):
+        """A real second argument is rejected even when the first is a literal."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default([1,2], 3) }}", StepContext(inputs={})
             )
 
     def test_filter_on_a_comparison_operand_is_refused(self):
@@ -938,6 +1334,91 @@ class TestExpressions:
         assert evaluate_expression("{{ true }}", ctx) is True
         assert evaluate_expression("{{ false }}", ctx) is False
 
+    def test_parenthesised_grouping(self):
+        """A parenthesised group is evaluated, not read as a dot path.
+
+        The operator scans skip bracketed text so an operator inside an
+        operand is not split on. Nothing unwrapped a group spanning the whole
+        expression, so ``(a or b) and c`` split at the top-level ``and`` and
+        then looked up ``(a or b)`` as a key, got ``None``, and read false --
+        adding parentheses to make precedence explicit silently inverted the
+        result.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": True, "b": False, "c": True, "n": 5})
+
+        assert evaluate_expression("{{ (inputs.a or inputs.b) and inputs.c }}", ctx) is True
+        assert evaluate_expression("{{ (inputs.b or inputs.b) and inputs.c }}", ctx) is False
+        assert evaluate_expression("{{ (inputs.n) }}", ctx) == 5
+        assert evaluate_expression("{{ (inputs.n > 1) }}", ctx) is True
+        assert evaluate_expression("{{ ((inputs.n)) }}", ctx) == 5
+        # A group is still only unwrapped when it spans the whole expression.
+        assert evaluate_expression("{{ (inputs.a) and (inputs.b) }}", ctx) is False
+        assert evaluate_expression("{{ (inputs.n) | default(9) }}", ctx) == 5
+        # A parenthesis inside a string literal is not a group.
+        assert evaluate_expression("{{ 'a(b' }}", ctx) == "a(b"
+        assert evaluate_expression("{{ ('(') }}", ctx) == "("
+
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("{{ inputs.b or\n  inputs.a }}", True),
+            ("{{ inputs.a and\n  inputs.c }}", True),
+            ("{{ inputs.b\nor inputs.a }}", True),
+            ("{{ inputs.a\tand inputs.c }}", True),
+            ("{{ not\n  inputs.b }}", True),
+            ("{{ 'x' in\n  inputs.tags }}", True),
+            ("{{ 'z' not\n  in inputs.tags }}", True),
+            ("{{ 'z' not in\n  inputs.tags }}", True),
+            ("{{ (inputs.b or\r\n  inputs.a) and inputs.c }}", True),
+        ],
+    )
+    def test_operators_separated_by_any_whitespace(self, expression, expected):
+        """Word operators are found across newlines and tabs, as in Jinja2.
+
+        The operator scans match ``" or "`` and friends by their spaces, so an
+        operator next to a line break was never split on: the whole expression
+        was looked up as one dot path and came back ``None`` -- a false
+        condition with no error.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"a": True, "b": False, "c": True, "mode": "fast", "tags": ["x", "y"]}
+        )
+        assert evaluate_expression(expression, ctx) is expected
+
+    def test_condition_wrapped_across_lines_in_yaml(self):
+        """A long condition broken after its operator keeps the line break in
+        YAML (the continuation line is more indented, so ``>`` does not fold
+        it), and still has to evaluate as written."""
+        from specify_cli.workflows.expressions import evaluate_condition
+        from specify_cli.workflows.base import StepContext
+
+        step = yaml.safe_load(
+            "condition: >-\n"
+            "  {{ inputs.skip_review or\n"
+            "     inputs.scope == 'docs' }}\n"
+        )
+        assert "\n" in step["condition"]
+
+        ctx = StepContext(inputs={"skip_review": False, "scope": "docs"})
+        assert evaluate_condition(step["condition"], ctx) is True
+
+    def test_whitespace_inside_quoted_operand_is_kept(self):
+        """Collapsing whitespace between tokens leaves string literals alone."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"title": "two  spaces", "text": "tab\there"})
+        assert evaluate_expression("{{ inputs.title == 'two  spaces' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.title == 'two spaces' }}", ctx) is False
+        assert evaluate_expression("{{ inputs.text\n  == 'tab\there' }}", ctx) is True
+        assert evaluate_expression("{{ 'a  or  b' }}", ctx) == "a  or  b"
+
     def test_list_indexing(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -947,6 +1428,25 @@ class TestExpressions:
         )
         result = evaluate_expression("{{ steps.tasks.output.task_list[0].file }}", ctx)
         assert result == "a.md"
+
+    def test_negative_list_indexing(self):
+        """``list[-1]`` resolves from the end, as Python and Jinja2 both do.
+
+        Without it the index silently fell through to a dict lookup for the
+        literal key ``"task_list[-1]"`` and produced ``None``, so a template
+        reaching for the last element rendered empty with no error.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"tasks": {"output": {"task_list": [{"file": "a.md"}, {"file": "b.md"}]}}}
+        )
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-1].file }}", ctx) == "b.md"
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-2].file }}", ctx) == "a.md"
+        # Out of range in either direction stays None rather than raising.
+        assert evaluate_expression("{{ steps.tasks.output.task_list[-3] }}", ctx) is None
+        assert evaluate_expression("{{ steps.tasks.output.task_list[2] }}", ctx) is None
 
     def test_context_run_id_resolves(self):
         """``{{ context.run_id }}`` resolves to ``StepContext.run_id``.
@@ -1024,11 +1524,10 @@ class TestBuildExecArgs:
     def test_copilot_exec_args(self, monkeypatch):
         monkeypatch.delenv("SPECKIT_COPILOT_ALLOW_ALL_TOOLS", raising=False)
         monkeypatch.delenv("SPECKIT_ALLOW_ALL_TOOLS", raising=False)
-        from specify_cli.integrations.copilot import CopilotIntegration
+        from specify_cli.integrations.copilot import CopilotIntegration, _copilot_executable
         impl = CopilotIntegration()
         args = impl.build_exec_args("do stuff", model="claude-sonnet-4-20250514")
-        expected_exec = "copilot.cmd" if os.name == "nt" else "copilot"
-        assert args[0] == expected_exec
+        assert args[0] == _copilot_executable()
         assert "-p" in args
         assert "--yolo" in args
         assert "--model" in args
@@ -2651,6 +3150,80 @@ class TestInitStep:
         assert result.output["exit_code"] != 0
         assert result.error is not None
 
+    def test_failed_init_surfaces_inits_own_message(self, tmp_path):
+        """A failing init step must report init's diagnostics, not 'SystemExit: 1'.
+
+        `typer.Exit(n)` — how `specify init` reports every ordinary failure —
+        surfaces through `CliRunner` as `result.exception = SystemExit(n)`, so
+        the unexpected-crash branch fired on routine errors too. `init` prints
+        through Rich to stdout, leaving `result.stderr` empty, so the
+        synthesized "SystemExit: 1" became the whole of stderr and preempted
+        the `stderr.strip() or stdout.strip()` fallback — stranding the real
+        message (here, the list of valid integrations) in stdout.
+        """
+        from specify_cli.workflows.step.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = InitStep().execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "integration": "no-such-agent",
+                "script": "sh",
+            },
+            StepContext(project_root=str(tmp_path)),
+        )
+
+        assert result.status == StepStatus.FAILED
+        assert result.error is not None
+        assert result.error.strip() != "SystemExit: 1"
+
+        # The real diagnostic reaches the caller...
+        collapsed = " ".join(result.error.split())
+        assert "no-such-agent" in collapsed or "Unknown" in collapsed, collapsed
+
+        # ...and reaches a downstream step reading steps.<id>.output.stderr.
+        # Asserting only "not the old sentinel" was too weak: an EMPTY stderr
+        # satisfies that while still carrying no diagnostic at all, which is
+        # exactly what dropping the synthesized detail left behind under
+        # click >= 8.2 (separate streams, init prints through Rich to stdout).
+        stderr = " ".join(result.output["stderr"].split())
+        assert stderr, "output.stderr must not be empty for a failed init"
+        assert stderr != "SystemExit: 1"
+        assert "no-such-agent" in stderr or "Unknown" in stderr, stderr
+
+    def test_unexpected_crash_still_reports_its_exception(self, monkeypatch, tmp_path):
+        """The branch's original purpose is preserved for a genuine crash.
+
+        Only `SystemExit` is now excluded; any other exception escaping the
+        runner must still be surfaced, since nothing else would describe it.
+        """
+        from specify_cli.workflows.step.init import InitStep
+        import typer.testing
+
+        class _Result:
+            exit_code = 1
+            output = ""
+            stderr = ""
+            exception = RuntimeError("boom inside init")
+
+        class _Runner:
+            def __init__(self, *a, **k):
+                pass
+
+            def invoke(self, *a, **k):
+                return _Result()
+
+        monkeypatch.setattr(typer.testing, "CliRunner", _Runner)
+
+        from specify_cli.workflows.base import StepContext
+
+        _code, _stdout, stderr = InitStep()._run_init(
+            ["init", "demo"], StepContext(project_root=str(tmp_path))
+        )
+
+        assert "RuntimeError: boom inside init" in stderr
+
     def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
         from specify_cli.workflows.step.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -3059,6 +3632,163 @@ steps:
 
         choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
         assert choice == "approve"
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            ["approve", "reject"],
+            ["reject", "approve"],
+            ["approve", "reject", "request-changes"],
+        ],
+        ids=["reject_last", "reject_first", "reject_middle"],
+    )
+    def test_eof_at_prompt_never_approves(self, monkeypatch, options):
+        """Ctrl+D at a gate must not resolve to an approving option.
+
+        `_prompt` returned `options[-1]`, assuming the reject option is last.
+        `validate` only requires that *some* option is 'reject'/'abort', never
+        that it is last, so `options: [approve, reject, request-changes]`
+        validates clean and EOF returned 'request-changes' — which `execute`
+        does not classify as a rejection, so the gate reported COMPLETED and
+        the run walked past the human review.
+        """
+        from specify_cli.workflows.step.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        assert GateStep._prompt("Approve the plan?", options) == "reject"
+
+    def test_eof_without_a_reject_option_keeps_last(self, monkeypatch):
+        """With no reject/abort option declared, the last option is still used."""
+        from specify_cli.workflows.step.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        assert GateStep._prompt("Pick one.", ["yes", "no"]) == "no"
+
+    def test_ctrl_c_propagates_rather_than_becoming_a_verdict(self, monkeypatch):
+        """Ctrl+C is not a gate decision — it must reach the engine.
+
+        `WorkflowEngine` turns a propagated KeyboardInterrupt into
+        `RunStatus.PAUSED` plus a `workflow_interrupted` event, so the operator
+        can resume. Swallowing it here produced a *decision* instead: the reject
+        branch fired `on_reject`, usually aborting the whole run — the one
+        outcome an interrupted reviewer did not choose.
+        """
+        from specify_cli.workflows.step.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        with pytest.raises(KeyboardInterrupt):
+            GateStep._prompt("Approve the plan?", ["approve", "reject"])
+
+    def test_ctrl_c_at_a_gate_step_propagates(self, monkeypatch):
+        """The step level must not convert it either — `execute` lets it through."""
+        from specify_cli.workflows.step.gate import GateStep
+        from specify_cli.workflows.base import StepContext
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        with pytest.raises(KeyboardInterrupt):
+            GateStep().execute(
+                {
+                    "id": "review",
+                    "message": "Approve the plan?",
+                    "options": ["approve", "reject", "request-changes"],
+                    "on_reject": "abort",
+                },
+                StepContext(),
+            )
+
+    def test_eof_at_a_gate_step_records_a_rejection(self, monkeypatch):
+        """EOF still yields a verdict: there is no operator left to resume."""
+        from specify_cli.workflows.step.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Approve the plan?",
+                "options": ["approve", "reject", "request-changes"],
+                "on_reject": "abort",
+            },
+            StepContext(),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["choice"] == "reject"
+
+    def test_ctrl_c_at_a_gate_pauses_the_run(self, tmp_path, monkeypatch):
+        """End to end: Ctrl+C at a gate pauses the run, it does not abort it.
+
+        This is the contract the split exists to honour. Previously the reject
+        fallback fired `on_reject: abort`, so an interrupted reviewer lost the
+        run instead of being able to `specify workflow resume` it.
+        """
+        import yaml
+        from specify_cli.workflows.engine import WorkflowEngine, RunStatus
+
+        workflows = tmp_path / ".specify" / "workflows" / "demo"
+        workflows.mkdir(parents=True)
+        (workflows / "workflow.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {"id": "demo", "name": "D", "version": "1.0.0"},
+                    "steps": [
+                        {
+                            "id": "review",
+                            "type": "gate",
+                            "message": "Approve?",
+                            "options": ["approve", "reject"],
+                            "on_reject": "abort",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        _force_gate_stdin(monkeypatch, tty=True)
+
+        def _boom(_prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", _boom)
+
+        engine = WorkflowEngine(tmp_path)
+        state = engine.execute(engine.load_workflow("demo"))
+
+        assert state.status is RunStatus.PAUSED
+        events = [e.get("event") for e in state.log_entries if isinstance(e, dict)]
+        assert "workflow_interrupted" in events, events
 
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
@@ -4081,7 +4811,7 @@ class TestFanOutStep:
         ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
         does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
         COMPLETED fan-out the engine reads ``step_template`` back out and, when
-        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        it is truthy, calls ``template.get("id", ...)`` while expanding items. A
         truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
         AttributeError there and took down the whole run. Mirrors the fan-out
         non-list ``items`` guard and the switch non-dict ``cases`` guard.
@@ -4312,24 +5042,16 @@ class TestFanInStep:
 
 
 class TestFanOutConcurrency:
-    """Fan-out honors max_concurrency (WorkflowEngine._run_fan_out)."""
+    """Fan-out honors max_concurrency through WorkflowEngine.execute()."""
 
     @staticmethod
-    def _build(tmp_path, on_item=None):
-        """Wire an engine + run state to a probe step that echoes context.item.
-
-        Per-item output is ``{"seen": <item>}`` so order and per-thread item
-        isolation are checkable. ``on_item(item)`` may run a side effect and
-        optionally return a StepStatus to override COMPLETED (or raise).
-        """
-        from specify_cli.workflows.base import (
-            RunStatus,
-            StepBase,
-            StepContext,
-            StepResult,
-            StepStatus,
-        )
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
+    def _run(
+        tmp_path, monkeypatch, items, max_concurrency, on_item=None, template=None
+    ):
+        """Run a public fan-out workflow with a probe that echoes ``context.item``."""
+        from specify_cli.workflows import STEP_REGISTRY
+        from specify_cli.workflows.base import StepBase, StepResult, StepStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
         class _ProbeStep(StepBase):
             type_key = "probe"
@@ -4342,35 +5064,41 @@ class TestFanOutConcurrency:
                         status = override
                 return StepResult(status=status, output={"seen": context.item})
 
-        engine = WorkflowEngine(project_root=tmp_path)
-        context = StepContext()
-        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-        state.status = RunStatus.RUNNING
-        template = {"id": "impl", "type": "probe"}
-        return engine, context, state, {"probe": _ProbeStep()}, template
-
-    def _run(self, tmp_path, items, max_concurrency, on_item=None):
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        results = engine._run_fan_out(
-            items, template, "fan", context, state, registry, max_concurrency
+        monkeypatch.setitem(STEP_REGISTRY, "probe", _ProbeStep())
+        template = template or {"id": "impl", "type": "probe"}
+        state = WorkflowEngine(tmp_path).execute(
+            WorkflowDefinition(
+                {
+                    "workflow": {"id": "fan-out-test", "name": "Fan-out Test"},
+                    "steps": [
+                        {
+                            "id": "fan",
+                            "type": "fan-out",
+                            "items": items,
+                            "max_concurrency": max_concurrency,
+                            "step": template,
+                        }
+                    ],
+                }
+            )
         )
-        return results, state
+        return state.step_results["fan"]["output"]["results"], state
 
-    def test_sequential_default_preserves_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(5)), 1)
+    def test_sequential_default_preserves_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(5)), 1)
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_concurrent_runs_all_items_in_item_order(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(10)), 4)
+    def test_concurrent_runs_all_items_in_item_order(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(10)), 4)
         assert results == [{"seen": i} for i in range(10)]
 
-    def test_sequential_and_concurrent_agree(self, tmp_path):
+    def test_sequential_and_concurrent_agree(self, tmp_path, monkeypatch):
         items = [{"n": i} for i in range(8)]
-        seq, _ = self._run(tmp_path, items, 1)
-        con, _ = self._run(tmp_path, items, 4)
+        seq, _ = self._run(tmp_path, monkeypatch, items, 1)
+        con, _ = self._run(tmp_path, monkeypatch, items, 4)
         assert seq == con == [{"seen": {"n": i}} for i in range(8)]
 
-    def test_shuffled_completion_preserves_item_order(self, tmp_path):
+    def test_shuffled_completion_preserves_item_order(self, tmp_path, monkeypatch):
         # Determinism keystone: completion order is forced to the exact REVERSE of
         # item order by an event chain (no sleeps) — item i blocks until item i+1
         # has finished, so item 0 completes LAST — yet results must still be in
@@ -4390,11 +5118,11 @@ class TestFanOutConcurrency:
             done[item].set()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
         assert completion == list(reversed(range(n)))
 
-    def test_concurrency_is_real(self, tmp_path):
+    def test_concurrency_is_real(self, tmp_path, monkeypatch):
         import threading
 
         # Deterministic proof of real parallelism (no wall-clock threshold to
@@ -4408,30 +5136,35 @@ class TestFanOutConcurrency:
             barrier.wait()
             return None
 
-        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
 
     @pytest.mark.parametrize(
         "bad", [0, -1, None, "abc", 1.0, float("inf"), float("nan")]
     )
-    def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+    def test_invalid_max_concurrency_coerces_to_sequential(
+        self, tmp_path, monkeypatch, bad
+    ):
         # float("inf") -> int() raises OverflowError (not TypeError/ValueError);
         # it must fall back to sequential like any other uncoercible value, not
         # crash the run.
-        results, _ = self._run(tmp_path, list(range(4)), bad)
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), bad)
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_string_max_concurrency_is_honored(self, tmp_path):
-        results, _ = self._run(tmp_path, list(range(4)), "2")
+    def test_string_max_concurrency_is_honored(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, list(range(4)), "2")
         assert results == [{"seen": i} for i in range(4)]
 
-    def test_context_item_isolation_across_threads(self, tmp_path):
+    def test_context_item_isolation_across_threads(self, tmp_path, monkeypatch):
         items = [{"id": f"x{i}"} for i in range(6)]
-        results, _ = self._run(tmp_path, items, 6)
+        results, _ = self._run(tmp_path, monkeypatch, items, 6)
         assert [r["seen"]["id"] for r in results] == [f"x{i}" for i in range(6)]
 
     @pytest.mark.parametrize("max_concurrency", [1, 2])
-    def test_marks_item_context_as_inside_fan_out(self, tmp_path, max_concurrency):
+    def test_marks_item_context_as_inside_fan_out(
+        self, tmp_path, monkeypatch, max_concurrency
+    ):
+        from specify_cli.workflows import STEP_REGISTRY
         from specify_cli.workflows.base import StepBase, StepResult, StepStatus
 
         class _ContextProbeStep(StepBase):
@@ -4443,28 +5176,27 @@ class TestFanOutConcurrency:
                     output={"inside_fan_out": context.inside_fan_out},
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        results = engine._run_fan_out(
+        monkeypatch.setitem(STEP_REGISTRY, "context-probe", _ContextProbeStep())
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
             ["a", "b"],
-            {"id": "probe", "type": "context-probe"},
-            "fan",
-            context,
-            state,
-            {"context-probe": _ContextProbeStep()},
             max_concurrency,
+            template={"id": "probe", "type": "context-probe"},
         )
 
         assert results == [
             {"inside_fan_out": True},
             {"inside_fan_out": True},
         ]
-        assert context.inside_fan_out is False
 
-    def test_empty_items(self, tmp_path):
-        results, _ = self._run(tmp_path, [], 4)
+    def test_empty_items(self, tmp_path, monkeypatch):
+        results, _ = self._run(tmp_path, monkeypatch, [], 4)
         assert results == []
 
-    def test_concurrent_halt_status_not_clobbered_by_later_item(self, tmp_path):
+    def test_concurrent_halt_status_not_clobbered_by_later_item(
+        self, tmp_path, monkeypatch
+    ):
         # Item 1 PAUSES (first halting item in order); item 3 FAILS while in
         # flight. The final run status must be the halting item's (PAUSED), never
         # a later item's (FAILED) that raced after it — matching sequential.
@@ -4477,22 +5209,24 @@ class TestFanOutConcurrency:
                 return StepStatus.FAILED
             return None
 
-        results, state = self._run(tmp_path, list(range(4)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(4)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}]
         assert state.status == RunStatus.PAUSED
 
-    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path):
+    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path, monkeypatch):
         from specify_cli.workflows.base import RunStatus, StepStatus
 
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(5)), 1, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(5)), 1, on_item)
         assert len(results) == 3  # items 0,1,2 ran; 3,4 never dispatched
         assert results[2] == {"seen": 2}
         assert state.status == RunStatus.FAILED
 
-    def test_halt_on_failure_concurrent_includes_halting_item(self, tmp_path):
+    def test_halt_on_failure_concurrent_includes_halting_item(
+        self, tmp_path, monkeypatch
+    ):
         # The concurrent prefix must match the sequential one: items up to and
         # INCLUDING the failing item (2), never a short prefix that drops it just
         # because a later in-flight item flipped the shared run status first.
@@ -4501,11 +5235,11 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        results, state = self._run(tmp_path, list(range(6)), 4, on_item)
+        results, state = self._run(tmp_path, monkeypatch, list(range(6)), 4, on_item)
         assert results == [{"seen": 0}, {"seen": 1}, {"seen": 2}]
         assert state.status == RunStatus.FAILED
 
-    def test_concurrent_restores_halting_item_error(self, tmp_path):
+    def test_concurrent_restores_halting_item_error(self, tmp_path, monkeypatch):
         # After a concurrent fan-out halts, the run-level error must be the first
         # halting item's own error (parity with the sequential path), even when a
         # later concurrent item failed with a different error AND the halting
@@ -4538,15 +5272,15 @@ class TestFanOutConcurrency:
                     status=StepStatus.COMPLETED, output={"seen": item}
                 )
 
-        engine, context, state, _registry, _template = self._build(tmp_path)
-        engine._run_fan_out(
+        from specify_cli.workflows import STEP_REGISTRY
+
+        monkeypatch.setitem(STEP_REGISTRY, "err-probe", _ErrorProbe())
+        _results, state = self._run(
+            tmp_path,
+            monkeypatch,
             ["ok0", "halt", "ok2", "leak"],
-            {"id": "impl", "type": "err-probe"},
-            "fan",
-            context,
-            state,
-            {"err-probe": _ErrorProbe()},
             4,
+            template={"id": "impl", "type": "err-probe"},
         )
 
         assert state.status == RunStatus.FAILED
@@ -4555,7 +5289,9 @@ class TestFanOutConcurrency:
         # error verbatim, even when falsy.
         assert state.error == ""
 
-    def test_continue_on_error_item_does_not_halt_concurrent(self, tmp_path):
+    def test_continue_on_error_item_does_not_halt_concurrent(
+        self, tmp_path, monkeypatch
+    ):
         # A failing item whose template sets continue_on_error must NOT truncate
         # the fan-out: every item still runs and is returned in order.
         from specify_cli.workflows.base import StepStatus
@@ -4563,41 +5299,38 @@ class TestFanOutConcurrency:
         def on_item(item):
             return StepStatus.FAILED if item == 2 else None
 
-        engine, context, state, registry, template = self._build(tmp_path, on_item)
-        template["continue_on_error"] = True
-        results = engine._run_fan_out(
-            list(range(5)), template, "fan", context, state, registry, 4
+        results, _ = self._run(
+            tmp_path,
+            monkeypatch,
+            list(range(5)),
+            4,
+            on_item,
+            template={"id": "impl", "type": "probe", "continue_on_error": True},
         )
         assert results == [{"seen": i} for i in range(5)]
 
-    def test_unknown_template_type_halts_concurrent_like_sequential(self, tmp_path):
+    def test_unknown_template_type_halts_concurrent_like_sequential(
+        self, tmp_path, monkeypatch
+    ):
         # A template whose type isn't registered fails fast and records no result;
         # the concurrent path must still attribute the halt to the first item and
         # return the same prefix as sequential — never run on as if completed.
-        from specify_cli.workflows.base import RunStatus, StepContext
-        from specify_cli.workflows.engine import RunState, WorkflowEngine
-
-        def fresh():
-            state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
-            state.status = RunStatus.RUNNING
-            return WorkflowEngine(project_root=tmp_path), StepContext(), state
-
         template = {"id": "impl", "type": "does-not-exist"}
-        e1, c1, s1 = fresh()
-        seq = e1._run_fan_out(list(range(5)), template, "fan", c1, s1, {}, 1)
-        e2, c2, s2 = fresh()
-        con = e2._run_fan_out(list(range(5)), template, "fan", c2, s2, {}, 4)
+        seq, s1 = self._run(tmp_path, monkeypatch, list(range(5)), 1, template=template)
+        con, s2 = self._run(tmp_path, monkeypatch, list(range(5)), 4, template=template)
         assert seq == con == [{}]  # halted at the first item; rest never returned
+        from specify_cli.workflows.base import RunStatus
+
         assert s1.status == s2.status == RunStatus.FAILED
 
-    def test_first_exception_cancels_and_reraises(self, tmp_path):
+    def test_first_exception_cancels_and_reraises(self, tmp_path, monkeypatch):
         def on_item(item):
             if item == 0:
                 raise ValueError("boom")
             return None
 
         with pytest.raises(ValueError, match="boom"):
-            self._run(tmp_path, list(range(4)), 2, on_item)
+            self._run(tmp_path, monkeypatch, list(range(4)), 2, on_item)
 
 
 class TestFanInWaitForValidation:
@@ -4720,6 +5453,26 @@ steps:
         assert any(
             "must be step-id strings" in e and "int" in e for e in errors
         )
+
+    def test_non_ascii_fan_out_item_index_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: [one]
+    step:
+      id: item
+      type: command
+      command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [fan:item:١]
+""")
+        assert any("unknown or not-yet-declared step id 'fan:item:١'" in e for e in errors)
 
 
 # ===== Workflow Definition Tests =====
@@ -7674,6 +8427,59 @@ steps:
         assert state.status == RunStatus.FAILED
         assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
 
+    def test_unknown_step_type_ignores_continue_on_error(self, project_dir):
+        """A missing implementation is terminal even with recovery enabled."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-recovery"
+  name: "Unknown Type Recovery"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+    continue_on_error: true
+  - id: after
+    type: shell
+    run: "echo should-not-run"
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert state.error == "Unknown step type: 'definitely-not-a-real-step'"
+        assert "after" not in state.step_results
+        events = [entry["event"] for entry in state.log_entries]
+        assert "step_failed" in events
+        assert "step_continue_on_error" not in events
+
+    def test_unknown_step_type_events_match_main(self, project_dir):
+        """Only step_started and step_failed, and no projected step result."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "unknown-type-events"
+  name: "Unknown Type Events"
+  version: "1.0.0"
+steps:
+  - id: mystery
+    type: definitely-not-a-real-step
+""")
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        assert state.status == RunStatus.FAILED
+        assert [
+            entry["event"]
+            for entry in state.log_entries
+            if entry.get("step_id") == "mystery"
+        ] == ["step_started", "step_failed"]
+        assert "mystery" not in state.step_results
+
 
 # ===== State Persistence Tests =====
 
@@ -7705,6 +8511,87 @@ class TestRunState:
         assert loaded.status == RunStatus.RUNNING
         assert loaded.inputs == {"name": "login"}
         assert loaded.step_results == state.step_results
+
+    def test_run_artifacts_keep_non_ascii_text_readable(self, project_dir):
+        """state.json, inputs.json and log.jsonl are human-auditable run
+        records, so non-ASCII text must be written as authored rather than
+        as ``\\uXXXX`` escapes (#4875)."""
+        from specify_cli.workflows.engine import RunState
+
+        text = "演示：完整闭环 — ¿aprobar? 日本語"
+        state = RunState(
+            run_id="non-ascii-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.inputs = {"spec": text}
+        state.step_results = {"gate": {"output": {"message": text}}}
+        state.save()
+        state.append_log({"event": "gate_message", "message": text})
+
+        for name in ("state.json", "inputs.json", "log.jsonl"):
+            raw = (state.runs_dir / name).read_text(encoding="utf-8")
+            assert text in raw, name
+            assert "\\u" not in raw, name
+
+        loaded = RunState.load("non-ascii-run", project_dir)
+        assert loaded.inputs == {"spec": text}
+        assert loaded.step_results == state.step_results
+        log_line = (state.runs_dir / "log.jsonl").read_text(encoding="utf-8")
+        assert json.loads(log_line)["message"] == text
+
+    def test_run_artifacts_round_trip_a_lone_surrogate(self, project_dir):
+        """A lone surrogate (e.g. an undecodable byte in a CLI argument) cannot
+        be encoded as UTF-8. It must still save, escaped, and load back intact
+        instead of crashing the run."""
+        from specify_cli.workflows.engine import RunState
+
+        value = "bad byte: \udc80"
+        state = RunState(
+            run_id="surrogate-run",
+            workflow_id="test-workflow",
+            project_root=project_dir,
+        )
+        state.inputs = {"spec": value}
+        state.save()
+        state.append_log({"event": "input", "value": value})
+
+        loaded = RunState.load("surrogate-run", project_dir)
+        assert loaded.inputs == {"spec": value}
+        log_line = (state.runs_dir / "log.jsonl").read_text(encoding="utf-8")
+        assert json.loads(log_line)["value"] == value
+
+    def test_workflow_snapshot_keeps_non_ascii_text_readable(self, project_dir):
+        """The workflow.yml copied into the run directory is the definition as
+        authored, so its non-ASCII text must not be escaped (#4875)."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        name = "Demo Hello Pipeline (教学演示版)"
+        wf_dir = project_dir / "non-ascii-snapshot"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text(
+            f"""
+schema_version: "1.0"
+workflow:
+  id: "non-ascii-snapshot"
+  name: "{name}"
+  version: "1.0.0"
+steps:
+  - id: noop
+    type: shell
+    run: "echo ok"
+""",
+            encoding="utf-8",
+        )
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        snapshot = state.runs_dir / "workflow.yml"
+        raw = snapshot.read_text(encoding="utf-8")
+        assert name in raw
+        assert "\\u" not in raw and "\\x" not in raw
+        assert yaml.safe_load(raw)["workflow"]["name"] == name
 
     @pytest.mark.parametrize("invalid_step_results", [None, [], "invalid", 1, True])
     def test_load_rejects_non_object_step_results(
@@ -8408,6 +9295,86 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
+    @pytest.fixture(params=["workflow", "step"])
+    def removal_catalog(self, request, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
+
+        kind = request.param
+        catalog_cls, error = (
+            (WorkflowCatalog, WorkflowValidationError)
+            if kind == "workflow" else (StepCatalog, StepValidationError)
+        )
+        env_key = f"SPECKIT_{kind.upper()}_CATALOG_URL"
+        monkeypatch.delenv(env_key, raising=False)
+        config = project_dir / ".specify" / f"{kind}-catalogs.yml"
+        return catalog_cls(project_dir), error, config, env_key
+
+    @pytest.mark.parametrize("index,original_index", [(0, 2), (1, 4), (2, 3), (3, 1)])
+    def test_remove_catalog_uses_listed_position(
+        self, removal_catalog, index, original_index
+    ):
+        catalog, _, config, _ = removal_catalog
+        data = {"notes": "keep", "catalogs": [
+            {"name": "skipped", "url": "  "},
+            {"name": "duplicate", "url": "https://example.com/low.json", "priority": 10},
+            {"name": "duplicate", "url": "https://example.com/first.json", "priority": "2"},
+            {"url": "https://example.com/unnamed.json"},
+            {"name": "duplicate", "url": "https://example.com/tied.json", "priority": 2},
+        ]}
+        config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        selected = catalog.get_catalog_configs()[index]
+        assert selected["url"] == data["catalogs"][original_index]["url"]
+
+        assert catalog.remove_catalog(index) == selected["name"]
+
+        data["catalogs"].pop(original_index)
+        assert yaml.safe_load(config.read_text(encoding="utf-8")) == data
+
+    @pytest.mark.parametrize("index", [-1, 1])
+    def test_remove_catalog_bounds_use_visible_entries(self, removal_catalog, index):
+        catalog, error, config, _ = removal_catalog
+        config.write_text(
+            "# keep this comment\ncatalogs:\n  - name: skipped\n"
+            "  - url: https://example.com/only.json\n", encoding="utf-8",
+        )
+        before = config.read_bytes()
+        with pytest.raises(error, match="out of range"):
+            catalog.remove_catalog(index)
+        assert config.read_bytes() == before
+
+    def test_remove_catalog_refuses_environment_source(self, removal_catalog, monkeypatch):
+        catalog, error, config, env_key = removal_catalog
+        catalog.add_catalog("https://example.com/project.json", "project")
+        before = config.read_bytes()
+        monkeypatch.setenv(env_key, " https://example.com/override.json ")
+        assert catalog.get_catalog_configs()[0]["name"] == "env-override"
+
+        with pytest.raises(error, match=env_key) as exc:
+            catalog.remove_catalog(0)
+        assert "Unset" in str(exc.value)
+        assert config.read_bytes() == before
+
+    def test_remove_catalog_ignores_blank_environment_override(self, removal_catalog, monkeypatch):
+        catalog, _, config, env_key = removal_catalog
+        catalog.add_catalog("https://example.com/project.json", "project")
+        monkeypatch.setenv(env_key, " \t ")
+        assert catalog.remove_catalog(0) == "project"
+        assert yaml.safe_load(config.read_text(encoding="utf-8"))["catalogs"] == []
+
+    @pytest.mark.parametrize("entry", ["invalid", {"name": "no-url"}, {
+        "url": "https://example.com/invalid.json", "priority": "invalid",
+    }])
+    def test_remove_catalog_rejects_unlistable_config(self, removal_catalog, entry):
+        catalog, error, config, _ = removal_catalog
+        config.write_text(yaml.safe_dump({"catalogs": [entry]}), encoding="utf-8")
+        before = config.read_bytes()
+        with pytest.raises(error):
+            catalog.get_catalog_configs()
+        with pytest.raises(error):
+            catalog.remove_catalog(0)
+        assert config.read_bytes() == before
+
     @pytest.mark.parametrize("catalog_type", ["workflow", "step"])
     def test_non_mapping_cache_metadata_is_invalid(
         self, project_dir, catalog_type
@@ -8901,14 +9868,28 @@ class TestWorkflowCatalog:
         new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
         assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
         catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/catalog.json")
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/catalog.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/catalog.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(WorkflowValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/catalog.json")
+            catalog.add_catalog("https://example.com/catalog.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -9025,6 +10006,94 @@ class TestWorkflowCatalog:
         monkeypatch.setattr(builtins, "open", _raising_open)
         with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
             catalog.remove_catalog(0)
+
+    def test_oversized_workflow_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows import catalog as catalog_module
+
+        monkeypatch.setattr(catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"workflows": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = WorkflowCatalog(project_dir)
+
+        bad_entry = WorkflowCatalogEntry(
+            url="https://bad.example.com/catalog.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(WorkflowCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = WorkflowCatalogEntry(
+            url="https://good.example.com/catalog.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
 
 
 # ===== Integration Test =====
@@ -9643,14 +10712,28 @@ class TestStepCatalog:
 
         assert config_path.read_text(encoding="utf-8") == original
 
-    def test_add_catalog_duplicate_rejected(self, project_dir):
+    def test_add_catalog_normalizes_stored_url_for_idempotency(self, project_dir):
         from specify_cli.workflows.step.catalog import StepCatalog, StepValidationError
 
         catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/steps.json")
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "added"
+        )
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["catalogs"][0]["url"] = "  https://example.com/steps.json  "
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        original = config_path.read_bytes()
+
+        assert (
+            catalog.add_catalog("https://example.com/steps.json", "mine")
+            == "unchanged"
+        )
+        assert config_path.read_bytes() == original
 
         with pytest.raises(StepValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/steps.json")
+            catalog.add_catalog("https://example.com/steps.json", "different")
 
     def test_remove_catalog(self, project_dir):
         from specify_cli.workflows.step.catalog import StepCatalog
@@ -9842,6 +10925,94 @@ class TestStepCatalog:
 
         missing = catalog.get_step_info("nonexistent")
         assert missing is None
+
+    def test_oversized_step_catalog_does_not_block_healthy_one(self, project_dir, monkeypatch):
+        """A healthy step catalog still works after an oversized one was rejected."""
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+        from specify_cli.workflows.step import catalog as step_catalog_module
+
+        monkeypatch.setattr(step_catalog_module, "MAX_JSON_CATALOG_BYTES", 512)
+
+        call_count = [0]
+
+        class _OversizedResponse:
+            def __init__(self):
+                self._data = b"x" * 1024
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://bad.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        class _HealthyResponse:
+            def __init__(self):
+                self._data = b'{"steps": {}}'
+                self._pos = 0
+
+            def read(self, n=-1):
+                if n < 0:
+                    chunk = self._data[self._pos:]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + n]
+                self._pos += len(chunk)
+                return chunk
+
+            def geturl(self):
+                return "https://good.example.com/steps.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _OversizedResponse()
+            return _HealthyResponse()
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = StepCatalog(project_dir)
+
+        bad_entry = StepCatalogEntry(
+            url="https://bad.example.com/steps.json",
+            name="bad",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(StepCatalogError, match="exceeds maximum size"):
+            catalog._fetch_single_catalog(bad_entry, force_refresh=True)
+
+        good_entry = StepCatalogEntry(
+            url="https://good.example.com/steps.json",
+            name="good",
+            priority=1,
+            install_allowed=True,
+        )
+        result = catalog._fetch_single_catalog(good_entry, force_refresh=True)
+        assert isinstance(result, dict)
 
 
 # ===== Load Custom Steps Tests =====

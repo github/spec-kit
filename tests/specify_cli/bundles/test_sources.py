@@ -200,6 +200,22 @@ def test_download_manifest_rejects_non_https_url_even_offline(tmp_path: Path):
         _download_manifest(resolved, offline=True)
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.2/bundle.zip",
+        "http://[0:0:0:0:0:0:0:1]/bundle.zip",
+    ],
+)
+def test_require_https_accepts_shared_loopback_http_forms(url):
+    _require_https("bundle 'x'", url)
+
+
+def test_require_https_rejects_remote_http():
+    with pytest.raises(BundlerError, match="non-HTTPS"):
+        _require_https("bundle 'x'", "http://example.com/bundle.zip")
+
+
 def test_local_zip_uses_bounded_archive_open(tmp_path: Path):
     artifact = tmp_path / "too-many-entries.zip"
     with zipfile.ZipFile(artifact, "w") as archive:
@@ -244,9 +260,8 @@ def test_download_manifest_rejects_malformed_url_cleanly(url):
 def test_require_https_rejects_malformed_url_cleanly(url):
     """``_require_https`` must also surface BundlerError on a malformed authority.
 
-    On older Python versions the ValueError is raised at ``.hostname`` access
-    rather than at ``urlparse``, so guarding both keeps the contract across the
-    CI Python matrix.
+    The shared URL policy rejects malformed hosts and ports without raising, so
+    callers keep the documented BundlerError contract.
     """
     with pytest.raises(BundlerError):
         _require_https("bundle 'x'", url)

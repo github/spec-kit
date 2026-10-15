@@ -84,6 +84,37 @@ class TestCopilotCommandsMode:
         assert settings not in created
         assert not any("settings.json" in k for k in m.files)
 
+    def test_setup_merge_keeps_non_ascii_vscode_settings_readable(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir(parents=True)
+        existing = {"cSpell.words": ["naïve", "Привіт", "日本語"]}
+        settings = vscode_dir / "settings.json"
+        settings.write_text(json.dumps(existing, indent=4, ensure_ascii=False), encoding="utf-8")
+        m = IntegrationManifest("copilot", tmp_path)
+
+        copilot.setup(tmp_path, m, parsed_options={"commands": True})
+
+        text = settings.read_text(encoding="utf-8")
+        assert '"naïve"' in text and '"Привіт"' in text and '"日本語"' in text
+        assert json.loads(text)["cSpell.words"] == existing["cSpell.words"]
+
+    def test_setup_merge_keeps_escaped_lone_surrogate_in_vscode_settings(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        vscode_dir = tmp_path / ".vscode"
+        vscode_dir.mkdir(parents=True)
+        settings = vscode_dir / "settings.json"
+        settings.write_text('{"custom.setting": "\\ud800"}', encoding="utf-8")
+        m = IntegrationManifest("copilot", tmp_path)
+
+        copilot.setup(tmp_path, m, parsed_options={"commands": True})
+
+        data = json.loads(settings.read_text(encoding="utf-8"))
+        assert data["custom.setting"] == "\ud800"
+        assert "chat.promptFilesRecommendations" in data
+
     def test_setup_preserves_non_utf8_vscode_settings(self, tmp_path, caplog):
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()

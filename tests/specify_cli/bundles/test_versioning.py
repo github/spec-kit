@@ -14,8 +14,18 @@ from specify_cli.bundles.versioning import is_semver, satisfies
     ("1.2.3-alpha1", True),
     ("1.2.3-beta2", True),
     ("v1.2.3", True),
+    ("1.20.30-12alpha.1+build.01", True),
+    ("V10.20.30", True),
+    # SemVer identifiers use ASCII digits, not Python's broader Unicode \d.
+    ("1٢.2.3", False),
+    ("1.2٣.3", False),
+    ("1.2.3٤", False),
+    ("1.2.3-1٢", False),
+    ("1.2.3-٢alpha", False),
+    ("1.2.3-１beta", False),
     ("not-a-version", False),
     ("", False),
+    ("1.2.3\n", False),
     # packaging.version.Version accepts these partial versions; SemVer must not.
     ("1", False),
     ("1.0", False),
@@ -66,3 +76,49 @@ def test_parse_constraint_empty_is_permissive():
     from specify_cli.bundles.versioning import parse_constraint
 
     assert str(parse_constraint("")) == ""
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        ">=1.0.0\n<2.0.0\n",   # a YAML block literal, as loaded
+        ">=1.0\n.0",
+        "a\nb",
+    ],
+    ids=["yaml_block_literal", "split_version", "garbage"],
+)
+def test_constraint_with_an_embedded_newline_reports_a_bundler_error(constraint):
+    """A clause containing a newline must be reported, not crash.
+
+    `_SPECIFIER_CLAUSE` is anchored with `^`/`$` and `.` does not cross
+    newlines, so such a clause does not match at all and `match.groups()`
+    raised a raw `AttributeError` — escaping `parse_constraint`'s contract to
+    surface bad input as a `BundlerError`. A YAML block literal reaches this
+    with no exotic input at all:
+
+        requires:
+          speckit_version: |
+            >=1.0.0
+            <2.0.0
+    """
+    from specify_cli.bundles.versioning import parse_constraint
+
+    with pytest.raises(BundlerError, match="Invalid version constraint"):
+        parse_constraint(constraint)
+
+
+@pytest.mark.parametrize(
+    "constraint,expected",
+    [
+        (">=1.0.0", ">=1.0.0"),
+        (">=v1.0.0", ">=1.0.0"),
+        ("~=1.2", "~=1.2"),
+        (">=1.0.0\n", ">=1.0.0"),   # trailing newline is still stripped
+        ("\n>=1.0.0", ">=1.0.0"),   # leading newline too
+    ],
+)
+def test_valid_constraints_are_unaffected(constraint, expected):
+    """Only clauses that genuinely fail to match change behaviour."""
+    from specify_cli.bundles.versioning import parse_constraint
+
+    assert str(parse_constraint(constraint)) == expected

@@ -118,6 +118,9 @@ class FakeInstaller:
         self.install_calls: list[tuple[str, str]] = []
         self.remove_calls: list[tuple[str, str]] = []
         self.refresh_calls: list[tuple[str, str]] = []
+        # Installed versions reported by ``installed_version``; set by tests
+        # that pre-install a component at a specific version.
+        self.versions: dict[tuple[str, str], str] = {}
         self._fail_on = fail_on
 
     def _key(self, component: ComponentRef) -> tuple[str, str]:
@@ -126,6 +129,12 @@ class FakeInstaller:
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool:
         return self._key(component) in self.installed
 
+    def installed_version(self, project_root: Path, component: ComponentRef) -> str | None:
+        return self.versions.get(self._key(component))
+
+    def validate_source(self, project_root: Path, component: ComponentRef) -> None:
+        pass
+
     def install(self, project_root: Path, component: ComponentRef) -> None:
         from specify_cli.bundler import BundlerError
 
@@ -133,11 +142,16 @@ class FakeInstaller:
         if self._fail_on is not None and component.id == self._fail_on:
             raise BundlerError(f"Simulated failure installing {component.id}")
         self.installed.add(self._key(component))
+        if component.version is not None:
+            self.versions[self._key(component)] = component.version
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         self.remove_calls.append(self._key(component))
         self.installed.discard(self._key(component))
+        self.versions.pop(self._key(component), None)
 
     def refresh(self, project_root: Path, component: ComponentRef) -> None:
         self.refresh_calls.append(self._key(component))
         self.installed.add(self._key(component))
+        if component.version is not None:
+            self.versions[self._key(component)] = component.version

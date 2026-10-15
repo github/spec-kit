@@ -27,6 +27,9 @@ These are independent entry points, not mandatory phases. SDD ships in core.
 Bug fixing and assessment are bundled, opt-in extensions. Assessment can stand
 alone; a decision to proceed does not automatically start implementation.
 
+See [how the Spec Kit project runs its agentic SDLC](guides/agentic-sdlc.md)
+and where it uses Spec Kit itself.
+
 Adding Spec Kit to an established codebase? Start with the
 [existing-project guide](guides/existing-projects.md).
 
@@ -139,6 +142,10 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 ## Explore the docs
 
 <div class="nav-cards">
+  <a href="guides/agentic-sdlc.md" class="nav-card">
+    <strong>Spec Kit's Agentic SDLC</strong>
+    <span>How this project assesses, builds, tests, ships, and repairs changes</span>
+  </a>
   <a href="quickstart.md" class="nav-card">
     <strong>Spec-Driven Development</strong>
     <span>Define, plan, implement, and converge on a feature</span>
@@ -198,4 +205,4 @@ Ready to start? [Choose your process](#choose-your-process).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: September 14, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: September 28, 2026</p>

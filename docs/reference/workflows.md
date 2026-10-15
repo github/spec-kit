@@ -54,6 +54,14 @@ For `failed` and `aborted` runs, the payload includes an `error` field carrying 
 
 `completed` and `paused` runs omit the `error` field. The error is persisted in the run's `state.json`, so `specify workflow status <run_id> --json` surfaces the same message after the fact.
 
+Adapter-load failures before creating or loading run state use a pre-run
+failure envelope: a new run has no run ID, while resume retains the supplied
+run ID but has no workflow or step context. After run state exists, adapter
+failures from per-step reloads or verified lazy imports retain the actual run,
+workflow, and current-step fields, just like execution I/O failures. If
+saving state fails, the on-disk status may still reflect the last successful
+save rather than the reported I/O failure.
+
 > **Note:** Most workflow commands require a project already initialized with `specify init`. The exception is `specify workflow run <local-file.{yml,yaml}>`, which can run outside a project; in that case, run state is stored under the current directory's `.specify/workflows/runs/<run_id>/`.
 
 ## Resume a Workflow
@@ -67,9 +75,17 @@ specify workflow resume <run_id>
 | `-i` / `--input`    | Updated input values as `key=value` (repeatable)         |
 | `--json`            | Emit the resume outcome as a single JSON object          |
 
-Resumes a paused or failed workflow run from the exact step where it stopped. Useful after responding to a gate step or fixing an issue that caused a failure.
+Resumes a paused or failed workflow run from its persisted execution state. A
+`running` run is not resumable. Resume replays completed work into its
+expression contexts without running step implementations again, then continues
+at the unfinished occurrence. This lets a run continue with information that
+only became available after it paused, or with a corrected value after a
+failure.
 
-Supplied `--input` values are merged over the run's stored inputs and re-validated against the workflow's input types, then the blocked step is re-run with the updated values. This lets a run continue with information that only became available after it paused, or with a corrected value after a failure:
+Supplied `--input` values are merged over the run's stored root inputs and
+re-validated against the workflow's input types. Unknown root input names are
+ignored. Updated values affect only unfinished work; completed steps and calls
+are not reinterpreted or repeated:
 
 ```bash
 specify workflow resume <run_id> --input cmd="exit 0"
@@ -105,6 +121,7 @@ specify workflow add <source>
 | --------------- | ------------------------------------------------------ |
 | `--dev`         | Install from a local YAML file, package directory, or archive |
 | `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
+| `--version <version>` | Install an exact advertised catalog release (`<source>` must be a workflow ID) |
 
 Installs a workflow from the catalog, an HTTPS URL, a local YAML file, a
 directory containing `workflow.yml`, or a `.zip`, `.tar.gz`, or `.tgz`
@@ -114,6 +131,37 @@ top-level directory.
 Directory and archive installs preserve the complete workflow package,
 including scripts and other companion files. ZIP, `.tar.gz`, and `.tgz`
 archives follow the same validation and installation behavior.
+
+Catalog entries keep the current release's `version`, `url`, optional `sha256`,
+and optional `requires` at the top level. An optional `releases` mapping
+advertises historical versions without changing what unqualified `add`,
+`search`, `info`, or `update` select:
+
+```json
+{
+  "id": "example",
+  "version": "2.0.0",
+  "url": "https://example.com/example-2.0.0.zip",
+  "releases": {
+    "1.0.0": {
+      "url": "https://example.com/example-1.0.0.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requires": {"speckit_version": ">=1.0.0"}
+    }
+  }
+}
+```
+
+Each historical release needs its own URL and SHA-256 digest; `requires` is
+optional and, when present, must match the downloaded workflow definition.
+Advertised versions use the workflow definition's `X.Y.Z` version format;
+`--version` also accepts equivalent spellings such as `v1.0` when selecting an
+advertised `1.0.0` release.
+The requested version must exist in the highest-priority catalog that provides
+the workflow. A missing version does not fall back to another source, and
+discovery-only catalogs cannot be installed from. The downloaded workflow ID,
+version, and declared digest are verified before installation. `--version` does
+not apply to local paths, direct URLs, or `--from` installations.
 
 ## Workflow Overlays
 
@@ -335,6 +383,7 @@ When an installed workflow is refreshed or reinstalled, project overlays in `.sp
 - An overlay that targets a step id that does not exist in the base workflow will raise a validation error when the workflow is resolved.
 - Overlays cannot target steps added by other overlays.
 - Overlays cannot add new inputs or change the input schema of the base workflow.
+
 ## Update Workflows
 
 ```bash
@@ -377,13 +426,20 @@ Searches all active catalogs for workflows matching the query.
 
 ```bash
 specify workflow info <workflow_id>
+specify workflow info <workflow_id> --versions
 ```
 
 Shows detailed information about a workflow, including its steps, inputs, and requirements.
+`--versions` lists the current catalog version followed by advertised historical
+versions and indicates whether the winning catalog is installable or
+discovery-only (not installable). It also works when a different version is
+installed locally.
 
 ## Catalog Management
 
 Workflow catalogs control where `search` and `add` look for workflows. Catalogs are checked in priority order.
+
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 
@@ -405,13 +461,17 @@ specify workflow catalog add <url>
 
 Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
 
+Re-adding the same workflow or step catalog URL with the same name succeeds without changing the configuration; a different name is rejected.
+
 ### Remove a Catalog
 
 ```bash
 specify workflow catalog remove <index>
+specify workflow step catalog remove <index>
 ```
 
-Removes a catalog by its index in the catalog list.
+Removes a project catalog by its index in the corresponding priority-ordered `catalog list`.
+Sources supplied by `SPECKIT_WORKFLOW_CATALOG_URL` or `SPECKIT_STEP_CATALOG_URL` cannot be removed this way; unset the variable to manage project sources.
 
 ### Catalog Resolution Order
 
@@ -537,8 +597,381 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `do-while`   | Execute at least once, then loop on condition    |
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
+| `workflow`   | Call an installed workflow with private inputs and declared outputs |
+
+### Workflow composition
+
+A `workflow` step executes an installed, enabled workflow in the current project
+as a private scope of the same run. Targets can be literal IDs or expressions;
+the resolved string must match the ID exactly, including case and whitespace.
+
+```yaml
+inputs:
+  target: {type: string, required: true}
+  report: {type: string, required: true}
+steps:
+  - id: investigate
+    type: workflow
+    workflow: "{{ inputs.target }}"
+    input:
+      report: "{{ inputs.report }}"
+```
+
+The included workflow sees only declared inputs passed through `input` and its
+own step results. It does not inherit the caller's `inputs`, step results,
+fan-out `item`/`fan_in` values, or workflow defaults. Unknown input names,
+missing required values, and invalid types/enums fail the call. Existing child
+defaults and `integration: auto` resolution apply. Values cross back only
+through explicit declarations:
+
+```yaml
+outputs:
+  report:
+    value: "{{ steps.analyze.output.stdout }}"
+```
+
+The caller reads `{{ steps.investigate.output.report }}`. Output includes
+`workflow` and `status`; failures include `error` when the failed operation
+reported one, and an abort includes `aborted: true`. These names and
+`integration`, `model`, `options`, and `input` are reserved. Returned values
+must be JSON-safe. Private inputs, step records, and logs are not part of the
+return value. No separate child run is created.
+
+`continue_on_error: true` on a workflow call handles a returned child failure
+and call-boundary contract failures, such as an unavailable target, invalid
+mapped input, cycle, depth limit, or invalid declared output. It does not catch
+step exceptions, expression errors (including `from_json` errors in `input:` or
+`outputs:`), interruptions, or checkpoint failures; those propagate exactly as
+they do at the root. An unavailable step implementation is terminal where the
+step occurs; at a workflow call it is a reported child failure, whether it is
+detected while binding the target or later. Pauses and explicit aborts always
+stop execution.
+
+Nested composition is allowed, but repeated workflow IDs on the active call
+path are cycles. Diamonds are allowed. The maximum included depth is 16, with
+the root at depth zero.
+
+### Calling a Child Gate
+
+Only root-declared inputs can be supplied to `workflow resume --input`. Map a
+root input through each workflow boundary when a child gate uses it as a
+`verdict_input`:
+
+```yaml
+# Parent workflow
+inputs:
+  approval:
+    type: string
+    default: ""
+steps:
+  - id: review-release
+    type: workflow
+    workflow: release-notes
+    input:
+      approval: "{{ inputs.approval }}"
+```
+
+```yaml
+# Installed release-notes workflow
+inputs:
+  approval:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Approve the release notes?"
+    options: [approve, reject]
+    verdict_input: approval
+```
+
+The initial run pauses if `approval` is empty. Its structured status identifies
+the nested gate and its enclosing call with `gate.scope_path`. Resume the root
+run, not the child, to continue it:
+
+```bash
+specify workflow status <run-id> --json
+specify workflow resume <run-id> --input approval=approve
+```
+
+A gate with `verdict_input` is not supported inside a fan-out item, including
+through one or more workflow calls. The `inside_fan_out` runtime condition is
+preserved across workflow boundaries.
+
+### Defaults and Errors at the Call Boundary
+
+Parent `integration`, `model`, and `options` defaults apply only to steps in
+the parent workflow. A child uses its own defaults or automatic resolution. To
+make a value common to both, declare it as a child input and map it explicitly.
+The call result intentionally has an empty `input` field and does not expose
+the child's private inputs, step records, or logs.
+
+An initial binding or output-finalization contract failure can be handled with
+`continue_on_error`. A failure while rebinding an incomplete call during
+`workflow resume --input` is different: it propagates. For a previously bound
+call, resume discards the prior `result`, `outcome`, and `error` while
+preserving its binding and child subtree, so it can be retried with corrected
+root inputs. A call whose initial binding failed returns to `ready` and retries
+target resolution and binding.
+
+### Execution identity and resume
+
+Each step occurrence owns a record in a persisted execution tree. An authored
+step ID is a local expression alias, not a global execution ID. Fan-out items
+have independent alias contexts and ordered item results. Public reporting uses
+qualified occurrence IDs where needed, for example `fan:template:0` for a
+fan-out item and `loop:step:1` for a later loop iteration. Qualified IDs are
+not expression names. Fan-out item aliases are reporting-only: a `fan-in`
+`wait_for` references declared step IDs, in particular the fan-out step's own
+`id`, whose ordered item results are available as
+`steps.<fan-out-id>.output.results`.
+
+> **Migration note:** a fan-out's output no longer includes `step_template`.
+> `steps.<fan-out-id>.output` and the fan-out's entry in a `fan-in`'s
+> `output.results` contain `items`, `max_concurrency`, `item_count`, and
+> `results`; the template is kept only in the private execution tree that runs
+> the items. An expression such as `{{ steps.<fan-out-id>.output.step_template }}`
+> now resolves to empty. Read the template from the fan-out's `step` in the
+> workflow definition instead.
+
+New runs persist selected branches, dynamic custom-step expansions, loop
+iterations, and fan-out items. Resume retains completed work without
+reevaluating already selected branches. Workflow targets and overlay-resolved
+definitions remain bound even if installations change. An unbound call still
+checks that its target is installed and enabled when execution reaches it.
+
+Ordinary resume retains bound inputs. Explicit `--input` rebinds reached,
+incomplete calls through their original mappings: newly mapped values override
+the prior binding, while values not mapped again retain their bound values.
+Completed calls retain their results. Failed output evaluation retries only
+finalization, without repeating completed child commands.
+
+Snapshots are stored as YAML strings inside the private JSON execution tree,
+preserving YAML scalar types. Inputs and results remain JSON values. The
+snapshot freezes workflow definitions and expansions, not files under
+`context.workflow_dir` or step implementations; missing resources can still
+cause ordinary step failures. Legacy runs without a tree enter through their
+saved root index, then use tree-backed resume. Resume is available only for
+runs in the `paused` or `failed` state.
+
+`current_step_index` is the root-sequence index; `current_step_id` is a
+compatibility occurrence-ID view updated as steps are entered. It is not an
+exact active-step set: during parallel fan-out it may name an item that has
+already completed. Qualified values include `fan:item:0` for a fan-out item
+and `loop:body:1` for a later loop iteration.
+Inside a workflow call, IDs are relative to the called workflow. Structured
+run/status output includes `workflow_scopes`
+summaries when calls exist and reports an active nested gate with its
+`scope_path`. Private log events add `workflow_id` and `execution_path` to the
+qualified `step_id`. A step emits completion after its checkpoint; containers
+emit before their children, while replayed completed occurrences emit no step
+events.
 
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
+### Custom step packages
+
+Custom step types are installed with `specify workflow step`. A step is a
+directory package containing metadata and executable Python:
+
+```text
+my-step/
+├── step.yml        # required, at the package root
+├── __init__.py     # required, at the package root
+└── helpers.py      # optional nested modules and data files
+```
+
+To prepare a public package for community catalog intake, see
+[Community Workflow Step Types](../community/workflow-steps.md).
+
+`step.yml` declares the step's identity. `step.type_key` must exactly match the
+`<step_id>` passed on the command line — the ID is never inferred from package
+content:
+
+```yaml
+step:
+  type_key: my-step
+  name: My Step
+  version: 0.1.0
+  author: you
+  description: What this step does
+```
+
+`__init__.py` must define a `StepBase` subclass whose `type_key` matches:
+
+```python
+from specify_cli.workflows.base import StepBase, StepResult
+
+
+class MyStep(StepBase):
+    type_key = "my-step"
+
+    def execute(self, config, context):
+        return StepResult(output={"ok": True})
+```
+
+#### Install from a local directory
+
+```bash
+specify workflow step add my-step --dev /path/to/my-step
+```
+
+`--dev` takes a **directory** (not an archive, not a bare `step.yml`) that is a
+complete package. This needs no catalog, server, or network, which makes it the
+supported local-authoring loop:
+
+```bash
+specify workflow step add my-step --dev ./my-step
+specify workflow step list
+specify workflow step info my-step
+# edit ./my-step, then replace the installed copy:
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step remove my-step
+```
+
+#### Install from an archive URL
+
+```bash
+specify workflow step add my-step --from https://example.com/my-step.zip
+```
+
+`--from` accepts a `.zip`, `.tar.gz`, or `.tgz` archive (a bare `step.yml`
+URL is **not** a package). The archive may place `step.yml` and `__init__.py`
+at its root or under exactly one top-level directory; unrelated top-level
+siblings are rejected. Because a step package contains executable Python, a
+direct URL install shows a default-deny trust confirmation before any network
+request; declining cancels with no request and no error. HTTPS is required
+(HTTP is permitted only for loopback hosts), redirects must remain secure, and
+downloads are size-bounded.
+
+#### Install from the catalog
+
+```bash
+specify workflow step add my-step
+```
+
+Catalog installs resolve individual file URLs from the active step catalogs and
+then go through the same validation and commit path as `--dev` and `--from`.
+Discovery-only catalogs cannot be installed from.
+
+To submit a custom step type to the discovery-only community catalog, follow
+[Community Workflow Steps](../community/workflow-steps.md). Submissions use
+tag-pinned individual file URLs and per-file digests; maintainers validate
+metadata and distribution evidence, not submitted code.
+
+##### Catalog release history
+
+`specify workflow step info <id> --versions` lists the current and historical
+releases in the winning catalog. `specify workflow step add <id> --version <v>`
+selects the exact catalog release; without `--version`, `add` installs the
+advertised current release. The requested version never falls back to a
+lower-priority catalog, and discovery-only sources remain non-installable.
+`--version` cannot be combined with direct `--dev` or `--from` installs.
+
+Existing single-version catalog entries continue to work. Keep the current
+release's `version`, `step_yml_url` (or `url`), `init_url`, and optional files
+at the top level. An optional `releases` mapping adds historical versions:
+
+```json
+{
+  "steps": {
+    "my-step": {
+      "version": "2.0",
+      "step_yml_url": "https://example.com/my-step/2.0/step.yml",
+      "releases": {
+        "1.0": {
+          "step_yml_url": "https://example.com/my-step/1.0/step.yml",
+          "init_url": "https://example.com/my-step/1.0/__init__.py",
+          "extra_files": {"helper.py": "https://example.com/my-step/1.0/helper.py"},
+          "sha256": {
+            "step.yml": "<64 hex digits>",
+            "__init__.py": "<64 hex digits>",
+            "helper.py": "<64 hex digits>"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Each historical release must supply its own step URL and SHA-256 digest for
+every downloaded file. `init_url` can be omitted when derived from a
+`step_yml_url` ending in `step.yml`. To select the current version explicitly,
+its top-level entry must likewise supply the per-file `sha256` mapping.
+Release-specific files and requirements are not inherited from the current
+release. Repeated or malformed versions are rejected; equivalent PEP 440
+spellings such as `v1.0` and `1.0` select the same advertised release. The
+downloaded `step.yml` must declare the selected step ID and version. An
+unqualified legacy catalog install does not require digests or a step version.
+Only one version of each step ID can be installed at a time; use `--force` to
+replace a previous installation after reviewing the selected package.
+
+#### Replacement and force
+
+```bash
+specify workflow step add my-step --dev ./my-step --force
+specify workflow step add my-step --from https://example.com/my-step.zip --force
+```
+
+`--force` first stages and validates the replacement before touching the
+existing installation, and can replace both a registered install and a leftover
+unregistered directory. Validation and staging failures leave the previous
+package untouched. If removing the old directory fails, the replacement is not
+published. If publishing the replacement or updating the registry fails after
+the old directory has been removed, the installation may be left incomplete:
+rerun the command with the original source and `--force` to reinstall. No
+automatic rollback is attempted.
+
+#### Package validation
+
+Every source is validated identically before anything is committed:
+
+- `step.yml` and `__init__.py` must be regular, non-symlink files at the package
+  root.
+- The package tree is copied recursively (relative imports, nested helper
+  modules, and data files are supported). A symlinked package root, any
+  descendant symlink, and any filesystem object that is not a regular file or
+  directory are rejected.
+- `.git`, `__pycache__`, and `.DS_Store` entries are skipped without being
+  inspected: they are not copied, excluded directories are not entered, and
+  they do not count toward any limit.
+- The installed-package policy permits at most **512 retained entries** (files
+  and directories combined), at most **32 levels** of directory nesting, and
+  **50 MiB** of retained content.
+- Archive URLs also pass transport/extraction safety limits before package
+  validation: at most 512 archive entries, 50 MiB downloaded or extracted, and
+  10 MiB per archive member. Catalog files have a 50 MiB per-response bound.
+- Installation validates and copies the package but does **not** import or
+  execute `__init__.py`. Installed custom step modules are loaded during startup
+  of `workflow add`, `workflow run`, and `workflow resume`, before any particular
+  custom step necessarily executes.
+
+> **Security note:** Loading a custom step runs its Python with **your**
+> privileges. Only install and retain step packages from sources you trust.
+
+#### Listing, running, and removing
+
+Installed custom steps appear in `specify workflow step list` and are loaded
+automatically by `workflow add`, `workflow run`, and `workflow resume`. Remove
+one with:
+
+```bash
+specify workflow step remove my-step
+```
+
+#### Registry provenance
+
+Each installed step records only the *kind* of its source — `catalog`
+(optionally with the catalog name), `local`, or `url`. Local paths and source
+URLs are never persisted. `specify workflow step info <id>` shows the source.
+
+#### Bundle-local limitation
+
+A bundle's `provides.steps` still resolves only through the active step
+catalogs. Bundle-local `steps/<id>/` payloads and relative
+`provides.steps[].source` overrides are **not** resolved in this release, so
+such steps are not installable offline. See the [Bundles reference](bundles.md).
 
 ### Per-Step Integration Configuration
 
@@ -590,7 +1023,34 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `context.run_id`               | Current workflow run ID              |
 | `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
-Available filters: `default`, `join`, `contains`, `map`, `from_json`.
+Available filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+| Filter   | Example                                    | Behavior                                                                                        |
+| -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `default`| `{{ val \| default('fb') }}`               | Fallback for `None` or an empty string                                                                  |
+| `join`   | `{{ list \| join(', ') }}`                 | Join list elements into a string                                                                   |
+| `contains`| `{{ text \| contains('sub') }}`           | Substring or membership check                                                                      |
+| `map`    | `{{ list \| map('attr') }}`                | Extract an attribute from each item                                                                |
+| `from_json`| `{{ out \| from_json }}`                 | Parse a JSON string into a typed value                                                             |
+| `to_json`| `{{ obj \| to_json }}`                     | Serialize a value to a JSON string — the inverse of `from_json`; mapping keys must be strings |
+| `upper`  | `{{ text \| upper }}`                      | Uppercase a string                                                                                 |
+| `lower`  | `{{ text \| lower }}`                      | Lowercase a string                                                                                 |
+| `split`  | `{{ csv \| split(',') }}`                  | Split a string on a separator into a list of strings                                               |
+| `length` | `{{ items \| length }}`                    | Number of elements in a list, or characters in a string                                            |
+
+`default` falls back only for `None` and the empty string. Other falsy values — `0`, `false`, `[]`, `{}` — are passed through unchanged, so `{{ count | default(10) }}` still yields `0` for a zero count. Falsy is not the same as empty here.
+
+Notes on the newer filters:
+
+- **Types are validated, not coerced.** `upper` and `lower` accept strings only, `split` requires both a string value and a non-empty string separator, and `length` accepts lists and strings but rejects mappings. Anything else raises a `ValueError` naming the problem. Coercion is deliberately not performed: a type mismatch nearly always means the workflow is wired to the wrong variable, and a coerced result would hide that. A filter given the wrong number of arguments (`| upper('x')`, `| split` with no separator, `| split(',', 1)`) is reported as a known filter misused, which is distinct from an entirely unknown filter name: a call carrying more than one argument falls through to that same unsupported-form error rather than being evaluated as a single expression. The older filters (`join`, `map`, `contains`) are more permissive and unchanged: `join` stringifies unsupported values and `map`/`contains` return fallbacks rather than raising.
+- **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
+- **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
+- **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
+- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+
+  ```yaml
+  condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True
+  ```
 
 Example:
 
@@ -598,6 +1058,8 @@ Example:
 condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
+tag_count: "{{ inputs.tags | split(',') | length }}"
+shell_flag: "{{ inputs.branch | upper }}"
 ```
 
 ### Interpolation and shell safety
@@ -650,7 +1112,9 @@ Each workflow run persists its state at `.specify/workflows/runs/<run_id>/`:
 - `inputs.json` — resolved input values
 - `log.jsonl` — step-by-step execution log
 
-This enables `specify workflow resume` to continue from the exact step where a run was paused (e.g., at a gate) or failed.
+This enables `specify workflow resume` to replay completed occurrences and
+continue at the unfinished occurrence where a run paused (for example, at a
+gate) or failed.
 
 ### Gate Verdict Inputs
 

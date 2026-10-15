@@ -27,7 +27,6 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.command_init import _shell_quote_arg
-
 from tests.conftest import requires_bash
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -51,7 +50,7 @@ def test_init_command_registered():
     callback_names = [
         cmd.callback.__name__ for cmd in app.registered_commands if cmd.callback
     ]
-    assert callback_names == ["init", "check", "version"]
+    assert callback_names == ["init", "check", "version", "mcp"]
 
 
 def test_init_has_win32_guard():
@@ -194,6 +193,7 @@ def test_printed_cd_command_actually_changes_directory(tmp_path: Path, name: str
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        check=False,
     )
     assert proc.returncode == 0, f"cd {printed!r} failed: {proc.stderr}"
     assert Path(proc.stdout.strip()).name == name, proc.stdout

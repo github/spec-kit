@@ -553,17 +553,13 @@ MULTI_POSITION_UNFIXABLE = [
     ("in inputs.tags", "missing an operand"),             # leading word operator
     ("inputs.f(]", "brackets do not balance"),            # matched count, wrong types
     ("inputs.f(]", "brackets do not balance"),
-    ("inputs.items | length", "the evaluator rejects it"),
+    ("inputs.items | truncate", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
     ('he said "hi" then left', "is not a name the evaluator can resolve"),
     ("inputs.count+1", "is not a valid path segment"),
     ("inputs.a === inputs.b", "is not a name the evaluator can resolve"),
     ("bogus == 'x'", "is not one of the namespace roots"),
     ("inputs.payload | from_json()", "the evaluator rejects it"),
-    # `_find_top_level` matches " and " with literal spaces, so a newline before
-    # the keyword is not an operator: the wrapped form evaluates False where the
-    # same expression with a space evaluates True.
-    ("inputs.x == 1\nand inputs.name == 'abc'", "is not a name the evaluator can resolve"),
 ]
 
 
@@ -576,6 +572,25 @@ def test_gates_inspect_every_position_not_just_the_first(step_cls, condition, ex
     assert len(errors) == 1
     assert "Wrap the expression" not in errors[0]
     assert expected in errors[0]
+
+
+@pytest.mark.parametrize("step_cls", STEP_CLASSES)
+def test_a_condition_wrapped_across_lines_gets_a_paste_ready_correction(step_cls):
+    """A line break before ``and`` no longer hides the operator.
+
+    The evaluator used to match " and " with literal spaces, so the wrapped form
+    of this condition read False where the one-line form read True, and the gate
+    had to withhold the correction. It now splits on any whitespace, so wrapping
+    repairs the condition and the correction is offered.
+    """
+    condition = "inputs.x == 1\nand inputs.name == 'abc'"
+    config = {"id": "s1", "condition": condition, "then": [], "steps": []}
+    errors = [e for e in step_cls().validate(config) if "'condition'" in e]
+
+    assert len(errors) == 1
+    assert "Wrap the expression" in errors[0]
+    ctx = StepContext(inputs={"x": 1, "name": "abc"})
+    assert evaluate_condition("{{ " + condition + " }}", ctx) is True
 
 
 @pytest.mark.parametrize(
@@ -612,10 +627,15 @@ def test_the_probe_reports_what_the_evaluator_reports():
     Asking the evaluator removes that class: any filter used under an unknown name
     or in an unsupported form is reported by the code that will run.
     """
-    assert _evaluator_rejects("inputs.items | length") is not None
+    assert _evaluator_rejects("inputs.items | truncate") is not None
     assert _evaluator_rejects("inputs.tags | join") is not None
     assert _evaluator_rejects("inputs.tags | join(',')") is None
     assert _evaluator_rejects("inputs.count > 100") is None
+    # A registered filter used in an unsupported form is a rejection too.
+    assert _evaluator_rejects("inputs.items | split") is not None
+    # Registered filters that are wired correctly are not.
+    assert _evaluator_rejects("inputs.items | length") is None
+    assert _evaluator_rejects("inputs.tags | split(',')") is None
 
 
 @pytest.mark.parametrize(
@@ -671,7 +691,12 @@ def test_probe_value_errors_are_not_treated_as_rejections(condition):
 
 @pytest.mark.parametrize(
     "condition",
-    ["inputs.items | length", "inputs.tags | join"],
+    [
+        "inputs.items | truncate",
+        "inputs.tags | join",
+        "inputs.items | split",
+        "inputs.text | upper('x')",
+    ],
 )
 def test_filter_wiring_errors_are_still_rejections(condition):
     """The other half: a filter named wrong or used wrong is the author's text."""
@@ -946,16 +971,17 @@ def test_a_literal_never_reaches_the_resolver():
 def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     """Widening `_INDEXED_SEGMENT` alone must reach the gate.
 
-    `steps.…​.task_list[-1]` is rejected today because `_INDEXED_SEGMENT` — the
-    one place `_resolve_dot_path` says what an index looks like — accepts digits
-    only. Widening it there and nowhere else must be enough; if the gate keeps
-    its own copy of the shape (as `_PATH_SEGMENT` used to), this fails.
+    `steps.…​.task_list[+1]` is rejected today because `_INDEXED_SEGMENT` — the
+    one place `_resolve_dot_path` says what an index looks like — accepts an
+    optional minus sign and digits only. Widening it there and nowhere else must
+    be enough; if the gate keeps its own copy of the shape (as `_PATH_SEGMENT`
+    used to), this fails.
     """
-    path = "steps.tasks.output.task_list[-1].file"
+    path = "steps.tasks.output.task_list[+1].file"
     assert expressions._unresolvable_term(path) is not None
 
     monkeypatch.setattr(
-        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[(-?\d+)\]$")
+        expressions, "_INDEXED_SEGMENT", re.compile(r"^([\w-]+)\[([+-]?\d+)\]$")
     )
     assert expressions._unresolvable_term(path) is None
 
@@ -963,20 +989,14 @@ def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
 def test_gate_reports_the_leaves_the_evaluator_actually_reached(monkeypatch):
     """The gate's operands come from the evaluator's own walk, not a second parse.
 
-    If `_evaluate_simple_expression` stops treating something as a leaf — which
-    is what unwrapping a parenthesised group does — the gate stops checking it,
-    with no change to the gate itself.
+    What `_evaluate_simple_expression` treats as a leaf is what the gate checks.
+    Unwrapping a parenthesised group takes that group off the list, so the gate
+    stops checking it, with no change to the gate itself.
     """
     grouped = "(inputs.a or inputs.b) and inputs.c"
-    assert expressions._unresolvable_term(grouped) is not None
-
-    real = expressions._evaluate_simple_expression
-
-    def unwrapping(expr, namespace):
-        stripped = expr.strip()
-        if stripped.startswith("(") and stripped.endswith(")"):
-            return unwrapping(stripped[1:-1], namespace)
-        return real(expr, namespace)
-
-    monkeypatch.setattr(expressions, "_evaluate_simple_expression", unwrapping)
     assert expressions._unresolvable_term(grouped) is None
+
+    # Stop the evaluator unwrapping the group and it becomes a leaf again, so
+    # the gate goes back to reporting it as a name it cannot resolve.
+    monkeypatch.setattr(expressions, "_is_wrapped_in_parens", lambda text: False)
+    assert expressions._unresolvable_term(grouped) is not None

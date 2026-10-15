@@ -16,6 +16,7 @@ import typer
 
 from . import (
     ArtifactError,
+    ArtifactResolutionError,
     NotASpecKitProjectError,
 )
 
@@ -43,9 +44,19 @@ def _resolve_project_root() -> Path:
 
     with contextlib.redirect_stderr(io.StringIO()):
         try:
-            return _require_specify_project()
+            root = _require_specify_project()
         except typer.Exit:
             raise NotASpecKitProjectError() from None
+    from ..integrations.installer import (
+        IntegrationInstallError,
+        load_installed_integrations,
+    )
+
+    try:
+        load_installed_integrations(root)
+    except (IntegrationInstallError, OSError) as exc:
+        raise ArtifactResolutionError(str(exc)) from exc
+    return root
 
 
 def _emit_error_and_exit(exc: ArtifactError) -> None:

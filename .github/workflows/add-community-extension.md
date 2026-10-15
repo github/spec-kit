@@ -62,6 +62,7 @@ safe-outputs:
   add-labels:
     allowed: [extension-submission, validation-passed, validation-failed, needs-info]
     max: 3
+    issue-intent: false
   remove-labels:
     allowed: [validation-passed, validation-failed]
 ---
@@ -71,6 +72,17 @@ safe-outputs:
 You are a catalog maintenance agent for the Spec Kit project. Your job is to
 process community extension submission issues and create pull requests that add
 or update entries in the community extension catalog.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+For a Passed outcome, emit `labels: ["validation-passed"]`; for a Failed
+outcome, emit `labels: ["validation-failed"]`. Follow the outcome rules below
+for timing, stale-label removal, and Blocked validation; this requirement does
+not turn environment blockers into submission failures.
 
 ## Triggering Conditions
 

@@ -9,10 +9,13 @@ from __future__ import annotations
 import logging
 import os
 import re
+import tomllib
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
+from .._file_changes import unlink as _unlink_file, write_text as _write_text
 from ..manifest import IntegrationManifest
 from ..._toml_string import escape_toml_basic
 from ..._utils import dump_frontmatter
@@ -89,6 +92,33 @@ class VibeIntegration(SkillsIntegration):
             ),
         )
         return opts
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``vibe`` execution.
+
+        ``SkillsIntegration``'s default appends ``--model`` and
+        ``--output-format``, neither of which exists in the Vibe CLI, so a
+        dispatched step exits 2 at argument parsing whenever either flag ends
+        up appended (a configured ``model``, or ``output_json=True``). Vibe's
+        structured output is ``--output json``. ``model`` is deliberately
+        dropped: Vibe has no per-invocation model flag and selects its model
+        out of band via ``active_model`` in its config (or ``VIBE_ACTIVE_MODEL``).
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
+        if output_json:
+            args.extend(["--output", "json"])
+        return args
 
     def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
         """Render a processed command template as a Vibe skill."""
@@ -223,12 +253,226 @@ class VibeIntegration(SkillsIntegration):
         return escape_toml_basic(value)
 
     @staticmethod
-    def _managed_hooks_pattern() -> re.Pattern[str]:
-        """Match one Vibe ``[[hooks]]`` block carrying our ownership marker."""
-        return re.compile(
-            r"\[\[hooks\]\]\n(?:(?!\[\[hooks\]\]).)*?speckit_marker = true\n*",
-            re.DOTALL,
-        )
+    def _parse_toml_header(code: str) -> tuple[bool, tuple[str | None, ...] | None]:
+        """Return a TOML header's kind and key path, or ``None`` if it is not one.
+
+        This deliberately recognizes only header syntax, not full TOML.  Its
+        caller has already excluded comments and unterminated strings.  A
+        ``None`` key component represents a quoted basic key with an escape:
+        it is still a real header, but cannot be the literal ``hooks`` key we
+        manage without decoding TOML escapes.
+        """
+        text = code.strip(" \t")
+        is_array = text.startswith("[[")
+        if is_array:
+            if not text.endswith("]]") or len(text) < 5:
+                return False, None
+            body = text[2:-2]
+        else:
+            if not text.startswith("[") or not text.endswith("]") or len(text) < 3:
+                return False, None
+            body = text[1:-1]
+
+        parts: list[str | None] = []
+        index = 0
+        length = len(body)
+        while True:
+            while index < length and body[index] in " \t":
+                index += 1
+            if index == length:
+                return False, None
+
+            if body[index] in "\"'":
+                quote = body[index]
+                index += 1
+                start = index
+                escaped = False
+                while index < length:
+                    char = body[index]
+                    if quote == "\"" and escaped:
+                        escaped = False
+                    elif quote == "\"" and char == "\\":
+                        escaped = True
+                    elif char == quote:
+                        raw_part = body[start:index]
+                        parts.append(raw_part if "\\\\" not in raw_part else None)
+                        index += 1
+                        break
+                    index += 1
+                else:
+                    return False, None
+            else:
+                start = index
+                while index < length and (body[index].isalnum() or body[index] in "_-"):
+                    # TOML bare keys are ASCII-only; non-ASCII alphanumerics
+                    # make this header ambiguous, so fail closed.
+                    if not body[index].isascii():
+                        return False, None
+                    index += 1
+                if start == index:
+                    return False, None
+                parts.append(body[start:index])
+
+            while index < length and body[index] in " \t":
+                index += 1
+            if index == length:
+                return is_array, tuple(parts)
+            if body[index] != ".":
+                return False, None
+            index += 1
+
+    @staticmethod
+    def _managed_hook_spans(source: str) -> list[tuple[int, int]] | None:
+        """Find Specify-owned hook blocks in valid TOML without interpreting values.
+
+        The scanner only needs TOML's lexical boundaries: comments, ordinary
+        strings, multiline strings, multiline arrays, and standalone table
+        headers. A parser validity gate and the scanner both return ``None``
+        for malformed or ambiguous input so callers can leave the source
+        byte-for-byte untouched.
+        """
+        try:
+            tomllib.loads(source)
+        except tomllib.TOMLDecodeError:
+            return None
+
+        spans: list[tuple[int, int]] = []
+        current_start: int | None = None
+        current_is_hooks = False
+        current_has_marker = False
+        multiline: str | None = None
+        array_depth = 0
+        offset = 0
+
+        for line in source.splitlines(keepends=True):
+            content = line.rstrip("\r\n")
+            index = 0
+            code_end = len(content)
+            line_starts_in_multiline_string = multiline is not None
+            line_has_multiline_string = line_starts_in_multiline_string
+            line_starts_in_array = array_depth > 0
+            structural = list(content)
+            while index < len(content):
+                char = content[index]
+                if multiline is not None:
+                    if multiline == '"""' and char == "\\":
+                        # A basic multiline string may escape its next
+                        # character (including a newline continuation).
+                        structural[index:min(index + 2, len(content))] = " " * min(
+                            2, len(content) - index
+                        )
+                        index += 2
+                        continue
+                    if content.startswith(multiline, index):
+                        run_end = index
+                        while run_end < len(content) and content[run_end] == multiline[0]:
+                            run_end += 1
+                        if run_end - index > 5:
+                            return None
+                        if run_end - index >= 3:
+                            structural[index:run_end] = " " * (run_end - index)
+                            multiline = None
+                            index = run_end
+                            continue
+                    structural[index] = " "
+                    index += 1
+                    continue
+
+                if char == "#":
+                    code_end = index
+                    break
+                if content.startswith('"""', index) or content.startswith("'''", index):
+                    multiline = content[index:index + 3]
+                    line_has_multiline_string = True
+                    structural[index:index + 3] = "   "
+                    index += 3
+                    continue
+                if char in "\"'":
+                    quote = char
+                    start = index
+                    index += 1
+                    while index < len(content):
+                        if quote == "\"" and content[index] == "\\":
+                            if index + 1 == len(content):
+                                return None
+                            index += 2
+                            continue
+                        if content[index] == quote:
+                            index += 1
+                            structural[start:index] = " " * (index - start)
+                            break
+                        index += 1
+                    else:
+                        return None
+                    continue
+                index += 1
+
+            if multiline is not None and not line.endswith(("\n", "\r")):
+                return None
+
+            # A multiline string can contain arbitrary text that resembles a
+            # header or marker. A header/assignment cannot validly share its
+            # physical line, so ignore that line for ownership purposes.
+            code = "" if line_has_multiline_string else content[:code_end]
+            is_array, header_path = (
+                VibeIntegration._parse_toml_header(code)
+                if not line_starts_in_array and not line_has_multiline_string
+                else (False, None)
+            )
+            if header_path is not None:
+                if current_start is not None and current_has_marker:
+                    spans.append((current_start, offset))
+                current_start = offset
+                current_is_hooks = is_array and header_path == ("hooks",)
+                current_has_marker = False
+            elif (
+                not line_starts_in_array
+                and not line_starts_in_multiline_string
+                and content.lstrip(" \t").startswith("[")
+            ):
+                # A line that starts like a header but cannot be classified is
+                # ambiguous (for example, a malformed header); never remove
+                # content from such a file.  Inspect the original line here:
+                # triple-quoted tokens are illegal in a header, but would
+                # otherwise blank ``code`` before this guard sees it.
+                return None
+            elif current_is_hooks and re.fullmatch(
+                r"[ \t]*speckit_marker[ \t]*=[ \t]*true[ \t]*", code
+            ):
+                current_has_marker = True
+
+            if header_path is None:
+                for char in structural[:code_end]:
+                    if char == "[":
+                        array_depth += 1
+                    elif char == "]":
+                        array_depth -= 1
+                        if array_depth < 0:
+                            return None
+
+            offset += len(line)
+
+        if multiline is not None or array_depth:
+            return None
+        if current_start is not None and current_has_marker:
+            spans.append((current_start, len(source)))
+        return spans
+
+    @classmethod
+    def _without_managed_hooks(cls, source: str) -> str | None:
+        """Remove managed spans, preserving every other source slice verbatim."""
+        spans = cls._managed_hook_spans(source)
+        if spans is None:
+            return None
+        if not spans:
+            return source
+        slices: list[str] = []
+        previous_end = 0
+        for start, end in spans:
+            slices.append(source[previous_end:start])
+            previous_end = end
+        slices.append(source[previous_end:])
+        return "".join(slices)
 
     def merge_vibe_event_hooks(
         self,
@@ -313,7 +557,9 @@ class VibeIntegration(SkillsIntegration):
             logger.debug("Read error detail: %s", exc)
             return False
 
-        cleaned = self._managed_hooks_pattern().sub("", existing)
+        cleaned = self._without_managed_hooks(existing)
+        if cleaned is None:
+            return False
         if cleaned == existing:
             return False
         non_comment_content = "\n".join(
@@ -322,9 +568,9 @@ class VibeIntegration(SkillsIntegration):
             if line.strip() and not line.strip().startswith("#")
         )
         if not non_comment_content:
-            path.unlink(missing_ok=True)
+            _unlink_file(path, missing_ok=True)
             return True
-        path.write_text(cleaned, encoding="utf-8")
+        _write_text(path, cleaned, encoding="utf-8")
         return False
 
     def _merge_managed_hooks(
@@ -334,7 +580,11 @@ class VibeIntegration(SkillsIntegration):
         *,
         ensure_safe_destination: Callable[[Path], None],
     ) -> bool:
-        """Replace managed entries while retaining every unowned byte sequence."""
+        """Replace managed entries while retaining unowned content.
+
+        Active merges normalize trailing separators before appending generated
+        hooks, so they do not promise byte-for-byte preservation.
+        """
         ensure_safe_destination(path)
         existing = ""
         if path.exists():
@@ -348,7 +598,9 @@ class VibeIntegration(SkillsIntegration):
                 )
                 logger.debug("Read error detail: %s", exc)
                 return False
-        cleaned = self._managed_hooks_pattern().sub("", existing)
+        cleaned = self._without_managed_hooks(existing)
+        if cleaned is None:
+            return False
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(cleaned.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+        _write_text(path, cleaned.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
         return True

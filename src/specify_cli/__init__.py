@@ -4,11 +4,12 @@
 # dependencies = [
 #     "typer",
 #     "rich",
-#     "platformdirs",
 #     "readchar",
 #     "json5",
 #     "pyyaml",
 #     "packaging",
+#     "mcp>=2.2.0,<3.0.0",
+#     "pydantic>=2.13.0,<3.0.0",
 # ]
 # ///
 """
@@ -32,6 +33,7 @@ from pathlib import Path
 
 import typer
 from rich.align import Align
+from rich.markup import escape as _escape_markup
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -273,7 +275,16 @@ def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     Returns ``project_path / <agent_folder> / "skills"``, falling back
     to ``project_path / ".agents/skills"`` for unknown agents.
     """
-    agent_config = AGENT_CONFIG.get(selected_ai, {})
+    if selected_ai == "generic":
+        from .integrations.generic import registration_directory
+
+        return project_path / registration_directory(project_path).relative_to(
+            project_path.resolve()
+        )
+    from .integrations import get_integration
+
+    integration = get_integration(selected_ai)
+    agent_config = (integration.config or {}) if integration is not None else {}
     agent_folder = agent_config.get("folder", "")
     if agent_folder:
         return project_path / agent_folder.rstrip("/") / "skills"
@@ -306,15 +317,6 @@ def resolve_active_skills_dir(project_root: Path) -> Path | None:
 
     agent = opts.get("ai")
     if not isinstance(agent, str) or not agent:
-        return None
-
-    # generic's output directory is a runtime --commands-dir CLI option, not
-    # a static per-agent folder (its config["folder"] is None), so there is
-    # no directory extension/preset skill registration could safely resolve
-    # here even when the project was scaffolded with --skills. Registration
-    # stays disabled for generic in both layouts, matching flat-mode generic
-    # (which never persists ai_skills=True and so never reaches this point).
-    if agent == "generic":
         return None
 
     ai_skills_enabled = _is_ai_skills_enabled(opts)
@@ -382,7 +384,7 @@ SKILL_DESCRIPTIONS = {
     "clarify": "Structured clarification workflow for underspecified requirements.",
     "constitution": "Create or update project governing principles and development guidelines.",
     "checklist": "Generate custom quality checklists for validating requirements completeness and clarity.",
-    "taskstoissues": "Convert tasks from tasks.md into GitHub issues.",
+    "taskstoissues": "Deprecated: Convert tasks from tasks.md into GitHub issues.",
 }
 
 
@@ -390,11 +392,13 @@ SKILL_DESCRIPTIONS = {
 
 from . import command_check as _command_check  # noqa: E402
 from . import command_init as _command_init  # noqa: E402
+from . import command_mcp as _command_mcp  # noqa: E402
 from . import command_version as _command_version  # noqa: E402
 
 _command_init.register(app)
 _command_check.register(app)
 _command_version.register(app)
+_command_mcp.register(app)
 
 # Preserve root imports for handlers that were previously defined here.
 check = _command_check.check
@@ -429,7 +433,7 @@ from .integrations._helpers import (  # noqa: E402
 from ._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: E402
 
 
-def _require_specify_project() -> Path:
+def _require_specify_project(*, load_integrations: bool = False) -> Path:
     """Return the project root if it is a spec-kit project, else exit.
 
     Honors the ``SPECIFY_INIT_DIR`` override (same validation rules as the shell
@@ -441,10 +445,16 @@ def _require_specify_project() -> Path:
     the current directory, as before.
     """
     override = _resolve_init_dir_override()
-    if override is not None:
-        return override
-    project_root = Path.cwd()
+    project_root = override if override is not None else Path.cwd()
     if (project_root / ".specify").is_dir():
+        if load_integrations:
+            from .integrations.installer import IntegrationInstallError, load_installed_integrations
+
+            try:
+                load_installed_integrations(project_root)
+            except (IntegrationInstallError, OSError) as exc:
+                err_console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+                raise typer.Exit(1) from exc
         return project_root
     err_console.print("[red]Error:[/red] Not a Spec Kit project (no .specify/ directory)")
     err_console.print(

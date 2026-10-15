@@ -42,6 +42,7 @@ safe-outputs:
   add-labels:
     allowed: [needs-assessment, needs-reproduction, fix-proposed, fix-blocked]
     max: 1
+    issue-intent: false
 ---
 
 # Fix Bug from Labeled Issue
@@ -57,6 +58,14 @@ that the `bug-assess` workflow posted as an issue comment — it does **not**
 depend on any Spec Kit-specific files, directories (e.g. `.specify/`), or
 tooling — so it can be lifted into any repository that runs the matching
 `bug-assess` stage.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+Follow the outcome rules below for label selection, limits, and missing labels.
 
 ## Triggering Conditions
 

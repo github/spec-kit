@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from specify_cli.integrations.installer import project_dispatch
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
@@ -189,12 +190,17 @@ class CommandStep(StepBase):
                 output=output,
                 error=(
                     f"Cannot dispatch command {command!r}: "
-                    f"integration {integration!r} CLI not found or not installed. "
-                    f"Install the CLI tool or check 'specify integration list'."
+                    f"integration {integration!r} CLI not found or not installed, "
+                    f"or the integration does not support CLI dispatch. "
+                    f"If the CLI is missing, install it or check "
+                    f"'specify integration list'; if the integration does not "
+                    f"support CLI dispatch, set the step's 'integration' to one "
+                    f"that does."
                 ),
             )
 
     @staticmethod
+    @project_dispatch
     def _try_dispatch(
         command: str,
         integration_key: str | None,

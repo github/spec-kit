@@ -45,6 +45,11 @@ def _register(integration: IntegrationBase) -> None:
 
 def get_integration(key: str) -> IntegrationBase | None:
     """Return the integration for *key*, or ``None`` if not registered."""
+    from .installer import dispatch_registry
+
+    scoped = dispatch_registry.get()
+    if scoped is not None:
+        return scoped.get(key)
     return INTEGRATION_REGISTRY.get(key)
 
 
@@ -89,6 +94,7 @@ def _register_builtins() -> None:
     from .kimi import KimiIntegration
     from .kiro_cli import KiroCliIntegration
     from .lingma import LingmaIntegration
+    from .mcode import McodeIntegration
     from .muse import MuseIntegration
     from .omp import OmpIntegration
     from .opencode import OpencodeIntegration
@@ -132,6 +138,7 @@ def _register_builtins() -> None:
     _register(KimiIntegration())
     _register(KiroCliIntegration())
     _register(LingmaIntegration())
+    _register(McodeIntegration())
     _register(MuseIntegration())
     _register(OmpIntegration())
     _register(OpencodeIntegration())
@@ -148,6 +155,14 @@ def _register_builtins() -> None:
 
 
 _register_builtins()
+BUILTIN_INTEGRATION_KEYS: frozenset[str] = frozenset(INTEGRATION_REGISTRY)
+
+
+def load_installed_integrations(project_root: Path) -> list[str]:
+    """Load trusted project adapters, refreshing derived agent configuration."""
+    from .installer import load_installed_integrations as load
+
+    return load(project_root)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +181,15 @@ class IntegrationDescriptorError(Exception):
     """Raised when an integration.yml descriptor is invalid."""
 
 
+def _optional_metadata_error(metadata: dict[str, Any]) -> str | None:
+    for field in ("author", "repository", "license"):
+        if field in metadata and (
+            not isinstance(metadata[field], str) or not metadata[field].strip()
+        ):
+            return f"{field} must be a non-empty string"
+    return None
+
+
 def _catalog_shape_error(payload: Any) -> Optional[str]:
     """Return a human-readable reason if *payload* is not a valid integration
     catalog document, else ``None``.
@@ -182,6 +206,16 @@ def _catalog_shape_error(payload: Any) -> Optional[str]:
         return "missing required 'schema_version' or 'integrations' key"
     if not isinstance(payload.get("integrations"), dict):
         return "'integrations' must be a JSON object"
+    from ._catalog_versions import _validated_releases
+
+    for integration_id, entry in payload["integrations"].items():
+        if isinstance(entry, dict) and "releases" in entry:
+            if entry.get("id", integration_id) != integration_id:
+                return f"Integration '{integration_id}' has an inconsistent id."
+            try:
+                _validated_releases({**entry, "id": integration_id})
+            except IntegrationCatalogError as exc:
+                return str(exc)
     return None
 
 
@@ -410,6 +444,7 @@ class IntegrationCatalog(CatalogStackBase):
                     merged[integ_id] = {
                         **integ_data,
                         "id": integ_id,
+                        "_declared_id": integ_data.get("id", integ_id),
                         "_catalog_name": entry.name,
                         "_install_allowed": entry.install_allowed,
                     }
@@ -462,13 +497,24 @@ class IntegrationCatalog(CatalogStackBase):
         return results
 
     def get_integration_info(
-        self, integration_id: str
+        self, integration_id: str, version: str | None = None
     ) -> Optional[Dict[str, Any]]:
-        """Return catalog metadata for a single integration, or None."""
+        """Return current or exact-version metadata from the winning catalog."""
+        from ._catalog_versions import select_release
+
         for item in self._get_merged_integrations():
             if item["id"] == integration_id:
-                return item
+                return select_release(item, version)
         return None
+
+    def get_integration_versions(self, integration_id: str) -> list[str]:
+        """Return the current and historical versions from the winning catalog."""
+        from ._catalog_versions import available_versions
+
+        for item in self._get_merged_integrations():
+            if item["id"] == integration_id:
+                return available_versions(item)
+        return []
 
     # -- Cache management -------------------------------------------------
 
@@ -515,14 +561,14 @@ class IntegrationCatalog(CatalogStackBase):
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: Optional[str] = None) -> None:
+    def add_catalog(self, url: str, name: Optional[str] = None) -> str:
         """Add a catalog source to the project-level config file.
 
         The URL is normalized (whitespace stripped) and validated before being
-        written. Duplicate URLs are rejected, including near-duplicates that
-        differ only by surrounding whitespace. Priority is derived as
-        ``max(existing) + 1`` so the new entry sorts last in the resolution
-        order unless the user edits the file manually.
+        written. An existing URL is unchanged when no name is supplied or the
+        supplied name matches; a different explicit name is rejected. Priority
+        is derived as ``max(existing) + 1`` so the new entry sorts last in the
+        resolution order unless the user edits the file manually.
         """
         url = url.strip()
         if not url:
@@ -557,6 +603,7 @@ class IntegrationCatalog(CatalogStackBase):
         # Validate each existing entry before mutating anything. Fail fast so
         # we don't silently preserve a corrupt sibling entry or derive a new
         # priority from a bogus value.
+        normalized_name = str(name).strip() if name is not None else ""
         existing_priorities: List[int] = []
         valid_catalog_count = 0
         for idx, cat in enumerate(catalogs):
@@ -577,6 +624,11 @@ class IntegrationCatalog(CatalogStackBase):
                     f"Invalid catalog entry at index {idx} in {config_path}: {exc}"
                 ) from exc
             if existing_url == url:
+                generated_name = f"catalog-{valid_catalog_count + 1}"
+                existing_name = str(cat.get("name") or generated_name).strip()
+                if not normalized_name or existing_name == normalized_name:
+                    self._load_catalog_config(config_path)
+                    return "unchanged"
                 raise IntegrationValidationError(
                     f"Catalog URL already configured: {url}"
                 )
@@ -603,9 +655,7 @@ class IntegrationCatalog(CatalogStackBase):
                 # Match `_load_catalog_config()`'s defaulting rule so the new
                 # entry still sorts after implicit-priority siblings.
                 existing_priorities.append(idx + 1)
-
         max_priority = max(existing_priorities, default=0)
-        normalized_name = str(name).strip() if name is not None else ""
         generated_name = f"catalog-{valid_catalog_count + 1}"
         catalogs.append(
             {
@@ -627,6 +677,7 @@ class IntegrationCatalog(CatalogStackBase):
                 sort_keys=False,
                 allow_unicode=True,
             )
+        return "added"
 
     def remove_catalog(self, index: int) -> str:
         """Remove a catalog source by 0-based index.
@@ -781,13 +832,13 @@ class IntegrationDescriptor:
         requires:
           speckit_version: ">=0.6.0"
           tools: [...]
-        provides:
-          commands: [...]
-          scripts: [...]
+
+    Optional legacy ``provides`` metadata is validated but is not an adapter
+    command inventory. Commands are rendered from the host's shared templates.
     """
 
     SCHEMA_VERSION = "1.0"
-    REQUIRED_TOP_LEVEL = ["schema_version", "integration", "requires", "provides"]
+    REQUIRED_TOP_LEVEL = ["schema_version", "integration", "requires"]
 
     def __init__(self, descriptor_path: Path) -> None:
         self.path = descriptor_path
@@ -865,6 +916,10 @@ class IntegrationDescriptor:
                     f"integration.{field} must be a string, got {type(integ[field]).__name__}"
                 )
 
+        optional_error = _optional_metadata_error(integ)
+        if optional_error:
+            raise IntegrationDescriptorError(f"integration.{optional_error}")
+
         if not re.match(r"^[a-z0-9-]+$", integ["id"]):
             raise IntegrationDescriptorError(
                 f"Invalid integration ID '{integ['id']}': "
@@ -891,6 +946,14 @@ class IntegrationDescriptor:
             raise IntegrationDescriptorError(
                 "requires.speckit_version must be a non-empty string"
             )
+        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+        try:
+            SpecifierSet(requires["speckit_version"])
+        except InvalidSpecifier as exc:
+            raise IntegrationDescriptorError(
+                f"Invalid requires.speckit_version: {exc}"
+            ) from exc
         tools = requires.get("tools")
         if tools is not None:
             if not isinstance(tools, list):
@@ -907,8 +970,23 @@ class IntegrationDescriptor:
                     raise IntegrationDescriptorError(
                         "requires.tools entry 'name' must be a non-empty string"
                     )
+                if "required" in tool and not isinstance(tool["required"], bool):
+                    raise IntegrationDescriptorError(
+                        "requires.tools entry 'required' must be a boolean"
+                    )
+                if "version" in tool:
+                    if not isinstance(tool["version"], str):
+                        raise IntegrationDescriptorError(
+                            "requires.tools entry 'version' must be a string"
+                        )
+                    try:
+                        SpecifierSet(tool["version"])
+                    except InvalidSpecifier as exc:
+                        raise IntegrationDescriptorError(
+                            f"Invalid requires.tools version: {exc}"
+                        ) from exc
 
-        provides = self.data["provides"]
+        provides = self.data.get("provides", {})
         if not isinstance(provides, dict):
             raise IntegrationDescriptorError(
                 "'provides' must be a mapping"
@@ -922,10 +1000,6 @@ class IntegrationDescriptor:
         if "scripts" in provides and not isinstance(scripts, list):
             raise IntegrationDescriptorError(
                 "Invalid provides.scripts: expected a list"
-            )
-        if not commands and not scripts:
-            raise IntegrationDescriptorError(
-                "Integration must provide at least one command or script"
             )
         for cmd in commands:
             if not isinstance(cmd, dict):

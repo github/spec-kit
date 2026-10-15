@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
 
@@ -23,6 +24,11 @@ _REGISTERED_FILTERS: tuple[str, ...] = (
     "map",
     "contains",
     "from_json",
+    "upper",
+    "lower",
+    "split",
+    "length",
+    "to_json",
 )
 
 
@@ -130,6 +136,162 @@ def _filter_from_json(value: Any) -> Any:
         raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
 
+def _filter_upper(value: Any) -> str:
+    """Return *value* uppercased.
+
+    Raises ``ValueError`` on non-string input. Without the guard a non-string
+    value (an authoring mistake like ``| upper`` on a shell exit code) would
+    reach ``str.upper`` and raise a cryptic ``AttributeError`` that escapes the
+    evaluator and crashes the whole run, since the engine wraps neither
+    expression evaluation nor ``execute`` in a try/except. Silently coercing
+    with ``str(value).upper()`` is rejected for the same reason ``from_json``
+    does not coerce: a type mismatch here means the pipeline is wired to the
+    wrong variable, and rendering ``"0"`` for an int hides that.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"upper: expected a string value, got {type(value).__name__}")
+    return value.upper()
+
+
+def _filter_lower(value: Any) -> str:
+    """Return *value* lowercased.
+
+    Raises ``ValueError`` on non-string input, for the same reason and with the
+    same trade-off as ``upper``: a type mismatch means the pipeline is wired to
+    the wrong variable, and coercing would hide it.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"lower: expected a string value, got {type(value).__name__}")
+    return value.lower()
+
+
+def _filter_split(value: Any, separator: str) -> list[str]:
+    """Split *value* on *separator* into a list of strings.
+
+    The single-argument ``split(sep)`` form is the only one supported; there is
+    no maxsplit, because a partial split has no obvious meaning in a workflow
+    expression and an unused parameter is an authoring mistake worth reporting.
+
+    Raises ``ValueError`` when *value* is not a string, *separator* is not a
+    string, or *separator* is empty. Without those guards a non-string argument
+    reaches ``str.split`` and raises a cryptic ``TypeError``, and an empty
+    separator raises the bare ``ValueError: empty separator`` — neither names
+    the filter, and both escape the evaluator and crash the whole run, mirroring
+    the strict argument handling in ``join`` and ``map``. An empty separator has
+    no meaning anyway: ``str.split("")`` is an error in Python, so it is an
+    authoring mistake rather than a valid edge case.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"split: expected a string value, got {type(value).__name__}")
+    if not isinstance(separator, str):
+        raise ValueError(
+            f"split: expected a string separator, got {type(separator).__name__}"
+        )
+    if separator == "":
+        raise ValueError("split: separator must not be empty")
+    return value.split(separator)
+
+
+def _filter_length(value: Any) -> int:
+    """Return the length of a list or string.
+
+    Follows Jinja2's ``length``, which also counts characters in a string. The
+    two supported input types are exactly ``list`` and ``str``: dicts are
+    excluded even though ``len()`` accepts them, because a mapping's length is
+    rarely what a workflow author means by ``length`` and accepting it would
+    make ``{{ obj | length }}`` silently return a key count for one shape and a
+    value count for another. Other types (notably ``bool`` and ``None``) are
+    authoring mistakes and raise rather than coercing to 0.
+    """
+    if isinstance(value, (list, str)):
+        return len(value)
+    raise ValueError(
+        "length: expected a list or string, got "
+        f"{type(value).__name__} (mappings are not supported)"
+    )
+
+
+def _filter_to_json(value: Any) -> str:
+    """Serialize *value* to a JSON string — the inverse of ``from_json``.
+
+    Serialization is pinned to ``sort_keys=True`` and ``ensure_ascii=False`` so
+    the output is byte-stable across runs, platforms, and dict insertion order.
+    It is why these flags are not left to the default: the default key order
+    varies with insertion order and escapes non-ASCII as ``\\uXXXX``, so the
+    same workflow would emit different bytes on different runs and hand
+    downstream tools mangled text. Determinism buys *reproducibility* — the same
+    value always serializes identically — and nothing more. It does not make the
+    result safe to pass through a shell: expression interpolation adds no
+    quoting or escaping, so JSON quotes and metacharacters are still interpreted
+    by whatever runs the ``run`` field. Interpolate unconstrained JSON into a
+    shell step only when you have constrained what it can contain; see the
+    "Interpolation and shell safety" section of ``docs/reference/workflows.md``.
+
+    Raises ``ValueError`` when *value* is not JSON-serializable, chained from
+    the underlying error so the offending type stays visible. ``allow_nan=False``
+    is what makes that true for non-finite floats: ``json.dumps`` would
+    otherwise emit bare ``NaN``/``Infinity``/``-Infinity``, none of which is
+    valid JSON, and hand downstream parsers a string they must reject.
+
+    Mapping keys must be strings, which is what JSON objects have anyway.
+    ``_check_json_keys`` enforces that before ``json.dumps`` is reached, so a
+    non-string key is reported as the authoring mistake it is rather than
+    surfacing as an ordering ``TypeError`` from ``sort_keys=True`` (mixed key
+    types) or as silent ``1`` → ``"1"`` coercion that collides with an existing
+    ``"1"`` key.
+    """
+    _check_json_keys(value)
+    try:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"to_json: value is not JSON-serializable: {exc}") from exc
+
+
+def _check_json_keys(value: Any) -> None:
+    """Raise ``ValueError`` if any mapping reachable from *value* has a
+    non-string key.
+
+    Walked iteratively with a ``seen`` set: a self-referential structure is
+    skipped rather than recursed into, so the circular reference stays for
+    ``json.dumps`` to report with its own clearer message instead of the walk
+    exhausting the stack first.
+    """
+    seen: set[int] = set()
+    stack: list[Any] = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            for key, sub_value in item.items():
+                if not isinstance(key, str):
+                    raise ValueError(
+                        "to_json: mapping keys must be strings, got "
+                        f"{type(key).__name__}: {key!r}"
+                    )
+                stack.append(sub_value)
+        elif isinstance(item, (list, tuple)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            stack.extend(item)
+
+
+# Filters that take no arguments and tolerate no trailing tokens. Keyed by name
+# so ``_apply_filter`` can recognize a mis-wired form of any of them from the
+# leading filter name alone, instead of each needing its own branch. ``default``
+# is deliberately absent: it is the one filter that is valid both bare and with
+# an argument, so it is dispatched by both of the branches below.
+_ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
+    "from_json": _filter_from_json,
+    "upper": _filter_upper,
+    "lower": _filter_lower,
+    "length": _filter_length,
+    "to_json": _filter_to_json,
+}
+
+
 # -- Expression resolution ------------------------------------------------
 
 _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
@@ -139,7 +301,7 @@ _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
 # against it, and the condition gate below reuses it rather than describing the
 # same shape a second time, so widening what indexing accepts cannot leave the
 # evaluator and the gate disagreeing.
-_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(\d+)\]$")
+_INDEXED_SEGMENT = re.compile(r"^([\w-]+)\[(-?\d+)\]$")
 
 _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 
@@ -147,12 +309,13 @@ _PLAIN_SEGMENT = re.compile(r"^[\w-]+$")
 def _resolve_dot_path(obj: Any, path: str) -> Any:
     """Resolve a dotted path like ``steps.specify.output.file`` against *obj*.
 
-    Supports dict key access and list indexing (e.g., ``task_list[0]``).
+    Supports dict key access and list indexing, including the negative form
+    Python and Jinja2 both accept (e.g., ``task_list[0]``, ``task_list[-1]``).
     """
     parts = path.split(".")
     current = obj
     for part in parts:
-        # Handle list indexing: name[0]
+        # Handle list indexing: name[0], name[-1]
         idx_match = _INDEXED_SEGMENT.match(part)
         if idx_match:
             key, idx = idx_match.group(1), int(idx_match.group(2))
@@ -160,7 +323,7 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
                 current = current.get(key)
             else:
                 return None
-            if isinstance(current, list) and 0 <= idx < len(current):
+            if isinstance(current, list) and -len(current) <= idx < len(current):
                 current = current[idx]
             else:
                 return None
@@ -463,19 +626,21 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     silently returning *value* unchanged: a passthrough would turn a mistyped
     or unsupported filter into a wrong result with no signal.
     """
-    # `from_json` is strict: it takes no arguments and tolerates no trailing
-    # tokens. Match on the leading filter name and require the whole filter to
-    # be exactly `from_json`, so every mis-wired form (`from_json()`,
-    # `from_json('x')`, `from_json)`, `from_json extra`) fails loudly instead of
-    # silently falling through to the unknown-filter path.
+    # Zero-argument filters are strict: they take no arguments and tolerate no
+    # trailing tokens. Match on the leading filter name and require the whole
+    # filter to be exactly that name, so every mis-wired form (`from_json()`,
+    # `from_json('x')`, `from_json)`, `from_json extra`, and the same for
+    # `upper`/`lower`/`length`/`to_json`) fails loudly instead of silently
+    # falling through to the unknown-filter path.
     leading = re.match(r"\w+", filter_expr)
-    if leading and leading.group(0) == "from_json":
-        if filter_expr != "from_json":
+    if leading and leading.group(0) in _ZERO_ARG_FILTERS:
+        fname = leading.group(0)
+        if filter_expr != fname:
             raise ValueError(
-                "from_json: expected '| from_json' with no arguments or "
+                f"{fname}: expected '| {fname}' with no arguments or "
                 f"trailing tokens, got '| {filter_expr}'"
             )
-        return _filter_from_json(value)
+        return _ZERO_ARG_FILTERS[fname](value)
 
     # Parse filter name and argument. Use fullmatch (not match) so trailing
     # tokens after the closing paren — e.g. a comparison/boolean operator that
@@ -485,6 +650,28 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     # branch above. The greedy ``.+`` still handles literal ``)`` and ``|``
     # inside quoted args.
     filter_match = re.fullmatch(r"(\w+)\((.+)\)", filter_expr)
+    # A multi-argument call is not a supported form: every filter here takes
+    # exactly one argument, and the whole captured argument text was handed to
+    # ``_evaluate_simple_expression`` as ONE expression. "1, 2" is not a valid
+    # expression, so it evaluated to None -- making ``default(1, 2)`` return
+    # None (silently wrong) and ``join(",", "extra")`` raise a message blaming
+    # the separator rather than the extra argument. Fall through to the
+    # unsupported-form error below instead, which names the filter and lists
+    # the accepted forms.
+    #
+    # Use ``_find_top_level``, the same scanner the operator splitting uses: it
+    # skips commas inside quotes AND inside nested brackets, so a single
+    # argument that happens to contain a comma still works -- ``join(", ")``,
+    # ``default("a, b")``, and the list literals the evaluator supports
+    # (``default([1, 2])``).
+    #
+    # List literals are the only container form ``_evaluate_simple_expression``
+    # implements; a mapping such as ``{"a": 1}`` has no branch there and falls
+    # through to dot-path resolution, which yields ``None``. The scanner does
+    # skip commas inside braces too, so nothing here changes if that ever gains
+    # support -- but do not read this comment as a promise that it exists.
+    if filter_match and _find_top_level(filter_match.group(2), ",") != -1:
+        filter_match = None
     if filter_match:
         fname = filter_match.group(1)
         farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
@@ -496,6 +683,8 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
             return _filter_map(value, farg)
         if fname == "contains":
             return _filter_contains(value, farg)
+        if fname == "split":
+            return _filter_split(value, farg)
     # Filter without args
     if filter_expr == "default":
         return _filter_default(value)
@@ -507,7 +696,8 @@ def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> An
     name = leading.group(0) if leading else filter_expr
     expected = (
         "expected one of default or default('x'), join('sep'), "
-        "map('attr'), contains('s'), or from_json"
+        "map('attr'), contains('s'), split('sep'), from_json, upper, "
+        "lower, length, or to_json"
     )
     if name in _REGISTERED_FILTERS:
         raise ValueError(
@@ -530,6 +720,65 @@ _COMPARISON_OPERATORS = ("!=", "==", ">=", "<=", ">", "<", " not in ", " in ")
 _leaf_sink: ContextVar[list[str] | None] = ContextVar("_leaf_sink", default=None)
 
 
+def _is_wrapped_in_parens(text: str) -> bool:
+    """True when *text* is one parenthesised group, brackets and all.
+
+    ``(a or b)`` is; ``(a) and (b)`` is not, because the opening paren closes
+    before the end. Quote-aware, so ``('(')`` does not count its own literal.
+    """
+    if not (text.startswith("(") and text.endswith(")")):
+        return False
+    quote: str | None = None
+    depth = 0
+    for index, ch in enumerate(text):
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return index == len(text) - 1
+    return False
+
+
+def _collapse_whitespace(text: str) -> str:
+    """Strip *text* and turn each run of whitespace outside a quoted string into
+    one space.
+
+    The operator scans below match word operators by their surrounding spaces
+    (``" or "``, ``" not in "``, ``expr.startswith("not ")``), so an operator
+    next to a newline or tab was never found. A condition wrapped across lines
+    in YAML keeps those newlines -- a ``|`` block scalar keeps every one, and a
+    ``>`` folded scalar keeps the break before a more-indented continuation
+    line -- so ``{{ inputs.a or\\n   inputs.b }}`` was resolved as one dot path,
+    came back ``None``, and read false with no error. Jinja2 treats any
+    whitespace between tokens alike; so does this, while quoted operands keep
+    their text exactly.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    pending_space = False
+    for ch in text.strip():
+        if quote is not None:
+            out.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch.isspace():
+            pending_space = True
+        else:
+            if pending_space:
+                out.append(" ")
+                pending_space = False
+            if ch in ("'", '"'):
+                quote = ch
+            out.append(ch)
+    return "".join(out)
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -538,10 +787,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
-    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
+    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``, ``| split(',')``, ``| upper``, ``| lower``, ``| length``, ``| to_json``
     - String and numeric literals
     """
-    expr = expr.strip()
+    expr = _collapse_whitespace(expr)
 
     # String literal — only when the WHOLE expression is one quoted string,
     # i.e. the opening quote's matching close is the final character. Checking
@@ -550,6 +799,16 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # strings containing `|` or operator keywords are not mis-parsed downstream.
     if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
+
+    # A parenthesised group. The operator scans below deliberately skip over
+    # bracketed text so an operator inside a quoted or nested operand is not
+    # split on -- which also means nothing ever looked inside a group that
+    # wraps the WHOLE expression. `(a or b) and c` split at the top-level
+    # `and`, then evaluated `(a or b)` as a dot path, found no such key, and
+    # returned None: the `or` was never evaluated and the whole thing read
+    # false. Unwrap here so grouping means what it says.
+    if _is_wrapped_in_parens(expr):
+        return _evaluate_simple_expression(expr[1:-1], namespace)
 
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
@@ -831,8 +1090,8 @@ def evaluate_condition(condition: str, context: Any) -> bool:
     # strip that trailing newline matches neither branch and falls through to
     # ``bool("false\n")`` -> True, silently taking an ``if`` step's ``then``
     # branch (and keeping a ``while``/``do-while`` looping) on a step that
-    # printed "false". A workflow cannot strip it itself -- the registered
-    # filters are default/join/map/contains/from_json, there is no ``trim``.
+    # printed "false". A workflow cannot strip it itself -- no registered
+    # filter trims whitespace (there is no ``trim``).
     # ``InitStep._resolve_bool`` and the catalog readers already strip before
     # matching boolean text. ``bool(result)`` below still sees the raw string,
     # so no non-boolean text changes truthiness.

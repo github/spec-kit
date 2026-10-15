@@ -4,7 +4,11 @@ Workflows are multi-step, resumable automation pipelines defined in YAML. They o
 
 ## How It Works
 
-A workflow definition declares a sequence of steps. The engine executes them in order, dispatching commands to AI integrations, running shell commands, evaluating conditions for branching, and pausing at gates for human review. State is persisted after each step, so workflows can be resumed after interruption.
+A workflow definition declares a sequence of steps. The engine executes them in
+order, dispatching commands to AI integrations, running shell commands,
+evaluating conditions for branching, and pausing at gates for human review.
+Persisted execution transitions let workflows resume after interruption without
+re-running completed work.
 
 ```yaml
 steps:
@@ -85,7 +89,10 @@ The bundled `speckit` workflow only declares `spec` (and optional
 
 ## Step Types
 
-Workflows support 12 built-in step types:
+Workflows support 13 built-in step types, including `workflow` for calling an
+installed workflow with private inputs and declared outputs. See
+[workflow composition and resume](../docs/reference/workflows.md#workflow-composition)
+for the scope and execution identity contracts.
 
 ### Command Steps (default)
 
@@ -313,6 +320,11 @@ Aggregate results from fan-out steps:
   output: {}
 ```
 
+`wait_for` references declared step IDs. For a fan-out, use the fan-out step's
+own `id` (`parallel-impl` above); its ordered item results are available as
+`steps.<fan-out-id>.output.results`. Generated item aliases such as
+`fan:template:0` are reporting-only and are not valid `wait_for` targets.
+
 ## Error Handling
 
 By default, any step that returns `StepResult(status=StepStatus.FAILED, ...)`
@@ -406,9 +418,26 @@ condition: "{{ steps.run-tests.output.exit_code != 0 }}"
 
 # Filters
 message: "{{ status | default('pending') }}"
+ids: "{{ rows | split(',') | length }}"
 ```
 
-Supported filters: `default`, `join`, `contains`, `map`, `from_json`.
+Supported filters: `default`, `join`, `contains`, `map`, `from_json`, `to_json`, `upper`, `lower`, `split`, `length`.
+
+The new filters validate their input types and raise a `ValueError` naming
+the problem instead of coercing — so `upper`/`lower` take strings only, `split`
+takes a string value and a non-empty string separator, `length` accepts
+lists and strings but rejects mappings, and `to_json` rejects what it cannot
+serialize: non-finite floats (`NaN`, `Infinity`, `-Infinity`), which would
+otherwise serialize to tokens that are not valid JSON, and mapping keys that
+are not strings, which JSON objects cannot carry. A filter used with the wrong
+number of
+arguments
+(`| upper('x')`, `| split(',', 1)`, bare `| split`) is reported as a known
+filter misused, which is
+distinct from an entirely unknown filter name. The older filters are more
+permissive and unchanged: `join` stringifies unsupported values, and
+`map`/`contains` return fallbacks rather than raising. See
+[ARCHITECTURE.md](ARCHITECTURE.md#expression-evaluation) for the full table.
 
 ### Runtime Context
 
@@ -505,9 +534,11 @@ specify workflow catalog list
 # Add a custom catalog
 specify workflow catalog add https://example.com/catalog.json --name my-org
 
-# Remove a catalog
+# Remove a project catalog by its index in the priority-ordered list
 specify workflow catalog remove <index>
 ```
+
+Environment-provided sources cannot be removed this way; unset `SPECKIT_WORKFLOW_CATALOG_URL` to manage project sources.
 
 ## Creating a Workflow
 
@@ -532,7 +563,7 @@ specify workflow catalog remove <index>
 
 ## Repository Layout
 
-```
+```text
 workflows/
 ├── ARCHITECTURE.md                         # Internal architecture documentation
 ├── PUBLISHING.md                           # Guide for submitting workflows to the catalog

@@ -70,13 +70,26 @@ class CatalogStack:
             self._payloads[source.id] = load_catalog_payload(raw)
         return self._payloads[source.id]
 
-    def resolve(self, bundle_id: str) -> ResolvedBundle:
+    def resolve(self, bundle_id: str, version: str | None = None) -> ResolvedBundle:
         """Return the highest-precedence entry for *bundle_id* or raise."""
+        from .catalog_versions import available_versions, select_release
+
         for source in self._sources:
             entries = self._entries_for(source)
             entry = entries.get(bundle_id)
             if entry is not None:
-                return ResolvedBundle(entry=entry.with_provenance(source), source=source)
+                selected = select_release(entry, version)
+                if selected is None:
+                    advertised = ", ".join(available_versions(entry))
+                    raise BundlerError(
+                        f"Bundle '{bundle_id}' has no release {version} in catalog source "
+                        f"'{source.id}' (advertised: {advertised}). Only the "
+                        "highest-precedence source that lists a bundle is consulted."
+                    )
+                return ResolvedBundle(
+                    entry=selected.with_provenance(source),
+                    source=source,
+                )
         raise BundlerError(
             f"Bundle '{bundle_id}' was not found in any configured catalog."
         )

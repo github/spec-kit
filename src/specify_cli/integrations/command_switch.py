@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import typer
+from rich.markup import escape
 
 from .._console import console
 from ..integration_runtime import invoke_prefix_for_integration as _invoke_prefix_for_integration, invoke_separator_for_integration as _invoke_separator_for_integration
@@ -14,16 +15,19 @@ from ..integration_state import (
     integration_settings as _integration_settings,
 )
 from ._commands import integration_app
+from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
 @integration_app.command("switch")
+@external_lifecycle("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
     script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Force removal of modified files during uninstall of the previous integration"),
     refresh_shared_infra: bool = typer.Option(False, "--refresh-shared-infra", help="Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved)"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the target integration'),
+    trust_integration: bool = typer.Option(False, "--trust-integration", help="Authorize executing a reviewed external integration package without prompting"),
 ):
     """Switch from the current integration to a different one."""
     from . import INTEGRATION_REGISTRY, get_integration
@@ -115,7 +119,7 @@ def integration_switch(
                 "need re-registration."
             ),
         )
-        console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
+        lifecycle_success(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
     selected_script = _resolve_script_type(project_root, script)
@@ -287,64 +291,64 @@ def integration_switch(
         )
 
     except Exception as exc:
-        # Attempt rollback of any files written by setup
-        try:
-            target_integration.teardown(project_root, manifest, force=True)
-        except Exception as rollback_err:
-            # Suppress so the original setup error remains the primary failure
-            _print_cli_warning(
-                "rollback",
-                "integration",
-                target,
-                rollback_err,
-                continuing="The original switch failure is still the primary error.",
-            )
-        if installed_keys:
-            fallback_key = installed_keys[0]
-            fallback_integration = get_integration(fallback_key)
-            if fallback_integration is not None:
-                raw_options, parsed_options = _resolve_integration_options(
-                    fallback_integration, current, fallback_key, None
+        if not lifecycle_owns_rollback():
+            try:
+                target_integration.teardown(project_root, manifest, force=True)
+            except Exception as rollback_err:
+                # Suppress so the original setup error remains the primary failure
+                _print_cli_warning(
+                    "rollback",
+                    "integration",
+                    target,
+                    rollback_err,
+                    continuing="The original switch failure is still the primary error.",
                 )
-                try:
-                    _set_default_integration(
-                        project_root,
-                        current,
-                        fallback_key,
-                        fallback_integration,
-                        installed_keys,
-                        raw_options=raw_options,
-                        parsed_options=parsed_options,
+            if installed_keys:
+                fallback_key = installed_keys[0]
+                fallback_integration = get_integration(fallback_key)
+                if fallback_integration is not None:
+                    raw_options, parsed_options = _resolve_integration_options(
+                        fallback_integration, current, fallback_key, None
                     )
-                except _SharedTemplateRefreshError as restore_err:
-                    console.print(
-                        f"[yellow]Warning:[/yellow] Failed to restore default "
-                        f"integration '{fallback_key}': {restore_err}"
-                    )
+                    try:
+                        _set_default_integration(
+                            project_root,
+                            current,
+                            fallback_key,
+                            fallback_integration,
+                            installed_keys,
+                            raw_options=raw_options,
+                            parsed_options=parsed_options,
+                        )
+                    except _SharedTemplateRefreshError as restore_err:
+                        console.print(
+                            f"[yellow]Warning:[/yellow] Failed to restore default "
+                            f"integration '{fallback_key}': {restore_err}"
+                        )
+                    else:
+                        # Under active-only registration the fallback may never
+                        # have received any extension/preset artifacts (it was
+                        # installed while another integration was active), and
+                        # Phase 1 already unregistered the outgoing agent's
+                        # artifacts. Rescaffold so the restored default is
+                        # actually usable. Both helpers are best-effort and
+                        # cannot raise past this point.
+                        _register_extensions_for_agent(
+                            project_root,
+                            fallback_key,
+                            continuing="The switch was rolled back; installed extensions may need re-registration.",
+                        )
+                        _register_presets_for_agent(
+                            project_root,
+                            fallback_key,
+                            continuing="The switch was rolled back; installed presets may need re-registration.",
+                        )
                 else:
-                    # Under active-only registration the fallback may never
-                    # have received any extension/preset artifacts (it was
-                    # installed while another integration was active), and
-                    # Phase 1 already unregistered the outgoing agent's
-                    # artifacts. Rescaffold so the restored default is
-                    # actually usable. Both helpers are best-effort and
-                    # cannot raise past this point.
-                    _register_extensions_for_agent(
-                        project_root,
-                        fallback_key,
-                        continuing="The switch was rolled back; installed extensions may need re-registration.",
-                    )
-                    _register_presets_for_agent(
-                        project_root,
-                        fallback_key,
-                        continuing="The switch was rolled back; installed presets may need re-registration.",
+                    _write_integration_json(
+                        project_root, fallback_key, installed_keys, _integration_settings(current)
                     )
             else:
-                _write_integration_json(
-                    project_root, fallback_key, installed_keys, _integration_settings(current)
-                )
-        else:
-            _remove_integration_json(project_root)
+                _remove_integration_json(project_root)
         console.print(
             f"[red]Error:[/red] Failed to {_cli_phase_label('install', 'integration', target)} "
             f"during switch: {_cli_error_detail(exc)}"
@@ -366,4 +370,4 @@ def integration_switch(
     )
 
     name = (target_integration.config or {}).get("name", target)
-    console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
+    lifecycle_success(f"\n[green]✓[/green] Switched to integration '{escape(str(name))}'")

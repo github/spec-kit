@@ -28,6 +28,7 @@ To build the documentation locally:
 - `toc.yml` - Table of contents configuration
 - `installation.md` - Installation guide
 - `quickstart.md` - Spec-Driven Development walkthrough
+- `guides/agentic-sdlc.md` - How Spec Kit applies agentic and conventional SDLC practices to itself
 - `guides/bugfix.md` - Bug-fixing walkthrough
 - `guides/assessment.md` - Idea assessment walkthrough
 - `guides/customization.md` - Choosing and combining customization building blocks

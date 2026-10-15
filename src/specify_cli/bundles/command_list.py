@@ -40,6 +40,6 @@ def bundle_list(
         console.print(
             f"  [bold]{_escape_markup(str(record.bundle_id))}[/bold] "
             f"v{_escape_markup(str(record.version))} "
-            f"[dim]({len(record.contributed_components)} components, "
+            f"[dim]({len(record.required_components)} components, "
             f"installed {_escape_markup(str(record.installed_at))})[/dim]"
         )

@@ -218,6 +218,34 @@ class TestKimiTeardownLegacyCleanup:
         assert user_skill.read_bytes() == b"\xff\xfe"
 
 
+@pytest.mark.parametrize("operation", ["migrate", "teardown"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_legacy_parent_removal_observes_only_empty_directories(tmp_path, operation, empty):
+    from specify_cli.integrations._file_changes import file_change_observer
+
+    legacy = tmp_path / ".kimi/skills"
+    legacy.mkdir(parents=True)
+    if not empty:
+        (legacy / "user-notes.txt").write_text("user notes")
+    observations = []
+    token = file_change_observer.set(
+        lambda path, before, removal: observations.append((path, before, removal))
+    )
+    try:
+        if operation == "migrate":
+            assert _migrate_legacy_kimi_skills_dir(legacy, tmp_path / ".kimi-code/skills") == (0, 0)
+        else:
+            get_integration("kimi").teardown(tmp_path, IntegrationManifest("kimi", tmp_path))
+    finally:
+        file_change_observer.reset(token)
+    if empty:
+        assert not legacy.exists()
+        assert observations == [(legacy, True, True), (legacy, False, False)]
+    else:
+        assert (legacy / "user-notes.txt").read_text() == "user notes"
+        assert observations == []
+
+
 class TestKimiCommandInvocation:
     """Kimi dispatch must use the native ``/skill:`` slash command."""
 

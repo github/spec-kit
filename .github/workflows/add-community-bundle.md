@@ -62,6 +62,7 @@ safe-outputs:
   add-labels:
     allowed: [bundle-submission, validation-passed, validation-failed, needs-info]
     max: 3
+    issue-intent: false
   remove-labels:
     allowed: [validation-passed, validation-failed, needs-info]
 
@@ -92,6 +93,17 @@ entries in the community bundle catalog.
 Community bundles are untrusted. Validate metadata and distribution evidence,
 but do not claim to audit, endorse, or support bundle code or the components it
 installs. Never register a submitted companion catalog automatically.
+
+## Label Responsibilities
+
+Applying the outcome labels is your responsibility, not a recommendation for a
+maintainer. Use the `add_labels` safe output on source issue
+#${{ github.event.issue.number }}, with plain strings in its `labels` array.
+Never emit label objects with `suggest: true` or suggestion-only output.
+For a Passed outcome, emit `labels: ["validation-passed"]`; for a Failed
+outcome, emit `labels: ["validation-failed"]`. Follow the outcome rules below
+for timing, stale-label removal, and Blocked validation; this requirement does
+not turn environment blockers into submission failures.
 
 ## Triggering Conditions
 

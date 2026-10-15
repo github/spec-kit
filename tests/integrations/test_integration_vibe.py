@@ -3,6 +3,7 @@
 import os
 from unittest.mock import MagicMock
 
+import pytest
 import yaml
 
 from specify_cli.events import install_integration_events, remove_integration_events
@@ -130,6 +131,54 @@ class TestVibeIntegration(SkillsIntegrationTests):
                 f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
             )
 
+    def test_build_exec_args_uses_prompt_mode(self):
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args(
+            "/speckit-specify build a login page",
+            output_json=False,
+        )
+
+        assert args == ["vibe", "-p", "/speckit-specify build a login page"]
+
+    def test_build_exec_args_requests_json_output(self):
+        """Vibe's structured output is `--output json`; it has no `--output-format`."""
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args("/speckit-plan add OAuth", output_json=True)
+
+        assert args == ["vibe", "-p", "/speckit-plan add OAuth", "--output", "json"]
+        assert "--output-format" not in args
+
+    def test_build_exec_args_omits_model_flag(self):
+        """Vibe has no model flag; passing `--model` exits 2 at argument parsing."""
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args(
+            "explain this repository",
+            model="mistral-medium-latest",
+            output_json=False,
+        )
+
+        assert args == ["vibe", "-p", "explain this repository"]
+        assert "--model" not in args
+        assert "mistral-medium-latest" not in args
+
+    def test_build_exec_args_applies_extra_args(self, monkeypatch):
+        monkeypatch.setenv("SPECKIT_INTEGRATION_VIBE_EXTRA_ARGS", "--auto-approve")
+        integration = get_integration("vibe")
+
+        args = integration.build_exec_args("check the build", output_json=True)
+
+        assert args == [
+            "vibe",
+            "-p",
+            "check the build",
+            "--auto-approve",
+            "--output",
+            "json",
+        ]
+
 
 class TestVibeTomlMerging:
     """Behavioral tests for the toml-vibe hooks.toml generation and cleanup."""
@@ -243,6 +292,26 @@ class TestVibeTomlMerging:
         remove_integration_events(integration, tmp_path, manifest)
         remaining = self._parse(tmp_path)["hooks"]
         assert [h["name"] for h in remaining] == ["deny-rm-rf"]
+
+    def test_merge_preserves_user_command_with_marker_text(self, tmp_path):
+        """A marker-looking command string does not claim a user hook block."""
+        config_path = tmp_path / ".vibe" / "hooks.toml"
+        config_path.parent.mkdir(parents=True)
+        user_block = (
+            "[[hooks]]\n"
+            'name = "user-hook"\n'
+            'type = "pre_tool"\n'
+            'command = "echo speckit_marker = true"\n'
+        )
+        config_path.write_text(user_block, encoding="utf-8")
+
+        self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
+
+        assert user_block in config_path.read_text(encoding="utf-8")
+        assert [hook["name"] for hook in self._parse(tmp_path)["hooks"]] == [
+            "user-hook",
+            "speckit-pre_tool-validate",
+        ]
 
     def test_commands_carry_structured_output_envelope(self, tmp_path):
         """Vibe parses non-empty hook stdout as JSON (HookStructuredResponse);
@@ -361,6 +430,224 @@ class TestVibeTomlNoOpRemoval:
         path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
 
         install_integration_events(get_integration("vibe"), tmp_path, _vibe_manifest(), {})
+
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_removal_preserves_user_comment_with_marker_text(self, tmp_path):
+        integration = get_integration("vibe")
+        original = (
+            b"[[hooks]]\n"
+            b'name = "user-hook"\n'
+            b'type = "pre_tool"\n'
+            b"# speckit_marker = true\n"
+            b'command = "guard-bash"\n'
+        )
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_removal_preserves_marker_inside_multiline_strings(self, tmp_path):
+        integration = get_integration("vibe")
+        for name, delimiter in (("basic", '"""'), ("literal", "'''")):
+            original = (
+                "[[hooks]]\n"
+                f"command = {delimiter}\n"
+                "speckit_marker = true\n"
+                f"{delimiter}\n"
+            ).encode()
+            path, original_mtime_ns = self._user_hooks_file(tmp_path / name, original)
+
+            removed_file = integration.remove_vibe_event_hooks(
+                tmp_path / name, ensure_safe_destination=lambda _path: None
+            )
+
+            assert removed_file is False
+            self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_removal_accepts_spaced_hooks_header(self, tmp_path):
+        integration = get_integration("vibe")
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "[[ hooks ]]\n"
+            "speckit_marker = true\n"
+            "[[hooks]]\n"
+            'name = "user-hook"\n',
+            encoding="utf-8",
+        )
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_text(encoding="utf-8") == '[[hooks]]\nname = "user-hook"\n'
+
+    def test_removal_does_not_cross_an_intervening_table(self, tmp_path):
+        integration = get_integration("vibe")
+        original = (
+            b"[[hooks]]\n"
+            b'command = "user-hook"\n'
+            b"[other]\n"
+            b"speckit_marker = true\n"
+        )
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    def test_removal_ignores_headers_inside_a_managed_multiline_string(self, tmp_path):
+        integration = get_integration("vibe")
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "[[hooks]]\n"
+            'command = """\n'
+            "[[hooks]]\n"
+            "not a header\n"
+            '"""\n'
+            "speckit_marker = true\n"
+            "[other]\n"
+            'value = "preserved"\n',
+            encoding="utf-8",
+        )
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_text(encoding="utf-8") == '[other]\nvalue = "preserved"\n'
+
+    def test_removal_ignores_header_like_nested_arrays(self, tmp_path):
+        """An array value must not split a managed array-of-tables block."""
+        integration = get_integration("vibe")
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "[[hooks]]\n"
+            "values = [\n"
+            '  [[ "hooks" ]]\n'
+            "]\n"
+            "speckit_marker = true\n"
+            "[other]\n"
+            'value = "preserved"\n',
+            encoding="utf-8",
+        )
+        assert tomllib.loads(path.read_text(encoding="utf-8"))["hooks"][0]["values"] == [
+            [["hooks"]]
+        ]
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_text(encoding="utf-8") == '[other]\nvalue = "preserved"\n'
+
+    def test_removal_leaves_malformed_multiline_source_untouched(self, tmp_path):
+        integration = get_integration("vibe")
+        original = (
+            b"[[hooks]]\n"
+            b'command = """\n'
+            b"speckit_marker = true\n"
+        )
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        self._assert_untouched(path, original, original_mtime_ns)
+
+    @pytest.mark.parametrize(
+        "original",
+        [
+            (
+                "[[hooks]]\r\n"
+                'name = "\u7528\u6237-hook"\r\n'
+                "values = [speckit_marker = true]\r\n"
+                "[other]\r\n"
+                'keep = "\u4fdd\u7559"\r\n'
+            ).encode(),
+            (
+                "[[hooks]]\n"
+                'name = "caf\u00e9-user"\n'
+                "bare invalid text\n"
+                "speckit_marker = true\n"
+                "[other]\n"
+                'keep = "\u4fdd\u7559"\n'
+            ).encode(),
+        ],
+        ids=("marker-like-array", "bare-invalid-text"),
+    )
+    def test_malformed_toml_leaves_removal_and_merge_unowned_and_untouched(
+        self, tmp_path, original
+    ):
+        """Invalid TOML must fail closed even when it resembles a managed hook."""
+        integration = get_integration("vibe")
+        with pytest.raises(tomllib.TOMLDecodeError):
+            tomllib.loads(original.decode())
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        self._assert_untouched(path, original, original_mtime_ns)
+
+        manifest = _vibe_manifest()
+        install_integration_events(
+            integration,
+            tmp_path,
+            manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+
+        self._assert_untouched(path, original, original_mtime_ns)
+        manifest.record_existing.assert_not_called()
+
+    def test_malformed_header_with_triple_quotes_leaves_removal_and_merge_untouched(
+        self, tmp_path
+    ):
+        """Malformed header tokens must not let a user hook gain our marker."""
+        integration = get_integration("vibe")
+        original = (
+            b"[[hooks]]\n"
+            b'name = "user-owned"\n'
+            b'[ """malformed-header""" ]\n'
+            b"speckit_marker = true\n"
+            b"[other]\n"
+            b'keep = "survives"\n'
+        )
+        with pytest.raises(tomllib.TOMLDecodeError):
+            tomllib.loads(original.decode("utf-8"))
+        path, original_mtime_ns = self._user_hooks_file(tmp_path, original)
+
+        removed_file = integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        self._assert_untouched(path, original, original_mtime_ns)
+
+        install_integration_events(
+            integration,
+            tmp_path,
+            _vibe_manifest(),
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
 
         self._assert_untouched(path, original, original_mtime_ns)
 
