@@ -2887,6 +2887,42 @@ def test_install_regex_commands_registers_concrete_ai_skills(project_dir):
     )
 
 
+def test_remove_disabled_selector_restores_lower_preset_ai_skill(project_dir, monkeypatch):
+    from specify_cli import save_init_options
+    from specify_cli.presets.command_disable import preset_disable
+    from tests.specify_cli.presets._helpers import write_command_declarations
+
+    save_init_options(project_dir, {"ai": "copilot", "ai_skills": True, "script": "sh"})
+    manager = PresetManager(project_dir)
+    for preset_id, name, priority, body in (
+        ("lower", "speckit.plan", 10, "LOWER PRESET"),
+        ("upper", r"regex:^speckit\.plan$", 1, "UPPER SELECTOR"),
+    ):
+        source = write_command_declarations(
+            project_dir / "source" / preset_id, preset_id,
+            [{"name": name, "type": "command", "strategy": "replace", "body": body}],
+        )
+        manager.install_from_directory(source, "0.1.5", priority=priority)
+
+    output = project_dir / ".github/skills/speckit-plan/SKILL.md"
+    assert "UPPER SELECTOR" in output.read_text()
+    metadata = manager.registry.get("upper")
+    assert not metadata.get("registered_commands")
+    assert metadata["selector_commands"] == {"copilot": ["speckit.plan"]}
+
+    monkeypatch.chdir(project_dir)
+    preset_disable("upper")
+    manager = PresetManager(project_dir)
+    assert manager.registry.get("upper")["enabled"] is False
+    assert "UPPER SELECTOR" in output.read_text()
+    assert manager.remove("upper") is True
+    content = output.read_text()
+    assert "LOWER PRESET" in content
+    assert "preset:lower" in content
+    assert "UPPER SELECTOR" not in content
+    assert not manager.registry.is_installed("upper")
+
+
 def test_skills_ignore_stale_composition_after_selector_falls_back_to_exact(project_dir):
     from specify_cli import save_init_options
     from specify_cli.presets import PresetManifest

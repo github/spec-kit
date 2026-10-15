@@ -803,6 +803,15 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 name for name in cmd_names
                 if isinstance(name, str) and not is_regex_selector(name)
             )
+        # Disabled selectors no longer expand, and command-backed integrations
+        # in AI-skills mode have no registered_commands. Retain their recorded
+        # concrete names so removal still reconciles surviving preset layers.
+        selector_commands = (metadata or {}).get("selector_commands", {})
+        for cmd_names in selector_commands.values():
+            removed_cmd_names.update(
+                name for name in cmd_names
+                if isinstance(name, str) and not is_regex_selector(name)
+            )
         manifest_path = pack_dir / "preset.yml"
         if manifest_path.exists():
             try:

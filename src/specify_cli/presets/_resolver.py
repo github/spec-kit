@@ -721,23 +721,76 @@ class PresetResolver:
                 continue
         return False
 
+    @staticmethod
+    def _effective_preset_strategy(
+        declaration: dict | None, candidate: Path, template_type: str
+    ) -> str:
+        """Honor explicit manifest strategy before legacy command frontmatter."""
+        strategy = "replace"
+        manifest_has_strategy = False
+        if declaration is not None:
+            strategy = declaration.get("strategy", "replace")
+            manifest_has_strategy = "strategy" in declaration
+        if (
+            not manifest_has_strategy
+            and strategy == "replace"
+            and template_type == "command"
+        ):
+            try:
+                cmd_content = candidate.read_text(encoding="utf-8")
+                lines = cmd_content.splitlines(keepends=True)
+                if lines and lines[0].rstrip("\r\n") == "---":
+                    fence_end = next(
+                        (
+                            i
+                            for i, line in enumerate(lines[1:], 1)
+                            if line.rstrip("\r\n") == "---"
+                        ),
+                        -1,
+                    )
+                    if fence_end > 0:
+                        fm_data = yaml.safe_load(
+                            "".join(lines[1:fence_end])
+                        )
+                        fm_strategy = (
+                            fm_data.get("strategy")
+                            if isinstance(fm_data, dict)
+                            else None
+                        )
+                        if (
+                            isinstance(fm_strategy, str)
+                            and fm_strategy.lower()
+                            in VALID_PRESET_STRATEGIES
+                        ):
+                            strategy = fm_strategy.lower()
+            except (UnicodeDecodeError, yaml.YAMLError, OSError):
+                pass
+        return strategy
+
     def _declared_replace_resources(
         self, base_dir: Path, name: str, template_type: str
     ) -> list[dict]:
-        """Return usable replace declarations, including eligible selectors only."""
+        """Return all usable exact replace declarations without evaluating selectors."""
         if template_type == "command":
-            # Selector eligibility checks strictly below base_dir's position in
-            # the priority stack, so recursive replace-base checks terminate.
-            declarations = self._preset_declarations_for_resource(
-                base_dir, name, template_type
-            )
+            # A selector needs an independent base below it, so traversing
+            # selectors cannot reveal another base and would rescan suffixes
+            # exponentially. Keep every exact declaration, not only the first.
+            manifest = self._get_manifest(base_dir)
+            declarations = []
+            for declaration in manifest.templates if manifest is not None else []:
+                if declaration.get("type") != template_type or declaration.get("name") != name:
+                    continue
+                file_value = declaration.get("file")
+                candidate = base_dir / file_value if isinstance(file_value, str) else None
+                if candidate is not None and candidate.is_file():
+                    declarations.append((declaration, candidate))
         else:
             declarations = [self._manifest_declared_template(base_dir, name, template_type)]
         return [
             declaration
             for declaration, candidate in declarations
             if declaration is not None and candidate is not None
-            and declaration.get("strategy", "replace") == "replace"
+            and self._effective_preset_strategy(declaration, candidate, template_type) == "replace"
         ]
 
     def _has_effective_replace_base(
@@ -755,18 +808,21 @@ class PresetResolver:
             base_dir = self.presets_dir / pack_id
             if self._declared_replace_resources(base_dir, name, template_type):
                 return True
-            # An undeclared conventional file is that layer's own content and
-            # defaults to ``replace``, so it is a valid base as well. Only a
-            # layer that declares the name purely for composition is not.
+            # Undeclared conventional commands may still opt into composition
+            # through legacy frontmatter, just as they do during layer collection.
             entry, _candidate = self._manifest_declared_template(
                 base_dir, name, template_type
             )
             if (
                 entry is None
                 and not (template_type == "command" and self._declares_command_name(base_dir, name))
-                and self._conventional_resource(base_dir, name, template_type) is not None
             ):
-                return True
+                candidate = self._conventional_resource(base_dir, name, template_type)
+                if (
+                    candidate is not None
+                    and self._effective_preset_strategy(None, candidate, template_type) == "replace"
+                ):
+                    return True
         for _priority, ext_id, _metadata in self._get_all_extensions_by_priority():
             base_dir = self.extensions_dir / ext_id
             # Extensions carry ``extension.yml``, so their declarations come from
@@ -937,47 +993,11 @@ class PresetResolver:
                         candidate = _find_in_subdirs(pack_dir)
                     preset_declarations = [(entry, candidate)]
                 for layer_entry, candidate in preset_declarations:
-                    strategy = "replace"
-                    manifest_has_strategy = False
-                    if layer_entry is not None:
-                        strategy = layer_entry.get("strategy", "replace")
-                        manifest_has_strategy = "strategy" in layer_entry
                     if candidate is None:
                         continue
-                    if (
-                        not manifest_has_strategy
-                        and strategy == "replace"
-                        and template_type == "command"
-                    ):
-                        try:
-                            cmd_content = candidate.read_text(encoding="utf-8")
-                            lines = cmd_content.splitlines(keepends=True)
-                            if lines and lines[0].rstrip("\r\n") == "---":
-                                fence_end = next(
-                                    (
-                                        i
-                                        for i, line in enumerate(lines[1:], 1)
-                                        if line.rstrip("\r\n") == "---"
-                                    ),
-                                    -1,
-                                )
-                                if fence_end > 0:
-                                    fm_data = yaml.safe_load(
-                                        "".join(lines[1:fence_end])
-                                    )
-                                    fm_strategy = (
-                                        fm_data.get("strategy")
-                                        if isinstance(fm_data, dict)
-                                        else None
-                                    )
-                                    if (
-                                        isinstance(fm_strategy, str)
-                                        and fm_strategy.lower()
-                                        in VALID_PRESET_STRATEGIES
-                                    ):
-                                        strategy = fm_strategy.lower()
-                        except (UnicodeDecodeError, yaml.YAMLError, OSError):
-                            pass
+                    strategy = self._effective_preset_strategy(
+                        layer_entry, candidate, template_type
+                    )
                     version = metadata.get("version", "?") if metadata else "?"
                     layers.append(
                         {

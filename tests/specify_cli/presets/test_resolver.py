@@ -2782,3 +2782,77 @@ def test_composition_only_lower_declaration_is_not_a_selector_base(
         assert [candidate for _declaration, candidate in middle] == [None]
         assert all("middle-selector" not in layer["source"]
                    for layer in resolver.collect_all_layers("foo", "command"))
+
+
+@pytest.mark.parametrize("preset_count", [4, 8, 12])
+def test_selector_base_scan_has_bounded_declaration_evaluations(project_dir, monkeypatch, preset_count):
+    """A grid of append selectors must not recursively rescan every suffix."""
+    name = "complexity-command"
+    write_selector_contract_preset(
+        project_dir, "base", [(name, "command", "replace", "BASE\n")], 100
+    )
+    for index in range(preset_count):
+        write_selector_contract_preset(
+            project_dir, f"selector-{index}",
+            [(f"regex:^{name}$", "command", "append", f"APPEND {index}\n"),
+             ("regex:^complexity-.*$", "command", "append", f"EXTRA {index}\n")],
+            index + 1,
+        )
+    resolver = PresetResolver(project_dir)
+    evaluate = resolver._preset_declarations_for_resource
+    evaluations = 0
+
+    def counted(*args, **kwargs):
+        nonlocal evaluations
+        evaluations += 1
+        return evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(resolver, "_preset_declarations_for_resource", counted)
+    layers = resolver.collect_all_layers(name, "command")
+    assert len(layers) == 2 * preset_count + 1
+    print(f"selector presets={preset_count}: declaration evaluations={evaluations}")
+    assert evaluations <= preset_count + 1
+    content = resolver.resolve_content(name, "command")
+    assert "BASE" in content
+    for index in range(preset_count):
+        assert f"APPEND {index}\n" in content
+        assert f"EXTRA {index}\n" in content
+
+
+@pytest.mark.parametrize("declared", [True, False], ids=["declared", "conventional"])
+def test_selector_base_honors_command_frontmatter(project_dir, declared):
+    """Legacy append payloads cannot establish a command for a selector."""
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    entry = {"name": "foo", "type": "command", "file": "commands/foo.md"}
+    lower = write_diagnostic_selector_preset(project_dir, "lower", [entry] if declared else [])
+    payload = lower / "commands/foo.md"
+    payload.parent.mkdir(exist_ok=True)
+    payload.write_text("---\nstrategy: append\n---\nLOWER\n", encoding="utf-8")
+    registry = PresetRegistry(project_dir / ".specify/presets")
+    registry.update("lower", {"priority": 10})
+    assert PresetResolver(project_dir).resolve_content("foo", "command") is None
+    write_selector_contract_preset(
+        project_dir, "upper", [("regex:^foo$", "command", "replace", "UPPER\n")]
+    )
+
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") is None
+    assert [layer["source"] for layer in resolver.collect_all_layers("foo", "command")] == ["lower v1.0.0"]
+
+    # Explicit manifest strategy wins over legacy frontmatter. An earlier exact
+    # append or missing payload in the stack must not hide the usable replace.
+    write_selector_contract_preset(
+        project_dir, "middle-append", [("foo", "command", "append", "MIDDLE\n")], 5
+    )
+    write_selector_contract_preset(
+        project_dir, "middle-missing", [("foo", "command", "replace", None)], 6
+    )
+    data = yaml.safe_load((lower / "preset.yml").read_text())
+    data["provides"]["templates"] = [{**entry, "strategy": "replace"}]
+    (lower / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") == "UPPER\n"
+    assert [layer["strategy"] for layer in resolver.collect_all_layers("foo", "command")] == [
+        "replace", "append", "replace",
+    ]
