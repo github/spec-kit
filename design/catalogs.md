@@ -39,7 +39,7 @@ The implementations use two source-stack models.
 Extensions, presets, integrations, workflows, and workflow step types resolve
 exactly one source layer:
 
-1. A non-blank environment override replaces every configured/default source.
+1. An environment override can replace every configured/default source.
 2. A project config replaces the user and built-in layers when that project
    config contributes an active stack.
 3. A user config replaces the built-in layer when it contributes an active
@@ -53,6 +53,12 @@ stable sort.
 The built-in official source permits installation. The built-in community
 source is discovery-only. Environment overrides are currently install-enabled.
 Configured sources default to discovery-only when `install_allowed` is omitted.
+
+Environment-value normalization is not uniform. Extensions and presets test the
+raw variable for presence and then strip it, so a whitespace-only value selects
+the override path and fails URL validation. Integrations, workflows, and
+workflow steps strip first, so a whitespace-only value is ignored and
+resolution continues to project, user, or built-in configuration.
 
 | Primitive | Environment override | Project config | User config |
 | --- | --- | --- | --- |
@@ -107,14 +113,27 @@ remote HTTPS URLs, with HTTP allowed only for localhost.
 
 ## Configuration semantics
 
-All readers reject:
+The active-stack readers for all six primitives reject a non-mapping YAML root,
+a non-list non-null `catalogs` value, and non-mapping source entries. Validation
+phase and accepted values otherwise differ:
 
-- a non-mapping YAML root
-- a non-list `catalogs` value
-- non-mapping source entries
-- boolean or otherwise non-integer priorities
-- malformed remote URLs
-- non-localhost HTTP remote URLs
+- Replacement-layer loaders validate remote URLs while reading the active
+  stack. Bundle resolution validates source structure while materializing
+  `CatalogSource` values, but the bundle catalog command reader's `_read()`
+  only validates the outer configuration shape and schema version; commands
+  materialize and validate entries afterward.
+- All readers reject boolean priorities. Replacement-layer loaders otherwise
+  call `int(value)`, so a fractional numeric value such as `1.9` is truncated
+  to `1`. Bundle `CatalogSource` materialization rejects floats rather than
+  truncating them.
+- Replacement-layer loaders reject malformed remote URLs and non-localhost
+  HTTP while resolving the active stack. Bundle source validation depends on
+  the path: catalog commands validate supported schemes and remote security
+  before writing, while a hand-edited stack is revalidated by the fetcher when
+  used.
+- Presets, workflows, workflow steps, and both bundle readers treat
+  `catalogs: null` as contributing no entries. Extensions and integrations
+  treat it as an empty selected config and fail closed.
 
 The current empty-config behavior is intentionally not uniform:
 
@@ -187,16 +206,23 @@ layer must not turn malformed payloads into empty successful results.
 
 ## Source failures
 
-Extensions, presets, integrations, workflows, and workflow steps can continue
-when one selected source cannot be fetched. They fail only when no selected
-source remains readable, subject to these established surface differences:
+Recoverable source-fetch errors can be skipped by extensions, presets,
+integrations, workflows, and workflow steps so another selected source remains
+usable. Validation errors are not uniformly recoverable:
 
 - Extensions and integrations emit warnings for failed sources and raise when
-  every source fails.
+  every source fails. Because integration release-history validation happens
+  during `_fetch_single_catalog`, malformed release history is represented as
+  an `IntegrationCatalogError`, so the merge warns, skips that source, and can
+  expose a lower-precedence copy.
 - Preset lookup preserves the first fetch error when no source is readable;
   preset search currently converts ordinary fetch failures to an empty result.
+  `PresetCatalogValidationError` remains fatal: search can fail on invalid
+  lower-precedence content even after reading a valid higher source, while a
+  targeted lookup can return as soon as it finds the requested higher entry.
 - Workflow and step merges count source failures and raise when every source
-  fails.
+  fails. Workflow-step duplicate JSON fields and duplicate IDs are fatal
+  validation errors rather than skippable source-fetch errors.
 - Workflow and step fetches may use readable stale cache data after a network
   failure.
 
@@ -209,8 +235,8 @@ failure strategy per caller rather than one implicit global policy.
 
 ## Shadowing, provenance, search, and lookup
 
-For every primitive, the highest-precedence source that defines a content ID
-wins. A lower-precedence copy is shadowed even when:
+For well-formed entries from readable sources, the highest-precedence source
+that defines a content ID wins. A lower-precedence copy is shadowed even when:
 
 - the lower copy matches a search query that the winning copy does not
 - the lower copy permits installation and the winning copy is discovery-only
@@ -219,6 +245,18 @@ wins. A lower-precedence copy is shadowed even when:
 
 Search must describe the same winning entry that lookup/install would resolve;
 it must not expose an unreachable shadowed entry.
+
+Malformed entry handling is an established exception:
+
+- Extensions, integrations, workflows, and workflow steps skip non-mapping
+  entries during merge, so a well-formed lower-precedence copy can win.
+- Preset search skips non-mapping entries and can show a lower-precedence copy,
+  but targeted preset lookup/install treats a malformed matching entry as
+  fatal and does not fall through.
+- Bundle payload parsing rejects malformed entries rather than skipping them.
+- Integration release-history validation occurs at fetch time; an invalid
+  higher source is skipped as a failed source, allowing a lower copy and its
+  installation policy to win.
 
 Resolved/search results preserve source provenance:
 
@@ -233,7 +271,7 @@ diagnostics. It is not presentation-only metadata.
 ## Exact historical release selection
 
 All six primitives support selecting the advertised current version or an
-exact historical release from the winning source. Selection:
+exact historical release from the winning well-formed entry. Selection:
 
 - never falls through to a lower-precedence source
 - accepts PEP 440-equivalent spellings where the current selector does
@@ -243,8 +281,11 @@ exact historical release from the winning source. Selection:
 - reports or returns "not found" when the winning entry does not advertise the
   requested release
 
-Malformed release history is payload validation failure, not a reason to use a
-shadowed source.
+Malformed release history is a validation failure, but its failure phase
+matters. Extensions, presets, workflows, workflow steps, and bundles do not
+consult a lower source after the winning entry fails release selection.
+Integrations validate history while fetching a source, so the merge can skip
+that source and select a lower copy instead.
 
 ## Intended shared-layer boundary
 

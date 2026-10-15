@@ -29,6 +29,7 @@ class RemoteCatalogCase:
     env_var: str
     error_type: type[Exception]
     empty_project_fails_closed: bool
+    whitespace_environment_fails_closed: bool
 
 
 REMOTE_CATALOGS = (
@@ -39,6 +40,7 @@ REMOTE_CATALOGS = (
         "SPECKIT_CATALOG_URL",
         ValidationError,
         True,
+        True,
     ),
     RemoteCatalogCase(
         "preset",
@@ -47,6 +49,7 @@ REMOTE_CATALOGS = (
         "SPECKIT_PRESET_CATALOG_URL",
         PresetValidationError,
         False,
+        True,
     ),
     RemoteCatalogCase(
         "integration",
@@ -55,6 +58,7 @@ REMOTE_CATALOGS = (
         "SPECKIT_INTEGRATION_CATALOG_URL",
         IntegrationValidationError,
         True,
+        False,
     ),
     RemoteCatalogCase(
         "workflow",
@@ -63,6 +67,7 @@ REMOTE_CATALOGS = (
         "SPECKIT_WORKFLOW_CATALOG_URL",
         WorkflowValidationError,
         False,
+        False,
     ),
     RemoteCatalogCase(
         "workflow-step",
@@ -70,6 +75,7 @@ REMOTE_CATALOGS = (
         "step-catalogs.yml",
         "SPECKIT_STEP_CATALOG_URL",
         StepValidationError,
+        False,
         False,
     ),
 )
@@ -144,6 +150,28 @@ def test_remote_catalog_resolution_replaces_lower_source_layers(
 
 
 @pytest.mark.parametrize("case", REMOTE_CATALOGS, ids=lambda case: case.name)
+def test_remote_catalog_whitespace_environment_keeps_historical_semantics(
+    case: RemoteCatalogCase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    _write_remote_config(project, case.config_filename, "project")
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv(case.env_var, "   ")
+    catalog = case.catalog_type(project)
+
+    if case.whitespace_environment_fails_closed:
+        with pytest.raises(case.error_type):
+            catalog.get_active_catalogs()
+    else:
+        assert [source.name for source in catalog.get_active_catalogs()] == ["project"]
+
+
+@pytest.mark.parametrize("case", REMOTE_CATALOGS, ids=lambda case: case.name)
 def test_remote_catalog_empty_project_config_keeps_historical_semantics(
     case: RemoteCatalogCase,
     tmp_path: Path,
@@ -185,6 +213,38 @@ def test_remote_catalog_malformed_config_fails_instead_of_falling_back(
 
     with pytest.raises(case.error_type):
         case.catalog_type(project).get_active_catalogs()
+
+
+@pytest.mark.parametrize("case", REMOTE_CATALOGS, ids=lambda case: case.name)
+def test_remote_catalog_fractional_priority_is_truncated(
+    case: RemoteCatalogCase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    (project / ".specify").mkdir(parents=True)
+    home.mkdir()
+    (project / ".specify" / case.config_filename).write_text(
+        yaml.safe_dump(
+            {
+                "catalogs": [
+                    {
+                        "name": "fractional",
+                        "url": "https://fractional.example.com/catalog.json",
+                        "priority": 1.9,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.delenv(case.env_var, raising=False)
+
+    sources = case.catalog_type(project).get_active_catalogs()
+
+    assert sources[0].priority == 1
 
 
 def test_bundle_catalogs_merge_scopes_by_id_and_sort_deterministically(
@@ -263,6 +323,53 @@ def test_bundle_catalogs_merge_scopes_by_id_and_sort_deterministically(
     assert by_id["community"].scope is Scope.BUILTIN
 
 
+def test_bundle_catalog_materialization_rejects_fractional_priority() -> None:
+    from specify_cli.bundler import BundlerError
+    from specify_cli.bundles.catalogs import CatalogSource, Scope
+
+    with pytest.raises(BundlerError, match="non-integer priority"):
+        CatalogSource.from_dict(
+            {
+                "id": "fractional",
+                "url": "https://example.com/catalog.json",
+                "priority": 1.9,
+                "install_policy": "discovery-only",
+            },
+            Scope.PROJECT,
+        )
+
+
+def test_bundle_config_reader_defers_source_field_validation(tmp_path: Path) -> None:
+    from specify_cli.bundles import catalog_config
+
+    project = tmp_path / "project"
+    (project / ".specify").mkdir(parents=True)
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(
+            {
+                "catalogs": [
+                    {
+                        "id": "deferred",
+                        "url": "ftp://example.com/catalog.json",
+                        "priority": 1.9,
+                        "install_policy": "not-a-policy",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert catalog_config._read(project) == [
+        {
+            "id": "deferred",
+            "url": "ftp://example.com/catalog.json",
+            "priority": 1.9,
+            "install_policy": "not-a-policy",
+        }
+    ]
+
+
 def test_bundle_catalog_malformed_project_config_does_not_fall_back(
     tmp_path: Path,
 ) -> None:
@@ -279,3 +386,60 @@ def test_bundle_catalog_malformed_project_config_does_not_fall_back(
 
     with pytest.raises(BundlerError, match="'catalogs' must be a list"):
         load_source_stack(project, user_config)
+
+
+def test_integration_malformed_release_history_falls_through(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from specify_cli.integrations import (
+        IntegrationCatalogEntry,
+        IntegrationCatalogError,
+        _catalog_shape_error,
+    )
+
+    high = IntegrationCatalogEntry(
+        "https://example.com/high.json", "high", 1, False
+    )
+    low = IntegrationCatalogEntry(
+        "https://example.com/low.json", "low", 2, True
+    )
+    payloads = {
+        "high": {
+            "schema_version": "1.0",
+            "integrations": {
+                "sample": {
+                    "id": "sample",
+                    "version": "2.0.0",
+                    "releases": [],
+                }
+            },
+        },
+        "low": {
+            "schema_version": "1.0",
+            "integrations": {
+                "sample": {
+                    "id": "sample",
+                    "version": "1.0.0",
+                }
+            },
+        },
+    }
+    catalog = IntegrationCatalog(tmp_path)
+    monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [high, low])
+
+    def fetch(source, force_refresh=False):
+        payload = payloads[source.name]
+        error = _catalog_shape_error(payload)
+        if error is not None:
+            raise IntegrationCatalogError(error)
+        return payload
+
+    monkeypatch.setattr(catalog, "_fetch_single_catalog", fetch)
+
+    result = catalog.get_integration_info("sample")
+
+    assert result is not None
+    assert result["version"] == "1.0.0"
+    assert result["_catalog_name"] == "low"
+    assert result["_install_allowed"] is True
