@@ -302,7 +302,15 @@ that source and select a lower copy instead.
 
 ## Intended shared-layer boundary
 
-A future `specify_cli.catalogs` domain may own:
+`src/specify_cli/catalogs.py` already provides a narrow shared starting point:
+`CatalogEntry` and `CatalogStackBase` centralize source-entry fields, remote URL
+validation, and YAML config loading. Extensions and integrations subclass that
+base today. Presets, workflows, workflow steps, and bundles retain independent
+source models and loaders, and fetching, cache, merge, failure, payload, and
+release behavior remains primitive-owned for all six domains.
+
+A broader shared catalog domain, whether evolved in `specify_cli.catalogs` or
+split into focused adjacent modules, may own:
 
 - typed source identity, scope, priority, trust/install policy, and provenance
 - config parsing primitives with an explicit empty-config policy
@@ -333,7 +341,9 @@ Refactoring into the shared layer must be incremental and behavior-preserving:
 1. Keep the characterization matrix passing.
 2. Move one independently testable concern at a time.
 3. Preserve existing import and monkeypatch paths where tests or consumers rely
-   on them.
+   on them, including `specify_cli.catalogs.CatalogEntry`,
+   `specify_cli.catalogs.CatalogStackBase`, and the extension/integration
+   package exports and subclass patch points built on those types.
 4. Do not normalize empty configs, source failure handling, cache fallback, or
    trust defaults in a structural PR.
 5. Treat any intended normalization as a separate behavior change with positive
