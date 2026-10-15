@@ -14,6 +14,7 @@ class LingmaIntegration(SkillsIntegration):
     """Integration for Lingma IDE."""
 
     key = "lingma"
+    skills_invocation_only = True
     config = {
         "name": "Lingma",
         "folder": ".lingma/",

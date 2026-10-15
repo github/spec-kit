@@ -92,6 +92,10 @@ class GenericIntegration(MarkdownIntegration):
         """
         return "-" if self.is_skills_mode(parsed_options, project_root) else "."
 
+    def invoke_separator_for_mode(self, skills_enabled: bool) -> str:
+        """Match command references to the selected generic output layout."""
+        return "-" if skills_enabled else "."
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [

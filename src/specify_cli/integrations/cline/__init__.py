@@ -90,6 +90,15 @@ class ClineIntegration(MarkdownIntegration):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def build_hook_invocation(
+        self,
+        command_name: str,
+        *,
+        skills_enabled: bool,
+    ) -> str:
+        """Cline formats every hook command through its registered name."""
+        return self.build_command_invocation(command_name)
+
     def process_template(self, *args, **kwargs):
         """Ensure shared templates render Cline command references with hyphens."""
         kwargs.setdefault("invoke_separator", self.invoke_separator)

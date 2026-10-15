@@ -27,6 +27,7 @@ class RovodevIntegration(SkillsIntegration):
     """
 
     key = "rovodev"
+    skills_invocation_only = True
     config = {
         "name": "RovoDev ACLI",
         "folder": ".rovodev/",

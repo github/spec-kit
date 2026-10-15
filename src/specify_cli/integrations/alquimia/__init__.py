@@ -26,6 +26,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
     """Integration for Alquimia AI skills."""
 
     key = "alquimia"
+    skills_invocation_only = True
     config = {
         "name": "Alquimia AI",
         "folder": ".alquimia/",

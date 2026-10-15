@@ -37,6 +37,7 @@ class HermesIntegration(SkillsIntegration):
     """
 
     key = "hermes"
+    skills_invocation_only = True
     config = {
         "name": "Hermes Agent",
         "folder": ".hermes/",

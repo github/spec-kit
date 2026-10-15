@@ -16,15 +16,17 @@ class TestDockerAgentIntegration(SkillsIntegrationTests):
     def test_multi_install_is_opt_in(self):
         assert DockerAgentIntegration().multi_install_safe is False
 
-    def test_is_slash_skills_agent(self):
-        """Docker Agent only installs `speckit-<name>/SKILL.md` skills, so the
-        helper must agree with its own renderer with or without `ai_skills`
-        (always slash, like Zed and Muse Code, which share that layout)."""
-        from specify_cli._invocation_style import is_slash_skills_agent
-
-        assert DockerAgentIntegration().build_command_invocation("plan") == "/speckit-plan"
-        assert is_slash_skills_agent("docker-agent", True) is True
-        assert is_slash_skills_agent("docker-agent", False) is True
+    def test_integration_owns_always_skill_reference_style(self):
+        integration = DockerAgentIntegration()
+        assert integration.build_command_invocation("plan") == "/speckit-plan"
+        assert (
+            integration.build_command_reference("plan", skills_enabled=True)
+            == "/speckit-plan"
+        )
+        assert (
+            integration.build_command_reference("plan", skills_enabled=False)
+            == "/speckit-plan"
+        )
 
     def test_hook_invocation_renders_the_hyphenated_form(self, tmp_path, monkeypatch):
         import specify_cli
