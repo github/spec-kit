@@ -830,6 +830,82 @@ def test_setup_tasks_ps_text_output_lists_available_docs(tasks_repo: Path) -> No
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_setup_tasks_ps_handles_literal_bracketed_feature_directory(
+    tasks_repo: Path,
+) -> None:
+    """Feature paths containing brackets must not be treated as wildcards."""
+    feature_name = "001-my-feature [v2]"
+    feat = tasks_repo / "specs" / feature_name
+    feat.mkdir(parents=True)
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    (feat / "data-model.md").write_text("# model\n", encoding="utf-8")
+    (feat / "quickstart.md").write_text("# quickstart\n", encoding="utf-8")
+    (feat / "contracts" / "v1").mkdir(parents=True)
+    _write_feature_json(tasks_repo, f"specs/{feature_name}")
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    json_result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    text_result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script)],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert json_result.returncode == 0, json_result.stderr + json_result.stdout
+    data = json.loads(json_result.stdout)
+    assert Path(data["FEATURE_DIR"]) == feat
+    assert data["AVAILABLE_DOCS"] == [
+        "research.md",
+        "data-model.md",
+        "contracts/",
+        "quickstart.md",
+    ]
+    assert text_result.returncode == 0, text_result.stderr + text_result.stdout
+    for document in ("research.md", "data-model.md", "contracts/", "quickstart.md"):
+        assert f"[OK] {document}" in text_result.stdout, text_result.stdout
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_setup_tasks_ps_does_not_match_wildcard_shaped_neighbor(
+    tasks_repo: Path,
+) -> None:
+    """A bracketed feature path must not accept a neighboring feature's plan."""
+    feature_name = "001-my-feature [v2]"
+    neighbor = tasks_repo / "specs" / "001-my-feature v"
+    neighbor.mkdir(parents=True)
+    (neighbor / "spec.md").write_text("# neighbor spec\n", encoding="utf-8")
+    (neighbor / "plan.md").write_text("# neighbor plan\n", encoding="utf-8")
+    _write_feature_json(tasks_repo, f"specs/{feature_name}")
+
+    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+
+    assert result.returncode != 0
+    assert "plan.md not found" in result.stderr
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_normalizes_mixed_separators(
     tasks_repo: Path,
 ) -> None:
