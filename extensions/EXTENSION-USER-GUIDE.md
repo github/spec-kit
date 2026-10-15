@@ -187,7 +187,7 @@ Provided commands:
    Check: .specify/extensions/jira/
 ```
 
-Command names are listed the way your agent registers them. Skills-based integrations such as Claude Code and Codex, and agents such as Cline, Forge, and Junie, show hyphenated names (for example `speckit-jira-specstoissues`).
+Command names are listed the way your agent registers them. Skills-based integrations such as Claude Code and Codex, projects initialized with `--integration-options="--skills"`, and agents such as Cline, Forge, and Junie show hyphenated names (for example `speckit-jira-specstoissues`).
 
 ### Automatic Agent Skill Registration
 

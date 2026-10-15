@@ -124,9 +124,9 @@ def _refresh_events_and_warn(project_root: Path) -> None:
 def _registered_command_name(project_root: Path, command_name: str) -> str:
     """Return *command_name* the way the project's active agent registers it.
 
-    Agents whose command references use ``-`` in the project's current mode
-    (skills layouts, and command layouts such as Cline, Forge, and Junie)
-    register ``speckit.<ext>.<cmd>`` as ``speckit-<ext>-<cmd>``; the others
+    Skills projects register extension commands as ``speckit-<ext>-<cmd>``
+    skills. In command mode, agents whose command references use ``-`` (such
+    as Cline, Forge, and Junie) register the same hyphenated name; the others
     keep the manifest's dotted name. Deriving this from the integration keeps
     command listings in step with registration instead of a list of agents.
     """
@@ -141,7 +141,11 @@ def _registered_command_name(project_root: Path, command_name: str) -> str:
     )
     if integration is None:
         return command_name
-    if integration.invoke_separator_for_mode(is_ai_skills_enabled(opts)) != "-":
+    # Generic's command-mode separator applies to both of its layouts, so
+    # the separator alone cannot tell that a skills project hyphenates.
+    if not is_ai_skills_enabled(opts) and (
+        integration.invoke_separator_for_mode(False) != "-"
+    ):
         return command_name
     return ExtensionManager._skill_name_for_command(command_name)
 
