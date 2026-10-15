@@ -29,6 +29,7 @@ from typing import Any
 
 import typer
 
+from .._capture import run_captured
 from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -368,6 +369,8 @@ class CopilotIntegration(IntegrationBase):
         stream: bool = True,
         integration_args: Sequence[str] | None = None,
         integration_options: Mapping[str, Any] | None = None,
+        output_json: bool | None = None,
+        capture_max_bytes: int | None = None,
     ) -> dict[str, Any]:
         """Dispatch via ``--agent speckit.<stem>`` instead of slash-commands.
 
@@ -379,6 +382,11 @@ class CopilotIntegration(IntegrationBase):
         (``/speckit-<stem>``).
         """
         import subprocess
+
+        if stream and capture_max_bytes is not None:
+            raise ValueError("capture_max_bytes requires stream=False.")
+        if output_json is None:
+            output_json = not stream
 
         self.validate_runtime_config(integration_args, integration_options)
 
@@ -412,7 +420,7 @@ class CopilotIntegration(IntegrationBase):
             cli_args.append("--yolo")
         if model:
             cli_args.extend(["--model", model])
-        if not stream:
+        if output_json:
             cli_args.extend(["--output-format", "json"])
 
         cwd = str(project_root) if project_root else None
@@ -435,6 +443,14 @@ class CopilotIntegration(IntegrationBase):
                 "stdout": "",
                 "stderr": "",
             }
+
+        if capture_max_bytes is not None:
+            return run_captured(
+                cli_args,
+                cwd=cwd,
+                timeout=timeout,
+                max_bytes=capture_max_bytes,
+            ).as_dispatch_result()
 
         result = subprocess.run(
             cli_args,
