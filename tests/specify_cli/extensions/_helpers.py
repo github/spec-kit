@@ -4,8 +4,32 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 
 MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
+
+# The ``extension_dir`` fixture provides ``speckit.test-ext.hello``. Each case
+# pairs an agent's init options with the name that agent registers on disk
+# (what the user types) and the other spelling, which must not be listed.
+_HYPHENATED = "speckit-test-ext-hello"
+_DOTTED = "speckit.test-ext.hello"
+LISTED_COMMAND_NAME_CASES = [
+    # .claude/skills/speckit-test-ext-hello/SKILL.md
+    pytest.param({"ai": "claude", "ai_skills": True}, _HYPHENATED, _DOTTED, id="claude"),
+    # .agents/skills/speckit-test-ext-hello/SKILL.md
+    pytest.param({"ai": "codex", "ai_skills": True}, _HYPHENATED, _DOTTED, id="codex"),
+    # .junie/commands/speckit-test-ext-hello.md
+    pytest.param({"ai": "junie"}, _HYPHENATED, _DOTTED, id="junie"),
+    # .github/skills/speckit-test-ext-hello/SKILL.md
+    pytest.param({"ai": "copilot", "ai_skills": True}, _HYPHENATED, _DOTTED, id="copilot-skills"),
+    pytest.param({"ai": "cline"}, _HYPHENATED, _DOTTED, id="cline"),
+    pytest.param({"ai": "forge"}, _HYPHENATED, _DOTTED, id="forge"),
+    # .github/agents/speckit.test-ext.hello.agent.md
+    pytest.param({"ai": "copilot"}, _DOTTED, _HYPHENATED, id="copilot-commands"),
+    # .gemini/commands/speckit.test-ext.hello.toml
+    pytest.param({"ai": "gemini"}, _DOTTED, _HYPHENATED, id="gemini"),
+]
 
 
 def open_test_download_zip(project_root, download_dir, zip_filename):

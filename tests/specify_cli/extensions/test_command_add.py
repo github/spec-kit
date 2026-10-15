@@ -28,6 +28,7 @@ from specify_cli.extensions import (
 )
 from tests.conftest import strip_ansi
 from tests.specify_cli.extensions._helpers import (
+    LISTED_COMMAND_NAME_CASES,
     MINIMAL_ZIP_BYTES as _MINIMAL_ZIP_BYTES,
     can_create_symlink,
     open_test_download_zip as _open_test_download_zip,
@@ -1268,3 +1269,32 @@ def test_forge_extension_install_listing_hyphenates_command_names(
     # Forge registers hyphenated command names, so the summary must match.
     assert "speckit-test-ext-hello" in result.output
     assert "speckit.test-ext.hello" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("init_options", "listed", "not_listed"), LISTED_COMMAND_NAME_CASES
+)
+def test_extension_install_listing_matches_registered_command_names(
+    extension_dir, project_dir, init_options, listed, not_listed
+):
+    """The post-install 'Provided commands' listing must show each command the
+    way the active agent registers it, for every integration rather than only
+    the agents special-cased by name."""
+    init_options_file = project_dir / ".specify" / "init-options.json"
+    init_options_file.write_text(
+        json.dumps({**init_options, "script": "sh"}), encoding="utf-8"
+    )
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    output = strip_ansi(result.output)
+    assert result.exit_code == 0, output
+    assert f"• {listed} - " in output, output
+    assert f"• {not_listed} - " not in output, output
