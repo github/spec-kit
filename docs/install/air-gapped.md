@@ -44,8 +44,10 @@ specify init my-project --integration copilot
 ## Component catalogs and sources
 
 Built-in integrations and bundled components remain available without network
-access. Additional extensions, presets, workflows, workflow steps, and bundles
-need both their catalog metadata and their release artifacts.
+access. Catalog-based installation of additional extensions, presets,
+workflows, workflow steps, and bundles needs both the catalog metadata and the
+referenced release artifacts. A supported direct or local source install does
+not require catalog metadata.
 
 For a restricted network that can reach approved internal services, host
 reviewed catalogs and artifacts on internal HTTPS endpoints, then register each

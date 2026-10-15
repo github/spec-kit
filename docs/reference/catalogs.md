@@ -47,19 +47,38 @@ Each command group also provides `catalog add` and `catalog remove`. Options,
 identifiers, install policies, and configuration filenames differ by component
 type, so use the linked reference before changing a catalog stack.
 
-Catalogs are resolved by precedence. Project sources generally take precedence
-over user and built-in sources, and environment-variable overrides are checked
-first where supported. Within a stack, the higher-precedence source that
-provides an identifier wins; Specify does not silently bypass that source to
-install a same-named component from a lower-precedence catalog.
+Catalog scope and precedence use two models:
+
+- **Integrations, extensions, presets, workflows, and workflow steps** select
+  one configuration layer. An environment-variable override replaces
+  everything; otherwise a project catalog file replaces the user and built-in
+  layers, a user file replaces the built-in layer, and built-in catalogs are
+  used only when no higher layer is configured. Within the selected layer,
+  entries are ordered by numeric priority. Adding the first project catalog
+  therefore removes the built-in sources from the active stack unless you also
+  list those sources in the project file.
+- **Bundles** merge built-in, user, and project sources by source ID. A
+  higher-scope definition replaces a lower-scope source with the same ID, then
+  all remaining sources are sorted by numeric priority. A project source does
+  not automatically outrank a differently named built-in source.
+
+Among catalogs that load successfully, the higher-priority entry providing an
+identifier wins. Some component readers skip ordinary fetch failures and
+continue with the remaining sources, so an unreachable higher-priority source
+can allow a lower-priority source to resolve the same identifier. Do not treat
+source priority as a fail-closed security control.
 
 ## Discovery and trust
 
 A catalog listing is not an audit or endorsement. Catalogs can be:
 
-- **Install-allowed**: a source you trust as an installation source.
-- **Discovery-only**: searchable for evaluation, but blocked from direct
-  installation.
+- **Install-allowed**: a source you trust for installation by component ID.
+- **Discovery-only**: searchable for evaluation, but blocked from installation
+  by ID through that catalog.
+
+Discovery-only policy does not block a separately requested direct-source
+installation such as a supported `--from` URL or `--dev` path. Review that
+source independently before using the direct-install route.
 
 Community catalogs are discovery surfaces and should remain discovery-only.
 Review a component's source and release artifact before using it. To make
@@ -75,13 +94,28 @@ installing or running components from an unfamiliar project.
 
 ## Host a private catalog
 
-1. Choose the component type and follow its catalog schema or publishing guide.
-2. Publish the catalog JSON at an HTTPS URL reachable by the intended users.
-3. Add that URL with the component's `catalog add` command.
-4. Mark the source install-allowed only after your organization has reviewed
-   and approved its entries and release artifacts.
+1. Review and approve the entries and release artifacts before registering an
+   install-allowed source.
+2. Choose the component type and follow its catalog schema or publishing guide.
+3. Publish the catalog JSON at an HTTPS URL reachable by the intended users.
+4. Add that URL with the component's `catalog add` command.
 5. Confirm the resulting source, precedence, and install policy with
    `catalog list`.
+
+The `catalog add` trust default differs by component type:
+
+| Component type | Default when added |
+| --- | --- |
+| Integrations | Install-allowed |
+| Extensions | Discovery-only; requires `--install-allowed` to enable installation |
+| Presets | Discovery-only; requires `--install-allowed` to enable installation |
+| Workflows | Install-allowed |
+| Workflow steps | Install-allowed |
+| Bundles | Install-allowed; use `--policy discovery-only` to restrict it |
+
+Because integration, workflow, workflow-step, and bundle additions can permit
+installation immediately, do not register an unreviewed source and plan to
+approve it later.
 
 Use the component-specific publishing guidance when authoring catalog entries:
 
