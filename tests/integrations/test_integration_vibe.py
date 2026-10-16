@@ -217,14 +217,14 @@ class TestVibeTomlMerging:
         (hook,) = self._parse(tmp_path)["hooks"]
         assert "match" not in hook
 
-    def test_unsupported_events_are_skipped(self, tmp_path, capsys):
+    def test_unsupported_events_are_skipped(self, tmp_path, caplog):
         self._install(tmp_path, {
             "session_start": [{"command": "speckit.agent-context.update"}],
             "pre_tool_use": [{"command": "speckit.tdd.validate"}],
         })
         hooks = self._parse(tmp_path)["hooks"]
         assert [h["type"] for h in hooks] == ["pre_tool"]
-        assert "does not support 'session_start'" in capsys.readouterr().err
+        assert "does not support 'session_start'" in caplog.text
 
     def test_multiple_handlers_get_unique_names(self, tmp_path):
         """Vibe drops duplicate hook names, so shared command stems must not collide."""
