@@ -1,5 +1,7 @@
 """Tests for CodexIntegration."""
 
+from pathlib import Path
+
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -191,3 +193,62 @@ class TestCodexHookCommandNote:
         assert "For each executable hook" not in lines[note_line_idx], (
             "Note and instruction must not be on the same line"
         )
+
+
+class TestCodexHookInvocationPrefix:
+    """Hook blocks in generated skills must carry Codex's ``$`` prefix.
+
+    The command templates and the bundled extension commands spell the hook
+    output block with a literal slash, so Codex was told to report
+    ``To execute: `/speckit-git-commit``` -- an invocation it cannot run,
+    and the opposite of the dot-to-hyphen note sitting right above it.
+    """
+
+    def _hook_invocations(self, skill: Path) -> list[str]:
+        return [
+            line.strip()
+            for line in skill.read_text(encoding="utf-8").splitlines()
+            if "`/{command}`" in line or "`${command}`" in line
+        ]
+
+    def test_core_skill_hook_invocations_use_dollar_prefix(self, tmp_path):
+        i = get_integration("codex")
+        i.setup(tmp_path, IntegrationManifest("codex", tmp_path), script_type="sh")
+
+        skill = tmp_path / ".agents/skills/speckit-specify/SKILL.md"
+        invocations = self._hook_invocations(skill)
+        assert invocations, "speckit-specify should render hook output blocks"
+        assert all("`${command}`" in line for line in invocations), invocations
+        assert "To execute: `${command}`" in invocations
+
+    def test_slash_agent_skill_hook_invocations_keep_slash(self, tmp_path):
+        """Agents whose native invocation is a bare slash must not change."""
+        i = get_integration("claude")
+        i.setup(tmp_path, IntegrationManifest("claude", tmp_path), script_type="sh")
+
+        skill = next(tmp_path.rglob("speckit-specify/SKILL.md"))
+        invocations = self._hook_invocations(skill)
+        assert invocations, "speckit-specify should render hook output blocks"
+        assert all("`/{command}`" in line for line in invocations), invocations
+
+    def test_extension_skill_hook_invocations_use_dollar_prefix(self, tmp_path):
+        """Bundled extension commands render through the command registrar."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.extensions import ExtensionManager
+
+        target = tmp_path / "proj"
+        result = CliRunner().invoke(
+            app,
+            ["init", str(target), "--integration", "codex",
+             "--ignore-agent-tools", "--script", "sh"],
+        )
+        assert result.exit_code == 0, result.output
+
+        ext_dir = Path(__file__).resolve().parents[2] / "extensions" / "bug"
+        ExtensionManager(target).install_from_directory(ext_dir, "0.9.0")
+
+        skill = target / ".agents/skills/speckit-bug-fix/SKILL.md"
+        invocations = self._hook_invocations(skill)
+        assert invocations, "speckit-bug-fix should render hook output blocks"
+        assert all("`${command}`" in line for line in invocations), invocations

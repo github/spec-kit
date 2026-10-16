@@ -850,6 +850,7 @@ class CommandRegistrar:
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
             body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
+            body = IntegrationBase.resolve_hook_invocation_prefix(body, _prefix)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
