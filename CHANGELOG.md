@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.1] - 2026-10-16
+
+### Changed
+
+- docs: add catalog reference (#4976)
+- Update Applied Epistemic Engineering extension to v1.5.0 (#4982)
+- Update Evaluator Contract extension to v1.1.1 (#4980)
+- test(integrations): characterize delivery boundaries (#4975)
+- fix(extensions): list commands the way the active agent registers them (#4964)
+- feat(workflows): add opt-in output capture to command and prompt steps (#4957)
+- docs: add README capability map (#4974)
+- docs: target Windows PowerShell 5.1 (#4973)
+- docs(mcp): document the first-class version and artifact tools (#4969)
+- fix(workflows): load custom steps before update (#4768)
+- Add gh-address-cr extension to community catalog (#4971)
+- [bug-fix] Fix missing-plan-template: reject empty plan setup (#4962)
+- fix(powershell): preserve plans in literal feature paths (#4956)
+- fix(extensions): delete the catalog config when the last entry is removed (#4909)
+- fix(integrations): move extension artifacts on integration uninstall (#4911)
+- fix(integrations): show hyphenated command names for docker-agent and junie (#4910)
+- Update Reconcile Extension to v1.3.1 (#4950)
+- docs: add Korean (한국어) README (#4939)
+- docs: distinguish extension reconciliation from core SDD (#4948)
+- chore: release 1.2.0, begin 1.2.1.dev0 development (#4949)
+
 ## [1.2.0] - 2026-10-13
 
 ### Changed
