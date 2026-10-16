@@ -170,11 +170,7 @@ def check_tool(tool: str, tracker=None) -> bool:
             return True
 
     # Per-integration executable resolution.
-    if tool == "kiro-cli":
-        # Kiro currently supports both executable names. Prefer kiro-cli and
-        # accept kiro as a compatibility fallback.
-        found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
-    elif tool == "rovodev":
+    if tool == "rovodev":
         found = shutil.which("acli") is not None
     elif tool == "docker-agent":
         found = docker_agent_command() is not None
