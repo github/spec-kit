@@ -60,6 +60,9 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
 
+The `github` provider supports `bearer` tokens and `github-cli` credentials
+acquired on demand from GitHub CLI.
+
 **Example — PAT via environment variable:**
 
 ```json
@@ -70,6 +73,30 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
   "token_env": "GH_TOKEN"
 }
 ```
+
+**Example — GitHub CLI:**
+
+```json
+{
+  "providers": [
+    {
+      "hosts": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "codeload.github.com"
+      ],
+      "provider": "github",
+      "auth": "github-cli"
+    }
+  ]
+}
+```
+
+Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
+using this mode. Specify runs the fixed command
+`gh auth token --hostname github.com` without a shell, caches the result in
+memory for the current process, and never writes the token to disk.
 
 ### GitHub Enterprise Server (GHES)
 
@@ -97,6 +124,27 @@ live there. If your instance uses subdomain isolation, also list the `raw.`
 and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
+
+With `auth: "github-cli"`, one provider entry represents one GitHub instance.
+List exactly one bare enterprise host plus any service aliases that share its
+credential:
+
+```json
+{
+  "hosts": [
+    "ghes.example.com",
+    "raw.ghes.example.com",
+    "codeload.ghes.example.com"
+  ],
+  "provider": "github",
+  "auth": "github-cli"
+}
+```
+
+Specify runs `gh auth token --hostname ghes.example.com`. Use separate provider
+entries for separate GitHub instances. The selected host must already be
+authenticated in GitHub CLI; failures suggest `gh auth login --hostname <host>`
+without including GitHub CLI command output.
 
 ### GitHub Enterprise Cloud with data residency (GHE.com)
 
