@@ -21,6 +21,15 @@ Integrations connect Spec Kit to your AI coding agent. Each integration sets up 
 
 [Integrations reference →](integrations.md)
 
+## Catalogs
+
+Catalogs are priority-ordered indexes for discovering integrations, extensions,
+presets, workflows, workflow step types, and bundles. Spec Kit includes
+built-in sources and supports private, organization-managed catalogs with
+explicit discovery and installation policies.
+
+[Catalogs reference →](catalogs.md)
+
 ## Extensions
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. They are discovered through catalogs and can be installed, updated, enabled, disabled, or removed independently. Multiple extensions can coexist in a single project.

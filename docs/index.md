@@ -172,7 +172,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
   </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
-    <span>Core commands, integrations, extensions, presets, and workflows</span>
+    <span>Core commands, catalogs, integrations, extensions, presets, and workflows</span>
   </a>
   <a href="community/overview.md" class="nav-card">
     <strong>Community</strong>
