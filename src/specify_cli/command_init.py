@@ -646,6 +646,18 @@ def register(app: typer.Typer) -> None:
             else:
                 selected_script = default_script
 
+        if here and (project_path / ".specify").is_dir():
+            from .presets import PresetManager as _ExistingPresetManager
+            from .presets import PresetValidationError
+
+            try:
+                _ExistingPresetManager(
+                    project_path
+                ).reject_unsupported_script_runtime_change(selected_script)
+            except PresetValidationError as exc:
+                console.print(f"[red]Error:[/red] {exc}")
+                raise typer.Exit(1)
+
         console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
 
@@ -866,6 +878,26 @@ def register(app: typer.Typer) -> None:
                 save_init_options(project_path, init_opts)
 
                 ensure_executable_scripts(project_path, tracker=tracker)
+
+                # install_shared_infra above may have just overwritten
+                # .specify/scripts/bash/<name>.sh with the bundled core,
+                # clobbering any generated launcher chain for a script an
+                # already-enabled preset provides (e.g. on
+                # `specify init --force` against an existing project).
+                # Restore those chains before any *new* --preset install
+                # below runs its own reconciliation.
+                try:
+                    from .presets import PresetManager as _ExistingPresetManager
+
+                    _ExistingPresetManager(project_path).reconcile_all_script_chains()
+                except Exception as exc:
+                    _print_cli_warning(
+                        "reconcile script presets after",
+                        "init",
+                        str(project_path),
+                        exc,
+                        continuing="Inspect .specify/scripts/bash/<name>.sh to diagnose.",
+                    )
 
                 if preset:
                     try:

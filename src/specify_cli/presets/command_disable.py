@@ -41,6 +41,10 @@ def preset_disable(
     manager.reconcile_constitution(
         f"Failed to reconcile constitution after disabling preset {preset_id}"
     )
+    manager.reconcile_scripts_for_preset(
+        preset_id,
+        f"Failed to reconcile scripts after disabling preset {preset_id}",
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' disabled")
     console.print("\nTemplates from this preset will be skipped during resolution.")
