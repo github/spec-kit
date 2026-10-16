@@ -68,6 +68,19 @@ demands them. Keep mode selection, invocation spelling, and registration in
 sync. Agent-specific layouts and options belong in the integration code and
 the [supported-integrations reference](../docs/reference/integrations.md).
 
+Integration classes are also authoritative for command naming and invocation
+rendering. Shared init, registration, extension, preset, hook, and runtime
+callers resolve the active integration and use its naming and mode hooks rather
+than maintaining agent-name lists. `registrar_config["format_name"]` controls
+registered command names when present; skills otherwise use the shared
+`speckit-<name>` convention. `invocation_prefix_for_mode()`,
+`invoke_separator_for_mode()`, and `build_command_reference()` define displayed
+and embedded command references. `build_hook_invocation()` preserves unrelated
+custom hook commands unless an integration such as Cline, Forge, or Junie owns
+their naming too. `build_command_invocation()` remains the runtime dispatch seam
+for integrations such as Bob and Copilot whose executable behavior depends on
+the installed layout.
+
 Core templates that call scripts declare `sh`, `ps`, and `py` commands in
 `scripts:` frontmatter; template processing replaces `{SCRIPT}` with the
 selected variant. `py` is opt-in; non-interactive init defaults to `sh` on

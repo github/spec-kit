@@ -270,7 +270,7 @@ class TestBuildCommandInvocation:
         """Kimi's post_process_skill_content must be idempotent.
 
         The hook-command note is injected with the /skill: prefix by the base
-        class (via get_invocation_prefix), so the idempotency check matches on
+        class (via the integration's prefix hook), so the idempotency check matches on
         re-runs without requiring the broad /speckit- -> /skill:speckit- body
         replacement to recognise a duplicate.
         """
@@ -289,14 +289,23 @@ class TestBuildCommandInvocation:
         assert once.count("replace dots (`.`) with hyphens") == 1
         assert "/skill:speckit-git-commit" in once
 
-    def test_get_invocation_prefix_skill_colon(self):
-        """get_invocation_prefix returns '/skill:' for Kimi in skills mode."""
-        from specify_cli._invocation_style import get_invocation_prefix
+    @pytest.mark.parametrize(
+        ("integration_key", "skills_enabled", "expected"),
+        [
+            ("kimi", True, "/skill:"),
+            ("kimi", False, "/skill:"),
+            ("codex", True, "$"),
+            ("codex", False, "/"),
+            ("claude", True, "/"),
+        ],
+    )
+    def test_integration_owns_invocation_prefix(
+        self, integration_key, skills_enabled, expected
+    ):
+        from specify_cli.integrations import get_integration
 
-        assert get_invocation_prefix("kimi", True) == "/skill:"
-        assert get_invocation_prefix("kimi", False) == "/"
-        assert get_invocation_prefix("codex", True) == "$"
-        assert get_invocation_prefix("claude", True) == "/"
+        integration = get_integration(integration_key)
+        assert integration.invocation_prefix_for_mode(skills_enabled) == expected
 
 class TestResolveCommandRefs:
     """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
