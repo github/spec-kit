@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-15T00:00:00Z",
+  "updated_at": "2026-10-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -50,9 +50,9 @@
       "id": "aee",
       "description": "Checks the claims in a spec-driven project against their evidence at every stage, and shows plainly what is verified, what is not, and what remains not understood.",
       "author": "ElectroHire",
-      "version": "1.5.0",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.5.0.zip",
-      "sha256": "00b84217243590233f815a64e62ccd2bb063523a1efa2d890c1d3bc2cfb16bf5",
+      "version": "1.5.2",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.5.2.zip",
+      "sha256": "d64db9145754cf7ebb623e4630e5e09f37f59da755456160c38379927e6e9515",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -111,7 +111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-10-15T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
