@@ -1213,6 +1213,19 @@ class _PresetCommandMethods:
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
         presets_by_priority = list(self.registry.list_by_priority())
+        expanded_declarations_by_pack: Dict[str, List[Dict[str, Any]]] = {}
+
+        def command_declarations(
+            pack_id: str, pack_dir: Path, manifest: PresetManifest
+        ) -> List[Dict[str, Any]]:
+            # Share one inventory expansion across replace and composed commands
+            # for this preset, keeping the cache local to this reconciliation.
+            if pack_id not in expanded_declarations_by_pack:
+                expanded_declarations_by_pack[pack_id] = self._expand_command_selectors(
+                    resolver, pack_dir,
+                    [item for item in manifest.templates if item.get("type") == "command"],
+                )
+            return expanded_declarations_by_pack[pack_id]
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
@@ -1239,14 +1252,8 @@ class _PresetCommandMethods:
                             concrete = next(
                                 (
                                     declaration
-                                    for declaration in self._expand_command_selectors(
-                                        resolver,
-                                        pack_dir,
-                                        [
-                                            item
-                                            for item in manifest.templates
-                                            if item.get("type") == "command"
-                                        ],
+                                    for declaration in command_declarations(
+                                        pack_id, pack_dir, manifest,
                                     )
                                     if declaration.get("name") == cmd_name
                                     and (pack_dir / str(declaration.get("file", "")))
@@ -1372,10 +1379,7 @@ class _PresetCommandMethods:
                     manifest = resolver._get_manifest(pack_dir)
                     if not manifest:
                         continue
-                    for tmpl in self._expand_command_selectors(
-                        resolver, pack_dir,
-                        [t for t in manifest.templates if t.get("type") == "command"],
-                    ):
+                    for tmpl in command_declarations(pack_id, pack_dir, manifest):
                         if (
                             tmpl.get("name") == cmd_name
                             and pack_dir / tmpl["file"] == layers[0]["path"]

@@ -3436,6 +3436,65 @@ def test_command_regex_excludes_higher_preset_and_project_override(
     )
 
 
+@pytest.mark.parametrize("match_count", [2, 4])
+@pytest.mark.parametrize("strategies", [("replace",), ("append",), ("replace", "append")])
+def test_reconcile_caches_selector_inventory_per_preset(
+    project_dir, tmp_path, monkeypatch, match_count, strategies
+):
+    """Both reconciliation branches share one expansion per preset per operation."""
+    from specify_cli import save_init_options
+    from specify_cli.artifacts.catalog import ArtifactCatalog
+
+    output_root = project_dir / ".agents" / "commands"
+    output_root.mkdir(parents=True)
+    save_init_options(project_dir, {"ai": "amp", "ai_skills": False, "script": "sh"})
+    names = [f"speckit.cached{index}" for index in range(match_count)]
+    lower = write_command_declarations(
+        tmp_path / "lower",
+        "lower",
+        [
+            {"type": "command", "name": name, "strategy": "replace", "body": f"BASE {name}\n"}
+            for name in [*names, "speckit.unmatched"]
+        ],
+    )
+    install_selector_fixture(project_dir, "lower", lower, 20)
+    upper = write_command_declarations(
+        tmp_path / "upper",
+        "upper",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.cached(" + "|".join(
+                    str(index) for index in range(offset, match_count, len(strategies))
+                ) + ")$",
+                "strategy": strategy,
+                "body": f"OVERLAY {strategy}\n",
+            }
+            for offset, strategy in enumerate(strategies)
+        ],
+    )
+    install_selector_fixture(project_dir, "upper", upper, 10)
+    manager = PresetManager(project_dir)
+    scan_count = 0
+    list_artifacts = ArtifactCatalog.list_artifacts
+
+    def counted_inventory(catalog, *args, **kwargs):
+        nonlocal scan_count
+        scan_count += 1
+        return list_artifacts(catalog, *args, **kwargs)
+
+    monkeypatch.setattr(ArtifactCatalog, "list_artifacts", counted_inventory)
+    for operation in range(1, 3):
+        assert manager._reconcile_composed_commands(names) == set(names)
+        for index, name in enumerate(names):
+            strategy = strategies[index % len(strategies)]
+            content = (output_root / f"{name}.md").read_text()
+            assert f"OVERLAY {strategy}" in content
+            assert (f"BASE {name}" in content) == (strategy == "append")
+        assert not (output_root / "speckit.unmatched.md").exists()
+        assert scan_count == operation
+
+
 @pytest.mark.parametrize(
     "agent,skills",
     [("amp", False), ("claude", True), ("kimi", False), ("copilot", True)],
