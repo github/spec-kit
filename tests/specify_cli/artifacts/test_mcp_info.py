@@ -22,6 +22,7 @@ from specify_cli.artifacts import (
     _commands,
     _mcp,
     _operation_info,
+    _operation_lookup,
     command_info,
     mcp_info,
 )
@@ -1030,9 +1031,19 @@ def test_artifact_info_inventory_matches_operation_and_registration(
     lookup_tool = next(
         item for item in _mcp.ARTIFACT_TOOLS if item.operation_id == "artifact.lookup"
     )
+    assert lookup_tool.contract_version == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.contract_version
+    )
     assert lookup_tool.disposition == "unavailable"
     assert lookup_tool.disposition_reason == (
-        "The artifact.lookup CLI leaf does not yet have a shared typed operation."
+        "The artifact.lookup shared operation exists, but its first-class "
+        "MCP adapter is not yet implemented."
+    )
+    assert lookup_tool.capabilities == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.capabilities
+    )
+    assert lookup_tool.network_access == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.network_access
     )
     assert lookup_tool.mcp_tool_name not in registered_tool_names
 

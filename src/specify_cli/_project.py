@@ -11,7 +11,8 @@ import typer
 from rich.markup import escape
 
 from ._console import err_console
-from ._file_policy import ProjectPolicyError, project_files
+from ._file_policy import project_files
+from ._project_policy import ProjectResolutionError, preflight_project_policy
 from .file_helper import FileHelper
 
 try:
@@ -20,10 +21,6 @@ except ModuleNotFoundError as error:
     if error.name != "typer._click":
         raise
     from click import get_current_context
-
-
-class ProjectResolutionError(RuntimeError):
-    """A project-root error that callers can render for their own surface."""
 
 
 def _resolve_init_dir_override_unrendered() -> Path | None:
@@ -48,23 +45,6 @@ def _resolve_init_dir_override_unrendered() -> Path | None:
             f"(no .specify/ directory): {init_root}"
         )
     return init_root
-
-
-def preflight_project_policy(project_root: Path) -> None:
-    """Validate at the resolved project boundary without printing or caching."""
-    try:
-        project_files(project_root)
-    except ProjectPolicyError as exc:
-        marker = project_root / ".specify"
-        if marker.is_symlink():
-            raise ProjectResolutionError(
-                f"Refusing to use symlinked .specify path: {marker}. {exc}"
-            ) from exc
-        if marker.exists() and not marker.is_dir():
-            raise ProjectResolutionError(
-                f"Not a Spec Kit project: .specify path exists but is not a directory: {marker}"
-            ) from exc
-        raise ProjectResolutionError(str(exc)) from exc
 
 
 def _resolve_init_dir_override() -> Path | None:
@@ -117,7 +97,8 @@ def render_project_error(error: ProjectResolutionError) -> NoReturn:
     """Render a project failure on the current command's error surface."""
     context = get_current_context(silent=True)
     if context is not None and (
-        context.params.get("json_output") is True or context.params.get("as_json") is True
+        context.params.get("json_output") is True
+        or context.params.get("as_json") is True
     ):
         typer.echo(json.dumps({"error": str(error)}, ensure_ascii=False), err=True)
     else:

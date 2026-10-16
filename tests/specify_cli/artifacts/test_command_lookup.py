@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 from unittest.mock import Mock
@@ -11,7 +12,21 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.artifacts import ArtifactCatalog, command_lookup
+from specify_cli._project_policy import (
+    ProjectResolutionError,
+    preflight_project_policy,
+)
+from specify_cli.artifacts import (
+    ArtifactCatalog,
+    ArtifactResolutionError,
+    _operation_lookup,
+    command_lookup,
+)
+from specify_cli.artifacts._operation_lookup import (
+    ArtifactLookupJsonObject,
+    ArtifactLookupNotFoundError,
+    ArtifactLookupResult,
+)
 from specify_cli.integrations import installer
 from tests.conftest import install_preset
 
@@ -54,9 +69,7 @@ class TestCommandLookup:
         lookup_id = ArtifactCatalog(spec_kit_project).get_artifact_info(
             "template:lookup-template"
         )["stack"][0]["lookupId"]
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
+        result = CliRunner().invoke(app, ["artifact", "lookup", lookup_id, "--json"])
 
         assert result.exit_code == 0, result.stderr
         payload = json.loads(result.stdout)
@@ -101,11 +114,16 @@ class TestCommandLookup:
         loader = Mock(side_effect=AssertionError("installed loader reached"))
         catalog = Mock(side_effect=AssertionError("artifact catalog reached"))
         monkeypatch.setattr(installer, "load_installed_integrations", loader)
-        monkeypatch.setattr(command_lookup, "ArtifactCatalog", catalog)
+        monkeypatch.setattr(_operation_lookup, "ArtifactCatalog", catalog)
 
         result = CliRunner().invoke(
             app,
-            ["artifact", "lookup", "preset:lookup-pack:template:lookup-template", "--json"],
+            [
+                "artifact",
+                "lookup",
+                "preset:lookup-pack:template:lookup-template",
+                "--json",
+            ],
         )
 
         assert result.exit_code == 1
@@ -117,21 +135,441 @@ class TestCommandLookup:
         loader.assert_not_called()
         catalog.assert_not_called()
 
+    @pytest.mark.parametrize("marker_kind", ["symlink", "file"])
+    def test_lookup_preserves_structural_project_policy_json_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        marker_kind: str,
+    ):
+        project_directory = tmp_path / "project"
+        project_directory.mkdir()
+        marker = project_directory / ".specify"
+        if marker_kind == "symlink":
+            target = tmp_path / "real-specify"
+            target.mkdir()
+            try:
+                marker.symlink_to(target, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                pytest.skip(f"Symlinks unavailable: {exc}")
+        else:
+            marker.write_text("not a directory", encoding="utf-8")
+
+        with pytest.raises(ProjectResolutionError) as preflight_exc:
+            preflight_project_policy(project_directory)
+
+        monkeypatch.chdir(project_directory)
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "malformed",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": str(preflight_exc.value)}
+        assert result.stderr.count("\n") == 1
+        assert "Traceback" not in result.stderr
+
     def test_lookup_json_rejects_unknown_contribution(
         self, spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch
     ):
         monkeypatch.chdir(spec_kit_project)
         lookup_id = "extension:missing:command:speckit.missing.command"
 
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
+        result = CliRunner().invoke(app, ["artifact", "lookup", lookup_id, "--json"])
 
         assert result.exit_code == 1
         assert result.stdout == ""
         assert json.loads(result.stderr) == {
             "error": f"unknown contribution {lookup_id}"
         }
+
+    def test_lookup_dispatches_directly_to_shared_operation(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        expected = ArtifactLookupResult(
+            id="extension:quality:template:réview",
+            layer="extension",
+            sourceId="quality",
+            kind="template",
+            name="réview",
+            manifestPath=".specify/extensions/quality/extension.yml",
+            sourcePath=".specify/extensions/quality/templates/réview.md",
+            contribution=ArtifactLookupJsonObject(
+                (
+                    ("name", "réview"),
+                    ("description", "Réview ✓"),
+                )
+            ),
+        )
+        operation = Mock(return_value=expected)
+        monkeypatch.setattr(command_lookup, "lookup_artifact", operation)
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "extension:quality:template:réview",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout) == expected.to_json_dict()
+        request = operation.call_args.args[0]
+        assert request.project_directory == spec_kit_project
+        assert request.lookup_id == "extension:quality:template:réview"
+        assert "ArtifactCatalog" not in command_lookup.__dict__
+
+    def test_lookup_json_matches_shared_operation_result(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        pack = install_preset(
+            spec_kit_project,
+            "parity",
+            {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "parity",
+                        "file": "templates/parity.md",
+                        "description": "Parity ✓",
+                    }
+                ]
+            },
+        )
+        (pack / "templates").mkdir()
+        (pack / "templates" / "parity.md").write_text(
+            "body",
+            encoding="utf-8",
+        )
+        lookup_id = "preset:parity:template:parity"
+        expected = command_lookup.lookup_artifact(
+            command_lookup.ArtifactLookupRequest(
+                spec_kit_project,
+                lookup_id,
+            )
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", lookup_id, "--json"],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout) == expected.to_json_dict()
+
+    def test_lookup_success_stream_is_exact_legacy_json(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        expected = ArtifactLookupResult(
+            id="preset:quality:template:réview",
+            layer="preset",
+            sourceId="quality",
+            kind="template",
+            name="réview",
+            manifestPath=".specify/presets/quality/preset.yml",
+            sourcePath=None,
+            contribution=ArtifactLookupJsonObject(
+                (
+                    ("zeta", (1, 2)),
+                    ("alpha", "Réview ✓"),
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            command_lookup,
+            "lookup_artifact",
+            Mock(return_value=expected),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", expected.id, "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = expected.to_json_dict()
+        assert result.stdout == (
+            json.dumps(
+                payload,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n"
+        )
+        result.stdout.encode("utf-8")
+        assert json.loads(result.stdout) == payload
+        assert result.stderr == ""
+        assert "\x1b[" not in result.stdout
+
+    def test_lookup_expected_operation_failure_is_one_legacy_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        lookup_id = "extension:missing:command:speckit.missing"
+        monkeypatch.setattr(
+            command_lookup,
+            "lookup_artifact",
+            Mock(side_effect=ArtifactLookupNotFoundError(lookup_id)),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", lookup_id, "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr == (
+            '{"error": "unknown contribution '
+            'extension:missing:command:speckit.missing"}\n'
+        )
+        assert result.stderr.count("\n") == 1
+        assert "\x1b[" not in result.stderr
+        assert "Traceback" not in result.stderr
+
+    def test_lookup_cli_context_filesystem_failure_is_resolution_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            command_lookup,
+            "_project_directory_from_cli_context",
+            Mock(side_effect=OSError("unreadable cwd")),
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            OSError("unreadable override"),
+            RuntimeError("Symlink loop from path resolution"),
+        ],
+        ids=["filesystem", "runtime"],
+    )
+    def test_lookup_cli_override_resolution_failure_preserves_project_error(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failure: Exception,
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", "cyclic-project")
+        monkeypatch.setattr(
+            Path,
+            "resolve",
+            Mock(side_effect=failure),
+        )
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": "not a Spec Kit project: no .specify/ directory found"
+        }
+        assert "Traceback" not in result.stderr
+
+    def test_lookup_invalid_unicode_identifier_is_utf8_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        lookup_id = "extension:source:template:\ud800"
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            ["artifact", "lookup", lookup_id, "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        result.stderr.encode("utf-8")
+        assert json.loads(result.stderr) == {
+            "error": "unknown contribution extension:source:template:\\ud800"
+        }
+        assert result.stderr.count("\n") == 1
+        assert "Traceback" not in result.stderr
+
+    def test_lookup_filesystem_derived_message_is_utf8_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setattr(
+            installer,
+            "load_installed_integrations",
+            Mock(
+                side_effect=installer.IntegrationInstallError(
+                    "unregistered child \ud800"
+                )
+            ),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        result.stderr.encode("utf-8")
+        assert json.loads(result.stderr) == {
+            "error": "artifact resolution failed: unregistered child \\ud800"
+        }
+        assert result.stderr.count("\n") == 1
+        assert "Traceback" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            OSError("unreadable catalog"),
+            RuntimeError("unexpected catalog failure"),
+            ArtifactResolutionError("unexpected catalog detail"),
+        ],
+        ids=["filesystem", "non-filesystem", "sibling-artifact-error"],
+    )
+    def test_lookup_unexpected_operation_failure_is_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        failure: Exception,
+    ):
+        monkeypatch.setattr(
+            command_lookup,
+            "lookup_artifact",
+            Mock(side_effect=failure),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        with caplog.at_level(
+            logging.ERROR,
+            logger="specify_cli.artifacts.command_lookup",
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "artifact",
+                    "lookup",
+                    "preset:sample:template:sample",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
+        assert str(failure) not in result.stderr
+        assert "Traceback" not in result.stderr
+        assert len(caplog.records) == 1
+        assert caplog.records[0].message == (
+            "Unexpected failure in the artifact lookup CLI adapter."
+        )
+        assert caplog.records[0].exc_info is not None
+
+    def test_lookup_cli_context_resolves_init_dir_override(
+        self,
+        spec_kit_project: Path,
+        non_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        operation = Mock(
+            side_effect=ArtifactLookupNotFoundError("preset:missing:template:missing")
+        )
+        monkeypatch.setattr(command_lookup, "lookup_artifact", operation)
+        monkeypatch.chdir(non_project)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", str(spec_kit_project))
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:missing:template:missing",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        request = operation.call_args.args[0]
+        assert request.project_directory == spec_kit_project.resolve()
+
+    def test_lookup_rendering_failure_is_json_error(
+        self,
+        spec_kit_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        result_object = Mock()
+        result_object.to_json_dict.return_value = {"value": date(2026, 1, 1)}
+        monkeypatch.setattr(
+            command_lookup,
+            "lookup_artifact",
+            Mock(return_value=result_object),
+        )
+        monkeypatch.chdir(spec_kit_project)
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "preset:sample:template:sample",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
     @pytest.mark.parametrize(
         "manifest_value",
@@ -183,9 +621,7 @@ class TestCommandLookup:
 
         assert result.exit_code == 1
         assert result.stdout == ""
-        assert json.loads(result.stderr) == {
-            "error": "artifact resolution failed"
-        }
+        assert json.loads(result.stderr) == {"error": "artifact resolution failed"}
 
     @pytest.mark.parametrize(
         "lookup_id",
@@ -204,9 +640,7 @@ class TestCommandLookup:
     ):
         monkeypatch.chdir(spec_kit_project)
 
-        result = CliRunner().invoke(
-            app, ["artifact", "lookup", lookup_id, "--json"]
-        )
+        result = CliRunner().invoke(app, ["artifact", "lookup", lookup_id, "--json"])
 
         assert result.exit_code == 1
         assert result.stdout == ""
@@ -237,6 +671,28 @@ class TestCommandLookup:
         result = CliRunner().invoke(
             app,
             ["artifact", "lookup", "project:_:command:local", "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert json.loads(result.stderr) == {
+            "error": "not a Spec Kit project: no .specify/ directory found"
+        }
+
+    def test_lookup_validates_project_before_unknown_lookup_id(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            app,
+            [
+                "artifact",
+                "lookup",
+                "extension:missing:command:speckit.missing",
+                "--json",
+            ],
         )
 
         assert result.exit_code == 1

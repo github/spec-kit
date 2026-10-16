@@ -3,23 +3,52 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sys
+from pathlib import Path
 
 import typer
 
-from ..presets import PresetError
-from . import ArtifactCatalog, ArtifactError, ArtifactResolutionError
 from ._commands import (
     _emit_error_and_exit,
     _require_json_flag,
-    _resolve_project_root,
     artifact_app,
 )
+from ._operation_lookup import (
+    ArtifactLookupError,
+    ArtifactLookupProjectError,
+    ArtifactLookupRequest,
+    ArtifactLookupResolutionError,
+    lookup_artifact,
+)
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
+
+def _project_directory_from_cli_context() -> Path:
+    """Return the explicit project directory selected by the CLI invocation."""
+    invocation_directory = Path.cwd()
+    override = os.environ.get("SPECIFY_INIT_DIR", "")
+    if not override:
+        return invocation_directory
+    try:
+        return (invocation_directory / override).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ArtifactLookupProjectError(Path(".")) from exc
+
+
+def _resolve_project_root() -> Path:
+    """Preserve the command module's established project-root patch seam."""
+    return _project_directory_from_cli_context()
 
 
 @artifact_app.command("lookup")
 def artifact_lookup(
-    lookup_id: str = typer.Argument(..., help="Contribution lookupId from an artifact stack."),
+    lookup_id: str = typer.Argument(
+        ..., help="Contribution lookupId from an artifact stack."
+    ),
     json_flag: bool = typer.Option(
         False,
         "--json",
@@ -29,26 +58,40 @@ def artifact_lookup(
     """Resolve a stack lookupId to its effective preset or extension contribution."""
     _require_json_flag(json_flag)
     try:
-        root = _resolve_project_root()
-        payload = ArtifactCatalog(root).get_contribution_info(lookup_id)
-    except ArtifactError as exc:
+        project_directory = _resolve_project_root()
+    except ArtifactLookupError as exc:
         _emit_error_and_exit(exc)
         return  # pragma: no cover
-    except (OSError, PresetError):
-        _emit_error_and_exit(ArtifactResolutionError())
+    except (OSError, RuntimeError):
+        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
+        return  # pragma: no cover
+
+    try:
+        result = lookup_artifact(
+            ArtifactLookupRequest(
+                project_directory=project_directory,
+                lookup_id=lookup_id,
+            )
+        )
+    except ArtifactLookupError as exc:
+        _emit_error_and_exit(exc)
+        return  # pragma: no cover
+    except Exception:
+        logger.exception("Unexpected failure in the artifact lookup CLI adapter.")
+        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
         return  # pragma: no cover
 
     try:
         rendered = json.dumps(
-            payload,
+            result.to_json_dict(),
             indent=2,
             sort_keys=True,
             ensure_ascii=False,
             allow_nan=False,
         )
         rendered.encode("utf-8")
-    except (TypeError, ValueError, UnicodeEncodeError):
-        _emit_error_and_exit(ArtifactResolutionError())
+    except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
+        _emit_error_and_exit(ArtifactLookupResolutionError(Path("."), lookup_id))
         return  # pragma: no cover
 
     sys.stdout.write(rendered)
