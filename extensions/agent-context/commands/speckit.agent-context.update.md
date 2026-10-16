@@ -1,5 +1,9 @@
 ---
 description: "Refresh the managed Spec Kit section in coding agent context file(s)"
+scripts:
+  sh: scripts/bash/update-agent-context.sh
+  ps: scripts/powershell/update-agent-context.ps1
+  py: scripts/python/update_agent_context.py
 ---
 
 # Update Coding Agent Context
@@ -23,5 +27,6 @@ If `context_files` and `context_file` are empty, the command reports nothing to 
 
 - **Bash**: `.specify/extensions/agent-context/scripts/bash/update-agent-context.sh [plan_path]`
 - **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`
+- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`
 
 When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).
