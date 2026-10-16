@@ -136,6 +136,35 @@ def _run_powershell_format_command(repo: Path, command_name: str) -> subprocess.
     )
 
 
+def _run_powershell_json_utf8(repo: Path) -> subprocess.CompletedProcess:
+    """Run setup-tasks.ps1 -Json with a process-local UTF-8 stdout encoding."""
+    script = repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    return subprocess.run(
+        [
+            exe,
+            "-NoProfile",
+            "-Command",
+            (
+                "& { param($scriptPath) "
+                "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+                "& $scriptPath -Json; "
+                "$scriptSucceeded = $?; "
+                "$scriptExitCode = $LASTEXITCODE; "
+                "if ($scriptSucceeded) { exit 0 }; "
+                "if ($null -ne $scriptExitCode -and $scriptExitCode -ne 0) { exit $scriptExitCode }; "
+                "exit 1 }"
+            ),
+            str(script),
+        ],
+        cwd=repo,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        env=_clean_env(),
+    )
+
+
 def _git_init(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(
@@ -712,17 +741,8 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     TASKS_TEMPLATE path.
     """
     _minimal_feature(tasks_repo)
-    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
 
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
-        cwd=tasks_repo,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-        env=_clean_env(),
-    )
+    result = _run_powershell_json_utf8(tasks_repo)
 
     assert result.returncode == 0, result.stderr + result.stdout
 
@@ -847,14 +867,7 @@ def test_setup_tasks_ps_handles_literal_bracketed_feature_directory(
 
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
-    json_result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
-        cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
-    )
+    json_result = _run_powershell_json_utf8(tasks_repo)
     text_result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script)],
         cwd=tasks_repo,
@@ -867,6 +880,7 @@ def test_setup_tasks_ps_handles_literal_bracketed_feature_directory(
     assert json_result.returncode == 0, json_result.stderr + json_result.stdout
     data = json.loads(json_result.stdout)
     assert Path(data["FEATURE_DIR"]) == feat
+    assert "⚠️" in data["TASKS_TEMPLATE_CONTENT"]
     assert data["AVAILABLE_DOCS"] == [
         "research.md",
         "data-model.md",
@@ -890,18 +904,9 @@ def test_setup_tasks_ps_does_not_match_wildcard_shaped_neighbor(
     (neighbor / "plan.md").write_text("# neighbor plan\n", encoding="utf-8")
     _write_feature_json(tasks_repo, f"specs/{feature_name}")
 
-    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
-        cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
-    )
+    result = _run_powershell_json_utf8(tasks_repo)
 
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert "plan.md not found" in result.stderr
 
 
@@ -1025,17 +1030,7 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
     _write_feature_json(tasks_repo)
 
-    script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
-
-    result = subprocess.run(
-        [exe, "-NoProfile", "-File", str(script), "-Json"],
-        cwd=tasks_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),
-    )
+    result = _run_powershell_json_utf8(tasks_repo)
 
     assert result.returncode == 0, result.stderr + result.stdout
 
