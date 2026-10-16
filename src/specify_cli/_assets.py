@@ -121,7 +121,14 @@ def get_speckit_version() -> str:
             if pyproject_path.exists():
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
-                    return data.get("project", {}).get("version", "unknown")
-        except (OSError, ValueError, KeyError):
+                project = data.get("project") if isinstance(data, dict) else None
+                # A present but non-mapping ``project`` table must not turn
+                # into an AttributeError from the narrowing of this branch.
+                if isinstance(project, dict):
+                    version = project.get("version")
+                    if isinstance(version, str) and version:
+                        return version
+                return "unknown"
+        except (OSError, KeyError, ValueError):
             pass
     return "unknown"
