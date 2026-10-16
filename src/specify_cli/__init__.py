@@ -30,6 +30,7 @@ Or install globally:
 import os
 import sys
 from pathlib import Path
+from .file_helper import FileHelper
 
 import typer
 from rich.align import Align
@@ -117,8 +118,11 @@ def _refresh_shared_templates(
     invoke_separator: str,
     invoke_prefix: str = "/",
     force: bool = False,
+    files: FileHelper | None = None,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
+    from ._file_policy import project_files
+
     _refresh_shared_templates_impl(
         project_path,
         version=get_speckit_version(),
@@ -128,6 +132,7 @@ def _refresh_shared_templates(
         invoke_separator=invoke_separator,
         invoke_prefix=invoke_prefix,
         force=force,
+        files=files if files is not None else project_files(project_path),
     )
 
 
@@ -140,6 +145,7 @@ def _install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    files: FileHelper | None = None,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -154,8 +160,8 @@ def _install_shared_infra(
 
     Overwrite policy:
 
-    * ``force=True``  — overwrite every existing file (still skips symlinks
-      to avoid following links outside the project root).
+    * ``force=True``  — overwrite every existing regular file permitted by
+      the operation's FileHelper policy, preserving allowed links.
     * ``refresh_managed=True`` — overwrite only files whose on-disk hash
       still matches the previously recorded manifest hash (i.e. unmodified
       files installed by spec-kit). Files with diverging hashes are
@@ -172,6 +178,8 @@ def _install_shared_infra(
 
     Returns ``True`` on success.
     """
+    from ._file_policy import project_files
+
     return _install_shared_infra_impl(
         project_path,
         script_type,
@@ -184,6 +192,7 @@ def _install_shared_infra(
         invoke_prefix=invoke_prefix,
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
+        files=files if files is not None else project_files(project_path),
     )
 
 
@@ -196,6 +205,7 @@ def _install_shared_infra_or_exit(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    files: FileHelper | None = None,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -207,6 +217,7 @@ def _install_shared_infra_or_exit(
             invoke_prefix=invoke_prefix,
             refresh_managed=refresh_managed,
             refresh_hint=refresh_hint,
+            files=files,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")

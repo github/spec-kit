@@ -223,6 +223,23 @@ class TestManifestPathTraversal:
 
 
 class TestManifestCheckModified:
+    @pytest.mark.parametrize("use_helper", [False, True])
+    def test_selected_paths_leave_default_query_unchanged(self, tmp_path, use_helper):
+        from specify_cli.file_helper import FileHelper
+
+        m = IntegrationManifest(
+            "test", tmp_path, files=FileHelper(tmp_path) if use_helper else None,
+        )
+        for name in ("selected.txt", "unrelated.txt"):
+            path = tmp_path / name
+            path.write_text("original", encoding="utf-8")
+            m.record_existing(name)
+            path.write_text("changed", encoding="utf-8")
+
+        assert m.check_modified(paths=set()) == []
+        assert m.check_modified(paths={"selected.txt", "untracked.txt"}) == ["selected.txt"]
+        assert m.check_modified() == ["selected.txt", "unrelated.txt"]
+
     def test_unmodified_file(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("f.txt", "original")

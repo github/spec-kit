@@ -27,6 +27,7 @@ from ._assets import (
 )
 from ._console import StepTracker, console, select_with_arrows, show_banner
 from ._utils import check_tool
+from .file_helper import FileHelper
 
 
 def _stdin_is_interactive() -> bool:
@@ -790,6 +791,7 @@ def register(app: typer.Typer) -> None:
                     selected_script,
                     tracker=tracker,
                     force=force,
+                    files=FileHelper(project_path, allow_symlinks=allow_symlinks),
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
                     ),

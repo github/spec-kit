@@ -2,11 +2,12 @@
 
 `specify_cli.file_helper.FileHelper` owns filesystem operations under one
 explicitly established root. Project-command boundaries now validate persisted
-policy, and init-options bootstrap I/O uses the helper. Other existing command
-filesystem operations are **not yet migrated**: loading policy alone does not
-enforce symlink behavior on those operations. Shared infrastructure, registration,
-managed storage, catalogs, scripts and runtime operations retain their existing
-behavior until their dependent migration stages.
+policy, and init-options bootstrap I/O uses the helper. Shared infrastructure installation and template refresh now execute their
+project-side operations through an explicitly handed-off helper, including their
+shared manifest reads, hashes and saves. Other existing command filesystem
+operations are **not yet migrated**: loading policy alone does not enforce
+symlink behavior on registration, managed storage, catalogs, script execution or
+runtime operations.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
@@ -149,6 +150,13 @@ helpers for independent project/source/managed boundaries.
 
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
+- `stat(path, follow_symlinks=True, missing_ok=False)` returns policy-checked
+  metadata. `missing_ok=True` returns `None` only for genuinely absent entries,
+  including beneath missing parents. Dangling link targets, invalid parents,
+  permissions, cycles and containment failures still raise. With
+  `follow_symlinks=False`, allow mode inspects a leaf link without following its
+  target; deny mode still rejects it, and linked parents and unsupported reparse
+  entries remain checked.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects
   existing leaves, including dangling links, before opening the destination.
@@ -195,6 +203,60 @@ delete includes the entire selected tree; there is no exclusion filter in this
 foundation. Future operations with exclusions must inspect only included
 entries, not reject a whole project for excluded/unrelated links.
 
+## Shared infrastructure ownership
+
+FileHelper owns symlink-aware filesystem CRUD and metadata access, not project
+configuration, file ownership, overwrite decisions or transaction/rollback
+policy. Callers select the paths they actually need to access; the helper
+enforces symlink policy on those operations, not on unrelated project entries.
+
+`install_shared_infra` and `refresh_shared_templates` receive an explicit
+`files: FileHelper` from init and integration lifecycle callers. Compatibility
+callers that omit it resolve the selected project's current policy afresh.
+Init supplies a helper using its current requested flag before final persistence,
+not an earlier stored value. Config bootstrap remains deny-only.
+
+The helper executes project metadata probes, directory creation, reads/hashes,
+atomic writes and stale managed-script deletion for `.specify/scripts/<variant>/`,
+`.specify/templates/`, `.specify/.gitignore`, and
+`.specify/integrations/speckit.manifest.json`. Source/bundled asset operations,
+archive verification, locks and other manifest consumers are unchanged.
+`IntegrationManifest` has an optional helper mode for these scoped load/save,
+record-existing, modification-check and lexical key-bookkeeping operations;
+legacy consumers retain their existing behavior.
+
+Accessed denied links now abort instead of warning and succeeding with skipped
+destinations, including with `--force`. Allow mode preserves contained links
+while retaining missing-only, managed/unmodified refresh, recovered/customized
+preservation and force-overwrite decisions. Policy violations never become a
+recovered-file or replacement-manifest success. Malformed manifest content still
+uses the existing warned recovery behavior. Manifest keys retain their lexical
+project-relative identity even when file bytes are read through allowed aliases.
+Stale leaf links remain customizations, including dangling/external-target links:
+they are never hash-promoted into managed files or deleted by stale cleanup.
+Eligible stale regular files reached through contained linked parents can be
+removed through the helper without deleting their parent links.
+
+`mkdir`, `write_bytes`/`write_text`, and `delete` accept an optional explicit
+`Callable[[Path, bool, bool], None]` mutation observer (path, before, removal).
+The helper validates before callbacks, reports the actual contained target for
+writes and directory creation, and reports the nonfollow entry for deletion.
+After callbacks occur only following successful mutations; callback failures
+propagate and atomic-write temporary cleanup remains active. `mkdir` reports
+only genuinely new directories in parent order, never existing directory trees.
+The integration lifecycle journals file/package mutations through its existing
+observer and tracks directory creation separately without claiming contents.
+Rollback restores observed target bytes/modes while preserving links, then
+removes only identified empty new directories; unrelated contents survive.
+Shared scope census retains lexical link entries and does not traverse linked
+scope roots or descendants. Other adapter/package/registry/lock restrictions
+are unchanged; operational permission does not waive those boundaries.
+In particular, external integration transactions still reject a linked
+`.specify/integrations` scope root because adapter-package and registry storage
+are outside this migration. Shared manifest leaf links are supported; standalone
+shared operations also support contained linked manifest parents. Integration
+uninstall retains its existing scope validation.
+
 ## Safety limits and migration
 
 Preflight detects static policy failures before recursive deletion or parent
@@ -207,9 +269,10 @@ relative traversal or platform-specific mechanisms are future work, not a
 claim of this API. The helper does not constrain subprocesses or third-party
 code. Exclusive creation uses `O_EXCL` and `O_NOFOLLOW` where available.
 
-Existing safe-write mechanisms informed this helper, but existing shared
-infrastructure warning/skip behavior and development-mode link creation are
-unchanged. Migrate one owned operation boundary at a time, carrying original
+Existing safe-write mechanisms informed this helper; shared installation and
+refresh now enforce its policy instead of warning and skipping denied links.
+Development-mode registration and unmigrated private safety helpers retain their
+existing behavior. Migrate one owned operation boundary at a time, carrying original
 paths and an explicit root/policy into the helper before any early resolution.
 Linked command directories and development-mode registration remain dependent
 stages. Non-atomic configuration writes preserve legacy metadata semantics;

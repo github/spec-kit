@@ -188,6 +188,223 @@ def snapshot(project):
     }
 
 
+@pytest.mark.parametrize("operation", ["install", "switch"])
+@pytest.mark.parametrize("kind", ["leaf", "scripts-root", "templates-root", "nested-parent"])
+@pytest.mark.parametrize("allow_links", [False, True])
+def test_public_install_switch_honor_persisted_shared_symlink_policy(
+    tmp_path, server, monkeypatch, operation, kind, allow_links,
+):
+    import specify_cli
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    core = tmp_path / "shared-core"
+    scripts = core / "scripts/bash"
+    scripts.mkdir(parents=True)
+    (scripts / "common.sh").write_text("# original common\n")
+    templates = core / "templates"
+    templates.mkdir()
+    (templates / "plan-template.md").write_text("# original plan\n")
+    monkeypatch.setattr(specify_cli, "_locate_core_pack", lambda: core)
+    if operation == "switch":
+        installed = run(project, ["integration", "install", "claude", "--script", "sh"])
+        assert installed.exit_code == 0, installed.output
+
+    options_path = project / ".specify/init-options.json"
+    options = json.loads(options_path.read_text()) if options_path.exists() else {}
+    options["allow_symlinks"] = allow_links
+    options_path.write_text(json.dumps(options))
+    target = project / "shared-target"
+    target.mkdir()
+    (target / "unrelated.txt").write_text("user content\n")
+    if kind == "leaf":
+        relative = ".specify/scripts/bash/common.sh"
+        link = project / relative
+        target_file = target / "common.sh"
+        if operation == "switch":
+            link.rename(target_file)
+        else:
+            link.parent.mkdir(parents=True)
+            target_file.write_text("# user common\n")
+        link.symlink_to(target_file)
+    else:
+        relative = {
+            "scripts-root": ".specify/scripts",
+            "templates-root": ".specify/templates",
+            "nested-parent": ".specify/scripts/bash",
+        }[kind]
+        link = project / relative
+        moved = target / "managed"
+        if operation == "switch":
+            link.rename(moved)
+        else:
+            moved.mkdir()
+            link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(moved, target_is_directory=True)
+        target_file = moved / (
+            "bash/common.sh" if kind == "scripts-root" else
+            "plan-template.md" if kind == "templates-root" else "common.sh"
+        )
+        relative = (
+            ".specify/templates/plan-template.md"
+            if kind == "templates-root" else ".specify/scripts/bash/common.sh"
+        )
+    identity = (link.lstat().st_dev, link.lstat().st_ino, os.readlink(link))
+    if operation == "switch":
+        (scripts / "common.sh").write_text("# replacement common\n")
+        (templates / "plan-template.md").write_text("# replacement plan\n")
+    nested = scripts / "new/nested"
+    nested.mkdir(parents=True)
+    (nested / "added.sh").write_text("# newly bundled\n")
+    before = snapshot(project)
+
+    result = run(project, [
+        "integration", operation, KEY, "--trust-integration", "--script", "sh",
+    ])
+
+    assert link.is_symlink()
+    assert (link.lstat().st_dev, link.lstat().st_ino, os.readlink(link)) == identity
+    assert (target / "unrelated.txt").read_text() == "user content\n"
+    assert json.loads(options_path.read_text())["allow_symlinks"] is allow_links
+    if not allow_links:
+        assert result.exit_code == 1, result.output
+        assert "Refusing symlink" in result.output
+        assert snapshot(project) == before
+        assert KEY not in read_records(project)
+        return
+
+    assert result.exit_code == 0, result.output
+    if operation == "switch":
+        expected = "# replacement plan\n" if kind == "templates-root" else "# replacement common\n"
+    else:
+        expected = (
+            "# user common\n" if kind == "leaf" else
+            "# original plan\n" if kind == "templates-root" else "# original common\n"
+        )
+    assert target_file.read_text() == expected
+    assert (project / ".specify/scripts/bash/new/nested/added.sh").read_text() == "# newly bundled\n"
+    manifest = json.loads((project / ".specify/integrations/speckit.manifest.json").read_text())
+    assert manifest["files"][relative] == hashlib.sha256(target_file.read_bytes()).hexdigest()
+    assert (relative in manifest.get("recovered_files", [])) == (operation == "install" and kind == "leaf")
+    assert KEY in read_records(project)
+    assert json.loads((project / ".specify/integration.json").read_text())["integration"] == KEY
+
+
+@pytest.mark.parametrize("operation", ["init", "upgrade"])
+@pytest.mark.parametrize("kind", ["leaf", "gitignore", "scripts-root", "templates-root", "nested-parent"])
+def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
+    tmp_path, server, monkeypatch, operation, kind,
+):
+    import specify_cli
+    from specify_cli.integrations import installer
+
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    options_path = project / ".specify/init-options.json"
+    options = json.loads(options_path.read_text()) if options_path.exists() else {}
+    options["allow_symlinks"] = operation != "init"
+    options_path.write_text(json.dumps(options))
+    target = project / "user-target"
+    target.mkdir()
+    (target / "unrelated").write_text("user content\n")
+    if kind in {"leaf", "gitignore"}:
+        link = project / (".specify/.gitignore" if kind == "gitignore" else ".specify/scripts/bash/common.sh")
+        target_file = target / link.name
+        link.rename(target_file)
+        link.symlink_to(target_file)
+    else:
+        relative = {
+            "scripts-root": ".specify/scripts", "templates-root": ".specify/templates",
+            "nested-parent": ".specify/scripts/bash",
+        }[kind]
+        link = project / relative
+        moved = target / "managed"
+        link.rename(moved)
+        link.symlink_to(moved, target_is_directory=True)
+        target_file = moved / (
+            "bash/common.sh" if kind == "scripts-root" else
+            "plan-template.md" if kind == "templates-root" else "common.sh"
+        )
+    target_file.chmod(0o600)
+    core = tmp_path / "replacement-core"
+    nested = core / "scripts/bash/new/nested"
+    nested.mkdir(parents=True)
+    (nested / "added.sh").write_text("# new nested script\n")
+    (core / "scripts/bash/common.sh").write_text("# new common\n")
+    templates = core / "templates"
+    templates.mkdir()
+    (templates / "plan-template.md").write_text("# new plan\n")
+    monkeypatch.setattr(specify_cli, "_locate_core_pack", lambda: core)
+    before = snapshot(project)
+    directories = {path.relative_to(project) for path in project.rglob("*") if path.is_dir()}
+    link_identity = os.readlink(link)
+
+    def late_failure(*args, **kwargs):
+        if kind == "gitignore":
+            from specify_cli.shared_infra import SPECIFY_GITIGNORE_CONTENT
+            assert target_file.read_text() == SPECIFY_GITIGNORE_CONTENT
+        else:
+            assert target_file.read_text() == ("# new plan\n" if kind == "templates-root" else "# new common\n")
+        raise OSError("sample late shared failure")
+
+    if operation == "init":
+        monkeypatch.setattr(specify_cli, "save_init_options", late_failure)
+        arguments = [
+            "init", "--here", "--force", "--integration", KEY,
+            "--ignore-agent-tools", "--script", "sh", "--allow-symlinks",
+        ]
+    else:
+        publish(server, version="2.0.0")
+        monkeypatch.setattr(installer, "persist_package", late_failure)
+        arguments = ["integration", "upgrade", KEY, "--trust-integration", "--force", "--script", "sh"]
+    result = run(project, arguments)
+
+    assert result.exit_code == 1, result.output
+    assert "sample late shared failure" in " ".join(result.output.split())
+    assert "Recovery snapshots retained" not in result.output
+    assert snapshot(project) == before
+    assert {path.relative_to(project) for path in project.rglob("*") if path.is_dir()} == directories
+    assert link.is_symlink() and os.readlink(link) == link_identity
+    if os.name != "nt":
+        assert target_file.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("kind", ["leaf", "gitignore", "scope", "parent"])
+def test_external_reinit_current_deny_flag_overrides_stored_allow(tmp_path, server, kind):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    result = run(project, ["integration", "install", KEY, "--trust-integration", "--script", "sh"])
+    assert result.exit_code == 0, result.output
+    options_path = project / ".specify/init-options.json"
+    options = json.loads(options_path.read_text()) if options_path.exists() else {}
+    options["allow_symlinks"] = True
+    options_path.write_text(json.dumps(options))
+    relative = {
+        "leaf": ".specify/scripts/bash/common.sh",
+        "gitignore": ".specify/.gitignore",
+        "scope": ".specify/scripts",
+        "parent": ".specify/scripts/bash",
+    }[kind]
+    link = project / relative
+    target = project / "target"
+    link.rename(target)
+    link.symlink_to(target, target_is_directory=kind not in {"leaf", "gitignore"})
+    before = snapshot(project)
+
+    result = run(project, [
+        "init", "--here", "--force", "--integration", KEY,
+        "--ignore-agent-tools", "--script", "sh",
+    ])
+
+    assert result.exit_code == 1, result.output
+    assert "Refusing symlink" in result.output
+    assert snapshot(project) == before
+    assert link.is_symlink()
+    assert json.loads(options_path.read_text())["allow_symlinks"] is True
+
+
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("change", ["unchanged", "partial", "concurrent", "deleted"])
 def test_round9_pending_write_preserves_unattributed_changes(tmp_path, server, monkeypatch, existing, change):
