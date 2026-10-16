@@ -508,6 +508,8 @@ class PresetResolver:
         self,
         template_name: str,
         template_type: str = "template",
+        *,
+        exclude_preset_id: str | None = None,
     ) -> List[Dict[str, Any]]:
         """Collect all layers in the priority stack for a template.
 
@@ -561,6 +563,8 @@ class PresetResolver:
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
         if self.presets_dir.exists():
             for pack_id, metadata in self._get_all_presets_by_priority():
+                if pack_id == exclude_preset_id:
+                    continue
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
@@ -736,6 +740,8 @@ class PresetResolver:
         self,
         template_name: str,
         template_type: str = "template",
+        *,
+        exclude_preset_id: str | None = None,
     ) -> Optional[str]:
         """Resolve a template name and return composed content.
 
@@ -755,7 +761,9 @@ class PresetResolver:
         Returns:
             Composed content string, or None if not found
         """
-        layers = self.collect_all_layers(template_name, template_type)
+        layers = self.collect_all_layers(
+            template_name, template_type, exclude_preset_id=exclude_preset_id
+        )
         if not layers:
             return None
 

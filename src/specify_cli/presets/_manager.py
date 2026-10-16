@@ -435,6 +435,9 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
         registered_commands: Dict[str, List[str]] = {}
         registered_skills: Dict[str, List[str]] = {}
         try:
+            self._ensure_hook_dispatchers_for_commands([
+                t["name"] for t in manifest.templates if t.get("type") == "command"
+            ])
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
             # before later phases complete.
@@ -781,6 +784,10 @@ class PresetManager(_PresetCommandMethods, _PresetSkillMethods):
                 # Invalid manifest — skip alias extraction; primary command
                 # names from registered_commands are still unregistered.
                 pass
+
+        self._ensure_hook_dispatchers_for_commands(
+            sorted(removed_cmd_names), exclude_preset_id=pack_id
+        )
 
         affected_skill_dirs: Dict[
             Path, tuple[Optional[str], List[str]]

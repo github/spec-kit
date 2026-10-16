@@ -1,80 +1,75 @@
-"""Command templates must not tell the agent to skip hook checking silently.
+"""Core command hook dispatch is present in every rendered script variant."""
 
-Every core command template reads ``.specify/extensions.yml`` before and after
-its main work, looking for ``hooks.before_*`` / ``hooks.after_*`` entries.  A
-manifest that could not be parsed used to be treated exactly like a manifest
-with no hooks: the agent was told to "skip hook checking silently and continue
-normally".  A mandatory hook (``optional: false``, the kind the bundled ``git``
-extension registers) could therefore be disabled by a single malformed line,
-and nothing would say so.
-
-These tests pin the replacement wording: an unreadable manifest is reported to
-the user (the parser error, and the fact that no hooks were checked) before
-the command continues.  They read the templates as text on purpose: the
-behaviour lives in the prompt, so the prompt is what must be checked.
-"""
-
-import re
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent
-TEMPLATES_DIR = REPO_ROOT / "templates" / "commands"
+from specify_cli.integrations.base import IntegrationBase
+from specify_cli.agents import CommandRegistrar
 
-_HOOK_KEY = re.compile(r"`hooks\.(before|after)_[a-z_]+`")
-_PARSE_FAILURE_LINE = re.compile(
-    r"^.*If the YAML cannot be parsed or is invalid.*$", re.MULTILINE
-)
-_SILENT = "skip hook checking silently"
-# Every clause of the replacement instruction, so that dropping any one of
-# them from the templates fails the test: the manifest could not be read, the
-# parser error is shown, no hooks were checked, mandatory hooks are named, and
-# the command still continues afterwards.
-_REPORTED = (
-    "could not be read",
-    "include the parser error",
-    "no hooks were checked",
-    "including any mandatory (`optional: false`) hooks",
-    "then continue",
-)
-
-HOOK_TEMPLATES = sorted(
-    p.name
-    for p in TEMPLATES_DIR.glob("*.md")
-    if _HOOK_KEY.search(p.read_text(encoding="utf-8"))
+ROOT = Path(__file__).parent.parent
+TEMPLATES = ROOT / "templates" / "commands"
+NAMES = (
+    "analyze", "checklist", "clarify", "constitution", "converge",
+    "implement", "plan", "specify", "tasks", "taskstoissues",
 )
 
 
-def test_hook_templates_discovered():
-    # Guard: the glob must find the templates that read extensions.yml,
-    # otherwise the parametrized tests below would pass by vacuity.
-    assert {"specify.md", "plan.md", "tasks.md", "implement.md"} <= set(
-        HOOK_TEMPLATES
+def test_all_core_hook_templates_discovered():
+    assert set(NAMES) <= {path.stem for path in TEMPLATES.glob("*.md")}
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_both_boundaries_and_error_handling(name):
+    text = (TEMPLATES / f"{name}.md").read_text(encoding="utf-8")
+    assert f"{{PRE_HOOK_SCRIPT}} {name}" in text
+    assert f"{{POST_HOOK_SCRIPT}} {name}" in text
+    assert text.index("{PRE_HOOK_SCRIPT}") < text.index("{POST_HOOK_SCRIPT}")
+    assert text.count("no hooks were checked") == 2
+    assert text.count("including mandatory hooks") == 2
+    assert text.count("wait for completion") == 2
+    assert text.count("without executing them automatically") == 2
+
+
+@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("variant,dir,ext", [
+    ("sh", "bash", "sh"), ("ps", "powershell", "ps1"), ("py", "python", "py"),
+])
+def test_hook_scripts_render_and_exist(name, variant, dir, ext):
+    text = (TEMPLATES / f"{name}.md").read_text(encoding="utf-8")
+    result = IntegrationBase.process_template(text, "copilot", variant)
+    assert "{PRE_HOOK_SCRIPT}" not in result
+    assert "{POST_HOOK_SCRIPT}" not in result
+    for phase in ("pre", "post"):
+        path = f".specify/scripts/{dir}/{phase}{'-' if variant != 'py' else '_'}hooks.{ext}"
+        assert path in result
+        assert (ROOT / "scripts" / dir / f"{phase}{'-' if variant != 'py' else '_'}hooks.{ext}").is_file()
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_no_repeated_yaml_hook_instructions(name):
+    text = (TEMPLATES / f"{name}.md").read_text(encoding="utf-8")
+    assert "hooks.before_" not in text
+    assert "hooks.after_" not in text
+    assert "If the YAML cannot be parsed" not in text
+
+
+@pytest.mark.parametrize("variant,dir,ext", [
+    ("sh", "bash", "sh"), ("ps", "powershell", "ps1"), ("py", "python", "py"),
+])
+def test_preset_wrap_and_skill_registrar_resolve_hook_scripts(tmp_path, variant, dir, ext):
+    config = tmp_path / ".specify"
+    config.mkdir()
+    (config / "init-options.json").write_text(
+        f'{{"script": "{variant}"}}', encoding="utf-8"
     )
-
-
-@pytest.mark.parametrize("name", HOOK_TEMPLATES)
-def test_unreadable_manifest_is_never_skipped_silently(name: str):
-    text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
-    assert _SILENT not in text, (
-        f"{name}: an unreadable .specify/extensions.yml may still be skipped "
-        "silently, which disables mandatory hooks without saying so"
+    body = "{PRE_HOOK_SCRIPT} plan\n{POST_HOOK_SCRIPT} plan"
+    rendered = CommandRegistrar.resolve_skill_placeholders(
+        "copilot",
+        {"scripts": {variant: "scripts/python/setup_plan.py --json"}},
+        body, tmp_path,
     )
-
-
-@pytest.mark.parametrize("name", HOOK_TEMPLATES)
-def test_every_parse_failure_line_reports_before_continuing(name: str):
-    text = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
-    lines = _PARSE_FAILURE_LINE.findall(text)
-    # One line for the before-hook check, one for the after-hook check.
-    assert len(lines) >= 2, (
-        f"{name}: expected a parse-failure instruction at both hook sites, "
-        f"found {len(lines)}"
-    )
-    for line in lines:
-        for phrase in _REPORTED:
-            assert phrase in line, (
-                f"{name}: parse-failure instruction does not tell the user "
-                f"{phrase!r}: {line.strip()}"
-            )
+    assert "{PRE_HOOK_SCRIPT}" not in rendered
+    assert "{POST_HOOK_SCRIPT}" not in rendered
+    assert f".specify/scripts/{dir}/" in rendered
+    assert f"hooks.{ext}" in rendered

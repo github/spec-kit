@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..base import MarkdownIntegration
+from ..base import MarkdownIntegration, _HOOK_INSTRUCTION_PATTERN
 from ..manifest import IntegrationManifest
 
 
@@ -140,7 +140,7 @@ class ClineIntegration(MarkdownIntegration):
         # instruction. This also matches the shared base helper, without which
         # the per-instruction check above cannot line up.
         return re.sub(
-            r"(?m)^([ \t]*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            _HOOK_INSTRUCTION_PATTERN,
             repl,
             content,
         )

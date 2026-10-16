@@ -309,6 +309,8 @@ class TestCopilotCommandsMode:
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/post-hooks.sh",
+            ".specify/scripts/bash/pre-hooks.sh",
             ".specify/scripts/bash/resolve-template.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",
@@ -374,6 +376,8 @@ class TestCopilotCommandsMode:
             ".specify/scripts/powershell/check-prerequisites.ps1",
             ".specify/scripts/powershell/common.ps1",
             ".specify/scripts/powershell/create-new-feature.ps1",
+            ".specify/scripts/powershell/post-hooks.ps1",
+            ".specify/scripts/powershell/pre-hooks.ps1",
             ".specify/scripts/powershell/resolve-template.ps1",
             ".specify/scripts/powershell/setup-plan.ps1",
             ".specify/scripts/powershell/setup-tasks.ps1",
@@ -685,13 +689,14 @@ class TestCopilotSkillsMode:
             fm = yaml.safe_load(parts[1])
             assert "mode" not in fm, f"{f} frontmatter must not contain unsupported 'mode' field"
 
-    def test_skills_hook_sections_explain_dotted_command_conversion(self, tmp_path):
-        """Generated skills with hook sections should include shared hook guidance."""
+    def test_skills_hook_sections_use_script_dispatch(self, tmp_path):
+        """Generated skills use the installed hook dispatcher instead of YAML instructions."""
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
         specify_skill = tmp_path / ".github" / "skills" / "speckit-specify" / "SKILL.md"
         content = specify_skill.read_text(encoding="utf-8")
-        assert "replace dots" in content
+        assert ".specify/scripts/bash/pre-hooks.sh specify" in content
+        assert ".specify/scripts/bash/post-hooks.sh specify" in content
 
     # -- Template processing ----------------------------------------------
 
@@ -887,6 +892,8 @@ class TestCopilotSkillsMode:
             ".specify/scripts/bash/check-prerequisites.sh",
             ".specify/scripts/bash/common.sh",
             ".specify/scripts/bash/create-new-feature.sh",
+            ".specify/scripts/bash/post-hooks.sh",
+            ".specify/scripts/bash/pre-hooks.sh",
             ".specify/scripts/bash/resolve-template.sh",
             ".specify/scripts/bash/setup-plan.sh",
             ".specify/scripts/bash/setup-tasks.sh",

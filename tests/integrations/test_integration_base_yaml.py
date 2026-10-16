@@ -424,6 +424,10 @@ class YamlIntegrationTests:
                 "setup-tasks.ps1",
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
+        files += [
+            f".specify/scripts/{'bash' if script_variant == 'sh' else 'powershell'}/{phase}-hooks.{'sh' if script_variant == 'sh' else 'ps1'}"
+            for phase in ("pre", "post")
+        ]
 
         for name in [
             "checklist-template.md",

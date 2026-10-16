@@ -171,20 +171,17 @@ class TestExtensionRegistration:
         assert "ext-no-hooks" not in config["installed"]
 
     def test_unregister_hooks_corrupted_config(self, project_dir):
-        """Resilience: unregister_hooks should gracefully handle corrupted config."""
+        """A non-mapping config must not be overwritten during removal."""
         # Create a corrupted config (root is a list)
         config_path = project_dir / ".specify" / "extensions.yml"
         config_path.write_text(yaml.dump(["corrupted", "list"]))
 
         executor = HookExecutor(project_dir)
 
-        # Should not raise even with corrupted config
-        executor.unregister_hooks("non-existent")
-
-        # Config should remain as-is or be handled gracefully
-        config = executor.get_project_config()
-        # If it's corrupted, it's returned as-is or handled by defensive logic
-        assert config is not None
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match="expected a mapping"):
+            executor.unregister_hooks("non-existent")
+        assert config_path.read_bytes() == original
 
     def test_unregister_hooks_with_multiple_extensions(self, project_dir, tmp_path):
         """Multiple Extensions: unregister_hooks should only remove target extension's hooks."""
@@ -300,7 +297,7 @@ class TestExtensionRegistration:
         assert True not in config["installed"]
 
     def test_unregister_hooks_null_hook_values(self, project_dir):
-        """Regression: hooks: {after_tasks: null} must not crash in unregister_hooks()."""
+        """A null hook event must not be silently removed."""
         executor = HookExecutor(project_dir)
 
         # Manually write a config with null hook event value
@@ -310,14 +307,13 @@ class TestExtensionRegistration:
             "hooks": {"after_tasks": None}
         }))
 
-        # Should not raise TypeError when iterating None
-        executor.unregister_hooks("broken-ext")
-
-        config = executor.get_project_config()
-        assert "broken-ext" not in config["installed"]
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match="hooks.after_tasks must be a list"):
+            executor.unregister_hooks("broken-ext")
+        assert config_path.read_bytes() == original
 
     def test_register_hooks_corrupted_hook_values(self, project_dir, tmp_path):
-        """Regression: register_hooks() must handle non-list hook event values in config."""
+        """Registration must preserve, not replace, an invalid event value."""
         executor = HookExecutor(project_dir)
 
         # Manually write a config with null hook event value
@@ -349,13 +345,10 @@ class TestExtensionRegistration:
 
         manifest = ExtensionManifest(manifest_path)
 
-        # Should not raise TypeError when trying to append to None
-        executor.register_hooks(manifest)
-
-        config = executor.get_project_config()
-        assert "new-ext" in config["installed"]
-        assert isinstance(config["hooks"]["after_tasks"], list)
-        assert any(h["extension"] == "new-ext" for h in config["hooks"]["after_tasks"])
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match="hooks.after_tasks must be a list"):
+            executor.register_hooks(manifest)
+        assert config_path.read_bytes() == original
 
     def test_register_extension_already_present_in_corrupted_list(self, project_dir):
         """Regression: if extension is already present but list has non-strings, it must still be sanitized."""
@@ -423,7 +416,7 @@ class TestExtensionRegistration:
         config = executor.get_project_config()
         assert config["installed"] == []
     def test_register_hooks_mixed_type_hook_list(self, project_dir, tmp_path):
-        """Regression: register_hooks() must sanitize hook event lists by dropping non-dicts."""
+        """Registration must not discard malformed entries from an existing list."""
         executor = HookExecutor(project_dir)
 
         config_path = project_dir / ".specify" / "extensions.yml"
@@ -454,33 +447,25 @@ class TestExtensionRegistration:
         manifest_path.write_text(yaml.dump(manifest_data))
         manifest = ExtensionManifest(manifest_path)
 
-        executor.register_hooks(manifest)
-
-        config = executor.get_project_config()
-        hooks = config["hooks"]["after_tasks"]
-
-        # Should have 2 valid dict hooks, and 0 non-dict items
-        assert len(hooks) == 2
-        assert all(isinstance(h, dict) for h in hooks)
-        assert any(h.get("extension") == "other" for h in hooks)
-        assert any(h.get("extension") == "new-ext" for h in hooks)
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match=r"hooks.after_tasks\[0\] must be a mapping"):
+            executor.register_hooks(manifest)
+        assert config_path.read_bytes() == original
 
     def test_unregister_extension_scalar_root(self, project_dir):
-        """Hardening: unregister_extension should handle scalar root config."""
+        """A scalar root must not be replaced by a default during removal."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
 
         config_path.write_text(yaml.dump(123))
 
-        # Should not crash and should normalize to {}
-        executor.unregister_extension("any-ext")
-
-        config = executor.get_project_config()
-        assert isinstance(config, dict)
-        assert config["installed"] == []
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match="expected a mapping"):
+            executor.unregister_extension("any-ext")
+        assert config_path.read_bytes() == original
 
     def test_unregister_hooks_scalar_hook_values(self, project_dir):
-        """Regression: unregister_hooks() must handle scalar hook event values."""
+        """A scalar event value must not be silently removed."""
         executor = HookExecutor(project_dir)
         config_path = project_dir / ".specify" / "extensions.yml"
 
@@ -489,9 +474,7 @@ class TestExtensionRegistration:
             "hooks": {"after_tasks": 123}
         }))
 
-        # Should not raise TypeError when iterating
-        executor.unregister_hooks("some-ext")
-
-        config = executor.get_project_config()
-        assert "some-ext" not in config["installed"]
-        assert "after_tasks" not in config["hooks"]
+        original = config_path.read_bytes()
+        with pytest.raises(ValueError, match="hooks.after_tasks must be a list"):
+            executor.unregister_hooks("some-ext")
+        assert config_path.read_bytes() == original
