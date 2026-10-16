@@ -551,7 +551,11 @@ class _PresetSkillMethods:
                 integration = get_integration(selected_ai)
                 if integration is not None:
                     skills_enabled = True
-                    if project_root is not None:
+                    agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
+                    registrar_writes_skills = (
+                        agent_config.get("extension") == "/SKILL.md"
+                    )
+                    if project_root is not None and not registrar_writes_skills:
                         from .. import load_init_options
 
                         skills_enabled = is_ai_skills_enabled(
