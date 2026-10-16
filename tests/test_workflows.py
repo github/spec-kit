@@ -10299,19 +10299,20 @@ class TestStepRegistryCustom:
         registry2 = StepRegistry(project_dir)
         assert registry2.is_installed("deploy")
 
-    def test_corrupted_registry_resets(self, project_dir):
+    def test_corrupted_registry_raises(self, project_dir):
         from specify_cli.workflows.step.catalog import StepRegistry
 
         registry = StepRegistry(project_dir)
         registry.steps_dir.mkdir(parents=True, exist_ok=True)
         registry.registry_path.write_text("not json", encoding="utf-8")
 
-        # Loading again should reset
-        registry2 = StepRegistry(project_dir)
-        assert registry2.list() == {}
+        # Loading again must fail loudly instead of handing back an empty
+        # registry that hides the corruption.
+        with pytest.raises(OSError, match="corrupted"):
+            StepRegistry(project_dir)
 
-    def test_registry_missing_steps_key_resets(self, project_dir):
-        """Valid JSON but missing 'steps' key should not crash add/get."""
+    def test_registry_invalid_steps_key_raises(self, project_dir):
+        """Valid JSON but a non-dict 'steps' must fail loudly, not repair."""
         from specify_cli.workflows.step.catalog import StepRegistry
         import json as _json
 
@@ -10323,15 +10324,12 @@ class TestStepRegistryCustom:
             encoding="utf-8",
         )
 
-        registry2 = StepRegistry(project_dir)
-        # Should be safe to call add/get without KeyError
-        assert registry2.list() == {}
-        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
-        assert registry2.is_installed("deploy")
+        with pytest.raises(OSError, match="'steps' must be an object"):
+            StepRegistry(project_dir)
 
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
-    def test_registry_unreadable_file_resets(self, project_dir):
-        """OSError reading the registry file should fall back to default."""
+    def test_registry_unreadable_file_raises(self, project_dir):
+        """An OSError reading the registry file must surface to the caller."""
         from specify_cli.workflows.step.catalog import StepRegistry
         import json as _json
 
@@ -10345,12 +10343,13 @@ class TestStepRegistryCustom:
         # Make it unreadable
         registry.registry_path.chmod(0o000)
         try:
-            registry2 = StepRegistry(project_dir)
-            assert registry2.list() == {}
+            with pytest.raises(OSError, match="Failed to read"):
+                StepRegistry(project_dir)
         finally:
             registry.registry_path.chmod(0o644)
 
         # After restoring permissions the registry is fully functional
+        registry2 = StepRegistry(project_dir)
         registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
         assert registry2.is_installed("deploy")
 
@@ -10369,20 +10368,23 @@ class TestStepRegistryCustom:
         steps_link = project_dir / ".specify" / "workflows" / "steps"
         steps_link.symlink_to(outside, target_is_directory=True)
 
-        registry = StepRegistry(project_dir)
-        assert registry.list() == {}
+        with pytest.raises(OSError, match="symlink"):
+            StepRegistry(project_dir)
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_registry_save_refuses_symlinked_steps_dir(self, project_dir):
         """save() must refuse symlinked registry paths (defense-in-depth)."""
         from specify_cli.workflows.step.catalog import StepRegistry, StepValidationError
 
+        # Build the registry before swapping in the symlink so the refusal
+        # comes from save() itself rather than the constructor's read check.
+        registry = StepRegistry(project_dir)
+
         outside = project_dir.parent / "outside-steps-save"
         outside.mkdir(parents=True, exist_ok=True)
         steps_link = project_dir / ".specify" / "workflows" / "steps"
         steps_link.symlink_to(outside, target_is_directory=True)
 
-        registry = StepRegistry(project_dir)
         with pytest.raises(StepValidationError, match="symlinked path"):
             registry.save()
 
@@ -11835,3 +11837,130 @@ class TestWorkflowCliAlignment:
         assert fresh.get("align-wf")["version"] == "1.0.0"
         assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o644
         assert not list(registry.workflows_dir.glob("*.tmp"))
+
+
+class TestStepRegistryAtomicSaveRegression:
+    """StepRegistry must fail loudly on corruption and save atomically."""
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_load_raises_on_symlinked_file(self, tmp_path):
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        real_file = tmp_path / "real_registry.json"
+        real_file.write_text(
+            json.dumps({"schema_version": "1.0", "steps": {}}), encoding="utf-8"
+        )
+        registry_path.symlink_to(real_file)
+
+        with pytest.raises(OSError, match="symlink"):
+            StepRegistry(tmp_path)
+
+    def test_load_raises_on_corrupted_json(self, tmp_path):
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        steps_dir = tmp_path / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("not valid json {{{", encoding="utf-8")
+
+        with pytest.raises(OSError, match="corrupted"):
+            StepRegistry(tmp_path)
+
+    def test_save_uses_atomic_write(self, tmp_path):
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        registry = StepRegistry(tmp_path)
+        registry.add("test-step", {"type": "command", "config": {}})
+        registry.save()
+
+        registry_path = (
+            tmp_path / ".specify" / "workflows" / "steps" / StepRegistry.REGISTRY_FILE
+        )
+        assert registry_path.exists()
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert "test-step" in data.get("steps", {})
+        assert not list(registry_path.parent.glob(".*.tmp"))
+
+    def test_save_failure_preserves_previous_bytes(self, tmp_path, monkeypatch):
+        """Injecting a write failure must leave the previous file untouched.
+
+        With a direct write (no temp file + os.replace), a mid-write failure
+        would truncate the existing registry.  This test injects a failure
+        during json.dump and asserts the previously persisted bytes remain.
+        """
+        import specify_cli.workflows.step.catalog._domain as catalog_mod
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        # First save succeeds normally.
+        registry = StepRegistry(tmp_path)
+        registry.add("step-a", {"type": "command", "config": {}})
+        registry.save()
+        registry_path = (
+            tmp_path / ".specify" / "workflows" / "steps" / StepRegistry.REGISTRY_FILE
+        )
+        original_bytes = registry_path.read_bytes()
+
+        # Inject a write failure on the second save.
+        def _fail_dump(obj, fp, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(catalog_mod.json, "dump", _fail_dump)
+
+        with pytest.raises((OSError, Exception), match="disk full"):
+            registry.save()
+
+        # Previous bytes must be intact — no partial write.
+        assert registry_path.read_bytes() == original_bytes
+        # No temp files left behind.
+        assert not list(registry_path.parent.glob(".*.tmp"))
+
+    def test_cli_list_exits_cleanly_on_corrupted_registry(self, project_dir, monkeypatch):
+        """A corrupted registry must produce exit code 1 with a clean error,
+        not a traceback."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+
+        steps_dir = project_dir / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("not valid json {{{", encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "step", "list"])
+        assert result.exit_code == 1
+        assert "corrupted" in result.output.lower() or "error" in result.output.lower()
+        assert "Traceback" not in result.output
+
+    def test_installer_rejects_corrupted_registry_before_mutation(self, project_dir):
+        """install_step_package() must raise StepInstallError on a corrupted
+        registry before any destination or staging directory is created."""
+        from specify_cli.workflows.step.installer import StepInstallError, install_step_package
+        from specify_cli.workflows.step.catalog import StepRegistry
+
+        # Corrupt the registry file.
+        steps_dir = project_dir / ".specify" / "workflows" / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+        registry_path.write_text("corrupted {{{", encoding="utf-8")
+
+        # Create a valid step package.
+        pkg = project_dir / "pkg"
+        pkg.mkdir()
+        (pkg / "step.yml").write_text(
+            "step:\n  type_key: my-step\n  name: My Step\n", encoding="utf-8"
+        )
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+
+        with pytest.raises(StepInstallError, match="corrupted"):
+            install_step_package(project_dir, "my-step", pkg, source="local")
+
+        # No destination directory or staging artifacts should exist.
+        assert not (steps_dir / "my-step").exists()
+        assert not list(steps_dir.glob(".speckit-step-install-*"))
+        assert not list(steps_dir.glob(".*.tmp"))
