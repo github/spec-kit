@@ -14,6 +14,7 @@ from specify_cli.presets import (
     PresetCatalogEntry,
     PresetManager,
     PresetManifest,
+    PresetRegistry,
 )
 
 REPO_ROOT = Path(__file__).parents[3]
@@ -252,3 +253,141 @@ class PresetArtifactTestHelpers:
         with open(preset_dir / "preset.yml", "w") as f:
             yaml.dump(manifest_data, f)
         return preset_dir
+
+
+def selector_manifest(
+    name: str, resource_type: str = "command", strategy: str = "replace"
+) -> dict:
+    return {
+        "schema_version": "1.0",
+        "preset": {
+            "id": "preset",
+            "name": "Preset",
+            "version": "1.0.0",
+            "description": "test",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "templates": [
+                {
+                    "type": resource_type,
+                    "name": name,
+                    "file": "payload.md" if resource_type != "script" else "payload.sh",
+                    "strategy": strategy,
+                }
+            ]
+        },
+    }
+
+
+def write_selector_preset(
+    project,
+    preset_id: str,
+    name: str,
+    *,
+    priority: int,
+    strategy: str = "replace",
+    resource_type: str = "command",
+    body: str = "overlay\n",
+):
+    root = project / ".specify" / "presets" / preset_id
+    root.mkdir(parents=True, exist_ok=True)
+    data = selector_manifest(name, resource_type, strategy)
+    data["preset"]["id"] = preset_id
+    filename = data["provides"]["templates"][0]["file"]
+    (root / filename).write_text(body, encoding="utf-8")
+    (root / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    PresetRegistry(project / ".specify" / "presets").add(
+        preset_id, {"enabled": True, "priority": priority, "version": "1.0.0"}
+    )
+    return root
+
+
+def write_command_declarations(pack_dir, preset_id, declarations):
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    for index, declaration in enumerate(declarations):
+        payload = pack_dir / f"command-{index}.md"
+        payload.write_text(declaration["body"], encoding="utf-8")
+        declaration["file"] = payload.name
+        declaration.pop("body")
+    data = selector_manifest("unused", "command")
+    data["preset"]["id"] = preset_id
+    data["provides"]["templates"] = declarations
+    (pack_dir / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    return pack_dir
+
+
+def install_selector_fixture(project_dir, preset_id, pack_dir, priority):
+    PresetRegistry(project_dir / ".specify" / "presets").add(
+        preset_id, {"enabled": True, "priority": priority, "version": "1.0.0"}
+    )
+    destination = project_dir / ".specify" / "presets" / preset_id
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in pack_dir.iterdir():
+        (destination / path.name).write_bytes(path.read_bytes())
+    return destination
+
+
+def write_selector_contract_preset(project, identifier, declarations, priority=1):
+    root = project / ".specify" / "presets" / identifier
+    root.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for index, (name, resource_type, strategy, body) in enumerate(declarations):
+        filename = f"payload-{index}.{'sh' if resource_type == 'script' else 'md'}"
+        if body is not None:
+            (root / filename).write_text(body, encoding="utf-8")
+        entries.append(
+            {
+                "name": name,
+                "type": resource_type,
+                "strategy": strategy,
+                "file": filename,
+            }
+        )
+    (root / "preset.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": identifier,
+                    "name": identifier,
+                    "version": "1.0.0",
+                    "description": "Selector contract regression",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": entries},
+            }
+        ),
+        encoding="utf-8",
+    )
+    PresetRegistry(project / ".specify" / "presets").add(
+        identifier, {"enabled": True, "priority": priority, "version": "1.0.0"}
+    )
+    return root
+
+
+def write_diagnostic_selector_preset(
+    project_dir: Path, preset_id: str, templates: list[dict]
+) -> Path:
+    preset_dir = project_dir / ".specify" / "presets" / preset_id
+    preset_dir.mkdir(parents=True)
+    for template in templates:
+        payload = preset_dir / template["file"]
+        payload.parent.mkdir(parents=True, exist_ok=True)
+        payload.write_text("# selector fixture\n", encoding="utf-8")
+    manifest = {
+        "schema_version": "1.0",
+        "preset": {
+            "id": preset_id,
+            "name": preset_id,
+            "version": "1.0.0",
+            "description": "diagnostic fixture",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {"templates": templates},
+    }
+    (preset_dir / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    PresetRegistry(project_dir / ".specify" / "presets").add(
+        preset_id, {"enabled": True, "priority": 1, "version": "1.0.0"}
+    )
+    return preset_dir

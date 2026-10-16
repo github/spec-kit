@@ -1,12 +1,20 @@
 """Tests for preset manifest validation in specify_cli.presets._manifest."""
 
+import re
+
 import pytest
 import yaml
 
 from specify_cli.presets import (
     VALID_PRESET_TEMPLATE_TYPES,
+    PresetManager,
     PresetManifest,
     PresetValidationError,
+)
+from specify_cli.presets._selectors import selector_matches
+from tests.specify_cli.presets._helpers import (
+    selector_manifest,
+    write_selector_contract_preset,
 )
 
 
@@ -553,3 +561,93 @@ class TestCompositionStrategyValidation:
             yaml.dump(valid_pack_data, f)
         manifest = PresetManifest(manifest_path)
         assert manifest.templates[0]["strategy"] == "prepend"
+
+
+INVALID_PATTERNS = [
+    pytest.param("[unterminated", re.error, id="grammar"),
+    pytest.param("a{999999999999999999999}", OverflowError, id="huge-repetition"),
+    pytest.param("(" * 2000 + "a" + ")" * 2000, RecursionError, id="deep-nesting"),
+]
+
+
+def test_exact_name_manifest_still_validates(tmp_path):
+    path = tmp_path / "preset.yml"
+    path.write_text(yaml.safe_dump(selector_manifest("plan-template")), encoding="utf-8")
+    manifest = PresetManifest(path)
+    assert manifest.templates[0]["name"] == "plan-template"
+    assert selector_matches("plan-template", "plan-template")
+    assert not selector_matches("plan-template", "other-template")
+
+
+def test_exact_name_manifest_keeps_legacy_trailing_newline_validation(tmp_path):
+    # Legacy `re.match(r'^[...]$')` accepts one trailing newline; preserve it.
+    path = tmp_path / "preset.yml"
+    path.write_text(yaml.safe_dump(selector_manifest("plan-template\n")), encoding="utf-8")
+    manifest = PresetManifest(path)
+    assert manifest.templates[0]["name"] == "plan-template\n"
+
+
+def test_regex_validation_and_fullmatch(tmp_path):
+    path = tmp_path / "preset.yml"
+    selector = r"regex:^plan-.*-template$"
+    path.write_text(yaml.safe_dump(selector_manifest(selector)), encoding="utf-8")
+    assert PresetManifest(path).templates[0]["name"] == selector
+    assert selector_matches(selector, "plan-main-template")
+    assert not selector_matches("regex:plan", "plan-template")
+
+
+def test_invalid_regex_fails_during_manifest_validation(tmp_path):
+    path = tmp_path / "preset.yml"
+    path.write_text(yaml.safe_dump(selector_manifest("regex:[unterminated")), encoding="utf-8")
+    with pytest.raises(PresetValidationError, match="Invalid regex selector"):
+        PresetManifest(path)
+
+
+@pytest.mark.parametrize("resource_type", ["template", "script"])
+def test_non_command_regex_is_rejected_before_install(tmp_path, resource_type):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "preset.yml").write_text(
+        yaml.safe_dump(selector_manifest("regex:.*", resource_type)), encoding="utf-8"
+    )
+    with pytest.raises(PresetValidationError, match="only supported for command"):
+        PresetManager(tmp_path).install_from_directory(source, "0.1.0")
+    assert not (tmp_path / ".specify" / "presets" / "preset").exists()
+
+
+@pytest.mark.parametrize("resource_type", ["command"])
+@pytest.mark.parametrize(
+    "pattern", ["(a+)+$", "(a|a)*$", "(a*)*$", r"(a)\1", r"(?=a)a"]
+)
+def test_every_regex_declaration_validated(tmp_path, resource_type, pattern):
+    data = selector_manifest("regex:valid.*", resource_type)
+    data["provides"]["templates"].append(
+        {
+            **data["provides"]["templates"][0],
+            "name": f"regex:{pattern}",
+        }
+    )
+    path = tmp_path / "preset.yml"
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(PresetValidationError, match="safety boundary"):
+        PresetManifest(path)
+
+
+@pytest.mark.parametrize("pattern,compile_error", INVALID_PATTERNS)
+def test_regex_compile_failures_become_manifest_validation_errors(
+    tmp_path, pattern, compile_error
+):
+    pack = write_selector_contract_preset(
+        tmp_path, "malformed", [(f"regex:{pattern}", "command", "replace", "bad")]
+    )
+    with pytest.raises(PresetValidationError, match="Invalid regex selector") as caught:
+        PresetManifest(pack / "preset.yml")
+    assert isinstance(caught.value.__cause__, compile_error)
+
+
+@pytest.mark.parametrize(
+    "selector", ["regex:a{1000}", "regex:(?:selector-)?contract", "selector-contract"]
+)
+def test_valid_regex_and_exact_names_remain_accepted(tmp_path, selector):
+    pack = write_selector_contract_preset(tmp_path, "valid", [(selector, "command", "replace", "valid")])
+    assert PresetManifest(pack / "preset.yml").templates[0]["name"] == selector

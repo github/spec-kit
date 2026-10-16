@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import ClassVar
 
 import yaml
+from typer.testing import CliRunner
 
+from specify_cli import app
 from specify_cli.presets import (
     PresetCatalog,
     PresetManager,
@@ -13,6 +15,7 @@ from tests.conftest import strip_ansi
 from tests.specify_cli.presets._helpers import (
     default_catalog_entries,
     seed_catalog,
+    write_diagnostic_selector_preset,
 )
 
 
@@ -248,3 +251,75 @@ class TestPresetInfoInstalledMarkup:
             result = self._invoke(project_dir, args)
             assert result.exit_code == 0, (args, result.output, result.exception)
             assert "Broken [/red] tag" in strip_ansi(result.output)
+
+
+def _info(project_dir: Path, preset_id: str) -> str:
+    from unittest.mock import patch
+
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, ["preset", "info", preset_id])
+    assert result.exit_code == 0, result.output
+    return strip_ansi(result.output)
+
+
+def test_preset_info_matches_bundled_core_without_local_commands(project_dir):
+    preset_dir = write_diagnostic_selector_preset(
+        project_dir,
+        "bundled-commands",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.plan$",
+                "file": "commands/overlay.md",
+                "strategy": "append",
+            }
+        ],
+    )
+    import shutil
+
+    shutil.rmtree(project_dir / ".specify" / "templates" / "commands")
+    output = _info(project_dir, preset_dir.name)
+    assert "speckit.plan" in output
+    assert "No current matches" not in output
+
+
+def test_preset_info_reports_unmatched_regex_selector(project_dir):
+    preset_dir = write_diagnostic_selector_preset(
+        project_dir,
+        "empty-diagnostic-selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^nothing-matches$",
+                "file": "templates/overlay.md",
+                "strategy": "append",
+            }
+        ],
+    )
+
+    output = _info(project_dir, preset_dir.name)
+
+    assert r"regex:^nothing-matches$" in output
+    assert "No current matches" in output
+
+
+def test_preset_info_expands_regex_command_to_concrete_names(project_dir):
+    preset_dir = write_diagnostic_selector_preset(
+        project_dir,
+        "command-diagnostic-selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.(plan|tasks)$",
+                "file": "commands/override.md",
+                "strategy": "replace",
+            }
+        ],
+    )
+
+    output = _info(project_dir, preset_dir.name)
+
+    assert r"regex:^speckit\.(plan|tasks)$" in output
+    assert "speckit.plan" in output
+    assert "speckit.tasks" in output
+    assert "No current matches" not in output

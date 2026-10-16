@@ -151,7 +151,7 @@ keep their exit code (normally 2), as with `list --json`.
 specify preset resolve <name>
 ```
 
-Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file.
+Shows which file will be used for a given name by tracing the full resolution stack. Useful for debugging when multiple presets provide the same file. When a layer was contributed by a `regex:` selector, the trace names the declaration that matched the requested name.
 
 ## Enable / Disable a Preset
 
@@ -290,6 +290,106 @@ Presets can provide command files, template files (like `plan-template.md`), and
 Templates and scripts are looked up from the stack when Spec Kit needs them. Commands use the same stack for replacement and composition, but are materialized into the active integration's directory only, instead of being re-resolved by agents or written to every detected agent directory (#2948). During preset install, Spec Kit registers command files for the preset being installed against the currently active integration; post-install and post-removal reconciliation then recomputes and writes the effective command content for affected command names based on the active stack. Install and rescaffold remain active-only, but removal may also update previously targeted inactive directories recorded by the removed preset to restore the surviving command or skill layer. A non-active installed integration does not otherwise receive these command files until it becomes the default — `specify integration use <key>` (or `switch <key>`) rescaffolds enabled presets for the newly active integration. Agents do not re-resolve the stack each time they run a command.
 
 By default, files use a **replace** strategy: the first match in the priority stack wins and is used entirely. Templates and commands can also use composition strategies: **prepend** places preset content before lower-priority content, **append** places it after lower-priority content, and **wrap** replaces `{CORE_TEMPLATE}` with lower-priority content. Scripts support **replace** and **wrap**; script wrappers use `$CORE_SCRIPT` as the placeholder.
+
+### Regex Selectors
+
+A `provides.templates` entry with `type: command` can match several commands with a `regex:` prefix on its `name`:
+
+```yaml
+provides:
+  templates:
+    - type: command
+      name: 'regex:^speckit\.(plan|tasks|implement)$'
+      file: commands/workflow-guidance.md
+      strategy: append
+
+```
+
+An entry without the prefix keeps exact-name matching and is unaffected:
+
+```yaml
+provides:
+  templates:
+    - type: command
+      name: speckit.plan
+      file: commands/plan-guidance.md
+      strategy: append
+```
+
+How selectors behave:
+
+- `regex:` selectors are supported only for `command` declarations. Template and script declarations reject the prefix.
+- A `name` beginning with `regex:` uses the bounded regular-expression syntax described below. The pattern is matched with **full-match** semantics against the logical command name (for example `speckit.plan`) — the same name you pass to `specify preset resolve` and see in `specify preset info`. It never matches file paths, directory names, or file extensions.
+- A selector is eligible only against concrete resources provided by **lower layers** of the resolution stack: lower-priority presets, installed and enabled extensions, and Spec Kit core (including the bundled core pack in a wheel install). Project-local overrides and other `regex:` declarations are never matched, so selectors cannot chain off one another and cannot be satisfied by an override.
+- Expansion preserves manifest declaration order, including overlapping exact and regex entries and declarations sharing the same file. Within each selector, concrete names are sorted.
+- Every concrete resource a selector matches behaves exactly as though the preset contained a separate exact-name entry with the same `file` and `strategy`. One declaration therefore expands into zero, one, or several concrete resources.
+- Matches are evaluated during resolution and existing registration points, including preset installation and active integration registration. Provider changes do not automatically refresh every previously generated match. Re-register affected presets with `specify integration use <key>` when their concrete providers change. Re-registration also retires tracked matches whose providers have disappeared.
+- For `command` entries the matches are expanded to concrete command names **before** registration. Registration, composition, reconciliation, and cleanup all run against those concrete names; the literal `regex:...` string is never stored as a command name in the preset registry, an agent directory, or the `.composed` cache.
+- Composition and priority are unchanged. `replace`, `prepend`, `append`, and `wrap` compose against the normal resolution stack, including when command declarations render as agent skills.
+
+Zero-match and invalid patterns are handled as follows:
+
+- A `regex:` selector that currently matches no lower-layer resource contributes nothing. Installing such a preset emits a warning unless an exact command declaration in the same preset satisfies the target name; it does **not** fail the installation.
+- `specify preset info` lists each selector's current concrete matches nested beneath the declaration, or `No current matches` when there are none.
+- `specify preset resolve <name>` attributes the layers it traces back to the declaration that matched, for example `sel-pack v1.0.0 → …/guidance.md (via regex:^speckit\.plan$)`, so a selector-driven resolution is visible in the stack trace and not only in `preset info`.
+
+#### Regex selector safety boundaries
+
+A `regex:` selector pattern is validated when a preset is installed, and again
+whenever a selector is evaluated — including a selector found in a manifest that is
+already on disk. The pattern, compiled-state and compiled-edge limits are enforced when the manifest
+is validated, and a pattern past one of them is rejected with a
+`PresetValidationError` that names the limit it broke. The resource-name limit applies
+to the names a selector is matched against, not to the manifest: an oversized concrete
+name is a warned non-match (`selector_matches` returns `False`) rather than an invalid
+preset:
+
+| Limit | Value |
+| --- | --- |
+| pattern length | 4096 characters after the `regex:` prefix |
+| compiled states | 4096 |
+| compiled edges | 2048 |
+| resource name length | 1024 characters |
+
+Matching never uses Python's backtracking engine. A selector is compiled to a state
+machine whose work is bounded by `(resource name length + 1) × compiled edges`, so no
+valid selector can make the CLI hang, however long or unlucky the resource name is.
+The state and edge counts are capped separately because a branch reuses one entry
+state for all of its alternatives: `(?:a|\B|\B|…){4000}` keeps the state count small
+while producing millions of edges.
+
+A selector found in a manifest that is already on disk — written by an older version,
+or edited by hand — does not raise during resolution. It is reported with a warning
+and treated as matching nothing, so an unsafe manifest cannot break unrelated
+commands. Installation fails hard, and `specify preset info` revalidates an installed
+manifest and exits with status 1, so both surfaces report the validation error rather
+than silently using the preset.
+
+The supported syntax is a subset of Python's regular expressions: literal characters
+and escapes, `.`, character classes (`[a-z]`, `[^x]`), the predefined classes (`\d`,
+`\w`, `\s` and their negations), grouping (`(...)`, `(?:...)`), alternation, the
+anchors `^ $ \A \Z \b \B`, inline flags (`(?i)`, `(?i:...)`), and the quantifiers
+`* + ? {m} {m,} {m,n}` including their lazy forms. The following are **refused**,
+because their behaviour cannot be analysed from the parsed pattern alone or because
+they are the shapes that make backtracking matchers hang:
+
+- backreferences (`\1`) and named backreferences (`(?P=name)`);
+- lookarounds (`(?=…)`, `(?!…)`, `(?<=…)`, `(?<!…)`);
+- atomic groups (`(?>…)`) and possessive quantifiers (`a*+`);
+- a repetition nested inside another repetition (`(a+)+`, `(a*)*`);
+- a repetition whose body can match the empty string (`(a|)*`, `(?:)*`, `\B*`);
+- an unbounded repetition over a zero-width alternation, such as `(a|a)*`, which the
+  parser factorises into `a` followed by a branch whose alternatives are all empty.
+
+Two similar-looking cases are deliberately treated differently:
+
+- `(ab|a)*` and `(ba|b)*c` are **accepted**. The parser factorises the shared prefix
+  out of the alternation, which leaves a branch with an empty alternative, but the
+  repeated body still has to consume at least `a`/`b` in every alternative. It cannot match
+  the empty string.
+- `(a|a)*` is **refused**, because there the factorised branch has no non-empty
+  alternative at all. The selector safety rule rejects that unbounded form.
+- An invalid regular expression is rejected during manifest validation, so a preset with a malformed pattern fails to install with a clear validation error rather than at resolution time.
 
 The resolution stack, from highest to lowest precedence:
 

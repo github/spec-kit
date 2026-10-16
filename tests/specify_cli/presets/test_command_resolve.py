@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
+from typer.testing import CliRunner
 
+from specify_cli import app
 from specify_cli.presets import (
     PresetManager,
 )
 from tests.conftest import strip_ansi
+from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
 
 
 class TestPresetResolve:
@@ -214,3 +218,65 @@ class TestPresetResolve:
         assert "Composition chain" in output, output
         assert "[base]" in output, output
         assert "[append]" in output, output
+
+
+def test_resolve_reports_command_selector_declaration(project_dir):
+    from unittest.mock import patch
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "attributed-command",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.plan$",
+                "file": "commands/overlay.md",
+                "strategy": "append",
+            }
+        ],
+    )
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, ["preset", "resolve", "speckit.plan"])
+    assert result.exit_code == 0, result.output
+    assert r"regex:^speckit\.plan$" in strip_ansi(result.output)
+
+
+@pytest.mark.parametrize("same_name_template", [False, True])
+def test_resolve_reports_selector_attribution_for_dotless_command(
+    project_dir, temp_dir, same_name_template
+):
+    """Dotless commands expose selectors while same-name templates keep precedence."""
+    from tests.specify_cli.presets._helpers import (
+        install_selector_fixture,
+        write_command_declarations,
+    )
+
+    lower = write_command_declarations(
+        temp_dir / "lower-exact",
+        "lower-exact",
+        [{"type": "command", "name": "new", "body": "LOWER NEW\n"}],
+    )
+    install_selector_fixture(project_dir, "lower-exact", lower, 20)
+    higher = write_command_declarations(
+        temp_dir / "higher-selector",
+        "higher-selector",
+        [{"type": "command", "name": r"regex:^new$", "body": "SELECTOR NEW\n"}],
+    )
+    install_selector_fixture(project_dir, "higher-selector", higher, 10)
+    if same_name_template:
+        template = project_dir / ".specify" / "templates" / "new.md"
+        template.write_text("EXACT TEMPLATE\n")
+
+    from unittest.mock import patch
+
+    with patch.object(Path, "cwd", return_value=project_dir):
+        result = CliRunner().invoke(app, ["preset", "resolve", "new"])
+
+    assert result.exit_code == 0, (result.output, result.exception)
+    output = strip_ansi(result.output)
+    if same_name_template:
+        assert str(template) in output.replace("\n", ""), output
+        assert "regex:^new$" not in output, output
+        assert "higher-selector" not in output, output
+    else:
+        assert r"regex:^new$" in output, output

@@ -1,14 +1,25 @@
 """Tests for preset command artifacts in specify_cli.presets._manager_commands."""
 
+import json
 from pathlib import Path
 
 import pytest
 import yaml
 
-from specify_cli.presets import PresetManager
+from specify_cli.extensions import CORE_COMMAND_NAMES, ExtensionRegistry
+from specify_cli.presets import (
+    PresetManager,
+    PresetManifest,
+    PresetRegistry,
+    PresetResolver,
+)
 from tests.specify_cli.presets._helpers import (
     PresetArtifactTestHelpers,
+    install_selector_fixture,
     install_self_test_preset,
+    selector_manifest,
+    write_command_declarations,
+    write_selector_preset,
 )
 
 
@@ -3158,3 +3169,615 @@ class TestRemoveReconciliation:
         assert ".specify/extensions/fakeext/agents/control/commander.md" in content
         assert "Read agents/control" not in content
         assert "## Extra" in content
+
+
+@pytest.mark.parametrize("change", ["disable", "remove"])
+@pytest.mark.parametrize("agent,skills", [("amp", False), ("copilot", True), ("claude", True)])
+def test_selector_refresh_retires_former_extension_match(project_dir, change, agent, skills):
+    """Refresh must include prior matches after their lower layer disappears."""
+    import shutil
+
+    from specify_cli import save_init_options
+    from specify_cli.extensions import ExtensionRegistry
+    from tests.specify_cli.presets._helpers import write_selector_preset as _write_preset
+
+    save_init_options(project_dir, {"ai": agent, "ai_skills": skills, "script": "sh"})
+    relative = {"amp": ".agents/commands", "copilot": ".github/skills", "claude": ".claude/skills"}[agent]
+    output_dir = project_dir / relative
+    output_dir.mkdir(parents=True)
+    extension = project_dir / ".specify/extensions/demo"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "commands/speckit.demo.collect.md").write_text("EXTENSION BASE\n")
+    registry = ExtensionRegistry(project_dir / ".specify/extensions")
+    registry.add("demo", {"enabled": True, "priority": 10, "version": "1.0.0"})
+    _write_preset(project_dir, "selector", r"regex:^speckit\.demo\.collect$", priority=1, body="SELECTOR BODY\n")
+    manager = PresetManager(project_dir)
+    manager.register_enabled_presets_for_agent(agent)
+    output = output_dir / ("speckit-demo-collect/SKILL.md" if skills else "speckit.demo.collect.md")
+    assert "SELECTOR BODY" in output.read_text()
+
+    if change == "disable":
+        registry.update("demo", {"enabled": False})
+    else:
+        registry.remove("demo")
+        shutil.rmtree(extension)
+    manager.register_enabled_presets_for_agent(agent)
+
+    assert not output.exists()
+    metadata = manager.registry.get("selector")
+    assert "speckit.demo.collect" not in metadata.get("registered_commands", {}).get(agent, [])
+    assert "speckit-demo-collect" not in metadata.get("registered_skills", {}).get(agent, [])
+
+
+def test_command_regex_expands_core_commands_to_exact_names(project_dir):
+    selector_pack = write_selector_preset(
+        project_dir,
+        "command-selector",
+        r"regex:^speckit\.(plan|tasks)$",
+        priority=1,
+        resource_type="command",
+    )
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(selector_pack / "preset.yml")
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), selector_pack, manifest.templates
+    )
+    names = {entry["name"] for entry in expanded}
+    expected = {f"speckit.{name}" for name in CORE_COMMAND_NAMES}
+    assert names == expected & {"speckit.plan", "speckit.tasks"}
+
+
+def test_command_regex_expands_extension_command(project_dir):
+    ext = project_dir / ".specify" / "extensions" / "demo"
+    (ext / "commands").mkdir(parents=True)
+    (ext / "commands" / "speckit.demo.md").write_text(
+        "extension command\\n", encoding="utf-8"
+    )
+    write_selector_preset(
+        project_dir,
+        "command-selector",
+        r"regex:^speckit\.demo$",
+        priority=1,
+        resource_type="command",
+    )
+    ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+        "demo", {"enabled": True, "priority": 10, "version": "1.0"}
+    )
+    pack = project_dir / ".specify" / "presets" / "command-selector"
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(pack / "preset.yml")
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), pack, manifest.templates
+    )
+    assert [entry["name"] for entry in expanded] == ["speckit.demo"]
+
+
+def test_command_regex_expands_lower_preset_and_excludes_own_or_higher(project_dir):
+    lower = project_dir / ".specify" / "presets" / "lower"
+    lower.mkdir(parents=True)
+    (lower / "commands").mkdir()
+    (lower / "payload.md").write_text("base\n", encoding="utf-8")
+    lower_data = selector_manifest("speckit.lower", "command")
+    lower_data["preset"]["id"] = "lower"
+    lower_data["provides"]["templates"][0]["file"] = "payload.md"
+    (lower / "preset.yml").write_text(yaml.safe_dump(lower_data), encoding="utf-8")
+    PresetRegistry(project_dir / ".specify" / "presets").add(
+        "lower", {"enabled": True, "priority": 10, "version": "1.0"}
+    )
+    selector_pack = write_selector_preset(
+        project_dir,
+        "selector",
+        r"regex:^speckit\.lower$",
+        priority=1,
+        resource_type="command",
+    )
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(selector_pack / "preset.yml")
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), selector_pack, manifest.templates
+    )
+    assert [entry["name"] for entry in expanded] == ["speckit.lower"]
+
+
+def test_command_regex_and_regex_overlap_preserves_both_entries(project_dir):
+    selector_pack = write_selector_preset(
+        project_dir,
+        "double-selector",
+        r"regex:^speckit\.plan$",
+        priority=1,
+        resource_type="command",
+    )
+    second = {"type": "command", "name": r"regex:^speckit\.plan$", "file": "payload.md"}
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(selector_pack / "preset.yml")
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), selector_pack, [*manifest.templates, second]
+    )
+    assert [entry["name"] for entry in expanded] == ["speckit.plan", "speckit.plan"]
+
+
+def test_command_regex_registration_tracks_and_cleans_only_concrete_names(project_dir):
+    (
+        project_dir / ".specify" / "templates" / "commands" / "speckit.plan.md"
+    ).write_text("# Plan\n", encoding="utf-8")
+    (
+        project_dir / ".specify" / "templates" / "commands" / "speckit.tasks.md"
+    ).write_text("# Tasks\n", encoding="utf-8")
+    commands_dir = project_dir / ".agents" / "commands"
+    commands_dir.mkdir(parents=True)
+    (project_dir / ".specify" / "init-options.json").write_text(
+        json.dumps({"ai": "amp", "ai_skills": False, "script": "sh"}),
+        encoding="utf-8",
+    )
+    source_dir = project_dir / "selector-source"
+    source_dir.mkdir()
+    source = write_selector_preset(
+        source_dir,
+        "command-selector",
+        r"regex:^speckit\.(plan|tasks)$",
+        priority=10,
+        resource_type="command",
+    )
+    # Core discovery in this isolated project uses the packaged command inventory.
+    manager = PresetManager(project_dir)
+    source = source_dir / ".specify" / "presets" / "command-selector"
+    manifest = manager.install_from_directory(source, "0.1.0")
+    metadata = manager.registry.get(manifest.id)
+    registered = metadata["registered_commands"]
+    tracked = {name for names in registered.values() for name in names}
+    expected = {f"speckit.{name}" for name in CORE_COMMAND_NAMES} & {
+        "speckit.plan",
+        "speckit.tasks",
+    }
+    assert tracked == expected
+    assert all(not name.startswith("regex:") for name in tracked)
+    files = list(commands_dir.iterdir())
+    assert files
+    assert all(path.exists() for path in files)
+    assert all(
+        path.name.startswith(("speckit.plan", "speckit.tasks")) for path in files
+    )
+    assert all(not path.name.startswith("regex:") for path in files)
+    manager.remove(manifest.id)
+
+
+def test_command_regex_zero_match_and_fullmatch(project_dir):
+    selector_pack = write_selector_preset(
+        project_dir,
+        "no-command-match",
+        r"regex:^missing\.command$",
+        priority=1,
+        resource_type="command",
+    )
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(selector_pack / "preset.yml")
+    assert (
+        manager._expand_command_selectors(
+            PresetResolver(project_dir), selector_pack, manifest.templates
+        )
+        == []
+    )
+
+
+def test_command_regex_and_exact_overlap_keep_only_concrete_names(project_dir):
+    write_selector_preset(
+        project_dir,
+        "overlap-selector",
+        r"regex:^speckit\.plan$",
+        priority=1,
+        resource_type="command",
+    )
+    selector_pack = project_dir / ".specify" / "presets" / "overlap-selector"
+    exact = {"type": "command", "name": "speckit.plan", "file": "commands/exact.md"}
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(selector_pack / "preset.yml")
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), selector_pack, [exact, *manifest.templates]
+    )
+    assert "regex:" not in " ".join(entry["name"] for entry in expanded)
+    assert [entry["name"] for entry in expanded].count("speckit.plan") == 2
+
+
+def test_command_regex_excludes_higher_preset_and_project_override(
+    project_dir, tmp_path
+):
+    # The selector is lower priority than both the higher preset and the project
+    # override. Neither may make a command eligible for selector expansion.
+    higher_pack = tmp_path / "higher"
+    write_command_declarations(
+        higher_pack,
+        "higher",
+        [
+            {
+                "type": "command",
+                "name": "speckit.higher",
+                "strategy": "replace",
+                "body": "# Higher command\n",
+            }
+        ],
+    )
+    install_selector_fixture(project_dir, "higher", higher_pack, 1)
+    selector_pack = tmp_path / "selector"
+    write_command_declarations(
+        selector_pack,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.(higher|override)$",
+                "strategy": "append",
+                "body": "# Selector addition\n",
+            }
+        ],
+    )
+    installed = install_selector_fixture(project_dir, "selector", selector_pack, 10)
+    override_dir = project_dir / ".specify" / "templates" / "overrides"
+    override_dir.mkdir(parents=True)
+    (override_dir / "speckit.override.md").write_text("# Project override\n")
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(installed / "preset.yml")
+
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir), installed, manifest.templates
+    )
+
+    assert expanded == []
+    assert (
+        PresetResolver(project_dir).collect_all_layers("speckit.higher", "command")[0][
+            "source"
+        ]
+        == "higher v1.0.0"
+    )
+    assert (
+        PresetResolver(project_dir).collect_all_layers("speckit.override", "command")[
+            0
+        ]["source"]
+        == "project override"
+    )
+
+
+@pytest.mark.parametrize("match_count", [2, 4])
+@pytest.mark.parametrize("strategies", [("replace",), ("append",), ("replace", "append")])
+def test_reconcile_caches_selector_inventory_per_preset(
+    project_dir, tmp_path, monkeypatch, match_count, strategies
+):
+    """Both reconciliation branches share one expansion per preset per operation."""
+    from specify_cli import save_init_options
+    from specify_cli.artifacts.catalog import ArtifactCatalog
+
+    output_root = project_dir / ".agents" / "commands"
+    output_root.mkdir(parents=True)
+    save_init_options(project_dir, {"ai": "amp", "ai_skills": False, "script": "sh"})
+    names = [f"speckit.cached{index}" for index in range(match_count)]
+    lower = write_command_declarations(
+        tmp_path / "lower",
+        "lower",
+        [
+            {"type": "command", "name": name, "strategy": "replace", "body": f"BASE {name}\n"}
+            for name in [*names, "speckit.unmatched"]
+        ],
+    )
+    install_selector_fixture(project_dir, "lower", lower, 20)
+    upper = write_command_declarations(
+        tmp_path / "upper",
+        "upper",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.cached(" + "|".join(
+                    str(index) for index in range(offset, match_count, len(strategies))
+                ) + ")$",
+                "strategy": strategy,
+                "body": f"OVERLAY {strategy}\n",
+            }
+            for offset, strategy in enumerate(strategies)
+        ],
+    )
+    install_selector_fixture(project_dir, "upper", upper, 10)
+    manager = PresetManager(project_dir)
+    scan_count = 0
+    list_artifacts = ArtifactCatalog.list_artifacts
+
+    def counted_inventory(catalog, *args, **kwargs):
+        nonlocal scan_count
+        scan_count += 1
+        return list_artifacts(catalog, *args, **kwargs)
+
+    monkeypatch.setattr(ArtifactCatalog, "list_artifacts", counted_inventory)
+    for operation in range(1, 3):
+        assert manager._reconcile_composed_commands(names) == set(names)
+        for index, name in enumerate(names):
+            strategy = strategies[index % len(strategies)]
+            content = (output_root / f"{name}.md").read_text()
+            assert f"OVERLAY {strategy}" in content
+            assert (f"BASE {name}" in content) == (strategy == "append")
+        assert not (output_root / "speckit.unmatched.md").exists()
+        assert scan_count == operation
+
+
+@pytest.mark.parametrize(
+    "agent,skills",
+    [("amp", False), ("claude", True), ("kimi", False), ("copilot", True)],
+)
+def test_selector_install_reregister_and_remove_restore_lower_command(
+    project_dir, tmp_path, agent, skills
+):
+    from specify_cli import save_init_options
+
+    directories = {
+        "amp": ".agents/commands",
+        "claude": ".claude/skills",
+        "kimi": ".kimi-code/skills",
+        "copilot": ".github/skills",
+    }
+    output_root = project_dir / directories[agent]
+    output_root.mkdir(parents=True, exist_ok=True)
+    save_init_options(project_dir, {"ai": agent, "ai_skills": skills, "script": "sh"})
+    lower = tmp_path / "lower-source"
+    lower.mkdir()
+    write_command_declarations(
+        lower,
+        "lower-command",
+        [
+            {
+                "type": "command",
+                "name": "speckit.plan",
+                "strategy": "replace",
+                "body": "LOWER COMMAND",
+            },
+        ],
+    )
+    upper = tmp_path / "upper-source"
+    upper.mkdir()
+    write_command_declarations(
+        upper,
+        "selector-command",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.plan$",
+                "strategy": "replace",
+                "body": "FIRST SELECTOR",
+            },
+            {
+                "type": "command",
+                "name": r"regex:speckit\.(plan|tasks)",
+                "strategy": "replace",
+                "body": "SECOND SELECTOR",
+            },
+        ],
+    )
+    manager = PresetManager(project_dir)
+    manager.install_from_directory(lower, "0.1.0", priority=20)
+    manager.install_from_directory(upper, "0.1.0", priority=10)
+    output = output_root / (
+        "speckit.plan.md" if agent == "amp" else "speckit-plan/SKILL.md"
+    )
+    assert "FIRST SELECTOR" in output.read_text()
+    assert "SECOND SELECTOR" not in output.read_text()
+    manager.register_enabled_presets_for_agent(agent)
+    assert "FIRST SELECTOR" in output.read_text()
+    assert "regex:" not in json.dumps(
+        manager.registry.get("selector-command")["registered_commands"]
+    )
+    manager.remove("selector-command")
+    assert "LOWER COMMAND" in output.read_text()
+
+
+@pytest.mark.parametrize(
+    "agent,skills",
+    [("amp", False), ("claude", True), ("copilot", True), ("copilot", False)],
+)
+def test_selector_tracks_the_concrete_matches_it_writes(project_dir, tmp_path, agent, skills):
+    """A selector materializes and tracks its concrete matches, never the raw pattern.
+
+    The overwrite-policy assertions this test used to make were removed together with
+    the ownership subsystem, which the maintainer asked to drop from this change.
+    """
+    from specify_cli import save_init_options
+
+    directories = {
+        "amp": ".agents/commands",
+        "claude": ".claude/skills",
+        "copilot": ".github/skills" if skills else ".github/agents",
+    }
+    root = project_dir / directories[agent]
+    root.mkdir(parents=True, exist_ok=True)
+    save_init_options(project_dir, {"ai": agent, "ai_skills": skills, "script": "sh"})
+    suffix = (
+        "-plan/SKILL.md"
+        if skills
+        else (".plan.agent.md" if agent == "copilot" else ".plan.md")
+    )
+    target = root / f"speckit{suffix}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source = write_command_declarations(
+        tmp_path / "source",
+        "guarded-selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.(plan|tasks)$",
+                "body": "SELECTOR BODY",
+                "strategy": "replace",
+            },
+        ],
+    )
+    manager = PresetManager(project_dir)
+    manager.install_from_directory(source, "0.1.0")
+    manager.register_enabled_presets_for_agent(agent)
+    metadata = manager.registry.get("guarded-selector")
+    tracked = [
+        name
+        for key in ("registered_commands", "registered_skills")
+        for names in metadata[key].values()
+        for name in names
+    ]
+    assert any("plan" in name for name in tracked)
+    assert any("tasks" in name for name in tracked)
+    assert "regex:" not in json.dumps(tracked)
+    assert "SELECTOR BODY" in target.read_text()
+    manager.remove("guarded-selector")
+    assert "SELECTOR BODY" not in target.read_text()
+
+
+@pytest.mark.parametrize("agent,skills", [("amp", False), ("copilot", True), ("claude", True)])
+def test_selector_refresh_keeps_available_matches_and_own_exact_command(project_dir, tmp_path, agent, skills):
+    """Losing one provider must not retire a surviving match or its exact replacement."""
+    from specify_cli import save_init_options
+
+    save_init_options(project_dir, {"ai": agent, "ai_skills": skills, "script": "sh"})
+    relative = {"amp": ".agents/commands", "copilot": ".github/skills", "claude": ".claude/skills"}[agent]
+    output_dir = project_dir / relative
+    output_dir.mkdir(parents=True)
+    extension = project_dir / ".specify/extensions/demo"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "commands/speckit.demo.collect.md").write_text("EXTENSION BASE\n")
+    registry = ExtensionRegistry(project_dir / ".specify/extensions")
+    registry.add("demo", {"enabled": True, "priority": 10, "version": "1.0.0"})
+    source = write_command_declarations(tmp_path / "source", "selector", [
+        {"type": "command", "name": r"regex:^speckit\.(demo\.collect|plan)$", "body": "SELECTOR BODY\n"},
+        {"type": "command", "name": "speckit.demo.collect", "body": "EXACT BODY\n"},
+    ])
+    manager = PresetManager(project_dir)
+    manager.install_from_directory(source, "0.1.0")
+    output = output_dir / ("speckit-demo-collect/SKILL.md" if skills else "speckit.demo.collect.md")
+    surviving = output_dir / ("speckit-plan/SKILL.md" if skills else "speckit.plan.md")
+    assert "SELECTOR BODY" in output.read_text()
+    assert "SELECTOR BODY" in surviving.read_text()
+
+    registry.update("demo", {"enabled": False})
+    # Reopen the manager to prove that prior matches survive between operations.
+    manager = PresetManager(project_dir)
+    manager.register_enabled_presets_for_agent(agent)
+
+    assert "EXACT BODY" in output.read_text()
+    assert "SELECTOR BODY" not in output.read_text()
+    assert "SELECTOR BODY" in surviving.read_text()
+    assert manager.registry.get("selector")["selector_commands"][agent] == ["speckit.plan"]
+
+
+def test_refresh_retires_names_whose_payload_disappeared(project_dir, temp_dir):
+    """A declaration with a missing payload is not a current match.
+
+    Copilot's open finding: after a selector lost its provider and a same-name exact
+    fallback pointed at a missing file, the unusable declaration still counted as
+    current, so ``stale`` stayed empty and the previously materialized command (or
+    skill) was left on disk.
+    """
+    from tests.specify_cli.presets._helpers import install_selector_fixture, write_command_declarations
+
+    pack = write_command_declarations(
+        temp_dir / "refresh-pack",
+        "refresh-pack",
+        [{"type": "command", "name": "speckit.foo", "body": "PAYLOAD\n"}],
+    )
+    install_selector_fixture(project_dir, "refresh-pack", pack, 10)
+    manager = PresetManager(project_dir)
+    modern_skill, legacy_skill = manager._skill_names_for_command("speckit.foo")
+    manager.registry.update(
+        "refresh-pack",
+        {
+            "registered_commands": {"copilot": ["speckit.foo"]},
+            "registered_skills": {"copilot": [modern_skill, legacy_skill]},
+            "selector_commands": {"copilot": ["speckit.foo"]},
+        },
+    )
+
+    # The payload is gone, so the declaration is unusable and must be retired.
+    (manager.presets_dir / "refresh-pack" / "command-0.md").unlink()
+    stale = manager._refresh_selector_matches(
+        "refresh-pack",
+        "copilot",
+        [{"type": "command", "name": "speckit.foo", "file": "command-0.md"}],
+    )
+
+    assert stale == {"speckit.foo"}
+    metadata = manager.registry.get("refresh-pack")
+    # Both reconciliation paths share this filter: the retired command and its
+    # skills must be dropped from tracking, not left because a same-name
+    # declaration exists without a payload.
+    assert metadata["registered_commands"].get("copilot", []) == []
+    assert metadata["registered_skills"].get("copilot", []) == []
+    assert metadata["selector_commands"]["copilot"] == []
+
+
+def test_unusable_exact_fallback_does_not_suppress_selector_warning(project_dir, tmp_path):
+    """The unmatched-selector warning survives a declared-but-missing fallback.
+
+    Suppressing it is only honest when the exact fallback actually materializes:
+    a missing payload registers nothing, so staying silent would hide that.
+    """
+    from specify_cli.presets._manifest import PresetManifest
+    from tests.specify_cli.presets._helpers import write_command_declarations
+
+    pack = write_command_declarations(
+        tmp_path / "warn-pack",
+        "warn-pack",
+        [
+            {"type": "command", "name": r"regex:^new$", "body": "SEL\n"},
+            {"type": "command", "name": "new", "body": "EXACT\n"},
+        ],
+    )
+    (pack / "command-1.md").unlink()
+    manifest = PresetManifest(pack / "preset.yml")
+    templates = [declaration for declaration in manifest.templates]
+    with pytest.warns(UserWarning, match="currently matches no command resources"):
+        PresetManager._warn_unmatched_command_selectors(manifest, templates, pack)
+
+
+@pytest.mark.parametrize("strategy", ["append", "prepend", "wrap"])
+def test_command_regex_expansion_requires_effective_replace_base(project_dir, strategy):
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    lower = write_diagnostic_selector_preset(
+        project_dir, "composition-only",
+        [{"type": "command", "name": "foo", "file": "commands/foo.md", "strategy": strategy}],
+    )
+    pack = write_diagnostic_selector_preset(
+        project_dir, "upper-selector",
+        [{"type": "command", "name": r"regex:^foo$", "file": "payload.md"}],
+    )
+    manager = PresetManager(project_dir)
+    manager.registry.update(lower.name, {"priority": 20})
+    manifest = PresetManifest(pack / "preset.yml")
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") is None
+    expanded = manager._expand_command_selectors(resolver, pack, manifest.templates)
+    assert expanded == []
+    with pytest.warns(UserWarning, match="currently matches no command resources"):
+        manager._warn_unmatched_command_selectors(manifest, expanded, pack)
+    manager._refresh_selector_matches(pack.name, "copilot", expanded)
+    assert manager.registry.get(pack.name)["selector_commands"]["copilot"] == []
+
+
+@pytest.mark.parametrize("missing_selector", [True, False])
+@pytest.mark.parametrize("usable_strategy", ["replace", "append"])
+def test_overlapping_composition_does_not_register_unusable_aliases(
+    project_dir, tmp_path, missing_selector, usable_strategy
+):
+    from specify_cli import save_init_options
+
+    output = project_dir / ".github" / "agents"
+    output.mkdir(parents=True)
+    save_init_options(project_dir, {"ai": "copilot", "ai_skills": False, "script": "sh"})
+    names = [r"regex:^speckit\.plan$", "speckit.plan"]
+    if not missing_selector:
+        names.reverse()
+    source = write_command_declarations(tmp_path / "overlap", "overlap", [
+        {"type": "command", "name": names[0], "strategy": "append",
+         "aliases": ["speckit.unusable"], "body": "MISSING BODY\n"},
+        {"type": "command", "name": names[1], "strategy": usable_strategy,
+         "aliases": ["speckit.usable"], "body": "USABLE BODY\n"},
+    ])
+    installed = install_selector_fixture(project_dir, "overlap", source, 1)
+    (installed / "command-0.md").unlink()
+    manager = PresetManager(project_dir)
+    manager.register_enabled_presets_for_agent("copilot")
+
+    assert not (output / "speckit.unusable.agent.md").exists()
+    assert "USABLE BODY" in (output / "speckit.plan.agent.md").read_text()
+    assert "USABLE BODY" in (output / "speckit.usable.agent.md").read_text()
+    tracked = manager.registry.get("overlap")["registered_commands"]["copilot"]
+    assert "speckit.unusable" not in tracked
+    assert "speckit.usable" in tracked

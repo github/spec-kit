@@ -1,6 +1,8 @@
 """Tests for preset layer resolution and composition in specify_cli.presets._resolver."""
 
 import json
+import re
+import warnings
 from pathlib import Path
 
 import pytest
@@ -9,13 +11,18 @@ import yaml
 from specify_cli.extensions import ExtensionRegistry
 from specify_cli.presets import (
     PresetManager,
+    PresetManifest,
     PresetRegistry,
     PresetResolver,
     PresetValidationError,
 )
 from tests.specify_cli.presets._helpers import (
     CORE_TEMPLATE_NAMES,
+    install_selector_fixture,
     install_self_test_preset,
+    write_command_declarations,
+    write_selector_contract_preset,
+    write_selector_preset,
 )
 
 
@@ -1800,3 +1807,1052 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_command_regex_matches_core_resource_only(project_dir):
+    write_selector_preset(
+        project_dir,
+        "regex-pack",
+        "regex:^speckit\.plan$",
+        priority=10,
+        strategy="append",
+    )
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    assert any(layer["source"].startswith("regex-pack") for layer in layers)
+    assert (
+        PresetResolver(project_dir).collect_all_layers("does-not-exist", "command")
+        == []
+    )
+
+
+def test_command_regex_matches_extension_resource(project_dir):
+    ext = project_dir / ".specify" / "extensions" / "demo"
+    (ext / "templates" / "commands").mkdir(parents=True)
+    (ext / "templates" / "commands" / "speckit.plan.md").write_text(
+        "extension base\n", encoding="utf-8"
+    )
+    write_selector_preset(
+        project_dir,
+        "regex-pack",
+        "regex:^speckit\.plan$",
+        priority=10,
+        strategy="append",
+    )
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    assert any(layer["source"].startswith("regex-pack") for layer in layers)
+
+
+def test_command_regex_matches_lower_priority_preset(project_dir):
+    write_selector_preset(
+        project_dir, "high", "regex:^speckit\.plan$", priority=1, strategy="append"
+    )
+    write_selector_preset(project_dir, "low", "speckit.plan", priority=10)
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    assert any(layer["source"].startswith("high") for layer in layers)
+    assert any(layer["source"].startswith("low") for layer in layers)
+
+
+def test_regex_does_not_match_higher_preset_or_create_resource(project_dir):
+    write_selector_preset(project_dir, "higher", "only-higher", priority=1)
+    write_selector_preset(project_dir, "lower", "regex:^only-higher$", priority=10)
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("only-higher", "command")
+    assert any(layer["source"].startswith("higher") for layer in layers)
+    assert not any(layer["source"].startswith("lower") for layer in layers)
+    assert resolver.collect_all_layers("does-not-exist", "command") == []
+    assert resolver.collect_all_layers("regex:^only-higher$", "command") == []
+
+
+def test_same_priority_regex_layers_follow_preset_id_order(project_dir):
+    # Registry tie-break is alphabetical ID; both selectors match the same core command.
+    write_selector_preset(
+        project_dir,
+        "zeta-regex",
+        "regex:^speckit.plan$",
+        priority=10,
+        strategy="append",
+        body="zeta\n",
+    )
+    write_selector_preset(
+        project_dir,
+        "alpha-regex",
+        "regex:^speckit.plan$",
+        priority=10,
+        strategy="append",
+        body="alpha\n",
+    )
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    regex_sources = [
+        layer["source"].split()[0] for layer in layers if "-regex" in layer["source"]
+    ]
+    assert regex_sources == ["alpha-regex", "zeta-regex"]
+
+
+def test_project_override_is_not_regex_lower_layer_proof(project_dir):
+    overrides = project_dir / ".specify" / "templates" / "overrides"
+    overrides.mkdir(parents=True)
+    (overrides / "speckit.foo.md").write_text("override\n", encoding="utf-8")
+    write_selector_preset(
+        project_dir,
+        "regex-pack",
+        "regex:^speckit.foo$",
+        priority=10,
+        strategy="append",
+    )
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("speckit.foo", "command")
+    assert [layer["source"] for layer in layers] == ["project override"]
+
+
+def test_project_override_does_not_hide_real_regex_lower_layer(project_dir):
+    overrides = project_dir / ".specify" / "templates" / "overrides"
+    overrides.mkdir(parents=True)
+    (overrides / "speckit.foo.md").write_text("override\n", encoding="utf-8")
+    write_selector_preset(
+        project_dir,
+        "regex-pack",
+        "regex:^speckit.foo$",
+        priority=10,
+        strategy="append",
+    )
+    core = project_dir / ".specify" / "templates" / "commands" / "speckit.foo.md"
+    core.parent.mkdir(parents=True, exist_ok=True)
+    core.write_text("core\n", encoding="utf-8")
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.foo", "command")
+    assert [layer["source"] for layer in layers] == [
+        "project override",
+        "regex-pack v1.0.0",
+        "core",
+    ]
+
+
+def test_exact_and_regex_layers_keep_existing_priority_composition(project_dir):
+    write_selector_preset(
+        project_dir,
+        "higher-regex",
+        "regex:^speckit.plan$",
+        priority=1,
+        strategy="append",
+        body="A\n",
+    )
+    write_selector_preset(
+        project_dir,
+        "higher-exact",
+        "speckit.plan",
+        priority=2,
+        strategy="prepend",
+        body="B\n",
+    )
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("speckit.plan", "command")
+    assert [layer["source"].split(" ")[0] for layer in layers[:2]] == [
+        "higher-regex",
+        "higher-exact",
+    ]
+    result = resolver.resolve_content("speckit.plan", "command")
+    assert result is not None and "A" in result and "B" in result
+
+
+def test_zero_match_is_non_fatal_and_has_no_layer(project_dir):
+    write_selector_preset(project_dir, "no-match", "regex:^missing-resource$", priority=10)
+    assert (
+        PresetResolver(project_dir).collect_all_layers("missing-resource", "command")
+        == []
+    )
+
+
+def _name(resource_type):
+    return (
+        "speckit.selector-contract"
+        if resource_type == "command"
+        else "selector-contract"
+    )
+
+
+def _assert_parity(
+    resolver, name, resource_type, expected_paths, expected_sources, content
+):
+    layers = resolver.collect_all_layers(name, resource_type)
+    assert [layer["path"] for layer in layers] == expected_paths
+    assert [layer["source"] for layer in layers] == expected_sources
+    assert resolver.resolve(name, resource_type) == expected_paths[0]
+    assert resolver.resolve_with_source(name, resource_type) == {
+        "path": str(expected_paths[0]),
+        "source": expected_sources[0],
+    }
+    assert resolver.resolve_content(name, resource_type) == content
+
+
+@pytest.mark.parametrize("resource_type", ["command"])
+@pytest.mark.parametrize("order", ["regex-exact", "exact-regex", "regex-regex"])
+def test_overlapping_declarations_share_manifest_order(tmp_path, resource_type, order):
+    name = _name(resource_type)
+    regex = f"regex:{re.escape(name)}"
+    names = {
+        "regex-exact": [regex, name],
+        "exact-regex": [name, regex],
+        "regex-regex": [regex, f"regex:^{re.escape(name)}$"],
+    }[order]
+    pack = write_selector_contract_preset(
+        tmp_path,
+        "selector",
+        [
+            (entry, resource_type, "replace", f"body-{index}")
+            for index, entry in enumerate(names)
+        ],
+    )
+    lower = write_selector_contract_preset(
+        tmp_path, "lower", [(name, resource_type, "replace", "base")], 10
+    )
+    suffix = "sh" if resource_type == "script" else "md"
+    _assert_parity(
+        PresetResolver(tmp_path),
+        name,
+        resource_type,
+        [
+            pack / f"payload-0.{suffix}",
+            pack / f"payload-1.{suffix}",
+            lower / f"payload-0.{suffix}",
+        ],
+        ["selector v1.0.0", "selector v1.0.0", "lower v1.0.0"],
+        "body-0",
+    )
+
+
+@pytest.mark.parametrize("resource_type", ["command"])
+@pytest.mark.parametrize("regex_first", [True, False])
+def test_exact_and_regex_compose_over_lower_without_deduplication(
+    tmp_path, resource_type, regex_first
+):
+    name = _name(resource_type)
+    names = [f"regex:{re.escape(name)}", name]
+    if not regex_first:
+        names.reverse()
+    placeholder = "$CORE_SCRIPT" if resource_type == "script" else "{CORE_TEMPLATE}"
+    pack = write_selector_contract_preset(
+        tmp_path,
+        "selector",
+        [
+            (entry, resource_type, "wrap", f"layer-{index}[{placeholder}]")
+            for index, entry in enumerate(names)
+        ],
+    )
+    lower = write_selector_contract_preset(
+        tmp_path, "lower", [(name, resource_type, "replace", "base")], 10
+    )
+    suffix = "sh" if resource_type == "script" else "md"
+    _assert_parity(
+        PresetResolver(tmp_path),
+        name,
+        resource_type,
+        [
+            pack / f"payload-0.{suffix}",
+            pack / f"payload-1.{suffix}",
+            lower / f"payload-0.{suffix}",
+        ],
+        ["selector v1.0.0", "selector v1.0.0", "lower v1.0.0"],
+        "layer-0[layer-1[base]]",
+    )
+
+
+@pytest.mark.parametrize("overlap", ["regex-exact", "regex-regex"])
+def test_overlaps_using_the_same_file_are_not_deduplicated(tmp_path, overlap):
+    name = _name("command")
+    pack = write_selector_contract_preset(
+        tmp_path,
+        "selector",
+        [
+            (f"regex:{name}", "command", "wrap", "overlay[{CORE_TEMPLATE}]"),
+            (
+                name if overlap == "regex-exact" else f"regex:^{name}$",
+                "command",
+                "wrap",
+                "unused",
+            ),
+        ],
+    )
+    manifest_path = pack / "preset.yml"
+    data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    data["provides"]["templates"][1]["file"] = "payload-0.md"
+    manifest_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    lower = write_selector_contract_preset(tmp_path, "lower", [(name, "command", "replace", "base")], 10)
+    _assert_parity(
+        PresetResolver(tmp_path),
+        name,
+        "command",
+        [pack / "payload-0.md", pack / "payload-0.md", lower / "payload-0.md"],
+        ["selector v1.0.0", "selector v1.0.0", "lower v1.0.0"],
+        "overlay[overlay[base]]",
+    )
+
+
+@pytest.mark.parametrize("missing", ["exact", "regex", "both"])
+def test_unusable_declarations_skip_to_the_first_usable_layer(tmp_path, missing):
+    name = _name("command")
+    pack = write_selector_contract_preset(
+        tmp_path,
+        "selector",
+        [
+            (
+                name,
+                "command",
+                "replace",
+                None if missing in {"exact", "both"} else "exact",
+            ),
+            (
+                f"regex:{name}",
+                "command",
+                "replace",
+                None if missing in {"regex", "both"} else "regex",
+            ),
+        ],
+    )
+    # A matching declaration still prevents a stray conventional file winning.
+    (pack / f"{name}.md").write_text("stray", encoding="utf-8")
+    lower = write_selector_contract_preset(tmp_path, "lower", [(name, "command", "replace", "base")], 10)
+    paths, sources = [], []
+    if missing not in {"exact", "both"}:
+        paths.append(pack / "payload-0.md")
+        sources.append("selector v1.0.0")
+    if missing not in {"regex", "both"}:
+        paths.append(pack / "payload-1.md")
+        sources.append("selector v1.0.0")
+    paths.append(lower / "payload-0.md")
+    sources.append("lower v1.0.0")
+    content = {"exact": "regex", "regex": "exact", "both": "base"}[missing]
+    _assert_parity(PresetResolver(tmp_path), name, "command", paths, sources, content)
+
+
+def test_own_exact_declaration_does_not_make_regex_eligible(tmp_path):
+    name = _name("command")
+    pack = write_selector_contract_preset(
+        tmp_path,
+        "selector",
+        [
+            (f"regex:{name}", "command", "replace", "ineligible"),
+            (name, "command", "replace", "exact"),
+        ],
+    )
+    _assert_parity(
+        PresetResolver(tmp_path),
+        name,
+        "command",
+        [pack / "payload-1.md"],
+        ["selector v1.0.0"],
+        "exact",
+    )
+
+
+INVALID_PATTERNS = [
+    pytest.param("[unterminated", re.error, id="grammar"),
+    pytest.param("a{999999999999999999999}", OverflowError, id="huge-repetition"),
+    pytest.param("(" * 2000 + "a" + ")" * 2000, RecursionError, id="deep-nesting"),
+]
+
+
+@pytest.mark.parametrize("pattern,compile_error", INVALID_PATTERNS)
+def test_malformed_selector_manifest_warns_once_but_unrelated_invalid_manifest_is_silent(
+    tmp_path, monkeypatch, pattern, compile_error
+):
+    from specify_cli.presets import _resolver
+
+    malformed = write_selector_contract_preset(
+        tmp_path, "malformed", [(f"regex:{pattern}", "command", "replace", "bad")]
+    )
+    errors = {}
+
+    def capture_validation_error(path):
+        try:
+            return PresetManifest(path)
+        except PresetValidationError as exc:
+            errors[path] = exc
+            raise
+
+    monkeypatch.setattr(_resolver, "PresetManifest", capture_validation_error)
+    invalid = write_selector_contract_preset(tmp_path, "invalid", [])
+    (invalid / "preset.yml").write_text("schema_version: invalid\n", encoding="utf-8")
+    resolver = PresetResolver(tmp_path)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert resolver._get_manifest(malformed) is None
+        assert resolver._get_manifest(malformed) is None
+        assert resolver._get_manifest(invalid) is None
+
+    assert len(caught) == 1
+    error = errors[malformed / "preset.yml"]
+    assert isinstance(error.__cause__, compile_error)
+    assert str(malformed / "preset.yml") in str(caught[0].message)
+    assert str(error) in str(caught[0].message)
+
+
+def test_exact_command_resolves_without_consulting_corrupt_extension_registry(tmp_path, monkeypatch):
+    name = "speckit.exact"
+    pack = write_selector_contract_preset(
+        tmp_path, "exact", [(name, "command", "replace", "EXACT BODY")]
+    )
+    extensions = tmp_path / ".specify" / "extensions"
+    extensions.mkdir()
+    (extensions / ".registry").write_text("{broken", encoding="utf-8")
+    resolver = PresetResolver(tmp_path)
+    assert resolver.resolve(name, "command") == pack / "payload-0.md"
+
+    def unexpected_scan():
+        pytest.fail("Exact declarations must not scan extensions")
+
+    monkeypatch.setattr(resolver, "_get_all_extensions_by_priority", unexpected_scan)
+    assert resolver.resolve(name, "command") == pack / "payload-0.md"
+
+
+@pytest.mark.parametrize(
+    "location,eligible",
+    [("commands", True), ("templates/commands", True), ("templates/templates/commands", False)],
+)
+def test_extension_conventional_command_locations_agree_with_selector_candidates(
+    tmp_path, location, eligible
+):
+    from specify_cli.presets._resolver import _conventional_command_names
+
+    name = "speckit.target.collect"
+    body = _extension(tmp_path, "target", f"{location}/{name}.md")
+    resolver = PresetResolver(tmp_path)
+    extension = resolver.extensions_dir / "target"
+
+    assert (name in _conventional_command_names(extension)) is eligible
+    assert resolver.resolve(name, "command") == (body if eligible else None)
+    assert resolver._extension_has_concrete_resource(extension, name, "command") is eligible
+
+
+@pytest.mark.parametrize("pattern,compile_error", INVALID_PATTERNS)
+def test_installed_malformed_selector_is_isolated_from_healthy_presets(
+    tmp_path, pattern, compile_error
+):
+    name = _name("command")
+    write_selector_contract_preset(
+        tmp_path, "malformed", [(f"regex:{pattern}", "command", "replace", "bad")]
+    )
+    healthy = write_selector_contract_preset(
+        tmp_path, "healthy", [(name, "command", "replace", "healthy")], 10
+    )
+    installed = {
+        entry["id"]: entry for entry in PresetManager(tmp_path).list_installed()
+    }
+    assert set(installed) == {"malformed", "healthy"}
+    assert installed["malformed"]["description"] == "⚠️ Corrupted preset"
+    assert installed["malformed"]["enabled"] is False
+    assert installed["healthy"]["enabled"] is True
+    _assert_parity(
+        PresetResolver(tmp_path),
+        name,
+        "command",
+        [healthy / "payload-0.md"],
+        ["healthy v1.0.0"],
+        "healthy",
+    )
+
+
+def _extension(project_dir, extension_id, filename, *, declared=False):
+    root = project_dir / ".specify" / "extensions" / extension_id
+    candidate = root / filename
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(f"# {extension_id} base\n", encoding="utf-8")
+    if declared:
+        (root / "extension.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": extension_id,
+                        "name": extension_id,
+                        "version": "1.0.0",
+                        "description": "resolver fixture",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": "speckit.target.collect",
+                                "file": filename,
+                                "description": "collect",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+    return candidate
+
+
+def _preset(project_dir, preset_id, declarations, *, priority=1):
+    root = project_dir / ".specify" / "presets" / preset_id
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "payload.md").write_text("overlay\n", encoding="utf-8")
+    (root / "preset.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": preset_id,
+                    "name": preset_id,
+                    "version": "1.0.0",
+                    "description": "resolver fixture",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"templates": declarations},
+            }
+        ),
+        encoding="utf-8",
+    )
+    PresetRegistry(root.parent).add(
+        preset_id, {"version": "1.0.0", "priority": priority, "enabled": True}
+    )
+    return root / "payload.md"
+
+
+@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize(
+    "filename,declared",
+    [
+        ("commands/target.collect.md", False),
+        ("templates/commands/target.collect.md", False),
+        ("commands/actual.md", True),
+        ("commands/speckit.target.collect.md", False),
+    ],
+)
+def test_each_extension_candidate_is_emitted_once_with_own_attribution(
+    project_dir, registered, filename, declared
+):
+    candidate = _extension(project_dir, "target", filename, declared=declared)
+    # An earlier unrelated orphan must not discover target's namespace fallback.
+    unrelated = project_dir / ".specify" / "extensions" / "aaa-orphan"
+    unrelated.mkdir()
+    if registered:
+        ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+            "target", {"enabled": True, "version": "1.0.0", "priority": 20}
+        )
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("speckit.target.collect", "command")
+    assert len(layers) == 1
+    assert layers[0]["path"] == candidate
+    assert layers[0]["extension_id"] == "target"
+    assert layers[0]["extension_dir"] == (
+        project_dir / ".specify" / "extensions" / "target"
+    )
+    assert layers[0]["source"] == (
+        "extension:target v1.0.0" if registered else "extension:target (unregistered)"
+    )
+    assert resolver.resolve("speckit.target.collect", "command") == candidate
+    assert (
+        resolver.resolve_content("speckit.target.collect", "command")
+        == "# target base\n"
+    )
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_disabled_namespace_is_never_revived_by_unrelated_extension(
+    project_dir, declared
+):
+    _extension(project_dir, "target", "commands/target.collect.md", declared=declared)
+    (project_dir / ".specify" / "extensions" / "aaa-orphan").mkdir()
+    registry = ExtensionRegistry(project_dir / ".specify" / "extensions")
+    registry.add("target", {"enabled": False, "version": "1.0.0"})
+    resolver = PresetResolver(project_dir)
+    assert resolver.collect_all_layers("speckit.target.collect", "command") == []
+    assert resolver.resolve("speckit.target.collect", "command") is None
+    assert resolver.resolve_content("speckit.target.collect", "command") is None
+
+
+@pytest.mark.parametrize("template_type", ["command", "template", "script"])
+def test_missing_manifest_command_never_falls_back_to_legacy_file(
+    project_dir, template_type
+):
+    candidate = _extension(
+        project_dir, "target", "commands/target.collect.md", declared=True
+    )
+    manifest_path = candidate.parents[1] / "extension.yml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["provides"]["commands"][0]["file"] = "commands/missing.md"
+    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    resolver = PresetResolver(project_dir)
+    assert resolver.collect_all_layers("speckit.target.collect", template_type) == []
+    assert resolver.resolve("speckit.target.collect", template_type) is None
+
+
+@pytest.mark.parametrize("template_type", ["template", "script"])
+def test_legacy_command_is_not_a_template_or_script_layer(project_dir, template_type):
+    _extension(project_dir, "target", "commands/target.collect.md")
+    resolver = PresetResolver(project_dir)
+    assert resolver.collect_all_layers("speckit.target.collect", template_type) == []
+    assert resolver.resolve("speckit.target.collect", template_type) is None
+    assert resolver.resolve_content("speckit.target.collect", template_type) is None
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_regex_eligibility_uses_enabled_legacy_namespace_base(project_dir, enabled):
+    candidate = _extension(project_dir, "target", "commands/target.collect.md")
+    ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+        "target", {"enabled": enabled, "version": "1.0.0"}
+    )
+    overlay = _preset(
+        project_dir,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.target\.collect$",
+                "file": "payload.md",
+                "strategy": "append",
+            }
+        ],
+    )
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("speckit.target.collect", "command")
+    if enabled:
+        assert [layer["path"] for layer in layers] == [overlay, candidate]
+        assert resolver.resolve("speckit.target.collect", "command") == overlay
+        assert resolver.resolve_content("speckit.target.collect", "command") == (
+            "# target base\n\n\noverlay\n"
+        )
+    else:
+        assert layers == []
+        assert resolver.resolve("speckit.target.collect", "command") is None
+        assert resolver.resolve_content("speckit.target.collect", "command") is None
+
+
+def test_distinct_providers_and_exact_regex_declarations_are_not_deduplicated(
+    project_dir,
+):
+    base = _extension(project_dir, "target", "commands/actual.md", declared=True)
+    other = _extension(project_dir, "other", "commands/actual.md", declared=True)
+    ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+        "target", {"enabled": True, "priority": 1, "version": "1.0.0"}
+    )
+    declarations = [
+        {
+            "type": "command",
+            "name": name,
+            "file": "payload.md",
+            "strategy": "append",
+        }
+        for name in ("speckit.target.collect", r"regex:^speckit\.target\.collect$")
+    ]
+    overlay = _preset(project_dir, "selector", declarations)
+    lower = _preset(project_dir, "lower", [declarations[0]], priority=2)
+    resolver = PresetResolver(project_dir)
+    layers = resolver.collect_all_layers("speckit.target.collect", "command")
+    assert [layer["path"] for layer in layers] == [overlay, overlay, lower, base, other]
+    assert resolver.resolve_content("speckit.target.collect", "command") == (
+        "# target base\n\n\noverlay\n\n\noverlay\n\n\noverlay\n"
+    )
+
+
+def test_lower_preset_conventional_templates_command_is_a_candidate(tmp_path):
+    """A lower preset's templates/commands/<name>.md must be discoverable.
+
+    _conventional_command_names and _expand_command_selectors both enumerate that
+    location, for lower presets as much as for extensions, so the shared
+    conventional lookup the eligibility check relies on has to agree with them.
+    Before the fix the file was enumerated as a candidate name but resolved to no
+    layer, so a selector that matched it materialized nothing.
+    """
+    from specify_cli.presets._resolver import PresetResolver
+
+    pack = tmp_path / ".specify" / "presets" / "lower"
+    (pack / "templates" / "commands").mkdir(parents=True)
+    body = pack / "templates" / "commands" / "speckit.lower.extra.md"
+    body.write_text("---\ndescription: lower\n---\nLOWER BODY\n", encoding="utf-8")
+
+    resolver = PresetResolver(tmp_path)
+
+    # The shared lookup resolves it, and the eligibility check agrees.
+    assert (
+        resolver._conventional_resource(pack, "speckit.lower.extra", "command") == body
+    )
+    assert resolver._has_concrete_resource(pack, "speckit.lower.extra", "command")
+
+    # The neighbouring conventional location keeps working.
+    (pack / "commands").mkdir()
+    flat = pack / "commands" / "speckit.lower.flat.md"
+    flat.write_text("---\ndescription: flat\n---\nFLAT BODY\n", encoding="utf-8")
+    assert (
+        resolver._conventional_resource(pack, "speckit.lower.flat", "command") == flat
+    )
+
+    # A missing resource stays missing.
+    assert (
+        resolver._conventional_resource(pack, "speckit.lower.absent", "command") is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("strategy", "overlay", "expected"),
+    [
+        ("replace", "# Preset replacement\n", "# Preset replacement"),
+        ("prepend", "# Preset prefix\n", "# Preset prefix\n\n\n# Core command"),
+        ("append", "# Preset suffix\n", "# Core command\n\n\n# Preset suffix"),
+        (
+            "wrap",
+            "# Wrapper start\n{CORE_TEMPLATE}\n# Wrapper end\n",
+            "# Wrapper start\n# Core command\n\n# Wrapper end",
+        ),
+    ],
+)
+def test_command_regex_composes_over_core_for_each_strategy(
+    project_dir, tmp_path, strategy, overlay, expected
+):
+    core_commands = project_dir / ".specify" / "templates" / "commands"
+    core_commands.mkdir(parents=True, exist_ok=True)
+    (core_commands / "plan.md").write_text("# Core command\n", encoding="utf-8")
+    pack_dir = tmp_path / "selector"
+    declaration = {
+        "type": "command",
+        "name": r"regex:^speckit\.plan$",
+        "strategy": strategy,
+        "body": overlay,
+    }
+    write_command_declarations(pack_dir, "selector", [declaration])
+    installed = install_selector_fixture(project_dir, "selector", pack_dir, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.plan", "command")
+
+    assert content is not None
+    assert content.strip() == expected.strip()
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    assert [layer["source"] for layer in layers] == ["selector v1.0.0", "core"]
+    assert layers[0]["path"] == installed / "command-0.md"
+
+
+def test_command_regex_expands_and_composes_over_extension_layer(project_dir, tmp_path):
+    extension = project_dir / ".specify" / "extensions" / "demo"
+    (extension / "commands").mkdir(parents=True)
+    (extension / "commands" / "speckit.demo.md").write_text(
+        "# Extension command\n", encoding="utf-8"
+    )
+    ExtensionRegistry(project_dir / ".specify" / "extensions").add(
+        "demo", {"enabled": True, "priority": 10, "version": "1.0"}
+    )
+    pack_dir = tmp_path / "selector"
+    write_command_declarations(
+        pack_dir,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.demo$",
+                "strategy": "append",
+                "body": "# Preset addition\n",
+            }
+        ],
+    )
+    install_selector_fixture(project_dir, "selector", pack_dir, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.demo", "command")
+
+    assert content == "# Extension command\n\n\n# Preset addition\n"
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.demo", "command")
+    assert [layer["source"] for layer in layers] == [
+        "selector v1.0.0",
+        "extension:demo v1.0",
+    ]
+
+
+def test_command_regex_expands_and_composes_over_lower_preset(project_dir, tmp_path):
+    lower_pack = tmp_path / "lower"
+    write_command_declarations(
+        lower_pack,
+        "lower",
+        [
+            {
+                "type": "command",
+                "name": "speckit.lower",
+                "strategy": "replace",
+                "body": "# Lower preset command\n",
+            }
+        ],
+    )
+    install_selector_fixture(project_dir, "lower", lower_pack, 10)
+    selector_pack = tmp_path / "selector"
+    write_command_declarations(
+        selector_pack,
+        "selector",
+        [
+            {
+                "type": "command",
+                "name": r"regex:^speckit\.lower$",
+                "strategy": "prepend",
+                "body": "# Selector prefix\n",
+            }
+        ],
+    )
+    install_selector_fixture(project_dir, "selector", selector_pack, 1)
+
+    content = PresetResolver(project_dir).resolve_content("speckit.lower", "command")
+
+    assert content == "# Selector prefix\n\n\n# Lower preset command\n"
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.lower", "command")
+    assert [layer["source"] for layer in layers] == [
+        "selector v1.0.0",
+        "lower v1.0.0",
+    ]
+
+
+def test_three_overlapping_command_regexes_keep_declaration_order_and_compose(
+    project_dir, tmp_path
+):
+    core_commands = project_dir / ".specify" / "templates" / "commands"
+    core_commands.mkdir(parents=True, exist_ok=True)
+    (core_commands / "plan.md").write_text("# Core command\n", encoding="utf-8")
+    pack_dir = tmp_path / "selector"
+    declarations = [
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.plan$",
+            "strategy": "prepend",
+            "body": "# Declared first\n",
+        },
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.p.*$",
+            "strategy": "append",
+            "body": "# Declared second\n",
+        },
+        {
+            "type": "command",
+            "name": r"regex:^speckit\.pla.*n$",
+            "strategy": "wrap",
+            "body": "# Declared third start\n{CORE_TEMPLATE}\n# Declared third end\n",
+        },
+    ]
+    write_command_declarations(pack_dir, "selector", declarations)
+    install_selector_fixture(project_dir, "selector", pack_dir, 1)
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(
+        project_dir / ".specify" / "presets" / "selector" / "preset.yml"
+    )
+
+    expanded = manager._expand_command_selectors(
+        PresetResolver(project_dir),
+        project_dir / ".specify" / "presets" / "selector",
+        manifest.templates,
+    )
+    layers = PresetResolver(project_dir).collect_all_layers("speckit.plan", "command")
+    content = PresetResolver(project_dir).resolve_content("speckit.plan", "command")
+
+    assert [entry["name"] for entry in expanded] == [
+        "speckit.plan",
+        "speckit.plan",
+        "speckit.plan",
+    ]
+    assert [layer["path"].name for layer in layers] == [
+        "command-0.md",
+        "command-1.md",
+        "command-2.md",
+        "plan.md",
+    ]
+    assert content is not None
+    assert content.index("Declared first") < content.index("Declared third start")
+    assert content.index("Declared third start") < content.index("Core command")
+    assert content.index("Core command") < content.index("Declared third end")
+    assert content.index("Declared third end") < content.index("Declared second")
+
+
+def test_ineligible_selector_declaration_does_not_create_its_conventional_payload(
+    project_dir,
+):
+    """A selector that matches no lower provider must not fabricate the resource.
+
+    Copilot's previously-missed finding: an ineligible matching selector was
+    collapsed to nothing, which callers read as "undeclared" and then satisfied
+    through the convention lookup. A declaration whose payload sits at the
+    conventional location ``commands/foo.md`` therefore resolved that file even
+    though no lower ``foo`` command exists, so the selector created the very
+    resource it was only meant to augment.
+    """
+    from specify_cli.presets import PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "selector-no-lower",
+        [{"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"}],
+    )
+    resolver = PresetResolver(project_dir)
+    pack = project_dir / ".specify" / "presets" / "selector-no-lower"
+
+    declarations = resolver._preset_declarations_for_resource(pack, "foo", "command")
+    assert declarations, "the matching declaration must be preserved, not dropped"
+    assert [candidate for _declaration, candidate in declarations] == [None]
+    assert resolver.resolve("foo", "command") is None
+    assert resolver.collect_all_layers("foo", "command") == []
+
+
+def test_unmatched_selector_payload_is_not_evidence_for_a_higher_selector(project_dir):
+    """Selector declarations must not chain through their own conventional payload.
+
+    A lower preset declaring ``regex:^foo$`` with its payload at ``commands/foo.md``
+    was discovered by the convention lookup, so it counted as a concrete lower
+    resource and made a higher ``regex:^foo$`` eligible - even though the contract
+    forbids using another selector declaration as evidence of existence.
+    """
+    from specify_cli.presets import PresetRegistry, PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    for preset_id in ("selector-lower", "selector-higher"):
+        write_diagnostic_selector_preset(
+            project_dir,
+            preset_id,
+            [{"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"}],
+        )
+    registry = PresetRegistry(project_dir / ".specify" / "presets")
+    registry.add("selector-lower", {"enabled": True, "priority": 20, "version": "1.0.0"})
+    registry.add("selector-higher", {"enabled": True, "priority": 10, "version": "1.0.0"})
+
+    resolver = PresetResolver(project_dir)
+    presets_dir = project_dir / ".specify" / "presets"
+    assert (
+        resolver._has_concrete_resource(presets_dir / "selector-lower", "foo", "command")
+        is False
+    )
+    higher = resolver._preset_declarations_for_resource(
+        presets_dir / "selector-higher", "foo", "command"
+    )
+    assert [candidate for _declaration, candidate in higher] == [None]
+    assert resolver.resolve("foo", "command") is None
+
+
+@pytest.mark.parametrize(
+    "middle_strategy,middle_file",
+    [(None, None), ("replace", "payload.md"), ("replace", "commands/foo.md"),
+     ("append", "commands/foo.md")],
+)
+def test_composition_only_lower_declaration_is_not_a_selector_base(
+    project_dir, middle_strategy, middle_file
+):
+    """A lower layer that only composes cannot make a selector eligible.
+
+    A lower preset declaring a name with ``append`` and nothing below it to replace
+    produces no content (``resolve_content`` returns ``None``), so the name does not
+    exist as a command. Treating it as a concrete base let an upper ``replace``
+    selector create a name that never existed below.
+    """
+    from specify_cli.presets import PresetRegistry, PresetResolver
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    write_diagnostic_selector_preset(
+        project_dir,
+        "append-only-lower",
+        [{"type": "command", "name": "foo", "file": "commands/foo.md", "strategy": "append"}],
+    )
+    write_diagnostic_selector_preset(
+        project_dir,
+        "upper-selector",
+        [
+            {"type": "command", "name": "foo", "file": "commands/foo.md"},
+            {"type": "command", "name": r"regex:^foo$", "file": "commands/foo.md"},
+        ],
+    )
+    registry = PresetRegistry(project_dir / ".specify" / "presets")
+    registry.add("append-only-lower", {"enabled": True, "priority": 20, "version": "1.0.0"})
+    registry.add("upper-selector", {"enabled": True, "priority": 10, "version": "1.0.0"})
+    if middle_strategy is not None:
+        write_diagnostic_selector_preset(
+            project_dir,
+            "middle-selector",
+            [{"type": "command", "name": r"regex:^foo$",
+              "file": middle_file, "strategy": middle_strategy}],
+        )
+        registry.add("middle-selector", {"enabled": True, "priority": 15, "version": "1.0.0"})
+
+    resolver = PresetResolver(project_dir)
+    assert (
+        resolver._has_effective_replace_base("foo", "command", below_pack_id="upper-selector")
+        is False
+    )
+    declarations = resolver._preset_declarations_for_resource(
+        project_dir / ".specify" / "presets" / "upper-selector", "foo", "command"
+    )
+    # The exact declaration still resolves; the selector contributes no layer.
+    assert [candidate is not None for _declaration, candidate in declarations] == [True, False]
+
+    if middle_strategy is not None:
+        middle = resolver._preset_declarations_for_resource(
+            project_dir / ".specify" / "presets" / "middle-selector", "foo", "command"
+        )
+        assert [candidate for _declaration, candidate in middle] == [None]
+        assert all("middle-selector" not in layer["source"]
+                   for layer in resolver.collect_all_layers("foo", "command"))
+
+
+@pytest.mark.parametrize("preset_count", [4, 8, 12])
+def test_selector_base_scan_has_bounded_declaration_evaluations(project_dir, monkeypatch, preset_count):
+    """A grid of append selectors must not recursively rescan every suffix."""
+    name = "complexity-command"
+    write_selector_contract_preset(
+        project_dir, "base", [(name, "command", "replace", "BASE\n")], 100
+    )
+    for index in range(preset_count):
+        write_selector_contract_preset(
+            project_dir, f"selector-{index}",
+            [(f"regex:^{name}$", "command", "append", f"APPEND {index}\n"),
+             ("regex:^complexity-.*$", "command", "append", f"EXTRA {index}\n")],
+            index + 1,
+        )
+    resolver = PresetResolver(project_dir)
+    evaluate = resolver._preset_declarations_for_resource
+    evaluations = 0
+
+    def counted(*args, **kwargs):
+        nonlocal evaluations
+        evaluations += 1
+        return evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(resolver, "_preset_declarations_for_resource", counted)
+    layers = resolver.collect_all_layers(name, "command")
+    assert len(layers) == 2 * preset_count + 1
+    print(f"selector presets={preset_count}: declaration evaluations={evaluations}")
+    assert evaluations <= preset_count + 1
+    content = resolver.resolve_content(name, "command")
+    assert "BASE" in content
+    for index in range(preset_count):
+        assert f"APPEND {index}\n" in content
+        assert f"EXTRA {index}\n" in content
+
+
+@pytest.mark.parametrize("declared", [True, False], ids=["declared", "conventional"])
+def test_selector_base_honors_command_frontmatter(project_dir, declared):
+    """Legacy append payloads cannot establish a command for a selector."""
+    from tests.specify_cli.presets._helpers import write_diagnostic_selector_preset
+
+    entry = {"name": "foo", "type": "command", "file": "commands/foo.md"}
+    lower = write_diagnostic_selector_preset(project_dir, "lower", [entry] if declared else [])
+    payload = lower / "commands/foo.md"
+    payload.parent.mkdir(exist_ok=True)
+    payload.write_text("---\nstrategy: append\n---\nLOWER\n", encoding="utf-8")
+    registry = PresetRegistry(project_dir / ".specify/presets")
+    registry.update("lower", {"priority": 10})
+    assert PresetResolver(project_dir).resolve_content("foo", "command") is None
+    write_selector_contract_preset(
+        project_dir, "upper", [("regex:^foo$", "command", "replace", "UPPER\n")]
+    )
+
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") is None
+    assert [layer["source"] for layer in resolver.collect_all_layers("foo", "command")] == ["lower v1.0.0"]
+
+    # Explicit manifest strategy wins over legacy frontmatter. An earlier exact
+    # append or missing payload in the stack must not hide the usable replace.
+    write_selector_contract_preset(
+        project_dir, "middle-append", [("foo", "command", "append", "MIDDLE\n")], 5
+    )
+    write_selector_contract_preset(
+        project_dir, "middle-missing", [("foo", "command", "replace", None)], 6
+    )
+    data = yaml.safe_load((lower / "preset.yml").read_text())
+    data["provides"]["templates"] = [{**entry, "strategy": "replace"}]
+    (lower / "preset.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    resolver = PresetResolver(project_dir)
+    assert resolver.resolve_content("foo", "command") == "UPPER\n"
+    assert [layer["strategy"] for layer in resolver.collect_all_layers("foo", "command")] == [
+        "replace", "append", "replace",
+    ]

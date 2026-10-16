@@ -20,6 +20,7 @@ def preset_resolve(
     """Show which template will be resolved for a given name."""
     from .. import _require_specify_project
     from . import PresetResolver
+    from ._selectors import is_regex_selector
 
     is_command = "." in template_name
     valid_name = (
@@ -38,9 +39,13 @@ def preset_resolve(
 
     project_root = _require_specify_project()
     resolver = PresetResolver(project_root)
+    # Preserve exact-template precedence for dotless names, falling back to the
+    # command surface so command-only names still expose selector attribution.
     template_type = "command" if is_command else "template"
-
     layers = resolver.collect_all_layers(template_name, template_type)
+    if not is_command and not layers:
+        template_type = "command"
+        layers = resolver.collect_all_layers(template_name, template_type)
     safe_template_name = _escape_markup(str(template_name))
 
     if layers:
@@ -55,6 +60,18 @@ def preset_resolve(
             f"    [dim](top layer from: "
             f"{_escape_markup(str(display_layer['source']))})[/dim]"
         )
+        # Selector attribution: when the winning layer was produced by a
+        # ``regex:`` declaration, name the declaration that matched this
+        # concrete resource. The acceptance criteria require resolution
+        # diagnostics, not only ``preset info``, to expose selector matches.
+        display_declaration = display_layer.get("declaration")
+        if isinstance(display_declaration, str) and is_regex_selector(
+            display_declaration
+        ):
+            console.print(
+                f"    [dim](declaration {_escape_markup(display_declaration)} "
+                f"matched {safe_template_name})[/dim]"
+            )
 
         has_composition = layers[0]["strategy"] != "replace" and any(
             layer["strategy"] != "replace" for layer in layers
@@ -95,13 +112,21 @@ def preset_resolve(
                 strategy_label = layer["strategy"]
                 if strategy_label == "replace" and i == 0:
                     strategy_label = "base"
+                # Attribute a selector-contributed layer to its declaration so a
+                # stack trace explains *why* the layer is present.
+                declaration = layer.get("declaration")
+                attribution = (
+                    f" (via {_escape_markup(str(declaration))})"
+                    if isinstance(declaration, str) and is_regex_selector(declaration)
+                    else ""
+                )
                 # Escape the literal bracket (\[) so Rich renders `[<strategy>]`
                 # instead of parsing it as a style tag and swallowing the label,
                 # mirroring `workflow info`'s step-graph line.
                 console.print(
                     f"    {i + 1}. \\[{_escape_markup(str(strategy_label))}] "
                     f"{_escape_markup(str(layer['source']))} → "
-                    f"{_escape_markup(str(layer['path']))}"
+                    f"{_escape_markup(str(layer['path']))}{attribution}"
                 )
     else:
         # No layers found — fall back to resolve_with_source for non-composition cases

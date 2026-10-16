@@ -2805,3 +2805,157 @@ class TestWrapStrategy:
 
         # Preset's scripts must not be overwritten by core
         assert preset_fm["scripts"] == {"sh": "preset-run.sh"}
+
+
+def test_reconcile_skills_keeps_winning_selector_declaration(project_dir):
+    """Concrete-name filtering must retain the expanded winning selector."""
+    from specify_cli import save_init_options
+    from tests.specify_cli.presets._helpers import write_selector_preset as _write_preset
+
+    save_init_options(project_dir, {"ai": "copilot", "ai_skills": True, "script": "sh"})
+    output = project_dir / ".github/skills/speckit-plan/SKILL.md"
+    output.parent.mkdir(parents=True)
+    output.write_text("---\nmetadata:\n  source: preset:selector\n---\nOLD BODY\n")
+    _write_preset(project_dir, "selector", r"regex:^speckit\.plan$", priority=1, body="WINNING SELECTOR\n")
+    manager = PresetManager(project_dir)
+    manager.registry.update("selector", {"registered_skills": {"copilot": ["speckit-plan"]}})
+
+    written = manager._reconcile_skills(["speckit.plan"], target_agent="copilot")
+
+    assert written == {"speckit.plan"}
+    assert "WINNING SELECTOR" in output.read_text()
+    assert "OLD BODY" not in output.read_text()
+
+
+def test_install_regex_commands_registers_concrete_ai_skills(project_dir):
+    from specify_cli import save_init_options
+
+    (project_dir / ".claude" / "skills").mkdir(parents=True)
+    save_init_options(
+        project_dir,
+        {"ai": "claude", "ai_skills": True, "script": "sh"},
+    )
+    source_dir = project_dir / "source"
+    source_dir.mkdir()
+    source = source_dir / "skill-selector"
+    source.mkdir()
+    (source / "commands").mkdir()
+    (source / "commands" / "override.md").write_text(
+        "---\ndescription: Preset override\n---\n\nConcrete selector skill.\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": "1.0",
+        "preset": {
+            "id": "skill-selector",
+            "name": "Skill selector",
+            "version": "1.0.0",
+            "description": "AI skills selector fixture",
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "templates": [
+                {
+                    "type": "command",
+                    "name": r"regex:^speckit\.(plan|tasks)$",
+                    "file": "commands/override.md",
+                    "strategy": "replace",
+                }
+            ]
+        },
+    }
+    (source / "preset.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+
+    manager = PresetManager(project_dir)
+    installed = manager.install_from_directory(source, "0.1.0")
+
+    metadata = manager.registry.get(installed.id)
+    assert metadata is not None
+    assert metadata["registered_commands"]
+    skill_names = {
+        name for names in metadata["registered_skills"].values() for name in names
+    }
+    assert skill_names == {"speckit-plan", "speckit-tasks"}
+    for skill_name in skill_names:
+        skill_file = project_dir / ".claude" / "skills" / skill_name / "SKILL.md"
+        assert skill_file.is_file()
+        assert "Concrete selector skill." in skill_file.read_text(encoding="utf-8")
+    assert all(
+        not name.startswith("regex:")
+        for names in metadata["registered_commands"].values()
+        for name in names
+    )
+
+
+def test_remove_disabled_selector_restores_lower_preset_ai_skill(project_dir, monkeypatch):
+    from specify_cli import save_init_options
+    from specify_cli.presets.command_disable import preset_disable
+    from tests.specify_cli.presets._helpers import write_command_declarations
+
+    save_init_options(project_dir, {"ai": "copilot", "ai_skills": True, "script": "sh"})
+    manager = PresetManager(project_dir)
+    for preset_id, name, priority, body in (
+        ("lower", "speckit.plan", 10, "LOWER PRESET"),
+        ("upper", r"regex:^speckit\.plan$", 1, "UPPER SELECTOR"),
+    ):
+        source = write_command_declarations(
+            project_dir / "source" / preset_id, preset_id,
+            [{"name": name, "type": "command", "strategy": "replace", "body": body}],
+        )
+        manager.install_from_directory(source, "0.1.5", priority=priority)
+
+    output = project_dir / ".github/skills/speckit-plan/SKILL.md"
+    assert "UPPER SELECTOR" in output.read_text()
+    metadata = manager.registry.get("upper")
+    assert not metadata.get("registered_commands")
+    assert metadata["selector_commands"] == {"copilot": ["speckit.plan"]}
+
+    monkeypatch.chdir(project_dir)
+    preset_disable("upper")
+    manager = PresetManager(project_dir)
+    assert manager.registry.get("upper")["enabled"] is False
+    assert "UPPER SELECTOR" in output.read_text()
+    assert manager.remove("upper") is True
+    content = output.read_text()
+    assert "LOWER PRESET" in content
+    assert "preset:lower" in content
+    assert "UPPER SELECTOR" not in content
+    assert not manager.registry.is_installed("upper")
+
+
+def test_skills_ignore_stale_composition_after_selector_falls_back_to_exact(project_dir):
+    from specify_cli import save_init_options
+    from specify_cli.presets import PresetManifest
+    from tests.specify_cli.presets._helpers import write_selector_contract_preset
+
+    save_init_options(project_dir, {"ai": "claude", "ai_skills": True, "script": "sh"})
+    (project_dir / ".claude" / "skills").mkdir(parents=True)
+    name = "speckit.fallback"
+    lower = write_selector_contract_preset(
+        project_dir, "lower", [(name, "command", "replace", "LOWER BODY\n")], 10
+    )
+    pack = write_selector_contract_preset(
+        project_dir,
+        "selector",
+        [
+            (r"regex:^speckit\.fallback$", "command", "prepend", "SELECTOR BODY\n"),
+            (name, "command", "replace", "EXACT FALLBACK\n"),
+        ],
+    )
+    manager = PresetManager(project_dir)
+    manifest = PresetManifest(pack / "preset.yml")
+    manager._register_commands(manifest, pack)
+    manager._register_skills(manifest, pack)
+    output = project_dir / ".claude" / "skills" / "speckit-fallback" / "SKILL.md"
+    assert "SELECTOR BODY" in output.read_text()
+    assert "EXACT FALLBACK" in output.read_text()
+    composed = pack / ".composed" / f"{name}.md"
+    assert "SELECTOR BODY" in composed.read_text()
+
+    (lower / "payload-0.md").unlink()
+    manager._register_commands(manifest, pack)
+    manager._register_skills(manifest, pack)
+
+    assert "EXACT FALLBACK" in output.read_text()
+    assert "SELECTOR BODY" not in output.read_text()
+    assert "LOWER BODY" not in output.read_text()

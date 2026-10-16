@@ -12,6 +12,7 @@ from .._installed_info_json import preset_info_item
 from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
 from .._project import resolve_specify_project_root
 from ._commands import preset_app
+from ._manifest import PresetValidationError
 
 
 @preset_app.command("info", cls=InstalledListJSONCommand)
@@ -65,6 +66,19 @@ def preset_info(
     # Check if installed locally first
     manager = PresetManager(project_root)
     local_pack = manager.get_pack(preset_id)
+    if local_pack is None and manager.registry.is_installed(preset_id):
+        # Installed but unreadable — for example a `regex:` selector rejected
+        # by the selector safety boundary. ``get_pack`` keeps its Optional
+        # contract so the listing/inventory paths stay usable, so surface the
+        # precise validation reason here rather than reporting the preset as
+        # missing.
+        from ._manifest import PresetManifest
+
+        try:
+            PresetManifest(manager.presets_dir / preset_id / "preset.yml")
+        except PresetValidationError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1) from exc
 
     if local_pack:
         console.print(
@@ -79,12 +93,33 @@ def preset_info(
         if isinstance(local_tags, list) and local_tags:
             tags_str = _escape_markup(", ".join(str(t) for t in local_tags))
             console.print(f"  Tags:        {tags_str}")
+        from ._selectors import is_regex_selector
+        from ._resolver import PresetResolver
+
+        resolver = PresetResolver(project_root)
+        preset_dir = manager.presets_dir / local_pack.id
         console.print(f"  Templates:   {len(local_pack.templates)}")
         for tmpl in local_pack.templates:
             tmpl_name = _escape_markup(str(tmpl["name"]))
             tmpl_type = _escape_markup(str(tmpl["type"]))
             tmpl_desc = _escape_markup(str(tmpl.get("description", "")))
             console.print(f"    - {tmpl_name} ({tmpl_type}): {tmpl_desc}")
+            if (
+                tmpl.get("type") == "command"
+                and isinstance(tmpl.get("name"), str)
+                and is_regex_selector(tmpl["name"])
+            ):
+                matches = manager._expand_command_selectors(
+                    resolver, preset_dir, [tmpl]
+                )
+            else:
+                matches = []
+            if is_regex_selector(str(tmpl.get("name", ""))):
+                if matches:
+                    for match in matches:
+                        console.print(f"      - {_escape_markup(str(match['name']))}")
+                else:
+                    console.print("      [dim]No current matches[/dim]")
         repo = local_pack.data.get("preset", {}).get("repository")
         if repo:
             console.print(f"  Repository:  {_escape_markup(str(repo))}")
