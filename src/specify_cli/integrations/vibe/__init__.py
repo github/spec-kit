@@ -10,12 +10,12 @@ import logging
 import os
 import re
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
-from .._file_changes import unlink as _unlink_file, write_text as _write_text
+from .._file_changes import unlink as _unlink_file, write_bytes as _write_bytes
 from ..manifest import IntegrationManifest
 from ..._toml_string import escape_toml_basic
 from ..._utils import dump_frontmatter
@@ -39,6 +39,21 @@ FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
 VIBE_EVENT_TIMEOUT_BUFFER = 5
 
 logger = logging.getLogger(__name__)
+
+
+def _toml_physical_lines(source: str) -> Iterator[str]:
+    """Yield TOML physical lines, preserving their original terminators.
+
+    TOML recognizes LF and CRLF only.  In particular, Python's ``splitlines``
+    would incorrectly treat bare CR and Unicode line-separator characters as
+    physical line boundaries.
+    """
+    start = 0
+    while (newline := source.find("\n", start)) >= 0:
+        yield source[start:newline + 1]
+        start = newline + 1
+    if start < len(source):
+        yield source[start:]
 
 
 class VibeIntegration(SkillsIntegration):
@@ -344,7 +359,7 @@ class VibeIntegration(SkillsIntegration):
         array_depth = 0
         offset = 0
 
-        for line in source.splitlines(keepends=True):
+        for line in _toml_physical_lines(source):
             content = line.rstrip("\r\n")
             index = 0
             code_end = len(content)
@@ -547,7 +562,8 @@ class VibeIntegration(SkillsIntegration):
             return False
         ensure_safe_destination(path)
         try:
-            existing = path.read_text(encoding="utf-8")
+            with path.open(encoding="utf-8", newline="") as file:
+                existing = file.read()
         except (OSError, UnicodeDecodeError) as exc:
             logger.warning(
                 "Could not read %s (it may be unreadable or not UTF-8); "
@@ -570,7 +586,7 @@ class VibeIntegration(SkillsIntegration):
         if not non_comment_content:
             _unlink_file(path, missing_ok=True)
             return True
-        _write_text(path, cleaned, encoding="utf-8")
+        _write_bytes(path, cleaned.encode("utf-8"))
         return False
 
     def _merge_managed_hooks(
@@ -589,7 +605,8 @@ class VibeIntegration(SkillsIntegration):
         existing = ""
         if path.exists():
             try:
-                existing = path.read_text(encoding="utf-8")
+                with path.open(encoding="utf-8", newline="") as file:
+                    existing = file.read()
             except (OSError, UnicodeDecodeError) as exc:
                 logger.warning(
                     "Could not read %s (it may be unreadable or not UTF-8); "
@@ -602,5 +619,5 @@ class VibeIntegration(SkillsIntegration):
         if cleaned is None:
             return False
         path.parent.mkdir(parents=True, exist_ok=True)
-        _write_text(path, cleaned.rstrip() + "\n\n" + fragment + "\n", encoding="utf-8")
+        _write_bytes(path, (cleaned.rstrip() + "\n\n" + fragment + "\n").encode("utf-8"))
         return True

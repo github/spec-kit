@@ -229,6 +229,27 @@ class TestVibeTomlMerging:
         (hook,) = self._parse(tmp_path)["hooks"]
         assert hook["match"] == f"re:{matcher}"
 
+    @pytest.mark.parametrize("separator", ("\u0085", "\u2028", "\u2029"))
+    def test_generated_matcher_unicode_separator_lifecycle(self, tmp_path, separator):
+        """Unicode separators in TOML strings do not split managed hook spans."""
+        matcher = f"Edit{separator}Write"
+        integration, _ = self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.tdd.validate", "matcher": matcher}],
+        })
+        assert self._parse(tmp_path)["hooks"][0]["match"] == f"re:{matcher}"
+
+        self._install(tmp_path, {
+            "pre_tool_use": [{"command": "speckit.review.verify", "matcher": matcher}],
+        })
+        (hook,) = self._parse(tmp_path)["hooks"]
+        assert hook["name"] == "speckit-pre_tool-verify"
+        assert hook["match"] == f"re:{matcher}"
+
+        assert integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        ) is True
+        assert not (tmp_path / ".vibe" / "hooks.toml").exists()
+
     def test_toml_quote_round_trips_special_characters(self):
         value = 'quote: " backslash: \\ newline: \n carriage: \r tab: \t nul: \x00 unit: \x1f del: \x7f'
         quoted = VibeIntegration._toml_quote(value)
@@ -293,6 +314,29 @@ class TestVibeTomlMerging:
         remaining = self._parse(tmp_path)["hooks"]
         assert [h["name"] for h in remaining] == ["deny-rm-rf"]
 
+    @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
+    def test_merge_preserves_user_physical_line_bytes(self, tmp_path, newline):
+        """A native Windows write must not expand retained CRLF to CRCRLF."""
+        user_content = (
+            f"[[hooks]]{newline}"
+            f'name = "user-hook"{newline}'
+            f'type = "pre_tool"{newline}'
+            f'command = "guard-bash"'
+        )
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_bytes((user_content + newline).encode("utf-8"))
+
+        self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
+
+        merged = path.read_bytes()
+        assert merged.startswith(user_content.encode("utf-8") + b"\n\n")
+        assert b"\r\r\n" not in merged
+        assert [hook["name"] for hook in self._parse(tmp_path)["hooks"]] == [
+            "user-hook",
+            "speckit-pre_tool-validate",
+        ]
+
     def test_merge_preserves_user_command_with_marker_text(self, tmp_path):
         """A marker-looking command string does not claim a user hook block."""
         config_path = tmp_path / ".vibe" / "hooks.toml"
@@ -308,6 +352,37 @@ class TestVibeTomlMerging:
         self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
 
         assert user_block in config_path.read_text(encoding="utf-8")
+        assert [hook["name"] for hook in self._parse(tmp_path)["hooks"]] == [
+            "user-hook",
+            "speckit-pre_tool-validate",
+        ]
+
+    @pytest.mark.parametrize("separator", ("\u0085", "\u2028", "\u2029"))
+    def test_comment_unicode_separator_cannot_spoof_marker(self, tmp_path, separator):
+        """Only TOML LF and CRLF can end a comment for ownership scanning."""
+        user_block = (
+            "[[hooks]]\n"
+            'name = "user-hook"\n'
+            'type = "pre_tool"\n'
+            f"# user note{separator}speckit_marker = true\n"
+            'command = "guard-bash"\n'
+        )
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        original = user_block.encode()
+        path.write_bytes(original)
+        mtime_ns = 1_700_000_000_123_456_789
+        os.utime(path, ns=(mtime_ns, mtime_ns))
+
+        integration = get_integration("vibe")
+        assert integration.remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        ) is False
+        assert path.read_bytes() == original
+        assert path.stat().st_mtime_ns == mtime_ns
+
+        self._install(tmp_path, {"pre_tool_use": [{"command": "speckit.tdd.validate"}]})
+        assert user_block in path.read_bytes().decode("utf-8")
         assert [hook["name"] for hook in self._parse(tmp_path)["hooks"]] == [
             "user-hook",
             "speckit-pre_tool-validate",
@@ -451,6 +526,28 @@ class TestVibeTomlNoOpRemoval:
         assert removed_file is False
         self._assert_untouched(path, original, original_mtime_ns)
 
+    @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
+    def test_removal_recognizes_valid_marker_with_toml_line_endings(self, tmp_path, newline):
+        """Removal uses both TOML line endings without expanding retained CRLF."""
+        managed = (
+            f"[[hooks]]{newline}"
+            f"name = \"managed\"{newline}"
+            f"speckit_marker = true{newline}"
+        )
+        user = (
+            f"[[hooks]]{newline}"
+            f"name = \"user-hook\"{newline}"
+            f"command = \"guard-bash\"{newline}"
+        )
+        path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
+
+        removed_file = get_integration("vibe").remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_bytes() == user.encode()
+
     def test_removal_preserves_marker_inside_multiline_strings(self, tmp_path):
         integration = get_integration("vibe")
         for name, delimiter in (("basic", '"""'), ("literal", "'''")):
@@ -588,8 +685,13 @@ class TestVibeTomlNoOpRemoval:
                 "[other]\n"
                 'keep = "\u4fdd\u7559"\n'
             ).encode(),
+            (
+                "[[hooks]]\r"
+                'name = "user-hook"\r'
+                "speckit_marker = true\r"
+            ).encode(),
         ],
-        ids=("marker-like-array", "bare-invalid-text"),
+        ids=("marker-like-array", "bare-invalid-text", "bare-cr"),
     )
     def test_malformed_toml_leaves_removal_and_merge_unowned_and_untouched(
         self, tmp_path, original
