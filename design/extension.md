@@ -226,13 +226,16 @@ integration operation.
 ### Update
 
 Update discovery compares the installed registry version with the winning
-catalog release and the bundled copy, while enforcing Spec Kit compatibility.
-Exact catalog releases remain bound to the winning catalog source.
+install-enabled catalog release and any required bundled copy. It does not
+filter candidates for Spec Kit compatibility, so an incompatible release may
+still be offered. Exact catalog releases remain bound to the winning catalog
+source.
 
-Before mutation, the update command preflights the replacement archive and
-backs up the extension directory, registry entry, eligible configuration,
-hook projection, command files, skills, and symlinks. A failed destructive
-update attempts to restore the prior package and all tracked outputs. Backup
+After selection and before mutation, the update command preflights the
+replacement archive, including manifest and Spec Kit compatibility checks, and
+backs up the extension directory, registry entry, eligible configuration, hook
+projection, command files, skills, and symlinks. A failed destructive update
+attempts to restore the prior package and all tracked outputs. Backup
 directories are unique per attempt; cleanup failures leave an isolated backup
 and produce a warning rather than contradicting a committed or restored state.
 
@@ -300,10 +303,14 @@ order is:
 3. enabled extensions in registry priority order; then
 4. core assets.
 
-An extension manifest declaration is authoritative. A declared but missing or
-unsafe file is not silently replaced by a conventionally named file. For
-legacy compatibility, undeclared files under `commands/`, `templates/`, or
-`scripts/` may still be discovered by convention.
+A successfully loaded and validated extension manifest declaration is
+authoritative. A declared but missing or unsafe file is not silently replaced
+by a conventionally named file. For legacy compatibility, an absent,
+unreadable, or invalid manifest reopens conventional lookup, as does a valid
+manifest that does not declare the requested artifact. Commands and scripts
+are searched under `commands/` and `scripts/`; templates are searched under
+`templates/` and at the extension root. Consequently, an undeclared root-level
+template can precede a core template.
 
 Extension layers always use `replace` semantics. Artifact listing and info
 project their manifest provenance, active stack entry, concrete source path,
