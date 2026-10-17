@@ -79,6 +79,10 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
+If Spec Kit is already installed, `uv tool install specify-cli` keeps the installed
+version. Check with `specify version`, and if it's older, run
+`uv tool install --force specify-cli` before `specify init`.
+
 <a id="-supported-ai-coding-agent-integrations"></a>
 
 The examples use **GitHub Copilot's default skills mode**. Replace `copilot` with
