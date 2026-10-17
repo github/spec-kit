@@ -151,6 +151,7 @@ class _PresetSkillMethods:
         # directory-independent, so it's computed once and then applied to
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
+        composed_winners: Dict[str, str] = {}
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
         reconciled_skill_commands: set[str] = set()
@@ -195,6 +196,8 @@ class _PresetSkillMethods:
                 pack_dir = self.presets_dir / pack_id
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
+                    if layers[0]["strategy"] != "replace":
+                        composed_winners[cmd_name] = pack_id
                     found_preset = True
                     break
             if not found_preset:
@@ -394,16 +397,21 @@ class _PresetSkillMethods:
         extra_dirs = extra_skills_dirs or {}
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
-            if extra_skills_dirs is None or active_provenance:
+            active_names: Optional[Set[str]] = None
+            if extra_skills_dirs is not None:
+                # Removal restores only skills the removed preset still owned,
+                # but a surviving preset composing over a removed lower layer
+                # owns its skill: recompose it while it keeps that marker.
+                active_names = set(active_provenance[1]) if active_provenance else set()
+                active_names |= self._skills_owned_by_preset(
+                    active_skills_dir, composed_winners
+                )
+            if active_names is None or active_names:
                 apply_to_dir(
                     active_skills_dir,
                     active_ai,
                     is_active=True,
-                    managed_names=(
-                        set(active_provenance[1])
-                        if active_provenance
-                        else None
-                    ),
+                    managed_names=active_names,
                 )
 
         for extra_dir, (extra_agent, extra_names) in extra_dirs.items():
@@ -417,6 +425,31 @@ class _PresetSkillMethods:
             )
 
         return reconciled_skill_commands
+
+    def _skills_owned_by_preset(
+        self, skills_dir: Path, owners: Dict[str, str]
+    ) -> Set[str]:
+        """Return skills in ``skills_dir`` whose source marker names their preset.
+
+        ``owners`` maps command names to the expected owning preset id.
+        """
+        registrar = self._command_registrar()
+        owned: Set[str] = set()
+        for cmd_name, pack_id in owners.items():
+            for skill_name in self._skill_names_for_command(cmd_name):
+                skill_file = skills_dir / skill_name / "SKILL.md"
+                if not self._validate_skill_subdir(
+                    skill_file.parent, create=False, skills_root=skills_dir
+                ) or not skill_file.is_file():
+                    continue
+                try:
+                    content = skill_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                metadata = registrar.parse_frontmatter(content)[0].get("metadata")
+                if isinstance(metadata, dict) and metadata.get("source") == f"preset:{pack_id}":
+                    owned.add(skill_name)
+        return owned
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""

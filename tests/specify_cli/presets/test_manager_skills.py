@@ -1897,6 +1897,97 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "---\nname: speckit-specify\n---\n\nUser-owned body\n"
         )
 
+    def _install_composed_specify_stack(self, project_dir, temp_dir, layers):
+        """Install ``(preset_id, body, strategy, priority)`` layers for speckit.specify."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-specify")
+        (project_dir / ".specify" / "templates" / "commands" / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in layers:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.specify", preset_id, body
+            )
+            if strategy != "replace":
+                manifest_path = preset_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text())
+                manifest["provides"]["templates"][0]["strategy"] = strategy
+                manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+        return manager, project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+
+    def test_remove_base_preset_recomposes_surviving_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removing a composition's base layer must recompose the surviving skill.
+
+        The appending preset owns the composed SKILL.md, so removing the
+        replace preset beneath it restored nothing in the active skills
+        directory and reconciliation skipped it: the skill kept the removed
+        preset's body while command-file agents were recomposed onto core.
+        """
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" in content and "Appended body" in content
+
+        assert manager.remove("base-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Core specify body" in content
+        assert "Appended body" in content
+        assert "preset:append-preset" in content
+
+    def test_remove_middle_preset_drops_its_layer_from_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removing a middle composing layer must drop its fragment from the skill."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+        assert "Middle body" in skill_file.read_text(encoding="utf-8")
+
+        assert manager.remove("middle-preset") is True
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Middle body" not in content
+        assert "Base preset body" in content
+        assert "Top body" in content
+
+    def test_remove_base_preset_preserves_hand_edited_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """Recomposition after removal must not overwrite a hand-edited skill."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        edited = "---\nname: speckit-specify\n---\n\nUser-owned body\n"
+        skill_file.write_text(edited, encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        assert skill_file.read_text(encoding="utf-8") == edited
+
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
     ):
