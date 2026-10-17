@@ -81,6 +81,22 @@ def extension_enable(
                 f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1) from exc
+    else:
+        # `integration use`/`switch` register only enabled extensions for the
+        # agent they activate, and `switch` removes a disabled extension's
+        # commands from the old one, so an extension disabled at that point has
+        # no commands for the now-active agent. Register them; an agent that
+        # still has them is left untouched.
+        active_ai = init_options.get("ai")
+        registered = metadata.get("registered_commands")
+        if (
+            isinstance(active_ai, str)
+            and active_ai
+            and not (isinstance(registered, dict) and registered.get(active_ai))
+        ):
+            manager.register_enabled_extensions_for_agent(
+                active_ai, extension_ids={extension_id}
+            )
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()

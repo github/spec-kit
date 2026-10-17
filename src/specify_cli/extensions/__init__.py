@@ -3924,7 +3924,13 @@ class ExtensionManager:
 
         return removed
 
-    def register_enabled_extensions_for_agent(self, agent_name: str, *, force: bool = False) -> None:
+    def register_enabled_extensions_for_agent(
+        self,
+        agent_name: str,
+        *,
+        force: bool = False,
+        extension_ids: Optional[Set[str]] = None,
+    ) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
         Command-file registration is scoped to the explicit ``agent_name``
@@ -3932,6 +3938,8 @@ class ExtensionManager:
         ``switch`` activate the target first; ``upgrade`` calls it only for
         the active integration), so extension skill rendering — scoped to the
         active ``ai`` / ``ai_skills`` init-options — matches ``agent_name``.
+
+        ``extension_ids``, when given, limits registration to those extensions.
         """
         if not agent_name:
             return
@@ -3970,6 +3978,8 @@ class ExtensionManager:
             agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
         for ext_id, metadata in self.registry.list().items():
+            if extension_ids is not None and ext_id not in extension_ids:
+                continue
             if not metadata.get("enabled", True):
                 continue
 
