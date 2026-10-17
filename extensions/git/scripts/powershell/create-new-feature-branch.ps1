@@ -528,7 +528,7 @@ if (-not $DryRun) {
             if ($existingBranch) {
                 # An explicit GIT_BRANCH_NAME naming the checked-out branch is
                 # already satisfied, so treat it like -AllowExistingBranch.
-                if ($AllowExistingBranch -or ($env:GIT_BRANCH_NAME -and $currentBranch -eq $branchName)) {
+                if ($AllowExistingBranch -or ($env:GIT_BRANCH_NAME -and $currentBranch -ceq $branchName)) {
                     if ($currentBranch -eq $branchName) {
                         # Already on the target branch
                     } else {

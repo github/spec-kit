@@ -942,6 +942,28 @@ class TestCreateFeaturePowerShell:
         assert data["BRANCH_NAME"] == "jdoe/2026-app/042-custom-branch"
         assert data["FEATURE_NUM"] == "042"
 
+    def test_git_branch_name_override_naming_current_branch_is_noop(self, tmp_path: Path):
+        """PowerShell GIT_BRANCH_NAME equal to the checked-out branch exits 0 without switching."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", "feature/PROJ-42-login"],
+            cwd=project, check=True,
+        )
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "login", "Login page",
+            env_extra={"GIT_BRANCH_NAME": "feature/PROJ-42-login"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "feature/PROJ-42-login"
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == "feature/PROJ-42-login"
+
     def test_git_branch_name_override_without_feature_marker_preserves_full_name(self, tmp_path: Path):
         """PowerShell keeps the full override name when no feature marker exists."""
         project = _setup_project(tmp_path / "app-a")
