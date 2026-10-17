@@ -569,7 +569,9 @@ if [ "$DRY_RUN" != true ]; then
         if ! branch_create_error=$(git checkout -q -b "$BRANCH_NAME" 2>&1); then
             current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
             if git branch --list "$BRANCH_NAME" | grep -q .; then
-                if [ "$ALLOW_EXISTING" = true ]; then
+                # An explicit GIT_BRANCH_NAME naming the checked-out branch is
+                # already satisfied, so treat it like --allow-existing-branch.
+                if [ "$ALLOW_EXISTING" = true ] || { [ -n "${GIT_BRANCH_NAME:-}" ] && [ "$current_branch" = "$BRANCH_NAME" ]; }; then
                     if [ "$current_branch" = "$BRANCH_NAME" ]; then
                         :
                     elif ! switch_branch_error=$(git checkout -q "$BRANCH_NAME" 2>&1); then

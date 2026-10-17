@@ -379,6 +379,38 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
         assert json.loads(p.stdout) == {"BRANCH_NAME": "team/042-exact-name", "FEATURE_NUM": "042"}
 
+    def test_git_branch_name_override_naming_current_branch_is_noop(
+        self, tmp_path: Path
+    ):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        env = {"GIT_BRANCH_NAME": "feature/PROJ-42-login"}
+        for proj in (bash_proj, py_proj):
+            subprocess.run(
+                ["git", "checkout", "-q", "-b", "feature/PROJ-42-login"],
+                cwd=proj, check=True,
+            )
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "desc word", env_extra=env)
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "desc word", env_extra=env)
+        _assert_parity(b, p)
+        assert p.returncode == 0, p.stderr
+        assert json.loads(p.stdout) == {
+            "BRANCH_NAME": "feature/PROJ-42-login",
+            "FEATURE_NUM": "feature/PROJ-42-login",
+        }
+
+    def test_git_branch_name_override_naming_other_existing_branch_fails(
+        self, tmp_path: Path
+    ):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        env = {"GIT_BRANCH_NAME": "feature/other"}
+        for proj in (bash_proj, py_proj):
+            subprocess.run(["git", "branch", "feature/other"], cwd=proj, check=True)
+        b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "desc word", env_extra=env)
+        p = _run_py("create-new-feature-branch", py_proj, "--json", "desc word", env_extra=env)
+        _assert_parity(b, p)
+        assert p.returncode == 1
+        assert "already exists" in p.stderr
+
     def test_git_branch_name_override_persist_hint_matches_bash(
         self, tmp_path: Path
     ):
