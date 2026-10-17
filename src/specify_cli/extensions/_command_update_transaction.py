@@ -407,10 +407,17 @@ def run_update_command(extension: str | None) -> None:
                     # already exists, and remember paths that are absent now so
                     # rollback can remove files created before registry state is
                     # available. Include aliases and Copilot companion prompts.
-                    for (
-                        agent_name,
-                        commands_dir,
-                    ) in manager._command_registration_targets().items():
+                    command_targets = manager._command_registration_targets()
+                    for agent_name, cmd_names in registered_commands.items():
+                        if cmd_names and agent_name in registrar.AGENT_CONFIGS:
+                            command_targets.setdefault(
+                                agent_name,
+                                _AgentReg._resolve_agent_dir(
+                                    agent_name, registrar.AGENT_CONFIGS[agent_name],
+                                    project_root,
+                                ),
+                            )
+                    for agent_name, commands_dir in command_targets.items():
                         agent_config = registrar.AGENT_CONFIGS[agent_name]
                         for command_name in new_command_names:
                             output_name = _AgentReg._compute_output_name(
@@ -556,6 +563,37 @@ def run_update_command(extension: str | None) -> None:
                         speckit_version,
                         catalog_name=update.catalog_name,
                     )
+
+                    # An update replaces an existing installation. Keep the
+                    # integrations that held commands before removal, even
+                    # when they are not the current default integration.
+                    if registered_commands:
+                        new_metadata = manager.registry.get(extension_id)
+                        if not isinstance(new_metadata, dict):
+                            raise RuntimeError(
+                                f"Registry entry for '{extension_id}' missing after install"
+                            )
+                        refreshed_commands = dict(new_metadata.get("registered_commands", {}))
+                        missing_agents = [
+                            agent_name for agent_name, cmd_names in registered_commands.items()
+                            if cmd_names and agent_name not in refreshed_commands
+                            and agent_name in registrar.AGENT_CONFIGS
+                        ]
+                        if missing_agents:
+                            manifest = manager.get_extension(extension_id)
+                            if manifest is None:
+                                raise RuntimeError(f"Extension '{extension_id}' missing after install")
+                            for agent_name in missing_agents:
+                                rendered = registrar.register_commands_for_agent(
+                                    agent_name, manifest,
+                                    manager.extensions_dir / extension_id, project_root,
+                                )
+                                if rendered:
+                                    refreshed_commands[agent_name] = rendered
+                            if refreshed_commands != new_metadata.get("registered_commands", {}):
+                                manager.registry.update(
+                                    extension_id, {"registered_commands": refreshed_commands}
+                                )
 
                     # Restore user config files from backup after successful install.
                     new_extension_dir = manager.extensions_dir / extension_id
