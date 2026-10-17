@@ -1171,6 +1171,98 @@ class TestTomlNoOpMerge:
         assert not config_path.exists()
 
 
+class TestJsonNoOpRemoval:
+    """An empty resolved event map must leave a JSON native config that holds
+    no Specify-owned entries untouched, as #4563 did for Codex's TOML.
+
+    Every ``specify extension add/remove/enable/disable/update`` refreshes
+    events. With no events configured, the refresh takes
+    ``install_integration_events``'s empty-map branch into the JSON removal
+    helpers, which rewrote the user's file even when there was nothing to
+    strip: re-indenting it, dropping empty lists, or deleting ``{}`` outright.
+    """
+
+    # Hand-formatted user configs with a user hook and an empty list that a
+    # rewrite would drop, and no Specify-owned entries.
+    USER_CONFIGS = {
+        "claude": (
+            ".claude/settings.json",
+            b'{\n\t"hooks": {"Notification": [], "Stop": [{"hooks": '
+            b'[{"type": "command", "command": "./user-hook.sh"}]}]}\n}',
+        ),
+        "copilot": (
+            ".github/hooks/speckit.json",
+            b'{"version": 1, "hooks": {"agentStop": [], "sessionStart": '
+            b'[{"type": "command", "bash": "./user-hook.sh"}]}}',
+        ),
+        "cursor-agent": (
+            ".cursor/hooks.json",
+            b'{"version": 1, "hooks": {"afterFileEdit": [], "stop": '
+            b'[{"command": "./user-hook.sh"}]}}',
+        ),
+        "devin": (
+            ".devin/hooks.v1.json",
+            b'{"Stop": [], "SessionStart": [{"matcher": "", "hooks": '
+            b'[{"type": "command", "command": "./user-hook.sh"}]}]}',
+        ),
+        "opencode": (
+            "opencode.json",
+            b'{"instructions": [], "plugin": ["./user-hook.ts"]}',
+        ),
+    }
+
+    def _write_user_config(self, tmp_path, key, content=None):
+        rel, original = self.USER_CONFIGS[key]
+        config_path = tmp_path / rel
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_bytes(original if content is None else content)
+        return config_path
+
+    @pytest.mark.parametrize("key", sorted(USER_CONFIGS))
+    def test_no_events_leaves_user_config_untouched(self, tmp_path, key):
+        config_path = self._write_user_config(tmp_path, key)
+        original = config_path.read_bytes()
+        mtime_before = config_path.stat().st_mtime_ns
+
+        install_integration_events(
+            get_integration(key), tmp_path, _claude_manifest(tmp_path), {}
+        )
+
+        assert config_path.read_bytes() == original
+        assert config_path.stat().st_mtime_ns == mtime_before
+
+    @pytest.mark.parametrize("key", sorted(USER_CONFIGS))
+    def test_no_events_keeps_empty_user_config(self, tmp_path, key):
+        config_path = self._write_user_config(tmp_path, key, content=b"{}")
+
+        install_integration_events(
+            get_integration(key), tmp_path, _claude_manifest(tmp_path), {}
+        )
+
+        assert config_path.read_bytes() == b"{}"
+
+    @pytest.mark.parametrize("key", sorted(USER_CONFIGS))
+    def test_no_events_still_strips_owned_entries(self, tmp_path, key):
+        """The guard must not defeat cleanup when owned entries exist."""
+        integration = get_integration(key)
+        config_path = self._write_user_config(tmp_path, key)
+        install_integration_events(
+            integration, tmp_path, _claude_manifest(tmp_path),
+            {"session_start": [{"command": "speckit.boot"}]},
+        )
+        merged = config_path.read_text(encoding="utf-8")
+        assert "__speckit_event__" in merged or "speckit-events.ts" in merged
+
+        install_integration_events(
+            integration, tmp_path, _claude_manifest(tmp_path), {}
+        )
+
+        cleaned = config_path.read_text(encoding="utf-8")
+        assert "__speckit_event__" not in cleaned
+        assert "speckit-events.ts" not in cleaned
+        assert "./user-hook." in cleaned
+
+
 # -- Opencode TS Plugin merging ---------------------------------------------
 
 class TestOpencodePluginMerging:
