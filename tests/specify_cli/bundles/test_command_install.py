@@ -147,6 +147,37 @@ def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: P
     assert not (project / ".specify" / "workflows" / "bugfix").exists()
 
 
+def test_local_bundle_with_non_positive_priority_is_rejected_before_any_install(
+    project: Path,
+):
+    """A priority the preset installer refuses must fail before earlier components install."""
+    bundle_dir = project / "zero-priority"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(
+            valid_manifest_dict(
+                provides={
+                    "extensions": [
+                        {"id": "bug", "version": bundled_extension_version("bug")}
+                    ],
+                    "presets": [
+                        {"id": "lean", "version": "1.0.0", "priority": 0, "strategy": "replace"}
+                    ],
+                }
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(bundle_dir), "--offline"])
+
+    assert result.exit_code == 1
+    assert "preset 'lean' priority must be 1 or higher, got 0" in " ".join(
+        result.output.split()
+    )
+    assert not (project / ".specify" / "extensions").exists()
+
+
 def test_local_bundle_refuses_unbundled_workflow_offline(project: Path):
     bundle_dir = project / "unbundled-workflow"
     (bundle_dir / "bundle.yml").parent.mkdir()
