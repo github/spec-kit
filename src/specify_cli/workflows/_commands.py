@@ -79,6 +79,27 @@ def _fail_workflow_execution(
     raise typer.Exit(1) from exc
 
 
+def _fail_recorded_run(
+    exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
+) -> None:
+    """Report *exc* as the run's outcome when the engine recorded it as one.
+
+    ``WorkflowEngine.execute``/``resume`` persist an exception raised while
+    steps run (an expression error, say) as the run's ``failed`` status and
+    error before re-raising it. Errors raised before that point, such as
+    input validation or a refused resume, record nothing, so this returns and
+    the caller reports them as before.
+    """
+    if (
+        state is not None
+        and getattr(state.status, "value", state.status) == "failed"
+        and state.error == str(exc)
+    ):
+        _fail_workflow_execution(
+            exc, json_output=json_output, state=state, resume=resume
+        )
+
+
 def _open_workflow_registry(project_root: Path, out=None):
     """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
 
