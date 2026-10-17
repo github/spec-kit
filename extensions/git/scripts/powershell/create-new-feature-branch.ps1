@@ -526,7 +526,9 @@ if (-not $DryRun) {
             try { $currentBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim() } catch {}
             $existingBranch = git branch --list $branchName 2>$null
             if ($existingBranch) {
-                if ($AllowExistingBranch) {
+                # An explicit GIT_BRANCH_NAME naming the checked-out branch is
+                # already satisfied, so treat it like -AllowExistingBranch.
+                if ($AllowExistingBranch -or ($env:GIT_BRANCH_NAME -and $currentBranch -eq $branchName)) {
                     if ($currentBranch -eq $branchName) {
                         # Already on the target branch
                     } else {
