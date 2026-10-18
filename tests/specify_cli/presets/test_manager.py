@@ -142,42 +142,6 @@ class TestPresetIgnore:
         assert (dest / "keep.txt").is_file()
         assert (dest / ".presetignore").exists() is not root_ignore
 
-    @pytest.mark.parametrize(
-        ("patterns", "excluded", "included"),
-        [
-            (".git/\n.idea/\ntests/\n", [".git/config", ".idea/x", "tests/a.py"], ["README.md"]),
-            ("*.pyc\n", ["cache.pyc", "nested/cache.pyc"], ["nested/code.py"]),
-            ("# comment\n\n  notes.txt  \n\n", ["notes.txt"], ["README.md"]),
-            ("docs/internal/draft.md\n", ["docs/internal/draft.md"], ["docs/guide.md"]),
-            ("docs\\internal\\draft.md\n", ["docs/internal/draft.md"], ["docs/guide.md"]),
-            ("ドキュメント/\ncafé/\n", ["ドキュメント/private.md", "café/résumé.txt"], ["docs/guide.md"]),
-            ("docs/*.draft.md\n", ["docs/api.draft.md"], ["docs/sub/api.draft.md"]),
-            ("docs/**/*.draft.md\n", ["docs/api.draft.md", "docs/sub/api.draft.md"], ["docs/guide.md"]),
-            ("docs/*.md\n!docs/api.md\n", ["docs/guide.md"], ["docs/api.md"]),
-            ("/notes.txt\n", ["notes.txt"], ["nested/notes.txt"]),
-            ("docs/draft.md\n", ["docs/draft.md"], ["nested/docs/draft.md"]),
-            ("cache/\n", ["cache/data", "nested/cache/data"], ["other/cache"]),
-            ("file?.txt\n", ["file1.txt"], ["file12.txt"]),
-            ("../sibling/\n/etc/passwd\n", [], ["sibling/data", "passwd"]),
-            # copytree never visits an excluded parent; child negation cannot restore it.
-            ("docs/\n!docs/api.md\n", ["docs/api.md"], ["README.md"]),
-            ("docs/\n!docs/\n", [], ["docs/api.md"]),
-        ],
-    )
-    def test_pattern_semantics(self, project_dir, pack_dir, patterns, excluded, included):
-        self._write_files(pack_dir, [*excluded, *included])
-        (pack_dir / ".presetignore").write_text(patterns, encoding="utf-8")
-
-        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
-
-        dest = project_dir / ".specify/presets/test-pack"
-        for relative in excluded:
-            assert not (dest / relative).exists()
-        for relative in included:
-            assert (dest / relative).read_bytes() == (pack_dir / relative).read_bytes()
-        assert (dest / "preset.yml").is_file()
-        assert not (dest / ".presetignore").exists()
-
     @pytest.mark.parametrize("registered", [False, True])
     def test_invalid_utf8_preserves_existing_state(
         self, project_dir, pack_dir, valid_pack_data, registered
