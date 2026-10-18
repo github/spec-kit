@@ -45,6 +45,49 @@ may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
+### Exclude development files with `.presetignore`
+
+Place a UTF-8 `.presetignore` beside `preset.yml` in the preset source root to
+filter files copied into `.specify/presets/<id>/`. For example:
+
+```gitignore
+# Development-only directories
+.git/
+.idea/
+tests/
+```
+
+Filtering applies to local directory installs and extracted archives, including
+reinstalls and replacements installed by `preset update`. Without
+`.presetignore`, all source files are copied as before. **`.gitignore` is not
+used for installation filtering**, and there are no implicit exclusions for
+development files.
+
+Patterns follow the same Git-style matching and normalization as
+`.extensionignore`:
+
+- Use one pattern per line; blank lines and `#` comments are ignored.
+- `*` and `?` do not cross directory boundaries; `**` can match across directories.
+- A trailing `/` matches directories only. A leading `/`, or a `/` within a
+  pattern other than its trailing slash, anchors the pattern to the source root.
+  Patterns without such a slash match names at any depth.
+- A later `!` pattern re-includes a match. An excluded directory is not traversed,
+  so re-including a child requires re-including its parent directory too.
+- Pattern whitespace is trimmed and backslashes are normalized to `/`, matching
+  the existing extension behavior. Use UTF-8 for non-ASCII names.
+
+Only the source root's `.presetignore` is read; nested ignore files do not add
+rules. Files named `.presetignore` are themselves excluded, even if negated.
+Manifest and declared asset files are not exempt from filtering: keep
+`preset.yml` and any templates, commands, or scripts the preset needs included.
+Excluding them can leave an incomplete or unusable installation.
+
+The source-directory installer reads and validates `.presetignore` before
+removing an existing destination, including during a forced reinstall. Invalid
+UTF-8 raises a preset validation error. The separate `preset update` command
+retains its remove-then-add behavior described below; it does not preflight the
+replacement ignore file before removal.
+
 ## Update a Preset
 
 ```bash

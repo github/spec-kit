@@ -7190,6 +7190,21 @@ class TestCatalogStack:
 class TestExtensionIgnore:
     """Test .extensionignore support during extension installation."""
 
+    @pytest.mark.parametrize("excluded", ["extension.yml", "commands/hello.md"])
+    def test_declared_files_are_not_exempt(self, temp_dir, valid_manifest_data, excluded):
+        """Filtering does not implicitly protect manifests or declared command files."""
+        ext_dir = self._make_extension(
+            temp_dir, valid_manifest_data, ignore_content=excluded + "\n"
+        )
+        project = temp_dir / "project"
+        (project / ".specify").mkdir(parents=True)
+        manager = ExtensionManager(project)
+
+        manifest = manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        assert manager.registry.is_installed(manifest.id)
+        assert not (project / ".specify/extensions" / manifest.id / excluded).exists()
+
     def _make_extension(self, temp_dir, valid_manifest_data, extra_files=None, ignore_content=None):
         """Helper to create an extension directory with optional extra files and .extensionignore."""
         import yaml

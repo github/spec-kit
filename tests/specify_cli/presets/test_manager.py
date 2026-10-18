@@ -101,6 +101,157 @@ def test_unreadable_constitution_provenance_fails_closed(
     )
 
 
+class TestPresetIgnore:
+    """Installation filtering follows the extension ignore contract."""
+
+    @staticmethod
+    def _write_files(root, paths):
+        for relative in paths:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"contents of {relative}\n", encoding="utf-8")
+
+    @pytest.mark.parametrize("ignore_content", [None, "", "!.presetignore\n"])
+    def test_no_default_exclusions(self, project_dir, pack_dir, ignore_content):
+        paths = [".git/config", ".idea/project.xml", "tests/test_example.py", "debug.log"]
+        self._write_files(pack_dir, paths)
+        (pack_dir / ".gitignore").write_text("*\n", encoding="utf-8")
+        (pack_dir / ".extensionignore").write_text("*\n", encoding="utf-8")
+        if ignore_content is not None:
+            (pack_dir / ".presetignore").write_text(ignore_content, encoding="utf-8")
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        dest = project_dir / ".specify/presets/test-pack"
+        for relative in [
+            *paths, ".gitignore", ".extensionignore", "preset.yml", "templates/spec-template.md"
+        ]:
+            assert (dest / relative).read_bytes() == (pack_dir / relative).read_bytes()
+        assert not (dest / ".presetignore").exists()
+
+    @pytest.mark.parametrize("root_ignore", [False, True])
+    def test_nested_ignore_is_not_loaded(self, project_dir, pack_dir, root_ignore):
+        self._write_files(pack_dir, ["nested/keep.txt"])
+        (pack_dir / "nested/.presetignore").write_bytes(b"*\n\xff\n")
+        if root_ignore:
+            (pack_dir / ".presetignore").write_text("", encoding="utf-8")
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        dest = project_dir / ".specify/presets/test-pack/nested"
+        assert (dest / "keep.txt").is_file()
+        assert (dest / ".presetignore").exists() is not root_ignore
+
+    @pytest.mark.parametrize(
+        ("patterns", "excluded", "included"),
+        [
+            (".git/\n.idea/\ntests/\n", [".git/config", ".idea/x", "tests/a.py"], ["README.md"]),
+            ("*.pyc\n", ["cache.pyc", "nested/cache.pyc"], ["nested/code.py"]),
+            ("# comment\n\n  notes.txt  \n\n", ["notes.txt"], ["README.md"]),
+            ("docs/internal/draft.md\n", ["docs/internal/draft.md"], ["docs/guide.md"]),
+            ("docs\\internal\\draft.md\n", ["docs/internal/draft.md"], ["docs/guide.md"]),
+            ("ドキュメント/\ncafé/\n", ["ドキュメント/private.md", "café/résumé.txt"], ["docs/guide.md"]),
+            ("docs/*.draft.md\n", ["docs/api.draft.md"], ["docs/sub/api.draft.md"]),
+            ("docs/**/*.draft.md\n", ["docs/api.draft.md", "docs/sub/api.draft.md"], ["docs/guide.md"]),
+            ("docs/*.md\n!docs/api.md\n", ["docs/guide.md"], ["docs/api.md"]),
+            ("/notes.txt\n", ["notes.txt"], ["nested/notes.txt"]),
+            ("docs/draft.md\n", ["docs/draft.md"], ["nested/docs/draft.md"]),
+            ("cache/\n", ["cache/data", "nested/cache/data"], ["other/cache"]),
+            ("file?.txt\n", ["file1.txt"], ["file12.txt"]),
+            ("../sibling/\n/etc/passwd\n", [], ["sibling/data", "passwd"]),
+            # copytree never visits an excluded parent; child negation cannot restore it.
+            ("docs/\n!docs/api.md\n", ["docs/api.md"], ["README.md"]),
+            ("docs/\n!docs/\n", [], ["docs/api.md"]),
+        ],
+    )
+    def test_pattern_semantics(self, project_dir, pack_dir, patterns, excluded, included):
+        self._write_files(pack_dir, [*excluded, *included])
+        (pack_dir / ".presetignore").write_text(patterns, encoding="utf-8")
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        dest = project_dir / ".specify/presets/test-pack"
+        for relative in excluded:
+            assert not (dest / relative).exists()
+        for relative in included:
+            assert (dest / relative).read_bytes() == (pack_dir / relative).read_bytes()
+        assert (dest / "preset.yml").is_file()
+        assert not (dest / ".presetignore").exists()
+
+    @pytest.mark.parametrize("registered", [False, True])
+    def test_invalid_utf8_preserves_existing_state(
+        self, project_dir, pack_dir, valid_pack_data, registered
+    ):
+        """Validate before deleting even an unregistered leftover destination."""
+        valid_pack_data["provides"]["templates"].append({
+            "type": "command", "name": "speckit.ignore.demo", "file": "commands/demo.md",
+            "description": "Ignore test command",
+        })
+        (pack_dir / "preset.yml").write_text(yaml.safe_dump(valid_pack_data), encoding="utf-8")
+        self._write_files(pack_dir, ["commands/demo.md"])
+        (project_dir / ".claude/skills").mkdir(parents=True)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        assert manager.registry.get("test-pack")["registered_commands"]
+        if not registered:
+            manager.registry.remove("test-pack")
+
+        def snapshot():
+            return {
+                str(path.relative_to(project_dir)): path.read_bytes()
+                for path in project_dir.rglob("*") if path.is_file()
+            }
+
+        before = snapshot()
+        (pack_dir / ".presetignore").write_bytes(b"caf\xe9/\n")
+        with pytest.raises(PresetValidationError, match=r"\.presetignore is not valid UTF-8.*byte 3"):
+            manager.install_from_directory(pack_dir, "0.1.5", force=registered)
+
+        assert snapshot() == before
+        assert manager.registry.is_installed("test-pack") is registered
+
+    @pytest.mark.parametrize("route", ["directory", "zip", "tar"])
+    def test_reinstall_filters_new_source(self, project_dir, pack_dir, temp_dir, route):
+        self._write_files(pack_dir, ["tests/dev.py", "keep.txt"])
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5")
+        dest = project_dir / ".specify/presets/test-pack"
+        assert (dest / "tests/dev.py").is_file()
+        (pack_dir / ".presetignore").write_text("tests/\n", encoding="utf-8")
+        (pack_dir / "keep.txt").write_text("updated\n", encoding="utf-8")
+
+        if route == "directory":
+            manager.install_from_directory(pack_dir, "0.1.5", force=True)
+        elif route == "zip":
+            archive_path = temp_dir / "preset.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                for path in pack_dir.rglob("*"):
+                    if path.is_file():
+                        archive.write(path, Path("package") / path.relative_to(pack_dir))
+            manager.install_from_zip(archive_path, "0.1.5", force=True)
+        else:
+            archive_path = temp_dir / "preset.tar.gz"
+            with tarfile.open(archive_path, "w:gz") as archive:
+                archive.add(pack_dir, arcname="package")
+            manager.install_from_archive(archive_path, "0.1.5", force=True)
+
+        assert not (dest / "tests").exists()
+        assert not (dest / ".presetignore").exists()
+        assert (dest / "keep.txt").read_text(encoding="utf-8") == "updated\n"
+        assert manager.registry.is_installed("test-pack")
+
+    @pytest.mark.parametrize("excluded", ["preset.yml", "templates/spec-template.md"])
+    def test_declared_files_are_not_exempt(self, project_dir, pack_dir, excluded):
+        """Like extensions, filtering does not protect the manifest or declared assets."""
+        (pack_dir / ".presetignore").write_text(excluded + "\n", encoding="utf-8")
+        manager = PresetManager(project_dir)
+        manifest = manager.install_from_directory(pack_dir, "0.1.5")
+
+        assert manifest.id == "test-pack"
+        assert manager.registry.is_installed("test-pack")
+        assert not (project_dir / ".specify/presets/test-pack" / excluded).exists()
+
+
 class TestPresetManager:
     """Test PresetManager installation and removal."""
 
