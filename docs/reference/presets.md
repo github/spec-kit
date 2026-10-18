@@ -47,8 +47,9 @@ may omit the digest.
 
 ### Exclude development files with `.presetignore`
 
-Place a UTF-8 `.presetignore` beside `preset.yml` in the preset source root to
-filter files copied into `.specify/presets/<id>/`. For example:
+Place a UTF-8 `.presetignore` (with or without a byte-order mark) beside
+`preset.yml` in the preset source root to filter files copied into
+`.specify/presets/<id>/`. For example:
 
 ```gitignore
 # Development-only directories

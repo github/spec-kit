@@ -68,6 +68,24 @@ def test_absent_ignore_returns_no_filter(tmp_path, ignore_contract):
     assert load_install_ignore(tmp_path, ignore_filename, validation_error) is None
 
 
+@pytest.mark.parametrize("directory", ["tests", "café"])
+def test_utf8_bom_first_pattern(tmp_path, ignore_contract, directory):
+    """Accept the UTF-8 BOM and CRLF bytes emitted by Windows PowerShell 5.1."""
+    ignore_filename, validation_error = ignore_contract
+    source = tmp_path / "source"
+    (source / directory).mkdir(parents=True)
+    (source / directory / "private.txt").write_text("development only", encoding="utf-8")
+    (source / "keep.txt").write_text("shipped", encoding="utf-8")
+    (source / ignore_filename).write_bytes(b"\xef\xbb\xbf" + f"{directory}/\r\n".encode("utf-8"))
+
+    dest = tmp_path / "installed"
+    shutil.copytree(source, dest, ignore=load_install_ignore(source, ignore_filename, validation_error))
+
+    assert not (dest / directory).exists()
+    assert (dest / "keep.txt").read_text(encoding="utf-8") == "shipped"
+    assert not (dest / ignore_filename).exists()
+
+
 @pytest.mark.parametrize("negate_self", [False, True])
 def test_ignore_file_is_always_excluded(tmp_path, ignore_contract, negate_self):
     ignore_filename, validation_error = ignore_contract
