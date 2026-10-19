@@ -85,18 +85,31 @@ def extension_enable(
         # `integration use`/`switch` register only enabled extensions for the
         # agent they activate, and `switch` removes a disabled extension's
         # commands from the old one, so an extension disabled at that point has
-        # no commands for the now-active agent. Register them; an agent that
-        # still has them is left untouched.
+        # no commands for the now-active agent. Register them only when files
+        # are actually missing on disk, so existing files and dev symlinks are
+        # left untouched, and roll back if registration does not produce them.
         active_ai = init_options.get("ai")
-        registered = metadata.get("registered_commands")
-        if (
-            isinstance(active_ai, str)
-            and active_ai
-            and not (isinstance(registered, dict) and registered.get(active_ai))
-        ):
-            manager.register_enabled_extensions_for_agent(
-                active_ai, extension_ids={extension_id}
-            )
+        if isinstance(active_ai, str) and active_ai:
+            try:
+                if manager.missing_invocation_artifacts(extension_id, active_ai):
+                    manager.register_enabled_extensions_for_agent(
+                        active_ai, extension_ids={extension_id}
+                    )
+                    missing = manager.missing_invocation_artifacts(
+                        extension_id, active_ai
+                    )
+                    if missing:
+                        raise ExtensionError(
+                            "Missing invocation artifacts: "
+                            + ", ".join(sorted(missing))
+                        )
+            except Exception as exc:
+                manager.registry.update(extension_id, {"enabled": False})
+                console.print(
+                    f"[red]Error:[/red] Could not register invocations "
+                    f"for '{_escape_markup(str(extension_id))}': {_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1) from exc
 
     # Enable hooks in extensions.yml
     config = hook_executor.get_project_config()

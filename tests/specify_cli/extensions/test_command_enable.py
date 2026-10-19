@@ -137,3 +137,84 @@ class TestExtensionEnableAfterIntegrationChange:
         assert result.exit_code == 0, result.output
         assert generated.read_text(encoding="utf-8") == "customized by the user\n"
         assert _registration(project, "test-ext") == expected
+
+    @pytest.mark.parametrize(("integration", "options", "artifact", "expected"), LAYOUTS)
+    def test_enable_keeps_dev_symlinked_outputs(
+        self, tmp_path, extension_dir, integration, options, artifact, expected
+    ):
+        """A disable/enable cycle keeps a ``--dev`` install's symlinked output."""
+        project = _init_project(tmp_path, integration, options)
+        assert _run_in_project(
+            project, ["extension", "add", str(extension_dir), "--dev"]
+        ).exit_code == 0
+        generated = project / artifact
+        if not generated.is_symlink():
+            pytest.skip("dev-mode symlinks are not available here")
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+
+        result = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert result.exit_code == 0, result.output
+        assert generated.is_symlink()
+
+
+def _enabled(project: Path, extension_id: str) -> bool:
+    registry = json.loads(
+        (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+    )
+    return registry["extensions"][extension_id]["enabled"]
+
+
+class TestExtensionEnableRegistrationFailure:
+    """``enable`` must not report success when registration leaves files missing."""
+
+    LAYOUTS = [
+        pytest.param("claude", None, ".claude/skills/speckit-test-ext-hello/SKILL.md", id="claude"),
+        pytest.param("copilot", "--skills", ".github/skills/speckit-test-ext-hello/SKILL.md", id="copilot-skills"),
+        pytest.param("gemini", None, ".gemini/commands/speckit.test-ext.hello.toml", id="gemini-commands"),
+    ]
+
+    def _disabled_after_switch(self, tmp_path, extension_dir, integration, options):
+        project = _init_project(tmp_path, "opencode")
+        assert _run_in_project(
+            project, ["extension", "add", str(extension_dir), "--dev"]
+        ).exit_code == 0
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+        switch = ["integration", "switch", integration, "--script", "sh"]
+        if options:
+            switch += ["--integration-options", options]
+        assert _run_in_project(project, switch).exit_code == 0
+        return project
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(lambda *a, **k: None, id="writes-nothing"),
+            pytest.param(
+                lambda *a, **k: (_ for _ in ()).throw(RuntimeError("adapter setup failed")),
+                id="raises",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(("integration", "options", "artifact"), LAYOUTS)
+    def test_failed_registration_keeps_extension_disabled_and_retry_works(
+        self, tmp_path, extension_dir, integration, options, artifact, failure
+    ):
+        project = self._disabled_after_switch(tmp_path, extension_dir, integration, options)
+        generated = project / artifact
+
+        with patch.object(
+            ExtensionManager, "register_enabled_extensions_for_agent", failure
+        ):
+            failed = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert failed.exit_code == 1, failed.output
+        assert "Could not register invocations" in failed.output
+        assert _enabled(project, "test-ext") is False
+        assert not generated.exists()
+
+        retried = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert retried.exit_code == 0, retried.output
+        assert _enabled(project, "test-ext") is True
+        assert generated.exists()

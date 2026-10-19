@@ -3924,6 +3924,64 @@ class ExtensionManager:
 
         return removed
 
+    def missing_invocation_artifacts(
+        self, extension_id: str, agent_name: str
+    ) -> List[str]:
+        """Return the extension's invocation files missing for ``agent_name``.
+
+        Checks the layout the agent currently uses (command files, native
+        skills, or skills mode) on disk rather than ``registered_commands``,
+        which some layouts leave empty. A dev-mode symlink counts as present.
+        Commands whose source file is absent are skipped, as registration
+        skips them too.
+        """
+        from .. import load_init_options
+        from ..agents import CommandRegistrar
+
+        manifest = self.get_extension(extension_id)
+        if manifest is None:
+            raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
+        registrar = CommandRegistrar(self.project_root)
+        agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+        if not manifest.commands or not agent_config:
+            return []
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            opts = {}
+        native_skills = agent_config.get("extension") == "/SKILL.md"
+        skills_mode = (
+            opts.get("ai") == agent_name
+            and is_ai_skills_enabled(opts)
+            and not native_skills
+        )
+        if skills_mode:
+            root = self._get_skills_dir(create=False)
+            if root is None:
+                return []
+        else:
+            root = self.project_root / agent_config["dir"]
+
+        ext_dir = self.extensions_dir / extension_id
+        missing: List[str] = []
+        for cmd in manifest.commands:
+            if not (ext_dir / cmd["file"]).is_file():
+                continue
+            if skills_mode:
+                name = self._skill_name_for_command(cmd["name"])
+                path = root / name / "SKILL.md"
+            else:
+                name = registrar._compute_output_name(
+                    agent_name, cmd["name"], agent_config
+                )
+                path = (
+                    root / name / "SKILL.md"
+                    if native_skills
+                    else root / f"{name}{agent_config['extension']}"
+                )
+            if not (path.exists() or path.is_symlink()):
+                missing.append(name)
+        return missing
+
     def register_enabled_extensions_for_agent(
         self,
         agent_name: str,
