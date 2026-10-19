@@ -3655,6 +3655,219 @@ def test_unregistration_keeps_requested_project_naming_hook(
     assert not (first / ".other-agent").exists()
 
 
+def test_artifact_resolution_keeps_requested_project_naming_hook(
+    tmp_path, server, monkeypatch
+):
+    from specify_cli.artifacts.resolution import _materialized_command_source_path
+
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nBody\n"
+    )
+    CommandRegistrar(first).register_commands(
+        KEY,
+        [{"name": "speckit.sample", "file": "command.md"}],
+        "sample",
+        source,
+        first,
+    )
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original_init = CommandRegistrar.__init__
+
+    def snapshot_first_then_interleave(registrar, *args, **kwargs):
+        original_init(registrar, *args, **kwargs)
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(
+        CommandRegistrar, "__init__", snapshot_first_then_interleave
+    )
+
+    assert _materialized_command_source_path(
+        first,
+        {"registered_commands": {KEY: ["speckit.sample"]}},
+        "speckit.sample",
+        source="extension",
+    ) == ".sample-agent/commands/first-sample.md"
+
+
+def test_failed_extension_update_restores_project_named_command(
+    tmp_path, server, monkeypatch
+):
+    from specify_cli.extensions import (
+        ExtensionCatalog,
+        ExtensionManager,
+        ExtensionRegistry,
+        HookExecutor,
+    )
+    from specify_cli.extensions import _command_update_transaction
+    from specify_cli.extensions._command_update_discovery import UpdateCandidate
+
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    (first / ".specify/config.toml").write_text("ai = 'sample-agent'\n")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nOriginal body\n"
+    )
+    command_name = "speckit.sample"
+    CommandRegistrar(first).register_commands(
+        KEY,
+        [{"name": command_name, "file": "command.md"}],
+        "test-ext",
+        source,
+        first,
+    )
+    command_file = first / ".sample-agent/commands/first-sample.md"
+    original_content = command_file.read_text()
+
+    extension_dir = first / ".specify/extensions/test-ext"
+    extension_dir.mkdir(parents=True)
+    (extension_dir / "extension.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "extension": {
+                    "id": "test-ext",
+                    "name": "Test Ext",
+                    "version": "1.0.0",
+                    "description": "Project-scoped rollback test",
+                },
+                "requires": {"speckit_version": ">=0"},
+                "provides": {
+                    "commands": [
+                        {"name": command_name, "file": "commands/run.md"}
+                    ]
+                },
+            }
+        )
+    )
+    registry_entry = {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_commands": {KEY: [command_name]},
+        "registered_skills": [],
+    }
+
+    archive = first / "update.zip"
+    with zipfile.ZipFile(archive, "w") as package_archive:
+        package_archive.writestr(
+            "extension.yml",
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "test-ext",
+                        "name": "Test Ext",
+                        "version": "1.1.0",
+                        "description": "Project-scoped rollback test",
+                    },
+                    "requires": {"speckit_version": ">=0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": command_name,
+                                "file": "commands/run.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+        )
+        package_archive.writestr(
+            "commands/run.md",
+            "---\ndescription: Updated command\n---\nUpdated body\n",
+        )
+
+    candidate = UpdateCandidate(
+        extension_id="test-ext",
+        name="Test Ext",
+        installed="1.0.0",
+        available="1.1.0",
+        download_url="https://example.com/test-ext.zip",
+        bundled_dir=None,
+        catalog_name=None,
+    )
+    monkeypatch.setattr(
+        _command_update_transaction,
+        "discover_updates",
+        lambda manager, catalog, extension: ([candidate], [], True),
+    )
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, extension_id: archive,
+    )
+    monkeypatch.setattr(
+        ExtensionRegistry,
+        "get",
+        lambda self, extension_id: registry_entry,
+    )
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original_hook_init = HookExecutor.__init__
+
+    def interleave_after_registrar_snapshot(executor, project_root):
+        original_hook_init(executor, project_root)
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(
+        HookExecutor, "__init__", interleave_after_registrar_snapshot
+    )
+
+    def remove_old_extension(manager, extension_id, keep_config=False):
+        CommandRegistrar(first).unregister_commands(
+            {KEY: [command_name]}, first
+        )
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(ExtensionManager, "remove", remove_old_extension)
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("Install failed after command cleanup")
+        ),
+    )
+
+    result = run(first, ["extension", "update", "test-ext"])
+
+    assert result.exit_code == 1
+    assert "Install failed after command cleanup" in result.output
+    assert "Rollback successful" in result.output
+    assert command_file.read_text() == original_content
+    assert not (first / ".other-agent").exists()
+
+
 @pytest.mark.parametrize("scenario", ["fresh-process", "interleaved-project"])
 def test_hook_rendering_uses_executor_project_adapter(
     tmp_path, server, scenario

@@ -202,7 +202,10 @@ def _materialized_command_source_path(
     except ImportError:
         return None
 
-    from ..integrations.installer import IntegrationInstallError
+    from ..integrations.installer import (
+        IntegrationInstallError,
+        project_integrations,
+    )
 
     try:
         registrar = CommandRegistrar(project_root)
@@ -221,9 +224,10 @@ def _materialized_command_source_path(
             agent_config = registrar.AGENT_CONFIGS.get(agent_name)
             if agent_config is None:
                 continue
-            output_name = registrar._compute_output_name(
-                agent_name, name, agent_config
-            )
+            with project_integrations(project_root):
+                output_name = registrar._compute_output_name(
+                    agent_name, name, agent_config
+                )
             command_path = (
                 registrar._resolve_agent_dir(agent_name, agent_config, project_root)
                 / f"{output_name}{agent_config['extension']}"
