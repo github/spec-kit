@@ -280,8 +280,19 @@ class IntegrationBase(ABC):
         content: str,
         *,
         skills_enabled: bool,
+        invoke_separator: str | None = None,
     ) -> str:
         """Replace command-reference placeholders using this integration."""
+        if (
+            invoke_separator is not None
+            and type(self).build_command_reference
+            is IntegrationBase.build_command_reference
+        ):
+            return IntegrationBase.resolve_command_refs(
+                content,
+                invoke_separator,
+                self.invocation_prefix_for_mode(skills_enabled),
+            )
         return re.sub(
             r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__",
             lambda match: self.build_command_reference(
@@ -1077,25 +1088,36 @@ class IntegrationBase(ABC):
         # an explicit rendering input because adapters may use a non-standard
         # spelling. Output mode is separate because it can affect the prefix
         # without implying a particular separator.
-        invocation_prefix = "/"
         try:
             from specify_cli.integrations import get_integration
 
             integration = get_integration(agent_name)
-            if integration is not None:
-                resolved_skills_enabled = (
-                    invoke_separator == "-"
-                    if skills_enabled is None
-                    else skills_enabled
-                )
-                invocation_prefix = integration.invocation_prefix_for_mode(
-                    resolved_skills_enabled
-                )
         except (ImportError, KeyError, ValueError):
-            pass
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invocation_prefix
-        )
+            integration = None
+        if integration is not None:
+            resolved_skills_enabled = (
+                invoke_separator == "-"
+                if skills_enabled is None
+                else skills_enabled
+            )
+            if (
+                type(integration).resolve_command_refs_for_mode
+                is IntegrationBase.resolve_command_refs_for_mode
+            ):
+                content = integration.resolve_command_refs_for_mode(
+                    content,
+                    skills_enabled=resolved_skills_enabled,
+                    invoke_separator=invoke_separator,
+                )
+            else:
+                content = integration.resolve_command_refs_for_mode(
+                    content,
+                    skills_enabled=resolved_skills_enabled,
+                )
+        else:
+            content = IntegrationBase.resolve_command_refs(
+                content, invoke_separator
+            )
 
         return content
 

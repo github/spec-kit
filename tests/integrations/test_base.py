@@ -392,6 +392,85 @@ class TestResolveCommandRefs:
         assert "/speckit-plan" in result
         assert "__SPECKIT_COMMAND_" not in result
 
+    def test_process_template_uses_integration_resolver_override(
+        self, monkeypatch
+    ):
+        class ResolverIntegration(StubIntegration):
+            def resolve_command_refs_for_mode(
+                self, content, *, skills_enabled
+            ):
+                assert skills_enabled is True
+                return content.replace(
+                    "__SPECKIT_COMMAND_PLAN__", "/native-plan"
+                )
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: ResolverIntegration() if key == "resolver" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "resolver",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "/native-plan" in result
+        assert "/speckit_plan" not in result
+
+    def test_process_template_uses_command_reference_override(
+        self, monkeypatch
+    ):
+        class ReferenceIntegration(StubIntegration):
+            def build_command_reference(
+                self, command_name, args="", *, skills_enabled
+            ):
+                assert command_name == "speckit.plan"
+                assert skills_enabled is True
+                return "/native-plan"
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: ReferenceIntegration() if key == "reference" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "reference",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "/native-plan" in result
+        assert "/speckit_plan" not in result
+
+    def test_process_template_keeps_explicit_separator_for_default_resolver(
+        self, monkeypatch
+    ):
+        integration = StubIntegration()
+        integration.invocation_prefix = "$"
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: integration if key == "stub" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "stub",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "$speckit_plan" in result
+        assert "$speckit.plan" not in result
+
     def test_unclosed_placeholder_unchanged(self):
         text = "Run __SPECKIT_COMMAND_PLAN to plan."
         assert IntegrationBase.resolve_command_refs(text, ".") == text
