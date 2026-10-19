@@ -20,6 +20,12 @@ pipx install specify-cli
 pip install specify-cli
 ```
 
+If Spec Kit is already installed, `uv tool install specify-cli` keeps the
+installed version; it does not upgrade it. Compare the version shown by
+`specify version` with the [latest version on PyPI](https://pypi.org/project/specify-cli/).
+If it is older, run `uv tool install --force specify-cli` before `specify init`.
+See [Upgrade](#upgrade) below for the commands for each package manager.
+
 ### Install a specific release
 
 Pin an exact version for reproducible installs (check [PyPI](https://pypi.org/project/specify-cli/#history) or [Releases](https://github.com/github/spec-kit/releases) for available versions):

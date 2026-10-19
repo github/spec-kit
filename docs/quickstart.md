@@ -179,11 +179,3 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 - Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
   [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)
-
-## Video Overview
-
-For a visual introduction, watch the
-[Spec Kit video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg).
-Use the commands in this guide for the current workflow and invocation syntax.
-
-[![Spec Kit video overview](https://raw.githubusercontent.com/github/spec-kit/main/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg)

@@ -177,7 +177,7 @@ specify extension add assess
 
 - [CLI 参考](https://github.github.io/spec-kit/reference/overview.html)与[流程命令](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD 理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完整方法论](./spec-driven.md)与[现有规范演进](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [视频概览](https://github.github.io/spec-kit/quickstart.html#video-overview)与[项目历史](https://github.github.io/spec-kit/history.html)
+- [项目历史](https://github.github.io/spec-kit/history.html)
 - [Spec Kit 如何使用 Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 <a id="-支持"></a>

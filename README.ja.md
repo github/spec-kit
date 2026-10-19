@@ -157,7 +157,7 @@ specify extension add assess
 
 - [CLIリファレンス](https://github.github.io/spec-kit/reference/overview.html) と [プロセスコマンド](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDDの理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完全な方法論](./spec-driven.md)、[既存の仕様の進化](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [紹介動画](https://github.github.io/spec-kit/quickstart.html#video-overview) と [プロジェクトの歴史](https://github.github.io/spec-kit/history.html)
+- [プロジェクトの歴史](https://github.github.io/spec-kit/history.html)
 - [Spec KitはSpec Kit自身をどう使っているか](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## スター数の推移

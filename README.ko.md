@@ -170,14 +170,13 @@ specify extension add assess
 <a id="-core-philosophy"></a>
 <a id="-development-phases"></a>
 <a id="-experimental-goals"></a>
-<a id="-video-overview"></a>
 <a id="-does-spec-kit-use-spec-kit"></a>
 
 ## 문서
 
 - [CLI 레퍼런스](https://github.github.io/spec-kit/reference/overview.html)와 [프로세스 명령어](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD 철학](https://github.github.io/spec-kit/concepts/sdd.html), [전체 방법론](./spec-driven.md), [기존 스펙 발전시키기](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [소개 영상](https://github.github.io/spec-kit/quickstart.html#video-overview)과 [프로젝트 연혁](https://github.github.io/spec-kit/history.html)
+- [프로젝트 연혁](https://github.github.io/spec-kit/history.html)
 - [Spec Kit이 Spec Kit을 쓰는 방법](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## 스타 추이
