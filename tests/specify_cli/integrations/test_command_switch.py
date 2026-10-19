@@ -190,6 +190,48 @@ class TestIntegrationSwitch:
         )
         assert after_state == before_state
 
+    @pytest.mark.parametrize(
+        "integration_options",
+        [None, "--skills", "--commands-dir="],
+        ids=["no-options", "options-without-commands-dir", "blank-commands-dir"],
+    )
+    def test_switch_rejects_missing_required_option_before_uninstall(
+        self, tmp_path, integration_options
+    ):
+        project = _init_project(tmp_path, "claude")
+        claude_skill = project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+        state_path = project / ".specify" / "integration.json"
+        options_path = project / ".specify" / "init-options.json"
+        before_state = state_path.read_text(encoding="utf-8")
+        before_options = options_path.read_text(encoding="utf-8")
+
+        args = ["integration", "switch", "generic", "--script", "sh"]
+        if integration_options is not None:
+            args += ["--integration-options", integration_options]
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 1, result.output
+        assert claude_skill.exists(), "switch removed the current integration"
+        assert state_path.read_text(encoding="utf-8") == before_state
+        assert options_path.read_text(encoding="utf-8") == before_options
+        assert "requires --commands-dir" in result.output
+
+    def test_switch_to_generic_with_required_option(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "switch", "generic",
+            "--script", "sh",
+            "--integration-options", "--commands-dir .myagent/commands",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
+        assert not (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["default_integration"] == "generic"
+        assert data["installed_integrations"] == ["generic"]
+
     def test_switch_preserves_target_options_with_fallback_integration(
         self, tmp_path
     ):
@@ -731,9 +773,11 @@ class TestIntegrationSwitch:
             ], catch_exceptions=False)
             assert install.exit_code == 0, install.output
 
+            # setup() rejects a commands dir outside the project in Phase 2.
             result = runner.invoke(app, [
                 "integration", "switch", "generic",
                 "--script", "sh",
+                "--integration-options", "--commands-dir ../outside",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -777,9 +821,11 @@ class TestIntegrationSwitch:
             "precondition: secondary install has no extension artifacts"
         )
 
+        # setup() rejects a commands dir outside the project in Phase 2.
         result = _run_in_project(project, [
             "integration", "switch", "generic",
             "--script", "sh",
+            "--integration-options", "--commands-dir ../outside",
         ])
         assert result.exit_code != 0
 
