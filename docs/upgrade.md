@@ -505,8 +505,12 @@ Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/s
 1. **Verify command files exist:**
 
    ```bash
-   # For GitHub Copilot (.github/agents/ and .github/prompts/ with --integration-options="--commands")
+   # For GitHub Copilot (default skills layout)
    ls -la .github/skills/
+
+   # For GitHub Copilot with the commands layout (--integration-options="--commands",
+   # or a project created before skills became the default and upgraded since)
+   ls -la .github/agents/ .github/prompts/
 
    # For Claude
    ls -la .claude/skills/
