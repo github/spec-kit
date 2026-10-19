@@ -79,6 +79,12 @@ specify init <project_name> --integration pi
 specify init <project_name> --integration omp
 ```
 
+The README examples use GitHub Copilot's default skills mode. To use another
+supported agent, replace `copilot` with its
+[integration key](reference/integrations.md). See
+[Command Invocation](reference/integrations.md#command-invocation) for the
+syntax used by each agent and mode.
+
 ### Specify Script Type (Shell, PowerShell, or Python)
 
 Automation scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants.

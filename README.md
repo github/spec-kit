@@ -31,7 +31,7 @@ process, customize it, or bring your own.
 | Decide whether an idea deserves investment | [Idea assessment](#idea-assessment) | An evidence-backed go, clarify, or stop decision |
 | Adopt or create a different process | [Your own process](#capabilities) | A process adapted or assembled from reusable primitives |
 
-These are **independent entry points**, not mandatory phases. SDD ships in core;
+These are independent entry points, not mandatory phases. SDD ships in core;
 bug fixing and assessment are bundled extensions you install when needed, and
 the primitives below let you adopt or create other processes.
 
@@ -70,9 +70,11 @@ community source code before installing or running it.
 
 ## Get started
 
-You need **Python 3.11+**, **[uv](https://github.github.io/spec-kit/install/uv.html)**,
+You need Python 3.11+, [uv](https://github.github.io/spec-kit/install/uv.html),
 and a supported AI coding agent on Linux, macOS, or Windows.
-For **CLI setup only**, run this in your terminal to install Spec Kit and create a project:
+
+Run these commands in your terminal to install Spec Kit and create a project.
+This example uses GitHub Copilot.
 
 ```bash
 uv tool install specify-cli
@@ -80,41 +82,32 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
-If Spec Kit is already installed, `uv tool install specify-cli` keeps the installed
-version. Compare the version shown by `specify version` with the
-[latest version on PyPI](https://pypi.org/project/specify-cli/), and if it's older,
-run `uv tool install --force specify-cli` before `specify init`.
-
 <a id="-supported-ai-coding-agent-integrations"></a>
 
-The examples use **GitHub Copilot's default skills mode**. Replace `copilot` with
-your [integration key](https://github.github.io/spec-kit/reference/integrations.html)
-to use another supported agent.
+After installing the Specify CLI and creating your project, launch your coding
+agent in the project directory, then choose a process below.
 
-Already have code? Follow the
-[existing-project guide](https://github.github.io/spec-kit/guides/existing-projects.html).
-For pinned releases, other installers, CI, or troubleshooting, see
-[Installation](https://github.github.io/spec-kit/installation.html).
-To update an existing installation, see [Upgrade](https://github.github.io/spec-kit/upgrade.html).
+For other setups:
 
-Now **launch your coding agent in the project directory** and choose a process
-below. Invoke each `/speckit-*` **skill in your agent's chat**, one at a time,
-and review the result before continuing. These are agent skills, not terminal
-commands. Other agents and modes may use
-[different invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+- [Installation](https://github.github.io/spec-kit/installation.html) for pinned releases, other installers, CI, and troubleshooting.
+- [Existing projects](https://github.github.io/spec-kit/guides/existing-projects.html) to start with code you already have.
+- [Other agents](https://github.github.io/spec-kit/reference/integrations.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+- [Upgrade](https://github.github.io/spec-kit/upgrade.html) to update an existing installation.
 
 <a id="-what-is-spec-driven-development"></a>
 <a id="sdd-quickstart"></a>
 
 ## Spec-Driven Development
 
-Define **what and why** before deciding **how** to build it. SDD turns your
-requirements into a specification, a technical plan, and actionable tasks,
-then guides implementation against those artifacts.
+Define what to build and why, then turn the specification into a plan, tasks,
+and working code.
 
-**Constitution once per project; specify → plan → tasks → implement → converge per feature.**
+The minimal flow is shown below. Create a constitution once per project and
+repeat the remaining steps for each feature. Run these skills in your agent's
+chat, not your terminal, one at a time, reviewing each result before continuing.
 
-Invoke these skills in your agent's chat:
+This example uses GitHub Copilot's default skills syntax. For another agent,
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
 
 ```text
 /speckit-constitution Create principles focused on code quality, testing, and maintainability.
@@ -125,9 +118,8 @@ Invoke these skills in your agent's chat:
 /speckit-converge
 ```
 
-Repeat **implement → converge** until convergence reports **Converged**.
-Add clarification, checklists, and consistency analysis when you need extra
-quality gates.
+Repeat implement and converge until convergence reports `Converged`.
+For clarification, checklists, and consistency analysis, see the SDD walkthrough.
 
 [SDD walkthrough](https://github.github.io/spec-kit/quickstart.html) ·
 [Command reference](https://github.github.io/spec-kit/reference/agentic-sdd.html)
@@ -137,16 +129,20 @@ quality gates.
 
 ## Bug fixing
 
-Keep diagnosis, repair, and verification separate so the agent fixes the assessed
-cause and checks the original symptom. No SDD feature workflow is required first.
+Assess the cause, fix the bug, and verify the original symptom is resolved.
+No SDD feature workflow is required first.
 
-**CLI setup (terminal):** install the opt-in extension from the project directory:
+Install the bug-fixing extension in your terminal, from the project directory:
 
 ```bash
 specify extension add bug
 ```
 
-Then invoke the **assess → fix → test** skills in your agent's chat:
+Run these skills in your agent's chat, not your terminal, one at a time,
+reviewing each result before continuing.
+
+This example uses GitHub Copilot's default skills syntax. For another agent,
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
 
 ```text
 /speckit-bug-assess "Submitting an empty password crashes the login form." slug=login-crash
@@ -154,8 +150,8 @@ Then invoke the **assess → fix → test** skills in your agent's chat:
 /speckit-bug-test slug=login-crash
 ```
 
-The reports live in `.specify/bugs/login-crash/`. Review the final verdict:
-`verified`, `partial`, or `failed`. Missing verification is not a successful fix.
+Review the reports in `.specify/bugs/login-crash/`. The final verdict is
+`verified`, `partial`, or `failed`; only `verified` confirms a successful fix.
 
 [Bug-fixing walkthrough](https://github.github.io/spec-kit/guides/bugfix.html) ·
 [Command reference](https://github.github.io/spec-kit/reference/agentic-bugfix.html)
@@ -165,16 +161,20 @@ The reports live in `.specify/bugs/login-crash/`. Review the final verdict:
 
 ## Idea assessment
 
-Gather evidence before committing to an idea, whether or not it becomes software.
-This standalone process works even in a project with no source code.
+Gather evidence to decide whether an idea is worth pursuing.
+No source code or SDD feature workflow is required.
 
-**CLI setup (terminal):** install the opt-in extension from the project directory:
+Install the assessment extension in your terminal, from the project directory:
 
 ```bash
 specify extension add assess
 ```
 
-Then invoke the **intake → research → define → shape → decide** skills in your agent's chat:
+Run these skills in your agent's chat, not your terminal, one at a time,
+reviewing each result before continuing.
+
+This example uses GitHub Copilot's default skills syntax. For another agent,
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
 
 ```text
 /speckit-assess-intake "Let users work offline and sync when they reconnect." slug=offline-mode
@@ -184,11 +184,13 @@ Then invoke the **intake → research → define → shape → decide** skills i
 /speckit-assess-decide slug=offline-mode
 ```
 
-The artifacts live in `.specify/assessments/offline-mode/`, ending in a
-**go / needs-clarification / kill** decision. Resolve unknowns by refining the
-existing Markdown artifacts directly or with the agent, rather than regenerating
-whole stages. A `go` decision can be handed to `/speckit-specify` if you choose
-to build it; stopping with a documented reason is also a useful result.
+Review the artifacts in `.specify/assessments/offline-mode/` and the final
+decision: `go`, `needs-clarification`, or `kill`. Resolve unknowns by editing the
+existing Markdown artifacts, directly or with your agent, rather than rerunning
+whole stages. If you choose to build a software idea with a `go` decision,
+establish a project constitution if needed, then pass the handoff summary from
+`decision.md` to `/speckit-specify`. Stopping with a documented reason is also a
+useful outcome.
 
 [Assessment walkthrough](https://github.github.io/spec-kit/guides/assessment.html) ·
 [Command reference](https://github.github.io/spec-kit/reference/agentic-assessment.html)
@@ -199,12 +201,20 @@ to build it; stopping with a documented reason is also a useful result.
 
 ## Customize or bring your own process
 
-**Extensions** add capabilities, **presets** adapt existing behavior,
-**workflows** automate steps, and **bundles** package a role-based setup.
-Use project-local overrides for one-off template changes.
+Customize Spec-Driven Development, bug fixing, or idea assessment to fit your
+team's standards. Or bring your own process without adopting any of them.
+Combine the [capabilities above](#capabilities) to match your goal:
+
+- Adapt an existing process with a preset, such as requiring regulatory traceability in plans. Use a project-local override for a one-off template change.
+- Bring your own process by adding its commands through an extension and exposing them to your coding agent through an integration.
+- Automate commands and checks in a workflow. Use overlays to adapt an installed workflow without forking it, or add custom workflow steps when the built-in types are not enough.
+- Share a reusable setup by packaging its extensions, presets, workflows, and workflow steps in a bundle.
+
+Start with the smallest change that meets your needs; you do not have to replace
+the whole process.
 
 [Customization guide](https://github.github.io/spec-kit/guides/customization.html) ·
-[Community extensions, presets, bundles, and walkthroughs](https://github.github.io/spec-kit/community/overview.html)
+[Community components and walkthroughs](https://github.github.io/spec-kit/community/overview.html)
 
 <a id="-specify-cli-reference"></a>
 <a id="available-slash-commands"></a>
@@ -212,15 +222,19 @@ Use project-local overrides for one-off template changes.
 <a id="-core-philosophy"></a>
 <a id="-development-phases"></a>
 <a id="-experimental-goals"></a>
-<a id="-video-overview"></a>
 <a id="-does-spec-kit-use-spec-kit"></a>
 
 ## Documentation
 
 - [CLI reference](https://github.github.io/spec-kit/reference/overview.html) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDD philosophy](https://github.github.io/spec-kit/concepts/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [Video overview](https://github.github.io/spec-kit/quickstart.html#video-overview) and [project history](https://github.github.io/spec-kit/history.html)
+- [Project history](https://github.github.io/spec-kit/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
+
+## In the news
+
+- [Open Source Friday: Spec Kit Part 2](https://www.youtube.com/watch?v=8hHCpNVLhmI) (October 16, 2026) — Manfred Riem and Nicole Haugen discuss Spec Kit 1.0 and the expanded toolkit.
+- [Open Source Friday with Spec Kit](https://www.youtube.com/watch?v=2IArMAhkJcE) (May 8, 2026) — An introduction and SDD demonstration with Manfred Riem.
 
 ## Star history
 
