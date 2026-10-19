@@ -1443,7 +1443,15 @@ class WorkflowEngine:
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg)
             try:
-                value = float(value)
+                # Preserve integers (including CLI strings) before float can
+                # round identifiers or timestamps above 2**53.
+                if isinstance(value, (str, int)):
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        value = float(value)
+                else:
+                    value = float(value)
                 if value == int(value):
                     value = int(value)
             except (ValueError, TypeError, OverflowError):
