@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-16T00:00:00Z",
+  "updated_at": "2026-10-19T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -2636,8 +2636,9 @@
       "id": "grill",
       "description": "Exhaustively clarify specifications and optionally sync canonical domain knowledge.",
       "author": "yoshi1220",
-      "version": "1.0.1",
-      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.1/speckit-grill-me-extension-v1.0.1.zip",
+      "version": "1.0.2",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.2/speckit-grill-me-extension-v1.0.2.zip",
+      "sha256": "7d01555e2ca2e5f2680aaa076dd7d89b0e364c36facb7fc1b97cc05133067099",
       "repository": "https://github.com/yoshi1220/speckit-grill-me",
       "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
       "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
@@ -2669,7 +2670,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
-      "updated_at": "2026-08-25T00:00:00Z"
+      "updated_at": "2026-10-19T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
