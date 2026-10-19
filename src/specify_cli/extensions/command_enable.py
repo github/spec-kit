@@ -12,6 +12,42 @@ from .._console import console
 from . import _commands
 
 
+def _present(path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _register_if_absent(manager, extension_id: str, agent: str, metadata: dict) -> None:
+    """Register ``extension_id`` for ``agent`` when none of its outputs exist.
+
+    Surviving outputs (customized files, dev symlinks) are never rewritten.
+    Every output was absent before registration, so if it leaves any missing
+    or raises, the outputs it did write and its registry tracking are undone,
+    and a retry starts from the same clean state.
+    """
+    from . import ExtensionError
+
+    outputs = manager.invocation_outputs(extension_id, agent)
+    if not outputs or any(_present(path) for _, path in outputs):
+        return
+    try:
+        manager.register_enabled_extensions_for_agent(agent, extension_ids={extension_id})
+        missing = sorted(name for name, path in outputs if not _present(path))
+        if missing:
+            raise ExtensionError("Missing invocation artifacts: " + ", ".join(missing))
+    except Exception:
+        for _, path in outputs:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            if path.name == "SKILL.md" and path.parent.is_dir() and not any(path.parent.iterdir()):
+                path.parent.rmdir()
+        manager.registry.update(extension_id, {
+            key: metadata[key]
+            for key in ("registered_commands", "registered_skills")
+            if key in metadata
+        })
+        raise
+
+
 @_commands.extension_app.command("enable")
 def extension_enable(
     extension: str = typer.Argument(help="Extension ID or name to enable"),
@@ -85,24 +121,14 @@ def extension_enable(
         # `integration use`/`switch` register only enabled extensions for the
         # agent they activate, and `switch` removes a disabled extension's
         # commands from the old one, so an extension disabled at that point has
-        # no commands for the now-active agent. Register them only when files
-        # are actually missing on disk, so existing files and dev symlinks are
-        # left untouched, and roll back if registration does not produce them.
+        # no commands for the now-active agent. Register them only when none
+        # of the extension's outputs exist for the active layout, so surviving
+        # files, edits and dev symlinks are never rewritten, and roll back if
+        # registration leaves any output missing.
         active_ai = init_options.get("ai")
         if isinstance(active_ai, str) and active_ai:
             try:
-                if manager.missing_invocation_artifacts(extension_id, active_ai):
-                    manager.register_enabled_extensions_for_agent(
-                        active_ai, extension_ids={extension_id}
-                    )
-                    missing = manager.missing_invocation_artifacts(
-                        extension_id, active_ai
-                    )
-                    if missing:
-                        raise ExtensionError(
-                            "Missing invocation artifacts: "
-                            + ", ".join(sorted(missing))
-                        )
+                _register_if_absent(manager, extension_id, active_ai, metadata)
             except Exception as exc:
                 manager.registry.update(extension_id, {"enabled": False})
                 console.print(

@@ -3924,17 +3924,25 @@ class ExtensionManager:
 
         return removed
 
-    def missing_invocation_artifacts(
+    def invocation_outputs(
         self, extension_id: str, agent_name: str
-    ) -> List[str]:
-        """Return the extension's invocation files missing for ``agent_name``.
+    ) -> List[tuple[str, Path]]:
+        """Return ``(name, path)`` for each invocation output of ``agent_name``.
 
-        Checks the layout the agent currently uses (command files, native
-        skills, or skills mode) on disk rather than ``registered_commands``,
-        which some layouts leave empty. A dev-mode symlink counts as present.
-        Commands whose source file is absent are skipped, as registration
-        skips them too.
+        Checks the layout the agent currently uses on disk rather than
+        ``registered_commands``, which some layouts leave empty: skill
+        directories in skills mode, otherwise every file command registration
+        writes (primary output, aliases, and Copilot's companion
+        ``.prompt.md``), under the directory registration itself resolves
+        (home-relative and legacy directories included). Commands whose
+        source file is absent are skipped, as registration skips them too.
+
+        Raises:
+            ExtensionError: If the manifest is unreadable or the skills
+                directory cannot be resolved safely.
         """
+        import warnings
+
         from .. import load_init_options
         from ..agents import CommandRegistrar
 
@@ -3948,39 +3956,42 @@ class ExtensionManager:
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
             opts = {}
-        native_skills = agent_config.get("extension") == "/SKILL.md"
         skills_mode = (
             opts.get("ai") == agent_name
             and is_ai_skills_enabled(opts)
-            and not native_skills
+            and agent_config.get("extension") != "/SKILL.md"
         )
         if skills_mode:
             root = self._get_skills_dir(create=False)
             if root is None:
-                return []
+                raise ExtensionError(
+                    f"Cannot resolve a usable skills directory for '{agent_name}'"
+                )
         else:
-            root = self.project_root / agent_config["dir"]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                root = registrar._resolve_agent_dir(
+                    agent_name, agent_config, self.project_root
+                )
 
         ext_dir = self.extensions_dir / extension_id
-        missing: List[str] = []
+        outputs: List[tuple[str, Path]] = []
         for cmd in manifest.commands:
             if not (ext_dir / cmd["file"]).is_file():
                 continue
             if skills_mode:
                 name = self._skill_name_for_command(cmd["name"])
-                path = root / name / "SKILL.md"
-            else:
-                name = registrar._compute_output_name(
-                    agent_name, cmd["name"], agent_config
-                )
-                path = (
-                    root / name / "SKILL.md"
-                    if native_skills
-                    else root / f"{name}{agent_config['extension']}"
-                )
-            if not (path.exists() or path.is_symlink()):
-                missing.append(name)
-        return missing
+                outputs.append((name, root / name / "SKILL.md"))
+                continue
+            aliases = cmd.get("aliases") or []
+            for invoked in [cmd["name"], *[a for a in aliases if isinstance(a, str)]]:
+                name = registrar._compute_output_name(agent_name, invoked, agent_config)
+                outputs.append((name, root / f"{name}{agent_config['extension']}"))
+                if agent_name == "copilot":
+                    prompt = self.project_root / ".github" / "prompts" / f"{invoked}.prompt.md"
+                    outputs.append((f"{invoked}.prompt.md", prompt))
+
+        return outputs
 
     def register_enabled_extensions_for_agent(
         self,

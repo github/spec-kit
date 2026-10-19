@@ -6,10 +6,12 @@ Mirrors ``specify_cli.extensions.command_enable``.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
@@ -218,3 +220,135 @@ class TestExtensionEnableRegistrationFailure:
         assert retried.exit_code == 0, retried.output
         assert _enabled(project, "test-ext") is True
         assert generated.exists()
+
+
+class TestExtensionEnableOutputLayouts:
+    """``enable`` checks the outputs registration actually writes."""
+
+    def test_unusable_skills_dir_fails_enable_and_retry_works_after_repair(
+        self, tmp_path, extension_dir
+    ):
+        project = _init_project(tmp_path, "opencode")
+        assert _run_in_project(project, ["extension", "add", str(extension_dir), "--dev"]).exit_code == 0
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+        assert _run_in_project(
+            project,
+            ["integration", "switch", "copilot", "--script", "sh",
+             "--integration-options", "--skills"],
+        ).exit_code == 0
+        skills_dir = project / ".github" / "skills"
+        shutil.rmtree(skills_dir)
+        skills_dir.write_text("not a directory\n", encoding="utf-8")
+
+        failed = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert failed.exit_code == 1, failed.output
+        assert _enabled(project, "test-ext") is False
+
+        skills_dir.unlink()
+        retried = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert retried.exit_code == 0, retried.output
+        assert (skills_dir / "speckit-test-ext-hello" / "SKILL.md").is_file()
+
+    def test_home_relative_outputs_survive_disable_enable(
+        self, tmp_path, extension_dir, monkeypatch
+    ):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        project = _init_project(tmp_path, "hermes")
+        assert _run_in_project(project, ["extension", "add", str(extension_dir), "--dev"]).exit_code == 0
+        skill = home / ".hermes" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        assert skill.exists()
+        skill.unlink()
+        skill.write_text("customized by the user\n", encoding="utf-8")
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+
+        result = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert result.exit_code == 0, result.output
+        assert _enabled(project, "test-ext") is True
+        assert skill.read_text(encoding="utf-8") == "customized by the user\n"
+
+    def test_legacy_command_dir_outputs_survive_disable_enable(
+        self, tmp_path, extension_dir
+    ):
+        project = _init_project(tmp_path, "opencode")
+        assert _run_in_project(project, ["extension", "add", str(extension_dir), "--dev"]).exit_code == 0
+        (project / ".opencode" / "commands").rename(project / ".opencode" / "command")
+        legacy = project / ".opencode" / "command" / "speckit.test-ext.hello.md"
+        assert legacy.exists()
+        legacy.unlink()
+        legacy.write_text("customized by the user\n", encoding="utf-8")
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+
+        result = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert result.exit_code == 0, result.output
+        assert _enabled(project, "test-ext") is True
+        assert legacy.read_text(encoding="utf-8") == "customized by the user\n"
+
+    def test_failure_after_primary_write_rolls_back_and_retry_completes(
+        self, tmp_path, extension_dir
+    ):
+        """Copilot command mode writes an agent file and a companion prompt; a
+        prompt failure must not leave a half-registered, enabled extension."""
+        from specify_cli.agents import CommandRegistrar
+
+        project = _init_project(tmp_path, "opencode")
+        assert _run_in_project(project, ["extension", "add", str(extension_dir), "--dev"]).exit_code == 0
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+        assert _run_in_project(
+            project,
+            ["integration", "switch", "copilot", "--script", "sh",
+             "--integration-options", "--commands"],
+        ).exit_code == 0
+        agent_file = project / ".github" / "agents" / "speckit.test-ext.hello.agent.md"
+        prompt_file = project / ".github" / "prompts" / "speckit.test-ext.hello.prompt.md"
+
+        def fail_prompt(project_root, cmd_name):
+            raise OSError("disk full")
+
+        with patch.object(CommandRegistrar, "write_copilot_prompt", staticmethod(fail_prompt)):
+            failed = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert failed.exit_code == 1, failed.output
+        assert _enabled(project, "test-ext") is False
+        assert not agent_file.exists()
+
+        retried = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert retried.exit_code == 0, retried.output
+        assert agent_file.is_file()
+        assert prompt_file.is_file()
+
+    def test_partially_present_outputs_are_not_rewritten(
+        self, tmp_path, extension_dir
+    ):
+        """With one of two commands' outputs gone, enable must not re-register
+        the extension and overwrite the other, customized output."""
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["provides"]["commands"].append(
+            {"name": "speckit.test-ext.bye", "file": "commands/bye.md",
+             "description": "Bye"}
+        )
+        manifest_path.write_text(yaml.dump(manifest), encoding="utf-8")
+        (extension_dir / "commands" / "bye.md").write_text(
+            "---\ndescription: \"Bye\"\n---\n\n# Bye\n\n$ARGUMENTS\n", encoding="utf-8"
+        )
+        project = _init_project(tmp_path, "claude")
+        assert _run_in_project(project, ["extension", "add", str(extension_dir), "--dev"]).exit_code == 0
+        skills = project / ".claude" / "skills"
+        hello = skills / "speckit-test-ext-hello" / "SKILL.md"
+        bye = skills / "speckit-test-ext-bye" / "SKILL.md"
+        hello.unlink()
+        hello.write_text("customized by the user\n", encoding="utf-8")
+        shutil.rmtree(bye.parent)
+        assert _run_in_project(project, ["extension", "disable", "test-ext"]).exit_code == 0
+
+        result = _run_in_project(project, ["extension", "enable", "test-ext"])
+
+        assert result.exit_code == 0, result.output
+        assert hello.read_text(encoding="utf-8") == "customized by the user\n"
