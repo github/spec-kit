@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.2] - 2026-10-19
+
+### Changed
+
+- Update SpecKit Grill Me extension to v1.0.2 (#5023)
+- fix(workflows): report a run failed by a raised step error under --json (#5015)
+- docs: point the upgrade guide's Copilot checks at .github/skills (#5010)
+- fix(events): leave JSON hook configs untouched when nothing is owned (#5017)
+- fix(extensions): scaffold new config templates on extension update (#5011)
+- fix(integrations): drop unsupported --model flag from ZCode dispatch (#5009)
+- fix(bundles): reject non-positive preset and extension priorities in validation (#5012)
+- fix(integrations): validate required options before switch uninstalls (#5008)
+- fix(presets): reject malformed catalog entries before removal (#4992)
+- Document the implemented extension architecture (#4978)
+- fix(bundles): don't refresh installed components on a repeated bundle init (#4963)
+- chore(deps): bump actions/download-artifact from 8.0.1 to 8.0.2 (#4989)
+- chore(deps): bump actions/setup-node from 7.0.0 to 7.1.0 (#4987)
+- Update Applied Epistemic Engineering extension to v1.5.2 (#5000)
+- Update DocGuard — CDD Enforcement to v0.45.1 (#5001)
+- Update Evaluator Contract extension to v1.1.2 (#4999)
+- Update Applied Epistemic Engineering extension to v1.5.1 (#4995)
+- chore(deps): bump the codeql-action group with 2 updates (#4985)
+- docs: define shared catalog contracts (#4977)
+- chore: release 1.2.1, begin 1.2.2.dev0 development (#4996)
+
 ## [1.2.1] - 2026-10-16
 
 ### Changed
