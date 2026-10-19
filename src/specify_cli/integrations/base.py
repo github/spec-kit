@@ -1839,11 +1839,10 @@ class SkillsIntegration(IntegrationBase):
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the agent's native invocation for a hyphenated skill name."""
-        return self.build_command_reference(
-            command_name,
-            args,
-            skills_enabled=True,
-        )
+        stem = command_name.removeprefix("speckit.")
+        prefix = self.invocation_prefix_for_mode(True)
+        invocation = prefix + "speckit-" + stem.replace(".", "-")
+        return f"{invocation} {args}" if args else invocation
 
     @staticmethod
     def _inject_hook_command_note(

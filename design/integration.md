@@ -170,9 +170,10 @@ directory must match `folder/commands_subdir`. Output paths
 must be canonical, project-local, and outside `.git` and `.specify`.
 Registration extensions must be plain dotted filename suffixes (such as
 `.md`) or, for Markdown skills, `/SKILL.md`; path traversal is not allowed.
-The public class attribute `invoke_separator` must be a non-empty string;
-`dev_no_symlink` and `multi_install_safe` must be booleans, including when
-registrar configuration supplies its own optional values.
+The public class attributes `invoke_separator` and `invocation_prefix` must be
+non-empty strings. `skills_invocation_only`, `dev_no_symlink`, and
+`multi_install_safe` must be booleans, including when registrar configuration
+supplies its own optional values.
 An explicit `registrar_config.invoke_separator` takes precedence over the class
 default. `dev_no_symlink` is enabled when either the class or registrar
 configuration enables it. Healthy registration and persisted recovery metadata

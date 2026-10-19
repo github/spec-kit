@@ -5666,13 +5666,15 @@ class HookExecutor:
         ai_skills_enabled = is_ai_skills_enabled(init_options)
         if isinstance(selected_ai, str):
             from ..integrations import get_integration
+            from ..integrations.installer import project_integrations
 
-            integration = get_integration(selected_ai)
-            if integration is not None:
-                return integration.build_hook_invocation(
-                    command_id,
-                    skills_enabled=ai_skills_enabled,
-                )
+            with project_integrations(self.project_root):
+                integration = get_integration(selected_ai)
+                if integration is not None:
+                    return integration.build_hook_invocation(
+                        command_id,
+                        skills_enabled=ai_skills_enabled,
+                    )
 
         return f"/{command_id}"
 
