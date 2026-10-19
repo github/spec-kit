@@ -92,14 +92,12 @@ class SkillsIntegrationTests:
         created = i.setup(tmp_path, m)
 
         created_skill_files = {
-            path.relative_to(tmp_path).as_posix()
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
             for path in created
-            if path.name == "SKILL.md"
+            if path.name.casefold() == "skill.md"
         }
-        tracked_skill_files = {
-            path for path in m.files if path.endswith("/SKILL.md")
-        }
-        assert tracked_skill_files == created_skill_files
+        tracked_skill_files = set(m.files)
+        assert created_skill_files <= tracked_skill_files
 
     def test_skill_directory_structure(self, tmp_path):
         """Each command produces speckit-<name>/SKILL.md."""

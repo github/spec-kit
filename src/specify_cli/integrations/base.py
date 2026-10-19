@@ -1952,14 +1952,13 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
+        resolved_project_root = project_root.resolve()
         created_skill_files = {
-            path.relative_to(project_root).as_posix()
+            path.resolve().relative_to(resolved_project_root).as_posix()
             for path in created
-            if path.name == "SKILL.md"
+            if path.name.casefold() == "skill.md"
         }
-        tracked_skill_files = {
-            path for path in manifest.files if path.endswith("/SKILL.md")
-        }
+        tracked_skill_files = set(manifest.files)
         missing_skill_files = created_skill_files - tracked_skill_files
         if missing_skill_files:
             raise RuntimeError(

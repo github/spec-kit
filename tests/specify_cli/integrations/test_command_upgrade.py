@@ -240,6 +240,11 @@ class TestIntegrationUpgradeDetailed:
         for path, info in manifest_data.get("files", {}).items():
             patched_files[path.replace(".opencode/commands/", ".opencode/command/")] = info
         manifest_data["files"] = patched_files
+        if "ownership_modes" in manifest_data:
+            manifest_data["ownership_modes"] = {
+                path.replace(".opencode/commands/", ".opencode/command/"): mode
+                for path, mode in manifest_data["ownership_modes"].items()
+            }
         manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
 
         old_commands = sorted(legacy.glob("speckit.*.md"))
@@ -312,15 +317,21 @@ class TestIntegrationUpgradeDetailed:
         )
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
         legacy_manifest_files = {}
+        legacy_ownership_modes = {}
         for path, info in manifest_data["files"].items():
             skill_path = project / path
             command_name = skill_path.parent.name.replace("speckit-", "speckit.", 1)
             legacy_path = commands / f"{command_name}.md"
             legacy_path.write_bytes(skill_path.read_bytes())
-            legacy_manifest_files[
-                legacy_path.relative_to(project).as_posix()
-            ] = info
+            legacy_relative_path = legacy_path.relative_to(project).as_posix()
+            legacy_manifest_files[legacy_relative_path] = info
+            if path in manifest_data.get("ownership_modes", {}):
+                legacy_ownership_modes[legacy_relative_path] = manifest_data[
+                    "ownership_modes"
+                ][path]
         manifest_data["files"] = legacy_manifest_files
+        if "ownership_modes" in manifest_data:
+            manifest_data["ownership_modes"] = legacy_ownership_modes
         manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
 
         registry_path = project / ".specify" / "extensions" / ".registry"

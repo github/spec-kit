@@ -63,6 +63,11 @@ def _move_kilocode_install_to_legacy_layout(project):
         path.replace(".kilo/commands/", ".kilocode/workflows/"): info
         for path, info in manifest_data.get("files", {}).items()
     }
+    if "ownership_modes" in manifest_data:
+        manifest_data["ownership_modes"] = {
+            path.replace(".kilo/commands/", ".kilocode/workflows/"): mode
+            for path, mode in manifest_data["ownership_modes"].items()
+        }
     manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
     return canonical, legacy
 

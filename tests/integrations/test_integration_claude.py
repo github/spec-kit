@@ -85,15 +85,33 @@ class TestClaudeIntegration:
         created = integration.setup(tmp_path, manifest, script_type="sh")
 
         created_skill_files = {
-            path.relative_to(tmp_path).as_posix()
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
             for path in created
-            if path.name == "SKILL.md"
+            if path.name.casefold() == "skill.md"
         }
-        tracked_skill_files = {
-            path for path in manifest.files if path.endswith("/SKILL.md")
-        }
-        assert tracked_skill_files == created_skill_files
+        tracked_skill_files = set(manifest.files)
+        assert created_skill_files <= tracked_skill_files
         assert ".claude/skills/speckit-converge/SKILL.md" in manifest.files
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows path casing behavior")
+    def test_setup_tracks_skills_in_existing_mixed_case_paths(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        existing_skill = (
+            tmp_path / ".CLAUDE" / "Skills" / "SPECKIT-PLAN" / "skill.md"
+        )
+        existing_skill.parent.mkdir(parents=True)
+        existing_skill.write_text("existing skill\n", encoding="utf-8")
+
+        created = integration.setup(tmp_path, manifest, script_type="sh")
+
+        created_skill_files = {
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
+            for path in created
+            if path.name.casefold() == "skill.md"
+        }
+        assert created_skill_files <= set(manifest.files)
+        assert ".CLAUDE/Skills/SPECKIT-PLAN/skill.md" in manifest.files
 
     def test_setup_fails_when_generated_skill_is_not_recorded(
         self, tmp_path, monkeypatch
