@@ -1918,6 +1918,55 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
         return manager, project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
 
+    def _install_unbacked_custom_stack(self, project_dir, temp_dir):
+        """Base + append presets for ``speckit.custom``, which has no core template."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        manager = PresetManager(project_dir)
+        for preset_id, body, strategy, priority in [
+            ("base-preset", "Base preset body", "replace", 10),
+            ("append-preset", "Appended body", "append", 5),
+        ]:
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            if strategy != "replace":
+                manifest_path = preset_dir / "preset.yml"
+                manifest = yaml.safe_load(manifest_path.read_text())
+                manifest["provides"]["templates"][0]["strategy"] = strategy
+                manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+        skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        assert "Base preset body" in skill_file.read_text(encoding="utf-8")
+        return manager, skill_file
+
+    def test_remove_sole_base_preset_retires_stale_composed_skill(
+        self, project_dir, temp_dir
+    ):
+        """With no core or extension fallback, removing the only base leaves
+        nothing to compose onto: the composed skill and its cache must not
+        keep serving the removed preset's instructions."""
+        manager, skill_file = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert not skill_file.exists()
+        assert not cache.exists()
+
+    def test_remove_sole_base_preset_keeps_hand_edited_skill(
+        self, project_dir, temp_dir
+    ):
+        manager, skill_file = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        edited = "---\nname: speckit-custom\n---\n\nUser-owned body\n"
+        skill_file.write_text(edited, encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert skill_file.read_text(encoding="utf-8") == edited
+
     def test_remove_base_preset_recomposes_surviving_composed_skill(
         self, project_dir, temp_dir
     ):

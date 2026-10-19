@@ -152,6 +152,9 @@ class _PresetSkillMethods:
         # every affected directory below.
         preset_cmds: Dict[str, List[str]] = {}
         composed_winners: Dict[str, str] = {}
+        # Composing winners whose stack no longer has a base (resolution
+        # returns None): their .composed cache and skill are stale.
+        unresolved_winners: Dict[str, str] = {}
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
         reconciled_skill_commands: set[str] = set()
@@ -197,7 +200,15 @@ class _PresetSkillMethods:
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
                     if layers[0]["strategy"] != "replace":
-                        composed_winners[cmd_name] = pack_id
+                        if resolver.resolve_content(cmd_name, "command") is None:
+                            # Nothing left to compose onto: drop the stale
+                            # cache so it can't be rendered back into a skill.
+                            unresolved_winners[cmd_name] = pack_id
+                            stale = pack_dir / ".composed" / f"{cmd_name}.md"
+                            if stale.is_file() and not stale.is_symlink():
+                                stale.unlink()
+                        else:
+                            composed_winners[cmd_name] = pack_id
                     found_preset = True
                     break
             if not found_preset:
@@ -411,6 +422,16 @@ class _PresetSkillMethods:
                 active_names |= self._skills_owned_by_preset(
                     active_skills_dir, composed_winners
                 )
+                # Command-file agents unregister an uncomposable command;
+                # retire its skill too while it still carries the marker.
+                for stale_skill in self._skills_owned_by_preset(
+                    active_skills_dir, unresolved_winners
+                ):
+                    stale_dir = active_skills_dir / stale_skill
+                    if self._validate_skill_subdir(
+                        stale_dir, create=False, skills_root=active_skills_dir
+                    ):
+                        shutil.rmtree(stale_dir)
             if active_names is None or active_names:
                 apply_to_dir(
                     active_skills_dir,
