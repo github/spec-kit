@@ -1381,6 +1381,7 @@ class CommandRegistrar:
                     continue
         return results
 
+    @project_registration
     def unregister_commands(
         self, registered_commands: Dict[str, List[str]], project_root: Path
     ) -> None:

@@ -973,6 +973,7 @@ class IntegrationBase(ABC):
         arg_placeholder: str = "$ARGUMENTS",
         invoke_separator: str = ".",
         project_root: Path | None = None,
+        skills_enabled: bool | None = None,
     ) -> str:
         """Process a raw command template into agent-ready content.
 
@@ -1073,16 +1074,22 @@ class IntegrationBase(ABC):
 
         # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings.
         # Integration classes own their native prefix; the separator remains
-        # an explicit rendering input because dual-layout setup paths resolve
-        # it from the selected mode before calling this shared transformer.
+        # an explicit rendering input because adapters may use a non-standard
+        # spelling. Output mode is separate because it can affect the prefix
+        # without implying a particular separator.
         invocation_prefix = "/"
         try:
             from specify_cli.integrations import get_integration
 
             integration = get_integration(agent_name)
             if integration is not None:
-                invocation_prefix = integration.invocation_prefix_for_mode(
+                resolved_skills_enabled = (
                     invoke_separator == "-"
+                    if skills_enabled is None
+                    else skills_enabled
+                )
+                invocation_prefix = integration.invocation_prefix_for_mode(
+                    resolved_skills_enabled
                 )
         except (ImportError, KeyError, ValueError):
             pass
@@ -1292,6 +1299,7 @@ class MarkdownIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -1507,6 +1515,7 @@ class TomlIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1747,6 +1756,7 @@ class YamlIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1982,6 +1992,7 @@ class SkillsIntegration(IntegrationBase):
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
                 invoke_separator=self.invoke_separator,
+                skills_enabled=True,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             # Preserve leading whitespace in the body to match release ZIP

@@ -1192,6 +1192,31 @@ def test_skill_dispatch_keeps_installed_name_with_reference_separator_override(
     )
 
 
+def test_skill_templates_use_skills_prefix_with_reference_separator_override(
+    tmp_path, server
+):
+    publish(
+        server,
+        code=implementation(
+            body=(
+                '    invoke_separator = "_"\n'
+                '    invocation_prefix = "$"\n'
+                "    skills_invocation_only = True\n"
+            )
+        ),
+    )
+    project = catalog_project(tmp_path, server)
+    install(project)
+
+    content = (
+        project / ".sample-agent/skills/speckit-specify/SKILL.md"
+    ).read_text()
+    assert "$speckit_specify" in content
+    assert "$speckit_plan" in content
+    assert "/speckit_specify" not in content
+    assert "/speckit_plan" not in content
+
+
 @pytest.mark.parametrize("damage", ["package", "files", "project"])
 def test_round5_recovery_checks_local_package_identity(tmp_path, server, damage):
     from specify_cli.integrations.installer import _recovery_identity
@@ -3583,6 +3608,50 @@ def test_registration_keeps_requested_project_hooks(tmp_path, server, monkeypatc
     output = (first / ".sample-agent/commands/speckit.sample.md").read_text()
     assert "FIRST PROJECT ADAPTER" in output
     assert "SECOND PROJECT ADAPTER" not in output
+    assert not (first / ".other-agent").exists()
+
+
+def test_unregistration_keeps_requested_project_naming_hook(
+    tmp_path, server
+):
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    registrar = CommandRegistrar(first)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nBody\n"
+    )
+    registrar.register_commands(
+        KEY,
+        [{"name": "speckit.sample", "file": "command.md"}],
+        "sample",
+        source,
+        first,
+    )
+    first_output = first / ".sample-agent/commands/first-sample.md"
+    unrelated_output = first / ".sample-agent/commands/second-sample.md"
+    unrelated_output.write_text("unrelated project output\n")
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    load_installed_integrations(second)
+
+    registrar.unregister_commands({KEY: ["speckit.sample"]}, first)
+
+    assert not first_output.exists()
+    assert unrelated_output.read_text() == "unrelated project output\n"
     assert not (first / ".other-agent").exists()
 
 
