@@ -680,8 +680,16 @@ class IntegrationBase(ABC):
         writing.  Returns *dest*.
         """
         normalized = content.replace("\r\n", "\n")
-        rel = dest.resolve().relative_to(project_root.resolve())
-        return manifest.record_file(rel, normalized.encode("utf-8"))
+        dest_absolute = dest if dest.is_absolute() else Path.cwd() / dest
+        project_root_absolute = (
+            project_root if project_root.is_absolute() else Path.cwd() / project_root
+        )
+        try:
+            rel = dest_absolute.relative_to(project_root_absolute)
+        except ValueError:
+            rel = dest_absolute.relative_to(project_root.resolve())
+        manifest.record_file(rel, normalized.encode("utf-8"))
+        return dest
 
     def integration_scripts_dir(self) -> Path | None:
         """Return path to this integration's bundled ``scripts/`` directory.
@@ -1832,9 +1840,9 @@ class SkillsIntegration(IntegrationBase):
                 f"project_root ({project_root_resolved})"
             )
 
-        skills_dir = self.skills_dest(project_root).resolve()
+        skills_dir = self.skills_dest(project_root)
         try:
-            skills_dir.relative_to(project_root_resolved)
+            skills_dir.resolve().relative_to(project_root_resolved)
         except ValueError as exc:
             raise ValueError(
                 f"Skills destination {skills_dir} escapes "
@@ -1945,17 +1953,19 @@ class SkillsIntegration(IntegrationBase):
             created.append(dst)
 
         created_skill_files = {
-            path.resolve().relative_to(project_root_resolved).as_posix()
+            path.relative_to(project_root).as_posix()
             for path in created
             if path.name == "SKILL.md"
         }
         tracked_skill_files = {
             path for path in manifest.files if path.endswith("/SKILL.md")
         }
-        if created_skill_files != tracked_skill_files:
+        missing_skill_files = created_skill_files - tracked_skill_files
+        if missing_skill_files:
             raise RuntimeError(
                 "Skills setup produced a manifest that does not track every "
-                "generated SKILL.md file"
+                "generated SKILL.md file: "
+                + ", ".join(sorted(missing_skill_files))
             )
 
         # Install agent runtime events

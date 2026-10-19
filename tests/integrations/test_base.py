@@ -200,6 +200,47 @@ class TestBasePrimitives:
         assert dest.read_text(encoding="utf-8") == "content"
         assert "sub/f.txt" in m.files
 
+    @pytest.mark.parametrize("link_type", ["leaf", "ancestor"])
+    def test_write_file_and_record_rejects_project_local_symlink(
+        self, tmp_path, link_type
+    ):
+        target_dir = tmp_path / "user-data"
+        target_dir.mkdir()
+        target = target_dir / "SKILL.md"
+        target.write_text("user content", encoding="utf-8")
+        dest_dir = tmp_path / ".claude" / "skills" / "speckit-plan"
+        if link_type == "leaf":
+            dest_dir.mkdir(parents=True)
+            dest = dest_dir / "SKILL.md"
+            dest.symlink_to(target)
+        else:
+            dest_dir.parent.mkdir(parents=True)
+            dest_dir.symlink_to(target_dir, target_is_directory=True)
+            dest = dest_dir / "SKILL.md"
+        manifest = IntegrationManifest("claude", tmp_path)
+
+        with pytest.raises(ValueError, match="symlinked"):
+            IntegrationBase.write_file_and_record(
+                "replacement", dest, tmp_path, manifest
+            )
+
+        assert target.read_text(encoding="utf-8") == "user content"
+        assert manifest.files == {}
+
+    def test_write_file_and_record_supports_aliased_project_root(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        alias = tmp_path / "project-alias"
+        alias.symlink_to(project, target_is_directory=True)
+        manifest = IntegrationManifest("test", alias)
+        dest = alias / "sub" / "f.txt"
+
+        result = IntegrationBase.write_file_and_record("content", dest, alias, manifest)
+
+        assert result == dest
+        assert result.read_text(encoding="utf-8") == "content"
+        assert "sub/f.txt" in manifest.files
+
     def test_setup_copies_shared_templates(self, tmp_path):
         i = StubIntegration()
         m = IntegrationManifest("stub", tmp_path)

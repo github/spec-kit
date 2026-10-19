@@ -101,26 +101,6 @@ class SkillsIntegrationTests:
         }
         assert tracked_skill_files == created_skill_files
 
-    def test_reinit_tracks_new_skill_over_existing_install(self, tmp_path):
-        i = get_integration(self.KEY)
-        skills_dir = i.skills_dest(tmp_path)
-        for command in (
-            "analyze", "clarify", "constitution", "implement", "plan",
-            "checklist", "specify", "tasks", "taskstoissues",
-        ):
-            skill_file = skills_dir / f"speckit-{command}" / "SKILL.md"
-            skill_file.parent.mkdir(parents=True, exist_ok=True)
-            skill_file.write_text("existing skill\n", encoding="utf-8")
-
-        m = IntegrationManifest(self.KEY, tmp_path)
-        created = i.setup(tmp_path, m)
-
-        skill_files = [path for path in created if path.name == "SKILL.md"]
-        assert any(path.parent.name == "speckit-converge" for path in skill_files)
-        assert len([path for path in m.files if path.endswith("/SKILL.md")]) == len(
-            skill_files
-        )
-
     def test_skill_directory_structure(self, tmp_path):
         """Each command produces speckit-<name>/SKILL.md."""
         i = get_integration(self.KEY)

@@ -95,6 +95,34 @@ class TestClaudeIntegration:
         assert tracked_skill_files == created_skill_files
         assert ".claude/skills/speckit-converge/SKILL.md" in manifest.files
 
+    def test_setup_fails_when_generated_skill_is_not_recorded(
+        self, tmp_path, monkeypatch
+    ):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+
+        def write_without_recording(content, dest, project_root, manifest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            return dest
+
+        monkeypatch.setattr(
+            integration, "write_file_and_record", write_without_recording
+        )
+
+        with pytest.raises(RuntimeError, match="does not track every generated"):
+            integration.setup(tmp_path, manifest, script_type="sh")
+
+    def test_setup_allows_additional_manifest_owned_skill(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        extra_skill = ".claude/skills/user-notes/SKILL.md"
+        manifest.record_file(extra_skill, "user-owned skill\n")
+
+        integration.setup(tmp_path, manifest, script_type="sh")
+
+        assert extra_skill in manifest.files
+
     def test_render_skill_unicode(self):
         """Test rendering a skill preserves non-ASCII characters."""
         integration = get_integration("claude")
