@@ -422,6 +422,96 @@ class TestExtensionUpdateCLI:
         assert "Updated to v2.0.0" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "2.0.0"
 
+    @staticmethod
+    def _declare_config(ext_dir: Path, template_text: str) -> None:
+        """Make *ext_dir* declare ``test-ext-config.yml`` in ``provides.config``."""
+        manifest_path = ext_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["provides"]["config"] = [
+            {"name": "test-ext-config.yml", "template": "config-template.yml"}
+        ]
+        manifest_path.write_text(yaml.dump(manifest, sort_keys=False))
+        (ext_dir / "config-template.yml").write_text(template_text)
+
+    def _update_from_archive(self, project_dir: Path, source_dir: Path, version: str):
+        """Run ``extension update`` with *source_dir* packaged as the catalog archive."""
+        archive = Path(shutil.make_archive(str(source_dir), "zip", source_dir))
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": version,
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=archive):
+            return CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n", catch_exceptions=True
+            )
+
+    def test_update_scaffolds_config_declared_by_new_version(self, tmp_path):
+        """A config template introduced by the new version is scaffolded, as
+        ``extension add`` would scaffold it for a fresh install."""
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        ExtensionManager(project_dir).install_from_directory(
+            self._create_extension_source(tmp_path, "1.0.0"), "0.1.0"
+        )
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        self._declare_config(v2_dir, "setting: default\n")
+
+        result = self._update_from_archive(project_dir, v2_dir, "2.0.0")
+
+        flat = " ".join(result.output.split())
+        assert result.exit_code == 0, result.output
+        assert "Updated to v2.0.0" in flat
+        config = project_dir / ".specify" / "extensions" / "test-ext" / "test-ext-config.yml"
+        assert config.is_file()
+        assert config.read_text() == "setting: default\n"
+        assert "Config scaffolded: .specify/extensions/test-ext/test-ext-config.yml" in flat
+
+    def test_update_keeps_existing_config_over_new_template(self, tmp_path):
+        """Scaffolding during update never replaces a config the project has."""
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        self._declare_config(v1_dir, "setting: default\n")
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(v1_dir, "0.1.0")
+        assert manager.scaffold_config("test-ext")[0] == ["test-ext-config.yml"]
+        config = project_dir / ".specify" / "extensions" / "test-ext" / "test-ext-config.yml"
+        config.write_text("setting: customized\n")
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        self._declare_config(v2_dir, "setting: new-default\n")
+
+        result = self._update_from_archive(project_dir, v2_dir, "2.0.0")
+
+        flat = " ".join(result.output.split())
+        assert result.exit_code == 0, result.output
+        assert "Updated to v2.0.0" in flat
+        assert config.read_text() == "setting: customized\n"
+        assert "Config scaffolded" not in flat
+
+    def test_update_warns_when_declared_config_cannot_be_scaffolded(self, tmp_path):
+        """A declared template missing from the package is reported, not fatal."""
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        ExtensionManager(project_dir).install_from_directory(
+            self._create_extension_source(tmp_path, "1.0.0"), "0.1.0"
+        )
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        self._declare_config(v2_dir, "setting: default\n")
+        (v2_dir / "config-template.yml").unlink()
+
+        result = self._update_from_archive(project_dir, v2_dir, "2.0.0")
+
+        flat = " ".join(result.output.split())
+        assert result.exit_code == 0, result.output
+        assert "Updated to v2.0.0" in flat
+        assert "Config templates not scaffolded: test-ext-config.yml" in flat
+        assert not (
+            project_dir / ".specify" / "extensions" / "test-ext" / "test-ext-config.yml"
+        ).exists()
+
     def test_update_bundled_blocked_when_local_copy_lags_catalog(self, tmp_path):
         """When the catalog advertises a newer version than the running release
         bundles, the update is reported as requiring a spec-kit upgrade instead
