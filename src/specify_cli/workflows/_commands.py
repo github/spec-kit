@@ -86,15 +86,12 @@ def _fail_recorded_run(
 
     ``WorkflowEngine.execute``/``resume`` persist an exception raised while
     steps run (an expression error, say) as the run's ``failed`` status and
-    error before re-raising it. Errors raised before that point, such as
-    input validation or a refused resume, record nothing, so this returns and
-    the caller reports them as before.
+    error, and mark that exception on the in-memory state, before re-raising
+    it. Errors raised before that point, such as input validation or a refused
+    resume, are not marked even when a loaded failed run carries the same
+    message, so this returns and the caller reports them as before.
     """
-    if (
-        state is not None
-        and getattr(state.status, "value", state.status) == "failed"
-        and state.error == str(exc)
-    ):
+    if state is not None and getattr(state, "_recorded_exception", None) is exc:
         _fail_workflow_execution(
             exc, json_output=json_output, state=state, resume=resume
         )

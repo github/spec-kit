@@ -144,6 +144,30 @@ steps:
         state = RunState.load(failed["run_id"], project_dir)
         assert state.error == failed["error"]
 
+    def test_resume_json_refused_with_matching_old_error_is_not_a_run_outcome(
+        self, project_dir
+    ):
+        """A refused resume is not reported as the run's outcome even when the
+        previously recorded failure has exactly the same message."""
+        from specify_cli.workflows.engine import RunState
+
+        wf = self._write_wf(project_dir, self._WF_FAIL, "fail")
+        failed = json.loads(
+            self._invoke(project_dir, ["workflow", "run", str(wf), "--json"]).stdout
+        )
+        message = "Input 'count' expected a number, got 'abc'."
+        state = RunState.load(failed["run_id"], project_dir)
+        state.error = message
+        state.save()
+
+        result = self._invoke(
+            project_dir,
+            ["workflow", "resume", failed["run_id"], "--json", "--input", "count=abc"],
+        )
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert message in result.stderr
+
 
 
 class TestResumeWithInputs:
