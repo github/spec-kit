@@ -47,6 +47,33 @@ def test_validate_bundled_patch_compatibility(
     assert ("newer packaged patch" in " ".join(result.output.split())) is warning
 
 
+def test_validate_rejects_non_positive_preset_priority(project: Path, monkeypatch):
+    """A manifest every install would reject must not be reported as valid."""
+    import specify_cli._assets as assets
+
+    payload = project / "packaged-preset"
+    payload.mkdir()
+    (payload / "preset.yml").write_text(
+        yaml.safe_dump({"preset": {"id": "p", "version": "1.0.0"}}), encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: payload)
+    data = valid_manifest_dict(
+        provides={
+            "presets": [
+                {"id": "p", "version": "1.0.0", "priority": 0, "strategy": "replace"}
+            ]
+        },
+    )
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+
+    assert result.exit_code == 1, result.output
+    assert "preset 'p' priority must be 1 or higher, got 0" in " ".join(
+        result.output.split()
+    )
+
+
 @pytest.mark.parametrize("offline", [False, True])
 def test_validate_bundled_workflow_patch_warns_without_catalog_lookup(
     project: Path, monkeypatch, offline: bool,
