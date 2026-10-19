@@ -365,7 +365,12 @@ class _PresetSkillMethods:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
                     # brand-new skill subdirectories when ai_skills is on).
-                    written = self._register_skills(filtered_manifest, pack_dir)
+                    # On removal, write only the skill names this directory
+                    # may manage, so a user-owned modern/legacy sibling of a
+                    # recomposed skill is left alone.
+                    written = self._register_skills(
+                        filtered_manifest, pack_dir, only_skill_names=managed_names,
+                    )
                 else:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
@@ -659,6 +664,7 @@ class _PresetSkillMethods:
         *,
         target_dir: Optional[Path] = None,
         target_agent: Optional[str] = None,
+        only_skill_names: Optional[Set[str]] = None,
     ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
@@ -684,6 +690,9 @@ class _PresetSkillMethods:
                 subdirectories are never created for a non-active,
                 explicitly targeted directory (that creation path is only
                 meaningful for the currently active agent).
+            only_skill_names: When given, write only these skill
+                directory names; any other existing modern or legacy
+                skill for the same command is left untouched.
 
         Returns:
             ``{agent_name: [skill_name, ...]}`` for the single active
@@ -769,6 +778,10 @@ class _PresetSkillMethods:
                 missing_skill_dir = skills_dir / skill_name
                 if not missing_skill_dir.exists():
                     target_skill_names.append(skill_name)
+            if only_skill_names is not None:
+                target_skill_names = [
+                    name for name in target_skill_names if name in only_skill_names
+                ]
             if not target_skill_names:
                 continue
 

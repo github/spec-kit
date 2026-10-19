@@ -1988,6 +1988,31 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
         assert skill_file.read_text(encoding="utf-8") == edited
 
+    def test_remove_base_preset_preserves_user_owned_legacy_skill(
+        self, project_dir, temp_dir
+    ):
+        """Recomposition writes only the skill name that still carries the
+        winning preset's marker, not a user-owned legacy sibling."""
+        manager, skill_file = self._install_composed_specify_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        legacy_file = skill_file.parent.parent / "speckit.specify" / "SKILL.md"
+        legacy_file.parent.mkdir(parents=True, exist_ok=True)
+        legacy = "---\nname: speckit.specify\n---\n\nUser-owned legacy body\n"
+        legacy_file.write_text(legacy, encoding="utf-8")
+
+        assert manager.remove("base-preset") is True
+
+        assert legacy_file.read_text(encoding="utf-8") == legacy
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Appended body" in content
+
     def test_shared_skills_dir_restored_once_using_active_agent(
         self, project_dir, temp_dir
     ):
