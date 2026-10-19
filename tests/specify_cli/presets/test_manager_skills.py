@@ -1937,7 +1937,8 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 manifest_path.write_text(yaml.dump(manifest))
             manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
         skill_file = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
-        assert "Base preset body" in skill_file.read_text(encoding="utf-8")
+        if layers is None:
+            assert "Base preset body" in skill_file.read_text(encoding="utf-8")
         return manager, skill_file
 
     def test_remove_sole_base_preset_retires_stale_composed_skill(
@@ -2030,6 +2031,81 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
         assert (cache, True, True) in events
         assert not cache.exists()
+        skill_dir = project_dir / ".claude" / "skills" / "speckit-custom"
+        assert (skill_dir, True, True) in events
+        assert not skill_dir.exists()
+
+    def test_stale_cache_cleanup_ignores_traversing_registry_key(
+        self, project_dir, temp_dir
+    ):
+        """A malformed registry key with ``..`` must not reach outside the project."""
+        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        outside = (manager.presets_dir / "../../../outside").resolve()
+        target = outside / ".composed" / "speckit.custom.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("external\n", encoding="utf-8")
+        manager.registry.add("../../../outside", {"version": "1.0.0", "enabled": True, "priority": 20})
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert target.read_text(encoding="utf-8") == "external\n"
+
+    def test_remove_sole_base_drops_disabled_preset_cache(
+        self, project_dir, temp_dir
+    ):
+        """A disabled composer's stale cache is dropped too, so re-enabling it
+        and rescaffolding cannot render the removed base back."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+        manager.registry.update("middle-preset", {"enabled": False})
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.registry.update("middle-preset", {"enabled": True})
+            manager.register_enabled_presets_for_agent("claude")
+
+        assert not (
+            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
+        ).exists()
+        assert not skill_file.exists() or "Base preset body" not in skill_file.read_text(
+            encoding="utf-8"
+        )
+
+    def test_unreadable_surviving_base_keeps_composed_output(
+        self, project_dir, temp_dir
+    ):
+        """Resolution also fails when a surviving base can't be decoded; that
+        must not be treated as a missing base that retires the output."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("other-base", "Other base body", "replace", 8),
+                ("append-preset", "Appended body", "append", 5),
+            ],
+        )
+        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
+        skill_before = skill_file.read_text(encoding="utf-8")
+        assert cache.is_file() and "Other base body" in skill_before
+        manifest = yaml.safe_load(
+            (manager.presets_dir / "other-base" / "preset.yml").read_text()
+        )
+        command_file = manager.presets_dir / "other-base" / manifest["provides"]["templates"][0]["file"]
+        command_file.write_bytes(b"---\ndescription: x\n---\n\xff\xfe broken\n")
+
+        manager.remove("base-preset")
+
+        assert cache.is_file()
+        assert skill_file.read_text(encoding="utf-8") == skill_before
 
     def test_remove_base_preset_recomposes_surviving_composed_skill(
         self, project_dir, temp_dir

@@ -20,6 +20,16 @@ from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
 
 
+def _is_plain_path_segment(name: Any) -> bool:
+    """True for a single, non-traversing path component."""
+    return (
+        isinstance(name, str)
+        and name not in ("", ".", "..")
+        and "/" not in name
+        and "\\" not in name
+    )
+
+
 class _PresetSkillMethods:
     """Skill artifact methods shared through PresetManager's lifecycle state."""
 
@@ -200,15 +210,17 @@ class _PresetSkillMethods:
                 if top_path.is_relative_to(pack_dir):
                     preset_cmds.setdefault(pack_id, []).append(cmd_name)
                     if layers[0]["strategy"] != "replace":
-                        if resolver.resolve_content(cmd_name, "command") is None:
-                            # Nothing left to compose onto: drop the stale
-                            # cache so it can't be rendered back into a skill.
-                            unresolved_winners[cmd_name] = pack_id
-                            self._drop_stale_composed_caches(
-                                cmd_name, presets_by_priority
-                            )
-                        else:
+                        if resolver.resolve_content(cmd_name, "command") is not None:
                             composed_winners[cmd_name] = pack_id
+                        elif not any(
+                            layer["strategy"] == "replace" for layer in layers
+                        ):
+                            # Nothing left to compose onto: drop the stale
+                            # caches so they can't be rendered back into a
+                            # skill. A None from an unreadable layer, with a
+                            # base still present, keeps existing output.
+                            unresolved_winners[cmd_name] = pack_id
+                            self._drop_stale_composed_caches(cmd_name)
                     found_preset = True
                     break
             if not found_preset:
@@ -431,7 +443,14 @@ class _PresetSkillMethods:
                     if self._validate_skill_subdir(
                         stale_dir, create=False, skills_root=active_skills_dir
                     ):
+                        from ..integrations._file_changes import (
+                            after_file_change,
+                            before_file_change,
+                        )
+
+                        before_file_change(stale_dir, removal=True)
                         shutil.rmtree(stale_dir)
+                        after_file_change(stale_dir)
             if active_names is None or active_names:
                 apply_to_dir(
                     active_skills_dir,
@@ -452,20 +471,24 @@ class _PresetSkillMethods:
 
         return reconciled_skill_commands
 
-    def _drop_stale_composed_caches(
-        self, cmd_name: str, presets_by_priority: List[Any]
-    ) -> None:
-        """Delete every preset's ``.composed/<cmd>.md`` for an uncomposable command.
+    def _drop_stale_composed_caches(self, cmd_name: str) -> None:
+        """Delete every installed preset's ``.composed/<cmd>.md`` for an
+        uncomposable command, disabled presets included.
 
         With no base left, any preset's cached composition of ``cmd_name``
         still holds the removed layer and could be rendered back by a later
-        registration. A cache reached through a symlinked ancestor below the
-        project root is skipped, so nothing outside the project is deleted;
-        the deletion is journaled like the cache writes.
+        registration. A registry key or command name with a path separator or
+        ``..`` component is skipped, as is a cache reached through a symlinked
+        ancestor below the project root, so nothing outside the project is
+        deleted; the deletion is journaled like the cache writes.
         """
         from ..integrations._file_changes import unlink as _unlink_file
 
-        for pack_id, _meta in presets_by_priority:
+        for pack_id in self.registry.list():
+            if not _is_plain_path_segment(pack_id) or not _is_plain_path_segment(
+                f"{cmd_name}.md"
+            ):
+                continue
             stale = self.presets_dir / pack_id / ".composed" / f"{cmd_name}.md"
             if not stale.is_file() or not self._has_no_symlink_below_project(stale):
                 continue
