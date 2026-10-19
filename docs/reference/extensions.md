@@ -305,18 +305,21 @@ events:
     command: speckit.my-extension.initialize
   pre_tool_use:
     command: speckit.my-extension.validate
-    matcher: "write|edit"
 ```
 
-Spec Kit translates these canonical event names into the active integration's
-agent-native event configuration. Supported canonical events are
-`session_start`, `pre_tool_use`, `post_tool_use`, `user_prompt_submit`, `stop`,
-and `session_end`; the active coding-agent integration may support only a
-subset.
+Event declarations are integration-agnostic. Spec Kit refreshes every installed
+event-capable integration, and each integration translates the canonical event
+names into its coding agent's native event configuration. Supported canonical
+events are `session_start`, `pre_tool_use`, `post_tool_use`,
+`user_prompt_submit`, `stop`, and `session_end`; each integration may support
+only a subset.
 
 Runtime events are distinct from extension hooks. Events react to the coding
-agent's lifecycle, while hooks surface extension commands before or after Spec
-Kit commands such as `plan`, `tasks`, and `implement`.
+agent's lifecycle and execute the referenced command template's `scripts`
+entry directly. The referenced command must therefore provide a runnable
+script; its Markdown instructions are not sent to the coding agent. Hooks
+instead surface extension commands before or after Spec Kit commands such as
+`plan`, `tasks`, and `implement`.
 
 ## Project Extension and Hook Configuration
 
