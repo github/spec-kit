@@ -294,6 +294,30 @@ cp .specify/extensions/<ext>/<ext>-config.template.yml \
    .specify/extensions/<ext>/<ext>-config.yml
 ```
 
+## Extension Runtime Events
+
+Extensions can react to coding-agent lifecycle events by declaring a top-level
+`events` mapping in `extension.yml`:
+
+```yaml
+events:
+  session_start:
+    command: speckit.my-extension.initialize
+  pre_tool_use:
+    command: speckit.my-extension.validate
+    matcher: "write|edit"
+```
+
+Spec Kit translates these canonical event names into the active integration's
+agent-native event configuration. Supported canonical events are
+`session_start`, `pre_tool_use`, `post_tool_use`, `user_prompt_submit`, `stop`,
+and `session_end`; the active coding-agent integration may support only a
+subset.
+
+Runtime events are distinct from extension hooks. Events react to the coding
+agent's lifecycle, while hooks surface extension commands before or after Spec
+Kit commands such as `plan`, `tasks`, and `implement`.
+
 ## Project Extension and Hook Configuration
 
 Spec Kit stores project-level extension registration and hook configuration in:
