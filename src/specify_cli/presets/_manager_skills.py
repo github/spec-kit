@@ -3,6 +3,7 @@
 import copy
 import os
 import shutil
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
@@ -18,6 +19,21 @@ from ..integrations._registration import project_registration
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
+
+
+def _is_link_or_reparse_point(path: Path) -> bool:
+    """True for a symlink or a Windows reparse point such as a directory junction.
+
+    ``Path.is_symlink()`` does not report junctions; mirror the check in
+    ``FileHelper._entry_mode``.
+    """
+    try:
+        entry = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISLNK(entry.st_mode) or bool(
+        getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
 
 
 def _is_plain_path_segment(name: Any) -> bool:
@@ -398,6 +414,7 @@ class _PresetSkillMethods:
                     written = self._register_skills(
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
+                        only_skill_names=managed_names,
                     )
                 if target_agent is None:
                     written_names = {
@@ -502,7 +519,7 @@ class _PresetSkillMethods:
             return False
         current = path
         while current != self.project_root:
-            if current.is_symlink():
+            if _is_link_or_reparse_point(current):
                 return False
             current = current.parent
         return True

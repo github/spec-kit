@@ -2035,6 +2035,34 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         assert (skill_dir, True, True) in events
         assert not skill_dir.exists()
 
+    def test_stale_cache_cleanup_rejects_junctioned_composed_dir(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A ``.composed`` directory reported as a Windows reparse point (a
+        junction, which ``is_symlink()`` misses) is not followed."""
+        from types import SimpleNamespace
+
+        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        composed = manager.presets_dir / "append-preset" / ".composed"
+        cache = composed / "speckit.custom.md"
+        lstat = Path.lstat
+
+        def junction_lstat(path, **kwargs):
+            result = lstat(path, **kwargs)
+            if path == composed:
+                return SimpleNamespace(
+                    st_mode=result.st_mode,
+                    st_file_attributes=0x400,
+                    st_reparse_tag=0xA0000003,
+                )
+            return result
+
+        monkeypatch.setattr(Path, "lstat", junction_lstat)
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert cache.is_file()
+
     def test_stale_cache_cleanup_ignores_traversing_registry_key(
         self, project_dir, temp_dir
     ):
@@ -2407,6 +2435,42 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             "the surviving preset's override must also be restored for "
             "the currently active agent"
         )
+
+    def test_remove_keeps_user_owned_legacy_skill_in_historical_dir(
+        self, project_dir, temp_dir
+    ):
+        """Reconciling an inactive agent's directory writes only the managed
+        skill name, not a user-owned legacy sibling beside it."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-legacy-b", "speckit.specify", "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-legacy-a", "speckit.specify", "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        legacy_file = claude_skills_dir / "speckit.specify" / "SKILL.md"
+        legacy_file.parent.mkdir(parents=True)
+        legacy = "---\nname: speckit.specify\n---\n\nUser-owned legacy body\n"
+        legacy_file.write_text(legacy, encoding="utf-8")
+
+        assert manager.remove("hist-legacy-a") is True
+
+        assert legacy_file.read_text(encoding="utf-8") == legacy
+        assert "preset:hist-legacy-b" in (
+            claude_skills_dir / "speckit-specify" / "SKILL.md"
+        ).read_text()
 
     def test_skill_reconciliation_preserves_per_directory_names(
         self, project_dir, temp_dir
