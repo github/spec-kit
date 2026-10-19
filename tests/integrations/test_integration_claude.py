@@ -131,6 +131,24 @@ class TestClaudeIntegration:
         with pytest.raises(RuntimeError, match="does not track every generated"):
             integration.setup(tmp_path, manifest, script_type="sh")
 
+    def test_setup_rejects_project_local_skills_symlink(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        target = tmp_path / "linked-skills"
+        target.mkdir()
+        skills_dir = tmp_path / ".claude" / "skills"
+        skills_dir.parent.mkdir()
+        try:
+            skills_dir.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        with pytest.raises(ValueError, match="symlinked"):
+            integration.setup(tmp_path, manifest, script_type="sh")
+
+        assert list(target.iterdir()) == []
+        assert manifest.files == {}
+
     def test_setup_allows_additional_manifest_owned_skill(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)

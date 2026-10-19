@@ -227,13 +227,18 @@ class TestBasePrimitives:
         assert target.read_text(encoding="utf-8") == "user content"
         assert manifest.files == {}
 
-    def test_write_file_and_record_supports_aliased_project_root(self, tmp_path):
+    @pytest.mark.parametrize("resolve_dest", [False, True])
+    def test_write_file_and_record_supports_aliased_project_root(
+        self, tmp_path, resolve_dest
+    ):
         project = tmp_path / "project"
         project.mkdir()
         alias = tmp_path / "project-alias"
         alias.symlink_to(project, target_is_directory=True)
         manifest = IntegrationManifest("test", alias)
         dest = alias / "sub" / "f.txt"
+        if resolve_dest:
+            dest = dest.resolve()
 
         result = IntegrationBase.write_file_and_record("content", dest, alias, manifest)
 
