@@ -1918,12 +1918,12 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
         return manager, project_dir / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
 
-    def _install_unbacked_custom_stack(self, project_dir, temp_dir):
-        """Base + append presets for ``speckit.custom``, which has no core template."""
+    def _install_unbacked_custom_stack(self, project_dir, temp_dir, layers=None):
+        """Presets for ``speckit.custom``, which has no core template."""
         self._write_init_options(project_dir, ai="claude", ai_skills=True)
         self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
         manager = PresetManager(project_dir)
-        for preset_id, body, strategy, priority in [
+        for preset_id, body, strategy, priority in layers or [
             ("base-preset", "Base preset body", "replace", 10),
             ("append-preset", "Appended body", "append", 5),
         ]:
@@ -1966,6 +1966,70 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             assert manager.remove("base-preset") is True
 
         assert skill_file.read_text(encoding="utf-8") == edited
+
+    def test_remove_sole_base_preset_keeps_cache_behind_symlinked_dir(
+        self, project_dir, temp_dir
+    ):
+        """A ``.composed`` directory that links outside the project is not
+        followed when stale caches are deleted."""
+        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        composed = manager.presets_dir / "append-preset" / ".composed"
+        external = temp_dir / "external-composed"
+        shutil.move(str(composed), str(external))
+        composed.symlink_to(external, target_is_directory=True)
+        target = external / "speckit.custom.md"
+        assert target.is_file()
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+
+        assert target.is_file()
+
+    def test_remove_sole_base_under_two_composers_survives_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """Every surviving preset's stale cache is dropped, so a later
+        rescaffold cannot render the removed base back into the skill."""
+        manager, skill_file = self._install_unbacked_custom_stack(
+            project_dir,
+            temp_dir,
+            [
+                ("base-preset", "Base preset body", "replace", 10),
+                ("middle-preset", "Middle body", "append", 7),
+                ("top-preset", "Top body", "append", 5),
+            ],
+        )
+
+        with pytest.warns(UserWarning, match="no base layer"):
+            assert manager.remove("base-preset") is True
+            manager.register_enabled_presets_for_agent("claude")
+
+        for preset_id in ("middle-preset", "top-preset"):
+            assert not (
+                manager.presets_dir / preset_id / ".composed" / "speckit.custom.md"
+            ).exists()
+        assert not skill_file.exists() or "Base preset body" not in skill_file.read_text(
+            encoding="utf-8"
+        )
+
+    def test_stale_cache_deletion_is_journaled(self, project_dir, temp_dir):
+        """The cache deletion is reported to the lifecycle file-change journal."""
+        from specify_cli.integrations._file_changes import file_change_observer
+
+        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
+        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
+        events = []
+        token = file_change_observer.set(
+            lambda path, before, removal: events.append((path, before, removal))
+        )
+        try:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+        finally:
+            file_change_observer.reset(token)
+
+        assert (cache, True, True) in events
+        assert not cache.exists()
 
     def test_remove_base_preset_recomposes_surviving_composed_skill(
         self, project_dir, temp_dir

@@ -204,9 +204,9 @@ class _PresetSkillMethods:
                             # Nothing left to compose onto: drop the stale
                             # cache so it can't be rendered back into a skill.
                             unresolved_winners[cmd_name] = pack_id
-                            stale = pack_dir / ".composed" / f"{cmd_name}.md"
-                            if stale.is_file() and not stale.is_symlink():
-                                stale.unlink()
+                            self._drop_stale_composed_caches(
+                                cmd_name, presets_by_priority
+                            )
                         else:
                             composed_winners[cmd_name] = pack_id
                     found_preset = True
@@ -451,6 +451,38 @@ class _PresetSkillMethods:
             )
 
         return reconciled_skill_commands
+
+    def _drop_stale_composed_caches(
+        self, cmd_name: str, presets_by_priority: List[Any]
+    ) -> None:
+        """Delete every preset's ``.composed/<cmd>.md`` for an uncomposable command.
+
+        With no base left, any preset's cached composition of ``cmd_name``
+        still holds the removed layer and could be rendered back by a later
+        registration. A cache reached through a symlinked ancestor below the
+        project root is skipped, so nothing outside the project is deleted;
+        the deletion is journaled like the cache writes.
+        """
+        from ..integrations._file_changes import unlink as _unlink_file
+
+        for pack_id, _meta in presets_by_priority:
+            stale = self.presets_dir / pack_id / ".composed" / f"{cmd_name}.md"
+            if not stale.is_file() or not self._has_no_symlink_below_project(stale):
+                continue
+            _unlink_file(stale)
+
+    def _has_no_symlink_below_project(self, path: Path) -> bool:
+        """True if ``path`` is under the project root with no symlinked component."""
+        try:
+            path.relative_to(self.project_root)
+        except ValueError:
+            return False
+        current = path
+        while current != self.project_root:
+            if current.is_symlink():
+                return False
+            current = current.parent
+        return True
 
     def _skills_owned_by_preset(
         self, skills_dir: Path, owners: Dict[str, str]
