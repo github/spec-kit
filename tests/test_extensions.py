@@ -3982,6 +3982,85 @@ Real body starts here.
         assert "$speckit-plan" in content
         assert "/speckit-plan" not in content
 
+    def test_skill_registration_uses_integration_command_ref_resolver(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        from specify_cli.integrations import get_integration
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND_PLAN__.",
+            encoding="utf-8",
+        )
+        integration = get_integration("codex")
+        assert integration is not None
+        calls = []
+
+        def resolve(content, *, skills_enabled):
+            calls.append((content, skills_enabled))
+            return content.replace(
+                "__SPECKIT_COMMAND_PLAN__", "custom-resolved-plan"
+            )
+
+        monkeypatch.setattr(
+            integration, "resolve_command_refs_for_mode", resolve
+        )
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        CommandRegistrar().register_commands_for_agent(
+            "codex", manifest, extension_dir, project_dir
+        )
+
+        content = (
+            skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "custom-resolved-plan" in content
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert calls and calls[0][1] is True
+
+    def test_skill_registration_uses_base_command_ref_resolver_fallback(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        from specify_cli.integrations import base, get_integration
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        command = extension_dir / "commands" / "hello.md"
+        command.write_text(
+            "---\ndescription: Test hello command\n---\n\n"
+            "Run __SPECKIT_COMMAND_PLAN__.",
+            encoding="utf-8",
+        )
+        original_get_integration = get_integration
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: None if key == "codex" else original_get_integration(key),
+        )
+        calls = []
+
+        def resolve(content, separator=".", prefix="/"):
+            calls.append((content, separator, prefix))
+            return content.replace(
+                "__SPECKIT_COMMAND_PLAN__", "fallback-resolved-plan"
+            )
+
+        monkeypatch.setattr(base.IntegrationBase, "resolve_command_refs", resolve)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        CommandRegistrar().register_commands_for_agent(
+            "codex", manifest, extension_dir, project_dir
+        )
+
+        content = (
+            skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "fallback-resolved-plan" in content
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert calls and calls[0][1:] == ("-", "/")
+
     def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
         """Codex SKILL.md overrides should resolve script placeholders."""
         import yaml

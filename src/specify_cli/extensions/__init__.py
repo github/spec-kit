@@ -1614,6 +1614,7 @@ class ExtensionManager:
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
         from ..integrations._file_changes import changing_file, unlink, write_text
+        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1629,19 +1630,14 @@ class ExtensionManager:
 
         def _resolve_command_ref_tokens(body: str) -> str:
             """Resolve explicit command-ref tokens with the active skill style."""
-
-            def _replacement(match: re.Match[str]) -> str:
-                command_name = "speckit." + match.group(1).lower().replace("_", ".")
-                if integration is not None:
-                    return integration.build_command_reference(
-                        command_name,
-                        skills_enabled=ai_skills_enabled,
-                    )
-                separator = agent_config.get("invoke_separator", ".")
-                return "/" + command_name.replace(".", separator)
-
-            return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
+            if integration is not None:
+                return integration.resolve_command_refs_for_mode(
+                    body,
+                    skills_enabled=ai_skills_enabled,
+                )
+            return IntegrationBase.resolve_command_refs(
+                body,
+                agent_config.get("invoke_separator", "."),
             )
 
         for cmd_info in manifest.commands:
