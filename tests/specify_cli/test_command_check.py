@@ -15,7 +15,6 @@ runner = CliRunner()
 @pytest.mark.parametrize("external", [False, True])
 def test_no_cli_requirement_is_not_classified_as_ide(tmp_path, monkeypatch, external):
     from specify_cli.command_check import _check_external_tools
-    from specify_cli._agent_config import AGENT_CONFIG
     from specify_cli._console import StepTracker
 
     if external:
@@ -33,14 +32,12 @@ def test_no_cli_requirement_is_not_classified_as_ide(tmp_path, monkeypatch, exte
         output = capture.get()
     else:
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setitem(AGENT_CONFIG, "artifact-free", {
-            "name": "Artifact-free", "requires_cli": False,
-        })
         with patch("specify_cli.check_tool", return_value=True) as check_tool:
             result = runner.invoke(app, ["check"])
         assert result.exit_code == 0, result.output
-        assert "artifact-free" not in [call.args[0] for call in check_tool.call_args_list]
+        assert "none" not in [call.args[0] for call in check_tool.call_args_list]
         output = strip_ansi(result.output)
+        assert "None (shared scaffolding only) (no CLI required)" in output
     assert "no CLI required" in output
     assert "IDE-based" not in output
 
