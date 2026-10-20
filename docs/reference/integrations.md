@@ -5,8 +5,8 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 For shared scaffolding without agent-specific files, use
 `specify init my-project --integration none`. Normal `.specify/` metadata remains.
 Use `specify integration switch <key>` to replace it, or
-`specify integration install <key> --force` followed by
-`specify integration use <key>` to keep both installed.
+`specify integration install <key>` followed by `specify integration use <key>`
+to keep both installed. The other integration must also be multi-install safe.
 
 ## Supported AI Coding Agents
 

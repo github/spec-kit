@@ -13,6 +13,7 @@ from specify_cli.integrations.manifest import IntegrationManifest
 def test_none_setup_produces_no_files(tmp_path):
     integration = get_integration("none")
     assert integration is not None
+    assert integration.multi_install_safe
     assert integration.registrar_config is None
     assert integration.list_command_templates() == []
     manifest = IntegrationManifest("none", tmp_path)
@@ -69,3 +70,37 @@ def test_none_lifecycle(tmp_path, monkeypatch, integration_args):
     assert result.exit_code == 1, result.output
     assert "Unknown integration option" in result.output
     assert IntegrationManifest.load("none", project).files == {}
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_none_teardown_preserves_unowned_dispatcher(tmp_path, force):
+    integration = get_integration("none")
+    manifest = IntegrationManifest("none", tmp_path)
+    manifest.save()
+    dispatcher = tmp_path / ".specify/events.py"
+    dispatcher.write_text("# User-owned dispatcher\n")
+
+    assert integration.teardown(tmp_path, manifest, force=force) == ([], [])
+    assert dispatcher.read_text() == "# User-owned dispatcher\n"
+    assert not (tmp_path / ".specify/integrations/none.manifest.json").exists()
+
+
+def test_none_coexists_with_a_safe_agent_without_force(tmp_path, monkeypatch):
+    runner = CliRunner()
+    project = tmp_path / "project"
+    result = runner.invoke(app, [
+        "init", str(project), "--integration", "none", "--non-interactive",
+    ])
+    assert result.exit_code == 0, result.output
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "install", "kiro-cli"])
+    assert result.exit_code == 0, result.output
+    state = json.loads((project / ".specify/integration.json").read_text())
+    assert state["integration"] == "none"
+    assert state["installed_integrations"] == ["none", "kiro-cli"]
+    result = runner.invoke(app, ["integration", "status", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "ok"
+    result = runner.invoke(app, ["integration", "install", "copilot"])
+    assert result.exit_code == 1, result.output
+    assert "multi-install safe" in result.output
