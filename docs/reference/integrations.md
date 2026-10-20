@@ -501,7 +501,7 @@ specify init my-project --integration claude --integration-options="--no-model-i
 
 OpenCode 1.18.31 and 1.19.3 on darwin arm64 discover files with a glob tool that calls ripgrep without `--hidden`. In a temporary Spec Kit tree, `opencode debug rg files --glob '.specify/**/*'` (the same `Ripgrep.glob` call the glob tool makes, with no model involved) returned no paths. `**/*.md` on that same command returned only a visible `README.md`, and missed `.specify/memory/constitution.md`, `.specify/templates/spec-template.md`, `.specify/templates/plan-template.md`, and `.specify/scripts/bash/check-prerequisites.sh`. After the project root `.ignore` contained:
 
-```
+```text
 !.specify/
 !.specify/**
 ```
