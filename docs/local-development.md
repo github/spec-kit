@@ -102,25 +102,12 @@ ls -l scripts | grep .sh
 
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
-## 6. Scaffold a Built-In Integration
+## 6. Develop a Built-In Integration
 
-Use the integration scaffold command to create the initial Python package and
-test skeleton for a new built-in integration:
-
-```bash
-specify integration scaffold my-agent --type markdown
-specify integration scaffold my-agent --type toml
-specify integration scaffold my-agent --type yaml
-specify integration scaffold my-agent --type skills
-```
-
-Hyphenated keys are converted to Python-safe package names, for example
-`my-agent` creates `src/specify_cli/integrations/my_agent/` and
-`tests/integrations/test_integration_my_agent.py`.
-
-The scaffold does not register the integration automatically. Review the
-generated metadata, then add the import and `_register()` call in
-`src/specify_cli/integrations/__init__.py`.
+Follow the [agent integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#adding-an-agent)
+for implementation contracts, registration, and behavioral coverage. See
+[contributing integrations](integrations/contributing.md) for catalog entries
+and submission guidance.
 
 ## 7. Run Lint / Basic Checks
 

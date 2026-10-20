@@ -11,7 +11,7 @@ These are one time installations required to be able to test your changes locall
 1. Install [Python 3.11+](https://www.python.org/downloads/)
 1. Install [uv](https://docs.astral.sh/uv/) for package management
 1. Install [Git](https://git-scm.com/downloads)
-1. Have an [AI coding agent available](https://github.github.io/spec-kit/reference/integrations.html)
+1. Have an [AI coding agent available](https://github.github.io/spec-kit/integrations/index.html)
 
 <details>
 <summary><b>💡 Hint if you are using <code>VSCode</code> or <code>GitHub Codespaces</code> as your IDE</b></summary>
@@ -172,7 +172,7 @@ its pinned archive URL and preferably its SHA-256 in a catalog. Registering a
 catalog only enables discovery/download; importing executable adapter code
 requires the user's trust decision and an install-enabled source. Follow the
 [integration API and lifecycle design](design/integration.md#external-adapter-package-contract)
-and [integration catalog contribution guide](integrations/CONTRIBUTING.md).
+and [integration catalog contribution guide](docs/integrations/contributing.md).
 Add public-path positive and negative tests rather than injecting test classes
 directly into the registry; include fresh-process loading and rollback evidence.
 

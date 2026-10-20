@@ -23,7 +23,6 @@ jobs:
         SECURITY.md
         SUPPORT.md
         spec-driven.md
-        integrations/*.md
         presets/*.md
         workflows/*.md
     steps:

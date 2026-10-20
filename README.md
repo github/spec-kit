@@ -41,7 +41,7 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 
 | Capability | Spec Kit mechanism |
 | --- | --- |
-| Connect to or switch between coding agents | [Integration](https://github.github.io/spec-kit/reference/integrations.html) |
+| Connect to or switch between coding agents | [Integration](https://github.github.io/spec-kit/integrations/index.html) |
 | Add a command, quality gate, or complete process | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
 | Connect a process to an external tool or service | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
 | React to coding-agent lifecycle events | [Extension runtime event](https://github.github.io/spec-kit/reference/extensions.html#extension-runtime-events) |
@@ -91,7 +91,7 @@ For other setups:
 
 - [Installation](https://github.github.io/spec-kit/installation.html) for pinned releases, other installers, CI, and troubleshooting.
 - [Existing projects](https://github.github.io/spec-kit/guides/existing-projects.html) to start with code you already have.
-- [Other agents](https://github.github.io/spec-kit/reference/integrations.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+- [Other agents](https://github.github.io/spec-kit/integrations/index.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 - [Upgrade](https://github.github.io/spec-kit/upgrade.html) to update an existing installation.
 
 <a id="-what-is-spec-driven-development"></a>
@@ -107,7 +107,7 @@ repeat the remaining steps for each feature. Run these skills in your agent's
 chat, not your terminal, one at a time, reviewing each result before continuing.
 
 This example uses GitHub Copilot's default skills syntax. For another agent,
-use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 
 ```text
 /speckit-constitution Create principles focused on code quality, testing, and maintainability.
@@ -142,7 +142,7 @@ Run these skills in your agent's chat, not your terminal, one at a time,
 reviewing each result before continuing.
 
 This example uses GitHub Copilot's default skills syntax. For another agent,
-use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 
 ```text
 /speckit-bug-assess "Submitting an empty password crashes the login form." slug=login-crash
@@ -174,7 +174,7 @@ Run these skills in your agent's chat, not your terminal, one at a time,
 reviewing each result before continuing.
 
 This example uses GitHub Copilot's default skills syntax. For another agent,
-use its [equivalent invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 
 ```text
 /speckit-assess-intake "Let users work offline and sync when they reconnect." slug=offline-mode
