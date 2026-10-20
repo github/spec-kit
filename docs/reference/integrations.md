@@ -37,7 +37,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
 | [Muse Code](https://dev.meta.ai/docs/muse-code)                                     | `muse`           | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                   |
 | [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)                  | `omp`            | Installs slash commands into `.omp/commands`                                                                                               |
-| [opencode](https://opencode.ai/)                                                     | `opencode`       |                                                                                                                                           |
+| [opencode](https://opencode.ai/)                                                     | `opencode`       | Optional `--configure-ignore-file` appends `!.specify/` and `!.specify/**` to the project root `.ignore` so OpenCode's glob tool can discover hidden `.specify` files. See [OpenCode: hidden Spec Kit files](#opencode-hidden-spec-kit-files). |
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
@@ -443,6 +443,7 @@ Some integrations accept additional options via `--integration-options`:
 | `copilot`   | `--commands`        | Scaffold `.github/agents/*.agent.md` commands with `.github/prompts/*.prompt.md` companions and merge `.vscode/settings.json` instead of using the default skills layout. |
 | `copilot`   | `--skills`          | Force the default skills layout, overriding an existing commands layout during an explicit migration. |
 | `claude`    | `--no-model-invocation` | Write `disable-model-invocation: true` into the core Spec Kit command skills so Claude Code runs them only when invoked as `/speckit-<command>` and keeps their descriptions out of its context. See [Claude: user-invocable-only skills](#claude-user-invocable-only-skills). |
+| `opencode`  | `--configure-ignore-file` | Append `!.specify/` and `!.specify/**` to the project root `.ignore` so OpenCode's glob tool can see hidden `.specify` files. See [OpenCode: hidden Spec Kit files](#opencode-hidden-spec-kit-files). |
 
 Example:
 
@@ -495,6 +496,28 @@ specify init my-project --integration claude --integration-options="--no-model-i
   --force` while Claude is the default integration (`--force` is needed because
   those commands modify installed skill files, and it overwrites local edits to
   Spec Kit-managed files).
+
+### OpenCode: hidden Spec Kit files
+
+OpenCode 1.18.31 and 1.19.3 on darwin arm64 discover files with a glob tool that calls ripgrep without `--hidden`. In a temporary Spec Kit tree, `opencode debug rg files --glob '.specify/**/*'` (the same `Ripgrep.glob` call the glob tool makes, with no model involved) returned no paths. `**/*.md` on that same command returned only a visible `README.md`, and missed `.specify/memory/constitution.md`, `.specify/templates/spec-template.md`, `.specify/templates/plan-template.md`, and `.specify/scripts/bash/check-prerequisites.sh`. After the project root `.ignore` contained:
+
+```
+!.specify/
+!.specify/**
+```
+
+those patterns returned the constitution, both templates, and the script. A catch-all `**/*` already listed `.specify` files before the exceptions. `!.specify/**` alone still returned no `.specify/**/*` matches; the directory rule is what re-includes the hidden directory on this ripgrep path. Cloud-model fallback prompts and OpenCode 2.x were outside this check.
+
+Opt in at install or upgrade:
+
+```bash
+specify init my-project --integration opencode --integration-options="--configure-ignore-file"
+specify integration upgrade opencode --integration-options="--configure-ignore-file"
+```
+
+The flag appends whichever of those two rules is not already an exact line, placing them at the end of the root `.ignore`. Bytes already in the file stay as a prefix, including non-ASCII text, CRLF, and a missing final newline. Default installs leave `.ignore` untouched. The file is recorded with partial ownership. `specify integration uninstall` and `specify integration uninstall --force` both leave it in place, exceptions included. Delete the two lines manually to restore the previous glob behavior.
+
+`.ignore` is a shared ignore file. OpenCode's glob tool sees the rules because it searches with ripgrep, and other tools that read `.ignore` (including fd) can start showing `.specify` as well. `specify integration upgrade opencode` replays the stored flag. Passing `--integration-options` replaces the whole stored set (repeat `--configure-ignore-file` alongside any other flags, such as `--events false`); `--integration-options=""` clears it.
 
 ## Scaffold a New Integration
 

@@ -1,12 +1,19 @@
 """Tests for OpencodeIntegration."""
 
+import json
 import warnings
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from specify_cli.agents import CommandRegistrar
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_markdown import MarkdownIntegrationTests
+
+_OPT_IN = {"configure_ignore_file": True}
 
 
 class TestOpencodeIntegration(MarkdownIntegrationTests):
@@ -200,3 +207,232 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert canonical.is_dir()
         assert not legacy.exists()
         assert any(canonical.glob("speckit.*.md"))
+
+    def test_configure_ignore_file_opt_in_records_partial_and_renders_commands(self, tmp_path):
+        """Opt-in appends both rules, renders commands, and records partial ownership."""
+        integration = get_integration(self.KEY)
+        manifest = IntegrationManifest(self.KEY, tmp_path)
+        created = integration.setup(tmp_path, manifest, parsed_options=_OPT_IN)
+
+        ignore = tmp_path / ".ignore"
+        assert ignore.read_bytes() == b"!.specify/\n!.specify/**\n"
+        assert any(path.resolve() == ignore.resolve() for path in created)
+        assert manifest.ownership_modes[".ignore"] == "partial"
+        assert ".ignore" in manifest.files
+
+        canonical = tmp_path / ".opencode" / "commands"
+        command_files = list(canonical.glob("speckit.*.md"))
+        assert command_files
+        plan = canonical / integration.command_filename("plan")
+        text = plan.read_text(encoding="utf-8")
+        assert "{SCRIPT}" not in text
+        assert "__AGENT__" not in text
+
+    def test_configure_ignore_file_preserves_prefix_and_repeats_cleanly(self, tmp_path):
+        """Existing bytes stay a prefix; missing rules are appended once."""
+        integration = get_integration(self.KEY)
+        cases = {
+            "empty": (b"", b"!.specify/\n!.specify/**\n"),
+            "lf-non-ascii-no-final-newline": (
+                "café keep".encode(),
+                "café keep\n!.specify/\n!.specify/**\n".encode(),
+            ),
+            "crlf-non-ascii-no-final-newline": (
+                "café\r\nkeep".encode(),
+                "café\r\nkeep\r\n!.specify/\r\n!.specify/**\r\n".encode(),
+            ),
+            "dir-rule-only": (b"!.specify/\n", b"!.specify/\n!.specify/**\n"),
+            "contents-rule-only": (b"!.specify/**\n", b"!.specify/**\n!.specify/\n"),
+            "both-rules": (
+                "café\r\n!.specify/\r\n!.specify/**\r\n".encode(),
+                "café\r\n!.specify/\r\n!.specify/**\r\n".encode(),
+            ),
+            "broader-exclusions": (
+                b"*\n.*\n.specify/**\n",
+                b"*\n.*\n.specify/**\n!.specify/\n!.specify/**\n",
+            ),
+        }
+        for name, (original, expected) in cases.items():
+            root = tmp_path / name
+            root.mkdir()
+            ignore = root / ".ignore"
+            ignore.write_bytes(original)
+            manifest = IntegrationManifest(self.KEY, root)
+            integration.setup(root, manifest, parsed_options=_OPT_IN)
+            assert ignore.read_bytes() == expected
+            assert ignore.read_bytes().startswith(original)
+            assert manifest.ownership_modes[".ignore"] == "partial"
+            integration.setup(
+                root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
+            )
+            assert ignore.read_bytes() == expected
+
+    def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        get_integration(self.KEY).setup(plain, IntegrationManifest(self.KEY, plain))
+        assert not (plain / ".ignore").exists()
+
+        other_root = tmp_path / "other"
+        other_root.mkdir()
+        (other_root / ".ignore").write_bytes(b"user\n")
+        get_integration("gemini").setup(
+            other_root, IntegrationManifest("gemini", other_root)
+        )
+        assert (other_root / ".ignore").read_bytes() == b"user\n"
+
+    def test_flag_parses_with_events_and_persists_across_upgrade(self, tmp_path):
+        from specify_cli.integrations._helpers import _parse_integration_options
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        integration = get_integration(self.KEY)
+        parsed = _parse_integration_options(
+            integration, "--configure-ignore-file --events false"
+        )
+        assert parsed == {"configure_ignore_file": True, "events": "false"}
+        names = [option.name for option in integration.options()]
+        assert "--events" in names
+        assert "--configure-ignore-file" in names
+
+        project = _init_project(
+            tmp_path, "opencode", "--configure-ignore-file --events false"
+        )
+        ignore = project / ".ignore"
+        state = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        settings = state["integration_settings"]["opencode"]
+        assert settings["parsed_options"] == {
+            "configure_ignore_file": True,
+            "events": "false",
+        }
+
+        ignore.write_bytes(b"keep me\n")
+        result = _run_in_project(project, ["integration", "upgrade", "opencode", "--force"])
+        assert result.exit_code == 0, result.output
+        assert ignore.read_bytes() == b"keep me\n!.specify/\n!.specify/**\n"
+        result = _run_in_project(project, ["integration", "upgrade", "opencode", "--force"])
+        assert result.exit_code == 0, result.output
+        assert ignore.read_bytes() == b"keep me\n!.specify/\n!.specify/**\n"
+
+    def test_uninstall_preserves_partial_ignore_even_when_forced(self, tmp_path):
+        integration = get_integration(self.KEY)
+        for force in (False, True):
+            root = tmp_path / f"force-{force}"
+            root.mkdir()
+            manifest = IntegrationManifest(self.KEY, root)
+            integration.setup(root, manifest, parsed_options=_OPT_IN)
+            ignore = root / ".ignore"
+            expected = ignore.read_bytes() + b"user-rule\n"
+            ignore.write_bytes(expected)
+            removed, skipped = integration.teardown(root, manifest, force=force)
+            assert ignore.read_bytes() == expected
+            assert ignore.resolve() not in {path.resolve() for path in removed}
+            assert ignore.resolve() in {path.resolve() for path in skipped}
+
+    def test_configure_ignore_file_rejects_unsafe_destinations(self, tmp_path):
+        integration = get_integration(self.KEY)
+        outside = tmp_path / "outside-secret"
+        outside.write_bytes(b"secret\n")
+
+        linked = tmp_path / "linked"
+        linked.mkdir()
+        link = linked / ".ignore"
+        link.symlink_to(outside)
+        with pytest.raises(ValueError, match="symlinked"):
+            integration.setup(linked, IntegrationManifest(self.KEY, linked), parsed_options=_OPT_IN)
+        assert link.is_symlink()
+        assert outside.read_bytes() == b"secret\n"
+
+        directory = tmp_path / "directory"
+        directory.mkdir()
+        ignore_dir = directory / ".ignore"
+        ignore_dir.mkdir()
+        (ignore_dir / "user.txt").write_text("keep", encoding="utf-8")
+        with pytest.raises(ValueError, match="not a regular file"):
+            integration.setup(
+                directory, IntegrationManifest(self.KEY, directory), parsed_options=_OPT_IN
+            )
+        assert (ignore_dir / "user.txt").read_text(encoding="utf-8") == "keep"
+
+        unreadable = tmp_path / "unreadable"
+        unreadable.mkdir()
+        blocked = unreadable / ".ignore"
+        blocked.write_bytes(b"user\n")
+        blocked.chmod(0)
+        try:
+            with pytest.raises(OSError):
+                integration.setup(
+                    unreadable,
+                    IntegrationManifest(self.KEY, unreadable),
+                    parsed_options=_OPT_IN,
+                )
+        finally:
+            blocked.chmod(0o644)
+        assert blocked.read_bytes() == b"user\n"
+
+        readonly = tmp_path / "readonly"
+        readonly.mkdir()
+        frozen = readonly / ".ignore"
+        frozen.write_bytes(b"user\n")
+        frozen.chmod(0o444)
+        try:
+            with pytest.raises(OSError):
+                integration.setup(
+                    readonly, IntegrationManifest(self.KEY, readonly), parsed_options=_OPT_IN
+                )
+        finally:
+            frozen.chmod(0o644)
+        assert frozen.read_bytes() == b"user\n"
+
+        failing = tmp_path / "write-fail"
+        failing.mkdir()
+        target = failing / ".ignore"
+        target.write_bytes(b"user\n")
+        real_write = Path.write_bytes
+
+        def fail_ignore_write(self, data):
+            if self.name == ".ignore":
+                raise OSError("disk full")
+            return real_write(self, data)
+
+        with patch.object(Path, "write_bytes", fail_ignore_write):
+            with pytest.raises(OSError, match="disk full"):
+                integration.setup(
+                    failing, IntegrationManifest(self.KEY, failing), parsed_options=_OPT_IN
+                )
+        assert target.read_bytes() == b"user\n"
+
+    def test_upgrade_rolls_back_existing_ignore_when_a_later_step_fails(self, tmp_path):
+        from specify_cli.integrations import installer
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "opencode")
+        ignore = project / ".ignore"
+        original = "café rule\r\n".encode()
+        ignore.write_bytes(original)
+        # Built-in upgrades open the file journal when an external package
+        # record is present. The sentinel starts that transaction without
+        # loading another adapter.
+        with (
+            patch.object(installer, "read_records", return_value={"sample": {"id": "sample"}}),
+            patch.object(installer, "load_installed_integrations", return_value=[]),
+            patch(
+                "specify_cli.integrations.command_upgrade._write_integration_json",
+                side_effect=OSError("later failure"),
+            ),
+        ):
+            result = _run_in_project(
+                project,
+                [
+                    "integration",
+                    "upgrade",
+                    "opencode",
+                    "--force",
+                    "--integration-options",
+                    "--configure-ignore-file",
+                ],
+            )
+        assert result.exit_code != 0
+        assert "later failure" in result.output
+        assert ignore.read_bytes() == original
