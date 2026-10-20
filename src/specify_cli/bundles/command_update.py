@@ -9,7 +9,7 @@ from .._console import console
 from . import BundlerError
 from ._commands import (
     _build_stack,
-    _fail,
+    _fail_with_notes,
     _render_install_warnings,
     _speckit_version,
     bundle_app,
@@ -72,5 +72,5 @@ def bundle_update(
                 f"to v{_escape_markup(str(plan.version))}."
             )
     except BundlerError as exc:
-        _fail(str(exc))
+        _fail_with_notes(exc)
         return

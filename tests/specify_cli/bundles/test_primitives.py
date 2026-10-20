@@ -1352,62 +1352,116 @@ def test_step_refresh_keeps_a_later_commit_when_reinstall_fails(
 def test_step_refresh_rollback_keeps_registry_keys_written_after_load(
     tmp_path: Path, monkeypatch
 ):
-    """Rollback must save the on-disk steps object, not the loaded snapshot.
+    """A competing install waits on rollback's lock; both entries survive.
 
-    After ``StepRegistry`` loads, a key written to ``step-registry.json``
-    without being inserted into that instance has to survive ``save()``.
+    Rollback is paused after its final registry read. An installer that takes
+    the shared step lock must block until rollback saves, or its new key is
+    overwritten by that stale document.
     """
     import json
+    import threading
 
-    from specify_cli.workflows.catalog import StepRegistry
+    from specify_cli.workflows.step import installer as step_installer
+    from tests.lock_helpers import wait_until_blocked_or_done, watch_lock_attempt
 
     steps_dir, entry = _seed_refresh_step(tmp_path)
-    registry_path = steps_dir / StepRegistry.REGISTRY_FILE
-    other_step = {
-        "name": "Other Step",
-        "version": "3.0.0",
-        "installed_at": "2024-06-06T00:00:00+00:00",
-        "updated_at": "2024-06-06T00:00:00+00:00",
-    }
+    other_pkg = tmp_path / "pkg-other"
+    other_pkg.mkdir()
+    (other_pkg / "step.yml").write_text(
+        "step:\n  type_key: other-step\n  name: Other\n  version: 1.0.0\n",
+        encoding="utf-8",
+    )
+    (other_pkg / "__init__.py").write_text("# init\n", encoding="utf-8")
     real_load = StepRegistry._load
-    injected = {"done": False}
+    state = {"n": 0}
+    loaded, release = threading.Event(), threading.Event()
 
     def _load(self):
         data = real_load(self)
-        steps = data.get("steps")
+        steps = data.get("steps") if isinstance(data, dict) else None
         if (
-            not injected["done"]
+            threading.current_thread().name == "refresh"
             and isinstance(steps, dict)
             and "my-step" not in steps
-            and self.registry_path.is_file()
         ):
-            injected["done"] = True
-            disk = json.loads(self.registry_path.read_text(encoding="utf-8"))
-            disk["steps"]["other-step"] = other_step
-            self.registry_path.write_text(json.dumps(disk), encoding="utf-8")
+            state["n"] += 1
+            if state["n"] == 2:
+                loaded.set()
+                assert release.wait(10), "rollback was never released"
         return data
 
-    def _boom(step_id, *args, **kwargs):
-        raise BundlerError(f"Failed to install step '{step_id}'.")
+    def _boom(*_args, **_kwargs):
+        raise BundlerError("Failed to install step 'my-step'.")
 
     monkeypatch.setattr(StepRegistry, "_load", _load)
     _stub_step_reinstall(monkeypatch, _boom)
+    attempted = watch_lock_attempt(monkeypatch, "installer")
+    errors: dict[str, BaseException] = {}
+    refresh_done, install_done = threading.Event(), threading.Event()
 
-    manager = primitive_manager("steps", tmp_path, allow_network=True)
-    with pytest.raises(BundlerError, match="Failed to install step 'my-step'"):
-        manager.refresh(_component("steps", "my-step"))
+    def _target(name, fn, done):
+        try:
+            fn()
+        except BaseException as exc:  # noqa: BLE001
+            errors[name] = exc
+        finally:
+            done.set()
 
-    assert injected["done"]
-    saved = json.loads(registry_path.read_text(encoding="utf-8"))
+    def _refresh():
+        primitive_manager("steps", tmp_path, allow_network=True).refresh(
+            _component("steps", "my-step")
+        )
+
+    refresh = threading.Thread(
+        target=_target, name="refresh", args=("refresh", _refresh, refresh_done),
+        daemon=True,
+    )
+    installer = threading.Thread(
+        target=_target,
+        name="installer",
+        args=(
+            "installer",
+            lambda: step_installer.install_step_package(
+                tmp_path, "other-step", other_pkg, source="local"
+            ),
+            install_done,
+        ),
+        daemon=True,
+    )
+    refresh.start()
+    try:
+        assert loaded.wait(10), "rollback never paused after its final registry read"
+        installer.start()
+        wait_until_blocked_or_done(attempted, install_done)
+        assert attempted.is_set()
+        assert not install_done.wait(0.2)
+    finally:
+        release.set()
+        refresh.join(10)
+        if installer.ident is not None:
+            installer.join(10)
+    assert not refresh.is_alive()
+    assert not installer.is_alive()
+    assert isinstance(errors.get("refresh"), BundlerError)
+    assert str(errors["refresh"]) == "Failed to install step 'my-step'."
+    assert errors.get("installer") is None, errors.get("installer")
+    saved = json.loads(
+        (steps_dir / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8")
+    )
     assert saved["steps"]["my-step"] == entry
-    assert saved["steps"]["other-step"] == other_step
+    assert "other-step" in saved["steps"]
+    assert (steps_dir / "my-step").is_dir()
+    assert (steps_dir / "other-step").is_dir()
 
 
 @pytest.mark.parametrize("failure", ["copy", "save"])
 def test_step_refresh_notes_restoration_failure_and_keeps_backup(
     tmp_path: Path, monkeypatch, failure: str
 ):
-    """A failed copy-back or registry write stays on the original install error."""
+    """A failed copy-back or registry write stays on the original install error.
+
+    A chained installer or catalog cause stays on that error too.
+    """
     import shutil
 
     from specify_cli.workflows.catalog import StepRegistry, StepValidationError
@@ -1416,9 +1470,10 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
     original_step_yml = (steps_dir / "my-step" / "step.yml").read_text(
         encoding="utf-8"
     )
+    cause = RuntimeError("catalog lookup failed")
 
     def _boom(step_id, *args, **kwargs):
-        raise BundlerError(f"Failed to install step '{step_id}'.")
+        raise BundlerError(f"Failed to install step '{step_id}'.") from cause
 
     if failure == "copy":
         real_copytree = shutil.copytree
@@ -1437,7 +1492,7 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
 
         def _boom_then_arm(step_id, *args, **kwargs):
             armed["on"] = True
-            raise BundlerError(f"Failed to install step '{step_id}'.")
+            raise BundlerError(f"Failed to install step '{step_id}'.") from cause
 
         def _save(self):
             if armed["on"]:
@@ -1453,6 +1508,7 @@ def test_step_refresh_notes_restoration_failure_and_keeps_backup(
         manager.refresh(_component("steps", "my-step"))
 
     assert str(caught.value) == "Failed to install step 'my-step'."
+    assert caught.value.__cause__ is cause
     note = caught.value.__notes__[0]
     assert failure_text in note
     assert "speckit-step-refresh-" in note

@@ -770,7 +770,7 @@ class _StepKindManager:
                         f"Could not restore step '{component.id}' from backup "
                         f"'{backup_root}': {restore_exc}"
                     )
-                    raise original from None
+                # Bare ``raise`` keeps the install error's ``__cause__``.
                 raise
         finally:
             if backup_root is not None and not keep_backup:

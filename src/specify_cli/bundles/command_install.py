@@ -13,7 +13,7 @@ from ._commands import (
     _build_stack,
     _bundle_overlaps,
     _default_script_type,
-    _fail,
+    _fail_with_notes,
     _render_install_warnings,
     _resolve_init_integration,
     _run_init,
@@ -141,7 +141,7 @@ def bundle_install(
             refresh=refresh,
         )
     except BundlerError as exc:
-        _fail(str(exc))
+        _fail_with_notes(exc)
         return
 
     _render_install_warnings(result)
