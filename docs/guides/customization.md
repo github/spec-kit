@@ -21,8 +21,9 @@ organization, or bring a different process entirely.
 
 Integrations determine how commands and skills are delivered to your coding
 agent; they are distinct from extensions that connect to external tools or
-services. See the [integration reference](../reference/integrations.md) for
-supported agents, installation, and scaffolding a new adapter.
+services. See the [integration guides](../integrations/index.md) for supported
+agents and setup, or [contributing integrations](../integrations/contributing.md)
+to develop an adapter.
 
 Workflow step packages extend the step types available to workflows. See
 [custom step packages](../reference/workflows.md#custom-step-packages) for

@@ -53,7 +53,7 @@ project:
 
 | Component type | List active catalogs | Detailed reference |
 | --- | --- | --- |
-| Integrations | `specify integration catalog list` | [Integrations](integrations.md#catalog-management) |
+| Integrations | `specify integration catalog list` | [Integrations](../integrations/cli.md#catalog-management) |
 | Extensions | `specify extension catalog list` | [Extensions](extensions.md#catalog-management) |
 | Presets | `specify preset catalog list` | [Presets](presets.md#catalog-management) |
 | Workflows | `specify workflow catalog list` | [Workflows](workflows.md#catalog-management) |
@@ -138,7 +138,7 @@ Use the component-specific publishing guidance when authoring catalog entries:
 
 | Component type | Publishing guidance |
 | --- | --- |
-| Integrations | [Integration catalog contributions](https://github.com/github/spec-kit/blob/main/integrations/CONTRIBUTING.md) |
+| Integrations | [Integration catalog contributions](../integrations/contributing.md) |
 | Extensions | [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md) |
 | Presets | [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md) |
 | Workflows | [Workflow Publishing Guide](https://github.com/github/spec-kit/blob/main/workflows/PUBLISHING.md) |
@@ -174,7 +174,7 @@ for installing the CLI offline.
 External integration adapters have no direct or local installation route.
 Installing one requires both an install-allowed integration catalog and its
 referenced archive to remain reachable. See
-[Catalog-installed external adapters](integrations.md#catalog-installed-external-adapters).
+[Catalog-installed external adapters](../integrations/cli.md#catalog-installed-external-adapters).
 
 Catalog metadata alone is not enough for offline installation: every selected
 release artifact and any bundle-provided dependency must also be reachable or
