@@ -964,6 +964,28 @@ class TestCreateFeaturePowerShell:
         ).stdout.strip()
         assert head == "feature/PROJ-42-login"
 
+    def test_git_branch_name_override_naming_other_existing_branch_fails(self, tmp_path: Path):
+        """PowerShell GIT_BRANCH_NAME naming a different existing branch is rejected without switching."""
+        project = _setup_project(tmp_path)
+        subprocess.run(["git", "branch", "feature/other"], cwd=project, check=True)
+        before = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "login", "Login page",
+            env_extra={"GIT_BRANCH_NAME": "feature/other"},
+        )
+
+        assert result.returncode == 1
+        assert "already exists" in result.stderr
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == before
+
     def test_git_branch_name_override_without_feature_marker_preserves_full_name(self, tmp_path: Path):
         """PowerShell keeps the full override name when no feature marker exists."""
         project = _setup_project(tmp_path / "app-a")
