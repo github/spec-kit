@@ -130,8 +130,11 @@ specify integration install <key>
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
 
-**Deprecated:** Use `specify integration switch <key>` to switch between desired
-agents instead of installing additional integrations.
+**Multi-install is deprecated.** Retain the currently active (default) integration
+and uninstall each other integration with
+`specify integration uninstall <other>` (without `--force`). Review retained files
+or conflicts. Once only one remains, use `specify integration switch <key>` for
+future agent changes; switching alone does not consolidate a multi-install project.
 
 **Catalog history is metadata only.** `integration install` still resolves
 registered built-in implementations directly, or the current external adapter
@@ -268,8 +271,11 @@ specify integration use <key>
 
 Sets the default integration without uninstalling any other installed integrations. This also refreshes managed shared templates so command references match the new default integration's invocation style. Modified or untracked shared templates are preserved unless `--force` is used.
 
-**Deprecated:** Use `specify integration switch <key>` to switch between desired
-agents instead of keeping multiple integrations installed.
+**Multi-install is deprecated.** Retain the currently active (default) integration
+and uninstall each other integration with
+`specify integration uninstall <other>` (without `--force`). Review retained files
+or conflicts. Once only one remains, use `specify integration switch <key>` for
+future agent changes; switching alone does not consolidate a multi-install project.
 
 `use` is also the activation point for installed extensions and presets: it re-registers every enabled extension's and preset's command overrides (and skills, for skills-mode agents) for the newly active integration, so artifacts installed while a different integration was active are rescaffolded here rather than at install time.
 
