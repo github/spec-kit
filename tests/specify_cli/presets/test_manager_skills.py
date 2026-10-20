@@ -1,6 +1,7 @@
 """Tests for preset skill artifacts in specify_cli.presets._manager_skills."""
 
 import shutil
+import os
 from pathlib import Path
 
 import pytest
@@ -2910,17 +2911,23 @@ def test_remove_disabled_selector_restores_lower_preset_ai_skill(project_dir, mo
     assert not metadata.get("registered_commands")
     assert metadata["selector_commands"] == {"copilot": ["speckit.plan"]}
 
-    monkeypatch.chdir(project_dir)
-    preset_disable("upper")
-    manager = PresetManager(project_dir)
-    assert manager.registry.get("upper")["enabled"] is False
-    assert "UPPER SELECTOR" in output.read_text()
-    assert manager.remove("upper") is True
-    content = output.read_text()
-    assert "LOWER PRESET" in content
-    assert "preset:lower" in content
-    assert "UPPER SELECTOR" not in content
-    assert not manager.registry.is_installed("upper")
+    previous_cwd = Path.cwd()
+    try:
+        monkeypatch.chdir(project_dir)
+        preset_disable("upper")
+        manager = PresetManager(project_dir)
+        assert manager.registry.get("upper")["enabled"] is False
+        assert "UPPER SELECTOR" in output.read_text()
+        assert manager.remove("upper") is True
+        content = output.read_text()
+        assert "LOWER PRESET" in content
+        assert "preset:lower" in content
+        assert "UPPER SELECTOR" not in content
+        assert not manager.registry.is_installed("upper")
+    finally:
+        # Windows cannot remove the temp project while it is the process cwd, so
+        # leave it before the test returns rather than relying on teardown order.
+        os.chdir(previous_cwd)
 
 
 def test_skills_ignore_stale_composition_after_selector_falls_back_to_exact(project_dir):
