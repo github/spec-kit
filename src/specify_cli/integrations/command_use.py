@@ -14,6 +14,7 @@ from ._helpers import (
     _register_presets_for_agent,
     _resolve_integration_options,
     _set_default_integration_or_exit,
+    _warn_multi_install,
 )
 
 
@@ -30,6 +31,7 @@ def integration_use(
     project_root = _require_specify_project()
     current = _read_integration_json(project_root)
     installed_keys = _installed_integration_keys(current)
+    _warn_multi_install(installed_keys)
     if key not in installed_keys:
         console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
         if installed_keys:

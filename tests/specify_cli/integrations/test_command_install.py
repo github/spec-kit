@@ -26,6 +26,44 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationInstall:
+    @pytest.mark.parametrize(
+        ("initial", "force", "exit_code"),
+        [("claude", False, 0), ("copilot", False, 1), ("copilot", True, 0)],
+    )
+    def test_additional_install_warns_without_changing_safety_policy(
+        self, tmp_path, initial, force, exit_code
+    ):
+        project = _init_project(tmp_path, initial)
+        state_path = project / ".specify/integration.json"
+        before = state_path.read_bytes()
+        args = ["integration", "install", "codex"]
+        if force:
+            args.append("--force")
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == exit_code, result.output
+        warning = " ".join(strip_ansi(result.stderr).split())
+        assert warning.count("Multi-install is deprecated.") == 1
+        assert "specify integration switch <key>" in warning
+        assert "Multi-install is deprecated." not in result.stdout
+        if exit_code:
+            assert state_path.read_bytes() == before
+        else:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            assert state["default_integration"] == initial
+            assert state["installed_integrations"] == [initial, "codex"]
+            assert state["integration_state_schema"] == 1
+
+    @pytest.mark.parametrize("key", ["claude", "none"])
+    def test_first_install_and_reinstall_do_not_warn(self, tmp_path, key):
+        project = tmp_path / "project"
+        (project / ".specify").mkdir(parents=True)
+        for _ in range(2):
+            result = _run_in_project(project, ["integration", "install", key])
+            assert result.exit_code == 0, result.output
+            assert "Multi-install is deprecated." not in result.output
+
     def test_historical_catalog_versions_are_not_install_options(self):
         result = runner.invoke(
             app, ["integration", "install", "copilot", "--version", "1.0.0"]

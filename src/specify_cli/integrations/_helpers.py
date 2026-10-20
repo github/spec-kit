@@ -9,7 +9,7 @@ import typer
 from rich.markup import escape
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
-from .._console import console
+from .._console import console, err_console
 from ..integration_runtime import (
     invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
@@ -19,10 +19,21 @@ from ..integration_runtime import (
 from ..integration_state import (
     INTEGRATION_JSON,
     INTEGRATION_STATE_SCHEMA,
+    dedupe_integration_keys,
     integration_setting as _integration_setting,
     try_read_integration_json as _try_read_integration_json,
     write_integration_json as _write_integration_json_file,
 )
+
+
+def _warn_multi_install(installed_keys: list[str]) -> None:
+    """Report advisory guidance without changing lifecycle or stdout contracts."""
+    if len(dedupe_integration_keys(installed_keys)) > 1:
+        err_console.print(
+            "[yellow]Warning:[/yellow] Multi-install is deprecated. "
+            "Use [cyan]specify integration switch <key>[/cyan] "
+            "to switch between desired agents."
+        )
 
 
 def _get_speckit_version() -> str:

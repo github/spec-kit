@@ -130,6 +130,9 @@ specify integration install <key>
 
 Installs the specified integration into the current project. If another integration is already installed, the command only proceeds automatically when all involved integrations are declared multi-install safe. Otherwise, use `switch` to replace the default integration or pass `--force` to explicitly opt in to multi-install. If the installation fails partway through, it automatically rolls back to a clean state.
 
+**Deprecated:** Use `specify integration switch <key>` to switch between desired
+agents instead of installing additional integrations.
+
 **Catalog history is metadata only.** `integration install` still resolves
 registered built-in implementations directly, or the current external adapter
 release from an install-enabled catalog, not historical catalog records.
@@ -264,6 +267,9 @@ specify integration use <key>
 | `--force` | Overwrite managed shared templates while changing the default |
 
 Sets the default integration without uninstalling any other installed integrations. This also refreshes managed shared templates so command references match the new default integration's invocation style. Modified or untracked shared templates are preserved unless `--force` is used.
+
+**Deprecated:** Use `specify integration switch <key>` to switch between desired
+agents instead of keeping multiple integrations installed.
 
 `use` is also the activation point for installed extensions and presets: it re-registers every enabled extension's and preset's command overrides (and skills, for skills-mode agents) for the newly active integration, so artifacts installed while a different integration was active are rescaffolded here rather than at install time.
 

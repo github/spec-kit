@@ -22,6 +22,29 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
+    def test_use_multi_install_warns_and_keeps_both_integrations(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["integration", "use", "codex"])
+
+        assert result.exit_code == 0, result.output
+        warning = " ".join(strip_ansi(result.stderr).split())
+        assert warning.count("Multi-install is deprecated.") == 1
+        assert "specify integration switch <key>" in warning
+        state = json.loads((project / ".specify/integration.json").read_text())
+        assert state["installed_integrations"] == ["claude", "codex"]
+        assert state["integration"] == state["default_integration"] == "codex"
+        assert (project / ".claude/skills/speckit-plan/SKILL.md").is_file()
+        assert (project / ".agents/skills/speckit-plan/SKILL.md").is_file()
+
+    @pytest.mark.parametrize("key", ["claude", "none"])
+    def test_use_single_integration_does_not_warn(self, tmp_path, key):
+        project = _init_project(tmp_path, key)
+        result = _run_in_project(project, ["integration", "use", key])
+        assert result.exit_code == 0, result.output
+        assert "Multi-install is deprecated." not in result.output
+
     def test_use_installed_integration_sets_default(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()

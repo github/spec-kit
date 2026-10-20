@@ -21,6 +21,7 @@ from ..integration_state import (
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
 from ._helpers import _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _refresh_init_options_speckit_version, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _update_init_options_for_integration, _write_integration_json
+from ._helpers import _warn_multi_install
 
 
 @integration_app.command("install")
@@ -48,6 +49,7 @@ def integration_install(
     current = _read_integration_json(project_root)
     default_key = _default_integration_key(current)
     installed_keys = _installed_integration_keys(current)
+    _warn_multi_install([*installed_keys, key])
 
     if key in installed_keys:
         console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
