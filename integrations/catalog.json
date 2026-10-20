@@ -3,6 +3,15 @@
   "updated_at": "2026-09-24T23:51:45Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
+    "none": {
+      "id": "none",
+      "name": "None (shared scaffolding only)",
+      "version": "1.0.0",
+      "description": "Shared scaffolding without generated agent artifacts",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["shared", "artifact-free"]
+    },
     "alquimia": {
       "id": "alquimia",
       "name": "Alquimia AI",

@@ -4,11 +4,11 @@ The integration catalog enables discovery, versioning, and distribution of AI ag
 
 ## Catalog Files
 
-### Built-In Catalog (`catalog.json`)
+### Built-In Catalog (`integrations/catalog.json`)
 
 Contains integrations that ship with Spec Kit. These are maintained by the core team and always installable.
 
-### Community Catalog (`catalog.community.json`)
+### Community Catalog (`integrations/catalog.community.json`)
 
 Community-contributed integrations. The default community source is
 discovery-only: listing an adapter is neither installation permission nor a
@@ -16,12 +16,17 @@ code audit. Review external code before using an install-enabled catalog.
 
 ## Catalog Configuration
 
-The catalog stack is resolved in this order (first match wins):
+The first configured layer replaces lower layers. Within that layer, lower
+numeric priority wins:
 
 1. **Environment variable** — `SPECKIT_INTEGRATION_CATALOG_URL` overrides all catalogs with a single URL
 2. **Project config** — `.specify/integration-catalogs.yml` in the project root
 3. **User config** — `~/.specify/integration-catalogs.yml` in the user home directory
 4. **Built-in defaults** — `catalog.json` + `catalog.community.json`
+
+Adding the first project catalog replaces the default sources unless you also
+list them in the project file. See [Catalogs](../reference/catalogs.md)
+for shared discovery, trust, and private-source guidance.
 
 Example `integration-catalogs.yml`:
 
@@ -35,32 +40,9 @@ catalogs:
 
 ## CLI Commands
 
-```bash
-# List built-in and trusted installed integrations
-specify integration list
-
-# Browse full catalog (built-in + community)
-specify integration list --catalog
-
-# Install an integration
-specify integration install copilot
-
-# Register a reviewed private catalog and install its external adapter
-specify integration catalog add https://example.com/catalog.json --name samples
-specify integration install sample-agent
-
-# Non-interactive install, after reviewing and trusting the adapter
-specify integration install sample-agent --trust-integration
-
-# Make an installed adapter the default
-specify integration use sample-agent
-
-# Upgrade the current integration (diff-aware)
-specify integration upgrade
-
-# Upgrade with force (overwrite modified files)
-specify integration upgrade --force
-```
+Browse with `specify integration list --catalog`, `search`, and `info`.
+See the CLI reference for [catalog management](cli.md#catalog-management)
+and [external adapter installation](cli.md#catalog-installed-external-adapters).
 
 ## Integration Descriptor (`integration.yml`)
 
@@ -83,9 +65,19 @@ requires:
       required: true
 ```
 
+Required descriptor fields:
+
+| Field | Validation |
+|-------|------------|
+| `schema_version` | Must be the string `"1.0"` |
+| `integration.id` | External IDs must match `^[a-z0-9][a-z0-9-]*$`. Names `con`, `prn`, `aux`, `nul`, `com1` through `com9`, and `lpt1` through `lpt9` are reserved |
+| `integration.name`, `integration.description` | Must be strings |
+| `integration.version` | Must be a PEP 440 version string |
+| `requires.speckit_version` | Mandatory, non-empty PEP 440 version specifier string |
+
 `requires.tools` is optional; omit it for adapters with no required executable.
 Optional legacy `provides` metadata remains valid but does not supply host
-commands. See [integration design](../design/integration.md#external-adapter-package-contract)
+commands. See [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
 for class metadata, runtime methods, tools, and storage requirements.
 
 ## Catalog Schema
@@ -110,7 +102,7 @@ Both catalog files follow the same JSON schema:
 }
 ```
 
-### Required Fields
+### Top-Level Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -133,11 +125,14 @@ Both catalog files follow the same JSON schema:
 | `download_url` | string | External installs | Pinned ZIP, tar.gz, or tgz archive URL; HTTPS or loopback HTTP |
 | `sha256` | string | No | 64-character hexadecimal SHA-256 of the archive |
 | `requires` | object | No | Must match descriptor requirements when supplied |
+| `releases` | object | No | [Historical version metadata](cli.md#historical-integration-metadata); not installable releases |
 
 The map key and any declared `id` must match `integration.id`. Name, version,
 description, and optional author/repository/license metadata must match the
 descriptor. Built-in entries need no download fields because their
 implementations ship with the CLI.
+
+## Installation Policy and Storage
 
 Registering a catalog with `integration catalog add` creates an install-enabled
 project source. Set `install_allowed: false` in its configuration to permit
@@ -149,26 +144,18 @@ Authenticated GitHub assets use the existing Spec Kit authentication providers.
 Installed code is stored in `.specify/integrations/packages/<id>/` with
 provenance and hashes in `packages.json`; both are excluded by the managed
 `.specify/.gitignore`. Execution consent is stored separately in
-`~/.specify/integration-trust.json`, bound to the canonical project root,
-integration ID, and verified package digest. Project metadata cannot grant
-consent. Copying a project or changing users requires a new local decision:
-review the package and run
-`specify integration upgrade sample-agent --force --trust-integration`
-from an install-enabled catalog.
-Generated files have a separate
-hash-tracked `<id>.manifest.json`; new CLI processes load the trusted package
-without fetching the catalog. An upgrade fetches the catalog's current version
-and checks its descriptor again. Do not edit installed package code in place:
-publish a new archive/version and upgrade instead.
-Catalog management/discovery and `integration info` remain metadata-only and do
-not import adapters. Forced upgrade/uninstall can recover damaged installed code
-using user-local registrar and generated-path ownership records, without
-bypassing source policy or trust. Edited project cleanup claims are rejected.
-Without local ownership proof, old-only generated files are preserved with a
-manual-cleanup warning; trusted replacement setup still targets its declared
-destination. Concurrent dispatch pins each project's adapter and verified
-imports independently.
+`~/.specify/integration-trust.json`, bound to the project, integration ID, and
+verified package digest. Generated files have their own hash-tracked
+`<id>.manifest.json`.
+
+Do not edit installed package code in place: publish a new archive/version and
+upgrade instead. See the CLI reference for
+[trust and reauthorization](cli.md#catalog-installed-external-adapters) and
+[upgrade and recovery](cli.md#upgrade-an-integration).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add integrations to the community catalog.
+See the [contribution guide](contributing.md) for adding built-in integrations
+or submitting external integration catalog entries. For agent-specific setup,
+start with the [integration directory](index.md). Shared user-facing commands
+are documented in the [integration management reference](cli.md).
