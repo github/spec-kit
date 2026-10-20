@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -626,9 +627,14 @@ class TestNegative:
         )
         state.write_text("[" * 100000, encoding="utf-8")
 
-        _assert_json_error(
-            _definition(project_dir, run["run_id"]), "nested too deeply"
-        )
+        result = _definition(project_dir, run["run_id"])
+
+        # Python 3.14's JSON decoder reports the truncated input as a decode
+        # error instead of hitting the recursion limit first.
+        if sys.version_info >= (3, 14):
+            _assert_json_error(result, "Expecting value")
+        else:
+            _assert_json_error(result, "nested too deeply")
 
     def test_node_budget_is_opt_in(self, capsys):
         from specify_cli.workflows import _commands
