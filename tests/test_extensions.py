@@ -3213,6 +3213,210 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="conflicts with core command"):
             manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
 
+    def _write_named_extension(self, root, ext_id, commands):
+        """Write an extension dir. ``commands`` is (name, aliases) pairs."""
+        ext_dir = root / ext_id
+        (ext_dir / "commands").mkdir(parents=True)
+        manifest_commands = []
+        for name, aliases in commands:
+            filename = f"{name}.md"
+            (ext_dir / "commands" / filename).write_text(
+                "---\ndescription: Test\n---\n\nBody\n", encoding="utf-8"
+            )
+            entry = {"name": name, "file": f"commands/{filename}"}
+            if aliases:
+                entry["aliases"] = list(aliases)
+            manifest_commands.append(entry)
+        (ext_dir / "extension.yml").write_text(yaml.dump({
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": ext_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": manifest_commands},
+        }))
+        return ext_dir
+
+    def test_install_rejects_hyphenated_cross_extension_collision(
+        self, temp_dir, project_dir
+    ):
+        """``speckit.foo.bar-baz`` and ``speckit.foo-bar.baz`` are one file."""
+        first = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        with pytest.raises(ValidationError, match="speckit-foo-bar-baz"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
+    def test_install_rejects_collision_with_extension_whose_manifest_is_unreadable(
+        self, temp_dir, project_dir
+    ):
+        """An installed extension whose manifest can't be read still has its
+        tracked command files on disk, so its registry names count."""
+        first = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.baz", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        manager.registry.update(
+            "foo-bar",
+            {"registered_commands": {"kiro-cli": ["speckit.foo-bar.baz"]}},
+        )
+        (manager.extensions_dir / "foo-bar" / "extension.yml").write_text(
+            "invalid: [", encoding="utf-8"
+        )
+        assert manager.get_extension("foo-bar") is None
+
+        with pytest.raises(ValidationError, match="extension 'foo-bar'"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
+    def test_install_rejects_collision_with_a_name_only_the_registry_still_tracks(
+        self, temp_dir, project_dir
+    ):
+        """A registered name the installed manifest no longer declares still
+        has its command file on disk, and removing that extension deletes it,
+        so it counts too."""
+        first = self._write_named_extension(
+            temp_dir, "foo-bar", [("speckit.foo-bar.qux", [])]
+        )
+        second = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(first, "0.1.0", register_commands=False)
+        manager.registry.update(
+            "foo-bar",
+            {"registered_commands": {"kiro-cli": ["speckit.foo-bar.baz"]}},
+        )
+        assert manager.get_extension("foo-bar") is not None
+
+        with pytest.raises(ValidationError, match="extension 'foo-bar'"):
+            manager.install_from_directory(second, "0.1.0", register_commands=False)
+
+    @pytest.mark.parametrize("readable_manifest", [False, True])
+    @pytest.mark.parametrize("damage", [
+        "registry-json", "entry-list", "commands-list", "agent-string", "non-string-item",
+    ])
+    def test_install_checks_names_before_writing_with_damaged_owner_metadata(
+        self, tmp_path, damage, readable_manifest
+    ):
+        """Unverifiable owners block installs; readable manifests still supply names (#4797)."""
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "kiro-cli")
+        first = self._write_named_extension(
+            tmp_path, "foo", [("speckit.foo.bar-baz", [])]
+        )
+        second = self._write_named_extension(
+            tmp_path, "foo-bar", [(
+                "speckit.foo-bar.other" if readable_manifest else "speckit.foo-bar.baz", [],
+            )]
+        )
+        result = _run_in_project(project, ["extension", "add", "--dev", str(first)])
+        assert result.exit_code == 0, result.output
+        output = project / ".kiro/prompts/speckit-foo-bar-baz.md"
+        before = output.read_bytes()
+        if not readable_manifest:
+            (project / ".specify/extensions/foo/extension.yml").write_text(
+                "invalid: [", encoding="utf-8"
+            )
+        registry = project / ".specify/extensions/.registry"
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        if damage == "registry-json":
+            registry.write_text("{", encoding="utf-8")
+        else:
+            if damage == "entry-list":
+                data["extensions"]["foo"] = []
+            else:
+                data["extensions"]["foo"]["registered_commands"] = {
+                    "commands-list": [],
+                    "agent-string": {"kiro-cli": "speckit.foo.bar-baz"},
+                    "non-string-item": {"kiro-cli": [{"name": "speckit.foo.bar-baz"}]},
+                }[damage]
+            registry.write_text(json.dumps(data), encoding="utf-8")
+        registry_before = registry.read_bytes()
+
+        result = _run_in_project(project, ["extension", "add", "--dev", str(second)])
+        if readable_manifest and damage != "registry-json":
+            assert result.exit_code == 0, result.output
+            assert (project / ".kiro/prompts/speckit-foo-bar-other.md").is_file()
+        else:
+            assert result.exit_code != 0, result.output
+            assert "installed command names" in " ".join(result.output.split())
+            assert ".specify/extensions/.registry" in result.output
+            assert registry.read_bytes() == registry_before
+            assert not (project / ".specify/extensions/foo-bar").exists()
+        assert output.read_bytes() == before
+
+    def test_install_rejects_alias_that_hyphenates_to_another_command(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir,
+            "foo",
+            [
+                ("speckit.foo.alpha", ["speckit-foo-bar-baz"]),
+                ("speckit.foo.bar-baz", []),
+            ],
+        )
+        manager = ExtensionManager(project_dir)
+        with pytest.raises(ValidationError, match="all write 'speckit-foo-bar-baz'"):
+            manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+    def test_install_allows_alias_that_hyphenates_to_its_own_command(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.commit", ["speckit-foo-commit"])]
+        )
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+        assert manifest.id == "foo"
+
+    def test_install_allows_distinct_commands_and_core_suffix(
+        self, temp_dir, project_dir
+    ):
+        """``speckit.foo.plan`` is not the core ``plan`` command."""
+        ext_dir = self._write_named_extension(
+            temp_dir,
+            "foo",
+            [("speckit.foo.bar-baz", []), ("speckit.foo.qux", []), ("speckit.foo.plan", [])],
+        )
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+        assert {cmd["name"] for cmd in manifest.commands} == {
+            "speckit.foo.bar-baz",
+            "speckit.foo.qux",
+            "speckit.foo.plan",
+        }
+
+    def test_force_reinstall_of_same_extension_is_not_a_self_collision(
+        self, temp_dir, project_dir
+    ):
+        ext_dir = self._write_named_extension(
+            temp_dir, "foo", [("speckit.foo.commit", ["speckit-foo-commit"])]
+        )
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False, force=True
+        )
+        assert manifest.id == "foo"
+
     def test_remove_extension(self, extension_dir, project_dir):
         """Test removing an installed extension."""
         manager = ExtensionManager(project_dir)
@@ -3229,6 +3433,43 @@ class TestExtensionManager:
         assert result is True
         assert not manager.registry.is_installed("test-ext")
         assert not ext_dir.exists()
+
+    @pytest.mark.parametrize("agent", ["kiro-cli", "qodercli"])
+    @pytest.mark.parametrize("damaged", [None, [], "speckit.test-ext.hello"])
+    def test_scoped_cleanup_preserves_malformed_aggregate_tracking(self, extension_dir, project_dir, agent, damaged):
+        from specify_cli.agents import CommandRegistrar as AgentRegistrar
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        manager.register_enabled_extensions_for_agent(agent)
+        registrar = AgentRegistrar(project_dir)
+        config = registrar.AGENT_CONFIGS[agent]
+        stem = registrar._compute_output_name(agent, "speckit.test-ext.hello", config)
+        path = project_dir / config["dir"] / f"{stem}{config['extension']}"
+        assert path.is_file()
+        manager.registry.update("test-ext", {"registered_commands": damaged})
+        manager.unregister_agent_artifacts(agent)
+        assert not os.path.lexists(path)
+        assert manager.registry.get("test-ext")["registered_commands"] == damaged
+
+    @pytest.mark.parametrize("operation", ["remove", "unregister"])
+    def test_malformed_command_names_never_delete_individual_characters(self, extension_dir, project_dir, operation):
+        from specify_cli.agents import CommandRegistrar as AgentRegistrar
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        registrar = AgentRegistrar(project_dir)
+        config = registrar.AGENT_CONFIGS["gemini"]
+        stem = registrar._compute_output_name("gemini", "s", config)
+        path = project_dir / config["dir"] / f"{stem}{config['extension']}"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"USER FILE\n")
+        manager.registry.update("test-ext", {"registered_commands": {"gemini": "speckit.test-ext.hello"}})
+        if operation == "remove":
+            assert manager.remove("test-ext")
+        else:
+            manager.unregister_agent_artifacts("gemini")
+        assert path.read_bytes() == b"USER FILE\n"
 
     def test_remove_nonexistent(self, project_dir):
         """Test removing non-existent extension."""

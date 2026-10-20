@@ -97,13 +97,13 @@ class TestCheckToolOther:
         with patch("shutil.which", return_value=None):
             assert check_tool("nonexistent-tool") is False
 
-    def test_kiro_fallback(self):
-        """kiro-cli detection should try both kiro-cli and kiro."""
+    def test_kiro_ide_launcher_is_not_kiro_cli(self):
+        """A bare ``kiro`` launches Kiro IDE by default, so it is not Kiro CLI."""
         def fake_which(name):
             return "/usr/bin/kiro" if name == "kiro" else None
 
         with patch("shutil.which", side_effect=fake_which):
-            assert check_tool("kiro-cli") is True
+            assert check_tool("kiro-cli") is False
 
     def test_rovodev_uses_acli_executable(self):
         """rovodev should resolve through the shared acli executable."""
