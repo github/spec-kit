@@ -1057,6 +1057,24 @@ def register(app: typer.Typer) -> None:
             steps_lines.append("1. You're already in the project directory!")
             step_num = 2
 
+        if not resolved_integration.list_command_templates():
+            steps_lines.append(
+                f"{step_num}. Choose an integration: [cyan]specify integration list[/cyan]"
+            )
+            steps_lines.append(
+                f"{step_num + 1}. Add it to this project: [cyan]specify integration switch <key>[/cyan]"
+            )
+            console.print()
+            console.print(
+                Panel(
+                    "\n".join(steps_lines),
+                    title="Next Steps",
+                    border_style="cyan",
+                    padding=(1, 2),
+                )
+            )
+            return
+
         _is_skills_integration = resolved_integration.is_skills_mode(
             integration_parsed_options or None, project_root=project_path
         )

@@ -3803,7 +3803,8 @@ def test_check_skips_optional_tools_for_external_ide_adapter(tmp_path, server, m
     assert KEY not in probes
     assert "optional-helper" not in probes
     assert "Sample Agent" in result.output
-    assert "IDE-based, no CLI check" in result.output
+    assert "no CLI required" in result.output
+    assert "IDE-based" not in result.output
 
 
 @pytest.mark.parametrize("error_type", ["ValueError", "OSError", "NotImplementedError"])

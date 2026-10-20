@@ -80,7 +80,7 @@ specify integration list
 | `--catalog` | Also browse the catalog, including external integrations not installed in this project. |
 
 Shows built-in and trusted installed external integrations, which one is
-currently installed, and whether each requires a CLI tool or is IDE-based.
+currently installed, and whether each requires a CLI tool.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 The list also shows whether each integration is declared multi-install safe.
 
@@ -565,7 +565,9 @@ Run `specify integration list` to see all available integrations with their keys
 
 ### Do I need the AI coding agent installed to use an integration?
 
-CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
+CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. The `CLI Required` column in `specify integration list` reports only whether an executable is required, not whether the integration is IDE-only.
+
+If an integration generates no command templates, `specify init` keeps the project-directory guidance and shows how to choose an integration with `specify integration list` and add it with `specify integration switch <key>`, rather than recommending unavailable agent commands.
 
 ### When should I use `upgrade` vs `switch`?
 
