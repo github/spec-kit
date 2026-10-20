@@ -65,6 +65,16 @@ requires:
       required: true
 ```
 
+Required descriptor fields:
+
+| Field | Validation |
+|-------|------------|
+| `schema_version` | Must be the string `"1.0"` |
+| `integration.id` | External IDs must match `^[a-z0-9][a-z0-9-]*$`. Names `con`, `prn`, `aux`, `nul`, `com1` through `com9`, and `lpt1` through `lpt9` are reserved |
+| `integration.name`, `integration.description` | Must be strings |
+| `integration.version` | Must be a PEP 440 version string |
+| `requires.speckit_version` | Mandatory, non-empty PEP 440 version specifier string |
+
 `requires.tools` is optional; omit it for adapters with no required executable.
 Optional legacy `provides` metadata remains valid but does not supply host
 commands. See [integration design](https://github.com/github/spec-kit/blob/main/design/integration.md#external-adapter-package-contract)
