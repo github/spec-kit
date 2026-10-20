@@ -3,14 +3,10 @@
 The Specify CLI supports a wide range of AI coding agents. When you run `specify init`, the CLI sets up the appropriate command files and directory structures for your chosen AI coding agent — so you can start using Spec-Driven Development immediately, regardless of which tool you prefer.
 
 For shared scaffolding without agent-specific files, use
-`specify init my-project --integration none`. You can add an integration later
-with `specify integration install <key> --force`, then select it with
-`specify integration use <key>` from the project directory. `none` is a regular
-built-in integration with an empty file manifest and supports all integration
-management commands. Normal `.specify/` project metadata and shared scaffolding
-remain. To replace `none` instead of keeping both integrations installed, use
-`specify integration switch <key>`. Existing multi-install safety rules apply
-unchanged.
+`specify init my-project --integration none`. Normal `.specify/` metadata remains.
+Use `specify integration switch <key>` to replace it, or
+`specify integration install <key> --force` followed by
+`specify integration use <key>` to keep both installed.
 
 ## Supported AI Coding Agents
 
