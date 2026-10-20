@@ -3160,7 +3160,8 @@ class TestDispatcherManifestClaimDroppedOnRetain:
     it), this integration's manifest still drops its claim so the subsequent
     manifest.uninstall() in teardown() doesn't delete the shared file."""
 
-    def test_full_teardown_keeps_dispatcher_when_other_references_it(self, tmp_path):
+    @pytest.mark.parametrize("force", [False, True])
+    def test_full_teardown_keeps_dispatcher_when_other_references_it(self, tmp_path, force):
         from specify_cli.integrations.codex import CodexIntegration
         from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -3196,8 +3197,7 @@ class TestDispatcherManifestClaimDroppedOnRetain:
 
         # Full teardown of claude (remove + manifest.uninstall): the dispatcher
         # must survive because codex's manifest still references it.
-        remove_integration_events(claude, tmp_path, claude_manifest)
-        claude_manifest.uninstall(tmp_path, force=True)
+        claude.teardown(tmp_path, claude_manifest, force=force)
 
         assert dispatcher_path.exists(), (
             "Shared dispatcher was deleted by teardown() despite another "
@@ -3277,6 +3277,96 @@ class TestDispatcherManifestClaimDroppedOnRetain:
         assert not dispatcher_path.exists(), (
             "Dispatcher orphaned after upgrade with a fresh manifest (S2)."
         )
+
+
+class TestDispatcherCleanupOwnership:
+    @pytest.mark.parametrize("operation", ["install", "remove", "teardown"])
+    @pytest.mark.parametrize("saved_manifest", [False, True])
+    def test_unowned_dispatcher_is_preserved(self, tmp_path, operation, saved_manifest):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        if saved_manifest:
+            manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True, exist_ok=True)
+        content = b"# User-owned dispatcher\n"
+        dispatcher.write_bytes(content)
+
+        if operation == "install":
+            install_integration_events(integration, tmp_path, manifest, {})
+        elif operation == "remove":
+            remove_integration_events(integration, tmp_path, manifest)
+        else:
+            integration.teardown(tmp_path, manifest, force=True)
+
+        assert dispatcher.read_bytes() == content
+        assert EVENTS_DISPATCHER_REL not in manifest.files
+
+    @pytest.mark.parametrize("fresh", [False, True])
+    def test_empty_map_preserves_modified_dispatcher(self, tmp_path, fresh, caplog):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-modified dispatcher\n", encoding="utf-8")
+        if fresh:
+            manifest = IntegrationManifest(integration.key, tmp_path)
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-modified dispatcher\n"
+        assert EVENTS_DISPATCHER_REL not in manifest.files
+        assert "modified dispatcher" in caplog.text
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_teardown_modified_dispatcher_honors_force(self, tmp_path, force):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-modified dispatcher\n", encoding="utf-8")
+
+        integration.teardown(tmp_path, manifest, force=force)
+
+        assert dispatcher.exists() is not force
+        if not force:
+            assert dispatcher.read_text(encoding="utf-8") == "# User-modified dispatcher\n"
+
+    @pytest.mark.parametrize(
+        ("recovered", "ownership"), [(True, "shared"), (True, "whole"), (False, "partial")],
+    )
+    def test_observed_dispatcher_is_not_cleanup_authority(self, tmp_path, recovered, ownership):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True)
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+        manifest.record_existing(EVENTS_DISPATCHER_REL, recovered=recovered, ownership=ownership)
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest, force=True)
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+
+    def test_unreadable_prior_manifest_does_not_authorize_cleanup(self, tmp_path):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        manifest.save()
+        manifest.manifest_path.write_text("{invalid", encoding="utf-8")
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="invalid JSON"):
+            install_integration_events(integration, tmp_path, manifest, {})
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
 
 
 # -- Dispatcher stale-cleanup exclusion (C3) ---------------------------------

@@ -383,6 +383,17 @@ partial and shared files are preserved by manifest-only uninstall.
 `teardown()` preserves modified tracked files by default; `--force` can remove
 them. Keep agent-specific settings and events consistent with that lifecycle.
 
+Event cleanup releases only the departing integration's dispatcher claim.
+It deletes `.specify/events.py` only when that integration's current or prior
+manifest records a produced copy and no other installed integration references
+it. Unowned, partial, or merely recovered files are preserved, even with `--force`;
+modified managed dispatchers are preserved with a warning unless forced.
+Empty-event upgrades consult the prior manifest so the last managed dispatcher
+is still cleaned up. Event helpers accept keyword-only `force=False`;
+`remove_events()` overrides must accept and forward it, and custom `setup()`
+implementations forwarding event emission should pass through `opts["force"]`
+when present.
+
 The integration does **not** own agent context files such as `AGENTS.md` or
 `CLAUDE.md`. The opt-in `extensions/agent-context/` owns their defaults,
 configuration, and managed sections; do not add `context_file` fields or

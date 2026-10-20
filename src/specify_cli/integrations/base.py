@@ -1059,7 +1059,7 @@ class IntegrationBase(ABC):
 
         Returns ``(removed, skipped)`` file lists.
         """
-        self.remove_events(project_root, manifest)
+        self.remove_events(project_root, manifest, force=force)
         return manifest.uninstall(project_root, force=force)
 
     def emit_events(
@@ -1071,15 +1071,19 @@ class IntegrationBase(ABC):
         **opts: Any,
     ) -> list[Path]:
         """Emit native event configuration for this integration."""
-        return install_integration_events(self, project_root, manifest, events or {})
+        return install_integration_events(
+            self, project_root, manifest, events or {}, force=opts.get("force", False)
+        )
 
     def remove_events(
         self,
         project_root: Path,
         manifest: IntegrationManifest,
+        *,
+        force: bool = False,
     ) -> None:
         """Remove Specify-authored event entries from native config."""
-        remove_integration_events(self, project_root, manifest)
+        remove_integration_events(self, project_root, manifest, force=force)
 
     def supports_events(self) -> bool:
         """Return True if this integration supports agent-native events."""
@@ -1209,7 +1213,8 @@ class MarkdownIntegration(IntegrationBase):
 
         # Install agent runtime events
         event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+            force=opts.get("force", False),
         )
         created.extend(event_files)
 
@@ -1426,7 +1431,8 @@ class TomlIntegration(IntegrationBase):
 
         # Install agent runtime events
         event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+            force=opts.get("force", False),
         )
         created.extend(event_files)
 
@@ -1668,7 +1674,8 @@ class YamlIntegration(IntegrationBase):
 
         # Install agent runtime events
         event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+            force=opts.get("force", False),
         )
         created.extend(event_files)
 
@@ -1954,7 +1961,8 @@ class SkillsIntegration(IntegrationBase):
 
         # Install agent runtime events
         event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options
+            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+            force=opts.get("force", False),
         )
         created.extend(event_files)
 
