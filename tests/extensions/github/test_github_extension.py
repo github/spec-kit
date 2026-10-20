@@ -364,11 +364,11 @@ class TestExtensionInstall:
 
 
 class TestScriptPathResolution:
-    def test_extension_registrar_scope_excludes_generic(self):
+    def test_extension_registrar_scope_excludes_generic_and_none(self):
         from specify_cli.integrations import INTEGRATION_REGISTRY
 
         assert set(EXTENSION_REGISTRAR_AGENTS) == set(INTEGRATION_REGISTRY) - {
-            "generic"
+            "generic", "none"
         }
 
     def test_frontmatter_uses_plain_extension_local_spelling(self):

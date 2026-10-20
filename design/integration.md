@@ -44,8 +44,9 @@ integration behavior. If the agent supports non-interactive workflows, implement
 `build_exec_args()` with the full base signature; `options()` declares
 install-time `--integration-options`, not per-workflow runtime options.
 Agent-specific native events can be declared on the integration. Set
-`multi_install_safe = True` only for a static, non-overlapping agent root and
-command directory; shared dynamic paths are not safe by default.
+`multi_install_safe = True` only when the integration emits no files or uses a
+static, non-overlapping agent root and command directory; shared dynamic paths
+are not safe by default.
 
 ## Output flavors
 
