@@ -1945,16 +1945,15 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         self, project_dir, temp_dir
     ):
         """With no core or extension fallback, removing the only base leaves
-        nothing to compose onto: the composed skill and its cache must not
-        keep serving the removed preset's instructions."""
+        nothing to compose onto: the composer's skill is removed, and a later
+        rescaffold does not render its stale cached composition back."""
         manager, skill_file = self._install_unbacked_custom_stack(project_dir, temp_dir)
-        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
 
         with pytest.warns(UserWarning, match="no base layer"):
             assert manager.remove("base-preset") is True
+            manager.register_enabled_presets_for_agent("claude")
 
         assert not skill_file.exists()
-        assert not cache.exists()
 
     def test_remove_sole_base_preset_keeps_hand_edited_skill(
         self, project_dir, temp_dir
@@ -1968,29 +1967,11 @@ class TestPresetSkills(PresetArtifactTestHelpers):
 
         assert skill_file.read_text(encoding="utf-8") == edited
 
-    def test_remove_sole_base_preset_keeps_cache_behind_symlinked_dir(
-        self, project_dir, temp_dir
-    ):
-        """A ``.composed`` directory that links outside the project is not
-        followed when stale caches are deleted."""
-        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
-        composed = manager.presets_dir / "append-preset" / ".composed"
-        external = temp_dir / "external-composed"
-        shutil.move(str(composed), str(external))
-        composed.symlink_to(external, target_is_directory=True)
-        target = external / "speckit.custom.md"
-        assert target.is_file()
-
-        with pytest.warns(UserWarning, match="no base layer"):
-            assert manager.remove("base-preset") is True
-
-        assert target.is_file()
-
     def test_remove_sole_base_under_two_composers_survives_rescaffold(
         self, project_dir, temp_dir
     ):
-        """Every surviving preset's stale cache is dropped, so a later
-        rescaffold cannot render the removed base back into the skill."""
+        """With two composers and no base left, the skill is removed and a
+        rescaffold does not render either composer's stale cache back."""
         manager, skill_file = self._install_unbacked_custom_stack(
             project_dir,
             temp_dir,
@@ -2005,20 +1986,13 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             assert manager.remove("base-preset") is True
             manager.register_enabled_presets_for_agent("claude")
 
-        for preset_id in ("middle-preset", "top-preset"):
-            assert not (
-                manager.presets_dir / preset_id / ".composed" / "speckit.custom.md"
-            ).exists()
-        assert not skill_file.exists() or "Base preset body" not in skill_file.read_text(
-            encoding="utf-8"
-        )
+        assert not skill_file.exists()
 
-    def test_stale_cache_deletion_is_journaled(self, project_dir, temp_dir):
-        """The cache deletion is reported to the lifecycle file-change journal."""
+    def test_stale_skill_removal_is_journaled(self, project_dir, temp_dir):
+        """Removing the composer's stale skill is reported to the lifecycle journal."""
         from specify_cli.integrations._file_changes import file_change_observer
 
         manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
-        cache = manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
         events = []
         token = file_change_observer.set(
             lambda path, before, removal: events.append((path, before, removal))
@@ -2029,39 +2003,9 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         finally:
             file_change_observer.reset(token)
 
-        assert (cache, True, True) in events
-        assert not cache.exists()
         skill_dir = project_dir / ".claude" / "skills" / "speckit-custom"
         assert (skill_dir, True, True) in events
         assert not skill_dir.exists()
-
-    def test_stale_cache_cleanup_rejects_junctioned_composed_dir(
-        self, project_dir, temp_dir, monkeypatch
-    ):
-        """A ``.composed`` directory reported as a Windows reparse point (a
-        junction, which ``is_symlink()`` misses) is not followed."""
-        from types import SimpleNamespace
-
-        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
-        composed = manager.presets_dir / "append-preset" / ".composed"
-        cache = composed / "speckit.custom.md"
-        lstat = Path.lstat
-
-        def junction_lstat(path, **kwargs):
-            result = lstat(path, **kwargs)
-            if path == composed:
-                return SimpleNamespace(
-                    st_mode=result.st_mode,
-                    st_file_attributes=0x400,
-                    st_reparse_tag=0xA0000003,
-                )
-            return result
-
-        monkeypatch.setattr(Path, "lstat", junction_lstat)
-        with pytest.warns(UserWarning, match="no base layer"):
-            assert manager.remove("base-preset") is True
-
-        assert cache.is_file()
 
     def _install_custom_layers(self, project_dir, temp_dir, *, core=False, alias=None):
         """Base (replace) + append presets for ``speckit.custom`` under Claude."""
@@ -2091,12 +2035,75 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
         return manager
 
+    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
+    def test_remove_base_reconciles_skill_owned_by_lower_survivor_in_historical_dir(
+        self, project_dir, temp_dir, core
+    ):
+        """Claude's skill was rendered by ``middle``; ``top`` was installed later
+        under Codex only. Removing the base must still refresh Claude's skill,
+        whose recorded owner is ``middle``, not the current winner ``top``."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._create_skill(project_dir / ".claude" / "skills", "speckit-custom")
+        if core:
+            core_cmds = project_dir / ".specify" / "templates" / "commands"
+            core_cmds.mkdir(parents=True, exist_ok=True)
+            (core_cmds / "custom.md").write_text(
+                "---\ndescription: Core custom\n---\n\nCore custom body\n",
+                encoding="utf-8",
+            )
+        manager = PresetManager(project_dir)
+
+        def install(preset_id, body, strategy, priority):
+            preset_dir = self._create_command_preset(
+                temp_dir, preset_id, "speckit.custom", preset_id, body
+            )
+            manifest_path = preset_dir / "preset.yml"
+            manifest = yaml.safe_load(manifest_path.read_text())
+            manifest["provides"]["templates"][0]["strategy"] = strategy
+            manifest_path.write_text(yaml.dump(manifest))
+            manager.install_from_directory(preset_dir, "0.1.5", priority=priority)
+
+        install("base-preset", "Base preset body", "replace", 10)
+        install("middle-preset", "Middle body", "append", 7)
+        assert "preset:middle-preset" in claude_skill.read_text(encoding="utf-8")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        install("top-preset", "Top body", "append", 5)
+
+        if core:
+            assert manager.remove("base-preset") is True
+            content = claude_skill.read_text(encoding="utf-8")
+            assert "Base preset body" not in content
+            assert "Core custom body" in content and "Middle body" in content
+        else:
+            with pytest.warns(UserWarning, match="no base layer"):
+                assert manager.remove("base-preset") is True
+            assert not claude_skill.exists()
+
+    def test_remove_base_reconciles_survivor_with_legacy_flat_skill_record(
+        self, project_dir, temp_dir
+    ):
+        """A surviving composer whose ``registered_skills`` is still a legacy
+        flat list gets its inactive agent's skill refreshed too."""
+        manager = self._install_custom_layers(project_dir, temp_dir, core=True)
+        claude_skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        manager.registry.update("append-preset", {"registered_skills": ["speckit-custom"]})
+
+        assert manager.remove("base-preset") is True
+
+        content = claude_skill.read_text(encoding="utf-8")
+        assert "Base preset body" not in content
+        assert "Core custom body" in content and "Appended body" in content
+
     def test_reenabled_sole_composer_does_not_render_removed_base(
         self, project_dir, temp_dir
     ):
         """The only composer is disabled while its base is removed; re-enabling
-        and rescaffolding must not render its stale cache, and the old skill is
-        retired once nothing is left to compose onto."""
+        and rescaffolding neither renders its stale cache nor keeps its old
+        skill, since nothing is left to compose onto."""
         manager = self._install_custom_layers(project_dir, temp_dir)
         skill = project_dir / ".claude" / "skills" / "speckit-custom" / "SKILL.md"
         manager.registry.update("append-preset", {"enabled": False})
@@ -2106,12 +2113,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         with pytest.warns(UserWarning, match="no base layer"):
             manager.register_enabled_presets_for_agent("claude")
 
-        assert not skill.exists() or "Base preset body" not in skill.read_text(
-            encoding="utf-8"
-        )
-        assert not (
-            manager.presets_dir / "append-preset" / ".composed" / "speckit.custom.md"
-        ).exists()
+        assert not skill.exists()
 
     @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
     def test_remove_base_reconciles_historical_agent_skill(
@@ -2134,63 +2136,11 @@ class TestPresetSkills(PresetArtifactTestHelpers):
                 assert manager.remove("base-preset") is True
             assert not claude_skill.exists()
 
-    @pytest.mark.parametrize("core", [False, True], ids=["no-fallback", "core-fallback"])
-    def test_remove_base_reconciles_native_alias_skill(
-        self, project_dir, temp_dir, core
-    ):
-        """A composer's alias skill is recomposed or retired with the primary."""
-        manager = self._install_custom_layers(
-            project_dir, temp_dir, core=core, alias="speckit.custom-alias"
-        )
-        alias_skill = project_dir / ".claude" / "skills" / "speckit-custom-alias" / "SKILL.md"
-        assert "Base preset body" in alias_skill.read_text(encoding="utf-8")
-
-        if core:
-            assert manager.remove("base-preset") is True
-            content = alias_skill.read_text(encoding="utf-8")
-            assert "Base preset body" not in content
-            assert "Core custom body" in content and "Appended body" in content
-        else:
-            with pytest.warns(UserWarning, match="no base layer"):
-                assert manager.remove("base-preset") is True
-            assert not alias_skill.exists()
-
-    def test_remove_sole_base_keeps_hand_edited_alias_skill(
+    def test_remove_sole_base_with_disabled_composer_survives_rescaffold(
         self, project_dir, temp_dir
     ):
-        manager = self._install_custom_layers(
-            project_dir, temp_dir, alias="speckit.custom-alias"
-        )
-        alias_skill = project_dir / ".claude" / "skills" / "speckit-custom-alias" / "SKILL.md"
-        edited = "---\nname: speckit-custom-alias\n---\n\nUser-owned alias\n"
-        alias_skill.write_text(edited, encoding="utf-8")
-
-        with pytest.warns(UserWarning, match="no base layer"):
-            assert manager.remove("base-preset") is True
-
-        assert alias_skill.read_text(encoding="utf-8") == edited
-
-    def test_stale_cache_cleanup_ignores_traversing_registry_key(
-        self, project_dir, temp_dir
-    ):
-        """A malformed registry key with ``..`` must not reach outside the project."""
-        manager, _skill = self._install_unbacked_custom_stack(project_dir, temp_dir)
-        outside = (manager.presets_dir / "../../../outside").resolve()
-        target = outside / ".composed" / "speckit.custom.md"
-        target.parent.mkdir(parents=True)
-        target.write_text("external\n", encoding="utf-8")
-        manager.registry.add("../../../outside", {"version": "1.0.0", "enabled": True, "priority": 20})
-
-        with pytest.warns(UserWarning, match="no base layer"):
-            assert manager.remove("base-preset") is True
-
-        assert target.read_text(encoding="utf-8") == "external\n"
-
-    def test_remove_sole_base_drops_disabled_preset_cache(
-        self, project_dir, temp_dir
-    ):
-        """A disabled composer's stale cache is dropped too, so re-enabling it
-        and rescaffolding cannot render the removed base back."""
+        """A composer disabled during the removal can't bring the removed base
+        back through its stale cache once it is re-enabled and rescaffolded."""
         manager, skill_file = self._install_unbacked_custom_stack(
             project_dir,
             temp_dir,
@@ -2207,12 +2157,7 @@ class TestPresetSkills(PresetArtifactTestHelpers):
             manager.registry.update("middle-preset", {"enabled": True})
             manager.register_enabled_presets_for_agent("claude")
 
-        assert not (
-            manager.presets_dir / "middle-preset" / ".composed" / "speckit.custom.md"
-        ).exists()
-        assert not skill_file.exists() or "Base preset body" not in skill_file.read_text(
-            encoding="utf-8"
-        )
+        assert not skill_file.exists()
 
     def test_unreadable_surviving_base_keeps_composed_output(
         self, project_dir, temp_dir
