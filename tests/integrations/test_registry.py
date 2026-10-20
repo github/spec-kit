@@ -28,7 +28,7 @@ ALL_INTEGRATION_KEYS = [
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
     "codex", "kimi", "agy", "zed", "generic",
-    "droid", "command-code", "dsh", "muse", "mcode",
+    "droid", "command-code", "dsh", "muse", "mcode", "none",
 ]
 
 
@@ -141,15 +141,16 @@ class TestRegistryCompleteness:
 
 
 class TestRegistrarKeyAlignment:
-    """Every integration key must have a matching AGENT_CONFIGS entry.
+    """Every rendering integration key must have a matching AGENT_CONFIGS entry.
 
     ``generic`` is excluded because it has no fixed directory — its
-    output path comes from ``--commands-dir`` at runtime.
+    output path comes from ``--commands-dir`` at runtime. ``none`` does
+    not render command files.
     """
 
     @pytest.mark.parametrize(
         "key",
-        [k for k in ALL_INTEGRATION_KEYS if k != "generic"],
+        [k for k in ALL_INTEGRATION_KEYS if k not in {"generic", "none"}],
     )
     def test_integration_key_in_registrar(self, key):
         from specify_cli.agents import CommandRegistrar
@@ -163,7 +164,7 @@ class TestRegistrarKeyAlignment:
         assert "cursor" not in CommandRegistrar.AGENT_CONFIGS
 
     @pytest.mark.parametrize(
-        "key", sorted(k for k in INTEGRATION_REGISTRY if k != "generic")
+        "key", sorted(k for k in INTEGRATION_REGISTRY if k not in {"generic", "none"})
     )
     def test_command_mode_separator_matches_registered_names(self, key):
         """A ``-`` command-mode separator must mean hyphenated registration.
