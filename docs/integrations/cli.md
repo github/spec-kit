@@ -45,8 +45,11 @@ specify integration list
 Shows built-in and trusted installed external integrations, their setup
 requirements, and their multi-install safety declarations. Installed
 integrations and the default are marked separately.
-The `CLI Required` column reports whether an executable is required, not
-whether the integration is IDE-only.
+The `CLI Required` column reports the agent CLI requirement declared by
+`config.requires_cli`, not whether the integration is IDE-only. External adapters
+can separately require executables through their descriptor's `requires.tools`;
+installation and `specify check` validate those tool requirements even when
+`CLI Required` is `no`.
 
 ## Search Available Integrations
 
