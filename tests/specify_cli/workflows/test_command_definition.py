@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -100,25 +99,36 @@ def _gate_scope(definition, scopes, gate):
         if path[:n] == scope["scope_path"] and (best is None or n > len(best["scope_path"])):
             best = scope
     root = best["definition"] if best else definition
+    path = path[len(best["scope_path"]) :] if best else path
     step_id = gate["step_id"]
     if step_id.count(":") >= 2:
         step_id = step_id.split(":")[-2]
 
-    def find(steps):
+    def walk(steps, in_template=False):
         for step in steps:
-            if step.get("id") == step_id:
-                return step
+            yield step, in_template
             for key in ("then", "else", "steps", "default"):
-                if isinstance(step.get(key), list) and (found := find(step[key])):
-                    return found
+                if isinstance(step.get(key), list):
+                    yield from walk(step[key], in_template)
             for case in (step.get("cases") or {}).values():
-                if found := find(case):
-                    return found
-            if isinstance(step.get("step"), dict) and (found := find([step["step"]])):
-                return found
-        return None
+                yield from walk(case, in_template)
+            # A fan-out template is its own ID namespace: only enter it when
+            # the gate's path runs through that fan-out step.
+            template = step.get("step")
+            if (
+                step.get("type") == "fan-out"
+                and step.get("id") in path
+                and isinstance(template, dict)
+            ):
+                yield from walk([template], True)
 
-    return find(root["steps"])
+    matches = [
+        (step, in_template)
+        for step, in_template in walk(root["steps"])
+        if step.get("id") == step_id
+    ]
+    inside = [step for step, in_template in matches if in_template]
+    return (inside or [step for step, _ in matches] or [None])[0]
 
 
 class TestPositive:
@@ -358,6 +368,28 @@ class TestComposition:
         assert [s["scope_path"] for s in payload["workflow_scopes"]] == [["route", "call"]]
         found = _gate_scope(payload["definition"], payload["workflow_scopes"], gate)
         assert found["message"] == "Review"
+
+    def test_gate_join_prefers_fan_out_template_over_colliding_root_id(
+        self, project_dir
+    ):
+        # Fan-out templates have their own ID namespace, so a root step and a
+        # template step may share an ID.
+        text = (
+            "workflow: {id: collide, name: Collide}\n"
+            "steps:\n"
+            "  - {id: g, type: shell, run: 'echo root'}\n"
+            "  - id: fan\n    type: fan-out\n    items: \"{{ ['a'] }}\"\n"
+            "    max_concurrency: 1\n"
+            "    step: {id: g, type: gate, message: Review}\n"
+        )
+        run = _run(project_dir, text)
+        payload = json.loads(_definition(project_dir, run["run_id"]).stdout)
+        gate = _status(project_dir, run["run_id"])["gate"]
+        assert (gate["step_id"], gate["scope_path"]) == ("fan:g:0", ["fan", "0"])
+
+        found = _gate_scope(payload["definition"], payload["workflow_scopes"], gate)
+
+        assert found["type"] == "gate"
 
     def test_root_gate_inside_if_has_no_scope(self, project_dir):
         text = (
@@ -627,14 +659,13 @@ class TestNegative:
         )
         state.write_text("[" * 100000, encoding="utf-8")
 
-        result = _definition(project_dir, run["run_id"])
-
-        # Python 3.14's JSON decoder reports the truncated input as a decode
-        # error instead of hitting the recursion limit first.
-        if sys.version_info >= (3, 14):
-            _assert_json_error(result, "Expecting value")
-        else:
-            _assert_json_error(result, "nested too deeply")
+        # Which decoder error surfaces (RecursionError or a decode error)
+        # depends on the interpreter and platform, so only the run-scoped
+        # message is part of the contract.
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]),
+            f"Invalid run state for {run['run_id']}",
+        )
 
     def test_node_budget_is_opt_in(self, capsys):
         from specify_cli.workflows import _commands
