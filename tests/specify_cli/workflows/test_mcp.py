@@ -46,14 +46,29 @@ def _workflow_cli_paths() -> list[str]:
     return walk(root.commands["workflow"], "specify workflow")
 
 
+def _assert_synthetic_discovery_shape(
+    record: _mcp.WorkflowToolInventory, tools: Sequence[Tool]
+) -> None:
+    """Check discovery cardinality/schema shape, not operation correspondence."""
+    matching = [tool for tool in tools if tool.name == record.mcp_tool_name]
+    assert len(matching) == 1, (
+        f"Expected exactly one registered tool for {record.operation_id}; got {len(matching)}"
+    )
+    tool = matching[0]
+    assert tool.input_schema.get("type") == "object", (
+        f"Missing input schema: {tool.name}"
+    )
+    assert tool.output_schema and tool.output_schema.get("type") == "object", (
+        f"Missing output schema: {tool.name}"
+    )
+
+
 def _assert_inventory(
     records: Sequence[_mcp.WorkflowToolInventory],
     cli_paths: Sequence[str],
     tools: Sequence[Tool],
-    *,
-    allow_unbound_contract_probe: bool = False,
 ) -> None:
-    """Validate accounting; synthetic probes only exercise discovery/schema shape.
+    """Validate accounting and fail closed for available workflow records.
 
     No shared workflow operation descriptors exist yet. Real available records
     must fail closed until operation-specific assertions bind their descriptor,
@@ -111,20 +126,14 @@ def _assert_inventory(
             assert item.disposition_reason is None, (
                 f"Available reason: {item.operation_id}"
             )
-            assert len(matching) == 1, (
-                f"Expected exactly one registered tool for {item.operation_id}; got {len(matching)}"
-            )
-            tool = matching[0]
-            assert tool.input_schema.get("type") == "object", (
-                f"Missing input schema: {tool.name}"
-            )
-            assert tool.output_schema and tool.output_schema.get("type") == "object", (
-                f"Missing output schema: {tool.name}"
-            )
-            assert allow_unbound_contract_probe, (
+            _assert_synthetic_discovery_shape(item, tools)
+            raise AssertionError(
                 f"No workflow operation contract evidence: {item.operation_id}"
             )
         else:
+            assert item.contract_version is None, (
+                f"Nonavailable tool has contract version: {item.operation_id}"
+            )
             assert (
                 isinstance(item.disposition_reason, str)
                 and item.disposition_reason.strip()
@@ -238,6 +247,15 @@ def test_nonavailable_disposition_requires_explanation(disposition, reason):
         _assert_inventory([record], [record.cli_path], [])
 
 
+@pytest.mark.parametrize("disposition", ["unavailable", "excluded"])
+def test_nonavailable_record_cannot_declare_contract_version(disposition):
+    record = replace(
+        _mcp.WORKFLOW_TOOLS[0], disposition=disposition, contract_version="1"
+    )
+    with pytest.raises(AssertionError, match="Nonavailable tool has contract version"):
+        _assert_inventory([record], [record.cli_path], [])
+
+
 class _ProbeResult(TypedDict):
     value: str
 
@@ -275,14 +293,12 @@ def test_available_record_requires_exactly_one_matching_tool(
         [tool] * count
     )  # Duplicate discovery is invalid even if an SDK deduplicates registration.
     if count == 1:
-        _assert_inventory(
-            [record], [record.cli_path], tools, allow_unbound_contract_probe=True
-        )
+        _assert_synthetic_discovery_shape(record, tools)
     else:
         with pytest.raises(
             AssertionError, match="Expected exactly one registered tool"
         ):
-            _assert_inventory([record], [record.cli_path], tools)
+            _assert_synthetic_discovery_shape(record, tools)
 
 
 @pytest.mark.parametrize("version", ["1", "999-fabricated"])
@@ -315,6 +331,7 @@ def test_synthetic_probe_cannot_establish_real_workflow_availability(
     available_record_and_tool,
 ):
     record, tool = available_record_and_tool
+    _assert_synthetic_discovery_shape(record, [tool])
     with pytest.raises(AssertionError, match="No workflow operation contract evidence"):
         _assert_inventory([record], [record.cli_path], [tool])
 
@@ -346,7 +363,7 @@ def test_available_tool_requires_typed_schemas(
 ):
     record, tool = available_record_and_tool
     with pytest.raises(AssertionError, match=message):
-        _assert_inventory([record], [record.cli_path], [tool.model_copy(update=schema)])
+        _assert_synthetic_discovery_shape(record, [tool.model_copy(update=schema)])
 
 
 @pytest.mark.parametrize("disposition", ["unavailable", "excluded"])
@@ -355,7 +372,10 @@ def test_nonavailable_record_cannot_register_tool(
 ):
     record, tool = available_record_and_tool
     record = replace(
-        record, disposition=disposition, disposition_reason="Not offered through MCP."
+        record,
+        disposition=disposition,
+        disposition_reason="Not offered through MCP.",
+        contract_version=None,
     )
     with pytest.raises(AssertionError, match="Nonavailable tool registered"):
         _assert_inventory([record], [record.cli_path], [tool])
