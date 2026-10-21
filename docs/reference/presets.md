@@ -73,9 +73,20 @@ Patterns follow the same Git-style matching and normalization as
   pattern other than its trailing slash, anchors the pattern to the source root.
   Patterns without such a slash match names at any depth.
 - A later `!` pattern re-includes a match. An excluded directory is not traversed,
-  so re-including a child requires re-including its parent directory too.
+  so a child cannot be re-included while its parent remains excluded.
 - Pattern whitespace is trimmed and backslashes are normalized to `/`, matching
   the existing extension behavior. Use UTF-8 for non-ASCII names.
+
+To keep only `docs/api.md` within `docs/`, exclude the directory's contents
+instead of the directory itself:
+
+```gitignore
+docs/*
+!docs/api.md
+```
+
+Using `docs/`, then `!docs/` and `!docs/api.md`, would re-include all files under
+`docs/`, not just `api.md`, unless other patterns exclude them.
 
 Only the source root's `.presetignore` is read; nested ignore files do not add
 rules. When a root `.presetignore` exists, files named `.presetignore` at any
