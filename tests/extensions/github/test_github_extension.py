@@ -565,7 +565,7 @@ class TestCommandBody:
         Regression: Command Code was omitted, so its users were pointed at a
         syntax their agent does not use.
         """
-        from specify_cli._invocation_style import DOLLAR_SKILLS_AGENTS
+        from specify_cli.integrations import INTEGRATION_REGISTRY
 
         readme = (EXT_DIR / "README.md").read_text(encoding="utf-8")
         note = next(
@@ -577,10 +577,15 @@ class TestCommandBody:
             "zcode": "ZCode",
             "command-code": "Command Code",
         }
-        # If a new dollar-skills agent appears, this fails until it is named.
-        assert set(display_names) == set(DOLLAR_SKILLS_AGENTS), (
-            "DOLLAR_SKILLS_AGENTS changed; update the README invocation note "
-            f"and this mapping: {sorted(DOLLAR_SKILLS_AGENTS)}"
+        dollar_skills_agents = {
+            key
+            for key, integration in INTEGRATION_REGISTRY.items()
+            if integration.invocation_prefix_for_mode(True) == "$"
+        }
+        # If a new dollar-skills integration appears, this fails until it is named.
+        assert set(display_names) == dollar_skills_agents, (
+            "Dollar-skills integrations changed; update the README invocation note "
+            f"and this mapping: {sorted(dollar_skills_agents)}"
         )
         for agent, display in display_names.items():
             assert display in note, f"README omits {display} ({agent}): {note}"

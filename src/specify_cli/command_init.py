@@ -1171,18 +1171,15 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
-        invoke_prefix = _invoke_prefix_for_integration(
-            resolved_integration,
-            resolved_integration.key,
-            integration_parsed_options or None,
-            project_path,
-        )
-        invoke_separator = resolved_integration.effective_invoke_separator(
+        invocation_skills_mode = resolved_integration.is_skills_mode(
             integration_parsed_options or None, project_root=project_path
         )
 
         def _display_cmd(name: str) -> str:
-            return f"{invoke_prefix}speckit{invoke_separator}{name}"
+            return resolved_integration.build_command_reference(
+                name,
+                skills_enabled=invocation_skills_mode,
+            )
 
         steps_lines.append(
             f"{step_num}. Start using {usage_label} with your coding agent:"

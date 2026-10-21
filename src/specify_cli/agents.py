@@ -16,7 +16,6 @@ from typing import Any, Dict, Iterable, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
-from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
@@ -582,18 +581,20 @@ class CommandRegistrar:
         agent_name: str, cmd_name: str, agent_config: Dict[str, Any]
     ) -> str:
         """Compute the on-disk command or skill name for an agent."""
-        if agent_config["extension"] != "/SKILL.md":
-            format_name = agent_config.get("format_name")
-            if format_name:
-                return format_name(cmd_name)
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration(agent_name)
+        if integration is not None:
+            return integration.format_registered_command_name(
+                cmd_name, agent_config
+            )
+
+        format_name = agent_config.get("format_name")
+        if callable(format_name):
+            return str(format_name(cmd_name))
+        if agent_config.get("extension") != "/SKILL.md":
             return cmd_name
-
-        short_name = cmd_name
-        if short_name.startswith("speckit."):
-            short_name = short_name[len("speckit.") :]
-        short_name = short_name.replace(".", "-")
-
-        return f"speckit-{short_name}"
+        return f"speckit-{cmd_name.removeprefix('speckit.').replace('.', '-')}"
 
     @staticmethod
     def _ensure_inside(candidate: Path, base: Path) -> None:
@@ -738,15 +739,17 @@ class CommandRegistrar:
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
         registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
+        _integration = None
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
-            _integ = get_integration(agent_name)
-            if _integ is not None:
-                _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
+            _integration = get_integration(agent_name)
+            if _integration is not None:
+                _sep = _integration.invoke_separator_for_mode(
+                    registrar_writes_skills
+                )
         except (ImportError, ValueError, KeyError):
             pass
-        _prefix = get_invocation_prefix(agent_name, registrar_writes_skills)
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
@@ -824,9 +827,15 @@ class CommandRegistrar:
                 frontmatter.pop(key, None)
 
             if agent_config.get("inject_name") and not frontmatter.get("name"):
-                # Use custom name formatter if provided (e.g., Forge's hyphenated format)
-                format_name = agent_config.get("format_name")
-                frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
+                frontmatter["name"] = (
+                    _integration.format_registered_command_name(
+                        cmd_name, agent_config
+                    )
+                    if _integration is not None
+                    else self._compute_output_name(
+                        agent_name, cmd_name, agent_config
+                    )
+                )
 
             if is_cline_ext:
                 frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
@@ -845,11 +854,16 @@ class CommandRegistrar:
             # the project's persisted ai_skills state. Single-layout agents fall back
             # to the static AGENT_CONFIGS value unchanged (invoke_separator_for_mode
             # default).
-            # Deferred import of IntegrationBase avoids a circular import at module load
-            # (base.py itself imports CommandRegistrar lazily).
-            from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
+            if _integration is not None:
+                body = _integration.resolve_command_refs_for_mode(
+                    body,
+                    skills_enabled=registrar_writes_skills,
+                )
+            else:
+                # Deferred import avoids a circular import at module load.
+                from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
-            body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
+                body = IntegrationBase.resolve_command_refs(body, _sep)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
@@ -899,13 +913,7 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             # -- Post-process for non-skills agents -----------------------
-            _integration = None
             if agent_config["extension"] != "/SKILL.md":
-                from specify_cli.integrations import (  # noqa: PLC0415
-                    get_integration,
-                )
-
-                _integration = get_integration(agent_name)
                 if _integration is not None:
                     output = _integration.post_process_command_content(output)
 
@@ -939,10 +947,14 @@ class CommandRegistrar:
                 # For agents with inject_name, render with alias-specific frontmatter
                 if agent_config.get("inject_name"):
                     alias_frontmatter = deepcopy(frontmatter)
-                    # Use custom name formatter if provided (e.g., Forge's hyphenated format)
-                    format_name = agent_config.get("format_name")
                     alias_frontmatter["name"] = (
-                        format_name(alias) if format_name else alias
+                        _integration.format_registered_command_name(
+                            alias, agent_config
+                        )
+                        if _integration is not None
+                        else self._compute_output_name(
+                            agent_name, alias, agent_config
+                        )
                     )
 
                     if agent_config["extension"] == "/SKILL.md":
@@ -1369,6 +1381,7 @@ class CommandRegistrar:
                     continue
         return results
 
+    @project_registration
     def unregister_commands(
         self, registered_commands: Dict[str, List[str]], project_root: Path
     ) -> None:

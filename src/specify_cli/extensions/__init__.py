@@ -43,7 +43,6 @@ from .._download_security import (
     safe_extract_archive,
 )
 from .._init_options import is_ai_skills_enabled
-from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
@@ -1614,8 +1613,8 @@ class ExtensionManager:
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
-        from ..integrations.base import IntegrationBase
         from ..integrations._file_changes import changing_file, unlink, write_text
+        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1631,25 +1630,14 @@ class ExtensionManager:
 
         def _resolve_command_ref_tokens(body: str) -> str:
             """Resolve explicit command-ref tokens with the active skill style."""
-
-            def _replacement(match: re.Match[str]) -> str:
-                command_name = "speckit." + match.group(1).lower().replace("_", ".")
-                if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
-                    return "$" + command_name.replace("speckit.", "speckit-").replace(
-                        ".", "-"
-                    )
-                if is_slash_skills_agent(selected_ai, ai_skills_enabled):
-                    return "/" + command_name.replace("speckit.", "speckit-").replace(
-                        ".", "-"
-                    )
-                if integration is not None:
-                    return integration.build_command_invocation(command_name)
-                return IntegrationBase.resolve_command_refs(
-                    match.group(0), agent_config.get("invoke_separator", ".")
+            if integration is not None:
+                return integration.resolve_command_refs_for_mode(
+                    body,
+                    skills_enabled=ai_skills_enabled,
                 )
-
-            return re.sub(
-                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
+            return IntegrationBase.resolve_command_refs(
+                body,
+                agent_config.get("invoke_separator", "."),
             )
 
         for cmd_info in manifest.commands:
@@ -5672,35 +5660,17 @@ class HookExecutor:
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
         ai_skills_enabled = is_ai_skills_enabled(init_options)
+        if isinstance(selected_ai, str):
+            from ..integrations import get_integration
+            from ..integrations.installer import project_integrations
 
-        dollar_skill_mode = is_dollar_skills_agent(selected_ai, ai_skills_enabled)
-        kimi_skill_mode = selected_ai == "kimi"
-        cline_mode = selected_ai == "cline"
-        forge_mode = selected_ai == "forge"
-        junie_mode = selected_ai == "junie"
-
-        skill_name = self._skill_name_from_command(command_id)
-        if dollar_skill_mode and skill_name:
-            return f"${skill_name}"
-        if kimi_skill_mode and skill_name:
-            return f"/skill:{skill_name}"
-        if cline_mode:
-            from ..integrations.cline import format_cline_command_name
-
-            return f"/{format_cline_command_name(command_id)}"
-        if forge_mode:
-            from ..integrations.forge import format_forge_command_name
-
-            return f"/{format_forge_command_name(command_id)}"
-        if junie_mode:
-            from ..integrations.junie import format_junie_command_name
-
-            return f"/{format_junie_command_name(command_id)}"
-
-        use_slash = is_slash_skills_agent(selected_ai, ai_skills_enabled)
-
-        if skill_name and use_slash:
-            return f"/{skill_name}"
+            with project_integrations(self.project_root):
+                integration = get_integration(selected_ai)
+                if integration is not None:
+                    return integration.build_hook_invocation(
+                        command_id,
+                        skills_enabled=ai_skills_enabled,
+                    )
 
         return f"/{command_id}"
 

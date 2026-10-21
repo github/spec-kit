@@ -715,6 +715,10 @@ def _validate_implementation(
         raise IntegrationInstallError(f"Integration '{key}' multi_install_safe must be a boolean")
     if not isinstance(integration.invoke_separator, str) or not integration.invoke_separator:
         raise IntegrationInstallError(f"Integration '{key}' invoke_separator must be a non-empty string")
+    if not isinstance(integration.invocation_prefix, str) or not integration.invocation_prefix:
+        raise IntegrationInstallError(f"Integration '{key}' invocation_prefix must be a non-empty string")
+    if not isinstance(integration.skills_invocation_only, bool):
+        raise IntegrationInstallError(f"Integration '{key}' skills_invocation_only must be a boolean")
     if not isinstance(integration.dev_no_symlink, bool):
         raise IntegrationInstallError(f"Integration '{key}' dev_no_symlink must be a boolean")
     if integration.multi_install_safe:

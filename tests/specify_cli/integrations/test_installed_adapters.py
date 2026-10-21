@@ -1128,7 +1128,11 @@ def test_round4_failed_settings_merge_preserves_concurrent_user_edit(tmp_path, s
 
 @pytest.mark.parametrize("field,value", [
     ("invoke_separator", None), ("invoke_separator", ""), ("invoke_separator", 1),
-    ("invoke_separator", False), ("dev_no_symlink", "false"),
+    ("invoke_separator", False), ("invocation_prefix", None),
+    ("invocation_prefix", ""), ("invocation_prefix", 1),
+    ("invocation_prefix", False), ("skills_invocation_only", "false"),
+    ("skills_invocation_only", 1), ("skills_invocation_only", None),
+    ("dev_no_symlink", "false"),
     ("dev_no_symlink", 1), ("dev_no_symlink", None),
 ])
 def test_round5_invalid_public_adapter_attributes_are_rejected(tmp_path, server, field, value):
@@ -1159,6 +1163,58 @@ def test_round5_valid_public_attributes_propagate_to_rendering_and_recovery(tmp_
     assert binding["registrar_config"]["invoke_separator"] == "_"
     assert binding["registrar_config"]["dev_no_symlink"] is no_symlinks
     assert binding["files"] == record["files"]
+
+
+def test_skill_dispatch_keeps_installed_name_with_reference_separator_override(
+    tmp_path, server
+):
+    from specify_cli.integrations import get_integration
+
+    publish(
+        server,
+        code=implementation(body='    invoke_separator = "_"\n'),
+    )
+    project = catalog_project(tmp_path, server)
+    install(project)
+    load_installed_integrations(project)
+    integration = get_integration(KEY)
+
+    assert integration is not None
+    assert (
+        integration.build_command_reference(
+            "speckit.git.commit", skills_enabled=True
+        )
+        == "/speckit_git_commit"
+    )
+    assert (
+        integration.build_command_invocation("speckit.git.commit")
+        == "/speckit-git-commit"
+    )
+
+
+def test_skill_templates_use_skills_prefix_with_reference_separator_override(
+    tmp_path, server
+):
+    publish(
+        server,
+        code=implementation(
+            body=(
+                '    invoke_separator = "_"\n'
+                '    invocation_prefix = "$"\n'
+                "    skills_invocation_only = True\n"
+            )
+        ),
+    )
+    project = catalog_project(tmp_path, server)
+    install(project)
+
+    content = (
+        project / ".sample-agent/skills/speckit-specify/SKILL.md"
+    ).read_text()
+    assert "$speckit_specify" in content
+    assert "$speckit_plan" in content
+    assert "/speckit_specify" not in content
+    assert "/speckit_plan" not in content
 
 
 @pytest.mark.parametrize("damage", ["package", "files", "project"])
@@ -3552,6 +3608,321 @@ def test_registration_keeps_requested_project_hooks(tmp_path, server, monkeypatc
     output = (first / ".sample-agent/commands/speckit.sample.md").read_text()
     assert "FIRST PROJECT ADAPTER" in output
     assert "SECOND PROJECT ADAPTER" not in output
+    assert not (first / ".other-agent").exists()
+
+
+def test_unregistration_keeps_requested_project_naming_hook(
+    tmp_path, server
+):
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    registrar = CommandRegistrar(first)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nBody\n"
+    )
+    registrar.register_commands(
+        KEY,
+        [{"name": "speckit.sample", "file": "command.md"}],
+        "sample",
+        source,
+        first,
+    )
+    first_output = first / ".sample-agent/commands/first-sample.md"
+    unrelated_output = first / ".sample-agent/commands/second-sample.md"
+    unrelated_output.write_text("unrelated project output\n")
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    load_installed_integrations(second)
+
+    registrar.unregister_commands({KEY: ["speckit.sample"]}, first)
+
+    assert not first_output.exists()
+    assert unrelated_output.read_text() == "unrelated project output\n"
+    assert not (first / ".other-agent").exists()
+
+
+def test_artifact_resolution_keeps_requested_project_naming_hook(
+    tmp_path, server, monkeypatch
+):
+    from specify_cli.artifacts.resolution import _materialized_command_source_path
+
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nBody\n"
+    )
+    CommandRegistrar(first).register_commands(
+        KEY,
+        [{"name": "speckit.sample", "file": "command.md"}],
+        "sample",
+        source,
+        first,
+    )
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original_init = CommandRegistrar.__init__
+
+    def snapshot_first_then_interleave(registrar, *args, **kwargs):
+        original_init(registrar, *args, **kwargs)
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(
+        CommandRegistrar, "__init__", snapshot_first_then_interleave
+    )
+
+    assert _materialized_command_source_path(
+        first,
+        {"registered_commands": {KEY: ["speckit.sample"]}},
+        "speckit.sample",
+        source="extension",
+    ) == ".sample-agent/commands/first-sample.md"
+
+
+def test_failed_extension_update_restores_project_named_command(
+    tmp_path, server, monkeypatch
+):
+    from specify_cli.extensions import (
+        ExtensionCatalog,
+        ExtensionManager,
+        ExtensionRegistry,
+        HookExecutor,
+    )
+    from specify_cli.extensions import _command_update_transaction
+    from specify_cli.extensions._command_update_discovery import UpdateCandidate
+
+    def package(prefix, folder):
+        body = f'''    def format_registered_command_name(self, command_name, registrar_config=None):
+        return {prefix!r} + command_name.removeprefix("speckit.")
+'''
+        publish(
+            server,
+            code=implementation(flavor="markdown", folder=folder, body=body),
+        )
+
+    package("first-", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    (first / ".specify/config.toml").write_text("ai = 'sample-agent'\n")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "command.md").write_text(
+        "---\ndescription: Sample command\n---\nOriginal body\n"
+    )
+    command_name = "speckit.sample"
+    CommandRegistrar(first).register_commands(
+        KEY,
+        [{"name": command_name, "file": "command.md"}],
+        "test-ext",
+        source,
+        first,
+    )
+    command_file = first / ".sample-agent/commands/first-sample.md"
+    original_content = command_file.read_text()
+
+    extension_dir = first / ".specify/extensions/test-ext"
+    extension_dir.mkdir(parents=True)
+    (extension_dir / "extension.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "extension": {
+                    "id": "test-ext",
+                    "name": "Test Ext",
+                    "version": "1.0.0",
+                    "description": "Project-scoped rollback test",
+                },
+                "requires": {"speckit_version": ">=0"},
+                "provides": {
+                    "commands": [
+                        {"name": command_name, "file": "commands/run.md"}
+                    ]
+                },
+            }
+        )
+    )
+    registry_entry = {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_commands": {KEY: [command_name]},
+        "registered_skills": [],
+    }
+
+    archive = first / "update.zip"
+    with zipfile.ZipFile(archive, "w") as package_archive:
+        package_archive.writestr(
+            "extension.yml",
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "extension": {
+                        "id": "test-ext",
+                        "name": "Test Ext",
+                        "version": "1.1.0",
+                        "description": "Project-scoped rollback test",
+                    },
+                    "requires": {"speckit_version": ">=0"},
+                    "provides": {
+                        "commands": [
+                            {
+                                "name": command_name,
+                                "file": "commands/run.md",
+                            }
+                        ]
+                    },
+                }
+            ),
+        )
+        package_archive.writestr(
+            "commands/run.md",
+            "---\ndescription: Updated command\n---\nUpdated body\n",
+        )
+
+    candidate = UpdateCandidate(
+        extension_id="test-ext",
+        name="Test Ext",
+        installed="1.0.0",
+        available="1.1.0",
+        download_url="https://example.com/test-ext.zip",
+        bundled_dir=None,
+        catalog_name=None,
+    )
+    monkeypatch.setattr(
+        _command_update_transaction,
+        "discover_updates",
+        lambda manager, catalog, extension: ([candidate], [], True),
+    )
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "download_extension",
+        lambda self, extension_id: archive,
+    )
+    monkeypatch.setattr(
+        ExtensionRegistry,
+        "get",
+        lambda self, extension_id: registry_entry,
+    )
+
+    package("second-", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    original_hook_init = HookExecutor.__init__
+
+    def interleave_after_registrar_snapshot(executor, project_root):
+        original_hook_init(executor, project_root)
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(
+        HookExecutor, "__init__", interleave_after_registrar_snapshot
+    )
+
+    def remove_old_extension(manager, extension_id, keep_config=False):
+        CommandRegistrar(first).unregister_commands(
+            {KEY: [command_name]}, first
+        )
+        load_installed_integrations(second)
+
+    monkeypatch.setattr(ExtensionManager, "remove", remove_old_extension)
+    monkeypatch.setattr(
+        ExtensionManager,
+        "install_from_zip",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("Install failed after command cleanup")
+        ),
+    )
+
+    result = run(first, ["extension", "update", "test-ext"])
+
+    assert result.exit_code == 1
+    assert "Install failed after command cleanup" in result.output
+    assert "Rollback successful" in result.output
+    assert command_file.read_text() == original_content
+    assert not (first / ".other-agent").exists()
+
+
+@pytest.mark.parametrize("scenario", ["fresh-process", "interleaved-project"])
+def test_hook_rendering_uses_executor_project_adapter(
+    tmp_path, server, scenario
+):
+    from specify_cli.extensions import HookExecutor
+
+    def package(marker, folder):
+        body = '''    def build_hook_invocation(self, command_name, *, skills_enabled):
+        from specify_cli.integrations import get_integration
+        assert get_integration(self.key) is self, "hook renderer escaped project scope"
+        from .helper import MARKER
+        return MARKER
+'''
+        publish(
+            server,
+            code=implementation(folder=folder, body=body),
+            members={"helper.py": f"MARKER = {marker!r}\n".encode()},
+        )
+
+    package("/first-project-hook", ".sample-agent")
+    first = catalog_project(tmp_path, server)
+    install(first)
+    (first / ".specify/init-options.json").write_text(
+        json.dumps({"ai": KEY, "ai_skills": True}),
+        encoding="utf-8",
+    )
+
+    if scenario == "fresh-process":
+        code = (
+            "from pathlib import Path\n"
+            "from specify_cli.extensions import HookExecutor\n"
+            f"root = Path({str(first)!r})\n"
+            "print(HookExecutor(root)._render_hook_invocation('speckit.plan'))\n"
+        )
+        process = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=first,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        assert process.returncode == 0, process.stderr
+        assert process.stdout.strip() == "/first-project-hook"
+        return
+
+    package("/second-project-hook", ".other-agent")
+    second = catalog_project(tmp_path / "second", server)
+    install(second)
+    load_installed_integrations(second)
+
+    assert (
+        HookExecutor(first)._render_hook_invocation("speckit.plan")
+        == "/first-project-hook"
+    )
     assert not (first / ".other-agent").exists()
 
 

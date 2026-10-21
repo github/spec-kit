@@ -17,6 +17,8 @@ class CodexIntegration(SkillsIntegration):
     """Integration for OpenAI Codex CLI."""
 
     key = "codex"
+    invocation_prefix = "$"
+    skills_invocation_only = True
     config = {
         "name": "Codex CLI",
         "folder": ".agents/",

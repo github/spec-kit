@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ..events import install_integration_events, remove_integration_events
@@ -142,6 +141,12 @@ class IntegrationBase(ABC):
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
 
+    invocation_prefix: str = "/"
+    """Prefix used for rendered command references in the native UI."""
+
+    skills_invocation_only: bool = False
+    """Whether the skills invocation style applies only in skills mode."""
+
     dev_no_symlink: bool = False
     """Whether dev-mode registration should write files instead of symlinks."""
 
@@ -221,6 +226,94 @@ class IntegrationBase(ABC):
         """
         cfg = self.registrar_config or {}
         return cfg.get("invoke_separator", self.invoke_separator)
+
+    def invocation_prefix_for_mode(self, skills_enabled: bool) -> str:
+        """Return the native command-reference prefix for the resolved mode."""
+        if self.skills_invocation_only and not skills_enabled:
+            return "/"
+        return self.invocation_prefix
+
+    def command_reference_separator_for_mode(self, skills_enabled: bool) -> str:
+        """Return the separator used by displayed and embedded references."""
+        if self.skills_invocation_only and not skills_enabled:
+            return "."
+        return self.invoke_separator_for_mode(skills_enabled)
+
+    def format_registered_command_name(
+        self,
+        command_name: str,
+        registrar_config: Mapping[str, Any] | None = None,
+    ) -> str:
+        """Return the on-disk command name used by command registration.
+
+        Integrations may provide ``registrar_config["format_name"]`` for
+        command layouts with agent-specific naming. Skills use the shared
+        ``speckit-<name>`` directory convention.
+        """
+        config = registrar_config or self.registrar_config or {}
+        format_name = config.get("format_name")
+        if callable(format_name):
+            return str(format_name(command_name))
+        if config.get("extension") != "/SKILL.md":
+            return command_name
+
+        stem = command_name.removeprefix("speckit.")
+        return f"speckit-{stem.replace('.', '-')}"
+
+    def build_command_reference(
+        self,
+        command_name: str,
+        args: str = "",
+        *,
+        skills_enabled: bool,
+    ) -> str:
+        """Render a command reference for guidance, templates, and hooks."""
+        stem = command_name.removeprefix("speckit.")
+        separator = self.command_reference_separator_for_mode(skills_enabled)
+        prefix = self.invocation_prefix_for_mode(skills_enabled)
+        invocation = prefix + "speckit" + separator + stem.replace(".", separator)
+        return f"{invocation} {args}" if args else invocation
+
+    def resolve_command_refs_for_mode(
+        self,
+        content: str,
+        *,
+        skills_enabled: bool,
+        invoke_separator: str | None = None,
+    ) -> str:
+        """Replace command-reference placeholders using this integration."""
+        if (
+            invoke_separator is not None
+            and type(self).build_command_reference
+            is IntegrationBase.build_command_reference
+        ):
+            return IntegrationBase.resolve_command_refs(
+                content,
+                invoke_separator,
+                self.invocation_prefix_for_mode(skills_enabled),
+            )
+        return re.sub(
+            r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__",
+            lambda match: self.build_command_reference(
+                "speckit." + match.group(1).lower().replace("_", "."),
+                skills_enabled=skills_enabled,
+            ),
+            content,
+        )
+
+    def build_hook_invocation(
+        self,
+        command_name: str,
+        *,
+        skills_enabled: bool,
+    ) -> str:
+        """Render a hook command without rewriting unrelated custom commands."""
+        if not command_name.startswith("speckit."):
+            return f"/{command_name}"
+        return self.build_command_reference(
+            command_name,
+            skills_enabled=skills_enabled,
+        )
 
     def is_skills_mode(
         self,
@@ -890,6 +983,7 @@ class IntegrationBase(ABC):
         arg_placeholder: str = "$ARGUMENTS",
         invoke_separator: str = ".",
         project_root: Path | None = None,
+        skills_enabled: bool | None = None,
     ) -> str:
         """Process a raw command template into agent-ready content.
 
@@ -988,13 +1082,41 @@ class IntegrationBase(ABC):
 
         content = CommandRegistrar.rewrite_project_relative_paths(content)
 
-        # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
-        invocation_prefix = get_invocation_prefix(
-            agent_name, invoke_separator == "-"
-        )
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invocation_prefix
-        )
+        # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings.
+        # Integration classes own their native prefix; the separator remains
+        # an explicit rendering input because adapters may use a non-standard
+        # spelling. Output mode is separate because it can affect the prefix
+        # without implying a particular separator.
+        try:
+            from specify_cli.integrations import get_integration
+
+            integration = get_integration(agent_name)
+        except (ImportError, KeyError, ValueError):
+            integration = None
+        if integration is not None:
+            resolved_skills_enabled = (
+                invoke_separator == "-"
+                if skills_enabled is None
+                else skills_enabled
+            )
+            if (
+                type(integration).resolve_command_refs_for_mode
+                is IntegrationBase.resolve_command_refs_for_mode
+            ):
+                content = integration.resolve_command_refs_for_mode(
+                    content,
+                    skills_enabled=resolved_skills_enabled,
+                    invoke_separator=invoke_separator,
+                )
+            else:
+                content = integration.resolve_command_refs_for_mode(
+                    content,
+                    skills_enabled=resolved_skills_enabled,
+                )
+        else:
+            content = IntegrationBase.resolve_command_refs(
+                content, invoke_separator
+            )
 
         return content
 
@@ -1198,6 +1320,7 @@ class MarkdownIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -1413,6 +1536,7 @@ class TomlIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1653,6 +1777,7 @@ class YamlIntegration(IntegrationBase):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
+                skills_enabled=False,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1745,15 +1870,10 @@ class SkillsIntegration(IntegrationBase):
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the agent's native invocation for a hyphenated skill name."""
-        stem = command_name
-        if stem.startswith("speckit."):
-            stem = stem[len("speckit."):]
-
-        prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
+        stem = command_name.removeprefix("speckit.")
+        prefix = self.invocation_prefix_for_mode(True)
         invocation = prefix + "speckit-" + stem.replace(".", "-")
-        if args:
-            invocation = f"{invocation} {args}"
-        return invocation
+        return f"{invocation} {args}" if args else invocation
 
     @staticmethod
     def _inject_hook_command_note(
@@ -1810,7 +1930,7 @@ class SkillsIntegration(IntegrationBase):
         ``$speckit-git-commit``).  Subclasses may override -- see
         ``ClaudeIntegration``.
         """
-        invocation_prefix = get_invocation_prefix(self.key, True)
+        invocation_prefix = self.invocation_prefix_for_mode(True)
         return self._inject_hook_command_note(content, invocation_prefix)
 
     def setup(
@@ -1893,6 +2013,7 @@ class SkillsIntegration(IntegrationBase):
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
                 invoke_separator=self.invoke_separator,
+                skills_enabled=True,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             # Preserve leading whitespace in the body to match release ZIP

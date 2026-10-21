@@ -21,6 +21,7 @@ from ..base import IntegrationOption, SkillsIntegration
 
 class CursorAgentIntegration(SkillsIntegration):
     key = "cursor-agent"
+    skills_invocation_only = True
     config = {
         "name": "Cursor",
         "folder": ".cursor/",

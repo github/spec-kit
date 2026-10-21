@@ -270,7 +270,7 @@ class TestBuildCommandInvocation:
         """Kimi's post_process_skill_content must be idempotent.
 
         The hook-command note is injected with the /skill: prefix by the base
-        class (via get_invocation_prefix), so the idempotency check matches on
+        class (via the integration's prefix hook), so the idempotency check matches on
         re-runs without requiring the broad /speckit- -> /skill:speckit- body
         replacement to recognise a duplicate.
         """
@@ -289,14 +289,23 @@ class TestBuildCommandInvocation:
         assert once.count("replace dots (`.`) with hyphens") == 1
         assert "/skill:speckit-git-commit" in once
 
-    def test_get_invocation_prefix_skill_colon(self):
-        """get_invocation_prefix returns '/skill:' for Kimi in skills mode."""
-        from specify_cli._invocation_style import get_invocation_prefix
+    @pytest.mark.parametrize(
+        ("integration_key", "skills_enabled", "expected"),
+        [
+            ("kimi", True, "/skill:"),
+            ("kimi", False, "/skill:"),
+            ("codex", True, "$"),
+            ("codex", False, "/"),
+            ("claude", True, "/"),
+        ],
+    )
+    def test_integration_owns_invocation_prefix(
+        self, integration_key, skills_enabled, expected
+    ):
+        from specify_cli.integrations import get_integration
 
-        assert get_invocation_prefix("kimi", True) == "/skill:"
-        assert get_invocation_prefix("kimi", False) == "/"
-        assert get_invocation_prefix("codex", True) == "$"
-        assert get_invocation_prefix("claude", True) == "/"
+        integration = get_integration(integration_key)
+        assert integration.invocation_prefix_for_mode(skills_enabled) == expected
 
 class TestResolveCommandRefs:
     """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
@@ -382,6 +391,85 @@ class TestResolveCommandRefs:
         )
         assert "/speckit-plan" in result
         assert "__SPECKIT_COMMAND_" not in result
+
+    def test_process_template_uses_integration_resolver_override(
+        self, monkeypatch
+    ):
+        class ResolverIntegration(StubIntegration):
+            def resolve_command_refs_for_mode(
+                self, content, *, skills_enabled
+            ):
+                assert skills_enabled is True
+                return content.replace(
+                    "__SPECKIT_COMMAND_PLAN__", "/native-plan"
+                )
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: ResolverIntegration() if key == "resolver" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "resolver",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "/native-plan" in result
+        assert "/speckit_plan" not in result
+
+    def test_process_template_uses_command_reference_override(
+        self, monkeypatch
+    ):
+        class ReferenceIntegration(StubIntegration):
+            def build_command_reference(
+                self, command_name, args="", *, skills_enabled
+            ):
+                assert command_name == "speckit.plan"
+                assert skills_enabled is True
+                return "/native-plan"
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: ReferenceIntegration() if key == "reference" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "reference",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "/native-plan" in result
+        assert "/speckit_plan" not in result
+
+    def test_process_template_keeps_explicit_separator_for_default_resolver(
+        self, monkeypatch
+    ):
+        integration = StubIntegration()
+        integration.invocation_prefix = "$"
+        monkeypatch.setattr(
+            "specify_cli.integrations.get_integration",
+            lambda key: integration if key == "stub" else None,
+        )
+        content = "---\ndescription: test\n---\nRun __SPECKIT_COMMAND_PLAN__ now."
+
+        result = IntegrationBase.process_template(
+            content,
+            "stub",
+            "sh",
+            invoke_separator="_",
+            skills_enabled=True,
+        )
+
+        assert "$speckit_plan" in result
+        assert "$speckit.plan" not in result
 
     def test_unclosed_placeholder_unchanged(self):
         text = "Run __SPECKIT_COMMAND_PLAN to plan."
