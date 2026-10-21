@@ -263,17 +263,18 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             ignore = root / ".ignore"
             ignore.write_bytes(original)
             ignore.chmod(0o640)
+            before_mode = stat.S_IMODE(ignore.stat().st_mode)
             manifest = IntegrationManifest(self.KEY, root)
             integration.setup(root, manifest, parsed_options=_OPT_IN)
             assert ignore.read_bytes() == expected
             assert ignore.read_bytes().startswith(original)
-            assert stat.S_IMODE(ignore.stat().st_mode) == 0o640
+            assert stat.S_IMODE(ignore.stat().st_mode) == before_mode
             assert manifest.ownership_modes[".ignore"] == "partial"
             integration.setup(
                 root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
             )
             assert ignore.read_bytes() == expected
-            assert stat.S_IMODE(ignore.stat().st_mode) == 0o640
+            assert stat.S_IMODE(ignore.stat().st_mode) == before_mode
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
@@ -437,7 +438,34 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
                 )
         assert target.read_bytes() == original
         assert (failing / ".opencode" / "commands").is_dir()
-        assert list(failing.glob(".ignore.*")) == []
+        assert list(failing.glob("..ignore.*")) == []
+
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="Windows reports directories writable regardless of mode bits",
+    )
+    def test_configure_ignore_file_rejects_writable_ignore_in_readonly_root(self, tmp_path):
+        integration = get_integration(self.KEY)
+        root = tmp_path / "readonly-root"
+        root.mkdir()
+        integration.setup(root, IntegrationManifest(self.KEY, root))
+        plan = root / ".opencode" / "commands" / integration.command_filename("plan")
+        plan.write_bytes(b"custom-command\n")
+        ignore = root / ".ignore"
+        ignore.write_bytes(b"user\n")
+        ignore.chmod(0o644)
+        root.chmod(0o555)
+        try:
+            assert os.access(ignore, os.W_OK)
+            assert not os.access(root, os.W_OK)
+            with pytest.raises(PermissionError, match="Cannot update .ignore"):
+                integration.setup(
+                    root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
+                )
+        finally:
+            root.chmod(0o755)
+        assert ignore.read_bytes() == b"user\n"
+        assert plan.read_bytes() == b"custom-command\n"
 
     def test_upgrade_rolls_back_existing_ignore_when_a_later_step_fails(self, tmp_path):
         from specify_cli.integrations import installer

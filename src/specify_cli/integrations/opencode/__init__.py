@@ -174,7 +174,9 @@ def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, 
     updated = _with_specify_ignore_rules(raw)
     if updated != raw and path.exists() and not os.access(path, os.W_OK):
         raise PermissionError(f"Cannot update .ignore at {path}")
-    if updated != raw and not path.exists() and not os.access(path.parent, os.W_OK):
+    if updated != raw and not os.access(path.parent, os.W_OK):
+        if path.exists():
+            raise PermissionError(f"Cannot update .ignore at {path}")
         raise PermissionError(f"Cannot create .ignore at {path}")
     return path, raw, updated
 
