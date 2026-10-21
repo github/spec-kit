@@ -721,11 +721,12 @@ class _StepKindManager:
                     with step_installer._step_install_transaction(self._root):
                         assert backup_root is not None
                         backup_dir = backup_root / component.id
-                        # Reinstall runs outside the lock, so the steps tree can
-                        # be swapped for a symlink before this section. Reload
-                        # through ``StepRegistry._load``, which refuses a
-                        # symlinked steps path or registry file, and resolve the
-                        # steps base before deleting or copying the package.
+                        # Reinstall runs outside the lock, so the steps tree or
+                        # the registry file can be swapped for a symlink before
+                        # this section. ``_load`` returns an empty registry for
+                        # a symlinked registry file or parent and does not
+                        # raise. Resolve the steps base, then reject that
+                        # symlink before deleting or copying the package.
                         # ``save()`` replaces the whole file: the document is
                         # that guarded read plus this step's snapshot when the
                         # id is absent. A later operation's package and registry
@@ -754,6 +755,16 @@ class _StepKindManager:
                             step_installer._check_duplicate(
                                 current, component.id, step_dir, force=True
                             )
+                            if (
+                                current._has_symlinked_parent()
+                                or current.registry_path.is_symlink()
+                            ):
+                                raise step_installer.StepInstallError(
+                                    "Refusing to restore step "
+                                    f"'{component.id}' through a symlinked "
+                                    "step registry at "
+                                    f"'{current.registry_path}'."
+                                )
                             if step_dir.exists():
                                 shutil.rmtree(step_dir)
                             if backup_dir.exists():

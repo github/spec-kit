@@ -1993,6 +1993,63 @@ def test_step_refresh_rollback_refuses_symlinked_step_directory(
         shutil.rmtree(backup_root, ignore_errors=True)
 
 
+def test_step_refresh_rollback_refuses_symlinked_registry(
+    tmp_path: Path, monkeypatch
+):
+    """Rollback must not replace a package when step-registry.json is a symlink.
+
+    ``StepRegistry._load`` returns an empty registry for that link and does
+    not raise, so the step looks absent. The newer package and the link
+    target stay untouched, and the backup is kept.
+    """
+    import shutil
+
+    _require_directory_symlink(tmp_path)
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    newer = "step:\n  type_key: my-step\n  version: 2.0.0\n"
+    registry_path = steps_dir / StepRegistry.REGISTRY_FILE
+    registry_target = tmp_path / "linked-step-registry.json"
+    linked_text = (
+        '{"schema_version":"1.0","steps":{"my-step":'
+        '{"sentinel":"linked-registry"}}}\n'
+    )
+    registry_target.write_text(linked_text, encoding="utf-8")
+
+    def _boom(step_id, *_args, **_kwargs):
+        package = steps_dir / step_id
+        package.mkdir()
+        (package / "step.yml").write_text(newer, encoding="utf-8")
+        (package / "__init__.py").write_text("# newer\n", encoding="utf-8")
+        registry_path.unlink()
+        registry_path.symlink_to(registry_target)
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    _stub_step_reinstall(monkeypatch, _boom)
+    with pytest.raises(BundlerError) as caught:
+        primitive_manager("steps", tmp_path, allow_network=True).refresh(
+            _component("steps", "my-step")
+        )
+
+    assert str(caught.value) == "Failed to install step 'my-step'."
+    note = caught.value.__notes__[0]
+    assert "Refusing to restore" in note
+    assert "symlinked step registry" in note
+    assert registry_path.is_symlink()
+    assert registry_path.readlink() == registry_target
+    assert registry_target.read_text(encoding="utf-8") == linked_text
+    assert (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8") == newer
+    assert (steps_dir / "my-step" / "__init__.py").read_text(encoding="utf-8") == (
+        "# newer\n"
+    )
+    backup_root = _backup_root_from_note(note)
+    try:
+        assert (backup_root / "my-step" / "step.yml").read_text(
+            encoding="utf-8"
+        ) == "step:\n  type_key: my-step\n"
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+
 _HISTORICAL_SHA = "a" * 64
 
 
