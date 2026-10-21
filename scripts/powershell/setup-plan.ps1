@@ -48,7 +48,7 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
 } else {
     $content = Resolve-TemplateContent -TemplateName 'plan-template' -RepoRoot $paths.REPO_ROOT
     if ($null -ne $content) {
-        if ($content.Length -eq 0) {
+        if ([string]::IsNullOrWhiteSpace($content)) {
             [Console]::Error.WriteLine(
                 "ERROR: Plan template is empty; no new plan.md was created."
             )

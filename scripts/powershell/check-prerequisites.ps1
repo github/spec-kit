@@ -108,7 +108,7 @@ if (-not (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf)) {
     exit 1
 }
 
-if ((Get-Item -LiteralPath $paths.IMPL_PLAN).Length -eq 0) {
+if ([string]::IsNullOrWhiteSpace([System.IO.File]::ReadAllText($paths.IMPL_PLAN))) {
     [Console]::Error.WriteLine("ERROR: plan.md is empty in $($paths.FEATURE_DIR)")
     $planCommand = Format-SpecKitCommand -CommandName 'plan' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine(

@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if paths.impl_plan.stat().st_size == 0:
+    if not paths.impl_plan.read_text(encoding="utf-8").strip():
         print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
         print(
             "Populate it, or remove the empty file and rerun "

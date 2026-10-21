@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         if template_content is not None:
-            if template_content == "":
+            if not template_content.strip():
                 print(
                     "ERROR: Plan template is empty; no new plan.md was created.",
                     file=sys.stderr,

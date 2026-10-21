@@ -148,7 +148,7 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
     exit 1
 fi
 
-if [[ ! -s "$IMPL_PLAN" ]]; then
+if ! grep -q '[^[:space:]]' "$IMPL_PLAN"; then
     echo "ERROR: plan.md is empty in $FEATURE_DIR" >&2
     echo "Populate it, or remove the empty file and rerun $(format_speckit_command plan "$REPO_ROOT") with a valid plan template." >&2
     exit 1

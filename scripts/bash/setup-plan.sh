@@ -46,7 +46,7 @@ else
     template_file=$(mktemp)
     trap 'rm -f "$template_file"' EXIT
     if resolve_template_content "plan-template" "$REPO_ROOT" > "$template_file"; then
-        if [[ ! -s "$template_file" ]]; then
+        if ! grep -q '[^[:space:]]' "$template_file"; then
             echo "ERROR: Plan template is empty; no new plan.md was created." >&2
             echo "Restore a valid plan template and rerun plan setup." >&2
             exit 1

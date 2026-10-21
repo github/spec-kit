@@ -576,7 +576,13 @@ def test_python_negative_errors_are_stderr_only(
     ],
 )
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-@pytest.mark.parametrize("plan_state", ["missing", "empty", "nonempty", "whitespace"])
+@pytest.mark.parametrize(
+    "plan_state",
+    [
+        "missing", "empty", "nonempty", "padded",
+        "whitespace", "whitespace_crlf", "whitespace_controls",
+    ],
+)
 def test_plan_prerequisite_diagnostics(
     tmp_path: Path, port: str, json_mode: bool, plan_state: str
 ) -> None:
@@ -589,7 +595,14 @@ def test_plan_prerequisite_diagnostics(
     feature = repo / "specs" / "001-my-feature"
     feature.mkdir(parents=True)
     plan = feature / "plan.md"
-    bodies = {"empty": b"", "nonempty": b"# Plan\n", "whitespace": b" \t\n"}
+    bodies = {
+        "empty": b"",
+        "nonempty": b"# Plan\n",
+        "padded": b" \t\n# Plan\n \t\r\n",
+        "whitespace": b" \t\n",
+        "whitespace_crlf": b" \t\r\n\r\n",
+        "whitespace_controls": b"\v\f\n",
+    }
     if plan_state != "missing":
         plan.write_bytes(bodies[plan_state])
         before = plan.stat().st_mtime_ns
@@ -601,7 +614,7 @@ def test_plan_prerequisite_diagnostics(
 
     result = _run(command, repo)
 
-    if plan_state in {"missing", "empty"}:
+    if plan_state in {"missing", "empty"} or plan_state.startswith("whitespace"):
         assert result.returncode == 1
         assert result.stdout == ""
         lines = result.stderr.replace("\\", "/").splitlines()
