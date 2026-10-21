@@ -209,3 +209,66 @@ def test_shell_quote_arg_is_host_appropriate():
         assert quoted == '"my project"'
     else:
         assert quoted == "'my project'"
+
+
+@pytest.mark.parametrize("here", [False, True])
+def test_output_free_init_recommends_switching_integrations(tmp_path, monkeypatch, here):
+    from specify_cli.integrations.generic import GenericIntegration
+
+    monkeypatch.setattr(GenericIntegration, "list_command_templates", lambda self: [])
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "init", *(["--here"] if here else ["proj"]),
+            "--integration", "generic",
+            "--integration-options", "--commands-dir .agent/commands",
+            "--ignore-agent-tools",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Next Steps" in output
+    if here:
+        assert "You're already in the project directory!" in output
+    else:
+        assert "cd proj" in output
+    assert "specify integration switch <key>" in output
+    assert "Switch this project to it:" in output
+    assert "Add it to this project:" not in output
+    assert "specify integration list" in output
+    assert "Start using" not in output
+    assert "speckit." not in output
+    assert "Enhancement Commands" not in output
+    assert "Enhancement Skills" not in output
+    project = tmp_path if here else tmp_path / "proj"
+    assert not (project / ".agent" / "commands").exists()
+
+
+def test_rendering_init_preserves_command_guidance(tmp_path):
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Start using slash commands" in output
+    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
+                    "clarify", "analyze", "checklist"):
+        assert f"/speckit.{command}" in output
+        assert (tmp_path / "proj" / ".agent" / "commands" / f"speckit.{command}.md").is_file()
+    assert "Enhancement Commands" in output
+    assert "specify integration switch <key>" not in output
+
+
+def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        app, ["init", "proj", "--integration", "copilot", "--ignore-agent-tools"],
+    )
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Start using skills" in output
+    assert "Enhancement Skills" in output
+    assert "specify integration switch <key>" not in output
+    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
+                    "clarify", "analyze", "checklist"):
+        assert f"/speckit-{command}" in output
+        assert (tmp_path / "proj" / ".github" / "skills" / f"speckit-{command}" / "SKILL.md").is_file()

@@ -45,6 +45,11 @@ specify integration list
 Shows built-in and trusted installed external integrations, their setup
 requirements, and their multi-install safety declarations. Installed
 integrations and the default are marked separately.
+The `CLI Required` column reports the agent CLI requirement declared by
+`config.requires_cli`, not whether the integration is IDE-only. External adapters
+can separately require executables through their descriptor's `requires.tools`;
+installation and `specify check` validate those tool requirements even when
+`CLI Required` is `no`.
 
 ## Search Available Integrations
 
@@ -530,6 +535,11 @@ CLI-based integrations require the tool to be installed. IDE-based integrations
 work through the IDE itself and may not require a separate CLI for setup.
 Workflow dispatch can have additional CLI requirements; see your integration's
 guide. `specify integration list` shows each integration's setup requirements.
+
+If an integration has no command templates, `specify init` keeps the
+project-directory guidance and shows how to choose an integration with
+`specify integration list` and switch to it with `specify integration switch <key>`,
+rather than recommending unavailable agent commands.
 
 ### When should I use `upgrade` vs `switch`?
 

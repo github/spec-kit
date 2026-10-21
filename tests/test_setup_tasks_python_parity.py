@@ -26,6 +26,45 @@ from tests.parity_helpers import (
 SCRIPT = "setup-tasks"
 
 
+def test_installed_python_json_preserves_stock_tasks_template(
+    tmp_path: Path,
+) -> None:
+    """The tasks command's actual script must emit JSON for the stock template."""
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+
+    project = tmp_path / "project"
+    initialized = CliRunner().invoke(
+        app,
+        [
+            "init", str(project), "--integration", "codex", "--script", "py",
+            "--ignore-agent-tools", "--non-interactive",
+        ],
+    )
+    assert initialized.exit_code == 0, initialized.output
+    created = run(
+        py_cmd(project, "create-new-feature", "--json", "Add user authentication"),
+        project,
+    )
+    assert created.returncode == 0, created.stderr
+    plan = run(py_cmd(project, "setup-plan", "--json"), project)
+    assert plan.returncode == 0, plan.stderr
+    template = project / ".specify/templates/tasks-template.md"
+    expected = template.read_bytes().decode("utf-8")
+    assert "🎯" in expected
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    result = run(py_cmd(project, SCRIPT, "--json"), project, env)
+
+    assert result.returncode == 0, result.stderr
+    payload = json_stdout(result)
+    assert payload["TASKS_TEMPLATE_CONTENT"] == expected
+    assert Path(payload["TASKS_TEMPLATE"]) == template
+    assert payload["AVAILABLE_DOCS"] == []
+
+
 def _setup_repo(tmp_path: Path) -> Path:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
