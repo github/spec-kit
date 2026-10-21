@@ -319,8 +319,6 @@ cryptography==50.0.2 \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
     # via pyjwt
 execnet==2.1.2 \
-    --hash=md5:057396dce2b1627b57220d53017a940e \
-    --hash=md5:d2dd795604b192dae2cc033757da2ab6 \
     --hash=sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd \
     --hash=sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec
     # via pytest-xdist
