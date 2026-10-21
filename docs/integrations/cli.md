@@ -535,9 +535,9 @@ work through the IDE itself and may not require a separate CLI for setup.
 Workflow dispatch can have additional CLI requirements; see your integration's
 guide. `specify integration list` shows each integration's setup requirements.
 
-If an integration generates no command templates, `specify init` keeps the
+If an integration has no command templates, `specify init` keeps the
 project-directory guidance and shows how to choose an integration with
-`specify integration list` and add it with `specify integration switch <key>`,
+`specify integration list` and switch to it with `specify integration switch <key>`,
 rather than recommending unavailable agent commands.
 
 ### When should I use `upgrade` vs `switch`?

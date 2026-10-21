@@ -212,7 +212,7 @@ def test_shell_quote_arg_is_host_appropriate():
 
 
 @pytest.mark.parametrize("here", [False, True])
-def test_output_free_init_recommends_installing_an_integration(tmp_path, monkeypatch, here):
+def test_output_free_init_recommends_switching_integrations(tmp_path, monkeypatch, here):
     from specify_cli.integrations.generic import GenericIntegration
 
     monkeypatch.setattr(GenericIntegration, "list_command_templates", lambda self: [])
@@ -234,6 +234,8 @@ def test_output_free_init_recommends_installing_an_integration(tmp_path, monkeyp
     else:
         assert "cd proj" in output
     assert "specify integration switch <key>" in output
+    assert "Switch this project to it:" in output
+    assert "Add it to this project:" not in output
     assert "specify integration list" in output
     assert "Start using" not in output
     assert "speckit." not in output

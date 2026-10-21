@@ -1062,7 +1062,7 @@ def register(app: typer.Typer) -> None:
                 f"{step_num}. Choose an integration: [cyan]specify integration list[/cyan]"
             )
             steps_lines.append(
-                f"{step_num + 1}. Add it to this project: [cyan]specify integration switch <key>[/cyan]"
+                f"{step_num + 1}. Switch this project to it: [cyan]specify integration switch <key>[/cyan]"
             )
             console.print()
             console.print(
