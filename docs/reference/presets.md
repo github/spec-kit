@@ -96,11 +96,12 @@ Manifest and declared asset files are not exempt from filtering: keep
 `preset.yml` and any templates, commands, or scripts the preset needs included.
 Excluding them can leave an incomplete or unusable installation.
 
-The source-directory installer reads and validates `.presetignore` before
-removing an existing destination, including during a forced reinstall. Invalid
-UTF-8 raises a preset validation error. The separate `preset update` command
-retains its remove-then-add behavior described below; it does not preflight the
-replacement ignore file before removal.
+For local directories and extracted archives, the source-directory installer
+reads and validates `.presetignore` before removing an existing destination,
+including during a forced reinstall. Invalid UTF-8 or malformed patterns raise
+a preset validation error. The separate `preset update` command retains its
+remove-then-add behavior described below; it does not preflight the replacement
+ignore file before removal.
 
 ## Update a Preset
 
