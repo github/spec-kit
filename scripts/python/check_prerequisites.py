@@ -14,6 +14,7 @@ try:
         TemplateResolutionError,
         format_speckit_command,
         get_feature_paths,
+        has_non_whitespace_content,
         resolve_template_content,
     )
 except ImportError:  # pragma: no cover - direct execution from unusual cwd
@@ -23,6 +24,7 @@ except ImportError:  # pragma: no cover - direct execution from unusual cwd
         TemplateResolutionError,
         format_speckit_command,
         get_feature_paths,
+        has_non_whitespace_content,
         resolve_template_content,
     )
 
@@ -236,7 +238,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if not paths.impl_plan.read_text(encoding="utf-8").strip():
+    if not has_non_whitespace_content(
+        paths.impl_plan.read_text(encoding="utf-8", errors="replace")
+    ):
         print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
         print(
             "Populate it, or remove the empty file and rerun "

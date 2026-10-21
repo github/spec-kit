@@ -64,7 +64,11 @@ def repo(tmp_path: Path) -> Path:
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
 @pytest.mark.parametrize(
     "template_state",
-    ["missing", "empty", "empty_override", "whitespace", "whitespace_override"],
+    [
+        "missing", "empty", "empty_override", "whitespace", "whitespace_override",
+        "whitespace_nbsp", "whitespace_bom", "whitespace_bom_override",
+        "whitespace_bom_nbsp", "whitespace_unicode",
+    ],
 )
 def test_plan_template_failure_and_retry(
     tmp_path: Path, port: str, json_mode: bool, template_state: str
@@ -73,7 +77,17 @@ def test_plan_template_failure_and_retry(
     template = repo / ".specify" / "templates" / "plan-template.md"
     if template_state != "missing":
         template.parent.mkdir(parents=True)
-        body = b" \t\r\n\v\f\n" if template_state.startswith("whitespace") else b""
+        bodies = {
+            "whitespace": b" \t\r\n\v\f\n",
+            "whitespace_nbsp": "\u00a0\n".encode(),
+            "whitespace_bom": b"\xef\xbb\xbf \t\r\n",
+            "whitespace_bom_nbsp": "\ufeff\u00a0\n".encode(),
+            "whitespace_unicode": (
+                "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+                "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\n"
+            ).encode(),
+        }
+        body = bodies.get(template_state.removesuffix("_override"), b"")
         template.write_bytes(body)
         if template_state.endswith("_override"):
             template.write_bytes(TEMPLATE_BODY.encode("utf-8"))
@@ -82,7 +96,7 @@ def test_plan_template_failure_and_retry(
             template.write_bytes(body)
     plan = repo / "specs" / "001-my-feature" / "plan.md"
 
-    result = run(_command(repo, port, json_mode), repo)
+    result = run(_command(repo, port, json_mode), repo, env={**clean_env(), "LC_ALL": "C"})
 
     diagnostic = "not found" if template_state == "missing" else "is empty"
     assert result.returncode == 1
@@ -141,16 +155,29 @@ def test_existing_plan_is_preserved(
 
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        b" \t\n# Plan Template\n\nBody.\n \t\n",
+        b"\xef\xbb\xbf \t\n# Plan Template\n\nBody.\n",
+        "\u00a0# Plan Template\n\u3000".encode(),
+        b"\x1c",
+        b"\n\xef\xbb\xbf\n",
+        b"\xef\xbb\xbf\xef\xbb\xbf\n",
+    ],
+    ids=["ascii", "bom", "unicode", "non_whitespace_control", "internal_bom", "double_bom"],
+)
 def test_plan_template_with_padded_content_is_preserved(
-    repo: Path, port: str, json_mode: bool
+    repo: Path, port: str, json_mode: bool, body: bytes
 ) -> None:
-    body = b" \t\n# Plan Template\n\nBody.\n \t\n"
     (repo / ".specify" / "templates" / "plan-template.md").write_bytes(body)
 
-    result = run(_command(repo, port, json_mode), repo)
+    result = run(_command(repo, port, json_mode), repo, env={**clean_env(), "LC_ALL": "C"})
 
     assert result.returncode == 0, result.stderr
-    assert (repo / "specs" / "001-my-feature" / "plan.md").read_bytes() == body
+    # PowerShell's existing resolver consumes the file BOM before returning text.
+    expected = body.removeprefix(b"\xef\xbb\xbf") if port == "powershell" else body
+    assert (repo / "specs" / "001-my-feature" / "plan.md").read_bytes() == expected
 
 
 @requires_bash

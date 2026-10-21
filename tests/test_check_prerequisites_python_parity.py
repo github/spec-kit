@@ -581,6 +581,9 @@ def test_python_negative_errors_are_stderr_only(
     [
         "missing", "empty", "nonempty", "padded",
         "whitespace", "whitespace_crlf", "whitespace_controls",
+        "whitespace_nbsp", "whitespace_bom", "whitespace_bom_nbsp",
+        "whitespace_unicode", "bom_content", "utf16_content", "cp1252_content",
+        "non_whitespace_control", "internal_bom", "double_bom",
     ],
 )
 def test_plan_prerequisite_diagnostics(
@@ -602,6 +605,19 @@ def test_plan_prerequisite_diagnostics(
         "whitespace": b" \t\n",
         "whitespace_crlf": b" \t\r\n\r\n",
         "whitespace_controls": b"\v\f\n",
+        "whitespace_nbsp": "\u00a0\n".encode(),
+        "whitespace_bom": b"\xef\xbb\xbf \t\r\n",
+        "whitespace_bom_nbsp": "\ufeff\u00a0\n".encode(),
+        "whitespace_unicode": (
+            "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+            "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\n"
+        ).encode(),
+        "bom_content": b"\xef\xbb\xbf \t# Plan\n",
+        "utf16_content": "# Plan\n".encode("utf-16"),
+        "cp1252_content": b"# \x93Plan\x94\n",
+        "non_whitespace_control": b"\x1c",
+        "internal_bom": b"\n\xef\xbb\xbf\n",
+        "double_bom": b"\xef\xbb\xbf\xef\xbb\xbf\n",
     }
     if plan_state != "missing":
         plan.write_bytes(bodies[plan_state])
@@ -612,7 +628,7 @@ def test_plan_prerequisite_diagnostics(
         command_fn = _bash_cmd if port == "bash" else _py_cmd
         command = command_fn(repo, *(("--json",) if json_mode else ()))
 
-    result = _run(command, repo)
+    result = _run(command, repo, env={**_clean_env(), "LC_ALL": "C"})
 
     if plan_state in {"missing", "empty"} or plan_state.startswith("whitespace"):
         assert result.returncode == 1
