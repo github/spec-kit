@@ -553,8 +553,6 @@ pytest-cov==7.1.0 \
     --hash=sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678
     # via specify-cli (pyproject.toml)
 pytest-xdist==3.8.0 \
-    --hash=md5:3864dd9f3061eae26e895b4e455f2acc \
-    --hash=md5:9ead4effcd1eba423610acd10d725aad \
     --hash=sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88 \
     --hash=sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1
     # via specify-cli (pyproject.toml)
