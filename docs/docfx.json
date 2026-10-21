@@ -8,6 +8,7 @@
           "community/*.md",
           "concepts/*.md",
           "guides/*.md",
+          "integrations/*.md",
           "reference/*.md",
           "install/*.md"
         ]

@@ -110,9 +110,15 @@ def workflow_resume(
             exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
         )
     except ValueError as exc:
+        cli._fail_recorded_run(
+            exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+        )
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
     except Exception as exc:
+        cli._fail_recorded_run(
+            exc, json_output=json_output, state=engine._execution_state.get(), resume=True,
+        )
         err.print(f"[red]Resume failed:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
 

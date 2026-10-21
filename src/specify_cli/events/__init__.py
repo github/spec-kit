@@ -32,6 +32,8 @@ import typer
 from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from ..integrations.base import IntegrationBase
     from ..integrations.manifest import IntegrationManifest
 
@@ -2153,13 +2155,15 @@ def _remove_opencode_entries(config_path: Path) -> bool:
     if existing is None:
         return False
     plugins = existing.get("plugin", [])
-    if isinstance(plugins, list):
-        ref = "./.opencode/plugin/speckit-events.ts"
-        plugins = [p for p in plugins if p != ref]
-        if plugins:
-            existing["plugin"] = plugins
-        else:
-            existing.pop("plugin", None)
+    ref = "./.opencode/plugin/speckit-events.ts"
+    # No Spec Kit plugin ref to strip: leave the user's file untouched.
+    if not isinstance(plugins, list) or ref not in plugins:
+        return False
+    plugins = [p for p in plugins if p != ref]
+    if plugins:
+        existing["plugin"] = plugins
+    else:
+        existing.pop("plugin", None)
     if not existing:
         _unlink_file(config_path, missing_ok=True)
         return True
@@ -2376,8 +2380,9 @@ def _remove_copilot_entries(dst: Path) -> bool:
     if not isinstance(existing, dict):
         return False
     hooks = existing.get("hooks", {})
-    if not isinstance(hooks, dict):
-        hooks = {}
+    # Nothing Specify-owned to strip: leave the user's file untouched.
+    if not isinstance(hooks, dict) or not _has_marked_entry(hooks.values()):
+        return False
     cleaned: dict[str, list] = {}
     for event, entries in hooks.items():
         if not isinstance(entries, list):
@@ -2505,7 +2510,8 @@ def _remove_json_root_entries(dst: Path) -> bool:
     existing = _load_user_json(dst)
     if existing is None:
         return False
-    if not isinstance(existing, dict):
+    # Nothing Specify-owned to strip: leave the user's file untouched.
+    if not isinstance(existing, dict) or not _has_marked_entry(existing.values()):
         return False
     cleaned: dict[str, Any] = {}
     for event, entries in existing.items():
@@ -2627,7 +2633,10 @@ def _remove_json_entries(dst: Path) -> bool:
     if existing is None:
         return False
     hooks = existing.get("hooks", {})
-    if not isinstance(hooks, dict):
+    # Nothing Specify-owned to strip: leave the user's file untouched, so a
+    # no-op event refresh neither reformats nor deletes it (the JSON
+    # counterpart of the TOML guard added for #4563).
+    if not isinstance(hooks, dict) or not _has_marked_entry(hooks.values()):
         return False
     cleaned: dict[str, list] = {}
     for event, entries in hooks.items():
@@ -2669,6 +2678,16 @@ def _has_marker(entry: Any) -> bool:
     if isinstance(inner, list):
         return any(_has_marker(h) for h in inner)
     return False
+
+
+def _has_marked_entry(groups: Iterable[Any]) -> bool:
+    """Return True if any list among *groups* holds a Specify-marked entry."""
+    return any(
+        _has_marker(entry)
+        for entries in groups
+        if isinstance(entries, list)
+        for entry in entries
+    )
 
 
 def register(app: typer.Typer) -> None:

@@ -14,7 +14,7 @@ These are independent processes, not prerequisites for this guide.
 
 The process steps here use GitHub Copilot's default skills mode (`/speckit-*`).
 For other agents or modes, see
-[Command invocation](reference/integrations.md#command-invocation).
+[Command invocation](integrations/cli.md#command-invocation).
 Invoke each `/speckit-*` skill separately in your agent's chat and review the
 result before moving to the next step. These are agent skills, not terminal
 commands; only CLI installation and project setup use the terminal.
@@ -179,11 +179,3 @@ Checks the codebase against the spec, plan, and tasks. If it finds gaps, it appe
 - Compare the [core templates](https://github.com/github/spec-kit/tree/main/templates) with
   [community walkthroughs](community/walkthroughs.md) to see how Spec-Driven Development is used in real projects
 - Explore the [source code on GitHub](https://github.com/github/spec-kit)
-
-## Video Overview
-
-For a visual introduction, watch the
-[Spec Kit video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg).
-Use the commands in this guide for the current workflow and invocation syntax.
-
-[![Spec Kit video overview](https://raw.githubusercontent.com/github/spec-kit/main/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg)
