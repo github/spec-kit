@@ -1696,6 +1696,32 @@ def test_switch_to_and_from_external_adapter_removes_durable_code(tmp_path, serv
     assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
     assert (project / ".claude/skills/speckit-plan/SKILL.md").is_file()
 
+@pytest.mark.parametrize("operation", ["uninstall", "switch"])
+@pytest.mark.parametrize("force", [False, True])
+def test_legacy_remove_events_adapter_lifecycle(tmp_path, server, operation, force):
+    body = '''    def remove_events(self, project_root, manifest):
+        (project_root / "legacy-cleanup-called").write_text("called", encoding="utf-8")
+'''
+    publish(server, code=implementation(body=body))
+    project = catalog_project(tmp_path, server)
+    install(project)
+    unload_installed_integrations()
+    arguments = ["integration", operation]
+    if operation == "switch":
+        arguments.append("claude")
+    if force:
+        arguments.append("--force")
+
+    result = run(project, arguments)
+
+    assert result.exit_code == 0, result.output
+    assert (project / "legacy-cleanup-called").read_text(encoding="utf-8") == "called"
+    assert not (project / ".sample-agent/skills/speckit-plan/SKILL.md").exists()
+    assert not (project / f".specify/integrations/{KEY}.manifest.json").exists()
+    assert KEY not in read_records(project)
+    if operation == "switch":
+        assert (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+
 
 @pytest.mark.parametrize("step_type", ["command", "prompt"])
 def test_public_workflow_dispatch_loads_adapter_and_uses_process_double(tmp_path, server, monkeypatch, step_type):

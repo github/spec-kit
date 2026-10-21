@@ -3278,8 +3278,94 @@ class TestDispatcherManifestClaimDroppedOnRetain:
             "Dispatcher orphaned after upgrade with a fresh manifest (S2)."
         )
 
+    @pytest.mark.parametrize("operation", ["teardown", "disable"])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    @pytest.mark.parametrize("modified", [False, True])
+    def test_cleanup_after_shared_dispatcher_revision_changes(
+        self, tmp_path, monkeypatch, caplog, operation, newline, modified,
+    ):
+        import specify_cli.events as event_module
+        from specify_cli.integrations.codex import CodexIntegration
+
+        claude = ClaudeIntegration()
+        codex = CodexIntegration()
+        current_template = event_module._EVENTS_DISPATCHER_TEMPLATE
+        claude_manifest = IntegrationManifest(claude.key, tmp_path)
+        with monkeypatch.context() as old_revision:
+            old_revision.setattr(
+                event_module, "_EVENTS_DISPATCHER_TEMPLATE",
+                current_template + "\n# Previous generated revision\n",
+            )
+            install_integration_events(
+                claude, tmp_path, claude_manifest,
+                {"pre_tool_use": [{"command": "speckit.x"}]},
+            )
+        claude_manifest.save()
+        codex_manifest = IntegrationManifest(codex.key, tmp_path)
+        install_integration_events(
+            codex, tmp_path, codex_manifest,
+            {"pre_tool_use": [{"command": "speckit.y"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_bytes(current_template.replace("\n", newline).encode("utf-8"))
+        codex_manifest.record_existing(EVENTS_DISPATCHER_REL)
+        codex_manifest.save()
+        assert claude_manifest.files[EVENTS_DISPATCHER_REL] != codex_manifest.files[EVENTS_DISPATCHER_REL]
+        state_path = tmp_path / ".specify/integration.json"
+        state_path.write_text(json.dumps({
+            "default_integration": "codex",
+            "installed_integrations": ["claude", "codex"],
+        }), encoding="utf-8")
+
+        codex.teardown(tmp_path, codex_manifest)
+        assert dispatcher.exists()
+        state_path.write_text(json.dumps({
+            "default_integration": "claude",
+            "installed_integrations": ["claude"],
+        }), encoding="utf-8")
+        expected = dispatcher.read_bytes()
+        if modified:
+            expected += b"\n# User customization\n"
+            dispatcher.write_bytes(expected)
+
+        if operation == "teardown":
+            claude.teardown(tmp_path, IntegrationManifest.load(claude.key, tmp_path))
+        else:
+            fresh = IntegrationManifest(claude.key, tmp_path)
+            install_integration_events(claude, tmp_path, fresh, {})
+
+        assert dispatcher.exists() is modified
+        if modified:
+            assert dispatcher.read_bytes() == expected
+            assert "modified dispatcher" in caplog.text
+        else:
+            assert "modified dispatcher" not in caplog.text
+
 
 class TestDispatcherCleanupOwnership:
+    @pytest.mark.parametrize("ownership", ["unowned", "recovered", "partial"])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_generated_template_does_not_establish_ownership(self, tmp_path, ownership, newline):
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True)
+        content = _EVENTS_DISPATCHER_TEMPLATE.replace("\n", newline).encode("utf-8")
+        dispatcher.write_bytes(content)
+        if ownership != "unowned":
+            manifest.record_existing(
+                EVENTS_DISPATCHER_REL,
+                recovered=ownership == "recovered",
+                ownership="partial" if ownership == "partial" else "shared",
+            )
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest)
+
+        assert dispatcher.read_bytes() == content
+
     @pytest.mark.parametrize("operation", ["install", "remove", "teardown"])
     @pytest.mark.parametrize("saved_manifest", [False, True])
     def test_unowned_dispatcher_is_preserved(self, tmp_path, operation, saved_manifest):

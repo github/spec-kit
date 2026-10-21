@@ -1059,7 +1059,15 @@ class IntegrationBase(ABC):
 
         Returns ``(removed, skipped)`` file lists.
         """
-        self.remove_events(project_root, manifest, force=force)
+        import inspect
+
+        remove_events = self.remove_events
+        try:
+            inspect.signature(remove_events).bind(project_root, manifest, force=force)
+        except TypeError:
+            remove_events(project_root, manifest)
+        else:
+            remove_events(project_root, manifest, force=force)
         return manifest.uninstall(project_root, force=force)
 
     def emit_events(

@@ -1759,10 +1759,16 @@ def _cleanup_shared_dispatcher(
         _ensure_safe_destination(dispatcher_path)
         if not force:
             try:
-                matches = hashlib.sha256(dispatcher_path.read_bytes()).hexdigest() == expected_hash
+                content = dispatcher_path.read_bytes()
             except OSError as exc:
                 logger.warning("Preserving unreadable dispatcher %s: %s", dispatcher_path, exc)
                 return
+            # Another integration may have regenerated the shared file since
+            # this manifest recorded it. Accept only exact generated LF/CRLF.
+            matches = hashlib.sha256(content).hexdigest() == expected_hash or content in (
+                _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
+                _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
+            )
             if not matches:
                 logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
                 return
