@@ -129,6 +129,66 @@ class TestIntegrationBase:
         assert removed == []
         assert skipped == []
 
+    @pytest.mark.parametrize("force", [False, True])
+    def test_teardown_supports_legacy_remove_events(self, tmp_path, force):
+        calls = []
+
+        class LegacyIntegration(StubIntegration):
+            def remove_events(self, project_root, manifest):
+                calls.append((project_root, manifest))
+
+        integration = LegacyIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".stub/commands/speckit.plan.md", "# Plan\n")
+        manifest.save()
+
+        removed, skipped = integration.teardown(tmp_path, manifest, force=force)
+
+        assert calls == [(tmp_path, manifest)]
+        assert removed == [generated]
+        assert skipped == []
+        assert not generated.exists()
+        assert not manifest.manifest_path.exists()
+
+    @pytest.mark.parametrize("force", [False, True])
+    @pytest.mark.parametrize("style", ["keyword", "kwargs"])
+    def test_teardown_forwards_supported_force(self, tmp_path, force, style):
+        calls = []
+
+        class KeywordIntegration(StubIntegration):
+            def remove_events(self, project_root, manifest, *, force=False):
+                calls.append(force)
+
+        class KwargsIntegration(StubIntegration):
+            def remove_events(self, project_root, manifest, **kwargs):
+                calls.append(kwargs["force"])
+
+        integration = KeywordIntegration() if style == "keyword" else KwargsIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+
+        integration.teardown(tmp_path, manifest, force=force)
+
+        assert calls == [force]
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_teardown_does_not_retry_remove_events_type_error(self, tmp_path, force):
+        calls = []
+
+        class BrokenIntegration(StubIntegration):
+            def remove_events(self, project_root, manifest, *, force=False):
+                calls.append(force)
+                raise TypeError("adapter cleanup failed")
+
+        integration = BrokenIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".stub/commands/speckit.plan.md", "# Plan\n")
+
+        with pytest.raises(TypeError, match="adapter cleanup failed"):
+            integration.teardown(tmp_path, manifest, force=force)
+
+        assert calls == [force]
+        assert generated.exists()
+
 
 class TestMarkdownIntegration:
     def test_is_subclass_of_base(self):

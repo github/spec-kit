@@ -26,6 +26,71 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationSwitch:
+    @pytest.mark.parametrize("command", ["install", "switch"])
+    def test_invalid_incoming_manifest_does_not_block_rollback(self, tmp_path, monkeypatch, caplog, command):
+        from specify_cli.integrations.copilot import CopilotIntegration
+
+        project = _init_project(tmp_path, "claude", "--events false")
+        stale_manifest = project / ".specify/integrations/copilot.manifest.json"
+        stale_manifest.write_text("{invalid", encoding="utf-8")
+        dispatcher = project / ".specify/events.py"
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+        setup = CopilotIntegration.setup
+        generated = []
+
+        def setup_then_fail(self, project_root, manifest, *args, **kwargs):
+            generated.extend(setup(self, project_root, manifest, *args, **kwargs))
+            raise OSError("injected setup failure")
+
+        monkeypatch.setattr(CopilotIntegration, "setup", setup_then_fail)
+        args = [
+            "integration", command, "copilot", "--script", "sh",
+            "--integration-options", "--events false",
+        ]
+        if command == "install":
+            args.append("--force")
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 1, result.output
+        assert not (project / ".github/skills/speckit-plan/SKILL.md").exists(), result.output
+        assert generated
+        assert all(not path.exists() for path in generated)
+        assert not stale_manifest.exists()
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        output = _normalize_cli_output(result.output)
+        assert "injected setup failure" in output
+        assert "Failed to rollback" not in output
+        assert "prior dispatcher manifest" in caplog.text
+
+    @pytest.mark.parametrize("command", ["install", "switch"])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_incoming_copilot_preserves_unowned_dispatcher(self, tmp_path, command, force):
+        project = _init_project(
+            tmp_path, "claude", "--events false",
+        )
+        if command == "install":
+            uninstall = _run_in_project(project, ["integration", "uninstall", "claude"])
+            assert uninstall.exit_code == 0, uninstall.output
+        dispatcher = project / ".specify" / "events.py"
+        content = b"# User-owned dispatcher\n"
+        dispatcher.write_bytes(content)
+
+        args = [
+            "integration", command, "copilot", "--script", "sh",
+            "--integration-options", "--events false",
+        ]
+        if force:
+            args.append("--force")
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 0, result.output
+        assert dispatcher.read_bytes() == content
+        manifest = json.loads(
+            (project / ".specify/integrations/copilot.manifest.json").read_text(encoding="utf-8")
+        )
+        assert ".specify/events.py" not in manifest["files"]
+
     def test_switch_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:
