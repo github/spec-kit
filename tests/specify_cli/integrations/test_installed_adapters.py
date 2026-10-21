@@ -104,7 +104,7 @@ def server(tmp_path):
             pass
 
     http = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(downloads)))
-    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     result = SimpleNamespace(
         root=downloads, url=f"http://127.0.0.1:{http.server_port}", requests=requests,
