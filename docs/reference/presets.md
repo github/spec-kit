@@ -78,7 +78,9 @@ Patterns follow the same Git-style matching and normalization as
   the existing extension behavior. Use UTF-8 for non-ASCII names.
 
 Only the source root's `.presetignore` is read; nested ignore files do not add
-rules. Files named `.presetignore` are themselves excluded, even if negated.
+rules. When a root `.presetignore` exists, files named `.presetignore` at any
+depth are excluded, even if negated. Otherwise, nested `.presetignore` files
+are copied unchanged.
 Manifest and declared asset files are not exempt from filtering: keep
 `preset.yml` and any templates, commands, or scripts the preset needs included.
 Excluding them can leave an incomplete or unusable installation.
