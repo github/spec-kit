@@ -373,6 +373,7 @@ class TestVibeTomlMerging:
         path.write_bytes(original)
         mtime_ns = 1_700_000_000_123_456_789
         os.utime(path, ns=(mtime_ns, mtime_ns))
+        mtime_ns = path.stat().st_mtime_ns
 
         integration = get_integration("vibe")
         assert integration.remove_vibe_event_hooks(
