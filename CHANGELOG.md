@@ -2,21 +2,6 @@
 
 <!-- insert new changelog below this comment -->
 
-## Unreleased - next minor release
-
-### Breaking
-
-- Remove `taskstoissues` from core commands and integration scaffolding after
-  the replacement shipped in 1.0.13 and core deprecation shipped in 1.1.3
-  (github/spec-kit#4423). The opt-in `github` extension is the sole owner of
-  `speckit.github.taskstoissues`. No legacy alias is installed; consistent
-  alias lifecycle support is deferred rather than expanding shared runtime.
-  Run `specify integration upgrade <integration>`, then
-  `specify extension add github` (skip `add` if already installed).
-  See the [migration guide](docs/upgrade.md#breaking-change-taskstoissues-removed-from-core).
-  This breaking removal must ship in a minor release, not the current patch
-  development line.
-
 ## [1.2.2] - 2026-10-19
 
 ### Changed

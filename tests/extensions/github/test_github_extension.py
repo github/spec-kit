@@ -3,7 +3,7 @@
 Validates:
 - Bundled layout (manifest, README, command file, script twins)
 - Catalog registration and wheel/source resolution via ``_locate_bundled_extension``
-- Manifest validation, including the absence of a legacy compatibility alias
+- Manifest validation
 - Install/uninstall through ``ExtensionManager``
 - Rendered command artifacts across command mode and skills mode, and in
   particular that ``{SCRIPT}`` resolves to a script the extension actually
@@ -36,7 +36,6 @@ from tests.parity_helpers import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "github"
-CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
@@ -168,14 +167,6 @@ class TestManifest:
         for cmd in m.commands:
             assert (EXT_DIR / cmd["file"]).is_file()
 
-    def test_no_legacy_compatibility_alias_is_registered(self):
-        """Removal does not expand the extension's alias lifecycle surface."""
-        from specify_cli.extensions import ExtensionManifest
-
-        m = ExtensionManifest(EXT_DIR / "extension.yml")
-        aliases = [a for cmd in m.commands for a in cmd.get("aliases", []) or []]
-        assert aliases == []
-
     def test_declares_its_mandatory_external_tools(self):
         """The command runs ``git config`` and needs the GitHub MCP tools."""
         tools = {t["name"]: t for t in _manifest_dict()["requires"]["tools"]}
@@ -183,7 +174,13 @@ class TestManifest:
         assert all(t["required"] is True for t in tools.values())
 
     def test_version_floor_covers_all_rendering_prerequisites(self):
-        """The extension retains its existing rendering compatibility floor."""
+        """The floor must exclude releases that cannot render this command.
+
+        Extension-local ``scripts/...`` rewriting landed in 0.12.6 (#3364),
+        but auto-registered skills did not resolve ``__SPECKIT_COMMAND_*__``
+        tokens until 0.12.17 (#3544). Versions through 0.12.16 therefore
+        accept the extension but leak a raw command token in skills mode.
+        """
         from packaging.specifiers import SpecifierSet
 
         floor = _manifest_dict()["requires"]["speckit_version"]
@@ -193,10 +190,6 @@ class TestManifest:
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor
-
-    def test_core_command_no_longer_ships(self):
-        assert not CORE_COMMAND.exists()
-
 
 # -- Install / uninstall ------------------------------------------------------
 
@@ -257,11 +250,6 @@ class TestExtensionInstall:
             if skills_mode else f"{COMMAND_NAME}.md"
         )
         assert artifact.is_file()
-        alias = commands_dir / (
-            "speckit-taskstoissues/SKILL.md"
-            if skills_mode else "speckit.taskstoissues.md"
-        )
-        assert not alias.exists()
         content = artifact.read_text(encoding="utf-8")
         assert ".specify/extensions/github/scripts/bash/resolve-tasks.sh" in content
         assert "{SCRIPT}" not in content
@@ -270,7 +258,6 @@ class TestExtensionInstall:
         ).exists()
         assert manager.remove("github")
         assert not artifact.exists()
-        assert not alias.exists()
         assert core.read_text(encoding="utf-8") == "core command remains unchanged\n"
 
     def test_install_copies_command_and_scripts(self, tmp_path: Path):
@@ -317,9 +304,7 @@ class TestExtensionInstall:
             ),
             (
                 "claude",
-                [
-                    ".claude/skills/speckit-github-taskstoissues/SKILL.md",
-                ],
+                [".claude/skills/speckit-github-taskstoissues/SKILL.md"],
                 ".claude/skills/speckit-tasks/SKILL.md",
             ),
         ],
@@ -436,8 +421,8 @@ class TestScriptPathResolution:
 
         Covers both layouts in one sweep — command-file agents, skills-mode
         agents, and Hermes, which installs to ``~/.hermes/skills`` rather than
-        a project-local directory (hence the redirected home). Generic resolves
-        persisted output options and is covered separately.
+        a project-local directory (hence the redirected home). Generic has no
+        static registrar config and does not register extension add-ons.
         """
         from specify_cli.extensions import CommandRegistrar, ExtensionManager
 
@@ -470,12 +455,6 @@ class TestScriptPathResolution:
             and "taskstoissues" in p.as_posix().lower()
         ]
         assert artifacts, f"{agent} produced no command artifact"
-        assert any("github" in p.name or "github" in p.parent.name for p in artifacts)
-        aliases = [
-            p for p in artifacts
-            if "github" not in p.name and "github" not in p.parent.name
-        ]
-        assert not aliases, f"{agent} unexpectedly installed a legacy alias"
 
         expected = f".specify/extensions/github/{SCRIPT_TWINS['sh']}"
         bodies = [p.read_text(encoding="utf-8") for p in artifacts]
@@ -483,7 +462,6 @@ class TestScriptPathResolution:
         # No artifact may leak an unresolved placeholder...
         for artifact, content in zip(artifacts, bodies):
             assert "{SCRIPT}" not in content, artifact
-            assert "__SPECKIT_COMMAND_" not in content, artifact
         # ...and the command body must carry the resolved extension-local path.
         # Some integrations also emit a thin companion file (e.g. Copilot's
         # prompt shim, which only points at the agent), so this is "at least
@@ -600,15 +578,6 @@ class TestCommandBody:
         assert "Stop paginating as soon as every task ID has been matched" in body
         # Four-digit and longer task IDs must still match.
         assert r"\bT\d{3,}\b" in body
-
-    def test_body_uses_only_extension_local_prerequisites(self):
-        """The sole implementation cannot depend on the removed core command."""
-        text = COMMAND_FILE.read_text(encoding="utf-8")
-        assert "parse FEATURE_DIR, TASKS and the AVAILABLE_DOCS list" in text
-        assert "extract the path to **tasks** (the `TASKS` value)" in text
-        assert "check-prerequisites" not in text
-        assert "check_prerequisites" not in text
-        assert set(_command_frontmatter()["scripts"]) == set(SCRIPT_TWINS)
 
     def test_uses_the_portable_command_reference_token(self):
         """A literal invocation would be correct for exactly one agent."""

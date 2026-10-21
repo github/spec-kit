@@ -407,9 +407,7 @@ settings:
 # Available events: before_specify, after_specify, before_plan, after_plan,
 #                   before_tasks, after_tasks, before_implement, after_implement,
 #                   before_analyze, after_analyze, before_checklist, after_checklist,
-#                   before_clarify, after_clarify, before_constitution, after_constitution
-# Bundled github extension events (when installed):
-#                   before_taskstoissues, after_taskstoissues
+#                   before_clarify, after_clarify, before_constitution, after_constitution,
 # Bundled bug extension events (when installed):
 #                   before_bug_assess, after_bug_assess, before_bug_fix, after_bug_fix,
 #                   before_bug_test, after_bug_test

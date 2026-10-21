@@ -94,11 +94,6 @@ For other setups:
 - [Other agents](https://github.github.io/spec-kit/reference/integrations.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
 - [Upgrade](https://github.github.io/spec-kit/upgrade.html) to update an existing installation.
 
-**Breaking change:** tasks-to-issues conversion is no longer installed by core.
-Opt in with `specify extension add github`, then use
-`speckit.github.taskstoissues`. Existing projects must also refresh their
-integration; see the [migration recipe](https://github.github.io/spec-kit/upgrade.html#breaking-change-taskstoissues-removed-from-core).
-
 <a id="-what-is-spec-driven-development"></a>
 <a id="sdd-quickstart"></a>
 

@@ -1204,10 +1204,8 @@ class ExtensionManager:
 
         Agent integrations (Cline, Forge, Junie) and the SKILL.md output-name
         computation (``CommandRegistrar._compute_output_name``) all collapse
-        dots to hyphens and prefix a bare name with ``speckit-``, so
-        ``speckit.tasks``, ``tasks``, and
-        ``speckit-tasks`` are distinct alias spellings that land on
-        the same on-disk command name. Normalize before comparing so all of
+        dots to hyphens and prefix a bare name with ``speckit-``.
+        Normalize before comparing so all of
         them are caught, not just the exact dotted spelling.
         """
         hyphenated = name.replace(".", "-")

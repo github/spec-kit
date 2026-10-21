@@ -634,14 +634,6 @@ Standard events (defined by core):
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
 
-#### Bundled `github` extension events (available when the extension is installed)
-
-The existing `speckit.github.taskstoissues` command consumes these hook keys.
-Core no longer installs an issue-tracking command.
-
-- `before_taskstoissues` - Before tasks-to-issues conversion
-- `after_taskstoissues` - After tasks-to-issues conversion
-
 #### Bundled `bug` extension events (available when the extension is installed)
 
 Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` and `BUG_DIR` (and, for post-hooks, the written report) from the conversation, and no variables are injected. Pre-hooks run after slug resolution and prerequisites; post-hooks run after the report is written and before completion is reported.

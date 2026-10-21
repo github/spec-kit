@@ -23,8 +23,7 @@ specify extension add github
 The `generic` (bring your own agent) integration registers this command under
 its configured `--commands-dir` in both commands and skills layouts. Installing
 `github` creates `speckit.github.taskstoissues.md` in commands mode or
-`speckit-github-taskstoissues/SKILL.md` in skills mode. Core no longer installs
-`speckit.taskstoissues`; use this extension's namespaced command. See
+`speckit-github-taskstoissues/SKILL.md` in skills mode. See
 [integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
 
 ## Removal
@@ -73,49 +72,37 @@ The extension ships its own feature-resolution script in all three supported run
 | PowerShell | `scripts/powershell/resolve-tasks.ps1`   |
 | Python     | `scripts/python/resolve_tasks.py`        |
 
-Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. It matches the invocation the core command makes (`--require-tasks --include-tasks`), so `spec.md` stays optional. By default, a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` so a later run without the variable resolves to the same feature. When `SPECIFY_FEATURE_NO_PERSIST=1` or `true`, the override still selects the feature for this run, but the script does not create or modify `feature.json`.
+Once installed they live under `.specify/extensions/github/scripts/`. The script is a trimmed twin of core's `check-prerequisites`: it resolves the project root and active feature directory, requires `plan.md` and `tasks.md`, and reports the design docs alongside them. `spec.md` stays optional. By default, a `SPECIFY_FEATURE_DIRECTORY` override is persisted to `.specify/feature.json` so a later run without the variable resolves to the same feature. When `SPECIFY_FEATURE_NO_PERSIST=1` or `true`, the override still selects the feature for this run, but the script does not create or modify `feature.json`.
 
 Prerequisite errors name the Spec Kit command without assuming an integration's invocation syntax. Use the syntax described under [Commands](#commands) for your integration.
 
 ## Migrating from the core `taskstoissues` command
 
-**Breaking change:** `taskstoissues` has been removed from core after the
-replacement shipped in 1.0.13 and deprecation shipped in 1.1.3. This removal
-is intended for the next minor release, not a patch release. New projects do
-not receive a tasks-to-issues command unless this extension is explicitly installed.
-
-After upgrading to a CLI containing the removal, run from the project root:
+For existing projects, upgrading the CLI alone does not refresh the generated
+core command files. After upgrading the CLI, run this from the project root:
 
 ```bash
-specify integration upgrade <integration>
+specify integration upgrade <key>
+```
+
+Replace `<key>` with the installed integration key, or omit it to upgrade the
+default integration. If locally modified files block the upgrade, inspect those changes
+before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
+
+To migrate, install the extension and use the namespaced command instead:
+
+```bash
 specify extension add github
 ```
 
-Replace `<integration>` with the installed integration key, or omit it to
-refresh the default integration. Skip `extension add` if `github` is already
-installed; the extension's implementation and version are unchanged.
-Integration upgrade removes manifest-tracked obsolete core files and
-re-registers enabled extensions for the default integration.
-Upgrading the CLI alone does not refresh generated files. Inspect local edits
-before deciding whether to use `--force`. Projects without an integration
-manifest need manual review and cleanup of old generated commands; `upgrade`
-reports that it cannot refresh them.
+The `generic` integration supports this migration in both commands and skills
+layouts under its configured `--commands-dir`.
 
-The `generic` integration supports both commands and skills layouts under its
-configured `--commands-dir`. For multiple installed integrations, upgrade each
-one; use `specify integration use <integration>` to register extension commands
-when changing the default. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
-
-| Removed core command | Canonical extension command |
+| Core command              | Recommended extension command     |
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-No legacy alias is installed: its lifecycle is not supported consistently
-across commands and skills, so compatibility is deferred rather than expanding
-shared registration and preset behavior in this removal.
-The existing namespaced command preserves feature resolution, `plan.md` and
-`tasks.md` prerequisites, GitHub remote validation, open/closed issue
-deduplication, issue titles, and hooks.
+Conversion behavior is unchanged: the same feature resolution, the same `plan.md` and `tasks.md` prerequisites, the same remote validation, the same deduplication across open and closed issues, the same issue titles, and the same hook contract. This extension does **not** register `speckit.taskstoissues` as an alias.
 
 ### Presets and dependent extensions
 
@@ -125,8 +112,7 @@ For GitHub issue conversion, use the canonical `speckit.github.taskstoissues`
 command ID and render it with the agent-specific syntax under [Commands](#commands).
 Replace `__SPECKIT_COMMAND_TASKSTOISSUES__` cross-command references with
 `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` where template rendering is supported.
-Document `specify extension add github` as a setup prerequisite; core never
-installs this dependency.
+Document `specify extension add github` as a setup prerequisite.
 
 If an extension proposal or external dependency declaration uses
 `requires.commands: [speckit.taskstoissues]`, update its target to
@@ -141,14 +127,3 @@ command. Review and port any needed customization, then verify the installed
 command in a sample project before retiring the old override. A preset that
 uses another issue tracker should retain its own provider-specific workflow
 rather than redirecting it to the GitHub command.
-
-Keep the `before_taskstoissues` and `after_taskstoissues` hook keys unchanged;
-the namespaced command still consumes them. Update a hook's command reference
-if it invokes the removed core command.
-
-Related proposals such as [milestone grouping (github/spec-kit#4370)](https://github.com/github/spec-kit/issues/4370)
-should target `speckit.github.taskstoissues`, not a core command.
-[Jira support (github/spec-kit#2223)](https://github.com/github/spec-kit/issues/2223)
-belongs in a provider-specific extension rather than an override of a
-GitHub-specific core command. Existing third-party presets targeting the old
-core name need their authors to port and verify those overrides.

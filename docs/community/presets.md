@@ -5,12 +5,6 @@
 
 The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/presets/catalog.community.json):
 
-**Migration note:** `speckit.taskstoissues` is no longer a core command.
-Listings below retain their authors' descriptions; presets targeting that old
-name need migration review by their authors. GitHub conversion now belongs to
-the opt-in `github` extension's `speckit.github.taskstoissues`; other trackers
-should use provider-specific extensions. See the [upgrade guide](../upgrade.md#breaking-change-taskstoissues-removed-from-core).
-
 | Preset | Purpose | Provides | Requires | URL |
 |--------|---------|----------|----------|-----|
 | A11Y Governance | Adds WCAG 2.2 AA, accessible status output, bilingual CEFR-B2 delivery, inclusive-content and didactic-comment governance, and provider-neutral model routing. | 11 templates, 3 commands | — | [spec-kit-preset-a11y-governance](https://github.com/hindermath/spec-kit-preset-a11y-governance) |
