@@ -51,7 +51,7 @@ cd my-project
 <a id="-supported-ai-coding-agent-integrations"></a>
 
 예시는 **GitHub Copilot의 기본 스킬 모드**를 기준으로 합니다. 지원되는 다른 에이전트를 쓰려면
-`copilot`을 해당 에이전트의 [통합 키](https://github.github.io/spec-kit/reference/integrations.html)로 바꾸세요.
+`copilot`을 해당 에이전트의 [통합 키](https://github.github.io/spec-kit/integrations/index.html)로 바꾸세요.
 
 이미 코드가 있나요? [기존 프로젝트 가이드](https://github.github.io/spec-kit/guides/existing-projects.html)를 따르세요.
 특정 버전 고정, 다른 설치 방법, CI, 문제 해결은
@@ -61,7 +61,7 @@ cd my-project
 이제 **프로젝트 디렉터리에서 코딩 에이전트를 실행**하고 아래 프로세스 중 하나를 고르세요.
 각 `/speckit-*` **스킬은 에이전트 채팅에서** 한 번에 하나씩 호출하고, 결과를 검토한 뒤 다음으로
 넘어가세요. 이들은 터미널 명령어가 아니라 에이전트 스킬입니다. 에이전트나 모드에 따라
-[호출 문법이 다를 수 있습니다](https://github.github.io/spec-kit/reference/integrations.html#command-invocation).
+[호출 문법이 다를 수 있습니다](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 
 <a id="-what-is-spec-driven-development"></a>
 <a id="sdd-quickstart"></a>

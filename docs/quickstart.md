@@ -14,7 +14,7 @@ These are independent processes, not prerequisites for this guide.
 
 The process steps here use GitHub Copilot's default skills mode (`/speckit-*`).
 For other agents or modes, see
-[Command invocation](reference/integrations.md#command-invocation).
+[Command invocation](integrations/cli.md#command-invocation).
 Invoke each `/speckit-*` skill separately in your agent's chat and review the
 result before moving to the next step. These are agent skills, not terminal
 commands; only CLI installation and project setup use the terminal.

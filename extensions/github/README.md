@@ -26,7 +26,7 @@ its configured `--commands-dir` in both commands and skills layouts. Installing
 `speckit-github-taskstoissues/SKILL.md` in skills mode. The core
 `speckit.taskstoissues` command is deprecated but remains available during migration.
 Use this extension's recommended command instead. See
-[integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
+[integration-specific options](../../docs/integrations/cli.md#integration-specific-options).
 
 ## Removal
 
@@ -96,7 +96,7 @@ specify integration upgrade <key>
 Replace `<key>` with the installed integration key, or omit it to upgrade the
 default integration. This refreshes the core command with the deprecation
 warning. If locally modified files block the upgrade, inspect those changes
-before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
+before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/integrations/cli.md#upgrade-an-integration).
 
 To migrate, install the extension and use the namespaced command instead:
 

@@ -144,7 +144,7 @@ specify integration upgrade claude
 specify integration upgrade codex
 ```
 
-See the [integration reference](reference/integrations.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
+See the [integration reference](integrations/cli.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
 
 ### 3. Update installed extensions
 

@@ -9,7 +9,7 @@ and use the workflow for the next bounded change.
 Before initialization, commit or stash existing work and create a branch for the
 adoption. This makes every generated file visible in a normal code review.
 
-Choose the [integration key](../reference/integrations.md) for the coding agent
+Choose the [integration key](../integrations/index.md) for the coding agent
 you use. Then run the command from the repository root:
 
 ```bash
