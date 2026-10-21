@@ -114,6 +114,20 @@ def test_invalid_utf8_uses_callers_validation_error(tmp_path, ignore_contract):
     assert "byte 3" in str(caught.value)
 
 
+@pytest.mark.parametrize("patterns", ["!\n", "# comment\n\ntests/\n  !  \n"])
+def test_malformed_pattern_uses_callers_validation_error(tmp_path, ignore_contract, patterns):
+    ignore_filename, validation_error = ignore_contract
+    ignore_file = tmp_path / ignore_filename
+    ignore_file.write_text(patterns, encoding="utf-8")
+
+    with pytest.raises(validation_error) as caught:
+        load_install_ignore(tmp_path, ignore_filename, validation_error)
+
+    assert f"Invalid patterns in {ignore_filename}: {ignore_file}" in str(caught.value)
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert str(caught.value.__cause__) in str(caught.value)
+
+
 def test_read_failure_is_propagated(tmp_path, ignore_contract, monkeypatch):
     ignore_filename, validation_error = ignore_contract
     ignore_file = tmp_path / ignore_filename

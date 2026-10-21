@@ -16,7 +16,8 @@ def load_install_ignore(
     Match the extension installer's Git-style patterns, including whitespace
     trimming and backslash normalization. Only the named root ignore file is
     read; there are no default exclusions except the ignore filename itself.
-    Invalid encoding raises the caller's domain validation error before copying.
+    Invalid encoding or patterns raise the caller's domain validation error
+    before copying.
     Excluded directories are pruned by copytree, so child negations cannot
     restore files inside them unless the parent directory is also re-included.
     """
@@ -48,7 +49,12 @@ def load_install_ignore(
     # Always ignore the ignore file itself, even after a negation pattern.
     normalised.append(ignore_filename)
 
-    spec = pathspec.GitIgnoreSpec.from_lines(normalised)
+    try:
+        spec = pathspec.GitIgnoreSpec.from_lines(normalised)
+    except ValueError as e:
+        raise validation_error(
+            f"Invalid patterns in {ignore_filename}: {ignore_file} ({e})"
+        ) from e
 
     def _ignore(directory: str, entries: List[str]) -> Set[str]:
         ignored: Set[str] = set()
