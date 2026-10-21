@@ -750,6 +750,10 @@ class _StepKindManager:
                                 steps_base, component.id
                             )
                             step_installer._reject_unsafe_destination(step_dir)
+                            current.data = document
+                            step_installer._check_duplicate(
+                                current, component.id, step_dir, force=True
+                            )
                             if step_dir.exists():
                                 shutil.rmtree(step_dir)
                             if backup_dir.exists():

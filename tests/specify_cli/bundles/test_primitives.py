@@ -1349,6 +1349,50 @@ def test_step_refresh_keeps_a_later_commit_when_reinstall_fails(
     assert StepRegistry(tmp_path).data["steps"] == committed
 
 
+def test_step_refresh_rollback_keeps_case_variant_commit(
+    tmp_path: Path, monkeypatch
+):
+    """Rollback must not delete or collide with a case-variant committed first."""
+    import json
+    import shutil
+
+    from specify_cli.workflows.catalog import StepRegistry
+
+    steps_dir, _entry = _seed_refresh_step(tmp_path)
+    variant, newer = "MY-STEP", "step:\n  type_key: MY-STEP\n"
+    committed = {variant: {"name": "My Step", "version": "2.0.0", "type_key": variant}}
+
+    def _boom(step_id, *_args, **_kwargs):
+        (steps_dir / variant).mkdir()
+        (steps_dir / variant / "step.yml").write_text(newer, encoding="utf-8")
+        (steps_dir / StepRegistry.REGISTRY_FILE).write_text(
+            json.dumps({"schema_version": "1.0", "steps": committed}),
+            encoding="utf-8",
+        )
+        raise BundlerError(f"Failed to install step '{step_id}'.")
+
+    _stub_step_reinstall(monkeypatch, _boom)
+    with pytest.raises(BundlerError) as caught:
+        primitive_manager("steps", tmp_path, allow_network=True).refresh(
+            _component("steps", "my-step")
+        )
+
+    assert str(caught.value) == "Failed to install step 'my-step'."
+    note = caught.value.__notes__[0]
+    assert "case-insensitively" in note
+    assert (steps_dir / variant / "step.yml").read_text(encoding="utf-8") == newer
+    assert {path.name for path in steps_dir.iterdir() if path.is_dir()} == {variant}
+    saved = json.loads(
+        (steps_dir / StepRegistry.REGISTRY_FILE).read_text(encoding="utf-8")
+    )
+    assert saved["steps"] == committed
+    backup_root = _backup_root_from_note(note)
+    try:
+        assert (backup_root / "my-step" / "step.yml").is_file()
+    finally:
+        shutil.rmtree(backup_root, ignore_errors=True)
+
+
 def test_step_refresh_rollback_keeps_registry_keys_written_after_load(
     tmp_path: Path, monkeypatch
 ):
