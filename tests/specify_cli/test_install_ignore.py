@@ -102,16 +102,23 @@ def test_ignore_file_is_always_excluded(tmp_path, ignore_contract, negate_self):
     assert sorted(path.name for path in dest.iterdir()) == ["keep.txt"]
 
 
-def test_invalid_utf8_uses_callers_validation_error(tmp_path, ignore_contract):
+@pytest.mark.parametrize(
+    ("content", "offset"),
+    [
+        pytest.param(b"caf\xe9/\n", 3, id="without-bom"),
+        pytest.param(b"\xef\xbb\xbfcaf\xe9/\n", 6, id="with-bom"),
+    ],
+)
+def test_invalid_utf8_uses_callers_validation_error(tmp_path, ignore_contract, content, offset):
     ignore_filename, validation_error = ignore_contract
     ignore_file = tmp_path / ignore_filename
-    ignore_file.write_bytes(b"caf\xe9/\n")
+    ignore_file.write_bytes(content)
 
     with pytest.raises(validation_error) as caught:
         load_install_ignore(tmp_path, ignore_filename, validation_error)
 
     assert f"{ignore_filename} is not valid UTF-8: {ignore_file}" in str(caught.value)
-    assert "byte 3" in str(caught.value)
+    assert f"at byte {offset})" in str(caught.value)
 
 
 @pytest.mark.parametrize("patterns", ["!\n", "# comment\n\ntests/\n  !  \n"])

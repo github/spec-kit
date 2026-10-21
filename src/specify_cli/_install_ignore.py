@@ -26,9 +26,9 @@ def load_install_ignore(
         return None
 
     # Accept UTF-8 with or without the BOM emitted by Windows PowerShell 5.1.
-    # Otherwise the BOM becomes part of the first pattern and prevents matching.
+    # Strip it after decoding so error offsets remain relative to the file.
     try:
-        raw = ignore_file.read_text(encoding="utf-8-sig")
+        raw = ignore_file.read_text(encoding="utf-8").removeprefix("\ufeff")
     except UnicodeDecodeError as e:
         raise validation_error(
             f"{ignore_filename} is not valid UTF-8: {ignore_file} "
