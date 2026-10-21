@@ -3355,18 +3355,76 @@ class TestDispatcherCleanupOwnership:
 
         assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
 
-    def test_unreadable_prior_manifest_does_not_authorize_cleanup(self, tmp_path):
+    @pytest.mark.parametrize("content", [b"{invalid", b"\xff", b"[]"])
+    def test_unreadable_prior_manifest_does_not_authorize_cleanup(self, tmp_path, caplog, content):
         integration = CopilotIntegration()
         manifest = IntegrationManifest(integration.key, tmp_path)
         manifest.save()
-        manifest.manifest_path.write_text("{invalid", encoding="utf-8")
+        manifest.manifest_path.write_bytes(content)
         dispatcher = tmp_path / EVENTS_DISPATCHER_REL
         dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
 
-        with pytest.raises(ValueError, match="invalid JSON"):
-            install_integration_events(integration, tmp_path, manifest, {})
+        install_integration_events(integration, tmp_path, manifest, {})
 
         assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        assert "prior dispatcher manifest" in caplog.text
+        assert integration.key in caplog.text
+
+    @pytest.mark.parametrize("error", [ValueError("invalid manifest"), PermissionError("manifest denied")])
+    def test_prior_manifest_failure_does_not_block_teardown(self, tmp_path, caplog, error):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".github/skills/speckit-plan/SKILL.md", "# Plan\n")
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+
+        with patch.object(IntegrationManifest, "load", side_effect=error):
+            removed, skipped = integration.teardown(tmp_path, manifest, force=True)
+
+        assert generated in removed
+        assert not generated.exists()
+        assert skipped == []
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        assert "prior dispatcher manifest" in caplog.text
+        assert str(error) in caplog.text
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_unreadable_dispatcher_does_not_block_teardown(self, tmp_path, monkeypatch, caplog, force):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".claude/skills/speckit-plan/SKILL.md", "# Plan\n")
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        read_bytes = Path.read_bytes
+        read_attempts = []
+
+        def deny_dispatcher_read(path):
+            if path == dispatcher:
+                read_attempts.append(path)
+                raise PermissionError("dispatcher denied")
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", deny_dispatcher_read)
+
+        removed, skipped = integration.teardown(tmp_path, manifest, force=force)
+
+        assert generated in removed
+        assert not generated.exists()
+        assert skipped == []
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.exists() is not force
+        if force:
+            assert read_attempts == []
+        else:
+            assert read_attempts == [dispatcher]
+            assert "unreadable dispatcher" in caplog.text
+            assert "dispatcher denied" in caplog.text
 
 
 # -- Dispatcher stale-cleanup exclusion (C3) ---------------------------------

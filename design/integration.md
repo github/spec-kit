@@ -388,6 +388,9 @@ It deletes `.specify/events.py` only when that integration's current or prior
 manifest records a produced copy and no other installed integration references
 it. Unowned, partial, or merely recovered files are preserved, even with `--force`;
 modified managed dispatchers are preserved with a warning unless forced.
+If the prior ownership manifest or non-forced dispatcher content cannot be
+read, cleanup warns and preserves the dispatcher without blocking cleanup of
+other integration-owned files.
 Empty-event upgrades consult the prior manifest so the last managed dispatcher
 is still cleaned up. Event helpers accept keyword-only `force=False`;
 `remove_events()` overrides must accept and forward it, and custom `setup()`

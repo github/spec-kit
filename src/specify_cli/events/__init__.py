@@ -1736,6 +1736,12 @@ def _cleanup_shared_dispatcher(
             owner = IntegrationManifest.load(integration.key, project_root)
         except FileNotFoundError:
             owner = manifest
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Could not read prior dispatcher manifest for '%s'; preserving %s: %s",
+                integration.key, project_root / dispatcher_rel, exc,
+            )
+            return
     expected_hash = owner.files.get(dispatcher_rel)
     recovered = owner.is_recovered(dispatcher_rel)
     partial = owner.ownership_modes.get(dispatcher_rel) == "partial"
@@ -1751,9 +1757,15 @@ def _cleanup_shared_dispatcher(
     dispatcher_path = project_root / dispatcher_rel
     if dispatcher_path.exists():
         _ensure_safe_destination(dispatcher_path)
-        if not force and hashlib.sha256(dispatcher_path.read_bytes()).hexdigest() != expected_hash:
-            logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
-            return
+        if not force:
+            try:
+                matches = hashlib.sha256(dispatcher_path.read_bytes()).hexdigest() == expected_hash
+            except OSError as exc:
+                logger.warning("Preserving unreadable dispatcher %s: %s", dispatcher_path, exc)
+                return
+            if not matches:
+                logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
+                return
         _unlink_file(dispatcher_path, missing_ok=True)
 
 
