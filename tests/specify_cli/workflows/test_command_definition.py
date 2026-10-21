@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -222,6 +223,41 @@ steps:
         result = _definition(project_dir, run["run_id"])
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["definition"]["released"] == "2026-01-01"
+
+    def test_binary_values_are_replaced_by_a_size_placeholder(self, project_dir):
+        # 64 KiB reused through 30 aliases would be ~10 MB of JSON if emitted
+        # as a repr string, past the byte cap. The value stays in the run
+        # snapshot; the command only reports that it is there.
+        blob = base64.b64encode(b"\0" * 65536).decode()
+        copies = ", ".join(["*blob"] * 30)
+        text = (
+            "workflow: {id: binary, name: Binary}\n"
+            f'blob: &blob !!binary "{blob}"\n'
+            f"copies: [{copies}]\n"
+            "steps:\n  - {id: g, type: gate, message: hi}\n"
+        )
+        run = _run(project_dir, text)
+
+        result = _definition(project_dir, run["run_id"])
+
+        assert result.exit_code == 0, result.stderr
+        definition = json.loads(result.stdout)["definition"]
+        assert definition["blob"] == "<binary: 65536 bytes>"
+        assert definition["copies"] == ["<binary: 65536 bytes>"] * 30
+        assert len(result.stdout) < 10_000
+
+    def test_sets_are_emitted_as_sorted_lists(self, project_dir):
+        text = (
+            "workflow: {id: sets, name: Sets}\n"
+            "tags: !!set {b, a, c}\n"
+            "steps:\n  - {id: g, type: gate, message: hi}\n"
+        )
+        run = _run(project_dir, text)
+
+        result = _definition(project_dir, run["run_id"])
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout)["definition"]["tags"] == ["a", "b", "c"]
 
     def test_plain_json_date_mapping_keys_are_strings(self, project_dir):
         text = (
@@ -700,6 +736,33 @@ class TestNegative:
             max_nodes=_commands._MAX_JSON_NODES,
         )
         assert len(json.loads(capsys.readouterr().out)["refs"]) == 50
+
+    def test_byte_budget_counts_every_occurrence_of_a_large_set(self, capsys):
+        # A set is not a plain string, so its members must be charged on every
+        # occurrence too: 50 aliases of a 200 KB member is ~10 MB of JSON.
+        from specify_cli.workflows import _commands
+
+        big = "x" * 200_000
+
+        with pytest.raises(ValueError, match="exceeds 5242880 bytes"):
+            _commands._emit_workflow_json(
+                {"refs": [{big}] * 50}, max_nodes=_commands._MAX_JSON_NODES
+            )
+        assert capsys.readouterr().out == ""
+
+        _commands._emit_workflow_json(
+            {"refs": [{big[:1000]}] * 50}, max_nodes=_commands._MAX_JSON_NODES
+        )
+        assert len(json.loads(capsys.readouterr().out)["refs"]) == 50
+
+    def test_byte_budget_is_opt_in(self, capsys):
+        from specify_cli.workflows import _commands
+
+        big = "x" * 100_000
+
+        _commands._emit_workflow_json({"refs": [{big}] * 60})
+
+        assert len(json.loads(capsys.readouterr().out)["refs"]) == 60
 
     def test_node_budget_message_does_not_blame_aliases(self):
         # A large alias-free payload hits the budget too; the message must not

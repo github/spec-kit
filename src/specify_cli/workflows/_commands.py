@@ -1064,7 +1064,8 @@ def _run_outcome_exit_code(status_value: str) -> int:
 _MAX_JSON_NODES = 100000
 
 # Byte cap on the emitted definition. Nodes do not bound size: one alias can
-# repeat a large string many times, so strings are charged by their JSON length.
+# repeat a large string many times, so every emitted string (including
+# stringified scalars) is charged by its JSON length.
 _MAX_JSON_BYTES = 5 * 1024 * 1024
 
 
@@ -1077,7 +1078,9 @@ def _emit_workflow_json(
     markup interpretation, syntax highlighting, and line-wrapping can
     never alter the emitted JSON. YAML-native scalars that JSON cannot
     represent (e.g. dates), mapping keys, and non-finite floats are stringified,
-    so output is always plain JSON.
+    so output is always plain JSON. Binary values are replaced by a
+    ``<binary: N bytes>`` placeholder rather than emitted, and sets become
+    lists sorted so that output does not depend on hash randomization.
 
     JSON has no way to share a reference, so a YAML alias graph must be
     duplicated into a tree; a non-recursive alias DAG can therefore expand
@@ -1156,10 +1159,21 @@ def _emit_workflow_json(
                 return [plain_json(item, active_containers) for item in value]
             finally:
                 active_containers.remove(container_id)
-        return value
+        if isinstance(value, (bytes, bytearray)):
+            placeholder = f"<binary: {len(value)} bytes>"
+            charge(placeholder)
+            return placeholder
+        if isinstance(value, (set, frozenset)):
+            items = [plain_json(item, active_containers) for item in value]
+            return sorted(items, key=json.dumps)
+        if isinstance(value, (str, int, float)) or value is None:
+            return value
+        text = str(value)
+        charge(text)
+        return text
 
     try:
-        text = json.dumps(plain_json(payload, set()), indent=2, default=str)
+        text = json.dumps(plain_json(payload, set()), indent=2)
     except RecursionError:
         raise ValueError(
             "Workflow JSON output is nested too deeply to represent"
