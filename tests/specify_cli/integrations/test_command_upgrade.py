@@ -27,6 +27,67 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUpgradeDetailed:
+    @pytest.mark.parametrize(
+        ("key", "options", "legacy_paths"),
+        [
+            ("copilot", "--commands", [
+                ".github/agents/speckit.taskstoissues.agent.md",
+                ".github/prompts/speckit.taskstoissues.prompt.md",
+            ]),
+            ("copilot", "--skills", [".github/skills/speckit-taskstoissues/SKILL.md"]),
+            ("claude", None, [".claude/skills/speckit-taskstoissues/SKILL.md"]),
+            ("gemini", None, [".gemini/commands/speckit.taskstoissues.toml"]),
+            ("generic", "--commands-dir .custom/commands", [
+                ".custom/commands/speckit.taskstoissues.md",
+            ]),
+            ("generic", "--commands-dir .custom/commands --skills", [
+                ".custom/commands/speckit-taskstoissues/SKILL.md",
+            ]),
+        ],
+    )
+    @pytest.mark.parametrize("with_extension", [False, True])
+    def test_upgrade_retires_core_taskstoissues_and_restores_only_opt_in_alias(
+        self, tmp_path, key, options, legacy_paths, with_extension,
+    ):
+        from specify_cli.extensions import ExtensionManager
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, key, integration_options=options)
+        manifest = IntegrationManifest.load(key, project)
+        for relative in legacy_paths:
+            assert not (project / relative).exists()
+            manifest.record_file(relative, "old core taskstoissues\n")
+        manifest.save()
+        user_file = project / "user-notes.md"
+        user_file.write_text("keep user content\n", encoding="utf-8")
+
+        upgraded = _run_in_project(project, ["integration", "upgrade", key])
+        assert upgraded.exit_code == 0, upgraded.output
+        assert not any((project / path).exists() for path in legacy_paths)
+        if with_extension:
+            installed = _run_in_project(project, ["extension", "add", "github"])
+            assert installed.exit_code == 0, installed.output
+
+        result = _run_in_project(project, ["integration", "upgrade", key, "--force"])
+
+        assert result.exit_code == 0, result.output
+        updated = IntegrationManifest.load(key, project)
+        assert not any("taskstoissues" in path for path in updated.files)
+        assert user_file.read_text(encoding="utf-8") == "keep user content\n"
+        for relative in legacy_paths:
+            artifact = project / relative
+            assert artifact.exists() is with_extension
+            if with_extension and "prompts/" not in relative:
+                content = artifact.read_text(encoding="utf-8")
+                assert "deprecated compatibility alias" in content
+                assert ".specify/extensions/github/scripts/" in content
+                assert "old core taskstoissues" not in content
+        manager = ExtensionManager(project)
+        assert manager.registry.is_installed("github") is with_extension
+        if with_extension:
+            assert manager.remove("github")
+            assert not any((project / path).exists() for path in legacy_paths)
+
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         _write_invalid_manifest(project, "claude")

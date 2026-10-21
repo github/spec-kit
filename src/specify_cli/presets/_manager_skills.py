@@ -611,10 +611,12 @@ class _PresetSkillMethods:
                     "extension_id": manifest.id,
                     "extension_dir": ext_root,
                 }
-                modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
-                restore_index.setdefault(modern_skill_name, restore_info)
-                if legacy_skill_name != modern_skill_name:
-                    restore_index.setdefault(legacy_skill_name, restore_info)
+                for name in [cmd_name, *(cmd_info.get("aliases") or [])]:
+                    modern_skill_name, legacy_skill_name = self._skill_names_for_command(name)
+                    named_restore_info = {**restore_info, "command_name": name}
+                    restore_index.setdefault(modern_skill_name, named_restore_info)
+                    if legacy_skill_name != modern_skill_name:
+                        restore_index.setdefault(legacy_skill_name, named_restore_info)
 
         return restore_index
 
@@ -1496,6 +1498,9 @@ class _PresetSkillMethods:
                     )
                     continue
                 frontmatter, body = registrar.parse_frontmatter(content)
+                frontmatter = registrar._adjust_script_paths(
+                    frontmatter, extension_id=extension_restore["extension_id"]
+                )
                 # Mirror the register-time rewrite (#2101): resolve
                 # extension-relative subdir references (agents/,
                 # knowledge-base/, etc.) to their installed location before
@@ -1509,7 +1514,8 @@ class _PresetSkillMethods:
                 )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
-                        selected_ai, frontmatter, body, self.project_root
+                        selected_ai, frontmatter, body, self.project_root,
+                        extension_id=extension_restore["extension_id"],
                     )
                     body = self._resolve_skill_command_refs(
                         body, registrar, selected_ai, self.project_root

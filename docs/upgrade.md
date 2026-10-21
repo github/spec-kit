@@ -280,6 +280,52 @@ preset/extension-managed — see the "Interaction with the resolution stack" sec
 
 ---
 
+## Breaking change: taskstoissues removed from core
+
+Tasks-to-issues conversion now belongs exclusively to the opt-in `github`
+extension. The replacement shipped in 1.0.13, and core deprecation shipped in
+1.1.3; removal is intended for the next minor release, not a patch release.
+New projects receive no tasks-to-issues command unless the extension is installed.
+
+After upgrading to the CLI containing the removal, migrate from your project root:
+
+```bash
+specify integration upgrade <integration>
+specify extension add github
+```
+
+Use the installed integration key in place of `<integration>`, or omit it to
+upgrade the default integration. If `github` is already installed, use
+`specify extension update github` instead of `add`. The delivered extension
+is named `github`, not the originally proposed `github-issues`.
+Refresh the integration first so old core artifacts cannot collide with the
+extension alias, especially in the ownership-preserving `generic` integration.
+
+Use the canonical `speckit.github.taskstoissues` command with your
+[integration's invocation syntax](reference/integrations.md#command-invocation).
+The extension also owns a deprecated `speckit.taskstoissues` alias, which warns
+and runs the same workflow once. Both preserve `before_taskstoissues` and
+`after_taskstoissues`. No extension is installed or enabled automatically.
+
+Integration upgrade removes obsolete manifest-tracked core command files and
+re-registers enabled extensions for the default integration. If local edits
+block the upgrade, inspect them before using `--force`. CLI upgrade alone does
+not update generated commands. Without a generated-file manifest, upgrade
+reports that there is nothing to upgrade: review and clean up old commands
+manually before reinstalling the integration. For multiple integrations,
+upgrade each; `specify integration use <integration>` registers extension
+commands when making one the default.
+
+For projects that do not want GitHub issue tracking, skip extension installation
+and run only the integration upgrade; neither tasks-to-issues invocation remains.
+Audit presets, dependent extensions, workflow steps, handoffs, and automation:
+use `speckit.github.taskstoissues` and
+`__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` for GitHub conversion and explicitly
+require extension installation. Preset overrides of the removed core name do
+not automatically customize the canonical extension command. Port them or use
+a provider-specific extension for another issue tracker. See the
+[extension migration guide](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command).
+
 ## Common Scenarios
 
 ### Scenario 1: "I just want new slash commands"

@@ -43,7 +43,6 @@ _COPILOT_CORE_COMMANDS = {
     "plan",
     "specify",
     "tasks",
-    "taskstoissues",
 }
 
 

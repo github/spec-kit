@@ -67,7 +67,6 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "plan",
         "specify",
         "tasks",
-        "taskstoissues",
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
@@ -1206,8 +1205,8 @@ class ExtensionManager:
         Agent integrations (Cline, Forge, Junie) and the SKILL.md output-name
         computation (``CommandRegistrar._compute_output_name``) all collapse
         dots to hyphens and prefix a bare name with ``speckit-``, so
-        ``speckit.taskstoissues``, ``taskstoissues``, and
-        ``speckit-taskstoissues`` are distinct alias spellings that land on
+        ``speckit.tasks``, ``tasks``, and
+        ``speckit-tasks`` are distinct alias spellings that land on
         the same on-disk command name. Normalize before comparing so all of
         them are caught, not just the exact dotted spelling.
         """
@@ -1586,7 +1585,7 @@ class ExtensionManager:
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
-        For every command in the extension manifest, creates a SKILL.md
+        For every command and alias in the extension manifest, creates a SKILL.md
         file in the agent's skills directory following the agentskills.io
         specification.  This is only done when skills mode was used
         during project initialisation.
@@ -1652,8 +1651,11 @@ class ExtensionManager:
                 r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
             )
 
-        for cmd_info in manifest.commands:
-            cmd_name = cmd_info["name"]
+        for cmd_info, cmd_name in (
+            (command, name)
+            for command in manifest.commands
+            for name in [command["name"], *(command.get("aliases") or [])]
+        ):
             cmd_file_rel = cmd_info["file"]
 
             # Guard against path traversal: reject absolute paths and ensure
@@ -2015,7 +2017,7 @@ class ExtensionManager:
         if isinstance(registered, dict):
             command_names.update(self._valid_name_list(registered.get("generic")))
         skill_names = (
-            {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+            {self._skill_name_for_command(name) for name in self._collect_manifest_command_names(manifest)}
             if manifest is not None and skills_mode_active else set()
         )
         skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
@@ -2178,8 +2180,8 @@ class ExtensionManager:
                 for name in [command["name"], *(command.get("aliases") or [])]
             )
             skill_names.update(
-                self._skill_name_for_command(command["name"])
-                for command in manifest.commands
+                self._skill_name_for_command(name)
+                for name in self._collect_manifest_command_names(manifest)
             )
         hashes = metadata.get("generic_artifact_hashes", {})
         if not isinstance(hashes, dict):
@@ -2540,7 +2542,7 @@ class ExtensionManager:
                     ) from exc
             skills = is_ai_skills_enabled(active_options)
             names = (
-                {self._skill_name_for_command(command["name"]) for command in manifest.commands}
+                {self._skill_name_for_command(name) for name in self._collect_manifest_command_names(manifest)}
                 if skills else self._collect_manifest_command_names(manifest)
             )
             owned = (
@@ -4066,8 +4068,8 @@ class ExtensionManager:
                                 ext_id,
                                 metadata,
                                 [
-                                    self._skill_name_for_command(cmd["name"])
-                                    for cmd in manifest.commands
+                                    self._skill_name_for_command(name)
+                                    for name in self._collect_manifest_command_names(manifest)
                                 ],
                                 registered_skills,
                                 skills=True,
