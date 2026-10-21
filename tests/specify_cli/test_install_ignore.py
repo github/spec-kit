@@ -4,6 +4,7 @@ import re
 import shutil
 from pathlib import Path
 
+import pathspec
 import pytest
 
 from specify_cli._install_ignore import load_install_ignore
@@ -122,18 +123,59 @@ def test_invalid_utf8_uses_callers_validation_error(tmp_path, ignore_contract, c
     assert f"at byte {offset})" in str(caught.value)
 
 
-@pytest.mark.parametrize("patterns", ["!\n", "# comment\n\ntests/\n  !  \n", "[z-a].txt\n"])
-def test_malformed_pattern_uses_callers_validation_error(tmp_path, ignore_contract, patterns):
+@pytest.mark.parametrize(
+    ("patterns", "line_number", "normalized_pattern"),
+    [
+        ("!\n", 1, "!"),
+        ("# comment\n\ntests/\n  !  \n", 4, "!"),
+        ("[z-a].txt\n", 1, "[z-a].txt"),
+        ("# comment\n\ntests/\n  docs\\[z-a].txt  \n!\n", 4, "docs/[z-a].txt"),
+    ],
+)
+def test_malformed_pattern_uses_callers_validation_error(
+    tmp_path, ignore_contract, patterns, line_number, normalized_pattern, monkeypatch
+):
     ignore_filename, validation_error = ignore_contract
     ignore_file = tmp_path / ignore_filename
     ignore_file.write_text(patterns, encoding="utf-8")
+    original_from_lines = pathspec.GitIgnoreSpec.from_lines
+    failures = []
+
+    def record_failures(lines):
+        try:
+            return original_from_lines(lines)
+        except (ValueError, re.error) as error:
+            failures.append(error)
+            raise
+
+    monkeypatch.setattr(pathspec.GitIgnoreSpec, "from_lines", record_failures)
 
     with pytest.raises(validation_error) as caught:
         load_install_ignore(tmp_path, ignore_filename, validation_error)
 
     assert f"Invalid patterns in {ignore_filename}: {ignore_file}" in str(caught.value)
+    assert f"at line {line_number}: {normalized_pattern!r}" in str(caught.value)
+    assert caught.value.__cause__ is failures[0]
     assert isinstance(caught.value.__cause__, (ValueError, re.error))
     assert str(caught.value.__cause__) in str(caught.value)
+
+
+def test_valid_patterns_compile_once(tmp_path, ignore_contract, monkeypatch):
+    ignore_filename, validation_error = ignore_contract
+    (tmp_path / ignore_filename).write_text("# comment\n\ndocs/*\n!docs/api.md\n", encoding="utf-8")
+    original_from_lines = pathspec.GitIgnoreSpec.from_lines
+    calls = []
+
+    def record_compilation(lines):
+        calls.append(list(lines))
+        return original_from_lines(calls[-1])
+
+    monkeypatch.setattr(pathspec.GitIgnoreSpec, "from_lines", record_compilation)
+
+    ignore = load_install_ignore(tmp_path, ignore_filename, validation_error)
+
+    assert len(calls) == 1
+    assert ignore(str(tmp_path / "docs"), ["api.md", "draft.md"]) == {"draft.md"}
 
 
 def test_read_failure_is_propagated(tmp_path, ignore_contract, monkeypatch):

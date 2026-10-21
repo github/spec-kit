@@ -53,8 +53,17 @@ def load_install_ignore(
     try:
         spec = pathspec.GitIgnoreSpec.from_lines(normalised)
     except (ValueError, re.error) as e:
+        # Locate the first malformed source rule only on failure. Valid files
+        # compile once; the appended self-exclusion is not a source line.
+        location = ""
+        for line_number, pattern in enumerate(normalised[:len(lines)], start=1):
+            try:
+                pathspec.GitIgnoreSpec.from_lines([pattern])
+            except (ValueError, re.error):
+                location = f" at line {line_number}: {pattern!r}"
+                break
         raise validation_error(
-            f"Invalid patterns in {ignore_filename}: {ignore_file} ({e})"
+            f"Invalid patterns in {ignore_filename}: {ignore_file}{location} ({e})"
         ) from e
 
     def _ignore(directory: str, entries: List[str]) -> Set[str]:
