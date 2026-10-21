@@ -53,12 +53,14 @@ specify extension remove github
 
 This extension consumes the existing `before_taskstoissues` and `after_taskstoissues` hook points, which are read from `.specify/extensions.yml` at run time. The hook keys are unchanged from the core command, so hooks registered by other extensions — for example the `git` extension's auto-commit hooks — keep firing exactly as before.
 
+Installing or updating the extension also installs the selected shared pre/post
+hook dispatchers under `.specify/scripts/` if an older project lacks them.
+Unmodified managed copies are refreshed; customized scripts are preserved.
+
 ## Requirements
 
-- Spec Kit **0.12.17 or newer**. Extension-local `scripts/...` path rewriting arrived in
-  0.12.6, but auto-registered skills did not resolve `__SPECKIT_COMMAND_*__` references
-  until 0.12.17. Earlier releases cannot render this command correctly in every supported
-  layout, so `specify extension add github` refuses to install below 0.12.17.
+- Spec Kit **1.1.3 or newer**. Older releases cannot resolve the hook
+  placeholders or install the shared pre/post dispatchers used by this command.
 - A Git remote pointing at GitHub.
 - The **GitHub MCP server** available to your coding agent, providing the `list_issues` and `issue_write` tools.
 

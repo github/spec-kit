@@ -789,9 +789,8 @@ class TestAlquimiaHookCommandNote:
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
         # specify.md has hook sections
-        assert "replace dots" in content, (
-            "speckit-specify should have dot-to-hyphen hook note"
-        )
+        assert ".specify/scripts/bash/pre-hooks.sh specify" in content
+        assert ".specify/scripts/bash/post-hooks.sh specify" in content
 
     def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
         """Skills without hook sections should not get the note."""

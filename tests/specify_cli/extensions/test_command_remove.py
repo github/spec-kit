@@ -5,17 +5,173 @@ Mirrors ``specify_cli.extensions.command_remove``.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.extensions import (
     ExtensionManager,
     ExtensionRegistry,
+    HookExecutor,
 )
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+@pytest.mark.parametrize("invalid", [
+    "hooks: [broken]\n",
+    "hooks:\n  before_plan: [broken]\n",
+    "hooks: [\n",
+])
+def test_mutations_preserve_state_on_invalid_hook_config(
+    tmp_path, extension_dir, command, invalid
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    config = HookExecutor(project).config_file
+    config.write_text(invalid, encoding="utf-8")
+    original = config.read_bytes()
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    cache = project / ".specify/hook-dispatch"
+    projection = {p.name: p.read_bytes() for p in cache.iterdir()}
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "Invalid .specify/extensions.yml" in result.output
+    assert config.read_bytes() == original
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert {p.name: p.read_bytes() for p in cache.iterdir()} == projection
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+def test_mutations_preserve_state_on_hook_cache_file_collision(
+    tmp_path, extension_dir, command
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    config = HookExecutor(project).config_file
+    original = config.read_bytes()
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    cache = project / ".specify/hook-dispatch"
+    shutil.rmtree(cache)
+    cache.write_text("collision", encoding="utf-8")
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "hook dispatch cache" in result.output
+    assert config.read_bytes() == original
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert cache.read_text(encoding="utf-8") == "collision"
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+@pytest.mark.parametrize("entry", ["orphan.json", "orphan.sha256", "unrelated"])
+def test_mutations_preserve_projection_on_cache_directory_entry(
+    tmp_path, extension_dir, command, entry
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    executor = HookExecutor(project)
+    config = executor.config_file
+    original = config.read_bytes()
+    cache = project / ".specify/hook-dispatch"
+    (cache / entry).mkdir()
+    projection = {p.name: p.read_bytes() for p in cache.iterdir() if p.is_file()}
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "non-file hook dispatch cache entry" in result.output
+    assert config.read_bytes() == original
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert (cache / entry).is_dir()
+    assert {p.name: p.read_bytes() for p in cache.iterdir() if p.is_file()} == projection
+
+
+@pytest.mark.parametrize("command", ["enable", "disable", "remove"])
+def test_mutations_preserve_state_on_dangling_config_symlink(
+    tmp_path, extension_dir, command
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    manager = ExtensionManager(project)
+    manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+    manager.registry.update("test-ext", {"enabled": command == "disable"})
+    registry = manager.registry.get("test-ext")
+    extension_path = manager.extensions_dir / "test-ext"
+    files = {p.relative_to(extension_path): p.read_bytes()
+             for p in extension_path.rglob("*") if p.is_file()}
+    cache = project / ".specify/hook-dispatch"
+    projection = {p.name: p.read_bytes() for p in cache.iterdir()}
+    config = HookExecutor(project).config_file
+    config.unlink()
+    target = tmp_path / "missing-extensions.yml"
+    try:
+        config.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"file symlinks unavailable: {exc}")
+    assert not config.exists()
+
+    args = ["extension", command, "test-ext"]
+    if command == "remove":
+        args.append("--force")
+    with patch.object(Path, "cwd", return_value=project):
+        result = CliRunner().invoke(app, args, catch_exceptions=True)
+
+    assert result.exit_code == 1, result.output
+    assert "symlinked .specify/extensions.yml" in result.output
+    assert config.is_symlink() and not target.exists()
+    assert manager.registry.get("test-ext") == registry
+    assert {p.relative_to(extension_path): p.read_bytes()
+            for p in extension_path.rglob("*") if p.is_file()} == files
+    assert {p.name: p.read_bytes() for p in cache.iterdir()} == projection
 
 
 class TestExtensionRemoveCLI:

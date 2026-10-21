@@ -248,6 +248,10 @@ class MarkdownIntegrationTests:
             for name in ["check-prerequisites.ps1", "common.ps1", "create-new-feature.ps1",
                          "resolve-template.ps1", "setup-plan.ps1", "setup-tasks.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
+        files += [
+            f".specify/scripts/{'bash' if script_variant == 'sh' else 'powershell'}/{phase}-hooks.{'sh' if script_variant == 'sh' else 'ps1'}"
+            for phase in ("pre", "post")
+        ]
 
         for name in ["checklist-template.md",
                      "constitution-template.md", "plan-template.md",

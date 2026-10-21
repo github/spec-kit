@@ -10,11 +10,9 @@ extension:
   license: MIT
 
 requires:
-  # 0.12.17 is the first release that both rewrites extension-local
-  # "scripts/..." paths (#3364) and resolves __SPECKIT_COMMAND_*__ tokens in
-  # auto-registered skills (#3544). Earlier versions cannot render this
-  # command correctly in every registerable layout.
-  speckit_version: ">=0.12.17"
+  # Hook placeholders and shared dispatcher installation first ship in 1.1.3.
+  # Allow its development build when testing this bundled extension.
+  speckit_version: ">=1.1.3.dev0"
   tools:
     - name: git
       required: true
