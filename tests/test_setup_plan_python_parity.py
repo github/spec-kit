@@ -60,6 +60,24 @@ def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
 
 
+def test_python_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path) -> None:
+    feature = repo / "specs/001-功能"
+    feature.mkdir()
+    write_feature_json(repo, "specs/001-功能")
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    result = run(py_cmd(repo, SCRIPT, "--json"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    payload = json_stdout(result)
+    assert payload["BRANCH"] == "001-功能"
+    assert Path(payload["FEATURE_DIR"]) == feature
+    assert Path(payload["FEATURE_SPEC"]) == feature / "spec.md"
+    assert Path(payload["IMPL_PLAN"]) == feature / "plan.md"
+    assert (feature / "plan.md").read_bytes() == TEMPLATE_BODY.encode("utf-8")
+
+
 @pytest.mark.parametrize("port", PORTS)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
 @pytest.mark.parametrize("template_state", ["missing", "empty", "empty_override"])
