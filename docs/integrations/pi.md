@@ -26,7 +26,8 @@ Invoke them in the agent's chat using dotted notation, for example
 ## Workflow Dispatch and Tooling
 
 Workflow steps use `pi -p <prompt>`, with `--model` when configured and
-`--output-format json` when structured output is requested.
+`--mode json` (JSONL events), not `--output-format`, when structured output is
+requested.
 There are no integration-specific setup options.
 
 This integration scaffolds prompt files; it does not install or configure MCP
