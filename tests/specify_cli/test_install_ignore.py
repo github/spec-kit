@@ -1,5 +1,6 @@
 """Contract tests for shared installation filtering in specify_cli._install_ignore."""
 
+import re
 import shutil
 from pathlib import Path
 
@@ -121,7 +122,7 @@ def test_invalid_utf8_uses_callers_validation_error(tmp_path, ignore_contract, c
     assert f"at byte {offset})" in str(caught.value)
 
 
-@pytest.mark.parametrize("patterns", ["!\n", "# comment\n\ntests/\n  !  \n"])
+@pytest.mark.parametrize("patterns", ["!\n", "# comment\n\ntests/\n  !  \n", "[z-a].txt\n"])
 def test_malformed_pattern_uses_callers_validation_error(tmp_path, ignore_contract, patterns):
     ignore_filename, validation_error = ignore_contract
     ignore_file = tmp_path / ignore_filename
@@ -131,7 +132,7 @@ def test_malformed_pattern_uses_callers_validation_error(tmp_path, ignore_contra
         load_install_ignore(tmp_path, ignore_filename, validation_error)
 
     assert f"Invalid patterns in {ignore_filename}: {ignore_file}" in str(caught.value)
-    assert isinstance(caught.value.__cause__, ValueError)
+    assert isinstance(caught.value.__cause__, (ValueError, re.error))
     assert str(caught.value.__cause__) in str(caught.value)
 
 

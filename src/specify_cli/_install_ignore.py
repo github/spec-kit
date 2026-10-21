@@ -1,5 +1,6 @@
 """Shared source-directory installation filtering for extensions and presets."""
 
+import re
 from pathlib import Path
 from typing import Callable, List, Optional, Set
 
@@ -51,7 +52,7 @@ def load_install_ignore(
 
     try:
         spec = pathspec.GitIgnoreSpec.from_lines(normalised)
-    except ValueError as e:
+    except (ValueError, re.error) as e:
         raise validation_error(
             f"Invalid patterns in {ignore_filename}: {ignore_file} ({e})"
         ) from e
