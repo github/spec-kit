@@ -75,7 +75,8 @@ def test_python_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path) ->
     assert Path(payload["FEATURE_DIR"]) == feature
     assert Path(payload["FEATURE_SPEC"]) == feature / "spec.md"
     assert Path(payload["IMPL_PLAN"]) == feature / "plan.md"
-    assert (feature / "plan.md").read_bytes() == TEMPLATE_BODY.encode("utf-8")
+    template = repo / ".specify" / "templates" / "plan-template.md"
+    assert (feature / "plan.md").read_bytes() == template.read_bytes()
 
 
 @pytest.mark.parametrize("port", PORTS)
