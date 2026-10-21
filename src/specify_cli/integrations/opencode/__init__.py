@@ -1,6 +1,7 @@
 """opencode integration."""
 
 import os
+import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -76,17 +77,20 @@ class OpencodeIntegration(MarkdownIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Render commands, then honor an explicit ``.ignore`` opt-in.
+        """Validate an explicit ``.ignore`` opt-in, then render commands.
 
         Command files stay on the Markdown layout from ``super().setup()``.
         ``--configure-ignore-file`` appends missing ``!.specify/`` and
         ``!.specify/**`` rules and records the root file as partial
         ownership. Without the flag the root ``.ignore`` is left alone.
         """
+        configure = (parsed_options or {}).get("configure_ignore_file") is True
+        if configure:
+            _preflight_root_ignore(manifest)
         created = super().setup(
             project_root, manifest, parsed_options=parsed_options, **opts
         )
-        if (parsed_options or {}).get("configure_ignore_file") is True:
+        if configure:
             created.append(_configure_root_ignore(manifest))
         return created
 
@@ -128,29 +132,23 @@ def _ignore_newline(raw: bytes) -> bytes:
     return b"\r\n" if b"\r\n" in raw else b"\n"
 
 
-def _present_ignore_rules(text: str) -> set[str]:
-    present: set[str] = set()
-    for line in text.splitlines():
-        if line in _SPECIFY_IGNORE_RULES:
-            present.add(line)
-    return present
-
-
 def _with_specify_ignore_rules(raw: bytes) -> bytes:
     """Append missing Spec Kit rules, keeping *raw* as a byte prefix.
 
     New rules use the file's newline (``\\n`` when *raw* is empty) and a
-    trailing newline. Rules already present as exact lines are not repeated.
+    trailing newline. Exact ASCII lines are matched without decoding, so a
+    non-UTF-8 prefix is preserved.
     """
     if not raw:
         newline = b"\n"
         body = newline.join(rule.encode("ascii") for rule in _SPECIFY_IGNORE_RULES)
         return body + newline
 
+    present = set(raw.splitlines())
     missing = [
         rule
         for rule in _SPECIFY_IGNORE_RULES
-        if rule not in _present_ignore_rules(raw.decode("utf-8"))
+        if rule.encode("ascii") not in present
     ]
     if not missing:
         return raw
@@ -161,13 +159,7 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
     return raw + addition
 
 
-def _configure_root_ignore(manifest: IntegrationManifest) -> Path:
-    """Record root ``.ignore`` with partial ownership.
-
-    Symlinks are rejected before they are followed. Directories and
-    unreadable files raise without a write. ``record_file`` journals a
-    real change; an already-complete file is re-recorded in place.
-    """
+def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, bytes]:
     path = manifest.project_root / ".ignore"
     if path.is_symlink():
         raise ValueError(f"Refusing to configure symlinked .ignore: {path}")
@@ -175,9 +167,21 @@ def _configure_root_ignore(manifest: IntegrationManifest) -> Path:
         raise ValueError(
             f"Refusing to configure .ignore because it is not a regular file: {path}"
         )
-
-    raw = path.read_bytes() if path.exists() else b""
+    try:
+        raw = path.read_bytes() if path.is_file() else b""
+    except OSError as exc:
+        raise OSError(f"Cannot read .ignore at {path}") from exc
     updated = _with_specify_ignore_rules(raw)
+    if updated != raw and path.exists() and not os.access(path, os.W_OK):
+        raise PermissionError(f"Cannot update .ignore at {path}")
+    if updated != raw and not path.exists() and not os.access(path.parent, os.W_OK):
+        raise PermissionError(f"Cannot create .ignore at {path}")
+    return path, raw, updated
+
+
+def _configure_root_ignore(manifest: IntegrationManifest) -> Path:
+    """Recheck root ``.ignore``, write it atomically, and record partial ownership."""
+    path, raw, updated = _preflight_root_ignore(manifest)
     if updated == raw and path.is_file():
         from .._file_changes import before_file_change
 
@@ -185,8 +189,9 @@ def _configure_root_ignore(manifest: IntegrationManifest) -> Path:
         manifest.record_existing(".ignore", ownership="partial")
         return path
 
-    if path.exists() and not os.access(path, os.W_OK):
-        raise PermissionError(f"Cannot update .ignore at {path}")
-    if not path.exists() and not os.access(path.parent, os.W_OK):
-        raise PermissionError(f"Cannot create .ignore at {path}")
-    return manifest.record_file(".ignore", updated, ownership="partial")
+    from ...shared_infra import _write_shared_bytes
+
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+    _write_shared_bytes(manifest.project_root, path, updated, mode=mode)
+    manifest.record_existing(".ignore", ownership="partial")
+    return path

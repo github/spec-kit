@@ -1,8 +1,9 @@
 """Tests for OpencodeIntegration."""
 
 import json
+import os
+import stat
 import warnings
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -251,21 +252,28 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
                 b"*\n.*\n.specify/**\n",
                 b"*\n.*\n.specify/**\n!.specify/\n!.specify/**\n",
             ),
+            "windows-1252-comment": (
+                b"# caf\xe9\n",
+                b"# caf\xe9\n!.specify/\n!.specify/**\n",
+            ),
         }
         for name, (original, expected) in cases.items():
             root = tmp_path / name
             root.mkdir()
             ignore = root / ".ignore"
             ignore.write_bytes(original)
+            ignore.chmod(0o640)
             manifest = IntegrationManifest(self.KEY, root)
             integration.setup(root, manifest, parsed_options=_OPT_IN)
             assert ignore.read_bytes() == expected
             assert ignore.read_bytes().startswith(original)
+            assert stat.S_IMODE(ignore.stat().st_mode) == 0o640
             assert manifest.ownership_modes[".ignore"] == "partial"
             integration.setup(
                 root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN
             )
             assert ignore.read_bytes() == expected
+            assert stat.S_IMODE(ignore.stat().st_mode) == 0o640
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
@@ -337,10 +345,14 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
 
         linked = tmp_path / "linked"
         linked.mkdir()
+        integration.setup(linked, IntegrationManifest(self.KEY, linked))
+        plan = linked / ".opencode" / "commands" / integration.command_filename("plan")
+        plan.write_bytes(b"custom-command\n")
         link = linked / ".ignore"
         link.symlink_to(outside)
         with pytest.raises(ValueError, match="symlinked"):
             integration.setup(linked, IntegrationManifest(self.KEY, linked), parsed_options=_OPT_IN)
+        assert plan.read_bytes() == b"custom-command\n"
         assert link.is_symlink()
         assert outside.read_bytes() == b"secret\n"
 
@@ -353,6 +365,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             integration.setup(
                 directory, IntegrationManifest(self.KEY, directory), parsed_options=_OPT_IN
             )
+        assert not (directory / ".opencode").exists()
         assert (ignore_dir / "user.txt").read_text(encoding="utf-8") == "keep"
 
         unreadable = tmp_path / "unreadable"
@@ -370,6 +383,7 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         finally:
             blocked.chmod(0o644)
         assert blocked.read_bytes() == b"user\n"
+        assert not (unreadable / ".opencode").exists()
 
         readonly = tmp_path / "readonly"
         readonly.mkdir()
@@ -384,24 +398,46 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         finally:
             frozen.chmod(0o644)
         assert frozen.read_bytes() == b"user\n"
+        assert not (readonly / ".opencode").exists()
 
         failing = tmp_path / "write-fail"
         failing.mkdir()
         target = failing / ".ignore"
-        target.write_bytes(b"user\n")
-        real_write = Path.write_bytes
+        original = b"user-rule-keep-this-prefix-intact\n"
+        target.write_bytes(original)
+        real_fdopen = os.fdopen
 
-        def fail_ignore_write(self, data):
-            if self.name == ".ignore":
-                raise OSError("disk full")
-            return real_write(self, data)
+        def fdopen_fail(fd, mode="r", *args, **kwargs):
+            stream = real_fdopen(fd, mode, *args, **kwargs)
+            if mode != "wb":
+                return stream
+            raw_write = stream.write
 
-        with patch.object(Path, "write_bytes", fail_ignore_write):
+            class _Stream:
+                def write(self, data):
+                    payload = bytes(data)
+                    if b"!.specify/" in payload:
+                        raw_write(payload[:8])
+                        raise OSError("disk full")
+                    return raw_write(data)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    stream.close()
+                    return False
+
+            return _Stream()
+
+        with patch("os.fdopen", fdopen_fail):
             with pytest.raises(OSError, match="disk full"):
                 integration.setup(
                     failing, IntegrationManifest(self.KEY, failing), parsed_options=_OPT_IN
                 )
-        assert target.read_bytes() == b"user\n"
+        assert target.read_bytes() == original
+        assert (failing / ".opencode" / "commands").is_dir()
+        assert list(failing.glob(".ignore.*")) == []
 
     def test_upgrade_rolls_back_existing_ignore_when_a_later_step_fails(self, tmp_path):
         from specify_cli.integrations import installer
