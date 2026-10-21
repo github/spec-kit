@@ -41,7 +41,7 @@ provides:
     - name: "speckit.my-ext.hello"      # Must follow pattern: speckit.{ext-id}.{cmd}
       file: "commands/hello.md"
       description: "Say hello"
-      aliases: ["speckit.my-ext.hi"]    # Optional alternative invocation names
+      aliases: ["speckit.my-ext.hi"]    # Optional aliases, same pattern
 
   config:                               # Optional: Config files
     - name: "my-ext-config.yml"
@@ -193,7 +193,7 @@ of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
 - `name`: Command name (must match `speckit.{ext-id}.{command}`)
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
-- `aliases`: Alternative command names (optional string array). Names must be safe relative output paths and must not shadow core or installed extension commands. An alias may use a retired core name, as the opt-in `github` extension does for `speckit.taskstoissues`.
+- `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
 
 **Template object**:
 
@@ -226,7 +226,7 @@ Available hook points:
 - `before_checklist` / `after_checklist`: Before/after checklist generation
 - `before_clarify` / `after_clarify`: Before/after spec clarification
 - `before_constitution` / `after_constitution`: Before/after constitution update
-- `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion (opt-in `github` extension, including its deprecated alias)
+- `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion (opt-in `github` extension)
 - `before_bug_assess` / `after_bug_assess`: Before/after bug assessment (bundled `bug` extension)
 - `before_bug_fix` / `after_bug_fix`: Before/after bug remediation (bundled `bug` extension)
 - `before_bug_test` / `after_bug_test`: Before/after bug verification (bundled `bug` extension)

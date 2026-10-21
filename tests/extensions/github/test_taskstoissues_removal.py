@@ -78,12 +78,9 @@ def test_core_inventories_release_the_legacy_name():
         assert "taskstoissues" not in inventory
 
 
-def test_compatibility_alias_is_deprecated_without_deprecating_canonical_command():
+def test_legacy_alias_is_not_installed_by_the_extension():
     text = EXTENSION.read_text(encoding="utf-8")
-    notice = text.split("## Compatibility Alias\n", 1)[1].split("## User Input", 1)[0]
-    assert "Only when invoked" in notice
-    assert "__SPECKIT_COMMAND_TASKSTOISSUES__" in notice
-    assert "__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__" in notice
-    assert "deprecated compatibility alias" in notice
-    assert "Continue with the workflow below" in notice
-    assert "Do not invoke the canonical command again" in notice
+    manifest = yaml.safe_load((ROOT / "extensions/github/extension.yml").read_text(encoding="utf-8"))
+    assert "## Compatibility Alias" not in text
+    assert "__SPECKIT_COMMAND_TASKSTOISSUES__" not in text
+    assert all(not command.get("aliases") for command in manifest["provides"]["commands"])

@@ -463,9 +463,8 @@ Use the canonical
 `/speckit.github.taskstoissues` command for dot-command integrations. Slash-hyphen
 integrations use `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code
 skills use `$speckit-github-taskstoissues`; Kimi uses
-`/skill:speckit-github-taskstoissues`. The extension also owns the deprecated
-`speckit.taskstoissues` compatibility alias; core never installs it or enables
-the extension automatically. See the [breaking-change migration](../upgrade.md#breaking-change-taskstoissues-removed-from-core).
+`/skill:speckit-github-taskstoissues`. No legacy alias is provided, and core
+never enables the extension automatically. See the [breaking-change migration](../upgrade.md#breaking-change-taskstoissues-removed-from-core).
 
 ### Claude: user-invocable-only skills
 

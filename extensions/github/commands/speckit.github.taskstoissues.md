@@ -7,14 +7,6 @@ scripts:
   py: scripts/python/resolve_tasks.py --json
 ---
 
-## Compatibility Alias
-
-Only when invoked as `__SPECKIT_COMMAND_TASKSTOISSUES__`, display:
-
-> `__SPECKIT_COMMAND_TASKSTOISSUES__` is a deprecated compatibility alias provided by the `github` extension. Use `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` instead.
-
-Do not display this warning for the canonical command. Continue with the workflow below, including its existing hooks and safety checks. Do not invoke the canonical command again, since that would run the conversion and hooks twice.
-
 ## User Input
 
 ```text

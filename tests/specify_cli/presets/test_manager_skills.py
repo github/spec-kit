@@ -843,43 +843,6 @@ class TestPresetSkills(PresetArtifactTestHelpers):
         metadata = manager.registry.get("ext-skill-override")
         assert "speckit-fakeext-cmd" in metadata.get("registered_skills", {}).get("codex", [])
 
-    @pytest.mark.parametrize(
-        "command", ["speckit.github.taskstoissues", "speckit.taskstoissues"],
-    )
-    def test_github_command_override_restores_opt_in_extension_not_core(
-        self, project_dir, temp_dir, command,
-    ):
-        from specify_cli.extensions import ExtensionManager
-
-        self._write_init_options(project_dir, ai="claude")
-        source = Path(__file__).resolve().parents[3] / "extensions/github"
-        extensions = ExtensionManager(project_dir)
-        extensions.install_from_directory(source, "1.2.3.dev0")
-        skills = project_dir / ".claude/skills"
-        canonical = skills / "speckit-github-taskstoissues/SKILL.md"
-        alias = skills / "speckit-taskstoissues/SKILL.md"
-        target, other = (canonical, alias) if command == "speckit.github.taskstoissues" else (alias, canonical)
-        other_before = other.read_bytes()
-        preset_dir = self._create_command_preset(
-            temp_dir, "github-override", command,
-            "Custom issue tracking", "custom GitHub workflow\n",
-        )
-        manager = PresetManager(project_dir)
-        manager.install_from_directory(preset_dir, "1.2.3.dev0")
-        assert "custom GitHub workflow" in target.read_text(encoding="utf-8")
-        assert other.read_bytes() == other_before
-
-        manager.remove("github-override")
-
-        content = target.read_text(encoding="utf-8")
-        assert "source: extension:github" in content
-        assert ".specify/extensions/github/scripts/" in content
-        assert "custom GitHub workflow" not in content
-        assert other.read_bytes() == other_before
-        assert extensions.remove("github")
-        assert not canonical.exists()
-        assert not alias.exists()
-
     def test_extension_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Preset removal should restore an extension-backed skill instead of deleting it."""
         self._write_init_options(project_dir, ai="codex")

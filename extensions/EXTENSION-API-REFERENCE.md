@@ -44,7 +44,7 @@ provides:
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
-      aliases: [string]  # Optional safe relative names; must not shadow core or installed extension commands
+      aliases: [string]  # Optional, same pattern as name; namespace must match extension.id and must not shadow core or installed extension commands
 
   templates:             # Optional, array of declared templates. Always resolve
                           # as "replace" -- 'strategy' is not an authorable field here.
@@ -633,10 +633,10 @@ Standard events (defined by core):
 - `after_clarify` - After spec clarification
 - `before_constitution` - Before constitution update
 - `after_constitution` - After constitution update
+
 #### Bundled `github` extension events (available when the extension is installed)
 
-The canonical `speckit.github.taskstoissues` command and its deprecated
-`speckit.taskstoissues` compatibility alias consume the same hook keys.
+The existing `speckit.github.taskstoissues` command consumes these hook keys.
 Core no longer installs an issue-tracking command.
 
 - `before_taskstoissues` - Before tasks-to-issues conversion

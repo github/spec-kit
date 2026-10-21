@@ -668,32 +668,25 @@ def test_generic_upgrade_warns_and_rolls_back_partial_extension_refresh(
     assert ExtensionManager(project).registry.get("sample") == previous
 
 
-@pytest.mark.parametrize("skills", [False, True])
-def test_generic_refreshes_owned_artifact_and_missing_alias(
-    tmp_path, generic_extension, skills,
+def test_generic_command_refreshes_owned_artifact_and_missing_alias(
+    tmp_path, generic_extension,
 ):
     manifest_path = generic_extension / "extension.yml"
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     manifest["provides"]["commands"][0]["aliases"] = ["speckit.sample.alias"]
     manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
-    project = generic_project(tmp_path, skills=skills)
+    project = generic_project(tmp_path)
     manager = ExtensionManager(project)
     manager.install_from_directory(generic_extension, "1.0.0")
     output = project / ".custom/commands"
-    primary = output / (
-        "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
-    )
-    alias = output / (
-        "speckit-sample-alias/SKILL.md" if skills else "speckit.sample.alias.md"
-    )
+    primary = output / "speckit.sample.run.md"
+    alias = output / "speckit.sample.alias.md"
     assert primary.is_file() and alias.is_file()
     alias.unlink()
-    if skills:
-        alias.parent.rmdir()
     source = manager.extensions_dir / "sample/commands/run.md"
     source.write_text(source.read_text(encoding="utf-8") + "\nnew content\n", encoding="utf-8")
 
-    manager.register_enabled_extensions_for_agent("generic", force=skills)
+    manager.register_enabled_extensions_for_agent("generic")
 
     assert "new content" in primary.read_text(encoding="utf-8")
     assert "new content" in alias.read_text(encoding="utf-8")
@@ -706,13 +699,12 @@ def test_generic_refreshes_owned_artifact_and_missing_alias(
 
 @pytest.mark.parametrize("skills", [False, True])
 @pytest.mark.parametrize("collision_owned", [False, True])
-@pytest.mark.parametrize("use_alias", [False, True])
 def test_generic_refresh_collision_rolls_back_and_warns(
-    tmp_path, generic_extension, skills, collision_owned, use_alias, capsys,
+    tmp_path, generic_extension, skills, collision_owned, capsys,
 ):
     manifest_path = generic_extension / "extension.yml"
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    if skills and collision_owned and not use_alias:
+    if skills and collision_owned:
         manifest["provides"]["commands"].append({
             "name": "speckit.sample.other",
             "file": "commands/other.md",
@@ -732,13 +724,12 @@ def test_generic_refresh_collision_rolls_back_and_warns(
         "speckit-sample-run/SKILL.md" if skills else "speckit.sample.run.md"
     )
     collision = output / (
-        ("speckit-sample-alias/SKILL.md" if use_alias else "speckit-sample-other/SKILL.md")
-        if skills else "speckit.sample.alias.md"
+        "speckit-sample-other/SKILL.md" if skills else "speckit.sample.alias.md"
     )
     if not collision_owned:
         installed_manifest = manager.extensions_dir / "sample/extension.yml"
         installed = yaml.safe_load(installed_manifest.read_text(encoding="utf-8"))
-        if skills and not use_alias:
+        if skills:
             installed["provides"]["commands"].append({
                 "name": "speckit.sample.other",
                 "file": "commands/other.md",
@@ -750,8 +741,6 @@ def test_generic_refresh_collision_rolls_back_and_warns(
             collision.parent.mkdir()
         else:
             installed["provides"]["commands"][0]["aliases"] = ["speckit.sample.alias"]
-            if skills:
-                collision.parent.mkdir()
         installed_manifest.write_text(yaml.safe_dump(installed), encoding="utf-8")
     original = primary.read_bytes()
     collision.write_text("user-edited invocation", encoding="utf-8")
@@ -775,29 +764,6 @@ def test_generic_refresh_collision_rolls_back_and_warns(
     assert "updated source" in primary.read_text(encoding="utf-8")
     assert collision.is_file()
     assert manager.remove("sample")
-
-
-@pytest.mark.parametrize("skills", [False, True])
-def test_generic_install_refuses_user_owned_compatibility_alias(
-    tmp_path, generic_extension, skills,
-):
-    manifest_path = generic_extension / "extension.yml"
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    manifest["provides"]["commands"][0]["aliases"] = ["speckit.taskstoissues"]
-    manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
-    project = generic_project(tmp_path, skills=skills)
-    alias = project / ".custom/commands" / (
-        "speckit-taskstoissues/SKILL.md" if skills else "speckit.taskstoissues.md"
-    )
-    alias.parent.mkdir(parents=True, exist_ok=True)
-    alias.write_text("user-owned issue workflow\n", encoding="utf-8")
-    manager = ExtensionManager(project)
-
-    with pytest.raises(ExtensionError, match="cannot be replaced safely"):
-        manager.install_from_directory(generic_extension, "1.0.0")
-
-    assert alias.read_text(encoding="utf-8") == "user-owned issue workflow\n"
-    assert not manager.registry.is_installed("sample")
 
 
 @pytest.mark.parametrize("skills", [False, True])

@@ -295,17 +295,16 @@ specify extension add github
 ```
 
 Use the installed integration key in place of `<integration>`, or omit it to
-upgrade the default integration. If `github` is already installed, use
-`specify extension update github` instead of `add`. The delivered extension
-is named `github`, not the originally proposed `github-issues`.
-Refresh the integration first so old core artifacts cannot collide with the
-extension alias, especially in the ownership-preserving `generic` integration.
+upgrade the default integration. Skip `extension add` if `github` is already
+installed; its implementation and version are unchanged. The delivered
+extension is named `github`, not the originally proposed `github-issues`.
 
 Use the canonical `speckit.github.taskstoissues` command with your
 [integration's invocation syntax](reference/integrations.md#command-invocation).
-The extension also owns a deprecated `speckit.taskstoissues` alias, which warns
-and runs the same workflow once. Both preserve `before_taskstoissues` and
-`after_taskstoissues`. No extension is installed or enabled automatically.
+There is no legacy `speckit.taskstoissues` alias: consistent alias lifecycle
+support would require separate shared-runtime changes. The namespaced command
+preserves `before_taskstoissues` and `after_taskstoissues`. No extension is
+installed or enabled automatically.
 
 Integration upgrade removes obsolete manifest-tracked core command files and
 re-registers enabled extensions for the default integration. If local edits
@@ -317,7 +316,7 @@ upgrade each; `specify integration use <integration>` registers extension
 commands when making one the default.
 
 For projects that do not want GitHub issue tracking, skip extension installation
-and run only the integration upgrade; neither tasks-to-issues invocation remains.
+and run only the integration upgrade; no core tasks-to-issues invocation remains.
 Audit presets, dependent extensions, workflow steps, handoffs, and automation:
 use `speckit.github.taskstoissues` and
 `__SPECKIT_COMMAND_GITHUB_TASKSTOISSUES__` for GitHub conversion and explicitly

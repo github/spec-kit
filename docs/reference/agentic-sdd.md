@@ -160,7 +160,7 @@ It first prints a severity-graded findings summary, then resolves to one of two 
 ## `/speckit.github.taskstoissues` (opt-in extension)
 
 **Breaking change:** tasks-to-issues conversion is removed from core.
-It is not installed by `specify init`; neither is the compatibility alias.
+It is not installed by `specify init`, and no legacy alias is provided.
 
 The recommended extension command optionally converts an existing `tasks.md`
 into actionable GitHub issues. Install the extension from your project root:
@@ -182,4 +182,4 @@ identified by that remote and checks existing task IDs to avoid duplicates.
 It is not required to implement tasks or converge on a feature.
 
 > [!NOTE]
-> GitHub issue tracking uses the bundled, opt-in [`github` extension](https://github.com/github/spec-kit/blob/main/extensions/github/README.md). Its canonical command is `/speckit.github.taskstoissues` (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`). The extension also supplies the deprecated `/speckit.taskstoissues` alias. The `generic` integration registers these commands under its configured command directory in commands or skills mode. Existing projects should follow the [upgrade migration recipe](../upgrade.md#breaking-change-taskstoissues-removed-from-core).
+> GitHub issue tracking uses the bundled, opt-in [`github` extension](https://github.com/github/spec-kit/blob/main/extensions/github/README.md). Its canonical command is `/speckit.github.taskstoissues` (slash-hyphen integrations: `/speckit-github-taskstoissues`; Codex, ZCode, and Command Code skills: `$speckit-github-taskstoissues`; Kimi: `/skill:speckit-github-taskstoissues`). The `generic` integration registers it under its configured command directory in commands or skills mode. Existing projects should follow the [upgrade migration recipe](../upgrade.md#breaking-change-taskstoissues-removed-from-core).

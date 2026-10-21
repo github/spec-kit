@@ -1585,7 +1585,7 @@ class ExtensionManager:
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
-        For every command and alias in the extension manifest, creates a SKILL.md
+        For every command in the extension manifest, creates a SKILL.md
         file in the agent's skills directory following the agentskills.io
         specification.  This is only done when skills mode was used
         during project initialisation.
@@ -1651,11 +1651,8 @@ class ExtensionManager:
                 r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_-]*)__", _replacement, body
             )
 
-        for cmd_info, cmd_name in (
-            (command, name)
-            for command in manifest.commands
-            for name in [command["name"], *(command.get("aliases") or [])]
-        ):
+        for cmd_info in manifest.commands:
+            cmd_name = cmd_info["name"]
             cmd_file_rel = cmd_info["file"]
 
             # Guard against path traversal: reject absolute paths and ensure
@@ -2017,7 +2014,7 @@ class ExtensionManager:
         if isinstance(registered, dict):
             command_names.update(self._valid_name_list(registered.get("generic")))
         skill_names = (
-            {self._skill_name_for_command(name) for name in self._collect_manifest_command_names(manifest)}
+            {self._skill_name_for_command(command["name"]) for command in manifest.commands}
             if manifest is not None and skills_mode_active else set()
         )
         skill_names.update(self._valid_name_list(metadata.get("registered_skills")))
@@ -2180,8 +2177,8 @@ class ExtensionManager:
                 for name in [command["name"], *(command.get("aliases") or [])]
             )
             skill_names.update(
-                self._skill_name_for_command(name)
-                for name in self._collect_manifest_command_names(manifest)
+                self._skill_name_for_command(command["name"])
+                for command in manifest.commands
             )
         hashes = metadata.get("generic_artifact_hashes", {})
         if not isinstance(hashes, dict):
@@ -2542,7 +2539,7 @@ class ExtensionManager:
                     ) from exc
             skills = is_ai_skills_enabled(active_options)
             names = (
-                {self._skill_name_for_command(name) for name in self._collect_manifest_command_names(manifest)}
+                {self._skill_name_for_command(command["name"]) for command in manifest.commands}
                 if skills else self._collect_manifest_command_names(manifest)
             )
             owned = (
@@ -4068,8 +4065,8 @@ class ExtensionManager:
                                 ext_id,
                                 metadata,
                                 [
-                                    self._skill_name_for_command(name)
-                                    for name in self._collect_manifest_command_names(manifest)
+                                    self._skill_name_for_command(cmd["name"])
+                                    for cmd in manifest.commands
                                 ],
                                 registered_skills,
                                 skills=True,

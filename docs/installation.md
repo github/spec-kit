@@ -158,15 +158,14 @@ After initialization, you should see the following commands available in your co
 
 **Breaking change:** tasks-to-issues conversion is no longer a core command.
 Fresh projects receive no issue-tracker commands unless you explicitly run
-`specify extension add github`. Use `/speckit.github.taskstoissues`; the
-extension also supplies the deprecated `/speckit.taskstoissues` alias.
+`specify extension add github`. Use `/speckit.github.taskstoissues`;
+the removed `/speckit.taskstoissues` invocation has no compatibility alias.
 See the [upgrade migration recipe](upgrade.md#breaking-change-taskstoissues-removed-from-core).
 
 The `generic` integration registers extension commands in its configured
 `--commands-dir`. Installing `github` makes `/speckit.github.taskstoissues`
 available there as a command file, or as `/speckit-github-taskstoissues` when
-`--skills` is enabled. Removing the extension removes its unchanged commands,
-including its compatibility alias.
+`--skills` is enabled. Removing the extension removes its unchanged commands.
 See the [GitHub extension's installation notes](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#installation).
 
 Scripts are installed into a variant subdirectory matching the chosen script type:

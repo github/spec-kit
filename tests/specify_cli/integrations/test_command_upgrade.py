@@ -46,7 +46,7 @@ class TestIntegrationUpgradeDetailed:
         ],
     )
     @pytest.mark.parametrize("with_extension", [False, True])
-    def test_upgrade_retires_core_taskstoissues_and_restores_only_opt_in_alias(
+    def test_upgrade_retires_core_taskstoissues_and_preserves_only_opt_in_command(
         self, tmp_path, key, options, legacy_paths, with_extension,
     ):
         from specify_cli.extensions import ExtensionManager
@@ -74,12 +74,17 @@ class TestIntegrationUpgradeDetailed:
         updated = IntegrationManifest.load(key, project)
         assert not any("taskstoissues" in path for path in updated.files)
         assert user_file.read_text(encoding="utf-8") == "keep user content\n"
-        for relative in legacy_paths:
+        canonical_paths = [
+            relative.replace("speckit.taskstoissues", "speckit.github.taskstoissues")
+            .replace("speckit-taskstoissues", "speckit-github-taskstoissues")
+            for relative in legacy_paths
+        ]
+        assert not any((project / path).exists() for path in legacy_paths)
+        for relative in canonical_paths:
             artifact = project / relative
             assert artifact.exists() is with_extension
             if with_extension and "prompts/" not in relative:
                 content = artifact.read_text(encoding="utf-8")
-                assert "deprecated compatibility alias" in content
                 assert ".specify/extensions/github/scripts/" in content
                 assert "old core taskstoissues" not in content
         manager = ExtensionManager(project)
@@ -87,6 +92,7 @@ class TestIntegrationUpgradeDetailed:
         if with_extension:
             assert manager.remove("github")
             assert not any((project / path).exists() for path in legacy_paths)
+            assert not any((project / path).exists() for path in canonical_paths)
 
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")

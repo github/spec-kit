@@ -3,7 +3,7 @@
 Validates:
 - Bundled layout (manifest, README, command file, script twins)
 - Catalog registration and wheel/source resolution via ``_locate_bundled_extension``
-- Manifest validation, including the retired core command's compatibility alias
+- Manifest validation, including the absence of a legacy compatibility alias
 - Install/uninstall through ``ExtensionManager``
 - Rendered command artifacts across command mode and skills mode, and in
   particular that ``{SCRIPT}`` resolves to a script the extension actually
@@ -40,9 +40,10 @@ CORE_COMMAND = PROJECT_ROOT / "templates" / "commands" / "taskstoissues.md"
 
 # A released Spec Kit version that satisfies the manifest floor. Installs are
 # refused below it, so this cannot be an arbitrary synthetic value.
-INSTALL_SPECKIT_VERSION = "1.2.3.dev0"
-# Earlier hosts still own taskstoissues and cannot accept the alias.
-MIN_SPECKIT_VERSION = "1.2.3.dev0"
+INSTALL_SPECKIT_VERSION = "1.0.12"
+# The floor exists because auto-registered skills did not resolve command
+# reference tokens until 0.12.17 (#3544).
+MIN_SPECKIT_VERSION = "0.12.17"
 
 COMMAND_NAME = "speckit.github.taskstoissues"
 COMMAND_FILE = EXT_DIR / "commands" / f"{COMMAND_NAME}.md"
@@ -157,7 +158,7 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.1.0"
+        assert m.version == "1.0.2"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
 
     def test_manifest_command_files_exist(self):
@@ -167,13 +168,13 @@ class TestManifest:
         for cmd in m.commands:
             assert (EXT_DIR / cmd["file"]).is_file()
 
-    def test_alias_claims_only_the_retired_core_command(self):
-        """The legacy spelling is owned exclusively by the opt-in extension."""
+    def test_no_legacy_compatibility_alias_is_registered(self):
+        """Removal does not expand the extension's alias lifecycle surface."""
         from specify_cli.extensions import ExtensionManifest
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         aliases = [a for cmd in m.commands for a in cmd.get("aliases", []) or []]
-        assert aliases == ["speckit.taskstoissues"]
+        assert aliases == []
 
     def test_declares_its_mandatory_external_tools(self):
         """The command runs ``git config`` and needs the GitHub MCP tools."""
@@ -182,14 +183,13 @@ class TestManifest:
         assert all(t["required"] is True for t in tools.values())
 
     def test_version_floor_covers_all_rendering_prerequisites(self):
-        """Hosts retaining core ownership must not accept this extension."""
+        """The extension retains its existing rendering compatibility floor."""
         from packaging.specifiers import SpecifierSet
 
         floor = _manifest_dict()["requires"]["speckit_version"]
         spec = SpecifierSet(floor)
         assert "0.12.5" not in spec, floor
         assert "0.12.16" not in spec, floor
-        assert "1.2.2" not in spec, floor
         assert MIN_SPECKIT_VERSION in spec, floor
         # And the version the install tests use must satisfy it.
         assert INSTALL_SPECKIT_VERSION in spec, floor
@@ -202,21 +202,6 @@ class TestManifest:
 
 
 class TestExtensionInstall:
-    @pytest.mark.parametrize("host_version", ["0.12.17", "1.0.13", "1.1.3", "1.2.2"])
-    def test_install_refuses_hosts_that_still_own_the_core_command(
-        self, tmp_path, host_version,
-    ):
-        from specify_cli.extensions import CompatibilityError, ExtensionManager
-
-        (tmp_path / ".specify").mkdir()
-        manager = ExtensionManager(tmp_path)
-        with pytest.raises(CompatibilityError):
-            manager.install_from_directory(
-                EXT_DIR, host_version, register_commands=False,
-            )
-        assert not manager.registry.is_installed("github")
-        assert not (tmp_path / ".specify/extensions/github").exists()
-
     @pytest.mark.parametrize("skills_mode", [False, True], ids=["commands", "skills"])
     def test_generic_registers_and_removes_artifact_in_configured_directory(
         self, tmp_path: Path, skills_mode: bool
@@ -276,10 +261,7 @@ class TestExtensionInstall:
             "speckit-taskstoissues/SKILL.md"
             if skills_mode else "speckit.taskstoissues.md"
         )
-        assert alias.is_file()
-        alias_content = alias.read_text(encoding="utf-8")
-        assert "deprecated compatibility alias" in alias_content
-        assert "__SPECKIT_COMMAND_" not in alias_content
+        assert not alias.exists()
         content = artifact.read_text(encoding="utf-8")
         assert ".specify/extensions/github/scripts/bash/resolve-tasks.sh" in content
         assert "{SCRIPT}" not in content
@@ -330,8 +312,6 @@ class TestExtensionInstall:
                 [
                     f".github/agents/{COMMAND_NAME}.agent.md",
                     f".github/prompts/{COMMAND_NAME}.prompt.md",
-                    ".github/agents/speckit.taskstoissues.agent.md",
-                    ".github/prompts/speckit.taskstoissues.prompt.md",
                 ],
                 ".github/agents/speckit.tasks.agent.md",
             ),
@@ -339,7 +319,6 @@ class TestExtensionInstall:
                 "claude",
                 [
                     ".claude/skills/speckit-github-taskstoissues/SKILL.md",
-                    ".claude/skills/speckit-taskstoissues/SKILL.md",
                 ],
                 ".claude/skills/speckit-tasks/SKILL.md",
             ),
@@ -457,7 +436,7 @@ class TestScriptPathResolution:
 
         Covers both layouts in one sweep — command-file agents, skills-mode
         agents, and Hermes, which installs to ``~/.hermes/skills`` rather than
-        a         project-local directory (hence the redirected home). Generic resolves
+        a project-local directory (hence the redirected home). Generic resolves
         persisted output options and is covered separately.
         """
         from specify_cli.extensions import CommandRegistrar, ExtensionManager
@@ -496,7 +475,7 @@ class TestScriptPathResolution:
             p for p in artifacts
             if "github" not in p.name and "github" not in p.parent.name
         ]
-        assert aliases, f"{agent} produced no compatibility alias"
+        assert not aliases, f"{agent} unexpectedly installed a legacy alias"
 
         expected = f".specify/extensions/github/{SCRIPT_TWINS['sh']}"
         bodies = [p.read_text(encoding="utf-8") for p in artifacts]
@@ -505,10 +484,6 @@ class TestScriptPathResolution:
         for artifact, content in zip(artifacts, bodies):
             assert "{SCRIPT}" not in content, artifact
             assert "__SPECKIT_COMMAND_" not in content, artifact
-        assert any(
-            "deprecated compatibility alias" in path.read_text(encoding="utf-8")
-            for path in aliases
-        )
         # ...and the command body must carry the resolved extension-local path.
         # Some integrations also emit a thin companion file (e.g. Copilot's
         # prompt shim, which only points at the agent), so this is "at least

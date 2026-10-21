@@ -23,9 +23,8 @@ specify extension add github
 The `generic` (bring your own agent) integration registers this command under
 its configured `--commands-dir` in both commands and skills layouts. Installing
 `github` creates `speckit.github.taskstoissues.md` in commands mode or
-`speckit-github-taskstoissues/SKILL.md` in skills mode. It also installs the
-deprecated `speckit.taskstoissues` compatibility alias. Neither invocation is
-installed by core. Use the namespaced command for new workflows. See
+`speckit-github-taskstoissues/SKILL.md` in skills mode. Core no longer installs
+`speckit.taskstoissues`; use this extension's namespaced command. See
 [integration-specific options](../../docs/reference/integrations.md#integration-specific-options).
 
 ## Removal
@@ -39,7 +38,6 @@ specify extension remove github
 | Command                        | Description                                                          |
 | ------------------------------ | -------------------------------------------------------------------- |
 | `speckit.github.taskstoissues` | Recommended: convert tasks from `tasks.md` into dependency-ordered GitHub issues. |
-| `speckit.taskstoissues` | Deprecated compatibility alias; warns and runs the same workflow and hooks once. |
 
 > NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.github.taskstoissues` for dot-command integrations; `/speckit-github-taskstoissues` for slash-hyphen integrations (including Forge and Cline); `$speckit-github-taskstoissues` for Codex, ZCode, or Command Code in skills mode; or `/skill:speckit-github-taskstoissues` for Kimi.
 
@@ -56,9 +54,10 @@ This extension consumes the existing `before_taskstoissues` and `after_taskstois
 
 ## Requirements
 
-- Spec Kit **1.2.3.dev0 or newer** from the core-removal development line.
-  Earlier hosts still own `speckit.taskstoissues` and reject the compatibility
-  alias. Extension 1.0.2 remains the pre-removal replacement for those hosts.
+- Spec Kit **0.12.17 or newer**. Extension-local `scripts/...` path rewriting arrived in
+  0.12.6, but auto-registered skills did not resolve `__SPECKIT_COMMAND_*__` references
+  until 0.12.17. Earlier releases cannot render this command correctly in every supported
+  layout, so `specify extension add github` refuses to install below 0.12.17.
 - A Git remote pointing at GitHub.
 - The **GitHub MCP server** available to your coding agent, providing the `list_issues` and `issue_write` tools.
 
@@ -83,7 +82,7 @@ Prerequisite errors name the Spec Kit command without assuming an integration's 
 **Breaking change:** `taskstoissues` has been removed from core after the
 replacement shipped in 1.0.13 and deprecation shipped in 1.1.3. This removal
 is intended for the next minor release, not a patch release. New projects do
-not receive either invocation unless this extension is explicitly installed.
+not receive a tasks-to-issues command unless this extension is explicitly installed.
 
 After upgrading to a CLI containing the removal, run from the project root:
 
@@ -93,12 +92,10 @@ specify extension add github
 ```
 
 Replace `<integration>` with the installed integration key, or omit it to
-refresh the default integration. Upgrade first to retire old core artifacts
-before installing the alias; generic registration refuses unowned collisions.
-If `github` is already installed, run
-`specify extension update github` instead of `add`. Integration upgrade
-removes manifest-tracked obsolete core files, then re-registers enabled
-extensions for the default integration, including the compatibility alias.
+refresh the default integration. Skip `extension add` if `github` is already
+installed; the extension's implementation and version are unchanged.
+Integration upgrade removes manifest-tracked obsolete core files and
+re-registers enabled extensions for the default integration.
 Upgrading the CLI alone does not refresh generated files. Inspect local edits
 before deciding whether to use `--force`. Projects without an integration
 manifest need manual review and cleanup of old generated commands; `upgrade`
@@ -109,16 +106,16 @@ configured `--commands-dir`. For multiple installed integrations, upgrade each
 one; use `specify integration use <integration>` to register extension commands
 when changing the default. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
 
-| Deprecated compatibility alias | Canonical extension command |
+| Removed core command | Canonical extension command |
 | ------------------------- | --------------------------------- |
 | `/speckit.taskstoissues`  | `/speckit.github.taskstoissues`   |
 
-The extension owns both invocations. The alias warns and executes the same
-workflow once; it does not invoke the canonical command a second time.
-Conversion behavior is unchanged: feature resolution, `plan.md` and `tasks.md`
-prerequisites, GitHub remote validation, open/closed issue deduplication,
-issue titles, and hooks are preserved. Removing the extension removes its
-unchanged canonical and alias artifacts without affecting core SDD commands.
+No legacy alias is installed: its lifecycle is not supported consistently
+across commands and skills, so compatibility is deferred rather than expanding
+shared registration and preset behavior in this removal.
+The existing namespaced command preserves feature resolution, `plan.md` and
+`tasks.md` prerequisites, GitHub remote validation, open/closed issue
+deduplication, issue titles, and hooks.
 
 ### Presets and dependent extensions
 
@@ -143,13 +140,11 @@ Preset command overrides are separate from command references: an override of
 command. Review and port any needed customization, then verify the installed
 command in a sample project before retiring the old override. A preset that
 uses another issue tracker should retain its own provider-specific workflow
-rather than redirecting it to the GitHub command. Existing overrides may also
-hide the compatibility warning, so communicate the migration to their users.
+rather than redirecting it to the GitHub command.
 
 Keep the `before_taskstoissues` and `after_taskstoissues` hook keys unchanged;
-the canonical command and alias consume them. Only update a hook's command
-reference if it invokes the deprecated alias. Do not invoke both names for
-the same conversion, since that also runs their hooks twice.
+the namespaced command still consumes them. Update a hook's command reference
+if it invokes the removed core command.
 
 Related proposals such as [milestone grouping (github/spec-kit#4370)](https://github.com/github/spec-kit/issues/4370)
 should target `speckit.github.taskstoissues`, not a core command.
