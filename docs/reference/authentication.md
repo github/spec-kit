@@ -98,6 +98,16 @@ using this mode. Specify runs the fixed command
 `gh auth token --hostname github.com` without a shell, caches the result in
 memory for the current process, and never writes the token to disk.
 
+For `github-cli` only, the **first hostname in `hosts`** is passed to
+`gh auth token --hostname`. Put `github.com` or your enterprise instance's
+GitHub CLI login hostname first. It must be an exact hostname, not a wildcard.
+All listed hosts remain request-matching destinations authorized to receive
+that credential; later entries may use supported wildcards. Specify does not
+infer the credential hostname from service prefixes or the requested URL.
+The in-memory cache is keyed by the first hostname. Use separate provider
+entries for hosts requiring different credentials. Host order has no effect
+on existing authentication modes.
+
 ### GitHub Enterprise Server (GHES)
 
 To use a private catalog or extension hosted on a GitHub Enterprise Server
@@ -125,9 +135,9 @@ and `codeload.` subdomains your catalog/extension URLs use. A
 `*.ghes.example.com` wildcard matches subdomains but **not** the bare host,
 so always include the bare host explicitly.
 
-With `auth: "github-cli"`, one provider entry represents one GitHub instance.
-List exactly one bare enterprise host plus any service aliases that share its
-credential:
+With `auth: "github-cli"`, list your enterprise instance's GitHub CLI login
+hostname first, followed by any request hosts or wildcard patterns that should
+receive the same credential:
 
 ```json
 {
@@ -141,8 +151,9 @@ credential:
 }
 ```
 
-Specify runs `gh auth token --hostname ghes.example.com`. Use separate provider
-entries for separate GitHub instances. The selected host must already be
+Specify runs `gh auth token --hostname ghes.example.com`, using the first
+hostname exactly as configured. Use separate provider entries for separate
+GitHub instances. The selected host must already be
 authenticated in GitHub CLI; failures suggest `gh auth login --hostname <host>`
 without including GitHub CLI command output.
 

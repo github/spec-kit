@@ -674,11 +674,57 @@ class TestGitHubAuth:
 
         assert run.call_args.args[0][-2:] == ["--hostname", "ghes.example.com"]
 
-    def test_github_cli_requires_one_instance_per_entry(self):
-        entry = _github_cli_entry(("github.com", "ghes.example.com"))
+    @pytest.mark.parametrize("hosts", [
+        ("api.company.example",),
+        ("raw.company.example", "api.raw.company.example"),
+        ("api.github.com", "github.com"),
+        ("ghes.example.com", "*.ghes.example.com"),
+        ("first.example.com", "second.example.com"),
+    ])
+    def test_github_cli_uses_first_hostname(self, hosts):
+        from unittest.mock import patch
 
-        with pytest.raises(GitHubCliAuthError, match="separate provider entries"):
+        with patch.object(
+            GitHubAuth, "_acquire_via_gh_cli", return_value="cli-token",
+        ) as acquire:
+            assert GitHubAuth().resolve_token(_github_cli_entry(hosts)) == "cli-token"
+
+        acquire.assert_called_once_with(hosts[0])
+
+    def test_github_cli_rejects_wildcard_first_hostname(self):
+        from unittest.mock import patch
+
+        entry = _github_cli_entry(("*.ghes.example.com", "ghes.example.com"))
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+        ) as which, patch(
+            "specify_cli.authentication.github.subprocess.run",
+        ) as run, pytest.raises(GitHubCliAuthError, match="first hostname"):
             GitHubAuth().resolve_token(entry)
+
+        which.assert_not_called()
+        run.assert_not_called()
+
+    def test_github_cli_caches_by_first_hostname(self):
+        from unittest.mock import patch
+
+        provider = GitHubAuth()
+        with patch.object(
+            GitHubAuth, "_acquire_via_gh_cli", side_effect=["first-token", "second-token"],
+        ) as acquire:
+            assert provider.resolve_token(_github_cli_entry((
+                "first.example.com", "api.first.example.com",
+            ))) == "first-token"
+            assert provider.resolve_token(_github_cli_entry((
+                "first.example.com", "*.first.example.com",
+            ))) == "first-token"
+            assert provider.resolve_token(_github_cli_entry((
+                "second.example.com", "first.example.com",
+            ))) == "second-token"
+
+        assert [call.args for call in acquire.call_args_list] == [
+            ("first.example.com",), ("second.example.com",),
+        ]
 
     def test_github_cli_caches_token_per_process(self):
         from unittest.mock import MagicMock, patch

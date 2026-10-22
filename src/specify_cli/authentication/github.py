@@ -14,13 +14,6 @@ if TYPE_CHECKING:
 
 
 _GITHUB_CLI_TIMEOUT_SECONDS = 10
-_GITHUB_PUBLIC_HOSTS = frozenset({
-    "github.com",
-    "api.github.com",
-    "raw.githubusercontent.com",
-    "codeload.github.com",
-})
-_GITHUB_SERVICE_PREFIXES = ("api.", "raw.", "codeload.")
 
 
 def _is_safe_cli_hostname(hostname: str) -> bool:
@@ -83,32 +76,15 @@ class GitHubAuth(AuthProvider):
 
     @staticmethod
     def _credential_hostname(entry: AuthConfigEntry) -> str:
-        """Select the one GitHub CLI credential host represented by *entry*."""
-        exact_hosts = {
-            host.lower()
-            for host in entry.hosts
-            if "*" not in host
-        }
-        if exact_hosts & _GITHUB_PUBLIC_HOSTS:
-            if any(host not in _GITHUB_PUBLIC_HOSTS for host in exact_hosts):
-                raise GitHubCliAuthError(
-                    "GitHub authentication failed for provider 'github': "
-                    "a github-cli entry must describe one GitHub instance. "
-                    "Use separate provider entries for github.com and GitHub Enterprise."
-                )
-            return "github.com"
-
-        bare_hosts = {
-            host
-            for host in exact_hosts
-            if not host.startswith(_GITHUB_SERVICE_PREFIXES)
-        }
-        if len(bare_hosts) != 1:
+        """Use the first configured host for GitHub CLI credential acquisition."""
+        hostname = entry.hosts[0]
+        if "*" in hostname:
             raise GitHubCliAuthError(
                 "GitHub authentication failed for provider 'github': "
-                "a github-cli entry must list exactly one bare GitHub host."
+                "the first hostname in a github-cli entry must be an exact "
+                "hostname, not a wildcard."
             )
-        return next(iter(bare_hosts))
+        return hostname
 
     @staticmethod
     def _acquire_via_gh_cli(hostname: str) -> str:
