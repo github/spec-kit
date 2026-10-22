@@ -809,12 +809,18 @@ class TestGitHubAuth:
         ), pytest.raises(GitHubCliAuthError, match="timed out"):
             GitHubAuth().resolve_token(_github_cli_entry())
 
-    def test_github_cli_caches_sanitized_failure(self):
+    @pytest.mark.parametrize("error", [
+        None,
+        PermissionError("secret"),
+        UnicodeDecodeError("utf-8", b"secret\xff", 6, 7, "secret"),
+    ], ids=["nonzero-exit", "permission-error", "decode-error"])
+    def test_github_cli_caches_sanitized_failure(self, error):
         from unittest.mock import MagicMock, patch
 
         provider = GitHubAuth()
         result = MagicMock(returncode=1, stdout="secret", stderr="secret")
         executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        messages = []
 
         with patch(
             "specify_cli.authentication.github.shutil.which",
@@ -822,12 +828,17 @@ class TestGitHubAuth:
         ), patch(
             "specify_cli.authentication.github.subprocess.run",
             return_value=result,
+            side_effect=error,
         ) as run:
             for _ in range(2):
                 with pytest.raises(GitHubCliAuthError) as exc_info:
                     provider.resolve_token(_github_cli_entry())
                 assert "secret" not in str(exc_info.value)
+                messages.append(str(exc_info.value))
 
+        assert messages[0] == messages[1]
+        assert "provider 'github'" in messages[0]
+        assert "could not provide a token" in messages[0]
         run.assert_called_once()
 
     def test_github_cli_rejects_shell_unsafe_host_without_echoing_it(self):
@@ -1490,6 +1501,88 @@ class TestAuthenticatedHttpNegative:
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             with pytest.raises(socket.timeout):
                 open_url("https://example.com/file")
+
+
+# ---------------------------------------------------------------------------
+# GitHub CLI — registered provider HTTP wiring
+# ---------------------------------------------------------------------------
+
+
+class TestGitHubCliAuthenticatedHttp:
+    @pytest.fixture(autouse=True)
+    def isolate_config_and_cache(self, monkeypatch):
+        from specify_cli.authentication import http
+
+        provider = get_provider("github")
+        assert isinstance(provider, GitHubAuth)
+        monkeypatch.setattr(provider, "_github_cli_cache", {})
+        monkeypatch.setattr(http, "_config_override", [_github_cli_entry()])
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    def test_resolved_token_becomes_bearer_header(self, helper):
+        from unittest.mock import MagicMock, patch
+        from specify_cli.authentication import http
+
+        result = MagicMock(returncode=0, stdout="  cli-token\n")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run, patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
+            if helper == "build_request":
+                request = http.build_request("https://api.github.com/repos/org/repo")
+                build_opener.assert_not_called()
+            else:
+                response = http.open_url("https://api.github.com/repos/org/repo")
+                opener = build_opener.return_value
+                assert response is opener.open.return_value
+                opener.open.assert_called_once()
+                request = opener.open.call_args.args[0]
+
+        assert request.get_header("Authorization") == "Bearer cli-token"
+        run.assert_called_once_with(
+            [executable, "auth", "token", "--hostname", "github.com"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+
+    @pytest.mark.parametrize("helper", ["build_request", "open_url"])
+    def test_acquisition_failure_stops_credential_and_anonymous_fallback(
+        self, monkeypatch, helper,
+    ):
+        from unittest.mock import patch
+        from specify_cli.authentication import http
+
+        entry = _github_cli_entry()
+        monkeypatch.setattr(http, "_config_override", [
+            entry, _github_entry(token="backup-token"),
+        ])
+        provider = get_provider("github")
+        assert isinstance(provider, GitHubAuth)
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=None,
+        ) as which, patch(
+            "specify_cli.authentication.github.subprocess.run",
+        ) as run, patch.object(
+            provider, "resolve_token", wraps=provider.resolve_token,
+        ) as resolve, patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener, pytest.raises(GitHubCliAuthError, match="was not found"):
+            getattr(http, helper)("https://api.github.com/repos/org/repo")
+
+        resolve.assert_called_once_with(entry)
+        which.assert_called_once_with("gh")
+        run.assert_not_called()
+        build_opener.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
