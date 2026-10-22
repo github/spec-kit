@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import pathspec
+
 from ..base import IntegrationOption, MarkdownIntegration
 from ..manifest import IntegrationManifest
 
@@ -16,6 +18,11 @@ from ..manifest import IntegrationManifest
 # call the glob tool makes). ``!.specify/**`` alone does not. OpenCode 2.x
 # was not part of that check.
 _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
+# Paths a later exclusion must not match after the Spec Kit rules.
+_SPECIFY_PROBES = (
+    ".specify/", ".specify/memory/constitution.md", ".specify/templates/spec-template.md",
+    ".specify/scripts/bash/common.sh", ".specify/scripts/powershell/common.ps1",
+)
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -132,12 +139,33 @@ def _ignore_newline(raw: bytes) -> bytes:
     return b"\r\n" if b"\r\n" in raw else b"\n"
 
 
+def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
+    """Fail when *updated* still hides Spec Kit paths, evaluated in file order."""
+    patterns = []
+    for line in updated.decode("utf-8").splitlines():
+        try:
+            patterns.append(pathspec.GitIgnoreSpec.from_lines([line]).patterns[0])
+        except (ValueError, IndexError):
+            continue
+    spec = pathspec.GitIgnoreSpec(patterns)
+    probes = set(_SPECIFY_PROBES)
+    specify = path.parent / ".specify"
+    if specify.is_dir() and not specify.is_symlink():
+        probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
+    hidden = sorted(probe for probe in probes if spec.match_file(probe))
+    if hidden:
+        raise ValueError(
+            f"A later exclusion in {path} hides {hidden[0]}. "
+            "Move !.specify/ and !.specify/** below it, then rerun."
+        )
+
+
 def _with_specify_ignore_rules(raw: bytes) -> bytes:
     """Append missing Spec Kit rules, keeping *raw* as a byte prefix.
 
     New rules use the file's newline (``\\n`` when *raw* is empty) and a
-    trailing newline. Exact ASCII lines are matched without decoding, so a
-    non-UTF-8 prefix is preserved.
+    trailing newline. Exact ASCII lines are matched without decoding.
+    Non-UTF-8 files are rejected before this runs and are not preserved.
     """
     if not raw:
         newline = b"\n"
@@ -171,7 +199,15 @@ def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, 
         raw = path.read_bytes() if path.is_file() else b""
     except OSError as exc:
         raise OSError(f"Cannot read .ignore at {path}") from exc
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{path} is not UTF-8 ({exc.reason} at byte {exc.start}). "
+            "Convert it to UTF-8 and rerun; ripgrep stops at the first invalid byte."
+        ) from exc
     updated = _with_specify_ignore_rules(raw)
+    _reject_hidden_specify_paths(path, updated)
     if updated != raw and path.exists() and not os.access(path, os.W_OK):
         raise PermissionError(f"Cannot update .ignore at {path}")
     if updated != raw and not os.access(path.parent, os.W_OK):

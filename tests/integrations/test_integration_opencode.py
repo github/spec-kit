@@ -252,10 +252,6 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
                 b"*\n.*\n.specify/**\n",
                 b"*\n.*\n.specify/**\n!.specify/\n!.specify/**\n",
             ),
-            "windows-1252-comment": (
-                b"# caf\xe9\n",
-                b"# caf\xe9\n!.specify/\n!.specify/**\n",
-            ),
         }
         for name, (original, expected) in cases.items():
             root = tmp_path / name
@@ -275,6 +271,26 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             )
             assert ignore.read_bytes() == expected
             assert stat.S_IMODE(ignore.stat().st_mode) == before_mode
+
+    def test_configure_ignore_file_rejects_non_utf8_and_overrides(self, tmp_path):
+        integration = get_integration(self.KEY)
+        for index, (original, match) in enumerate((
+            (b"# caf\xe9\n", "Convert it to UTF-8"),
+            (b"!.specify/\n!.specify/**\n.specify/**\n", "later exclusion"),
+            (b"!.specify/\n!.specify/**\n/.specify/templates/**\n", "later exclusion"),
+            (b"!.specify/\n!.specify/**\n.specify/memory/custom.md\n", "custom.md"),
+        )):
+            root = tmp_path / str(index)
+            (root / ".specify" / "memory").mkdir(parents=True)
+            (root / ".specify" / "memory" / "custom.md").write_text("x\n")
+            (root / ".ignore").write_bytes(original)
+            with pytest.raises(ValueError, match=match):
+                integration.setup(root, IntegrationManifest(self.KEY, root), parsed_options=_OPT_IN)
+            assert (root / ".ignore").read_bytes() == original and not (root / ".opencode").exists()
+        restored = b"!.specify/\n!.specify/**\n.specify/**\n!.specify/**\n"
+        (tmp_path / ".ignore").write_bytes(restored)
+        integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
+        assert (tmp_path / ".ignore").read_bytes() == restored
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
