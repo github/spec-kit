@@ -687,21 +687,20 @@ class _StepKindManager:
                         step_dir = registry.steps_dir / component.id
                         if step_dir.exists():
                             shutil.copytree(step_dir, backup_dir)
-                        with _chdir(self._root):
-                            try:
-                                _delegate_command(
-                                    "remove",
-                                    f"step '{component.id}'",
-                                    lambda: command_remove._remove_step_locked(
-                                        self._root, component.id
-                                    ),
-                                )
-                            except BundlerError as exc:
-                                # ``_remove_step_locked`` drops the registry key
-                                # before the directory delete. A JSON null cannot
-                                # be put back there, so this error must reach
-                                # rollback below with the snapshot still intact.
-                                removal_error = exc
+                        try:
+                            _delegate_command(
+                                "remove",
+                                f"step '{component.id}'",
+                                lambda: command_remove._remove_step_locked(
+                                    self._root, component.id
+                                ),
+                            )
+                        except BundlerError as exc:
+                            # ``_remove_step_locked`` drops the registry key
+                            # before the directory delete. A JSON null cannot
+                            # be put back there, so this error must reach
+                            # rollback below with the snapshot still intact.
+                            removal_error = exc
             except step_installer.StepInstallError as exc:
                 # Lock acquisition failed before any package or registry snapshot.
                 raise BundlerError(

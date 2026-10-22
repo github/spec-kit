@@ -1780,6 +1780,43 @@ def test_step_refresh_snapshots_step_added_after_manager_construction(
     assert all(not path.exists() for path in backup_dirs)
 
 
+def test_step_refresh_reinstalls_relative_project_root(tmp_path: Path, monkeypatch):
+    """A relative root is removed in place and refresh still reaches reinstall.
+
+    ``_chdir(Path("project"))`` before ``_remove_step_locked`` resolves that
+    same root a second time, so removal reports the step as not installed.
+    """
+    import specify_cli.workflows.step.command_remove as command_remove
+
+    project = tmp_path / "project"
+    project.mkdir()
+    _seed_refresh_step(project)
+    monkeypatch.chdir(tmp_path)
+    outside = Path.cwd()
+    relative = Path("project")
+    seen: dict = {}
+    real_remove = command_remove._remove_step_locked
+
+    def _tracking_remove(project_root, step_id):
+        seen["cwd"] = Path.cwd()
+        seen["root"] = Path(project_root)
+        return real_remove(project_root, step_id)
+
+    def _add(step_id, *_args, **_kwargs):
+        seen["installed"] = step_id
+
+    monkeypatch.setattr(command_remove, "_remove_step_locked", _tracking_remove)
+    _stub_step_reinstall(monkeypatch, _add)
+    primitive_manager("steps", relative, allow_network=True).refresh(
+        _component("steps", "my-step")
+    )
+
+    assert seen == {"cwd": outside, "root": relative, "installed": "my-step"}
+    assert not (project / ".specify" / "workflows" / "steps" / "my-step").exists()
+    assert not (project / "project").exists()
+    assert not StepRegistry(project).is_installed("my-step")
+
+
 def _backup_root_from_note(note: str) -> Path:
     return Path(note.split("from backup '", 1)[1].split("'", 1)[0])
 
@@ -2035,7 +2072,7 @@ def test_step_refresh_rollback_refuses_symlinked_registry(
     assert "Refusing to restore" in note
     assert "symlinked step registry" in note
     assert registry_path.is_symlink()
-    assert registry_path.readlink() == registry_target
+    assert registry_path.resolve() == registry_target.resolve()
     assert registry_target.read_text(encoding="utf-8") == linked_text
     assert (steps_dir / "my-step" / "step.yml").read_text(encoding="utf-8") == newer
     assert (steps_dir / "my-step" / "__init__.py").read_text(encoding="utf-8") == (
