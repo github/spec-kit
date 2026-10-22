@@ -159,9 +159,11 @@ def workflow_run(
     except OSError as exc:
         cli._fail_workflow_execution(exc, json_output=json_output, state=engine._execution_state.get())
     except ValueError as exc:
+        cli._fail_recorded_run(exc, json_output=json_output, state=engine._execution_state.get())
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
     except Exception as exc:
+        cli._fail_recorded_run(exc, json_output=json_output, state=engine._execution_state.get())
         err.print(f"[red]Workflow failed:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
 

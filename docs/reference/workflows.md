@@ -21,6 +21,12 @@ Example:
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
+Inputs declared as `type: number` preserve integer values and integer strings
+exactly, including 64-bit identifiers and nanosecond timestamps above `2**53`.
+Decimal and exponent strings continue to use floating-point conversion;
+whole-valued results are stored as integers. Booleans, non-numeric values, and
+non-finite numbers are rejected.
+
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
 ```bash

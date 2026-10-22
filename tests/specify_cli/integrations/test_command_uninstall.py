@@ -47,6 +47,46 @@ def _registered_agents(project, kind, package_id):
     return set(registry[kind][package_id]["registered_commands"])
 
 class TestIntegrationUninstall:
+    @pytest.mark.parametrize("command", ["uninstall", "switch"])
+    def test_unreadable_dispatcher_preserves_other_cleanup(self, tmp_path, monkeypatch, caplog, command):
+        from specify_cli.events import install_integration_events
+        from specify_cli.integrations.claude import ClaudeIntegration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude", "--events false")
+        manifest = IntegrationManifest.load("claude", project)
+        install_integration_events(
+            ClaudeIntegration(), project, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = project / ".specify/events.py"
+        original = dispatcher.read_text(encoding="utf-8")
+        read_bytes = Path.read_bytes
+
+        def deny_dispatcher_read(path):
+            if path == dispatcher:
+                raise PermissionError("dispatcher denied")
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", deny_dispatcher_read)
+        args = ["integration", command]
+        if command == "switch":
+            args += ["copilot", "--integration-options", "--events false"]
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == 0, result.output
+        assert not (project / ".claude/skills/speckit-plan/SKILL.md").exists()
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.read_text(encoding="utf-8") == original
+        assert "unreadable dispatcher" in caplog.text
+        state_path = project / ".specify/integration.json"
+        if command == "switch":
+            assert json.loads(state_path.read_text(encoding="utf-8"))["default_integration"] == "copilot"
+        else:
+            assert not state_path.exists()
+
     def test_uninstall_requires_speckit_project(self, tmp_path):
         old_cwd = os.getcwd()
         try:

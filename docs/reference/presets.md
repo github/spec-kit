@@ -45,6 +45,64 @@ may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
+### Exclude development files with `.presetignore`
+
+Place a UTF-8 `.presetignore` (with or without a byte-order mark) beside
+`preset.yml` in the preset source root to filter files copied into
+`.specify/presets/<id>/`. For example:
+
+```gitignore
+# Development-only directories
+.git/
+.idea/
+tests/
+```
+
+Filtering applies to local directory installs and extracted archives, including
+reinstalls and replacements installed by `preset update`. Without
+`.presetignore`, all source files are copied as before. **`.gitignore` is not
+used for installation filtering**, and there are no implicit exclusions for
+development files.
+
+Patterns follow the same Git-style matching and normalization as
+`.extensionignore`:
+
+- Use one pattern per line; blank lines and `#` comments are ignored.
+- `*` and `?` do not cross directory boundaries; `**` can match across directories.
+- A trailing `/` matches directories only. A leading `/`, or a `/` within a
+  pattern other than its trailing slash, anchors the pattern to the source root.
+  Patterns without such a slash match names at any depth.
+- A later `!` pattern re-includes a match. An excluded directory is not traversed,
+  so a child cannot be re-included while its parent remains excluded.
+- Pattern whitespace is trimmed and backslashes are normalized to `/`, matching
+  the existing extension behavior. Use UTF-8 for non-ASCII names.
+
+To keep only `docs/api.md` within `docs/`, exclude the directory's contents
+instead of the directory itself:
+
+```gitignore
+docs/*
+!docs/api.md
+```
+
+Using `docs/`, then `!docs/` and `!docs/api.md`, would re-include all files under
+`docs/`, not just `api.md`, unless other patterns exclude them.
+
+Only the source root's `.presetignore` is read; nested ignore files do not add
+rules. When a root `.presetignore` exists, files named `.presetignore` at any
+depth are excluded, even if negated. Otherwise, nested `.presetignore` files
+are copied unchanged.
+Manifest and declared asset files are not exempt from filtering: keep
+`preset.yml` and any templates, commands, or scripts the preset needs included.
+Excluding them can leave an incomplete or unusable installation.
+
+For local directories and extracted archives, the source-directory installer
+reads and validates `.presetignore` before removing an existing destination,
+including during a forced reinstall. Invalid UTF-8 or malformed patterns raise
+a preset validation error. The separate `preset update` command retains its
+remove-then-add behavior described below; it does not preflight the replacement
+ignore file before removal.
+
 ## Update a Preset
 
 ```bash

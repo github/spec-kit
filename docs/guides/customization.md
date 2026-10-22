@@ -8,6 +8,7 @@ organization, or bring a different process entirely.
 
 | Goal | Use |
 | --- | --- |
+| Connect Spec Kit to a coding agent or adapt its command/skill delivery | Integration |
 | Add a new command, capability, or process | Extension |
 | Integrate an external tool or service | Extension |
 | Change the format or terminology of specs, plans, or tasks | Preset |
@@ -15,7 +16,20 @@ organization, or bring a different process entirely.
 | Ship reusable domain-specific templates | Presets for overrides; extensions for templates accompanying new commands |
 | Make a one-off template adjustment in a single project | Project-local override |
 | Automate a multi-step process | Workflow |
+| Add a custom executable step type for workflows | Workflow step package |
 | Provision a complete role-based setup in one operation | Bundle |
+
+Integrations determine how commands and skills are delivered to your coding
+agent; they are distinct from extensions that connect to external tools or
+services. See the [integration guides](../integrations/index.md) for supported
+agents and setup, or [contributing integrations](../integrations/contributing.md)
+to develop an adapter.
+
+Workflow step packages extend the step types available to workflows. See
+[custom step packages](../reference/workflows.md#custom-step-packages) for
+installation and execution, and
+[community workflow steps](../community/workflow-steps.md) for discovery and
+contribution guidance. Review executable packages before installing or using them.
 
 ## Extensions: add capabilities
 

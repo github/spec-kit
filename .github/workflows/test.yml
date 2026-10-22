@@ -52,4 +52,4 @@ jobs:
       # because it cannot handle native Windows paths in test fixtures.
       # See tests/conftest.py::_has_working_bash() for details.
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest -n 2

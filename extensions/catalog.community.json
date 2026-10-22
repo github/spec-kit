@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-15T00:00:00Z",
+  "updated_at": "2026-10-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -50,9 +50,9 @@
       "id": "aee",
       "description": "Checks the claims in a spec-driven project against their evidence at every stage, and shows plainly what is verified, what is not, and what remains not understood.",
       "author": "ElectroHire",
-      "version": "1.4.0",
-      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.4.0.zip",
-      "sha256": "14e02e74f65acd1d5f9360694315f7201aa753c82246f508426d9d39ecfd5464",
+      "version": "1.5.2",
+      "download_url": "https://github.com/electrohire/spec-kit-aee/archive/refs/tags/v1.5.2.zip",
+      "sha256": "d64db9145754cf7ebb623e4630e5e09f37f59da755456160c38379927e6e9515",
       "repository": "https://github.com/electrohire/spec-kit-aee",
       "homepage": "https://github.com/electrohire/spec-kit-aee",
       "documentation": "https://github.com/electrohire/spec-kit-aee#readme",
@@ -111,7 +111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-15T00:00:00Z",
-      "updated_at": "2026-10-13T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
@@ -1706,6 +1706,61 @@
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
     },
+    "csdd": {
+      "name": "CSDD — Controlled Spec-Driven Development",
+      "id": "csdd",
+      "description": "把治理规范、门禁、模板安装到已有仓库；第三方扩展按清单可选安装，默认不装。",
+      "author": "CSDD",
+      "version": "1.2.0",
+      "download_url": "https://github.com/yuansanche/csdd/archive/refs/tags/v1.2.0.zip",
+      "sha256": "ba9230b609739c39d0b4591c5b0875bcd28aff0d35401edb808fdb1815ce1cbd",
+      "repository": "https://github.com/yuansanche/csdd",
+      "homepage": "https://github.com/yuansanche/csdd",
+      "documentation": "https://github.com/yuansanche/csdd/blob/main/README.md",
+      "changelog": "https://github.com/yuansanche/csdd/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=1.1.3",
+        "tools": [
+          {
+            "name": "bash",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "unzip",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "governance",
+        "quality-gate",
+        "spec-driven-development"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-22T00:00:00Z",
+      "updated_at": "2026-10-22T00:00:00Z"
+    },
     "data-model-diagram": {
       "name": "Data Model Diagram",
       "id": "data-model-diagram",
@@ -1811,12 +1866,12 @@
       "id": "docguard",
       "description": "Documentation integrity for AI-assisted repositories: lifecycle registry, drift validation, traceability, safe archival, SARIF/JUnit, MCP, GitHub Actions, and Spec Kit hooks.",
       "author": "raccioly",
-      "version": "0.44.3",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.44.3/spec-kit-docguard-v0.44.3.zip",
-      "sha256": "6e8d9eeb7a436038dad1dfb19a521cf073c57a38227a43a43841abd0c33564f8",
+      "version": "0.45.1",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.45.1/spec-kit-docguard-v0.45.1.zip",
+      "sha256": "7248256490092dc3ae5d746b8925bfce8b16fd9ac251a7319f9b4665e83b4f95",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
-      "documentation": "https://raccioly.github.io/docguard/guides/spec-kit.html",
+      "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
       "changelog": "https://github.com/raccioly/docguard/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "docs",
@@ -1840,7 +1895,7 @@
         ]
       },
       "provides": {
-        "commands": 12,
+        "commands": 13,
         "hooks": 5
       },
       "tags": [
@@ -1854,7 +1909,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-10-12T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -2096,9 +2151,9 @@
       "id": "evaluator",
       "description": "Provider-neutral evaluator contract for evidence, provenance, uncertainty, and recovery across Spec-Driven Development phases.",
       "author": "ElectroHire",
-      "version": "1.1.1",
-      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.1.1.zip",
-      "sha256": "79a54460d37ee2b760daf52b4f54a21ce30d43e763aba2c93901b24db7281151",
+      "version": "1.1.2",
+      "download_url": "https://github.com/electrohire/spec-kit-evaluator/archive/refs/tags/v1.1.2.zip",
+      "sha256": "f2803c5da687bb4f269b31023983dbe827a7dd36d1cff626afec96b7aed9ff95",
       "repository": "https://github.com/electrohire/spec-kit-evaluator",
       "homepage": "https://github.com/electrohire/spec-kit-evaluator",
       "documentation": "https://github.com/electrohire/spec-kit-evaluator/blob/main/README.md",
@@ -2124,7 +2179,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-09-03T00:00:00Z",
-      "updated_at": "2026-10-15T00:00:00Z"
+      "updated_at": "2026-10-16T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
@@ -2636,8 +2691,9 @@
       "id": "grill",
       "description": "Exhaustively clarify specifications and optionally sync canonical domain knowledge.",
       "author": "yoshi1220",
-      "version": "1.0.1",
-      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.1/speckit-grill-me-extension-v1.0.1.zip",
+      "version": "1.0.2",
+      "download_url": "https://github.com/yoshi1220/speckit-grill-me/releases/download/v1.0.2/speckit-grill-me-extension-v1.0.2.zip",
+      "sha256": "7d01555e2ca2e5f2680aaa076dd7d89b0e364c36facb7fc1b97cc05133067099",
       "repository": "https://github.com/yoshi1220/speckit-grill-me",
       "homepage": "https://github.com/yoshi1220/speckit-grill-me/tree/main/spec-kit-extension",
       "documentation": "https://github.com/yoshi1220/speckit-grill-me/blob/main/spec-kit-extension/README.md",
@@ -2669,7 +2725,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-08-11T00:00:00Z",
-      "updated_at": "2026-08-25T00:00:00Z"
+      "updated_at": "2026-10-19T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -3136,8 +3192,9 @@
       "id": "linear-weave",
       "description": "Weave Spec Kit into Linear: pull requirements, mirror tasks.md into sub-issues, sync statuses.",
       "author": "Tony Woodhouse",
-      "version": "1.0.1",
-      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.1.zip",
+      "version": "1.0.2",
+      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.2.zip",
+      "sha256": "d5e07b1e2897ad357661379b3fb4dd50109c00a351c412fe14db5ef98c2d9a4c",
       "repository": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "homepage": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
       "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/README.md",
@@ -3168,7 +3225,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-27T00:00:00Z"
+      "updated_at": "2026-10-21T00:00:00Z"
     },
     "logreduce": {
       "name": "Log Intake (logreduce)",

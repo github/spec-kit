@@ -57,7 +57,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
-<a href="reference/integrations.md" class="pillar-link">See all integrations →</a>
+<a href="integrations/index.md" class="pillar-link">See all integrations →</a>
 
 </div>
 
@@ -172,7 +172,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
   </a>
   <a href="reference/overview.md" class="nav-card">
     <strong>Reference</strong>
-    <span>Core commands, integrations, extensions, presets, and workflows</span>
+    <span>Core commands, catalogs, integrations, extensions, presets, and workflows</span>
   </a>
   <a href="community/overview.md" class="nav-card">
     <strong>Community</strong>

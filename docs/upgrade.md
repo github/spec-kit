@@ -21,6 +21,10 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
+If you installed from PyPI and want to keep that install route, follow the
+[PyPI upgrade instructions](install/pypi.md#upgrade). Repeating
+`uv tool install specify-cli` does not upgrade an existing installation.
+
 ### Recommended: `specify self upgrade`
 
 The CLI ships with two self-management commands that handle the common case automatically:
@@ -95,7 +99,7 @@ When Spec Kit releases new features (like new slash commands, updated templates,
 
 For existing Spec Kit projects, use the manifest-aware upgrade path first:
 
-- ✅ **Integration command/skill files** (`.claude/skills/`, `.github/prompts/`, `.agents/skills/`, etc.)
+- ✅ **Integration command/skill files** (`.claude/skills/`, `.github/skills/`, `.agents/skills/`, etc.)
 - ✅ **Managed shared scripts and templates** (`.specify/scripts/`, `.specify/templates/`) when they are unchanged from the previous managed copy
 - ✅ **Installed extensions** when you run `specify extension update`
 
@@ -140,7 +144,7 @@ specify integration upgrade claude
 specify integration upgrade codex
 ```
 
-See the [integration reference](reference/integrations.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
+See the [integration reference](integrations/cli.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
 
 ### 3. Update installed extensions
 
@@ -420,7 +424,7 @@ This warning appears when you run `specify init --here` (or `specify init .`) in
 
 Only Spec Kit infrastructure files:
 
-- Agent command/skill files (`.claude/skills/`, `.github/prompts/`, etc.)
+- Agent command/skill files (`.claude/skills/`, `.github/skills/`, etc.)
 - Scripts in `.specify/scripts/`
 - Templates in `.specify/templates/`
 - Missing memory files such as `.specify/memory/constitution.md` may be created from templates; an existing constitution is preserved
@@ -498,15 +502,19 @@ The `specify` CLI tool is used for:
 - **Fallback recovery:** `specify init --here --force` when integration metadata is missing or the manifest-aware path cannot be used
 - **Diagnostics:** `specify check` to verify tool installation
 
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
+Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/skills/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
 
 **If your agent isn't recognizing slash commands:**
 
 1. **Verify command files exist:**
 
    ```bash
-   # For GitHub Copilot
-   ls -la .github/prompts/
+   # For GitHub Copilot (default skills layout)
+   ls -la .github/skills/
+
+   # For GitHub Copilot with the commands layout (--integration-options="--commands",
+   # or a project created before skills became the default and upgraded since)
+   ls -la .github/agents/ .github/prompts/
 
    # For Claude
    ls -la .claude/skills/

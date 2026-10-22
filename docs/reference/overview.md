@@ -19,7 +19,18 @@ clients through a local stdio server.
 
 Integrations connect Spec Kit to your AI coding agent. Each integration sets up the appropriate command files and directory structures for a specific agent. Only one integration is active per project at a time, and you can switch between them at any point.
 
-[Integrations reference →](integrations.md)
+[Agent-specific setup guides →](../integrations/index.md)
+
+[Integration management reference →](../integrations/cli.md)
+
+## Catalogs
+
+Catalogs are priority-ordered indexes for discovering integrations, extensions,
+presets, workflows, workflow step types, and bundles. Spec Kit includes
+built-in sources and supports private, organization-managed catalogs with
+explicit discovery and installation policies.
+
+[Catalogs reference →](catalogs.md)
 
 ## Extensions
 
@@ -56,7 +67,7 @@ Bundles compose existing extensions, presets, workflows, and steps into a single
 The sections above cover primitives managed by the `specify` CLI. The following
 are independent processes your coding agent runs, not terminal commands. The
 references use `/speckit.*` notation; see
-[Command invocation](integrations.md#command-invocation) for your agent's syntax.
+[Command invocation](../integrations/cli.md#command-invocation) for your agent's syntax.
 For guided examples, start with [SDD](../quickstart.md),
 [bug fixing](../guides/bugfix.md), or [idea assessment](../guides/assessment.md).
 
