@@ -113,8 +113,8 @@ WORKFLOW_TOOLS = (
         cli_path="specify workflow remove",
         mcp_tool_name="specify_workflow_remove",
         disposition_reason=(
-            "Confirmation, staged directory removal and registry rollback remain in "
-            "command_remove; no shared typed remove operation or MCP adapter."
+            "Staged directory removal and attempted directory recovery after registry "
+            "failure remain in command_remove; no shared typed remove operation or MCP adapter."
         ),
         capabilities=_LOCAL_WRITE,
         network_access="none",
@@ -323,8 +323,9 @@ WORKFLOW_TOOLS = (
         cli_path="specify workflow step remove",
         mcp_tool_name="specify_workflow_step_remove",
         disposition_reason=(
-            "Confirmation, staged package removal and registry rollback remain in "
-            "command_remove; no shared typed step-remove operation or MCP adapter."
+            "Registry removal, direct package deletion and attempted registry restoration "
+            "on deletion failure remain in command_remove; no shared typed step-remove "
+            "operation or MCP adapter."
         ),
         capabilities=_LOCAL_WRITE,
         network_access="none",
