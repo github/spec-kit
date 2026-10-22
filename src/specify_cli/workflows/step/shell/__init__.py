@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import locale
 import math
 import os
 import subprocess
@@ -57,16 +59,18 @@ class ShellStep(StepBase):
                 run_cmd,
                 shell=True,
                 capture_output=True,
-                text=True,
                 cwd=cwd,
                 env=env,
                 timeout=timeout,
             )
-            output = {
-                "exit_code": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-            }
+            # Decode in this thread so malformed output becomes a step
+            # failure on Windows too, where subprocess uses reader threads.
+            # Preserve text=True's locale encoding and universal newlines.
+            output = {"exit_code": proc.returncode}
+            encoding = locale.getpreferredencoding(False)
+            for name in ("stdout", "stderr"):
+                with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
+                    output[name] = stream.read()
             if proc.returncode != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -79,7 +83,7 @@ class ShellStep(StepBase):
                 # (e.g. a fan-out's ``items:``). A parse failure fails the
                 # step — declaring ``output_format: json`` is a contract.
                 try:
-                    output["data"] = json.loads(proc.stdout)
+                    output["data"] = json.loads(output["stdout"])
                 except json.JSONDecodeError as exc:
                     return StepResult(
                         status=StepStatus.FAILED,
@@ -99,6 +103,13 @@ class ShellStep(StepBase):
                 status=StepStatus.FAILED,
                 error=f"Shell command timed out after {timeout} seconds.",
                 output={"exit_code": -1, "stdout": "", "stderr": "timeout"},
+            )
+        except UnicodeDecodeError as exc:
+            error = f"Shell command output could not be decoded: {exc}"
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=error,
+                output={"exit_code": -1, "stdout": "", "stderr": str(exc)},
             )
         except OSError as exc:
             return StepResult(
