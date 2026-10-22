@@ -18,11 +18,6 @@ from ..manifest import IntegrationManifest
 # call the glob tool makes). ``!.specify/**`` alone does not. OpenCode 2.x
 # was not part of that check.
 _SPECIFY_IGNORE_RULES = ("!.specify/", "!.specify/**")
-# Paths a later exclusion must not match after the Spec Kit rules.
-_SPECIFY_PROBES = (
-    ".specify/", ".specify/memory/constitution.md", ".specify/templates/spec-template.md",
-    ".specify/scripts/bash/common.sh", ".specify/scripts/powershell/common.ps1",
-)
 
 
 class OpencodeIntegration(MarkdownIntegration):
@@ -141,18 +136,46 @@ def _ignore_newline(raw: bytes) -> bytes:
 
 def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
     """Fail when *updated* still hides Spec Kit paths, evaluated in file order."""
+    from ..._assets import _locate_core_pack, _repo_root
+
     patterns = []
     for line in updated.decode("utf-8").splitlines():
         try:
             patterns.append(pathspec.GitIgnoreSpec.from_lines([line]).patterns[0])
         except (ValueError, IndexError):
             continue
-    spec = pathspec.GitIgnoreSpec(patterns)
-    probes = set(_SPECIFY_PROBES)
+
+    def ignored(candidate: str) -> bool:
+        state = False
+        for pattern in patterns:
+            hit = pattern.include is not None and pattern.match_file(candidate) is not None
+            state = bool(pattern.include) if hit else state
+        return state
+
+    def hides(probe: str) -> bool:
+        parts = [part for part in probe.split("/") if part]
+        built, ancestors = "", parts if probe.endswith("/") else parts[:-1]
+        for part in ancestors:
+            built = f"{built}/{part}" if built else part
+            if ignored(built + "/"):
+                return True
+        return not probe.endswith("/") and ignored(probe)
+
+    pack, repo = _locate_core_pack(), _repo_root()
+    probes = {".specify/", ".specify/.gitignore", ".specify/memory/constitution.md"}
+    for kind in ("templates", "scripts"):
+        base = (pack if pack and (pack / kind).is_dir() else repo) / kind
+        walk = () if not base.is_dir() else (base.iterdir() if kind == "templates" else base.rglob("*"))
+        probes.update(
+            f".specify/{kind}/{item.relative_to(base).as_posix()}"
+            for item in walk
+            if item.is_file() and "__pycache__" not in item.parts
+            and not item.name.startswith(".") and item.name != "vscode-settings.json"
+        )
     specify = path.parent / ".specify"
     if specify.is_dir() and not specify.is_symlink():
         probes.update(f.relative_to(path.parent).as_posix() for f in specify.rglob("*") if f.is_file())
-    hidden = sorted(probe for probe in probes if spec.match_file(probe))
+    hidden = sorted(probe for probe in probes if hides(probe))
     if hidden:
         raise ValueError(
             f"A later exclusion in {path} hides {hidden[0]}. "

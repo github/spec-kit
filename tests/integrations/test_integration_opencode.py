@@ -279,6 +279,8 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             (b"!.specify/\n!.specify/**\n.specify/**\n", "later exclusion"),
             (b"!.specify/\n!.specify/**\n/.specify/templates/**\n", "later exclusion"),
             (b"!.specify/\n!.specify/**\n.specify/memory/custom.md\n", "custom.md"),
+            (b"!.specify/\n!.specify/**\n.specify/templates/plan-template.md\n", "plan-template.md"),
+            (b"!.specify/\n!.specify/**\n.specify/memory\n!.specify/memory/*.md\n", "constitution.md"),
         )):
             root = tmp_path / str(index)
             (root / ".specify" / "memory").mkdir(parents=True)
@@ -291,6 +293,12 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         (tmp_path / ".ignore").write_bytes(restored)
         integration.setup(tmp_path, IntegrationManifest(self.KEY, tmp_path), parsed_options=_OPT_IN)
         assert (tmp_path / ".ignore").read_bytes() == restored
+        kept = b"!.specify/\n!.specify/**\n.specify/memory\n!.specify/memory/\n!.specify/memory/**\n"
+        reinclude = tmp_path / "reinclude"
+        reinclude.mkdir()
+        (reinclude / ".ignore").write_bytes(kept)
+        integration.setup(reinclude, IntegrationManifest(self.KEY, reinclude), parsed_options=_OPT_IN)
+        assert (reinclude / ".ignore").read_bytes() == kept
 
     def test_without_flag_and_other_integrations_leave_ignore_untouched(self, tmp_path):
         plain = tmp_path / "plain"
