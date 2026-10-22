@@ -655,6 +655,47 @@ def test_plan_prerequisite_diagnostics(
         assert plan.stat().st_mtime_ns == before
 
 
+@requires_bash
+@pytest.mark.skipif(os.name == "nt", reason="requires POSIX read permissions")
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_bash_unreadable_plan_is_not_reported_as_empty(
+    prereq_repo: Path, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    mode = plan.stat().st_mode
+    args = ("--json",) if json_mode else ()
+
+    try:
+        plan.chmod(0)
+        if os.access(plan, os.R_OK):
+            pytest.skip("current user can read files with no read permissions")
+
+        result = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+        paths_only = _run(
+            _bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo
+        )
+    finally:
+        plan.chmod(mode)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {feature}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
     (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True)
     _write_feature_json(prereq_repo)
