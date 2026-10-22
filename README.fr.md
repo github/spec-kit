@@ -28,8 +28,8 @@ Partez d'un processus prêt à l'emploi, adaptez-le ou apportez le vôtre.
 | Votre besoin | Processus | Résultat |
 | --- | --- | --- |
 | Construire une fonctionnalité ou une application | [Développement piloté par les spécifications](#développement-piloté-par-les-spécifications) | Une spécification menée jusqu'au plan, à l'implémentation et à la convergence |
-| Diagnostiquer et réparer un comportement défaillant | [Correction de bugs](#correction-de-bugs) | Une cause évaluée, un correctif ciblé et une vérification consignée |
-| Décider si une idée mérite d'être financée | [Évaluation d'idées](#évaluation-didées) | Une décision étayée : poursuivre, clarifier ou arrêter |
+| Diagnostiquer et réparer un comportement défaillant | [Correction de bugs](#correction-de-bugs) | Une cause évaluée, un correctif au périmètre défini et une vérification consignée |
+| Décider si une idée mérite qu'on y investisse | [Évaluation d'idées](#évaluation-didées) | Une décision étayée : poursuivre, clarifier ou arrêter |
 | Adopter ou créer un autre processus | [Votre propre processus](#fonctionnalités) | Un processus adapté ou assemblé à partir de briques réutilisables |
 
 Ce sont des points d'entrée indépendants, pas des étapes obligatoires. Le SDD est
@@ -44,7 +44,7 @@ Spec Kit associe des processus prêts à l'emploi à des mécanismes combinables
 | Fonctionnalité | Mécanisme de Spec Kit |
 | --- | --- |
 | Se connecter à des agents de codage ou passer de l'un à l'autre | [Intégration](https://github.github.io/spec-kit/integrations/index.html) |
-| Ajouter une commande, un contrôle qualité ou un processus complet | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
+| Ajouter une commande, un point de contrôle qualité ou un processus complet | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
 | Relier un processus à un outil ou à un service externe | [Extension](https://github.github.io/spec-kit/reference/extensions.html) |
 | Réagir aux événements du cycle de vie de l'agent de codage | [Événement d'exécution d'extension](https://github.github.io/spec-kit/reference/extensions.html#extension-runtime-events) |
 | Lancer des commandes d'extension avant ou après les commandes de Spec Kit | [Hook d'extension](https://github.github.io/spec-kit/reference/extensions.html#project-extension-and-hook-configuration) |
@@ -54,7 +54,7 @@ Spec Kit associe des processus prêts à l'emploi à des mécanismes combinables
 | Automatiser des prompts, des commandes, des contrôles et des tâches shell | [Workflow](https://github.github.io/spec-kit/reference/workflows.html) |
 | Modifier un workflow installé sans le forker | [Surcouche de workflow](https://github.github.io/spec-kit/reference/workflows.html#workflow-overlays) |
 | Ajouter aux workflows un comportement exécutable réutilisable | [Étape de workflow](https://github.github.io/spec-kit/reference/workflows.html#custom-step-packages) |
-| Installer une configuration choisie pour un rôle ou une équipe | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
+| Installer une configuration soigneusement composée pour un rôle ou une équipe | [Bundle](https://github.github.io/spec-kit/reference/bundles.html) |
 | Découvrir les composants de la communauté | [Catalogue](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Héberger un catalogue privé de composants approuvés | [Catalogue](https://github.github.io/spec-kit/reference/catalogs.html) |
 | Accéder aux catalogues privés et aux téléchargements de composants | [Authentification](https://github.github.io/spec-kit/reference/authentication.html) |
