@@ -9166,8 +9166,11 @@ steps:
         assert runs[0]["workflow_id"] == "good-run-utf8"
 
     def test_list_skips_oserror_with_valid_sibling(self, project_dir, monkeypatch):
-        import builtins
-        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.engine import (
+            RunState,
+            WorkflowDefinition,
+            WorkflowEngine,
+        )
 
         runs_dir = project_dir / ".specify" / "workflows" / "runs"
         bad_dir = runs_dir / "bad-oserror"
@@ -9175,14 +9178,14 @@ steps:
         state_file = bad_dir / "state.json"
         state_file.write_text('{"run_id": "bad"}', encoding="utf-8")
 
-        original_open = builtins.open
+        original_open = RunState._open_artifact
 
-        def _mock_open(path, *args, **kwargs):
-            if str(path).endswith("state.json") and "bad-oserror" in str(path):
+        def _mock_open(path, mode, *, dir_fd, **kwargs):
+            if path.name == "state.json" and "bad-oserror" in str(path):
                 raise OSError("permission denied")
-            return original_open(path, *args, **kwargs)
+            return original_open(path, mode, dir_fd=dir_fd, **kwargs)
 
-        monkeypatch.setattr(builtins, "open", _mock_open)
+        monkeypatch.setattr(RunState, "_open_artifact", staticmethod(_mock_open))
 
         yaml_str = """
 schema_version: "1.0"

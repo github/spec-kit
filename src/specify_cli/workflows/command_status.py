@@ -100,7 +100,12 @@ def workflow_status(
                     f"{cli._escape_markup(scope['workflow_id'])}: {scope['status']}"
                 )
     else:
-        runs = engine.list_runs()
+        err = cli._error_console(json_output)
+        try:
+            runs = engine.list_runs()
+        except (OSError, ValueError) as exc:
+            err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
+            raise cli.typer.Exit(1)
 
         if json_output:
             payload = {
