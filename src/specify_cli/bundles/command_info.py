@@ -305,11 +305,8 @@ def _format_override(item: dict, override: dict) -> str:
             value = override.get(field)
             changed.append(f"{field}={value if value is not None else '<unset>'}")
 
-    # An override always differs in at least one install-affecting field, but
-    # retain the historical version-only marker if a caller supplies an
-    # incomplete provenance dictionary.
-    if not changed:
-        changed.append(str(old_version) if old_version else "unpinned")
-    marker = ", ".join(changed)
     origin = " → ".join(override.get("origin", []))
-    return f"overrides {marker} from {origin}"
+    if not changed:
+        # Equivalent copies stay in the history; don't invent a difference.
+        return f"also declared by {origin} (same as final)"
+    return f"overrides {', '.join(changed)} from {origin}"

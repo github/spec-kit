@@ -213,6 +213,24 @@ def test_info_exposes_trust_of_unverified_reference(project: Path, monkeypatch):
     assert "    - child-bundle v1.0.0 (local; community)" in text.output
 
 
+def test_format_component_equivalent_override_is_labelled_historical():
+    text = _format_component(
+        {
+            "kind": "extensions",
+            "id": "e",
+            "version": "1.0.0",
+            "overrides": [
+                {"version": "1.0.0", "origin": ["child", "leaf"]},
+                {"version": "2.0.0", "origin": ["child"]},
+            ],
+        }
+    )
+
+    assert "also declared by child → leaf (same as final)" in text
+    assert "overrides 1.0.0" not in text
+    assert "overrides 2.0.0 from child" in text
+
+
 def test_format_component_describes_setting_overrides():
     text = _format_component(
         {
