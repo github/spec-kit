@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -170,3 +171,47 @@ class TestOverlayPathTraversal:
         assert result.exit_code != 0, result.output
         assert real_file.is_file()
         assert "symlink" in result.output.lower() or "Invalid" in result.output
+
+
+class TestOverlayUppercaseExtension:
+    """``remove`` must find every overlay the resolver applies.
+
+    ``ProjectOverlaySource.collect`` matches ``.yml``/``.yaml`` case-insensitively,
+    so a ``lint.YML`` overlay is ACTIVE during resolution. ``_find_overlay_file``
+    matched the suffix case-sensitively, so ``remove`` reported that same overlay
+    "not found" -- applied, but impossible to uninstall.
+    """
+
+    @pytest.mark.parametrize("filename", ["lint.YML", "lint.Yaml"])
+    def test_remove_finds_uppercase_extension_overlay(
+        self, project_dir, monkeypatch, filename
+    ):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        ov_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        overlay = ov_dir / filename
+        overlay.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "lint",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "remove", "wf", "lint"])
+
+        assert result.exit_code == 0, result.output
+        assert not overlay.exists()
