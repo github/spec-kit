@@ -456,8 +456,9 @@ def test_local_reference_bundle_offline_names_reference_and_network_limit(projec
     assert result.exit_code == 1, result.output
     output = " ".join(result.output.split())
     assert "Cannot resolve bundle reference missing-child@1.0.0 (parent)" in output
-    assert "Network access disabled" in output
-    assert "not found in any configured catalog" not in output
+    assert "Bundle 'missing-child' was not found in any configured catalog." in output
+    assert "built-in catalog may be outdated" in output
+    assert "Re-run without --offline." in output
 
 
 def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):

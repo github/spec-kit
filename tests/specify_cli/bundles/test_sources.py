@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -397,9 +398,25 @@ def test_catalog_loader_offline_missing_bundle_reports_network_limit():
             BundleRef("missing", "0.9.0"), ("team",)
         )
 
+    message = str(excinfo.value)
+    assert message.startswith(
+        "Bundle 'missing' was not found in any configured catalog."
+    )
+    assert "built-in catalog may be outdated" in message
+    assert "Re-run without --offline." in message
+
+
+def test_catalog_loader_offline_missing_bundle_in_local_catalog_has_no_retry_hint():
+    local = replace(_catalog_source("team", 1), url="/tmp/team-catalog.json")
+    stack = _catalog_stack([local], {"team": catalog_payload({})})
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("missing", "0.9.0"), ("team",)
+        )
+
     assert str(excinfo.value) == (
-        "Network access disabled; cannot resolve bundle reference missing@0.9.0 "
-        "while offline. Re-run without --offline."
+        "Bundle 'missing' was not found in any configured catalog."
     )
 
 

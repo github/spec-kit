@@ -115,11 +115,15 @@ class CatalogBundleLoader:
         try:
             resolved = self._stack.resolve(ref.id, ref.version)
         except BundleNotFoundError as exc:
-            if self._offline:
+            # A packaged built-in snapshot can lag the live catalog, so only
+            # then can going online help; otherwise keep the plain not-found.
+            if self._offline and any(
+                source.url.startswith("builtin://") for source in self._stack.sources
+            ):
                 raise BundlerError(
-                    f"Network access disabled; cannot resolve bundle reference "
-                    f"{ref.id}@{ref.version or '<unpinned>'} while offline. "
-                    "Re-run without --offline."
+                    f"{exc} Network access disabled; a built-in catalog may be "
+                    f"outdated, so {ref.id}@{ref.version or '<unpinned>'} may "
+                    "resolve online. Re-run without --offline."
                 ) from exc
             raise
         except ReleaseNotFoundError as exc:
