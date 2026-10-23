@@ -59,9 +59,7 @@ Either `token` or `token_env` must be set for the `bearer`, `basic-pat`, and `ba
 | Scheme | Header | Use for |
 |---|---|---|
 | `bearer` | `Authorization: Bearer <token>` | PATs, fine-grained PATs, OAuth tokens, GitHub App tokens |
-
-The `github` provider supports `bearer` tokens and `github-cli` credentials
-acquired on demand from GitHub CLI.
+| `github-cli` | `Authorization: Bearer <token>` | Credentials acquired on demand via `gh auth token` |
 
 **Example — PAT via environment variable:**
 
