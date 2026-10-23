@@ -997,7 +997,7 @@ def resolve_events(
                     override_file, integration_key,
                 )
             else:
-                key_events = key_data.get("events", {})
+                key_events = key_data.get("events")
                 if not isinstance(key_events, dict):
                     logger.warning(
                         "Override %s: 'events' for '%s' is not a mapping; ignoring override",
