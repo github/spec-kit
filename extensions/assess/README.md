@@ -32,13 +32,15 @@ flowchart LR
 
 ## Commands
 
-| Command | Stage | Output |
+| Command ID | Stage | Output |
 |---------|-------|--------|
 | `speckit.assess.intake` | Capture & normalize a raw idea (text, URL, ticket, or codebase pointer). | `intake.md` |
 | `speckit.assess.research` | Gather users/market/prior-art/data evidence — and evidence *against* the idea. | `research.md` |
 | `speckit.assess.define` | Define the problem: users, goals, non-goals, success metrics, cost of inaction. | `problem.md` |
 | `speckit.assess.shape` | Shape 2–3 concept-level options with appetite and trade-offs; recommend one (or none). | `concept.md` |
 | `speckit.assess.decide` | Score against criteria and render the verdict; hand `go` ideas to `/speckit.specify`. | `decision.md` |
+
+The table lists canonical command IDs. Dotted `/speckit.*` references in this README identify commands; the invocation depends on your integration and installed mode. For example, intake is `/speckit-assess-intake` in GitHub Copilot's default skills mode, `$speckit-assess-intake` in Codex skills mode, and `/skill:speckit-assess-intake` in Kimi. Use the form exposed by your agent; see [Command invocation](https://github.github.io/spec-kit/integrations/cli.html#command-invocation) and [Copilot's commands layout](https://github.github.io/spec-kit/integrations/copilot.html#commands-layout).
 
 Stages are meant to run in order but are not rigidly gated:
 
@@ -91,22 +93,24 @@ specify extension enable assess
 
 ## Typical Flow
 
-```bash
+This example uses GitHub Copilot's default skills mode. Invoke each skill separately in your agent's chat, reviewing its artifact before continuing. These are not terminal commands.
+
+```text
 # 1. Capture an idea (pasted text, a URL, or "assess this repo")
-/speckit.assess.intake "Let users work offline and sync when they reconnect" slug=offline-mode
+/speckit-assess-intake "Let users work offline and sync when they reconnect" slug=offline-mode
 
 # 2. Gather evidence — and reasons it might not be worth it
-/speckit.assess.research slug=offline-mode
+/speckit-assess-research slug=offline-mode
 
 # 3. Define the actual problem
-/speckit.assess.define slug=offline-mode
+/speckit-assess-define slug=offline-mode
 
 # 4. Shape 2–3 concept options with appetites
-/speckit.assess.shape slug=offline-mode
+/speckit-assess-shape slug=offline-mode
 
 # 5. Decide — go, clarify, or kill
-/speckit.assess.decide slug=offline-mode
-# → on "go", hand the decision.md handoff summary to /speckit.specify
+/speckit-assess-decide slug=offline-mode
+# → on "go", optionally pass the decision.md handoff summary to /speckit-specify
 ```
 
 ## Handoff
