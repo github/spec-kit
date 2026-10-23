@@ -24,6 +24,59 @@ from tests.specify_cli.self_upgrade_helpers import (
 )
 
 
+class TestRelocatedToolDetection:
+    @pytest.mark.parametrize("env_name,suffix,method", [
+        ("UV_TOOL_DIR", "specify-cli/bin/specify", _InstallMethod.UV_TOOL),
+        ("XDG_DATA_HOME", "uv/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
+        ("APPDATA", "uv/data/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
+        ("PIPX_HOME", "venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+        ("XDG_DATA_HOME", "pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+        ("LOCALAPPDATA", "pipx/pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+        ("HOME", ".local/share/pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+        ("HOME", "Library/Application Support/pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+        ("HOME", "pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
+    ])
+    def test_tool_directory_matches(self, monkeypatch, tmp_path, env_name, suffix, method):
+        root = tmp_path / "tool data"
+        monkeypatch.setenv(env_name, str(root))
+        if env_name == "HOME":
+            monkeypatch.setenv("USERPROFILE", str(root))
+        entrypoint = root / suffix
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
+            "specify_cli._version.subprocess.run"
+        ) as registry_lookup:
+            actual, signals = _detect_install_method(str(entrypoint), include_signals=True)
+        assert actual == method
+        assert signals.matched_tier == 1
+        registry_lookup.assert_not_called()
+
+    @pytest.mark.parametrize("env_name,suffix", [
+        ("UV_TOOL_DIR", "specify-cli2/bin/specify"),
+        ("XDG_DATA_HOME", "uv/tools/specify-cli2/bin/specify"),
+        ("PIPX_HOME", "venvs/specify-cli2/bin/specify"),
+    ])
+    def test_sibling_environment_is_not_accepted(self, monkeypatch, tmp_path, env_name, suffix):
+        monkeypatch.setenv(env_name, str(tmp_path))
+        entrypoint = tmp_path / suffix
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False):
+            assert _detect_install_method(str(entrypoint)) == _InstallMethod.UNSUPPORTED
+
+    @pytest.mark.parametrize("value", [None, ""])
+    @pytest.mark.parametrize("variable", ["UV_TOOL_DIR", "PIPX_HOME", "XDG_DATA_HOME"])
+    def test_unconfigured_prefix_is_ignored(self, monkeypatch, variable, value):
+        from specify_cli._version import _expand_prefix
+
+        if value is None:
+            monkeypatch.delenv(variable, raising=False)
+        else:
+            monkeypatch.setenv(variable, value)
+        assert _expand_prefix("${" + variable + "}/specify-cli/") is None
+
+
 class TestDetectionUvTool:
     """Tier-1 path-prefix detection for uv-tool installs."""
 

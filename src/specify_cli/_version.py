@@ -182,11 +182,20 @@ def _render_argv(argv: list[str]) -> str:
 
 _INSTALLER_PATH_PREFIXES: dict[str, list[str]] = {
     "uv-tool": [
+        "${UV_TOOL_DIR}/specify-cli/",
+        "${XDG_DATA_HOME}/uv/tools/specify-cli/",
         "~/.local/share/uv/tools/specify-cli/",
+        "${APPDATA}/uv/data/tools/specify-cli/",
         "%LOCALAPPDATA%\\uv\\tools\\specify-cli\\",
     ],
     "pipx": [
+        "${PIPX_HOME}/venvs/specify-cli/",
+        "${XDG_DATA_HOME}/pipx/venvs/specify-cli/",
+        "~/.local/share/pipx/venvs/specify-cli/",
+        "~/Library/Application Support/pipx/venvs/specify-cli/",
+        "${LOCALAPPDATA}/pipx/pipx/venvs/specify-cli/",
         "~/.local/pipx/venvs/specify-cli/",
+        "~/pipx/venvs/specify-cli/",
         "%LOCALAPPDATA%\\pipx\\venvs\\specify-cli\\",
     ],
     "uvx-ephemeral": [
@@ -343,6 +352,10 @@ def _validate_tag(tag: str) -> str:
 def _expand_prefix(prefix: str) -> Path | None:
     """Expand `~` or `%LOCALAPPDATA%`-style tokens in a path prefix."""
 
+    # An unset or empty directory override must not become a root-level prefix.
+    for token in _UNRESOLVED_ENV_VAR_RE.findall(prefix):
+        if not os.environ.get(token.strip("${}%")):
+            return None
     expanded = os.path.expanduser(prefix)
     if "%LOCALAPPDATA%" in expanded:
         local_app_data = os.environ.get("LOCALAPPDATA")
