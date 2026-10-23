@@ -2988,6 +2988,30 @@ class TestOverridePreserveLayers:
     the accumulated built-in + extension layers, instead of disabling all
     hooks."""
 
+    @pytest.mark.parametrize("entry", ["{}", "{evnts: {stop: {command: speckit.typo}}}"])
+    def test_missing_events_field_keeps_prior_layers(self, tmp_path, caplog, entry):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(
+            "events:\n  session_start:\n    command: speckit.my-ext.boot\n",
+            encoding="utf-8",
+        )
+        override_file = tmp_path / ".specify" / "integration-events.yml"
+        override_file.write_text(f"integrations:\n  claude: {entry}\n", encoding="utf-8")
+
+        result = resolve_events(
+            "claude",
+            {"events": {"post_tool_use": {"command": "speckit.tdd.validate"}}},
+            tmp_path,
+            None,
+        )
+
+        assert result == {
+            "post_tool_use": [{"command": "speckit.tdd.validate"}],
+            "session_start": [{"command": "speckit.my-ext.boot"}],
+        }
+        assert "'events' for 'claude' is not a mapping; ignoring override" in caplog.text
+
     def test_invalid_override_entry_keeps_prior_layers(self, tmp_path):
         override_file = tmp_path / ".specify" / "integration-events.yml"
         override_file.parent.mkdir(parents=True, exist_ok=True)
