@@ -1,5 +1,9 @@
 ---
 description: "Initialize a Git repository with an initial commit"
+scripts:
+  sh: scripts/bash/initialize-repo.sh
+  ps: scripts/powershell/initialize-repo.ps1
+  py: scripts/python/initialize_repo.py
 ---
 
 # Initialize Git Repository
@@ -12,10 +16,12 @@ Run the appropriate script from the project root:
 
 - **Bash**: `.specify/extensions/git/scripts/bash/initialize-repo.sh`
 - **PowerShell**: `.specify/extensions/git/scripts/powershell/initialize-repo.ps1`
+- **Python**: `.specify/extensions/git/scripts/python/initialize_repo.py`
 
 If the extension scripts are not found, fall back to:
 - **Bash**: `git init && git add . && git commit -m "Initial commit from Specify template"`
 - **PowerShell**: `git init; git add .; git commit -m "Initial commit from Specify template"`
+- **Python**: run `git init`, `git add .`, and `git commit -m "Initial commit from Specify template"` via your tooling
 
 The script handles all checks internally:
 - Skips if Git is not available

@@ -1,5 +1,9 @@
 ---
 description: "Create a feature branch with sequential or timestamp numbering"
+scripts:
+  sh: scripts/bash/create-new-feature-branch.sh --json
+  ps: scripts/powershell/create-new-feature-branch.ps1 -Json
+  py: scripts/python/create_new_feature_branch.py --json
 ---
 
 # Create Feature Branch
@@ -61,10 +65,12 @@ Run the appropriate script based on your platform:
 - **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --timestamp --short-name "<short-name>" "<feature description>"`
 - **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -ShortName "<short-name>" "<feature description>"`
 - **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -Timestamp -ShortName "<short-name>" "<feature description>"`
+- **Python**: `.specify/extensions/git/scripts/python/create_new_feature_branch.py --json --short-name "<short-name>" "<feature description>"`
+- **Python (timestamp)**: `.specify/extensions/git/scripts/python/create_new_feature_branch.py --json --timestamp --short-name "<short-name>" "<feature description>"`
 
 **IMPORTANT**:
 - Do NOT pass `--number` — the script determines the correct next number automatically
-- Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
+- Always include the JSON flag (`--json` for Bash and Python, `-Json` for PowerShell) so the output can be parsed reliably
 - You must only ever run this script once per feature
 - The JSON output will contain `BRANCH_NAME` and `FEATURE_NUM`
 - Do not manually expand `branch_template`; the script reads the git extension config and applies it consistently
