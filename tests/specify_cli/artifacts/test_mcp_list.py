@@ -21,6 +21,7 @@ from specify_cli.artifacts import (
     _mcp,
     _operation_info,
     _operation_list,
+    _operation_lookup,
     mcp_list,
 )
 from specify_cli.artifacts._operation_list import (
@@ -886,7 +887,19 @@ def test_artifact_inventory_matches_cli_leaves_and_operation_contract(
     lookup_tool = next(
         item for item in unavailable if item.operation_id == "artifact.lookup"
     )
-    assert lookup_tool.contract_version is None
+    assert lookup_tool.contract_version == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.contract_version
+    )
+    assert lookup_tool.capabilities == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.capabilities
+    )
+    assert lookup_tool.network_access == (
+        _operation_lookup.ARTIFACT_LOOKUP_OPERATION.network_access
+    )
+    assert lookup_tool.disposition_reason == (
+        "The artifact.lookup shared operation exists, but its first-class "
+        "MCP adapter is not yet implemented."
+    )
 
 
 def test_artifact_registration_adds_available_tool_once_and_rejects_collision(
