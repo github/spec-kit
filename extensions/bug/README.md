@@ -27,6 +27,18 @@ The three stages communicate through three Markdown files in a single per-bug di
 | `speckit.bug.fix` | Applies the remediation from the assessment. | `.specify/bugs/<slug>/fix.md` |
 | `speckit.bug.test` | Validates the fix and records the verification report. | `.specify/bugs/<slug>/test.md` |
 
+### Installed command names
+
+The dotted `speckit.bug.*` names above are the extension's canonical command IDs — what `extension.yml` declares, what `specify extension list` shows, and what hook configuration references. When the commands are registered with an AI agent they are installed as hyphenated skill names, and the spelling you invoke depends on the agent:
+
+| Where | Invocations |
+|-------|-------------|
+| Claude Code, GitHub Copilot, Cursor, Devin and the other slash agents | `/speckit-bug-assess`, `/speckit-bug-fix`, `/speckit-bug-test` |
+| Codex, ZCode, Command Code (skills mode) | `$speckit-bug-assess`, `$speckit-bug-fix`, `$speckit-bug-test` |
+| Kimi | `/skill:speckit-bug-assess`, `/skill:speckit-bug-fix`, `/skill:speckit-bug-test` |
+
+See [Command invocation](../../docs/integrations/cli.md#command-invocation) for the shared table, and the examples below use the slash-agent spelling.
+
 ## Slug Conventions
 
 A *slug* is the per-bug directory name under `.specify/bugs/`. It is the only handle the three commands share.
@@ -56,16 +68,16 @@ specify extension enable bug
 
 ```bash
 # 1. Triage a bug from a pasted stack trace
-/speckit.bug.assess "TypeError: cannot read properties of undefined (reading 'token') at /auth/callback"
+/speckit-bug-assess "TypeError: cannot read properties of undefined (reading 'token') at /auth/callback"
 
 # 2. Triage a bug from a GitHub issue URL
-/speckit.bug.assess https://github.com/example/repo/issues/1234 slug=callback-token
+/speckit-bug-assess https://github.com/example/repo/issues/1234 slug=callback-token
 
 # 3. Apply the proposed fix
-/speckit.bug.fix slug=callback-token
+/speckit-bug-fix slug=callback-token
 
 # 4. Validate the fix
-/speckit.bug.test slug=callback-token
+/speckit-bug-test slug=callback-token
 ```
 
 ## Guardrails
@@ -73,6 +85,7 @@ specify extension enable bug
 - `speckit.bug.assess` and `speckit.bug.test` **never modify source code**. They read the repository and write only inside `.specify/bugs/<slug>/`.
 - `speckit.bug.fix` is the only command that edits source code, and it stays within the files listed in the assessment unless new evidence requires expanding scope (which is logged in `fix.md` under **Deviations from Assessment**).
 - None of the commands overwrite an existing report file without explicit confirmation; in automated mode they refuse and pick a new unique slug instead.
+- Re-assessing a bug that already has `fix.md` / `test.md` never deletes those reports. After a confirmed assessment overwrite they describe the superseded assessment: interactive mode offers to rename them to `fix.stale.md` / `test.stale.md`, and `speckit.bug.test` refuses to validate a `fix.md` that predates the current `assessment.md`.
 - Verdicts and verification results are never over-claimed: a reproduction that was not actually performed is reported as `partial` or `not-run`, not `verified`.
 
 ## Hooks
