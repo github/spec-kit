@@ -1726,8 +1726,9 @@ class TestGitHubCliAuthenticatedHttp:
             result = CliRunner().invoke(app, ["self", command])
 
         assert result.exit_code == exit_code, result.output
-        assert detail in result.output
-        assert "offline or timeout" not in result.output
+        output = " ".join(result.output.split())
+        assert detail in output
+        assert "offline or timeout" not in output
         build_opener.assert_not_called()
         run.assert_not_called()
 
