@@ -54,7 +54,9 @@ def bundle_install(
 
     ``bundle_id`` may be a catalog bundle id, or a local path to a built
     artifact (``.zip``), a bundle directory, or a ``bundle.yml`` file. Local
-    sources install directly without consulting the catalog stack. Use
+    sources install directly without consulting the catalog stack, unless
+    the manifest declares ``provides.bundles``: a local parent's references
+    resolve through the catalog stack and need network access. Use
     ``--refresh`` to update owned components from a newer local source.
     """
     try:

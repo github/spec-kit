@@ -59,6 +59,17 @@ def test_reference_values_are_stripped_and_version_coerced_to_text():
     assert manifest.bundles == [BundleRef("bugfix", "1.0.1", "default")]
 
 
+@pytest.mark.parametrize("blank", [None, "", " ", "\t "])
+def test_blank_reference_source_and_version_are_unset(blank):
+    manifest = _manifest(
+        reference_manifest_dict(
+            [{"id": "bugfix", "version": blank, "source": blank}]
+        )
+    )
+
+    assert manifest.bundles == [BundleRef("bugfix", None, None)]
+
+
 def test_components_stay_own_only_when_bundles_declared():
     manifest = _manifest(
         reference_manifest_dict(

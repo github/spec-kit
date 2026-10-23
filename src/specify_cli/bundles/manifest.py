@@ -358,11 +358,18 @@ def _parse_bundle_refs(raw: Any) -> list[BundleRef]:
         refs.append(
             BundleRef(
                 id=_text(item.get("id")),
-                version=(str(item["version"]).strip() if item.get("version") else None),
-                source=(str(item["source"]).strip() if item.get("source") else None),
+                version=_optional_text(item.get("version")),
+                source=_optional_text(item.get("source")),
             )
         )
     return refs
+
+
+def _optional_text(raw: Any) -> str | None:
+    """Stripped text, with unset, empty and whitespace-only values as ``None``."""
+    if not raw:
+        return None
+    return str(raw).strip() or None
 
 
 def _parse_priority(kind: str, raw: Any) -> int | None:
