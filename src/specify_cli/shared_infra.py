@@ -342,7 +342,10 @@ def _write_shared_bytes(
         os.replace(temp_path, dest)
         after_file_change(dest)
     finally:
-        temp_path.unlink(missing_ok=True)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 _BASH_FORMAT_COMMAND_RE = re.compile(
