@@ -34,6 +34,10 @@ After resolution, set `BUG_SLUG` and `BUG_DIR = .specify/bugs/<BUG_SLUG>`.
 
 - Ensure the directory `.specify/bugs/<BUG_SLUG>/` (i.e., `BUG_DIR`) exists, creating it (including any missing parents) if necessary. Use whatever mechanism is appropriate for the current environment.
 - If `BUG_DIR/assessment.md` already exists, ask the user whether to overwrite it before continuing (in interactive mode); in automated mode, refuse and pick a new unique slug instead.
+- If an overwrite is confirmed (interactive mode) and `BUG_DIR` also contains `fix.md` or `test.md` from an earlier run of this workflow, those reports describe the superseded assessment. After writing the new `assessment.md`, ask the user what to do with them:
+  - Offer to rename the older reports to `fix.stale.md` and `test.stale.md` so `__SPECKIT_COMMAND_BUG_TEST__` cannot mistake them for reports of the current assessment. If a `.stale.md` name is already taken, disambiguate with a short suffix instead of overwriting it. Renaming preserves the history — never delete the files.
+  - If the user declines the rename, leave the files untouched and call them out as stale in the Completion Report.
+  - In automated mode nothing changes: the overwrite is refused and a new unique slug is chosen instead, so the existing reports are never left inconsistent with `assessment.md`.
 
 ## Safety When Fetching URLs
 
@@ -250,4 +254,5 @@ Check if `.specify/extensions.yml` exists in the project root.
 - Never modify source files during assessment — this command only reads and writes inside `.specify/bugs/<slug>/`.
 - Never invent reproduction steps or file paths that are not supported by either the report or the codebase.
 - Never overwrite an existing `assessment.md` without confirmation.
+- Never delete sibling reports left by an earlier triage: when re-assessing, offer to rename them to `fix.stale.md` / `test.stale.md` or flag them as stale in the Completion Report.
 - If the bug report cannot be understood at all (empty, unrelated, spam), set verdict to `invalid` with a clear reason and stop.

@@ -7,6 +7,10 @@ Validates:
 - Install via ``ExtensionManager.install_from_directory`` copies the three
   command files and records them in the installed manifest (command
   registration with AI agents is exercised separately and not asserted here)
+- Command-template guardrails for re-assessed bugs: the README documents the
+  installed (hyphenated) skill names, re-assessment offers to rename the old
+  fix/test reports instead of deleting them, and validation refuses a fix
+  report older than the current assessment
 """
 
 from __future__ import annotations
@@ -51,6 +55,19 @@ class TestExtensionLayout:
         assert readme.is_file()
         text = readme.read_text(encoding="utf-8")
         assert "Bug Triage Workflow Extension" in text
+
+    def test_readme_documents_installed_skill_names(self):
+        """The README shows the hyphenated names agents install the commands as."""
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        for installed in ("speckit-bug-assess", "speckit-bug-fix", "speckit-bug-test"):
+            assert installed in text
+
+    def test_readme_documents_per_agent_invocation_spellings(self):
+        """The README distinguishes slash, dollar, and skill-colon invocations."""
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        assert "/speckit-bug-assess" in text
+        assert "$speckit-bug-assess" in text
+        assert "/skill:speckit-bug-assess" in text
 
     def test_command_files_exist(self):
         for name in EXPECTED_COMMANDS:
@@ -111,3 +128,47 @@ class TestExtensionInstall:
 
         names = {c["name"] for c in manifest.commands}
         assert names == EXPECTED_COMMANDS
+
+
+# ── Stale-report guardrails ──────────────────────────────────────────────────
+
+
+class TestStaleReportGuardrails:
+    """Static checks for the re-assessment flow (stale fix/test reports).
+
+    Re-assessing a bug that already has ``fix.md`` / ``test.md`` must offer to
+    rename the older reports instead of deleting them, and validation must
+    refuse a fix report that predates the current assessment.
+    """
+
+    def test_assess_template_offers_stale_rename(self):
+        text = (EXT_DIR / "commands" / "speckit.bug.assess.md").read_text(
+            encoding="utf-8"
+        )
+        assert "fix.stale.md" in text
+        assert "test.stale.md" in text
+        assert "never delete" in text.lower()
+
+    def test_assess_template_flags_declined_reports_as_stale(self):
+        text = (EXT_DIR / "commands" / "speckit.bug.assess.md").read_text(
+            encoding="utf-8"
+        )
+        assert "stale" in text
+
+    def test_test_template_refuses_fix_older_than_assessment(self):
+        text = (EXT_DIR / "commands" / "speckit.bug.test.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Staleness check" in text
+        assert "__SPECKIT_COMMAND_BUG_FIX__ slug=" in text
+
+    def test_test_template_falls_back_to_modification_times(self):
+        text = (EXT_DIR / "commands" / "speckit.bug.test.md").read_text(
+            encoding="utf-8"
+        )
+        assert "modification times" in text
+
+    def test_readme_describes_stale_report_behavior(self):
+        text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+        assert "fix.stale.md" in text
+        assert "predates the current" in text
