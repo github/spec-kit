@@ -11,6 +11,7 @@ artifact command modules should not import the private helpers.
 
 from __future__ import annotations
 
+import ast
 import re
 import shlex
 from collections.abc import Iterable
@@ -139,7 +140,7 @@ def _extract_frontmatter_description(text: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _extract_script_description(text: str) -> str:
+def _extract_script_description(text: str, *, is_python: bool = False) -> str:
     """Return the first docstring/comment line of a script, else ``""``.
 
     Supports the three script runtimes Spec Kit ships:
@@ -152,6 +153,17 @@ def _extract_script_description(text: str) -> str:
 
     Anything unrecognized yields the empty string.
     """
+    if is_python:
+        # Coding declarations and license comments may precede a module's
+        # docstring. Parse without executing the project script so those
+        # comments are not mistaken for its user-facing description.
+        try:
+            description = ast.get_docstring(ast.parse(text))
+        except SyntaxError:
+            description = None
+        if description and description.strip():
+            return description.strip().splitlines()[0].strip()
+
     py_match = re.match(r'^(?:#![^\n]*\n)?\s*(?:"""|\'\'\')(.*?)(?:"""|\'\'\')', text, re.DOTALL)
     if py_match:
         first = py_match.group(1).strip().splitlines()
@@ -186,7 +198,7 @@ def _describe_artifact_file(path: Path, kind: ArtifactKind) -> str:
     except (OSError, UnicodeDecodeError):
         return ""
     if kind == "script":
-        return _extract_script_description(text)
+        return _extract_script_description(text, is_python=path.suffix == ".py")
     return _extract_frontmatter_description(text)
 
 
