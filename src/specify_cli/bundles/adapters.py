@@ -159,7 +159,7 @@ def make_catalog_fetcher(*, allow_network: bool = True):
             ) from None
         scheme = parsed.scheme.lower()
 
-        if scheme == "builtin":
+        if source.is_builtin:
             repository_url = _BUILTIN_REPOSITORY_URLS.get(url)
             if repository_url is None:
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")

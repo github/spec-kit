@@ -289,7 +289,7 @@ def test_catalog_loader_expansion_wraps_missing_release_and_source_failures():
         with pytest.raises(BundlerError) as excinfo:
             expand_manifest(
                 root,
-                CatalogBundleLoader(stack, offline=True, download=lambda *_args, **_kwargs: _manifest("bugfix")),
+                CatalogBundleLoader(stack, offline=False, download=lambda *_args, **_kwargs: _manifest("bugfix")),
             )
 
         message = str(excinfo.value)
@@ -382,9 +382,75 @@ def test_catalog_loader_missing_release_names_pin_and_offered_versions():
             r"2\.0\.0, 1\.0\.0\. Update the reference"
         ),
     ):
-        CatalogBundleLoader(stack, offline=True).load(
+        CatalogBundleLoader(stack, offline=False).load(
             BundleRef("bugfix", "0.9.0"), ("team",)
         )
+
+
+def _missing_release_stack(source):
+    return _catalog_stack(
+        [source],
+        {
+            source.id: catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.1")}
+            )
+        },
+    )
+
+
+def test_catalog_loader_offline_builtin_missing_release_recommends_retry():
+    stack = _missing_release_stack(_catalog_source("default", 1))
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    message = str(excinfo.value)
+    assert "'team' pins bugfix 1.0.2, but catalog 'default' offers 1.0.1." in message
+    assert "built-in catalog may be outdated" in message
+    assert "Re-run without --offline." in message
+    assert "Update the reference" not in message
+
+
+@pytest.mark.parametrize("offline", [True, False])
+def test_catalog_loader_non_builtin_missing_release_keeps_update_advice(offline):
+    # A local catalog named "default" must not be mistaken for the built-in one.
+    local = replace(_catalog_source("default", 1), url="/tmp/default-catalog.json")
+    stack = _missing_release_stack(local)
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=offline).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    message = str(excinfo.value)
+    assert "Update the reference to an advertised version." in message
+    assert "--offline" not in message
+
+
+def test_catalog_loader_offline_release_miss_depends_on_winning_source():
+    # The built-in catalog is configured, but a local source wins the lookup.
+    local = replace(_catalog_source("team", 1), url="/tmp/team-catalog.json")
+    builtin = _catalog_source("default", 20)
+    stack = _catalog_stack(
+        [local, builtin],
+        {
+            "team": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.1")}
+            ),
+            "default": catalog_payload(
+                {"bugfix": _resolved_catalog_entry(version="1.0.2")}
+            ),
+        },
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=True).load(
+            BundleRef("bugfix", "1.0.2"), ("team",)
+        )
+
+    assert "Update the reference to an advertised version." in str(excinfo.value)
 
 
 def test_catalog_loader_offline_missing_bundle_reports_network_limit():

@@ -298,3 +298,18 @@ def test_unreachable_source_raises_named_error():
     stack = CatalogStack([_source("bad", 1, "install-allowed")], fetcher)
     with pytest.raises(BundlerError, match="bad"):
         stack.resolve("anything")
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("builtin://default", True),
+        ("BUILTIN://community", True),
+        ("https://example.com/catalog.json", False),
+        ("file:///tmp/catalog.json", False),
+        ("/tmp/builtin://catalog.json", False),
+        ("https://[::1/catalog.json", False),
+    ],
+)
+def test_catalog_source_is_builtin_follows_url_scheme(url, expected):
+    assert _source("x", 1, "install-allowed", url=url).is_builtin is expected
