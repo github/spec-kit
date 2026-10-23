@@ -327,10 +327,13 @@ You can configure multiple entries for different hosts or organizations:
 1. For each outbound HTTP request, the URL hostname is matched against
    the `hosts` patterns in `auth.json`.
 2. If a match is found, the corresponding provider resolves the token
-   and attaches the appropriate `Authorization` header.
-3. If the request receives a 401 or 403, the next matching entry is tried.
-4. After all matching entries are exhausted, an unauthenticated request
-   is attempted as a final fallback.
+   and attaches the appropriate `Authorization` header. A `github-cli`
+   acquisition failure ends the request immediately, without trying later
+   matching entries or making an unauthenticated request.
+3. After successful token acquisition, if the request receives a 401 or 403,
+   the next matching entry is tried.
+4. After all matching entries are exhausted without an acquisition failure,
+   an unauthenticated request is attempted as a final fallback.
 5. On redirects, the `Authorization` header is stripped if the redirect
    target leaves the entry's declared hosts — preventing credential
    leakage to CDNs or third-party services.
