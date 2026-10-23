@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 
 from specify_cli import app
 from specify_cli.extensions import (
+    CommandRegistrar,
     ExtensionCatalog,
     ExtensionManager,
     HookExecutor,
@@ -380,6 +381,67 @@ class TestExtensionUpdateCLI:
             project_dir / ".specify" / "extensions" / "test-ext" / "linear-config.yml"
         ).read_text()
         assert restored_config_content == original_config_content
+
+    @pytest.mark.parametrize("previously_registered", [True, False])
+    def test_update_preserves_other_registered_integration(
+        self, tmp_path, previously_registered
+    ):
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "script": "sh"}), encoding="utf-8"
+        )
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        codex_skill = project_dir / ".agents" / "skills" / "speckit-test-ext-hello" / "SKILL.md"
+        if previously_registered:
+            commands = CommandRegistrar(project_dir).register_commands_for_agent(
+                "codex", manager.get_extension("test-ext"),
+                manager.extensions_dir / "test-ext", project_dir,
+            )
+            manager.registry.update("test-ext", {
+                "registered_commands": {
+                    **manager.registry.get("test-ext")["registered_commands"],
+                    "codex": commands,
+                }
+            })
+            assert codex_skill.is_file()
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        (v2_dir / "commands" / "hello.md").write_text(
+            "---\ndescription: Updated\n---\n\nUpdated content\n", encoding="utf-8"
+        )
+        zip_path = tmp_path / "test-ext-update.zip"
+        self._create_catalog_zip(zip_path, "2.0.0")
+
+        def fake_install_from_zip(self_obj, _zip_path, speckit_version, *, catalog_name=None):
+            return self_obj.install_from_directory(
+                v2_dir, speckit_version, catalog_name=catalog_name
+            )
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext", "name": "Test Extension", "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
+            result = CliRunner().invoke(
+                app, ["extension", "update", "test-ext"], input="y\n"
+            )
+
+        assert result.exit_code == 0, result.output
+        registered = ExtensionManager(project_dir).registry.get("test-ext")["registered_commands"]
+        if previously_registered:
+            assert "Updated content" in codex_skill.read_text(encoding="utf-8")
+            assert registered["codex"] == ["speckit.test-ext.hello"]
+        else:
+            assert not codex_skill.exists()
+            assert "codex" not in registered
 
     def test_update_installs_bundled_extension_from_local_copy(self, tmp_path):
         """A bundled extension (no download URL) updates from the copy shipped
