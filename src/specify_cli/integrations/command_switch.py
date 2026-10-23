@@ -46,6 +46,8 @@ def integration_switch(
     from .. import _print_cli_warning, _require_specify_project, _install_shared_infra_or_exit
 
     project_root = _require_specify_project()
+    from .._file_policy import project_files
+    files = project_files(project_root)
     target_integration = get_integration(target)
     if target_integration is None:
         console.print(f"[red]Error:[/red] Unknown integration '{target}'")
@@ -260,6 +262,7 @@ def integration_switch(
     _install_shared_infra_or_exit(
         project_root,
         selected_script,
+        files=files,
         force=refresh_shared_infra,
         refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(

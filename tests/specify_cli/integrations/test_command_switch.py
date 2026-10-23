@@ -745,7 +745,7 @@ class TestIntegrationSwitch:
         # Recovered file must NOT be overwritten — team content preserved.
         assert shared_script.read_bytes() == custom_bytes
 
-    def test_switch_skips_symlinked_parent_directory(self, tmp_path):
+    def test_switch_rejects_symlinked_parent_directory(self, tmp_path):
         """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
 
         Copilot follow-up on #2375: leaf-only symlink check let writes escape
@@ -775,8 +775,8 @@ class TestIntegrationSwitch:
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0
-        # Symlinked tree reported, not written through.
+        assert result.exit_code == 1
+        # Denied parents abort instead of warning and succeeding with skips.
         assert "symlink" in result.output.lower()
         # Outside dir contents unchanged.
         assert (outside / "common.sh").read_bytes() == sentinel

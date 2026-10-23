@@ -19,13 +19,15 @@ import typer
 from rich.markup import escape
 
 from .._console import console
+from .._file_policy import project_files
+from ..file_helper import FileHelper
 from ..integration_state import (
     default_integration_key,
     installed_integration_keys,
     try_read_integration_json,
 )
 from . import BUILTIN_INTEGRATION_KEYS, INTEGRATION_REGISTRY, installer
-from ._file_changes import file_change_observer
+from ._file_changes import directory_change_observer, file_change_observer
 
 _init_directory: ContextVar[tuple[Path, bool, list[Path]] | None] = ContextVar(
     "external_integration_init_directory", default=None
@@ -143,6 +145,8 @@ class _FileJournal:
         self.backup_bytes = 0
         self.backup_entries = 0
         self.directory_states: dict[Path, bool] = {}
+        self.created_directories: dict[Path, tuple[int, int]] = {}
+        self.pending_directories: set[Path] = set()
         for path in paths:
             self._remember_parents(path)
 
@@ -256,6 +260,25 @@ class _FileJournal:
         else:
             self.pending.add(path)
 
+    def observe_directory(self, path: Path, before: bool, removal: bool = False) -> None:
+        path = self.safe_path(path, allow_leaf_symlink=False)
+        if before:
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                raise installer.IntegrationInstallError(f"Directory changed before creation: {path}")
+            self._remember_parents(path)
+            self.directory_states[path] = False
+            self.pending_directories.add(path)
+        else:
+            entry = path.lstat()
+            if path not in self.pending_directories or not stat.S_ISDIR(entry.st_mode):
+                raise installer.IntegrationInstallError(f"Unobserved directory creation: {path}")
+            self.created_directories[path] = (entry.st_dev, entry.st_ino)
+            self.pending_directories.remove(path)
+
 
 def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
     conflicts = []
@@ -286,11 +309,55 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
             parent = path.parent
             boundary = root if path.is_relative_to(root) else Path.home().absolute()
             while parent != boundary and not journal.directory_states[parent]:
+                if parent in journal.created_directories:
+                    break
                 try:
                     parent.rmdir()
                 except OSError:
                     break
                 parent = parent.parent
+    for path, identity in sorted(journal.created_directories.items(), key=lambda item: len(item[0].parts), reverse=True):
+        journal.safe_path(path)
+        try:
+            entry = path.lstat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISDIR(entry.st_mode) or (entry.st_dev, entry.st_ino) != identity:
+            conflicts.append(path)
+            continue
+        try:
+            path.rmdir()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                raise
+            continue
+        # Legacy writers also create uncensused parents. Resume their existing
+        # empty-parent cleanup once deferred helper-created children are gone.
+        parent = path.parent
+        boundary = root if path.is_relative_to(root) else Path.home().absolute()
+        while parent != boundary and not journal.directory_states.get(parent, True):
+            if parent in journal.created_directories:
+                break
+            journal.safe_path(parent, allow_leaf_symlink=False)
+            try:
+                parent.rmdir()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
+                break
+            parent = parent.parent
+    for path in journal.pending_directories:
+        journal.safe_path(path)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            continue
+        else:
+            conflicts.append(path)
     return conflicts
 
 
@@ -298,11 +365,15 @@ def _restore_snapshots(root: Path, journal: _FileJournal) -> list[Path]:
 def _transaction(
     root: Path, target: str | None,
     expected_state: dict[str, Any] | None, expected_records: dict[str, dict[str, Any]],
-    *, creation_root: Path | None = None,
+    *, creation_root: Path | None = None, shared_files: FileHelper | None = None,
 ):
     """Journal operation-owned writes under an inter-process integration lock."""
+    from ..file_helper import UnsupportedPathError
     from ..shared_infra import _exclusive_project_lock
     from .manifest import IntegrationManifest
+
+    if shared_files is not None and shared_files.root.resolve() != root.resolve():
+        raise installer.IntegrationInstallError("Shared FileHelper must own the transaction project")
 
     folders = {
         ".specify/integrations", ".specify/templates", ".specify/scripts",
@@ -331,12 +402,20 @@ def _transaction(
     target_folder = (target_integration.config or {}).get("folder") if target_integration else None
     if target_folder:
         folders.add(target_folder.rstrip("/"))
-    paths = [
-        installer.safe_project_path(
-            root, folder, allow_leaf_symlink=folder in manifest_leaves and folder not in folders
-        )
-        for folder in sorted(folders | manifest_leaves)
-    ]
+    paths = []
+    for folder in sorted(folders | manifest_leaves):
+        if shared_files is not None and folder in {".specify/scripts", ".specify/templates", ".specify/.gitignore"}:
+            entry = shared_files.stat(folder, missing_ok=True)
+            expected = stat.S_ISREG if folder == ".specify/.gitignore" else stat.S_ISDIR
+            if entry is not None and not expected(entry.st_mode):
+                raise UnsupportedPathError(f"Shared infrastructure scope has an invalid type: {folder}")
+            # Retain lexical scope identity. The lstat census does not descend
+            # into a linked scope; helper callbacks journal actual target entries.
+            paths.append(root / folder)
+        else:
+            paths.append(installer.safe_project_path(
+                root, folder, allow_leaf_symlink=folder in manifest_leaves and folder not in folders
+            ))
     home_scopes = []
     for key in {*installed_integration_keys(state or {}), target} & BUILTIN_INTEGRATION_KEYS:
         integration = INTEGRATION_REGISTRY[key]
@@ -367,6 +446,7 @@ def _transaction(
                 )
             journal = _FileJournal(root, paths, backup, _initial_entries(paths), tuple(home_scopes))
             token = file_change_observer.set(journal.observe)
+            directory_token = directory_change_observer.set(journal.observe_directory)
             try:
                 with installer.event_recovery_transaction():
                     yield
@@ -375,6 +455,8 @@ def _transaction(
                     # Restoration itself must not add writes to the journal.
                     file_change_observer.reset(token)
                     token = None
+                    directory_change_observer.reset(directory_token)
+                    directory_token = None
                     conflicts = _restore_snapshots(root, journal)
                     if conflicts:
                         preserve_backup = True
@@ -393,6 +475,8 @@ def _transaction(
             finally:
                 if token is not None:
                     file_change_observer.reset(token)
+                if directory_token is not None:
+                    directory_change_observer.reset(directory_token)
     finally:
         if not preserve_backup:
             shutil.rmtree(backup)
@@ -488,9 +572,18 @@ def external_lifecycle(operation: str):
                         )
                         stack.callback(_init_directory.reset, token)
                     transaction = (
-                        _transaction(root, key, state, records, creation_root=creation_root)
+                        _transaction(
+                            root, key, state, records, creation_root=creation_root,
+                            shared_files=(
+                                FileHelper(root, allow_symlinks=values.get("allow_symlinks", False))
+                                if root.exists() else None
+                            ),
+                        )
                         if operation == "init"
-                        else _transaction(root, key, state, records)
+                        else _transaction(
+                            root, key, state, records,
+                            shared_files=project_files(root) if operation != "uninstall" else None,
+                        )
                     )
                     with transaction:
                         if recovery_token is not None and recovery_binding is None:
