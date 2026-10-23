@@ -97,6 +97,8 @@ Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
 using this mode. Specify runs the fixed command
 `gh auth token --hostname github.com` without a shell, caches the result in
 memory for the current process, and never writes the token to disk.
+Surrounding whitespace is trimmed; tokens containing embedded carriage returns
+or newlines are rejected without including the token in the error.
 
 For `github-cli` only, the **first hostname in `hosts`** is passed to
 `gh auth token --hostname`. Put `github.com` or your enterprise instance's

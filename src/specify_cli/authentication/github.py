@@ -136,4 +136,9 @@ class GitHubAuth(AuthProvider):
                 f"GitHub CLI returned an empty token for {hostname!r}. "
                 f"Run 'gh auth login --hostname {hostname}'."
             )
+        if "\r" in token or "\n" in token:
+            raise GitHubCliAuthError(
+                "GitHub authentication failed for provider 'github': "
+                f"GitHub CLI returned a malformed token for {hostname!r}."
+            )
         return token

@@ -794,6 +794,34 @@ class TestGitHubAuth:
         ), pytest.raises(GitHubCliAuthError, match="empty token"):
             GitHubAuth().resolve_token(_github_cli_entry())
 
+    @pytest.mark.parametrize("separator", ["\r", "\n", "\r\n"])
+    def test_github_cli_caches_sanitized_malformed_token_failure(self, separator):
+        from unittest.mock import MagicMock, patch
+
+        secret = "synthetic_credential"
+        result = MagicMock(returncode=0, stdout=f" {secret}{separator}extra\n")
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        provider = GitHubAuth()
+        messages = []
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=result,
+        ) as run:
+            for _ in range(2):
+                with pytest.raises(GitHubCliAuthError, match="malformed token") as exc_info:
+                    provider.resolve_token(_github_cli_entry())
+                messages.append(str(exc_info.value))
+                assert secret not in messages[-1]
+                assert "extra" not in messages[-1]
+
+        assert messages[0] == messages[1]
+        assert provider._github_cli_cache == {"github.com": (False, messages[0])}
+        run.assert_called_once()
+
     def test_github_cli_timeout_raises(self):
         import subprocess
         from unittest.mock import patch
