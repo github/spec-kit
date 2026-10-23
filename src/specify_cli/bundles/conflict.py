@@ -19,17 +19,20 @@ class ConflictReport:
         return self.integration_clash is not None or bool(self.version_clashes)
 
 
-def component_setting_differences(a: ComponentRef, b: ComponentRef) -> list[str]:
+def component_setting_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
     """Return install-affecting setting fields that differ between two refs.
 
-    Compares ``source``, ``priority`` for extensions and presets, and
-    ``strategy`` for presets only.
-    Versions are intentionally not compared.
+    Compares ``source``, ``priority`` for presets and, unless
+    *extension_priority* is false, extensions, and ``strategy`` for presets
+    only. Versions are intentionally not compared.
     """
     different = []
     if a.source != b.source:
         different.append("source")
-    if a.kind in ("extensions", "presets") and a.priority != b.priority:
+    priority_kinds = ("extensions", "presets") if extension_priority else ("presets",)
+    if a.kind in priority_kinds and a.priority != b.priority:
         different.append("priority")
     if a.kind == "presets" and a.strategy != b.strategy:
         different.append("strategy")

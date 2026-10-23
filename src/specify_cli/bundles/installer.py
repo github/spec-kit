@@ -330,7 +330,12 @@ def _check_installed_pins(
     for component in plan.components:
         key = component.kind, component.id
         for bundle_id, required in other_requirements.get(key, []):
-            different = component_setting_differences(component, required)
+            # Cross-bundle sharing keeps the flat-bundle rule: an omitted
+            # extension priority already means the default, so only preset
+            # priority is compared here.
+            different = component_setting_differences(
+                component, required, extension_priority=False
+            )
             if different:
                 raise BundlerError(
                     f"Cannot install or refresh shared {component.kind[:-1]} "

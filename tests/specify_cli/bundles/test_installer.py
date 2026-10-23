@@ -514,6 +514,53 @@ def test_shared_install_rejects_conflicting_preset_priority(tmp_path: Path):
     assert records_path(tmp_path).read_bytes() == before
 
 
+def _extension_bundle(bundle_id: str, *, priority: int | None = None) -> BundleManifest:
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = bundle_id
+    extension = {"id": "ext-shared", "version": "1.0.0"}
+    if priority is not None:
+        extension["priority"] = priority
+    data["provides"] = {"extensions": [extension]}
+    return BundleManifest.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("first_priority", "second_priority"),
+    [(None, 10), (10, None), (None, None), (5, 10), (10, 5)],
+)
+@pytest.mark.parametrize("refresh", [False, True])
+def test_flat_bundles_may_share_extension_with_any_priority(
+    tmp_path: Path, first_priority, second_priority, refresh
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _extension_bundle("first", priority=first_priority)
+    second = _extension_bundle("second", priority=second_priority)
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+    install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+    if refresh:
+        install_bundle(
+            tmp_path, _plan(second), installer, manifest=second, refresh=True
+        )
+
+    assert {record.bundle_id for record in load_records(tmp_path)} == {"first", "second"}
+
+
+def test_shared_extension_source_must_still_match(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first = _extension_bundle("first")
+    second = _extension_bundle("second")
+    second.extensions[0] = ComponentRef(
+        kind="extensions", id="ext-shared", version="1.0.0", source="other"
+    )
+    install_bundle(tmp_path, _plan(first), installer, manifest=first)
+
+    with pytest.raises(BundlerError, match="shared extension.*source"):
+        install_bundle(tmp_path, _plan(second), installer, manifest=second)
+
+
 def test_shared_refresh_allows_matching_install_requirements(tmp_path: Path):
     make_project(tmp_path)
     installer = FakeInstaller()
