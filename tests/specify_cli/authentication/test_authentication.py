@@ -1682,12 +1682,9 @@ class TestGitHubCliAuthenticatedHttp:
         assert "GitHub CLI ('gh') was not found" in warning
         build_opener.return_value.open.assert_called_once()
 
-    def test_release_check_handles_cli_failure_as_url_error(self):
+    def test_release_check_preserves_cli_failure_reason(self):
         from unittest.mock import patch
-        from specify_cli._version import (
-            _fetch_latest_release_tag,
-            _RESOLUTION_FAILURE_OFFLINE,
-        )
+        from specify_cli._version import _fetch_latest_release_tag
 
         with patch(
             "specify_cli.authentication.github.shutil.which",
@@ -1695,8 +1692,98 @@ class TestGitHubCliAuthenticatedHttp:
         ), patch(
             "specify_cli.authentication.http.urllib.request.build_opener",
         ) as build_opener:
-            assert _fetch_latest_release_tag() == (None, _RESOLUTION_FAILURE_OFFLINE)
+            tag, reason = _fetch_latest_release_tag()
 
+        assert tag is None
+        assert reason is not None
+        assert "GitHub CLI ('gh') was not found" in reason
+        assert "offline or timeout" not in reason
+
+        build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("detail", [
+        "GitHub CLI ('gh') was not found.",
+        "Run 'gh auth login --hostname github.com'.",
+    ])
+    @pytest.mark.parametrize("command,exit_code", [("check", 0), ("upgrade", 1)])
+    def test_release_commands_preserve_cli_failure(self, detail, command, exit_code):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app, _version
+
+        error = GitHubCliAuthError(
+            "GitHub authentication failed for provider 'github': " + detail
+        )
+        with patch.object(
+            GitHubAuth, "_acquire_via_gh_cli", side_effect=error,
+        ), patch.object(
+            _version, "_detect_install_method", return_value=_version._InstallMethod.UV_TOOL,
+        ), patch.object(
+            _version, "_get_installed_version", return_value="1.0.0",
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener, patch.object(_version.subprocess, "run") as run:
+            result = CliRunner().invoke(app, ["self", command])
+
+        assert result.exit_code == exit_code, result.output
+        assert detail in result.output
+        assert "offline or timeout" not in result.output
+        build_opener.assert_not_called()
+        run.assert_not_called()
+
+    @pytest.mark.parametrize("url", [
+        "builtin://default",
+        "https://github.com/org/repo/catalog.json",
+    ])
+    def test_bundle_catalog_auth_failure_does_not_use_snapshot(self, url):
+        from unittest.mock import patch
+        from specify_cli.bundles import BundlerError, adapters
+        from specify_cli.bundles.catalogs import CatalogSource, InstallPolicy
+
+        source = CatalogSource(
+            id="test", url=url, priority=1,
+            install_policy=InstallPolicy.INSTALL_ALLOWED,
+        )
+        with patch(
+            "specify_cli.authentication.github.shutil.which", return_value=None,
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener, patch.object(
+            adapters, "_load_packaged_catalog",
+        ) as snapshot, pytest.raises(BundlerError, match="was not found") as exc_info:
+            adapters.make_catalog_fetcher(allow_network=True)(source)
+
+        assert not isinstance(exc_info.value, adapters._CatalogUnavailable)
+        snapshot.assert_not_called()
+        build_opener.assert_not_called()
+
+    def test_bundle_reference_auth_failure_is_not_left_unchecked(self, tmp_path):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from specify_cli.bundles.manifest import ComponentRef
+        from specify_cli.bundles.references import make_reference_checker
+        from specify_cli.extensions import ExtensionCatalog
+
+        source = SimpleNamespace(
+            name="private", install_allowed=True,
+            url="https://github.com/org/repo/catalog.json",
+        )
+        warnings = []
+        with patch.object(
+            ExtensionCatalog, "get_active_catalogs", return_value=[source],
+        ), patch(
+            "specify_cli.authentication.github.shutil.which", return_value=None,
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
+            check = make_reference_checker(tmp_path, allow_network=True, warnings=warnings)
+            problem = check(ComponentRef(
+                kind="extensions", id="private-extension", version="1.0.0", source="private",
+            ))
+
+        assert problem is not None
+        assert "GitHub CLI ('gh') was not found" in problem
+        assert warnings == []
         build_opener.assert_not_called()
 
 

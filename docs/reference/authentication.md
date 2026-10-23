@@ -102,6 +102,10 @@ Credential acquisition failures fail the affected request without trying another
 credential or an unauthenticated request. They use the existing URL-error
 category, so callers retain their normal error handling (for example, warning
 and skipping an unavailable catalog).
+Release checks and upgrades preserve the authentication diagnostic rather than
+reporting a network outage. Online bundle catalog fetching and reference
+validation treat authentication failures as errors, not as availability
+fallbacks to packaged snapshots or unchecked references.
 
 For `github-cli` only, the **first hostname in `hosts`** is passed to
 `gh auth token --hostname`. Put `github.com` or your enterprise instance's
