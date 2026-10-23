@@ -1191,6 +1191,10 @@ def _load_run_state(run_id: str, project_root: Path) -> RunState:
         raise ValueError(f"Run not found: {run_id}") from None
     except OSError as exc:
         raise ValueError(str(exc)) from exc
+    except json.JSONDecodeError as exc:
+        # Newer interpreters report pathological nesting as a decode error
+        # rather than RecursionError.
+        raise ValueError(f"Invalid run state for {run_id}: {exc}") from None
     except RecursionError:
         raise ValueError(
             f"Invalid run state for {run_id}: nested too deeply"

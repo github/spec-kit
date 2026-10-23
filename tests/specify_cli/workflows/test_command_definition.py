@@ -703,6 +703,20 @@ class TestNegative:
             f"Invalid run state for {run['run_id']}",
         )
 
+    def test_decoder_error_on_state_returns_run_scoped_json_error(self, project_dir):
+        run = _run(project_dir, GATE_WF)
+        state = (
+            project_dir / ".specify" / "workflows" / "runs" / run["run_id"] / "state.json"
+        )
+        # Interpreters 3.13+ report pathological nesting as a decode error
+        # rather than RecursionError; plain invalid JSON exercises that path.
+        state.write_text("[", encoding="utf-8")
+
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]),
+            f"Invalid run state for {run['run_id']}",
+        )
+
     def test_node_budget_is_opt_in(self, capsys):
         from specify_cli.workflows import _commands
 
