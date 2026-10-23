@@ -1,6 +1,8 @@
 """Deterministic tests for bundle-reference expansion."""
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from specify_cli.bundles import BundlerError
@@ -814,3 +816,69 @@ def test_sibling_extension_priority_non_default_still_conflicts_with_omitted():
 
     with pytest.raises(BundlerError, match="priority"):
         expand_manifest(root, FakeBundleLoader(loaded(first, second)))
+
+
+def _agreeing_siblings_with_parent_override(order):
+    a = manifest("a", extensions=[{"id": "e", "version": "1.0.0"}])
+    b = manifest("b", extensions=[{"id": "e", "version": "1.0.0"}])
+    refs = [{"id": bundle_id, "version": "1.0.0"} for bundle_id in order]
+    root = manifest("root", bundles=refs, extensions=[{"id": "e", "version": "2.0.0"}])
+    return expand_manifest(root, FakeBundleLoader(loaded(a, b)))
+
+
+@pytest.mark.parametrize("order", [("a", "b"), ("b", "a")])
+def test_agreeing_siblings_are_both_recorded_when_parent_overrides(order):
+    expanded = _agreeing_siblings_with_parent_override(order)
+
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert sorted(item.origin for item in overrides) == [("a",), ("b",)]
+    (warning,) = expanded.warnings
+    assert "from root → a" in warning
+    assert "from root → b" in warning
+
+
+def test_agreeing_siblings_result_does_not_depend_on_order():
+    forward = _agreeing_siblings_with_parent_override(("a", "b"))
+    reverse = _agreeing_siblings_with_parent_override(("b", "a"))
+
+    def summary(expanded):
+        overrides = expanded.origins[("extensions", "e")].overrides
+        chains = re.findall(r"from (root → \w+)", expanded.warnings[0])
+        return sorted(overrides, key=str), sorted(chains)
+
+    assert summary(forward) == summary(reverse)
+
+
+def test_agreeing_siblings_declarations_survive_nested_routes():
+    a = manifest("a", extensions=[{"id": "e", "version": "1.0.0"}])
+    b = manifest("b", extensions=[{"id": "e", "version": "1.0.0"}])
+    mid = manifest(
+        "mid",
+        bundles=[{"id": "a", "version": "1.0.0"}, {"id": "b", "version": "1.0.0"}],
+    )
+    root = manifest(
+        "root",
+        bundles=[{"id": "mid", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(a, b, mid)))
+
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert sorted(item.origin for item in overrides) == [("mid", "a"), ("mid", "b")]
+
+
+def test_two_routes_to_one_declaring_bundle_stay_one_record():
+    shared = manifest("shared", extensions=[{"id": "e", "version": "1.0.0"}])
+    left = manifest("left", bundles=[{"id": "shared", "version": "1.0.0"}])
+    right = manifest("right", bundles=[{"id": "shared", "version": "1.0.0"}])
+    root = manifest(
+        "root",
+        bundles=[{"id": "left", "version": "1.0.0"}, {"id": "right", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(shared, left, right)))
+
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert [item.origin for item in overrides] == [("left", "shared")]

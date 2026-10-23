@@ -92,15 +92,25 @@ class ExpandedManifest:
 @dataclass(frozen=True)
 class _Entry:
     component: ComponentRef
-    origin: tuple[str, ...]
+    # One record per distinct declaring bundle whose copy agrees with
+    # ``component``; the route to each is relative to the current bundle.
+    declarations: tuple[ComponentOverride, ...]
     overrides: tuple[ComponentOverride, ...] = ()
+
+    @property
+    def origin(self) -> tuple[str, ...]:
+        """Shortest route to a declaring bundle, for display."""
+        return min(
+            (declaration.origin for declaration in self.declarations),
+            key=lambda origin: (len(origin), origin),
+        )
 
 
 @dataclass(frozen=True)
 class _OverrideNotice:
     component: ComponentRef
     declaring: tuple[str, ...]
-    replaced: tuple[_Entry, ...]
+    replaced: tuple[ComponentOverride, ...]
 
 
 @dataclass(frozen=True)
@@ -301,36 +311,16 @@ def _expand(
     # Apply the current bundle's own declarations after all referenced plans.
     for component in manifest.components:
         key = component.kind, component.id
-        own_entry = _Entry(component, ())
         existing = candidates.get(key, [])
-        if not existing:
-            candidates[key] = [own_entry]
-            ordered.append(key)
-            continue
-
-        replaced: list[_Entry] = []
-        inherited_overrides: list[ComponentOverride] = []
-        for entry in existing:
-            inherited_overrides.extend(entry.overrides)
-            if _component_differences(entry.component, component):
-                replaced.append(entry)
-        # Removing and re-adding gives an override the position of the own
-        # declaration, rather than the first referenced occurrence.
-        ordered.remove(key)
-        inherited = _merge_overrides(inherited_overrides)
-        candidates[key] = [_Entry(component, (), inherited)]
+        entry, notice = _declare_own(component, existing)
+        if existing:
+            # Removing and re-adding gives an override the position of the own
+            # declaration, rather than the first referenced occurrence.
+            ordered.remove(key)
+        candidates[key] = [entry]
         ordered.append(key)
-        if replaced:
-            direct_overrides = tuple(
-                ComponentOverride(entry.component, entry.origin) for entry in replaced
-            )
-            candidates[key] = [
-                _Entry(component, (), _merge_overrides(inherited, direct_overrides))
-            ]
-            _append_notice(
-                notices,
-                _OverrideNotice(component, (), tuple(replaced)),
-            )
+        if notice is not None:
+            _append_notice(notices, notice)
 
     if conflicts:
         raise BundlerError("Bundle component conflicts:\n" + "\n".join(conflicts))
@@ -374,21 +364,18 @@ def _merge_candidate(
         conflicts.append(_format_conflict(previous, entry, declaring_chain))
         return
 
-    # A shared dependency can arrive through multiple routes. Merge an
-    # agreeing copy into the existing candidate instead of retaining a
-    # duplicate override entry. Preserve the first component spelling and the
-    # shorter provenance, while keeping distinct override histories from both
-    # routes for `bundle info`.
+    # A shared dependency can arrive through multiple routes, and distinct
+    # bundles can declare the same component. Merge an agreeing copy into the
+    # existing candidate, keeping each distinct declaring bundle so a later
+    # override can name all of them. Preserve the first component spelling.
     for index, fields in enumerate(differences):
         if not fields:
             previous = existing[index]
-            overrides = _merge_overrides(previous.overrides, entry.overrides)
-            origin = (
-                entry.origin
-                if len(entry.origin) < len(previous.origin)
-                else previous.origin
+            existing[index] = _Entry(
+                previous.component,
+                _merge_declarations(previous.declarations, entry.declarations),
+                _merge_declarations(previous.overrides, entry.overrides),
             )
-            existing[index] = _Entry(previous.component, origin, overrides)
             return
 
     if key in own_keys:
@@ -396,27 +383,54 @@ def _merge_candidate(
         return
 
 
-def _merge_overrides(
-    *histories: tuple[ComponentOverride, ...] | list[ComponentOverride],
+def _merge_declarations(
+    *groups: tuple[ComponentOverride, ...] | list[ComponentOverride],
 ) -> tuple[ComponentOverride, ...]:
-    """Merge override histories to one record per discarded declaration.
+    """Merge declaration records to one per component and declaring bundle.
 
-    The declaration is identified by the discarded component and the bundle
-    that declared it; the route to it is display-only, so only the shortest
-    chain is kept. Without this, every route through a shared graph would add
-    its own copy and the history would grow exponentially.
+    This is the single rule for what counts as one declaration: the component
+    and the bundle that declared it. The route to it is display-only, so only
+    the shortest chain is kept, with ties broken on the chain itself so the
+    result does not depend on merge order. Routes to the same declaration
+    collapse (otherwise a shared graph grows exponentially), while distinct
+    declaring bundles stay separate records. It serves both the declarations
+    behind an entry and the override history discarded by a parent.
     """
-    best: dict[tuple[ComponentRef, str], ComponentOverride] = {}
-    for history in histories:
-        for override in history:
-            key = (override.component, override.origin[-1])
+    best: dict[tuple[ComponentRef, tuple[str, ...]], ComponentOverride] = {}
+    for group in groups:
+        for declaration in group:
+            key = (declaration.component, declaration.origin[-1:])
             current = best.get(key)
-            if current is None or (len(override.origin), override.origin) < (
+            if current is None or (len(declaration.origin), declaration.origin) < (
                 len(current.origin),
                 current.origin,
             ):
-                best[key] = override
+                best[key] = declaration
     return tuple(best.values())
+
+
+def _declare_own(
+    component: ComponentRef, existing: list[_Entry]
+) -> tuple[_Entry, _OverrideNotice | None]:
+    """Entry for a bundle's own declaration over any referenced copies.
+
+    Every declaration of a differing referenced copy is discarded and recorded,
+    one per declaring bundle. Agreeing copies are not overrides.
+    """
+    inherited = _merge_declarations(*(entry.overrides for entry in existing))
+    replaced = tuple(
+        declaration
+        for entry in existing
+        if _component_differences(entry.component, component)
+        for declaration in entry.declarations
+    )
+    entry = _Entry(
+        component,
+        (ComponentOverride(component, ()),),
+        _merge_declarations(inherited, replaced),
+    )
+    notice = _OverrideNotice(component, (), replaced) if replaced else None
+    return entry, notice
 
 
 def _stable_keys(ordered: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -424,14 +438,20 @@ def _stable_keys(ordered: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return sorted(ordered, key=lambda key: kind_order.get(key[0], len(kind_order)))
 
 
+def _prefix_declarations(
+    declarations: tuple[ComponentOverride, ...], prefix: tuple[str, ...]
+) -> tuple[ComponentOverride, ...]:
+    return tuple(
+        ComponentOverride(declaration.component, prefix + declaration.origin)
+        for declaration in declarations
+    )
+
+
 def _prefix_entry(entry: _Entry, prefix: tuple[str, ...]) -> _Entry:
     return _Entry(
         entry.component,
-        prefix + entry.origin,
-        tuple(
-            ComponentOverride(override.component, prefix + override.origin)
-            for override in entry.overrides
-        ),
+        _prefix_declarations(entry.declarations, prefix),
+        _prefix_declarations(entry.overrides, prefix),
     )
 
 
@@ -439,10 +459,7 @@ def _prefix_notice(notice: _OverrideNotice, prefix: tuple[str, ...]) -> _Overrid
     return _OverrideNotice(
         notice.component,
         prefix + notice.declaring,
-        tuple(
-            _Entry(entry.component, prefix + entry.origin, entry.overrides)
-            for entry in notice.replaced
-        ),
+        _prefix_declarations(notice.replaced, prefix),
     )
 
 
