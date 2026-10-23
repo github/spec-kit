@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import re
 import shlex
+import warnings
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
@@ -158,8 +159,10 @@ def _extract_script_description(text: str, *, is_python: bool = False) -> str:
         # docstring. Parse without executing the project script so those
         # comments are not mistaken for its user-facing description.
         try:
-            description = ast.get_docstring(ast.parse(text))
-        except SyntaxError:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                description = ast.get_docstring(ast.parse(text))
+        except (SyntaxError, RecursionError, MemoryError):
             description = None
         if description and description.strip():
             return description.strip().splitlines()[0].strip()
