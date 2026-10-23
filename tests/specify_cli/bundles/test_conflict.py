@@ -193,10 +193,10 @@ def test_setting_differences_ignores_versions():
     ) == []
 
 
-def test_setting_differences_ignores_preset_fields_for_non_presets():
+def test_setting_differences_reports_extension_priority_but_ignores_strategy():
     a = ComponentRef(kind="extensions", id="e", priority=1, strategy="append")
     b = ComponentRef(kind="extensions", id="e", priority=2, strategy="replace")
-    assert component_setting_differences(a, b) == []
+    assert component_setting_differences(a, b) == ["priority"]
 
 
 def test_setting_differences_reports_source_for_any_kind():

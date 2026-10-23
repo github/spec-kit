@@ -443,6 +443,23 @@ def test_offline_reference_failure_names_reference_and_chain(
     assert not (project / ".specify/bundle-records.json").exists()
 
 
+def test_local_reference_bundle_offline_names_reference_and_network_limit(project: Path):
+    parent = write_manifest(
+        project / "parent",
+        reference_manifest_dict(
+            [{"id": "missing-child", "version": "1.0.0"}], bundle_id="parent"
+        ),
+    )
+
+    result = runner.invoke(app, ["bundle", "install", str(parent), "--offline"])
+
+    assert result.exit_code == 1, result.output
+    output = " ".join(result.output.split())
+    assert "Cannot resolve bundle reference missing-child@1.0.0 (parent)" in output
+    assert "Network access disabled" in output
+    assert "not found in any configured catalog" not in output
+
+
 def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):
     bundle_dir = project / "mismatched-workflow-pin"
     (bundle_dir / "bundle.yml").parent.mkdir()

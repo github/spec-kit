@@ -193,6 +193,58 @@ def test_shared_dependency_override_is_merged_once():
     assert "root → second → dependency" not in expanded.warnings[0]
 
 
+def test_agreeing_copies_merge_override_histories_regardless_of_order():
+    leaf = manifest("leaf", extensions=[{"id": "shared", "version": "1.0.0"}])
+    plain = manifest("plain", extensions=[{"id": "shared", "version": "2.0.0"}])
+    overriding = manifest(
+        "overriding",
+        bundles=[{"id": "leaf", "version": "1.0.0"}],
+        extensions=[{"id": "shared", "version": "2.0.0"}],
+    )
+
+    for reference_ids in (("plain", "overriding"), ("overriding", "plain")):
+        root = manifest(
+            "root",
+            bundles=[{"id": bundle_id, "version": "1.0.0"} for bundle_id in reference_ids],
+        )
+        expanded = expand_manifest(
+            root, FakeBundleLoader(loaded(leaf, plain, overriding))
+        )
+
+        overrides = expanded.origins[("extensions", "shared")].overrides
+        assert [(item.component.version, item.origin) for item in overrides] == [
+            ("1.0.0", ("overriding", "leaf"))
+        ]
+
+
+def test_shorter_origin_preserves_agreeing_copy_override_history():
+    leaf = manifest("leaf", extensions=[{"id": "shared", "version": "1.0.0"}])
+    overriding = manifest(
+        "overriding",
+        bundles=[{"id": "leaf", "version": "1.0.0"}],
+        extensions=[{"id": "shared", "version": "2.0.0"}],
+    )
+    long = manifest("long", bundles=[{"id": "overriding", "version": "1.0.0"}])
+    plain = manifest("plain", extensions=[{"id": "shared", "version": "2.0.0"}])
+    root = manifest(
+        "root",
+        bundles=[
+            {"id": "long", "version": "1.0.0"},
+            {"id": "plain", "version": "1.0.0"},
+        ],
+    )
+
+    expanded = expand_manifest(
+        root, FakeBundleLoader(loaded(leaf, overriding, long, plain))
+    )
+
+    origin = expanded.origins[("extensions", "shared")]
+    assert origin.origin == ("plain",)
+    assert [(item.component.version, item.origin) for item in origin.overrides] == [
+        ("1.0.0", ("long", "overriding", "leaf"))
+    ]
+
+
 def test_agreeing_copy_keeps_first_component_spelling_and_shorter_origin():
     dependency = manifest("dependency", extensions=[{"id": "e", "version": "v1.0.0"}])
     first = manifest("first", bundles=[{"id": "dependency", "version": "1.0.0"}])
@@ -236,6 +288,24 @@ def test_own_override_records_all_fields_and_own_position():
     assert "priority 10 from root → child" in warning
     assert "strategy append from root → child" in warning
     assert expanded.warnings.count(warning) == 1
+
+
+def test_extension_priority_only_override_is_reported():
+    child = manifest(
+        "child", extensions=[{"id": "style", "version": "1.0.0", "priority": 10}]
+    )
+    root = manifest(
+        "root",
+        bundles=[{"id": "child", "version": "1.0.0"}],
+        extensions=[{"id": "style", "version": "1.0.0", "priority": 20}],
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(child)))
+
+    origin = expanded.origins[("extensions", "style")]
+    assert expanded.components[0].priority == 20
+    assert origin.overrides[0].origin == ("child",)
+    assert "priority 20 (root) overrides priority 10 from root → child" in expanded.warnings[0]
 
 
 def test_own_override_and_agreeing_copy_keep_own_positions():
@@ -289,6 +359,7 @@ def test_nested_override_is_resolved_before_parent_merge():
         ("extensions", {"version": "1.0.0"}, {"version": None}, "version", "1.0.0", "<unpinned>"),
         ("extensions", {"source": "a"}, {"source": "b"}, "source", "a", "b"),
         ("extensions", {"source": None}, {"source": "a"}, "source", "<unset>", "a"),
+        ("extensions", {"priority": 10}, {"priority": 20}, "priority", "10", "20"),
         ("presets", {"priority": 1}, {"priority": 2}, "priority", "1", "2"),
         ("presets", {"strategy": "append"}, {"strategy": "replace"}, "strategy", "append", "replace"),
     ],

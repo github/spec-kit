@@ -386,7 +386,7 @@ def test_catalog_loader_missing_release_names_pin_and_offered_versions():
         )
 
 
-def test_catalog_loader_propagates_unrelated_resolve_error():
+def test_catalog_loader_offline_missing_bundle_reports_network_limit():
     stack = _catalog_stack(
         [_catalog_source("default", 1)],
         {"default": catalog_payload({})},
@@ -398,9 +398,25 @@ def test_catalog_loader_propagates_unrelated_resolve_error():
         )
 
     assert str(excinfo.value) == (
+        "Network access disabled; cannot resolve bundle reference missing@0.9.0 "
+        "while offline. Re-run without --offline."
+    )
+
+
+def test_catalog_loader_online_missing_bundle_reports_catalog_miss():
+    stack = _catalog_stack(
+        [_catalog_source("default", 1)],
+        {"default": catalog_payload({})},
+    )
+
+    with pytest.raises(BundlerError) as excinfo:
+        CatalogBundleLoader(stack, offline=False).load(
+            BundleRef("missing", "0.9.0"), ("team",)
+        )
+
+    assert str(excinfo.value) == (
         "Bundle 'missing' was not found in any configured catalog."
     )
-    assert "pins" not in str(excinfo.value)
 
 
 def test_catalog_loader_propagates_offline_download_error():

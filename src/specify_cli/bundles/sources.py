@@ -11,7 +11,7 @@ from .._download_security import (
     read_response_limited,
 )
 from . import BundlerError
-from .catalog_stack import ReleaseNotFoundError
+from .catalog_stack import BundleNotFoundError, ReleaseNotFoundError
 from .expansion import LoadedBundle, SourceMismatchError
 from .manifest import BundleRef
 from .versioning import same_version
@@ -114,6 +114,14 @@ class CatalogBundleLoader:
         """
         try:
             resolved = self._stack.resolve(ref.id, ref.version)
+        except BundleNotFoundError as exc:
+            if self._offline:
+                raise BundlerError(
+                    f"Network access disabled; cannot resolve bundle reference "
+                    f"{ref.id}@{ref.version or '<unpinned>'} while offline. "
+                    "Re-run without --offline."
+                ) from exc
+            raise
         except ReleaseNotFoundError as exc:
             missing = _missing_release_error(ref, chain, exc)
             if missing is not None:

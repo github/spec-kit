@@ -22,6 +22,13 @@ from .catalogs import (
 CatalogFetcher = Callable[[CatalogSource], dict]
 
 
+class BundleNotFoundError(BundlerError):
+    """A bundle ID is absent from every configured catalog."""
+
+    def __init__(self, bundle_id: str) -> None:
+        super().__init__(f"Bundle '{bundle_id}' was not found in any configured catalog.")
+
+
 class ReleaseNotFoundError(BundlerError):
     """A requested release is absent from the winning catalog entry."""
 
@@ -112,9 +119,7 @@ class CatalogStack:
                     entry=selected.with_provenance(source),
                     source=source,
                 )
-        raise BundlerError(
-            f"Bundle '{bundle_id}' was not found in any configured catalog."
-        )
+        raise BundleNotFoundError(bundle_id)
 
     def search(self, query: str = "") -> list[ResolvedBundle]:
         """Return entries matching *query* (substring over id/name/role/tags/description).

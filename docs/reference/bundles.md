@@ -149,7 +149,8 @@ recursively in declaration order (depth-first), followed by the declaring
 bundle's own components, while preserving the existing extension, preset, step,
 and workflow grouping. A component is installed at most once per `kind:id`.
 Copies agree when their version and `source` match (omitted and set `source`
-values differ); preset copies must also have the same `priority` and `strategy`.
+values differ); extension and preset copies must also have the same `priority`,
+and preset copies must also have the same `strategy`.
 Other differences between sibling references are conflicts that must be fixed
 in the parent. At every level, a bundle's own declaration wins over its
 references, takes the declaration's position, and emits a warning describing
@@ -171,10 +172,13 @@ records. `bundle update` follows the parent's current manifest and its pinned
 references; remove and refresh retain the existing ownership and component
 lifecycle rules.
 
-Referenced manifests require network access. `install`, `info`, and `update`
-fail offline with the reference named; `validate --offline` warns once per
-declared reference that it was not expanded. `bundle build` performs only the
-structural checks for references and does not resolve or embed them.
+Referenced manifests require network access. For a local root manifest,
+`install` can identify the first reference and fail offline with that reference
+named. A catalog-root `install`, `info`, or `update` can instead fail earlier
+while fetching its catalog or root manifest, before any reference can be known.
+`validate --offline` warns once per declared reference that it was not expanded.
+`bundle build` performs only the structural checks for references and does not
+resolve or embed them.
 
 **Known limitations.**
 
@@ -285,7 +289,7 @@ specify bundle validate
 | `--path`     | Bundle directory or `bundle.yml` (default: current directory)       |
 | `--offline`  | Verify references against bundled/installed components only          |
 
-Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. For a reference-bearing manifest, online validation expands the complete reference graph and checks every component in the expanded plan, including structural, cycle, version, source, conflict, and install-policy checks. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; references that cannot be checked offline or because a catalog is unreachable produce warnings. In `--offline` mode, each declared bundle reference produces a warning that it was not expanded. If a higher-priority catalog is unreachable before a match is found, the lookup remains unverified; a lower-priority match cannot settle it. As with installation, legacy extension and preset entries advertising no version are accepted without verifying their pins.
+Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves at its pinned version. For a reference-bearing manifest, online validation expands the complete reference graph and checks every component in the expanded plan, including structural, cycle, version, source, conflict, and install-policy checks. References are checked against matching bundled or installed components and — when online — the exact release in the winning install-allowed catalog. An explicit `source` is verified against the winning catalog instead of resolving locally. Missing releases, mismatched sources, discovery-only sources, and malformed catalog metadata fail validation; references that cannot be checked offline or because a catalog is unreachable produce warnings. In `--offline` mode, each declared bundle reference produces a warning that it was not expanded. If a higher-priority catalog is unreachable before a match is found, the lookup remains unverified; a lower-priority match cannot settle it. Validation does not evaluate `requires.speckit_version` against the running CLI; `install` and `update` enforce that runtime compatibility gate. As with installation, legacy extension and preset entries advertising no version are accepted without verifying their pins.
 
 ## Build a Bundle Artifact
 

@@ -34,7 +34,7 @@ class ComponentRef:
     id: str
     version: str | None = None
     source: str | None = None
-    priority: int | None = None  # presets only
+    priority: int | None = None  # extensions and presets only
     strategy: str | None = None  # presets only
 
     def label(self) -> str:

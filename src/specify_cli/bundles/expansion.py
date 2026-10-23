@@ -373,15 +373,21 @@ def _merge_candidate(
 
     # A shared dependency can arrive through multiple routes. Merge an
     # agreeing copy into the existing candidate instead of retaining a
-    # duplicate override entry. Preserve the first component spelling while
-    # taking the shorter provenance and its inherited overrides.
+    # duplicate override entry. Preserve the first component spelling and the
+    # shorter provenance, while keeping distinct override histories from both
+    # routes for `bundle info`.
     for index, fields in enumerate(differences):
         if not fields:
             previous = existing[index]
-            if len(entry.origin) < len(previous.origin):
-                existing[index] = _Entry(
-                    previous.component, entry.origin, entry.overrides
-                )
+            overrides = tuple(
+                dict.fromkeys((*previous.overrides, *entry.overrides))
+            )
+            origin = (
+                entry.origin
+                if len(entry.origin) < len(previous.origin)
+                else previous.origin
+            )
+            existing[index] = _Entry(previous.component, origin, overrides)
             return
 
     if key in own_keys:

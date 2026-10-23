@@ -22,17 +22,17 @@ class ConflictReport:
 def component_setting_differences(a: ComponentRef, b: ComponentRef) -> list[str]:
     """Return install-affecting setting fields that differ between two refs.
 
-    Compares ``source`` and, for presets only, ``priority`` and ``strategy``.
+    Compares ``source``, ``priority`` for extensions and presets, and
+    ``strategy`` for presets only.
     Versions are intentionally not compared.
     """
     different = []
     if a.source != b.source:
         different.append("source")
-    if a.kind == "presets":
-        if a.priority != b.priority:
-            different.append("priority")
-        if a.strategy != b.strategy:
-            different.append("strategy")
+    if a.kind in ("extensions", "presets") and a.priority != b.priority:
+        different.append("priority")
+    if a.kind == "presets" and a.strategy != b.strategy:
+        different.append("strategy")
     return different
 
 

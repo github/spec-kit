@@ -76,6 +76,24 @@ def test_info_unknown_bundle_without_project_reports_not_found(
     assert "Spec Kit project" not in result.output
 
 
+def test_info_rejects_local_bundle_path_with_explicit_guidance(project: Path):
+    local_bundle = project / "local-bundle.yml"
+    local_bundle.write_text(
+        yaml.safe_dump(
+            reference_manifest_dict(
+                [{"id": "child", "version": "1.0.0"}], bundle_id="local"
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "info", str(local_bundle)])
+
+    assert result.exit_code == 1, result.output
+    assert "Local bundle preview is not supported" in result.output
+    assert "was not found in any configured catalog" not in result.output
+
+
 def test_info_renders_reference_provenance(project: Path, monkeypatch):
     parent_dir = project / "parent-bundle"
     child_dir = project / "child-bundle"
