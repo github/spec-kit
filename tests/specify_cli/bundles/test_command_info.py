@@ -139,6 +139,8 @@ def test_info_renders_reference_provenance(project: Path, monkeypatch):
             "source": "local",
             "install_policy": "install-allowed",
             "via": [],
+            "verified": True,
+            "trust": "verified",
         },
         {
             "id": "grandchild-bundle",
@@ -146,6 +148,8 @@ def test_info_renders_reference_provenance(project: Path, monkeypatch):
             "source": "local",
             "install_policy": "install-allowed",
             "via": ["child-bundle"],
+            "verified": True,
+            "trust": "verified",
         },
     ]
     component = next(c for c in payload["components"] if c["id"] == "child-extension")
@@ -155,9 +159,58 @@ def test_info_renders_reference_provenance(project: Path, monkeypatch):
     assert transitive["origin"] == ["child-bundle", "grandchild-bundle"]
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "References:" in text.output
-    assert "    - child-bundle v1.0.0 (local)" in text.output
-    assert "    - grandchild-bundle v1.0.0 (local; via child-bundle)" in text.output
+    assert "    - child-bundle v1.0.0 (local; verified)" in text.output
+    assert "    - grandchild-bundle v1.0.0 (local; verified; via child-bundle)" in text.output
     assert "overrides 1.0.0 from child-bundle" in text.output
+
+
+def test_info_exposes_trust_of_unverified_reference(project: Path, monkeypatch):
+    parent_dir = project / "parent-bundle"
+    child_dir = project / "child-bundle"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    parent_data = reference_manifest_dict([{"id": "child-bundle", "version": "1.0.0"}])
+    child_data = reference_manifest_dict(
+        [],
+        bundle_id="child-bundle",
+        extensions=[{"id": "child-extension", "version": "1.0.0"}],
+    )
+    child_data["bundle"]["version"] = "1.0.0"
+    parent_path.write_text(yaml.safe_dump(parent_data), encoding="utf-8")
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    catalog = project / "trust-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle", verified=True),
+            "child-bundle": catalog_entry_dict(
+                "child-bundle",
+                version="1.0.0",
+                download_url="https://example.com/child.zip",
+                verified=False,
+            ),
+        },
+    )
+    added = runner.invoke(app, ["bundle", "catalog", "add", str(catalog), "--id", "local"])
+    assert added.exit_code == 0, added.output
+
+    def fake_download(resolved, *, offline):
+        path = {"demo-bundle": parent_path, "child-bundle": child_path}[resolved.entry.id]
+        return BundleManifest.from_file(path)
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert (payload["verified"], payload["trust"]) == (True, "verified")
+    (reference,) = payload["references"]
+    assert (reference["verified"], reference["trust"]) == (False, "community")
+
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert "Trust: ✔ verified" in text.output
+    assert "    - child-bundle v1.0.0 (local; community)" in text.output
 
 
 def test_format_component_describes_setting_overrides():

@@ -166,7 +166,7 @@ def test_local_parent_installs_referenced_catalog_components(
     )
 
     resolved = SimpleNamespace(
-        entry=SimpleNamespace(id="child-pack"),
+        entry=SimpleNamespace(id="child-pack", verified=True),
         source=SimpleNamespace(id="test-catalog"),
         install_allowed=True,
     )
@@ -206,7 +206,7 @@ def test_install_rejects_reference_source_mismatch(project: Path, monkeypatch):
         ),
     )
     selected = SimpleNamespace(
-        entry=SimpleNamespace(id="child-pack"),
+        entry=SimpleNamespace(id="child-pack", verified=True),
         source=SimpleNamespace(id="winner"),
         install_allowed=True,
     )
@@ -242,12 +242,12 @@ def test_catalog_root_reference_install_builds_stack_once(
     child = BundleManifest.from_dict(child_data)
     selected = {
         "parent-pack": SimpleNamespace(
-            entry=SimpleNamespace(id="parent-pack"),
+            entry=SimpleNamespace(id="parent-pack", verified=True),
             source=SimpleNamespace(id="default"),
             install_allowed=True,
         ),
         "child-pack": SimpleNamespace(
-            entry=SimpleNamespace(id="child-pack"),
+            entry=SimpleNamespace(id="child-pack", verified=True),
             source=SimpleNamespace(id="default"),
             install_allowed=True,
         ),
@@ -312,7 +312,7 @@ def test_reference_only_parent_installs_without_own_components(
         ),
     )
     resolved = SimpleNamespace(
-        entry=SimpleNamespace(id="child-pack"),
+        entry=SimpleNamespace(id="child-pack", verified=True),
         source=SimpleNamespace(id="test-catalog"),
         install_allowed=True,
     )
@@ -354,7 +354,7 @@ def test_no_project_reference_gate_runs_before_init(tmp_path: Path, monkeypatch)
         ),
     )
     resolved = SimpleNamespace(
-        entry=SimpleNamespace(id="child-pack"),
+        entry=SimpleNamespace(id="child-pack", verified=True),
         source=SimpleNamespace(id="test-catalog"),
         install_allowed=True,
     )
@@ -393,7 +393,7 @@ def test_discovery_only_reference_is_rejected_with_parent_chain(
         ),
     )
     resolved = SimpleNamespace(
-        entry=SimpleNamespace(id="child-pack"),
+        entry=SimpleNamespace(id="child-pack", verified=True),
         source=SimpleNamespace(id="community"),
         install_allowed=False,
     )
@@ -421,7 +421,7 @@ def test_offline_reference_failure_names_reference_and_chain(
         ),
     )
     resolved = SimpleNamespace(
-        entry=SimpleNamespace(id="child"),
+        entry=SimpleNamespace(id="child", verified=True),
         source=SimpleNamespace(id="default"),
         install_allowed=True,
     )

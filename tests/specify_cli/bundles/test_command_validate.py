@@ -285,7 +285,7 @@ def test_validate_expands_references_and_checks_expanded_components(project: Pat
     )
     path = project / "bundle.yml"
     path.write_text(yaml.safe_dump(parent), encoding="utf-8")
-    selected = SimpleNamespace(entry=SimpleNamespace(id="child", version="1.0.0"), source=SimpleNamespace(id="default"), install_allowed=True)
+    selected = SimpleNamespace(entry=SimpleNamespace(id="child", version="1.0.0", verified=True), source=SimpleNamespace(id="default"), install_allowed=True)
 
     class Stack:
         def resolve(self, bundle_id, version=None):
@@ -324,7 +324,7 @@ def _write_reference_bundle(project: Path, references, *, bundle_id="parent", pr
 
 
 def _selected(bundle_id, *, install_allowed=True, source="default"):
-    return SimpleNamespace(entry=SimpleNamespace(id=bundle_id, version="1.0.0"), source=SimpleNamespace(id=source), install_allowed=install_allowed)
+    return SimpleNamespace(entry=SimpleNamespace(id=bundle_id, version="1.0.0", verified=True), source=SimpleNamespace(id=source), install_allowed=install_allowed)
 
 
 def test_validate_online_success(project: Path, monkeypatch):

@@ -138,6 +138,7 @@ class CatalogBundleLoader:
             manifest,
             resolved.source.id,
             resolved.install_allowed,
+            resolved.entry.verified,
         )
 
 

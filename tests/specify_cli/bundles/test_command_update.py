@@ -115,12 +115,12 @@ def test_update_refresh_removes_dropped_referenced_component(
     child = BundleManifest.from_dict(child_data)
     selected = {
         "parent": SimpleNamespace(
-            entry=SimpleNamespace(id="parent"),
+            entry=SimpleNamespace(id="parent", verified=True),
             source=SimpleNamespace(id="test-catalog"),
             install_allowed=True,
         ),
         "child": SimpleNamespace(
-            entry=SimpleNamespace(id="child"),
+            entry=SimpleNamespace(id="child", verified=True),
             source=SimpleNamespace(id="test-catalog"),
             install_allowed=True,
         ),
@@ -177,8 +177,8 @@ def test_update_follows_parent_reference_pin_bump(project: Path, monkeypatch):
     )
     child = BundleManifest.from_dict(child_data)
     selected = {
-        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent"), source=SimpleNamespace(id="default"), install_allowed=True),
-        "child": SimpleNamespace(entry=SimpleNamespace(id="child"), source=SimpleNamespace(id="default"), install_allowed=True),
+        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent", verified=True), source=SimpleNamespace(id="default"), install_allowed=True),
+        "child": SimpleNamespace(entry=SimpleNamespace(id="child", verified=True), source=SimpleNamespace(id="default"), install_allowed=True),
     }
 
     class Stack:
@@ -244,8 +244,8 @@ def test_update_escapes_reference_plan_warning_markup(
     )
     child = BundleManifest.from_dict(child_data)
     selected = {
-        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent"), source=SimpleNamespace(id="default"), install_allowed=True),
-        "child": SimpleNamespace(entry=SimpleNamespace(id="child"), source=SimpleNamespace(id="default"), install_allowed=True),
+        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent", verified=True), source=SimpleNamespace(id="default"), install_allowed=True),
+        "child": SimpleNamespace(entry=SimpleNamespace(id="child", verified=True), source=SimpleNamespace(id="default"), install_allowed=True),
     }
 
     class Stack:
@@ -298,8 +298,8 @@ def test_update_rejects_discovery_only_reference(project: Path, monkeypatch):
         provides={"extensions": []},
     ))
     selected = {
-        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent"), source=SimpleNamespace(id="default"), install_allowed=True),
-        "child": SimpleNamespace(entry=SimpleNamespace(id="child"), source=SimpleNamespace(id="community"), install_allowed=False),
+        "parent": SimpleNamespace(entry=SimpleNamespace(id="parent", verified=True), source=SimpleNamespace(id="default"), install_allowed=True),
+        "child": SimpleNamespace(entry=SimpleNamespace(id="child", verified=True), source=SimpleNamespace(id="community"), install_allowed=False),
     }
 
     class Stack:
@@ -329,7 +329,7 @@ def test_update_flat_plan_warnings_keep_existing_output(project: Path, monkeypat
     data["requires"]["tools"] = ["docker"]
     manifest = BundleManifest.from_dict(data)
     selected = SimpleNamespace(
-        entry=SimpleNamespace(id="flat"), source=SimpleNamespace(id="default"),
+        entry=SimpleNamespace(id="flat", verified=True), source=SimpleNamespace(id="default"),
         install_allowed=True,
     )
 

@@ -18,6 +18,7 @@ class LoadedBundle:
     manifest: BundleManifest
     source_id: str
     install_allowed: bool
+    verified: bool = False
 
 
 class BundleLoader(Protocol):
@@ -32,6 +33,7 @@ class ResolvedReference:
     install_allowed: bool
     via: tuple[str, ...]
     manifest: BundleManifest
+    verified: bool = False
 
 
 class SourceMismatchError(BundlerError):
@@ -130,6 +132,7 @@ class _ExpansionState:
             install_allowed=loaded.install_allowed,
             via=via,
             manifest=loaded.manifest,
+            verified=loaded.verified,
         )
         index = self._reference_indexes.get(ref.id)
         if index is None:
@@ -158,6 +161,7 @@ class _ExpansionState:
                     install_allowed=previous.install_allowed,
                     via=via,
                     manifest=previous.manifest,
+                    verified=previous.verified,
                 )
 
 

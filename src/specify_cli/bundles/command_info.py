@@ -241,6 +241,8 @@ def _reference_view(expanded) -> list[dict]:
                 "install-allowed" if reference.install_allowed else "discovery-only"
             ),
             "via": list(reference.via),
+            "verified": reference.verified,
+            "trust": _trust_level(reference.verified),
         }
         for reference in expanded.references
     ]
@@ -248,6 +250,7 @@ def _reference_view(expanded) -> list[dict]:
 
 def _format_reference(reference) -> str:
     label = f"{reference.id} v{reference.version} ({reference.source_id}"
+    label += f"; {_trust_level(reference.verified)}"
     if reference.via:
         label += f"; via {' → '.join(reference.via)}"
     if not reference.install_allowed:
