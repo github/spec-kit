@@ -280,11 +280,12 @@ def test_catalog_root_reference_install_builds_stack_once(
 def test_flat_local_install_never_builds_catalog_stack(project: Path, monkeypatch):
     bundle = write_manifest(project / "flat", valid_manifest_dict(provides={}))
 
-    monkeypatch.setattr(
-        command_install,
-        "_build_stack",
-        lambda *args, **kwargs: pytest.fail("flat local install built a catalog stack"),
-    )
+    def fail(*args, **kwargs):
+        pytest.fail("flat local install built a catalog stack")
+
+    # Both namespaces: command_install's alias and the one _expand_manifest uses.
+    monkeypatch.setattr(command_install, "_build_stack", fail)
+    monkeypatch.setattr(_commands, "_build_stack", fail)
 
     result = runner.invoke(app, ["bundle", "install", str(bundle), "--offline"])
 
