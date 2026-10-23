@@ -1,172 +1,45 @@
-"""The ``specify integration uninstall`` command."""
-from __future__ import annotations
+"""CLI adapter for ``specify integration uninstall``."""
 
+from __future__ import annotations
 
 import typer
 from rich.markup import escape
 
 from .._console import console
 from .._utils import _display_project_path
-from ..integration_state import default_integration_key as _default_integration_key, installed_integration_keys as _installed_integration_keys, integration_settings as _integration_settings
 from ._commands import integration_app
-from ._lifecycle import external_lifecycle, lifecycle_success
-from ._helpers import _MANIFEST_READ_ERRORS, _clear_init_options_for_integration, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
+from ._operation_uninstall import (
+    IntegrationUninstallError,
+    IntegrationUninstallRequest,
+    uninstall_integration,
+)
 
 
 @integration_app.command("uninstall")
-@external_lifecycle("uninstall")
 def integration_uninstall(
     key: str = typer.Argument(None, help="Integration key to uninstall (default: current integration)"),
     force: bool = typer.Option(False, "--force", help="Remove files even if modified"),
 ):
     """Uninstall an integration, safely preserving modified files."""
-    from . import get_integration
-    from .manifest import IntegrationManifest
     from .. import _require_specify_project
 
-    project_root = _require_specify_project()
-    current = _read_integration_json(project_root)
-    default_key = _default_integration_key(current)
-    installed_keys = _installed_integration_keys(current)
-
-    if key is None:
-        if not default_key:
-            console.print("[yellow]No integration is currently installed.[/yellow]")
-            raise typer.Exit(0)
-        key = default_key
-
-    if key not in installed_keys:
-        console.print(f"[red]Error:[/red] Integration '{key}' is not installed.")
-        raise typer.Exit(1)
-
-    integration = get_integration(key)
-
-    manifest_path = project_root / ".specify" / "integrations" / f"{key}.manifest.json"
-    if not manifest_path.exists():
-        console.print(f"[yellow]No manifest found for integration '{key}'. Nothing to uninstall.[/yellow]")
-        _unregister_extensions_for_agent(
-            project_root,
-            key,
-            continuing="Continuing with integration uninstall; extension artifacts may need manual cleanup.",
-        )
-        _unregister_presets_for_agent(
-            project_root,
-            key,
-            continuing="Continuing with integration uninstall; preset artifacts may need manual cleanup.",
-        )
-        remaining = [installed for installed in installed_keys if installed != key]
-        new_default = default_key if default_key != key else (remaining[0] if remaining else None)
-        if remaining:
-            if default_key == key and new_default and (new_integration := get_integration(new_default)):
-                raw_options, parsed_options = _resolve_integration_options(
-                    new_integration, current, new_default, None
-                )
-                _set_default_integration_or_exit(
-                    project_root,
-                    current,
-                    new_default,
-                    new_integration,
-                    remaining,
-                    raw_options=raw_options,
-                    parsed_options=parsed_options,
-                )
-                _register_extensions_for_agent(
-                    project_root,
-                    new_default,
-                    continuing="The fallback integration was selected, but extensions may need re-registration.",
-                )
-                _register_presets_for_agent(
-                    project_root,
-                    new_default,
-                    continuing="The fallback integration was selected, but presets may need re-registration.",
-                )
-            else:
-                _write_integration_json(
-                    project_root, new_default, remaining, _integration_settings(current)
-                )
-        else:
-            _remove_integration_json(project_root)
-        if default_key == key:
-            _clear_init_options_for_integration(project_root, key)
-        raise typer.Exit(0)
-
+    root = _require_specify_project()
     try:
-        manifest = IntegrationManifest.load(key, project_root)
-    except _MANIFEST_READ_ERRORS as exc:
-        console.print(f"[red]Error:[/red] Integration manifest for '{key}' is unreadable.")
-        console.print(f"Manifest: {manifest_path}")
-        console.print(
-            f"To recover, delete the unreadable manifest, run "
-            f"[cyan]specify integration uninstall {key}[/cyan] to clear stale metadata, "
-            f"then run [cyan]specify integration install {key}[/cyan] to regenerate."
-        )
-        console.print(f"[dim]Details:[/dim] {exc}")
-        raise typer.Exit(1)
-
-    if not integration:
-        console.print(
-            f"[yellow]Warning:[/yellow] Integration '{key}' not found "
-            "in registry. Falling back to manifest-based cleanup."
-        )
-        removed, skipped = manifest.uninstall(project_root, force=force)
-    else:
-        removed, skipped = integration.teardown(project_root, manifest, force=force)
-
-    # Extension/preset artifacts are tracked in their own registries, not the
-    # integration manifest, so teardown leaves them behind.
-    _unregister_extensions_for_agent(
-        project_root,
-        key,
-        continuing="Continuing with integration uninstall; extension artifacts may need manual cleanup.",
-    )
-    _unregister_presets_for_agent(
-        project_root,
-        key,
-        continuing="Continuing with integration uninstall; preset artifacts may need manual cleanup.",
-    )
-
-    remaining = [installed for installed in installed_keys if installed != key]
-    new_default = default_key if default_key != key else (remaining[0] if remaining else None)
-    if remaining:
-        if default_key == key and new_default and (new_integration := get_integration(new_default)):
-            raw_options, parsed_options = _resolve_integration_options(
-                new_integration, current, new_default, None
-            )
-            _set_default_integration_or_exit(
-                project_root,
-                current,
-                new_default,
-                new_integration,
-                remaining,
-                raw_options=raw_options,
-                parsed_options=parsed_options,
-            )
-            _register_extensions_for_agent(
-                project_root,
-                new_default,
-                continuing="The fallback integration was selected, but extensions may need re-registration.",
-            )
-            _register_presets_for_agent(
-                project_root,
-                new_default,
-                continuing="The fallback integration was selected, but presets may need re-registration.",
-            )
-        else:
-            _write_integration_json(
-                project_root, new_default, remaining, _integration_settings(current)
-            )
-    else:
-        _remove_integration_json(project_root)
-
-    if default_key == key:
-        _clear_init_options_for_integration(project_root, key)
-
-    name = (integration.config or {}).get("name", key) if integration else key
-    lifecycle_success(f"\n[green]✓[/green] Integration '{escape(str(name))}' uninstalled")
-    if removed:
-        console.print(f"  Removed {len(removed)} file(s)")
-    if skipped:
-        console.print(f"\n[yellow]⚠[/yellow]  {len(skipped)} modified file(s) were preserved:")
-        for path in skipped:
-            rel = _display_project_path(project_root, path)
-            console.print(f"    {rel}")
+        result = uninstall_integration(IntegrationUninstallRequest(root, key, force))
+    except IntegrationUninstallError as exc:
+        console.print(f"[red]Error:[/red] {escape(exc.message)}")
+        raise typer.Exit(1) from exc
+    if result.key is None:
+        console.print("[yellow]No integration is currently installed.[/yellow]")
+        return
+    for warning in result.warnings:
+        console.print(f"[yellow]Warning:[/yellow] {escape(warning)}")
+    if result.missing_manifest:
+        console.print(f"[yellow]No manifest found for integration '{escape(result.key)}'. Nothing to uninstall.[/yellow]")
+    console.print(f"\n[green]✓[/green] Integration '{escape(result.name)}' uninstalled")
+    if result.removed:
+        console.print(f"  Removed {len(result.removed)} file(s)")
+    if result.skipped:
+        console.print(f"\n[yellow]⚠[/yellow]  {len(result.skipped)} modified file(s) were preserved:")
+        for path in result.skipped:
+            console.print(f"    {_display_project_path(root, path)}")
