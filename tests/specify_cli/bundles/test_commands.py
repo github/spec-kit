@@ -109,3 +109,36 @@ def test_error_paths_escape_rich_markup(project: Path, argv: list, expected: str
     # A MarkupError would surface here as an exception rather than a clean exit.
     assert isinstance(result.exception, SystemExit)
     assert expected in strip_ansi(result.output)
+
+
+@pytest.mark.parametrize(
+    ("argv", "target"),
+    [
+        (
+            ["bundle", "install", "demo"],
+            "specify_cli.bundles.project.find_project_root",
+        ),
+        (
+            ["bundle", "update", "demo"],
+            "specify_cli.bundles.command_update.require_project_root",
+        ),
+    ],
+)
+def test_refresh_cli_shows_restoration_notes(monkeypatch, argv, target):
+    """``bundle install`` and ``bundle update`` show notes after the error."""
+    from specify_cli.bundles import BundlerError
+
+    def _boom(*_args, **_kwargs):
+        exc = BundlerError("primary failure")
+        exc.add_note("Could not restore step 'my-step' from backup '/tmp/bak'")
+        raise exc
+
+    monkeypatch.setattr(target, _boom)
+    result = runner.invoke(app, argv)
+    output = " ".join(strip_ansi(result.output).split())
+    assert result.exit_code == 1, result.output
+    assert "Error:" in output
+    assert "primary failure" in output
+    assert "Could not restore step 'my-step'" in output
+    assert "/tmp/bak" in output
+    assert output.index("primary failure") < output.index("Could not restore")
