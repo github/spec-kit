@@ -697,3 +697,76 @@ def test_component_difference_uses_strict_pinned_rules():
     assert _component_differences(
         ComponentRef("extensions", "e", "v1.0.0"), ComponentRef("extensions", "e", "1.0.0")
     ) == []
+
+
+def _layered_override_graph(layers: int):
+    """Build `layers` of two-way sharing above one bundle that overrides a leaf."""
+    def refs(*ids):
+        return [{"id": item, "version": "1.0.0"} for item in ids]
+
+    bundles = [
+        manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}]),
+        manifest(
+            "base",
+            bundles=refs("leaf"),
+            extensions=[{"id": "e", "version": "2.0.0"}],
+        ),
+    ]
+    previous: tuple[str, ...] = ("base",)
+    for layer in range(layers):
+        current = (f"l{layer}a", f"l{layer}b")
+        bundles.extend(manifest(name, bundles=refs(*previous)) for name in current)
+        previous = current
+    return bundles, previous
+
+
+@pytest.mark.parametrize("layers", [1, 4, 7])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_layered_sharing_keeps_one_override_per_declaration(layers, reverse):
+    bundles, top = _layered_override_graph(layers)
+    ordered = tuple(reversed(top)) if reverse else top
+    root = manifest(
+        "root", bundles=[{"id": name, "version": "1.0.0"} for name in ordered]
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(*bundles)))
+
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert len(overrides) == 1
+    assert overrides[0].component.version == "1.0.0"
+    expected_chain = (
+        tuple(f"l{layer}a" for layer in reversed(range(layers))) + ("base", "leaf")
+    )
+    assert overrides[0].origin == expected_chain
+
+
+def test_distinct_discarded_declarations_stay_separate_records():
+    first = manifest("first", extensions=[{"id": "e", "version": "1.0.0"}])
+    second = manifest("second", extensions=[{"id": "e", "version": "3.0.0"}])
+    base = manifest(
+        "base",
+        bundles=[
+            {"id": "first", "version": "1.0.0"},
+            {"id": "second", "version": "1.0.0"},
+        ],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+    left = manifest("left", bundles=[{"id": "base", "version": "1.0.0"}])
+    right = manifest("right", bundles=[{"id": "base", "version": "1.0.0"}])
+    root = manifest(
+        "root",
+        bundles=[
+            {"id": "left", "version": "1.0.0"},
+            {"id": "right", "version": "1.0.0"},
+        ],
+    )
+
+    expanded = expand_manifest(
+        root, FakeBundleLoader(loaded(first, second, base, left, right))
+    )
+
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert sorted((item.component.version, item.origin) for item in overrides) == [
+        ("1.0.0", ("left", "base", "first")),
+        ("3.0.0", ("left", "base", "second")),
+    ]

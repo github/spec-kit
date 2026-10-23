@@ -313,16 +313,15 @@ def _expand(
         # Removing and re-adding gives an override the position of the own
         # declaration, rather than the first referenced occurrence.
         ordered.remove(key)
-        candidates[key] = [
-            _Entry(component, (), tuple(inherited_overrides))
-        ]
+        inherited = _merge_overrides(inherited_overrides)
+        candidates[key] = [_Entry(component, (), inherited)]
         ordered.append(key)
         if replaced:
             direct_overrides = tuple(
                 ComponentOverride(entry.component, entry.origin) for entry in replaced
             )
             candidates[key] = [
-                _Entry(component, (), tuple(inherited_overrides) + direct_overrides)
+                _Entry(component, (), _merge_overrides(inherited, direct_overrides))
             ]
             _append_notice(
                 notices,
@@ -379,9 +378,7 @@ def _merge_candidate(
     for index, fields in enumerate(differences):
         if not fields:
             previous = existing[index]
-            overrides = tuple(
-                dict.fromkeys((*previous.overrides, *entry.overrides))
-            )
+            overrides = _merge_overrides(previous.overrides, entry.overrides)
             origin = (
                 entry.origin
                 if len(entry.origin) < len(previous.origin)
@@ -393,6 +390,29 @@ def _merge_candidate(
     if key in own_keys:
         existing.append(entry)
         return
+
+
+def _merge_overrides(
+    *histories: tuple[ComponentOverride, ...] | list[ComponentOverride],
+) -> tuple[ComponentOverride, ...]:
+    """Merge override histories to one record per discarded declaration.
+
+    The declaration is identified by the discarded component and the bundle
+    that declared it; the route to it is display-only, so only the shortest
+    chain is kept. Without this, every route through a shared graph would add
+    its own copy and the history would grow exponentially.
+    """
+    best: dict[tuple[ComponentRef, str], ComponentOverride] = {}
+    for history in histories:
+        for override in history:
+            key = (override.component, override.origin[-1])
+            current = best.get(key)
+            if current is None or (len(override.origin), override.origin) < (
+                len(current.origin),
+                current.origin,
+            ):
+                best[key] = override
+    return tuple(best.values())
 
 
 def _stable_keys(ordered: list[tuple[str, str]]) -> list[tuple[str, str]]:
