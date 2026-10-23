@@ -4,7 +4,7 @@ The Specify CLI (`specify`) manages the full lifecycle of Spec-Driven Developmen
 
 ## Core Commands
 
-The foundational commands for creating and managing Spec Kit projects. Initialize a new project with the necessary directory structure, templates, and scripts. Verify that your system has the required tools installed. Check version and system information.
+The foundational commands for creating and managing Spec Kit projects. Initialize a new project with the necessary directory structure, templates, and scripts. Uninstall with `specify destroy`, removing project-local tooling and SDD artifacts by default, or use `--preserve-all` to retain the constitution and feature specifications. Verify that your system has the required tools installed. Check version and system information.
 
 [Core Commands reference →](core.md)
 
