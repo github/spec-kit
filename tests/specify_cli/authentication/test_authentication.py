@@ -819,7 +819,9 @@ class TestGitHubAuth:
                 assert "extra" not in messages[-1]
 
         assert messages[0] == messages[1]
-        assert provider._github_cli_cache == {"github.com": (False, messages[0])}
+        assert provider._github_cli_cache == {
+            "github.com": (False, exc_info.value.reason),
+        }
         run.assert_called_once()
 
     def test_github_cli_timeout_raises(self):
@@ -1610,6 +1612,91 @@ class TestGitHubCliAuthenticatedHttp:
         resolve.assert_called_once_with(entry)
         which.assert_called_once_with("gh")
         run.assert_not_called()
+        build_opener.assert_not_called()
+
+    @pytest.mark.parametrize("target,expected_auth", [
+        ("https://codeload.github.com/org/repo/zip", "Bearer cli-token"),
+        ("https://unlisted.example.com/archive.zip", None),
+    ])
+    def test_open_url_wires_declared_redirect_hosts(self, target, expected_auth):
+        from unittest.mock import MagicMock, patch
+        from specify_cli.authentication import http
+
+        executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=executable,
+        ), patch(
+            "specify_cli.authentication.github.subprocess.run",
+            return_value=MagicMock(returncode=0, stdout="cli-token"),
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
+            http.open_url("https://github.com/org/repo/archive.zip")
+
+        handler = build_opener.call_args.args[0]
+        request = build_opener.return_value.open.call_args.args[0]
+        redirected = handler.redirect_request(
+            request, io.BytesIO(b""), 302, "Found", {}, target,
+        )
+        assert redirected is not None
+        assert redirected.get_header("Authorization") == expected_auth
+
+    def test_failed_cli_catalog_does_not_abort_other_catalogs(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        from unittest.mock import MagicMock, patch
+        from specify_cli.integrations import IntegrationCatalog, IntegrationCatalogEntry
+
+        catalog = IntegrationCatalog(tmp_path)
+        entries = [
+            IntegrationCatalogEntry(
+                url="https://github.com/org/private/catalog.json",
+                name="private", priority=1, install_allowed=True,
+            ),
+            IntegrationCatalogEntry(
+                url="https://catalog.example.com/catalog.json",
+                name="public", priority=2, install_allowed=True,
+            ),
+        ]
+        monkeypatch.setattr(catalog, "get_active_catalogs", lambda: entries)
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.geturl.return_value = entries[1].url
+        response.read.side_effect = io.BytesIO(json.dumps({
+            "schema_version": "1.0",
+            "integrations": {"example": {"name": "Example"}},
+        }).encode()).read
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=None,
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
+            build_opener.return_value.open.return_value = response
+            results = catalog.search()
+
+        assert [item["id"] for item in results] == ["example"]
+        warning = capsys.readouterr().err
+        assert "Could not fetch catalog 'private'" in warning
+        assert "GitHub CLI ('gh') was not found" in warning
+        build_opener.return_value.open.assert_called_once()
+
+    def test_release_check_handles_cli_failure_as_url_error(self):
+        from unittest.mock import patch
+        from specify_cli._version import (
+            _fetch_latest_release_tag,
+            _RESOLUTION_FAILURE_OFFLINE,
+        )
+
+        with patch(
+            "specify_cli.authentication.github.shutil.which",
+            return_value=None,
+        ), patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+        ) as build_opener:
+            assert _fetch_latest_release_tag() == (None, _RESOLUTION_FAILURE_OFFLINE)
+
         build_opener.assert_not_called()
 
 

@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 from typing import TYPE_CHECKING
+from urllib.error import URLError
 
 from .base import AuthProvider
 
@@ -30,7 +31,7 @@ def _is_safe_cli_hostname(hostname: str) -> bool:
     )
 
 
-class GitHubCliAuthError(RuntimeError):
+class GitHubCliAuthError(URLError):
     """Raised when GitHub CLI cannot provide a configured credential."""
 
 
@@ -67,7 +68,7 @@ class GitHubAuth(AuthProvider):
         try:
             token = self._acquire_via_gh_cli(credential_host)
         except GitHubCliAuthError as exc:
-            message = str(exc)
+            message = str(exc.reason)
             self._github_cli_cache[credential_host] = (False, message)
             raise GitHubCliAuthError(message) from None
 
