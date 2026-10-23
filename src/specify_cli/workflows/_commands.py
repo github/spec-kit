@@ -1069,27 +1069,25 @@ _MAX_JSON_NODES = 100000
 _MAX_JSON_BYTES = 5 * 1024 * 1024
 
 
-def _emit_workflow_json(
-    payload: dict[str, Any], *, max_nodes: int | None = None
-) -> None:
-    """Write a workflow payload as machine-readable JSON to stdout.
+def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
+    """Convert *payload* to plain JSON-representable values.
 
-    Uses the builtin ``print`` rather than ``console.print`` so Rich
-    markup interpretation, syntax highlighting, and line-wrapping can
-    never alter the emitted JSON. YAML-native scalars that JSON cannot
-    represent (e.g. dates), mapping keys, and non-finite floats are stringified,
-    so output is always plain JSON. Binary values are replaced by a
-    ``<binary: N bytes>`` placeholder rather than emitted, and sets become
-    lists sorted so that output does not depend on hash randomization.
+    YAML-native scalars that JSON cannot represent (e.g. dates), mapping
+    keys, and non-finite floats are stringified, so output is always plain
+    JSON. Binary values are replaced by a ``<binary: N bytes>`` placeholder
+    rather than emitted, and sets become lists sorted so that output does
+    not depend on hash randomization.
 
     JSON has no way to share a reference, so a YAML alias graph must be
     duplicated into a tree; a non-recursive alias DAG can therefore expand
     exponentially even though it is linear on disk. Cycle detection alone
     lets that terminate, so a caller emitting user-authored definitions passes
     ``max_nodes`` to bound the expansion instead of rejecting every reused
-    alias. The budget is opt-in: payloads such as ``workflow status --json``
-    grow with the number of runs and must not be capped. Excessive nesting
-    depth is always reported as ``ValueError``.
+    alias. Each call has its own node and byte budget, so independent
+    definitions can be budgeted separately. The budget is opt-in: payloads
+    such as ``workflow status --json`` grow with the number of runs and must
+    not be capped. Excessive nesting depth is always reported as
+    ``ValueError``.
     """
     remaining_nodes = max_nodes
     remaining_bytes = _MAX_JSON_BYTES if max_nodes is not None else None
@@ -1173,7 +1171,26 @@ def _emit_workflow_json(
         return text
 
     try:
-        text = json.dumps(plain_json(payload, set()), indent=2)
+        return plain_json(payload, set())
+    except RecursionError:
+        raise ValueError(
+            "Workflow JSON output is nested too deeply to represent"
+        ) from None
+
+
+def _emit_workflow_json(
+    payload: dict[str, Any], *, max_nodes: int | None = None
+) -> None:
+    """Write a workflow payload as machine-readable JSON to stdout.
+
+    Uses the builtin ``print`` rather than ``console.print`` so Rich
+    markup interpretation, syntax highlighting, and line-wrapping can
+    never alter the emitted JSON. See ``_plain_workflow_json`` for the
+    value conversion and the opt-in ``max_nodes`` budget.
+    """
+    plain = _plain_workflow_json(payload, max_nodes=max_nodes)
+    try:
+        text = json.dumps(plain, indent=2)
     except RecursionError:
         raise ValueError(
             "Workflow JSON output is nested too deeply to represent"

@@ -363,6 +363,42 @@ class TestComposition:
         _install(project_dir, "child", CHILD)
         return _run(project_dir, parent, "parent")
 
+    def test_budget_applies_per_definition_not_to_the_whole_response(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows import _commands
+
+        run = self._call_run(project_dir)
+        payload = json.loads(_definition(project_dir, run["run_id"]).stdout)
+
+        def nodes(value):
+            if isinstance(value, dict):
+                return 1 + sum(nodes(v) for v in value.values())
+            if isinstance(value, list):
+                return 1 + sum(nodes(v) for v in value)
+            return 1
+
+        sizes = [nodes(payload["definition"])] + [
+            nodes(s["definition"]) for s in payload["workflow_scopes"]
+        ]
+        # Each definition fits the budget on its own; together they do not.
+        budget = max(sizes)
+        assert sum(sizes) > budget
+        monkeypatch.setattr(_commands, "_MAX_JSON_NODES", budget)
+
+        result = _definition(project_dir, run["run_id"])
+
+        assert result.exit_code == 0, result.stderr
+        assert json.loads(result.stdout) == payload
+
+    def test_over_budget_single_definition_still_fails(self, project_dir, monkeypatch):
+        from specify_cli.workflows import _commands
+
+        run = self._call_run(project_dir)
+        monkeypatch.setattr(_commands, "_MAX_JSON_NODES", 3)
+
+        _assert_json_error(_definition(project_dir, run["run_id"]), "too large to represent")
+
     def test_bound_call_matches_status(self, project_dir):
         run = self._call_run(project_dir)
         assert run["status"] == "paused"

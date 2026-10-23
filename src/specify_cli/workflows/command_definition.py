@@ -50,16 +50,20 @@ def workflow_definition(
         emit_json_error(ValueError(f"Invalid workflow definition for run {state.run_id}: {exc}"))
 
     try:
+        # Budget each definition on its own: a run with many bound workflow
+        # calls grows the response without any alias expansion.
+        def plain(d):
+            return cli._plain_workflow_json(d.data, max_nodes=cli._MAX_JSON_NODES)
+
         cli._emit_workflow_json(
             {
                 "run_id": state.run_id,
-                "definition": definition.data,
+                "definition": plain(definition),
                 "workflow_scopes": [
-                    {"scope_path": path, "workflow_id": workflow_id, "definition": d.data}
+                    {"scope_path": path, "workflow_id": workflow_id, "definition": plain(d)}
                     for path, workflow_id, d in scopes
                 ],
-            },
-            max_nodes=cli._MAX_JSON_NODES,
+            }
         )
     except ValueError as exc:
         emit_json_error(exc)
