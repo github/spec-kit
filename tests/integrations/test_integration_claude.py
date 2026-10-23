@@ -79,6 +79,86 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
+    def test_setup_tracks_every_skill_in_manifest(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        created = integration.setup(tmp_path, manifest, script_type="sh")
+
+        created_skill_files = {
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
+            for path in created
+            if path.name.casefold() == "skill.md"
+        }
+        tracked_skill_files = set(manifest.files)
+        assert created_skill_files <= tracked_skill_files
+        assert ".claude/skills/speckit-converge/SKILL.md" in manifest.files
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows path casing behavior")
+    def test_setup_tracks_skills_in_existing_mixed_case_paths(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        existing_skill = (
+            tmp_path / ".CLAUDE" / "Skills" / "SPECKIT-PLAN" / "skill.md"
+        )
+        existing_skill.parent.mkdir(parents=True)
+        existing_skill.write_text("existing skill\n", encoding="utf-8")
+
+        created = integration.setup(tmp_path, manifest, script_type="sh")
+
+        created_skill_files = {
+            path.resolve().relative_to(tmp_path.resolve()).as_posix()
+            for path in created
+            if path.name.casefold() == "skill.md"
+        }
+        assert created_skill_files <= set(manifest.files)
+        assert ".CLAUDE/Skills/SPECKIT-PLAN/skill.md" in manifest.files
+
+    def test_setup_fails_when_generated_skill_is_not_recorded(
+        self, tmp_path, monkeypatch
+    ):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+
+        def write_without_recording(content, dest, project_root, manifest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            return dest
+
+        monkeypatch.setattr(
+            integration, "write_file_and_record", write_without_recording
+        )
+
+        with pytest.raises(RuntimeError, match="does not track every generated"):
+            integration.setup(tmp_path, manifest, script_type="sh")
+
+    def test_setup_rejects_project_local_skills_symlink(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        target = tmp_path / "linked-skills"
+        target.mkdir()
+        skills_dir = tmp_path / ".claude" / "skills"
+        skills_dir.parent.mkdir()
+        try:
+            skills_dir.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        with pytest.raises(ValueError, match="symlinked"):
+            integration.setup(tmp_path, manifest, script_type="sh")
+
+        assert list(target.iterdir()) == []
+        assert manifest.files == {}
+
+    def test_setup_allows_additional_manifest_owned_skill(self, tmp_path):
+        integration = get_integration("claude")
+        manifest = IntegrationManifest("claude", tmp_path)
+        extra_skill = ".claude/skills/user-notes/SKILL.md"
+        manifest.record_file(extra_skill, "user-owned skill\n")
+
+        integration.setup(tmp_path, manifest, script_type="sh")
+
+        assert extra_skill in manifest.files
+
     def test_render_skill_unicode(self):
         """Test rendering a skill preserves non-ASCII characters."""
         integration = get_integration("claude")

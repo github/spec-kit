@@ -71,6 +71,40 @@ class TestHermesIntegration(SkillsIntegrationTests):
         """Override: Hermes writes to global, not project-local."""
         self.test_setup_writes_to_global_skills_dir(tmp_path, monkeypatch)
 
+    def test_all_skill_files_are_tracked_in_manifest(self, tmp_path, monkeypatch):
+        """Override: globally installed Hermes skills are not project-owned."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+
+        assert created
+        assert all(f.is_relative_to(home) for f in created)
+        assert not any(path.endswith("/SKILL.md") for path in m.files)
+
+    def test_reinit_tracks_new_skill_over_existing_install(self, tmp_path, monkeypatch):
+        """Override: Hermes skills stay global and untracked on re-init."""
+        home = _fake_home(tmp_path)
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+        i = get_integration(self.KEY)
+        skills_dir = home / ".hermes" / "skills"
+        for command in (
+            "analyze", "clarify", "constitution", "implement", "plan",
+            "checklist", "specify", "tasks", "taskstoissues",
+        ):
+            skill_file = skills_dir / f"speckit-{command}" / "SKILL.md"
+            skill_file.parent.mkdir(parents=True, exist_ok=True)
+            skill_file.write_text("existing skill\n", encoding="utf-8")
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+
+        assert any(path.parent.name == "speckit-converge" for path in created)
+        assert not any(path.endswith("/SKILL.md") for path in m.files)
+
     def test_plan_skill_has_no_context_placeholder(self, tmp_path, monkeypatch):
         """The core plan skill must not carry a context-file placeholder —
         agent context files are owned by the opt-in agent-context extension."""
