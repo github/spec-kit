@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.artifacts import catalog
 
 
 COMMANDS = [
@@ -49,11 +52,11 @@ def _assert_script_description(payload, command, expected):
 
 @pytest.mark.parametrize(
     "expression",
-    ["1+" * 9999 + "1", "+" * 6000 + "1"],
-    ids=["deep-addition", "deep-unary"],
+    ["1+" * 9999 + "1", "+" * 6000 + "1", "def broken(:", "\0"],
+    ids=["deep-addition", "deep-unary", "invalid-syntax", "nul-character"],
 )
 @pytest.mark.parametrize("command", COMMANDS)
-def test_parser_resource_failures_use_comment_fallback(
+def test_parser_failures_use_comment_fallback(
     spec_kit_project: Path,
     monkeypatch: pytest.MonkeyPatch,
     expression: str,
@@ -89,3 +92,33 @@ def test_metadata_parse_suppresses_warnings_without_changing_filters(
     assert result.stderr == ""
     assert emitted == []
     _assert_script_description(json.loads(result.stdout), command, "Deployment helper.")
+
+
+@pytest.mark.parametrize("command", COMMANDS)
+def test_legacy_nul_parser_value_error_uses_comment_fallback(
+    spec_kit_project: Path, monkeypatch: pytest.MonkeyPatch, command: list[str]
+):
+    _write_python_script(spec_kit_project, "# Deployment helper\n\0\n")
+    monkeypatch.chdir(spec_kit_project)
+    parse = ast.parse
+    filters = warnings.filters.copy()
+
+    def parse_with_legacy_nul_error(source, *args, **kwargs):
+        if isinstance(source, str) and "\0" in source:
+            raise ValueError("source code string cannot contain null bytes")
+        return parse(source, *args, **kwargs)
+
+    monkeypatch.setattr(
+        catalog,
+        "ast",
+        SimpleNamespace(
+            parse=parse_with_legacy_nul_error, get_docstring=ast.get_docstring
+        ),
+    )
+    result = CliRunner().invoke(app, command)
+
+    assert ast.parse is parse
+    assert warnings.filters == filters
+    assert result.exit_code == 0, result.exception
+    assert result.stderr == ""
+    _assert_script_description(json.loads(result.stdout), command, "Deployment helper")

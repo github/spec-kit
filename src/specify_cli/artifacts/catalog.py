@@ -162,7 +162,7 @@ def _extract_script_description(text: str, *, is_python: bool = False) -> str:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 description = ast.get_docstring(ast.parse(text))
-        except (SyntaxError, RecursionError, MemoryError):
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
             description = None
         if description and description.strip():
             return description.strip().splitlines()[0].strip()
