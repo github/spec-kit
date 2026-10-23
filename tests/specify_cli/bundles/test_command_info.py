@@ -76,24 +76,6 @@ def test_info_unknown_bundle_without_project_reports_not_found(
     assert "Spec Kit project" not in result.output
 
 
-def test_info_rejects_local_bundle_path_with_explicit_guidance(project: Path):
-    local_bundle = project / "local-bundle.yml"
-    local_bundle.write_text(
-        yaml.safe_dump(
-            reference_manifest_dict(
-                [{"id": "child", "version": "1.0.0"}], bundle_id="local"
-            )
-        ),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(app, ["bundle", "info", str(local_bundle)])
-
-    assert result.exit_code == 1, result.output
-    assert "Local bundle preview is not supported" in result.output
-    assert "was not found in any configured catalog" not in result.output
-
-
 def test_info_renders_reference_provenance(project: Path, monkeypatch):
     parent_dir = project / "parent-bundle"
     child_dir = project / "child-bundle"
@@ -216,6 +198,38 @@ def test_format_component_does_not_claim_unpinned_version_changed():
 
     assert "overrides source=lower from child-bundle" in text
     assert "overrides unpinned" not in text
+
+
+@pytest.mark.parametrize("extra_args", [[], ["--versions"]])
+def test_info_catalog_id_ignores_same_named_path(
+    project: Path, monkeypatch, extra_args: list[str]
+):
+    bundle_dir = project / "demo-bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    catalog = project / "local-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict(
+                "demo-bundle", download_url="https://example.com/demo-bundle.zip"
+            )
+        },
+    )
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
+    )
+    assert added.exit_code == 0, added.output
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
+
+    result = runner.invoke(
+        app, ["bundle", "info", "demo-bundle", "--offline", *extra_args]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "demo-bundle" in result.output
 
 
 def test_info_expands_full_component_set(project: Path, monkeypatch):

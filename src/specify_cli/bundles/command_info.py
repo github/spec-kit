@@ -34,11 +34,6 @@ def bundle_info(
 ) -> None:
     """Show full metadata and the fully expanded component set (== what install adds)."""
     try:
-        if Path(bundle_id).expanduser().exists():
-            raise BundlerError(
-                "Local bundle preview is not supported; 'specify bundle info' "
-                "accepts a catalog bundle ID. Add the bundle to a catalog to preview it."
-            )
         project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
