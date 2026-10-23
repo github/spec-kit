@@ -20,6 +20,7 @@ from ._commands import (
     _trust_level,
     bundle_app,
 )
+from .conflict import effective_setting
 from .project import find_project_root
 from .sources import _download_manifest
 from .versioning import same_version
@@ -288,8 +289,16 @@ def _format_override(item: dict, override: dict) -> str:
     ):
         changed.append(str(old_version) if old_version else "unpinned")
 
+    kind = item.get("kind")
     for field in ("source", "priority", "strategy"):
-        if override.get(field) != item.get(field):
+        if kind is None:
+            # Provenance without a kind compares raw values.
+            differs = override.get(field) != item.get(field)
+        else:
+            differs = effective_setting(
+                kind, field, override.get(field)
+            ) != effective_setting(kind, field, item.get(field))
+        if differs:
             value = override.get(field)
             changed.append(f"{field}={value if value is not None else '<unset>'}")
 

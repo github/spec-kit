@@ -20,11 +20,23 @@ class ConflictReport:
         return self.integration_clash is not None or bool(self.version_clashes)
 
 
-def _priority(ref: ComponentRef) -> int | None:
-    # An omitted extension priority installs as DEFAULT_PRIORITY.
-    if ref.kind == "extensions" and ref.priority is None:
-        return DEFAULT_PRIORITY
-    return ref.priority
+def effective_setting(
+    kind: str, field: str, value, *, extension_priority: bool = True
+):
+    """Return *value* as it affects install for a component of *kind*.
+
+    ``priority`` applies to presets and, when *extension_priority* is true,
+    extensions, where an omitted value installs as ``DEFAULT_PRIORITY``.
+    ``strategy`` applies to presets only. Settings that do not apply return
+    ``None``; ``source`` always applies.
+    """
+    if field == "priority":
+        if kind == "extensions" and extension_priority:
+            return DEFAULT_PRIORITY if value is None else value
+        return value if kind == "presets" else None
+    if field == "strategy":
+        return value if kind == "presets" else None
+    return value
 
 
 def component_setting_differences(
@@ -32,20 +44,19 @@ def component_setting_differences(
 ) -> list[str]:
     """Return install-affecting setting fields that differ between two refs.
 
-    Compares ``source``, ``priority`` for presets and, unless
-    *extension_priority* is false, extensions (omitted counts as the
-    default), and ``strategy`` for presets
-    only. Versions are intentionally not compared.
+    Compares ``source``, ``priority`` and ``strategy`` through
+    :func:`effective_setting`. Versions are intentionally not compared.
     """
-    different = []
-    if a.source != b.source:
-        different.append("source")
-    priority_kinds = ("extensions", "presets") if extension_priority else ("presets",)
-    if a.kind in priority_kinds and _priority(a) != _priority(b):
-        different.append("priority")
-    if a.kind == "presets" and a.strategy != b.strategy:
-        different.append("strategy")
-    return different
+    return [
+        field
+        for field in ("source", "priority", "strategy")
+        if effective_setting(
+            a.kind, field, getattr(a, field), extension_priority=extension_priority
+        )
+        != effective_setting(
+            b.kind, field, getattr(b, field), extension_priority=extension_priority
+        )
+    ]
 
 
 def detect_conflicts(

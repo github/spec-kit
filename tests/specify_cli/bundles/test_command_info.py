@@ -200,6 +200,45 @@ def test_format_component_does_not_claim_unpinned_version_changed():
     assert "overrides unpinned" not in text
 
 
+def _override_text(kind, item_fields, override_fields):
+    return _format_component(
+        {
+            "kind": kind,
+            "id": "shared",
+            "version": "2.0.0",
+            **item_fields,
+            "overrides": [
+                {"version": "1.0.0", "origin": ["child-bundle"], **override_fields}
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("item_fields", "override_fields"),
+    [({"priority": 10}, {}), ({}, {"priority": 10})],
+)
+def test_format_component_omitted_extension_priority_equals_default(item_fields, override_fields):
+    text = _override_text("extensions", item_fields, override_fields)
+    assert "overrides 1.0.0 from child-bundle" in text
+    assert "priority=" not in text.split("overrides", 1)[1]
+
+
+def test_format_component_extension_non_default_priority_is_reported():
+    text = _override_text("extensions", {"priority": 11}, {})
+    assert "overrides 1.0.0, priority=<unset> from child-bundle" in text
+
+
+def test_format_component_ignores_extension_strategy():
+    text = _override_text("extensions", {"strategy": "replace"}, {"strategy": "append"})
+    assert "strategy=" not in text.split("overrides", 1)[1]
+
+
+def test_format_component_preset_settings_still_compare_raw():
+    text = _override_text("presets", {"priority": 10, "strategy": "replace"}, {"strategy": "append"})
+    assert "overrides 1.0.0, priority=<unset>, strategy=append from child-bundle" in text
+
+
 @pytest.mark.parametrize("extra_args", [[], ["--versions"]])
 def test_info_catalog_id_ignores_same_named_path(
     project: Path, monkeypatch, extra_args: list[str]
@@ -1132,3 +1171,29 @@ def test_bundle_download_rejects_oversized_response(project: Path, monkeypatch):
     # Rich may wrap the message across lines; normalise whitespace before checking.
     output_flat = " ".join(result.output.split())
     assert "exceeds maximum size of 100 bytes" in output_flat
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "workflows"])
+@pytest.mark.parametrize(
+    ("field", "old", "new"),
+    [
+        ("priority", None, 10),
+        ("priority", 10, None),
+        ("priority", 1, 2),
+        ("strategy", None, "append"),
+        ("strategy", "append", "replace"),
+    ],
+)
+def test_override_marker_agrees_with_component_setting_differences(kind, field, old, new):
+    from specify_cli.bundles.conflict import component_setting_differences
+
+    def ref(value):
+        return ComponentRef(kind=kind, id="shared", **{field: value})
+
+    differs = field in component_setting_differences(ref(old), ref(new))
+    text = _override_text(
+        kind,
+        {} if new is None else {field: new},
+        {} if old is None else {field: old},
+    )
+    assert (f"{field}=" in text.split("overrides", 1)[1]) is differs
