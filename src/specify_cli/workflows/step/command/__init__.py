@@ -165,7 +165,13 @@ class CommandStep(StepBase):
                 return StepResult(status=StepStatus.FAILED, error=invalid_timeout)
             timeout = config.get("timeout", _DEFAULT_CAPTURE_TIMEOUT)
 
-        args_str = str(resolved_input.get("args", ""))
+        # A lone ``{{ }}`` block keeps its typed value, so an ``args`` reference
+        # with nothing behind it (an optional input that was not supplied, an
+        # output key the earlier step does not produce) is None. ``str()`` sent
+        # that to the agent as the text "None"; send no arguments instead, as
+        # for a missing 'args' key and as interpolation renders None in text.
+        raw_args = resolved_input.get("args", "")
+        args_str = "" if raw_args is None else str(raw_args)
         output: dict[str, Any] = {
             "command": command,
             "integration": integration,
