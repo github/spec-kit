@@ -95,8 +95,9 @@ Install [GitHub CLI](https://cli.github.com/) and run `gh auth login` before
 using this mode. Specify runs the fixed command
 `gh auth token --hostname github.com` without a shell, caches the result in
 memory for the current process, and never writes the token to disk.
-Surrounding whitespace is trimmed; tokens containing embedded carriage returns
-or newlines are rejected without including the token in the error.
+Surrounding whitespace is trimmed; tokens containing non-ASCII characters,
+embedded carriage returns, or newlines are rejected without including the
+token in the error.
 Credential acquisition failures fail the affected request without trying another
 credential or an unauthenticated request. They use the existing URL-error
 category, so callers retain their normal error handling (for example, warning

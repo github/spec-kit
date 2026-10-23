@@ -794,12 +794,12 @@ class TestGitHubAuth:
         ), pytest.raises(GitHubCliAuthError, match="empty token"):
             GitHubAuth().resolve_token(_github_cli_entry())
 
-    @pytest.mark.parametrize("separator", ["\r", "\n", "\r\n"])
-    def test_github_cli_caches_sanitized_malformed_token_failure(self, separator):
+    @pytest.mark.parametrize("invalid_text", ["\r", "\n", "\r\n", "\u00e9", "\u2603"])
+    def test_github_cli_caches_sanitized_malformed_token_failure(self, invalid_text):
         from unittest.mock import MagicMock, patch
 
         secret = "synthetic_credential"
-        result = MagicMock(returncode=0, stdout=f" {secret}{separator}extra\n")
+        result = MagicMock(returncode=0, stdout=f" {secret}{invalid_text}extra\n")
         executable = os.path.join(os.path.abspath(os.sep), "opt", "gh", "gh")
         provider = GitHubAuth()
         messages = []
