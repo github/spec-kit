@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .manifest import BundleManifest, ComponentRef
+from .primitives import DEFAULT_PRIORITY
 from .records import InstalledBundleRecord
 from .versioning import same_version
 
@@ -19,20 +20,28 @@ class ConflictReport:
         return self.integration_clash is not None or bool(self.version_clashes)
 
 
+def _priority(ref: ComponentRef) -> int | None:
+    # An omitted extension priority installs as DEFAULT_PRIORITY.
+    if ref.kind == "extensions" and ref.priority is None:
+        return DEFAULT_PRIORITY
+    return ref.priority
+
+
 def component_setting_differences(
     a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
 ) -> list[str]:
     """Return install-affecting setting fields that differ between two refs.
 
     Compares ``source``, ``priority`` for presets and, unless
-    *extension_priority* is false, extensions, and ``strategy`` for presets
+    *extension_priority* is false, extensions (omitted counts as the
+    default), and ``strategy`` for presets
     only. Versions are intentionally not compared.
     """
     different = []
     if a.source != b.source:
         different.append("source")
     priority_kinds = ("extensions", "presets") if extension_priority else ("presets",)
-    if a.kind in priority_kinds and a.priority != b.priority:
+    if a.kind in priority_kinds and _priority(a) != _priority(b):
         different.append("priority")
     if a.kind == "presets" and a.strategy != b.strategy:
         different.append("strategy")

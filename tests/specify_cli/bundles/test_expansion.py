@@ -770,3 +770,47 @@ def test_distinct_discarded_declarations_stay_separate_records():
         ("1.0.0", ("left", "base", "first")),
         ("3.0.0", ("left", "base", "second")),
     ]
+
+
+@pytest.mark.parametrize("omitted_first", [False, True])
+def test_sibling_omitted_and_default_extension_priority_agree(omitted_first):
+    omitted = {"id": "style", "version": "1.0.0"}
+    default = {"id": "style", "version": "1.0.0", "priority": 10}
+    first = manifest("first", extensions=[omitted if omitted_first else default])
+    second = manifest("second", extensions=[default if omitted_first else omitted])
+    root = manifest(
+        "root",
+        bundles=[{"id": "first", "version": "1.0.0"}, {"id": "second", "version": "1.0.0"}],
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(first, second)))
+
+    assert [ref.id for ref in expanded.components] == ["style"]
+    assert expanded.warnings == []
+
+
+@pytest.mark.parametrize("parent_explicit", [False, True])
+def test_parent_declaration_with_equivalent_extension_priority_is_not_an_override(parent_explicit):
+    child_ref = {"id": "style", "version": "1.0.0", **({} if parent_explicit else {"priority": 10})}
+    parent_ref = {"id": "style", "version": "1.0.0", **({"priority": 10} if parent_explicit else {})}
+    child = manifest("child", extensions=[child_ref])
+    root = manifest(
+        "root", bundles=[{"id": "child", "version": "1.0.0"}], extensions=[parent_ref]
+    )
+
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(child)))
+
+    assert expanded.warnings == []
+    assert expanded.origins[("extensions", "style")].overrides == ()
+
+
+def test_sibling_extension_priority_non_default_still_conflicts_with_omitted():
+    first = manifest("first", extensions=[{"id": "style", "version": "1.0.0"}])
+    second = manifest("second", extensions=[{"id": "style", "version": "1.0.0", "priority": 11}])
+    root = manifest(
+        "root",
+        bundles=[{"id": "first", "version": "1.0.0"}, {"id": "second", "version": "1.0.0"}],
+    )
+
+    with pytest.raises(BundlerError, match="priority"):
+        expand_manifest(root, FakeBundleLoader(loaded(first, second)))

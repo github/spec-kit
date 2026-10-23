@@ -1,8 +1,11 @@
 """Unit tests for conflict detection (T034): integration clash and overlap precedence."""
 from __future__ import annotations
 
+import pytest
+
 from specify_cli.bundles._commands import _bundle_overlaps
 from specify_cli.bundles.conflict import component_setting_differences, detect_conflicts
+from specify_cli.bundles.primitives import DEFAULT_PRIORITY
 from specify_cli.bundles.manifest import BundleManifest, ComponentRef
 from specify_cli.bundles.records import InstalledBundleRecord, save_records
 from tests.specify_cli.bundles.helpers import valid_manifest_dict
@@ -222,3 +225,30 @@ def test_setting_differences_preset_fields_in_stable_order():
     assert component_setting_differences(
         a, ComponentRef(kind="presets", id="p", source="one", priority=1, strategy="replace")
     ) == ["strategy"]
+
+
+@pytest.mark.parametrize("explicit_first", [False, True])
+def test_setting_differences_omitted_extension_priority_equals_default(explicit_first):
+    omitted = ComponentRef(kind="extensions", id="e")
+    default = ComponentRef(kind="extensions", id="e", priority=DEFAULT_PRIORITY)
+    a, b = (default, omitted) if explicit_first else (omitted, default)
+    assert component_setting_differences(a, b) == []
+
+
+def test_setting_differences_omitted_extension_priority_differs_from_non_default():
+    omitted = ComponentRef(kind="extensions", id="e")
+    other = ComponentRef(kind="extensions", id="e", priority=DEFAULT_PRIORITY + 1)
+    assert component_setting_differences(omitted, other) == ["priority"]
+    assert component_setting_differences(other, omitted) == ["priority"]
+
+
+def test_setting_differences_omitted_preset_priority_still_differs_from_default():
+    omitted = ComponentRef(kind="presets", id="p")
+    default = ComponentRef(kind="presets", id="p", priority=DEFAULT_PRIORITY)
+    assert component_setting_differences(omitted, default) == ["priority"]
+
+
+def test_setting_differences_extension_priority_opt_out_ignores_priority():
+    omitted = ComponentRef(kind="extensions", id="e")
+    other = ComponentRef(kind="extensions", id="e", priority=DEFAULT_PRIORITY + 1)
+    assert component_setting_differences(omitted, other, extension_priority=False) == []
