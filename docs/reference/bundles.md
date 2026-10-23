@@ -150,10 +150,9 @@ bundle's own components, while preserving the existing extension, preset, step,
 and workflow grouping. A component is installed at most once per `kind:id`.
 Copies agree when their version and `source` match (omitted and set `source`
 values differ); extension and preset copies must also have the same `priority`,
-and preset copies must also have the same `strategy`. An omitted extension
-`priority` means the default, `10`, so it agrees with an explicit `10`. A preset
-`priority` is compared as written, so an omitted value differs from an explicit
-`10`.
+and preset copies must also have the same `strategy`. Extensions may omit
+`priority`; an omitted value means the default, `10`, so it agrees with an
+explicit `10`. Presets must declare an integer `priority`.
 Other differences between sibling references are conflicts that must be fixed
 in the parent. At every level, a bundle's own declaration wins over its
 references, takes the declaration's position, and emits a warning describing
