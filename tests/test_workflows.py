@@ -1,4 +1,4 @@
-"""Tests for the workflow engine subsystem.
+﻿"""Tests for the workflow engine subsystem.
 
 Covers:
 - Step registry & auto-discovery
@@ -302,7 +302,7 @@ class TestExpressions:
 
         The quote-aware scan never finds a block-closing ``}}`` when a quote is
         left open, but a raw ``}}`` is still present in the tail. It must fall
-        back to that raw delimiter and evaluate — same as the old regex path —
+        back to that raw delimiter and evaluate â€” same as the old regex path â€”
         so a typo fails loudly instead of being hidden (Copilot review on
         #3307)."""
         import pytest
@@ -442,7 +442,7 @@ class TestExpressions:
         # A trailing comma must not append a spurious None element.
         assert evaluate_expression("{{ [1, 2,] }}", ctx) == [1, 2]
         assert evaluate_expression("{{ [1,, 2] }}", ctx) == [1, 2]
-        # …but an intentional empty-string element is still preserved.
+        # â€¦but an intentional empty-string element is still preserved.
         assert evaluate_expression("{{ ['', 'a'] }}", ctx) == ["", "a"]
 
     def test_list_literal_followed_by_index_is_not_misparsed_as_one_literal(self):
@@ -604,8 +604,8 @@ class TestExpressions:
 
     def test_filter_from_json_rejects_malformed_forms(self):
         # `from_json` is strict: no arguments and no trailing tokens. Every
-        # mis-wired form — parenthesized, accidental arg, or trailing
-        # garbage — must raise rather than silently fall through to the
+        # mis-wired form â€” parenthesized, accidental arg, or trailing
+        # garbage â€” must raise rather than silently fall through to the
         # unknown-filter path and return the unparsed value.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
@@ -641,15 +641,15 @@ class TestExpressions:
         # Case-only transforms are no-ops on already-conforming input.
         assert evaluate_expression("{{ inputs.mixed | upper }}", ctx) == "ABC"
         # Non-ASCII text uses Unicode case mapping without transliteration or loss.
-        assert evaluate_expression("{{ inputs.uni | upper }}", StepContext(inputs={"uni": "café"})) == "CAFÉ"
+        assert evaluate_expression("{{ inputs.uni | upper }}", StepContext(inputs={"uni": "cafÃ©"})) == "CAFÃ‰"
         # Filters compose left to right with the rest of the chain.
         assert evaluate_expression("{{ inputs.s | upper | lower }}", ctx) == "hello world"
 
     def test_filter_upper_rejects_non_string(self):
         # A non-string value is an authoring mistake (e.g. `| upper` on an exit
         # code). It must raise a ValueError naming the problem rather than
-        # coerce to "3" — which would look like a plausible result and hide the
-        # mis-wiring — or leak AttributeError and crash the run.
+        # coerce to "3" â€” which would look like a plausible result and hide the
+        # mis-wiring â€” or leak AttributeError and crash the run.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -782,7 +782,7 @@ class TestExpressions:
                 "n": 3,
                 "flag": False,
                 "none": None,
-                "uni": "café",
+                "uni": "cafÃ©",
             }
         )
         # sort_keys=True pins key order, so output does not depend on dict
@@ -795,12 +795,12 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.none | to_json }}", ctx) == "null"
         # ensure_ascii=False keeps non-ASCII readable instead of \uXXXX-escaped,
         # so shell steps receive the original text.
-        assert evaluate_expression("{{ inputs.uni | to_json }}", ctx) == '"café"'
+        assert evaluate_expression("{{ inputs.uni | to_json }}", ctx) == '"cafÃ©"'
 
     def test_filter_to_json_round_trips_from_json(self):
         # to_json is the inverse of from_json: a structured value survives an
         # evaluator-level round trip. Nothing here exercises a shell, and the
-        # round trip is not extended to one — interpolation adds no quoting, so
+        # round trip is not extended to one â€” interpolation adds no quoting, so
         # the output is reproducible but not shell-safe (see docs/reference/
         # workflows.md, "Interpolation and shell safety").
         from specify_cli.workflows.expressions import evaluate_expression
@@ -832,7 +832,7 @@ class TestExpressions:
 
     def test_filter_to_json_rejects_non_finite_floats(self):
         # json.dumps defaults to allow_nan=True, which would emit bare
-        # NaN/Infinity/-Infinity — none of them valid JSON. All three must
+        # NaN/Infinity/-Infinity â€” none of them valid JSON. All three must
         # take the ValueError path instead, both at the top level and when
         # they are buried inside a container.
         import pytest
@@ -907,8 +907,8 @@ class TestExpressions:
 
     def test_zero_arg_filters_reject_miswired_forms(self):
         # The strict no-argument branch is shared by from_json/upper/lower/
-        # length/to_json. Every mis-wired form — parenthesized, accidental arg,
-        # or trailing garbage — must raise naming the filter, rather than
+        # length/to_json. Every mis-wired form â€” parenthesized, accidental arg,
+        # or trailing garbage â€” must raise naming the filter, rather than
         # silently falling through to the unknown-filter path.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
@@ -1097,7 +1097,7 @@ class TestExpressions:
 
         The whole captured argument text was handed to
         `_evaluate_simple_expression` as ONE expression. `"1, 2"` is not a valid
-        expression, so it evaluated to None — making `default(1, 2)` return None
+        expression, so it evaluated to None â€” making `default(1, 2)` return None
         (silently wrong) and `join(",", "extra")` raise a message blaming the
         separator rather than the extra argument.
         """
@@ -1120,8 +1120,8 @@ class TestExpressions:
 
         A single argument may legitimately contain a comma in two ways:
 
-        * inside quotes — `join(", ")`, `default("a, b")`
-        * inside a bracketed literal — `default([1, 2])`, which the expression
+        * inside quotes â€” `join(", ")`, `default("a, b")`
+        * inside a bracketed literal â€” `default([1, 2])`, which the expression
           evaluator supports and which resolves to a real list
 
         so the check uses `_find_top_level` (the same scanner the operator
@@ -1162,7 +1162,7 @@ class TestExpressions:
 
         The pipe is detected before the operators, so
         `count > limit | default(5)` evaluated `count > limit` first and then
-        applied `default` to the resulting bool — a no-op — silently returning
+        applied `default` to the resulting bool â€” a no-op â€” silently returning
         the comparison against the *unfiltered* operand (False, where the author
         meant `10 > 5` = True).
 
@@ -1191,7 +1191,7 @@ class TestExpressions:
         it with `expr.startswith("not ")`), so it has no surrounding space for
         the operator scan to match. Without an explicit check,
         `not inputs.missing | default(1)` evaluated `not inputs.missing` first
-        and applied `default` to that boolean — a no-op — silently returning
+        and applied `default` to that boolean â€” a no-op â€” silently returning
         True where the author meant `not 1` = False.
         """
         import pytest
@@ -1228,7 +1228,7 @@ class TestExpressions:
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,
-        # so `map('name') | join(', ')` is the canonical pairing — it must not
+        # so `map('name') | join(', ')` is the canonical pairing â€” it must not
         # raise. Previously the pipe parser split only at the first `|` and
         # handed the whole tail (`map('name') | join(', ')`) to one filter,
         # which the `name(arg)` regex mangled into a ValueError.
@@ -1279,7 +1279,7 @@ class TestExpressions:
 
     def test_pipe_in_quoted_arg_is_not_a_filter_separator(self):
         # A literal `|` inside a quoted operand or filter argument must not be
-        # mistaken for a filter-chain separator — the top-level split has to
+        # mistaken for a filter-chain separator â€” the top-level split has to
         # respect quotes.
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -1493,7 +1493,7 @@ class TestExpressions:
     def test_context_run_id_defaults_to_empty_when_unset(self):
         """``{{ context.run_id }}`` resolves to ``""`` when no run is
         active (dry-run, validation, ad-hoc evaluator usage) rather
-        than raising — workflows referencing the variable never error
+        than raising â€” workflows referencing the variable never error
         outside a run context.
         """
         from specify_cli.workflows.expressions import evaluate_expression
@@ -1504,7 +1504,7 @@ class TestExpressions:
         assert evaluate_expression("{{ context.run_id }}", ctx) == ""
 
     def test_context_run_id_string_interpolation(self):
-        """Run id interpolates inside a larger template string — the
+        """Run id interpolates inside a larger template string â€” the
         common pattern for stamping shell commands and artifact paths
         with the run id.
         """
@@ -1895,7 +1895,7 @@ class TestCommandStep:
         assert step.validate({"id": "c", "command": "/x", "input": {"args": "y"}, "options": {"k": 1}}) == []
         # execute() has no auto-validation guarantee (the engine may skip
         # validate), so a non-mapping input/options FAILS the step with the same
-        # contract error — it does not silently coerce to empty and report
+        # contract error â€” it does not silently coerce to empty and report
         # COMPLETED (which would defeat continue_on_error).
         res_in = step.execute({"id": "c", "command": "echo", "input": None}, StepContext())
         assert res_in.status is StepStatus.FAILED
@@ -1911,8 +1911,8 @@ class TestCommandStep:
         """A non-string 'integration'/'model' must be rejected at validation.
 
         execute() passes 'integration' to get_integration(), which uses it as a
-        dict key — an unhashable list/dict raises a raw TypeError there, even on
-        a validated run — and feeds 'model' into the CLI argv. Mirrors the
+        dict key â€” an unhashable list/dict raises a raw TypeError there, even on
+        a validated run â€” and feeds 'model' into the CLI argv. Mirrors the
         'command'/'input'/'options' type checks.
         """
         from specify_cli.workflows.step.command import CommandStep
@@ -1925,7 +1925,7 @@ class TestCommandStep:
 
     def test_validate_accepts_none_and_expression_integration_model(self):
         """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
-        integration/model stays valid — only literal non-strings are rejected."""
+        integration/model stays valid â€” only literal non-strings are rejected."""
         from specify_cli.workflows.step.command import CommandStep
 
         step = CommandStep()
@@ -2450,7 +2450,7 @@ class TestPromptStep:
 
         execute() str()-coerces prompt and dispatches it to the integration
         CLI, so a null or list prompt would otherwise send the Python repr to
-        the model as instructions — silently wrong. Mirrors the shell-step
+        the model as instructions â€” silently wrong. Mirrors the shell-step
         'run' type check.
         """
         from specify_cli.workflows.step.prompt import PromptStep
@@ -2481,8 +2481,8 @@ class TestPromptStep:
         """A non-string 'integration'/'model' must be rejected at validation.
 
         execute() passes 'integration' to get_integration(), which uses it as a
-        dict key — an unhashable list/dict raises a raw TypeError there, even on
-        a validated run — and feeds 'model' into the CLI argv."""
+        dict key â€” an unhashable list/dict raises a raw TypeError there, even on
+        a validated run â€” and feeds 'model' into the CLI argv."""
         from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
@@ -2493,7 +2493,7 @@ class TestPromptStep:
 
     def test_validate_accepts_none_and_expression_integration_model(self):
         """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
-        integration/model stays valid — only literal non-strings are rejected."""
+        integration/model stays valid â€” only literal non-strings are rejected."""
         from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
@@ -2563,8 +2563,8 @@ class TestPromptStep:
         workflow that fails validation as a shell step passed as a prompt one.
 
         ``10**400`` is an int too large to convert to float: it passes
-        ``isinstance``/``> 0`` but makes ``math.isfinite()`` — and later
-        ``subprocess.run()`` — raise ``OverflowError``, so the guard has to
+        ``isinstance``/``> 0`` but makes ``math.isfinite()`` â€” and later
+        ``subprocess.run()`` â€” raise ``OverflowError``, so the guard has to
         catch that rather than let it escape as the crash it exists to stop.
         """
         from specify_cli.workflows.step.prompt import PromptStep
@@ -2580,7 +2580,7 @@ class TestPromptStep:
 
     @pytest.mark.parametrize("good", [300, 5, 0.5])
     def test_validate_accepts_valid_timeout(self, good):
-        """A positive int/float timeout — and an absent one — stay valid."""
+        """A positive int/float timeout â€” and an absent one â€” stay valid."""
         from specify_cli.workflows.step.prompt import PromptStep
 
         step = PromptStep()
@@ -2597,8 +2597,8 @@ class TestPromptStep:
         The engine does not auto-validate step config and re-raises anything a
         step throws, so an unvalidated ``timeout`` reaching subprocess.run()
         raised a raw ``TypeError: unsupported operand type(s) for +: 'float'
-        and 'str'`` (or ``ValueError`` for NaN) that aborted the entire run —
-        naming neither the step nor the field — after earlier steps had
+        and 'str'`` (or ``ValueError`` for NaN) that aborted the entire run â€”
+        naming neither the step nor the field â€” after earlier steps had
         already run their side effects.
         """
         import subprocess
@@ -2859,7 +2859,7 @@ class TestShellStep:
 
     def test_execute_fails_cleanly_on_invalid_timeout(self, monkeypatch):
         """execute() must fail the step (not raise) on an invalid timeout even
-        when validate() was skipped — the engine does not auto-validate step
+        when validate() was skipped â€” the engine does not auto-validate step
         config, so an unvalidated string/bool/non-finite timeout would
         otherwise crash subprocess.run() and take down the whole run."""
         import subprocess
@@ -2915,7 +2915,7 @@ class TestShellStep:
 
         ``math.isfinite(10**400)`` raises ``OverflowError: int too large to
         convert to float``. Such a value is an ``int`` and is not a ``bool``,
-        so it clears every clause before ``isfinite()`` and raises there —
+        so it clears every clause before ``isfinite()`` and raises there â€”
         escaping ``validate()`` as the uncaught crash this guard exists to
         prevent. ``specify workflow run`` then aborts with a bare traceback
         instead of "Workflow validation failed". Both signs reach
@@ -3064,7 +3064,7 @@ class TestInitStep:
         The class docstring says "Because workflows run unattended, the step
         defaults to ``--ignore-agent-tools``" and the field docs say "defaults to
         ``true``". But ``config.get(key, True)`` applies the default only when the
-        key is ABSENT — a bare ``ignore_agent_tools:`` in YAML parses to None,
+        key is ABSENT â€” a bare ``ignore_agent_tools:`` in YAML parses to None,
         which ``_resolve_bool`` turned into False, dropping the flag and
         re-enabling the agent-CLI presence check for an unattended run.
         """
@@ -3182,12 +3182,12 @@ class TestInitStep:
     def test_failed_init_surfaces_inits_own_message(self, tmp_path):
         """A failing init step must report init's diagnostics, not 'SystemExit: 1'.
 
-        `typer.Exit(n)` — how `specify init` reports every ordinary failure —
+        `typer.Exit(n)` â€” how `specify init` reports every ordinary failure â€”
         surfaces through `CliRunner` as `result.exception = SystemExit(n)`, so
         the unexpected-crash branch fired on routine errors too. `init` prints
         through Rich to stdout, leaving `result.stderr` empty, so the
         synthesized "SystemExit: 1" became the whole of stderr and preempted
-        the `stderr.strip() or stdout.strip()` fallback — stranding the real
+        the `stderr.strip() or stdout.strip()` fallback â€” stranding the real
         message (here, the list of valid integrations) in stdout.
         """
         from specify_cli.workflows.step.init import InitStep
@@ -3585,7 +3585,7 @@ steps:
 
         ``validate`` rejects anything outside abort/skip/retry, but the engine
         does not auto-validate before ``execute``. The reject branch handles only
-        "abort" and "retry", then falls through to its ``"skip"`` case — so a
+        "abort" and "retry", then falls through to its ``"skip"`` case â€” so a
         REJECTED gate reported COMPLETED and the run continued past the review
         the gate exists to enforce. Reachable by a capitalisation slip, a guessed
         verb, a non-string, or a bare ``on_reject:`` (which yields None, since
@@ -3650,13 +3650,13 @@ steps:
         assert result.output["choice"] == "approve"
 
     def test_interactive_prompt_rejects_non_decimal_digit(self, monkeypatch, capsys):
-        """A Unicode digit int() can't parse — e.g. the superscript '²', which
-        str.isdigit() accepts but int() rejects — must be treated as an invalid
+        """A Unicode digit int() can't parse â€” e.g. the superscript 'Â²', which
+        str.isdigit() accepts but int() rejects â€” must be treated as an invalid
         choice, not crash the prompt loop with an uncaught ValueError."""
         from specify_cli.workflows.step.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
-        inputs = iter(["²", "1"])  # superscript-two, then a real "1"
+        inputs = iter(["Â²", "1"])  # superscript-two, then a real "1"
         monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
 
         choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
@@ -3677,7 +3677,7 @@ steps:
         `_prompt` returned `options[-1]`, assuming the reject option is last.
         `validate` only requires that *some* option is 'reject'/'abort', never
         that it is last, so `options: [approve, reject, request-changes]`
-        validates clean and EOF returned 'request-changes' — which `execute`
+        validates clean and EOF returned 'request-changes' â€” which `execute`
         does not classify as a rejection, so the gate reported COMPLETED and
         the run walked past the human review.
         """
@@ -3706,12 +3706,12 @@ steps:
         assert GateStep._prompt("Pick one.", ["yes", "no"]) == "no"
 
     def test_ctrl_c_propagates_rather_than_becoming_a_verdict(self, monkeypatch):
-        """Ctrl+C is not a gate decision — it must reach the engine.
+        """Ctrl+C is not a gate decision â€” it must reach the engine.
 
         `WorkflowEngine` turns a propagated KeyboardInterrupt into
         `RunStatus.PAUSED` plus a `workflow_interrupted` event, so the operator
         can resume. Swallowing it here produced a *decision* instead: the reject
-        branch fired `on_reject`, usually aborting the whole run — the one
+        branch fired `on_reject`, usually aborting the whole run â€” the one
         outcome an interrupted reviewer did not choose.
         """
         from specify_cli.workflows.step.gate import GateStep
@@ -3727,7 +3727,7 @@ steps:
             GateStep._prompt("Approve the plan?", ["approve", "reject"])
 
     def test_ctrl_c_at_a_gate_step_propagates(self, monkeypatch):
-        """The step level must not convert it either — `execute` lets it through."""
+        """The step level must not convert it either â€” `execute` lets it through."""
         from specify_cli.workflows.step.gate import GateStep
         from specify_cli.workflows.base import StepContext
 
@@ -3920,7 +3920,7 @@ steps:
 
         # The displayed path header (and the read-error notice it produces)
         # must not carry escapes even when the path string itself contains
-        # control characters — ESC, LF, and C1 CSI (\x9b); the file is still
+        # control characters â€” ESC, LF, and C1 CSI (\x9b); the file is still
         # opened with the raw value.
         out = GateStep._compose_prompt("Review.", "ev\x1bil\x9b[2J\npath.md")
         assert "\x1b" not in out and "\x9b" not in out
@@ -4548,7 +4548,7 @@ class TestWhileStep:
     @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
     def test_execute_non_list_steps_ok_when_condition_false(self, bad_steps):
         """A false condition never dispatches the body, so a non-list ``steps``
-        stays benign — the step completes without touching ``next_steps``.
+        stays benign â€” the step completes without touching ``next_steps``.
         """
         from specify_cli.workflows.step.while_loop import WhileStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -4852,7 +4852,7 @@ class TestFanOutStep:
         ctx = StepContext(steps={"tasks": {"output": {"task_list": [1, 2]}}})
         # ``None`` is an explicit ``step: null``: ``config.get("step", {})`` only
         # substitutes the default for an *absent* key, so it reaches the guard
-        # and must fail here too — matching ``validate``.
+        # and must fail here too â€” matching ``validate``.
         for bad_step in (["impl"], "impl", 5, None):
             result = step.execute(
                 {
@@ -4954,7 +4954,7 @@ class TestFanInStep:
         ``execute()`` does not auto-validate. Before the guard, ``execute``
         iterated the raw value: a scalar (int/None) raised TypeError and took
         down the whole run, while a string silently iterated its characters and
-        returned a join of empty results with a COMPLETED status — the exact
+        returned a join of empty results with a COMPLETED status â€” the exact
         "silent empty result + COMPLETED" wiring bug the engine's fan-in
         validation warns against. Mirrors the fan-out non-list ``items`` guard.
         """
@@ -4977,7 +4977,7 @@ class TestFanInStep:
         ``validate`` rejects it and says why: "execute() silently coerces a
         non-mapping output to {}, so the author's declared aggregation keys would
         vanish with no error." The engine does not auto-validate before
-        ``execute``, so that is exactly what happened — and ``x or {}`` masked
+        ``execute``, so that is exactly what happened â€” and ``x or {}`` masked
         the falsy shapes (``[]``, ``false``, ``0``, ``''``) before the isinstance
         check even ran. The step still returned COMPLETED, so downstream
         ``steps.<id>.output.<key>`` resolved to None and interpolated as "".
@@ -5018,7 +5018,7 @@ class TestFanInStep:
         (a list/dict from a YAML indentation slip like ``wait_for: [[a, b]]``)
         crashed ``context.steps.get(entry, ...)`` with a raw TypeError, while a
         hashable-but-non-string entry (``wait_for: [123]``) silently joined an
-        empty ``{}`` and still reported COMPLETED — the same wiring bug the
+        empty ``{}`` and still reported COMPLETED â€” the same wiring bug the
         list-shape guard exists to prevent. Mirrors the engine's
         ``test_non_string_wait_for_entry_is_rejected`` load-time check.
         """
@@ -5129,8 +5129,8 @@ class TestFanOutConcurrency:
 
     def test_shuffled_completion_preserves_item_order(self, tmp_path, monkeypatch):
         # Determinism keystone: completion order is forced to the exact REVERSE of
-        # item order by an event chain (no sleeps) — item i blocks until item i+1
-        # has finished, so item 0 completes LAST — yet results must still be in
+        # item order by an event chain (no sleeps) â€” item i blocks until item i+1
+        # has finished, so item 0 completes LAST â€” yet results must still be in
         # item order. K == len(items) so all workers are in flight together.
         import threading
 
@@ -5156,7 +5156,7 @@ class TestFanOutConcurrency:
 
         # Deterministic proof of real parallelism (no wall-clock threshold to
         # tune or flake): every item must reach the barrier before any may pass.
-        # Sequential execution would block the first item forever — the barrier
+        # Sequential execution would block the first item forever â€” the barrier
         # times out, raises BrokenBarrierError, and fails the test.
         n = 4
         barrier = threading.Barrier(n, timeout=5)
@@ -5228,7 +5228,7 @@ class TestFanOutConcurrency:
     ):
         # Item 1 PAUSES (first halting item in order); item 3 FAILS while in
         # flight. The final run status must be the halting item's (PAUSED), never
-        # a later item's (FAILED) that raced after it — matching sequential.
+        # a later item's (FAILED) that raced after it â€” matching sequential.
         from specify_cli.workflows.base import RunStatus, StepStatus
 
         def on_item(item):
@@ -5314,7 +5314,7 @@ class TestFanOutConcurrency:
 
         assert state.status == RunStatus.FAILED
         # Halt is attributed to "halt" (index 1). Its empty error must win over
-        # the later "leak" item's error — the restore assigns the halting item's
+        # the later "leak" item's error â€” the restore assigns the halting item's
         # error verbatim, even when falsy.
         assert state.error == ""
 
@@ -5343,7 +5343,7 @@ class TestFanOutConcurrency:
     ):
         # A template whose type isn't registered fails fast and records no result;
         # the concurrent path must still attribute the halt to the first item and
-        # return the same prefix as sequential — never run on as if completed.
+        # return the same prefix as sequential â€” never run on as if completed.
         template = {"id": "impl", "type": "does-not-exist"}
         seq, s1 = self._run(tmp_path, monkeypatch, list(range(5)), 1, template=template)
         con, s2 = self._run(tmp_path, monkeypatch, list(range(5)), 4, template=template)
@@ -5407,7 +5407,7 @@ steps:
 
     def test_wait_for_conditionally_declared_step_passes(self):
         # A step declared inside an if-branch may be skipped at runtime, but it is
-        # still "declared", so referencing it must validate — a legitimately-empty
+        # still "declared", so referencing it must validate â€” a legitimately-empty
         # runtime join stays valid.
         errors = self._errors("""
 workflow:
@@ -5499,9 +5499,9 @@ steps:
       command: speckit.implement
   - id: collect
     type: fan-in
-    wait_for: [fan:item:١]
+    wait_for: [fan:item:Ù¡]
 """)
-        assert any("unknown or not-yet-declared step id 'fan:item:١'" in e for e in errors)
+        assert any("unknown or not-yet-declared step id 'fan:item:Ù¡'" in e for e in errors)
 
 
 # ===== Workflow Definition Tests =====
@@ -5557,7 +5557,7 @@ class TestWorkflowDefinition:
         errors = validate_workflow(definition)
         assert any("workflow.id" in e for e in errors)
         # The RAW malformed value is preserved on .data (the guard only
-        # normalizes the local var, not self.data) — .data is what gets written
+        # normalizes the local var, not self.data) â€” .data is what gets written
         # back out when a definition is serialized. Assert it was NOT replaced
         # with {} by comparing against the original parse and confirming it is
         # still a non-mapping.
@@ -5999,7 +5999,7 @@ steps:
 
     def test_requires_permissions_is_rejected_as_not_enforced(self):
         """A `requires.permissions` block looks like a runtime capability gate
-        but no such gate exists — shell steps always run with the user's
+        but no such gate exists â€” shell steps always run with the user's
         privileges. Reject it explicitly so authors are not misled into
         believing the declaration sandboxes execution.
         """
@@ -6068,7 +6068,7 @@ steps:
 
     def test_requires_omitted_is_valid(self):
         """A workflow with no ``requires`` block at all defaults to ``{}`` and
-        must validate cleanly — only a present-but-non-mapping value is an
+        must validate cleanly â€” only a present-but-non-mapping value is an
         error (guards against over-correcting YAML-null rejection into also
         flagging the omitted case).
         """
@@ -6090,7 +6090,7 @@ steps:
 class TestGateVerdictInputValidation:
     """Gate verdict_input must reference a declared workflow input.
 
-    ``_resolve_inputs`` iterates only over ``definition.inputs`` — a provided
+    ``_resolve_inputs`` iterates only over ``definition.inputs`` â€” a provided
     value for an undeclared name is silently dropped at both initial run and
     resume. So an undeclared ``verdict_input`` can never receive a value; the
     gate would pause forever. Surface this wiring error at validation time.
@@ -6259,7 +6259,7 @@ steps:
             )
 
     def test_retry_verdict_without_enum_passes(self):
-        # No enum means _coerce_input accepts "" — the documented shape.
+        # No enum means _coerce_input accepts "" â€” the documented shape.
         errors = self._errors("""
 workflow:
   id: wf
@@ -6787,7 +6787,7 @@ inputs:
 
     def test_integration_explicit_auto_resolves_like_default(self, project_dir):
         """Passing ``integration=auto`` explicitly must resolve the sentinel,
-        not pass it through as a literal — the workflow prompt advertises
+        not pass it through as a literal â€” the workflow prompt advertises
         ``auto`` as a valid value, so the dispatch path must never see it.
         """
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
@@ -6815,7 +6815,7 @@ inputs:
         assert resolved["integration"] == "opencode"
 
     def test_integration_auto_ignores_malformed_integration_json(self, project_dir):
-        """A malformed integration.json must not crash — fall back to the literal default."""
+        """A malformed integration.json must not crash â€” fall back to the literal default."""
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
 
         specify_dir = project_dir / ".specify"
@@ -6838,7 +6838,7 @@ inputs:
         assert resolved["integration"] == "auto"
 
     def test_integration_auto_ignores_non_utf8_integration_json(self, project_dir):
-        """A non-UTF8 integration.json must not crash — fall back to the literal default."""
+        """A non-UTF8 integration.json must not crash â€” fall back to the literal default."""
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
 
         specify_dir = project_dir / ".specify"
@@ -7047,7 +7047,7 @@ steps:
         assert any("invalid default" in e for e in errors), errors
 
     def test_validate_workflow_rejects_bool_default_for_number_type(self):
-        """``type: number`` paired with a bool default must fail — bool is a
+        """``type: number`` paired with a bool default must fail â€” bool is a
         subclass of int so ``float(True)`` would otherwise silently coerce
         ``true`` to ``1``.
         """
@@ -7138,8 +7138,8 @@ steps:
 
         A scalar (``enum: 5``) makes ``value not in 5`` raise
         ``TypeError: argument of type 'int' is not iterable``. A bare string
-        (``enum: "abc"``) is silently wrong instead — ``value in "abc"`` is a
-        substring test, not enum membership — so it must be rejected too.
+        (``enum: "abc"``) is silently wrong instead â€” ``value in "abc"`` is a
+        substring test, not enum membership â€” so it must be rejected too.
         """
         from specify_cli.workflows.engine import WorkflowEngine
 
@@ -7213,7 +7213,7 @@ inputs:
     def test_non_list_enum_on_integration_auto_still_rejected(self, project_dir):
         """The ``integration: auto`` sentinel strips a *list* ``enum`` before
         coercion (enum-membership is a runtime concern for ``auto``). A non-list
-        ``enum`` must NOT be silently stripped by that path — it is still an
+        ``enum`` must NOT be silently stripped by that path â€” it is still an
         authoring error and must fail with the clean shape ValueError.
         """
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
@@ -7262,7 +7262,7 @@ steps:
         assert any("invalid default" in e for e in errors), errors
 
     def test_validate_workflow_rejects_non_string_default_for_string_type(self):
-        """``type: string`` must require an actual string — a numeric YAML
+        """``type: string`` must require an actual string â€” a numeric YAML
         default like ``5`` would otherwise slip through unvalidated.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -7296,12 +7296,12 @@ steps:
         from specify_cli.workflows.base import RunStatus
 
         # Shell step echoes a counter via a file.
-        # Condition: exit_code != 0 means "keep looping" — but a non-zero
+        # Condition: exit_code != 0 means "keep looping" â€” but a non-zero
         # exit code would mark the step FAILED and abort the run, so we
         # use stdout-based comparison instead.
         #
-        # Iteration 0: counter=1, echoes "1" → not "done" → loop continues
-        # Iteration 1: counter=2, echoes "done" → condition false → stop
+        # Iteration 0: counter=1, echoes "1" â†’ not "done" â†’ loop continues
+        # Iteration 1: counter=2, echoes "done" â†’ condition false â†’ stop
         # Without the fix, condition always reads iteration-0 stdout,
         # so the loop runs all max_iterations.
         import sys
@@ -7392,7 +7392,7 @@ steps:
 
     def test_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """While loop must still run to max_iterations when the condition
-        never becomes false — copy-back must not break this path.
+        never becomes false â€” copy-back must not break this path.
 
         See https://github.com/github/spec-kit/issues/2592
         """
@@ -7447,7 +7447,7 @@ steps:
 
         ``max_iterations: true`` would otherwise slip past the int check
         (``isinstance(True, int)`` is True and ``True < 1`` is False) and
-        cap the loop at ``range(True - 1) == range(0)`` — a single
+        cap the loop at ``range(True - 1) == range(0)`` â€” a single
         iteration. ``execute()`` does not auto-validate, so the engine's own
         guard is the only line of defence here.
         """
@@ -7563,7 +7563,7 @@ steps:
 
         # Step B uses {{ steps.step-a.output.stdout }} expression
         # substitution in its run command so the engine resolves the
-        # aliased unprefixed key — this is the real inter-step test.
+        # aliased unprefixed key â€” this is the real inter-step test.
         yaml_str = f"""
 schema_version: "1.0"
 workflow:
@@ -7603,8 +7603,8 @@ steps:
 #
 # End-to-end coverage for the `{{ context.run_id }}` template
 # variable introduced in issue #2590. Locks resolution inside the
-# three step types the acceptance criteria called out — shell `run:`,
-# command `input.args:`, and switch `expression:` — plus the
+# three step types the acceptance criteria called out â€” shell `run:`,
+# command `input.args:`, and switch `expression:` â€” plus the
 # "workflow doesn't reference it" backward-compat path.
 
 
@@ -7709,7 +7709,7 @@ steps:
         assert state.step_results["route"]["output"]["matched_case"] == "target-run"
         assert "matched-branch" in state.step_results
         assert "default-branch" not in state.step_results
-        # The nested branch sees the same run id — propagation through
+        # The nested branch sees the same run id â€” propagation through
         # recursive `_execute_steps` is intact.
         nested_stdout = state.step_results["matched-branch"]["output"]["stdout"]
         assert nested_stdout.strip() == "nested-run-id=target-run"
@@ -8072,7 +8072,7 @@ steps:
 # and continues to the next sibling step instead of halting the run.
 # Gate aborts (`output.aborted`) still halt regardless of the flag.
 # Unhandled exceptions raised out of `step_impl.execute()` are out of
-# scope for this flag — they propagate to `WorkflowEngine.execute()`
+# scope for this flag â€” they propagate to `WorkflowEngine.execute()`
 # and abort the run.
 
 
@@ -8122,7 +8122,7 @@ class TestContinueOnError:
         """Default behaviour (no `continue_on_error`): a failing step
         halts the workflow run with `status == StepStatus.FAILED`.
 
-        Locks the byte-equivalent default — workflows that do not
+        Locks the byte-equivalent default â€” workflows that do not
         declare the flag must behave exactly as before this feature.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
@@ -8187,7 +8187,7 @@ steps:
 
     def test_declared_but_step_succeeded_is_noop(self, project_dir):
         """`continue_on_error: true` on a step that succeeds is a
-        no-op — the flag only changes behaviour on StepStatus.FAILED status.
+        no-op â€” the flag only changes behaviour on StepStatus.FAILED status.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
@@ -8306,7 +8306,7 @@ steps:
     ):
         """A capitalised reject option (`options: [Approve, Reject]`) still
         aborts the run. `validate` accepts a reject choice case-insensitively,
-        so the runtime reject check must agree — a case-sensitive comparison
+        so the runtime reject check must agree â€” a case-sensitive comparison
         would treat the echoed `Reject` as approval and silently run
         downstream steps.
         """
@@ -8398,7 +8398,7 @@ steps:
         """Defense-in-depth: even if a caller bypasses
         `validate_workflow()` and feeds the engine a definition with
         `continue_on_error: "true"` (a string), the engine must NOT
-        honour the flag — only a literal boolean enables the
+        honour the flag â€” only a literal boolean enables the
         behaviour. `WorkflowEngine.execute()` does not auto-validate
         (the `WorkflowEngine.load_workflow` docstring explicitly
         notes the definition is "not yet validated; call
@@ -8409,7 +8409,7 @@ steps:
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
         from specify_cli.workflows.base import RunStatus
 
-        # Bypass `validate_workflow()` — execute() is what would
+        # Bypass `validate_workflow()` â€” execute() is what would
         # be called by a caller that skipped validation.
         definition = WorkflowDefinition.from_string("""
 schema_version: "1.0"
@@ -8593,7 +8593,7 @@ class TestRunState:
         as ``\\uXXXX`` escapes (#4875)."""
         from specify_cli.workflows.engine import RunState
 
-        text = "演示：完整闭环 — ¿aprobar? 日本語"
+        text = "æ¼”ç¤ºï¼šå®Œæ•´é—­çŽ¯ â€” Â¿aprobar? æ—¥æœ¬èªž"
         state = RunState(
             run_id="non-ascii-run",
             workflow_id="test-workflow",
@@ -8641,7 +8641,7 @@ class TestRunState:
         authored, so its non-ASCII text must not be escaped (#4875)."""
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
-        name = "Demo Hello Pipeline (教学演示版)"
+        name = "Demo Hello Pipeline (æ•™å­¦æ¼”ç¤ºç‰ˆ)"
         wf_dir = project_dir / "non-ascii-snapshot"
         wf_dir.mkdir()
         wf_file = wf_dir / "workflow.yml"
@@ -8836,11 +8836,11 @@ steps:
     @pytest.mark.parametrize(
         "malicious_run_id",
         [
-            # Parent-directory traversal — the classic path-escape vector.
+            # Parent-directory traversal â€” the classic path-escape vector.
             "../escape",
             "..",
             "../../etc/passwd",
-            # Embedded path separators — both POSIX and Windows.
+            # Embedded path separators â€” both POSIX and Windows.
             "foo/bar",
             "foo\\bar",
             # Leading non-alphanumeric characters that the existing
@@ -8848,10 +8848,10 @@ steps:
             # or hidden files in shell completions / error messages).
             ".hidden",
             "-flag",
-            # NUL byte — some filesystems treat the prefix as a valid
+            # NUL byte â€” some filesystems treat the prefix as a valid
             # path and silently truncate at the NUL.
             "foo\x00bar",
-            # Empty string — degenerate case, matches no file but the
+            # Empty string â€” degenerate case, matches no file but the
             # validator should reject it before any I/O.
             "",
         ],
@@ -8866,7 +8866,7 @@ steps:
         probe arbitrary paths the process can read (a file-existence
         oracle) and ``json.load`` would happily parse attacker-planted
         JSON from outside ``.specify/workflows/runs/``. The check must
-        fire *before* the path is built — ``__init__``'s identical
+        fire *before* the path is built â€” ``__init__``'s identical
         regex on ``state_data["run_id"]`` fires too late.
         """
         from specify_cli.workflows.engine import RunState
@@ -8898,7 +8898,7 @@ steps:
         "bad_run_id",
         [
             # One vector per category from ``test_load_rejects_path_traversal``
-            # — enough to prove both entry points agree without re-running
+            # â€” enough to prove both entry points agree without re-running
             # the full attack matrix here.
             "../escape",    # parent-directory traversal
             "foo/bar",      # embedded path separator
@@ -8910,12 +8910,12 @@ steps:
     def test_init_and_load_share_validation(self, project_dir, bad_run_id):
         """``__init__`` *and* ``load`` reject the same malformed IDs.
 
-        The two entry points must stay in sync — drift would let an ID
+        The two entry points must stay in sync â€” drift would let an ID
         slip in via one path that the other would reject, producing
         confusing crashes mid-workflow. The previous version of this
         test only exercised ``__init__`` and ``_validate_run_id`` (the
-        shared helper), so a regression in ``load`` — e.g. someone
-        deleting the ``cls._validate_run_id(run_id)`` call there — could
+        shared helper), so a regression in ``load`` â€” e.g. someone
+        deleting the ``cls._validate_run_id(run_id)`` call there â€” could
         slip through despite ``__init__`` and the helper staying
         aligned. We now hit ``load`` directly with the same vector so
         any drift between the two call sites is caught by this test.
@@ -9593,7 +9593,7 @@ class TestWorkflowCatalog:
 
     def test_search_with_non_string_fields(self, project_dir, monkeypatch):
         """Non-string workflow fields (null/int name/description) must not
-        raise TypeError in search — StepCatalog.search already coerces these."""
+        raise TypeError in search â€” StepCatalog.search already coerces these."""
         from specify_cli.workflows.catalog import WorkflowCatalog
 
         catalog = WorkflowCatalog(project_dir)
@@ -9679,7 +9679,7 @@ class TestWorkflowCatalog:
 
     @pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
     def test_absent_or_empty_catalogs_is_noop(self, project_dir, body):
-        """An explicit ``catalogs:`` null or an empty list stays a valid no-op —
+        """An explicit ``catalogs:`` null or an empty list stays a valid no-op â€”
         the layer contributes nothing and resolution falls through."""
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -9704,7 +9704,7 @@ class TestWorkflowCatalog:
     @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
     def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
         """`priority: true` must not be silently coerced to 1, and `priority: .inf`
-        must not crash with an uncaught OverflowError — both raise a clean
+        must not crash with an uncaught OverflowError â€” both raise a clean
         validation error (parity with the base CatalogStackBase loader)."""
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
@@ -9817,7 +9817,7 @@ class TestWorkflowCatalog:
 
     def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
         """A redirect_validator is passed to open_url and rejects a non-HTTPS
-        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        INTERMEDIATE hop â€” closing the https -> http -> attacker-https chain a
         terminal-URL-only check would miss. Mirrors presets/extensions
         (#3523 / #3524)."""
         from specify_cli.workflows.catalog import (
@@ -9921,7 +9921,7 @@ class TestWorkflowCatalog:
     def test_add_catalog_with_existing_inf_priority(self, project_dir):
         """add_catalog() derives the new priority from existing ones via
         _coerce_priority; an existing `priority: .inf` must not crash it
-        (int(float('inf')) is an OverflowError) — it is treated as 0 and the add
+        (int(float('inf')) is an OverflowError) â€” it is treated as 0 and the add
         succeeds."""
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -10475,7 +10475,7 @@ class TestStepCatalog:
     )
     def test_empty_or_null_config_is_noop(self, project_dir, body):
         """An empty document, explicit null, or absent/empty ``catalogs:`` stays a
-        valid no-op — the layer contributes nothing and resolution falls
+        valid no-op â€” the layer contributes nothing and resolution falls
         through."""
         from specify_cli.workflows.step.catalog import StepCatalog
 
@@ -10630,7 +10630,7 @@ class TestStepCatalog:
 
     def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
         """A redirect_validator is passed to open_url and rejects a non-HTTPS
-        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        INTERMEDIATE hop â€” closing the https -> http -> attacker-https chain a
         terminal-URL-only check would miss. Mirrors presets/extensions
         (#3523 / #3524)."""
         from specify_cli.workflows.step.catalog import (
@@ -10733,7 +10733,7 @@ class TestStepCatalog:
 
     def test_add_catalog_with_existing_inf_priority(self, project_dir):
         """Step-catalog add_catalog() must not crash when an existing entry has a
-        `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
+        `priority: .inf` (int(float('inf')) is an OverflowError) â€” _coerce_priority
         treats it as 0 and the add succeeds."""
         from specify_cli.workflows.step.catalog import StepCatalog
 
@@ -11240,7 +11240,7 @@ class HyphenStep(StepBase):
         loaded = load_custom_steps(project_dir)
         assert "my-hyphen-step" in loaded
         assert "my-hyphen-step" in STEP_REGISTRY
-        # Synthetic module name must be a valid identifier (hyphens → underscores)
+        # Synthetic module name must be a valid identifier (hyphens â†’ underscores)
         # and include a collision-resistant hash suffix.
         key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
         module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
@@ -11881,3 +11881,48 @@ class TestWorkflowCliAlignment:
         assert fresh.get("align-wf")["version"] == "1.0.0"
         assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o644
         assert not list(registry.workflows_dir.glob("*.tmp"))
+
+class TestReadResponseWithinLimitExceptions:
+    """Regression tests for narrowed Content-Length header exception handling."""
+
+    def test_attribute_error_from_getheader_is_caught(self):
+        """AttributeError from getheader() must be caught and reading continues."""
+        from specify_cli.workflows._commands import _read_response_within_limit
+
+        class _Response:
+            def __init__(self):
+                self._returned = False
+
+            def getheader(self, name):
+                raise AttributeError("no such header method")
+
+            def read(self, size=-1):
+                if not self._returned:
+                    self._returned = True
+                    return b"hello"
+                return b""
+
+        result = _read_response_within_limit(_Response())
+        assert result == b"hello"
+
+    def test_runtime_error_from_getheader_propagates(self):
+        """A non-AttributeError exception (e.g. RuntimeError) must propagate.
+
+        With the old bare ``except Exception`` this was silently swallowed.
+        This test fails against the previous implementation.
+        """
+        from specify_cli.workflows._commands import _read_response_within_limit
+
+        class _Response:
+            def getheader(self, name):
+                raise RuntimeError("unexpected failure")
+
+            def read(self, size=-1):
+                return b"hello"
+
+        try:
+            _read_response_within_limit(_Response())
+        except RuntimeError:
+            pass  # narrowed: RuntimeError propagates
+        else:
+            raise AssertionError("RuntimeError was swallowed by except Exception")
