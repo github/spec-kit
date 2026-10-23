@@ -3,6 +3,7 @@ from __future__ import annotations
 import io  # noqa: F401
 import json  # noqa: F401
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch  # noqa: F401
 
 import pytest
@@ -10,11 +11,16 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundler import BundlerError
+from specify_cli.bundles.manifest import BundleManifest
 from specify_cli.bundles.packager import build_bundle  # noqa: F401
 from tests.conftest import strip_ansi
 from tests.specify_cli.bundles.helpers import (
     bundled_extension_version,
+    catalog_entry_dict,
+    reference_manifest_dict,
     valid_manifest_dict,
+    write_catalog_file,
 )
 
 runner = CliRunner()
@@ -269,3 +275,209 @@ def test_validate_rejects_mismatched_bundled_component(
 
     assert result.exit_code == 1, result.output
     assert f"resolved version is {version}" in result.output
+
+
+def test_validate_expands_references_and_checks_expanded_components(project: Path, monkeypatch):
+    parent = reference_manifest_dict([{"id": "child", "version": "1.0.0"}], bundle_id="parent")
+    child = valid_manifest_dict(
+        bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"},
+        provides={"extensions": [{"id": "child-extension", "version": "1.0.0"}]},
+    )
+    path = project / "bundle.yml"
+    path.write_text(yaml.safe_dump(parent), encoding="utf-8")
+    selected = SimpleNamespace(entry=SimpleNamespace(id="child", version="1.0.0"), source=SimpleNamespace(id="default"), install_allowed=True)
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return selected
+
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: BundleManifest.from_dict(child))
+    monkeypatch.setattr("specify_cli.bundles.references.make_reference_checker", lambda *a, **k: lambda component: "synthetic unresolved component" if component.id == "child-extension" else None)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1, result.output
+    assert "child-extension" in result.output
+    assert "synthetic unresolved component" in " ".join(result.output.split())
+
+
+def test_validate_offline_warns_once_per_direct_reference(project: Path):
+    data = valid_manifest_dict(schema_version="1.1", provides={"bundles": [
+        {"id": "first-child", "version": "1.0.0"},
+        {"id": "second-child", "version": "1.0.0"},
+    ]})
+    path = project / "bundle.yml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path), "--offline"])
+    assert result.exit_code == 0, result.output
+    assert "first-child@1.0.0" in result.output
+    assert "second-child@1.0.0" in result.output
+    assert " ".join(result.output.split()).count("was not expanded") == 2
+
+
+def _write_reference_bundle(project: Path, references, *, bundle_id="parent", provides=None):
+    data = reference_manifest_dict(references, bundle_id=bundle_id)
+    if provides is not None:
+        data["provides"].update(provides)
+    path = project / f"{bundle_id}.yml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return path
+
+
+def _selected(bundle_id, *, install_allowed=True, source="default"):
+    return SimpleNamespace(entry=SimpleNamespace(id=bundle_id, version="1.0.0"), source=SimpleNamespace(id=source), install_allowed=install_allowed)
+
+
+def test_validate_online_success(project: Path, monkeypatch):
+    path = _write_reference_bundle(project, [{"id": "child", "version": "1.0.0"}])
+    child = BundleManifest.from_dict(valid_manifest_dict(bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"}, provides={}))
+    class Stack:
+        def resolve(self, bundle_id, version=None): return _selected(bundle_id)
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: child)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_rejects_reference_source_mismatch(project: Path, monkeypatch):
+    path = _write_reference_bundle(
+        project,
+        [{"id": "child", "version": "1.0.0", "source": "X"}],
+    )
+    child = BundleManifest.from_dict(
+        valid_manifest_dict(
+            bundle={
+                "id": "child", "name": "Child", "version": "1.0.0",
+                "role": "developer", "description": "child", "author": "tests",
+                "license": "MIT",
+            },
+            provides={},
+        )
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return _selected(bundle_id, source="winner")
+
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(
+        "specify_cli.bundles.command_validate._download_manifest",
+        lambda *a, **k: child,
+    )
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+
+    assert result.exit_code == 1, result.output
+    assert "requires source" in result.output
+
+
+def test_validate_cycle_and_discovery_only_errors(project: Path, monkeypatch):
+    path = _write_reference_bundle(project, [{"id": "child", "version": "1.0.0"}])
+    child_data = reference_manifest_dict([{"id": "parent", "version": "1.0.0"}], bundle_id="child")
+    child_data["bundle"]["version"] = "1.0.0"
+    child = BundleManifest.from_dict(child_data)
+    class Stack:
+        def resolve(self, bundle_id, version=None): return _selected(bundle_id, install_allowed=False, source="community")
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: child)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1, result.output
+    assert "Bundle reference cycle" in result.output
+
+    child = BundleManifest.from_dict(valid_manifest_dict(bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"}, provides={}))
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: child)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1, result.output
+    assert "discovery-only" in result.output
+
+
+def test_validate_structural_error_skips_expansion(project: Path, monkeypatch):
+    path = _write_reference_bundle(project, [{"id": "child", "version": "1.0.0"}])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["schema_version"] = "1.0"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    monkeypatch.setattr("specify_cli.bundles.command_validate._expand_manifest", lambda *a, **k: pytest.fail("expanded structural error"))
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1
+    assert "Bundle references require schema_version" in result.output
+
+
+def test_validate_expansion_failure_reports_own_error_once(project: Path, monkeypatch):
+    path = _write_reference_bundle(project, [{"id": "child", "version": "1.0.0"}], provides={"extensions": [{"id": "own", "version": "1.0.0"}]})
+    monkeypatch.setattr("specify_cli.bundles.command_validate._expand_manifest", lambda *a, **k: (_ for _ in ()).throw(BundlerError("expansion boom")))
+    monkeypatch.setattr("specify_cli.bundles.references.make_reference_checker", lambda *a, **k: lambda component: "own problem" if component.id == "own" else None)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1
+    assert result.output.count("expansion boom") == 1
+    assert result.output.count("own problem") == 1
+    assert result.output.index("expansion boom") < result.output.index("own problem")
+
+
+def test_validate_flat_manifest_never_expands(project: Path, monkeypatch):
+    path = project / "flat.yml"
+    path.write_text(yaml.safe_dump(valid_manifest_dict(provides={})), encoding="utf-8")
+    monkeypatch.setattr("specify_cli.bundles.command_validate._expand_manifest", lambda *a, **k: pytest.fail("flat manifest expanded"))
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path), "--offline"])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_real_catalog_with_patched_download(project: Path, monkeypatch):
+    path = _write_reference_bundle(project, [{"id": "child", "version": "1.0.0"}])
+    child_path = project / "child.yml"
+    child_path.write_text(yaml.safe_dump(valid_manifest_dict(bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"}, provides={})), encoding="utf-8")
+    catalog = project / "catalog.json"
+    write_catalog_file(catalog, {"child": catalog_entry_dict("child", version="1.0.0")})
+    (project / ".specify" / "bundle-catalogs.yml").write_text(yaml.safe_dump({"schema_version": "1.0", "catalogs": [{"id": "file", "url": str(catalog), "priority": 0, "install_policy": "install-allowed"}]}), encoding="utf-8")
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: BundleManifest.from_file(child_path))
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_reports_sibling_conflict(project: Path, monkeypatch):
+    path = _write_reference_bundle(
+        project,
+        [{"id": "first", "version": "1.0.0"}, {"id": "second", "version": "1.0.0"}],
+    )
+    children = {
+        "first": BundleManifest.from_dict(valid_manifest_dict(
+            bundle={"id": "first", "name": "First", "version": "1.0.0", "role": "developer", "description": "first", "author": "tests", "license": "MIT"},
+            provides={"extensions": [{"id": "shared", "version": "1.0.0"}]},
+        )),
+        "second": BundleManifest.from_dict(valid_manifest_dict(
+            bundle={"id": "second", "name": "Second", "version": "1.0.0", "role": "developer", "description": "second", "author": "tests", "license": "MIT"},
+            provides={"extensions": [{"id": "shared", "version": "2.0.0"}]},
+        )),
+    }
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return _selected(bundle_id)
+
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr(
+        "specify_cli.bundles.command_validate._download_manifest",
+        lambda resolved, *, offline: children[resolved.entry.id],
+    )
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1, result.output
+    assert "declare 'shared'" in result.output
+
+
+def test_validate_reports_override_warning(project: Path, monkeypatch):
+    path = _write_reference_bundle(
+        project,
+        [{"id": "child", "version": "1.0.0"}],
+        provides={"extensions": [{"id": "shared", "version": "2.0.0"}]},
+    )
+    child = BundleManifest.from_dict(valid_manifest_dict(
+        bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"},
+        provides={"extensions": [{"id": "shared", "version": "1.0.0"}]},
+    ))
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return _selected(bundle_id)
+
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: child)
+    monkeypatch.setattr("specify_cli.bundles.references.make_reference_checker", lambda *a, **k: lambda component: None)
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 0, result.output
+    assert "overrides" in result.output

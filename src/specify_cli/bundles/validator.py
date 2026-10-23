@@ -35,6 +35,7 @@ class ValidationReport:
 def validate_manifest(
     manifest: BundleManifest,
     reference_checker: ReferenceChecker | None = None,
+    components: list[ComponentRef] | None = None,
 ) -> ValidationReport:
     report = ValidationReport()
 
@@ -50,7 +51,8 @@ def validate_manifest(
             )
 
     if reference_checker is not None:
-        for component in manifest.components:
+        selected_components = manifest.components if components is None else components
+        for component in selected_components:
             problem = reference_checker(component)
             if problem:
                 report.errors.append(

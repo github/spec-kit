@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .manifest import BundleManifest
+from .manifest import BundleManifest, ComponentRef
 from .records import InstalledBundleRecord
 from .versioning import same_version
 
@@ -19,10 +19,28 @@ class ConflictReport:
         return self.integration_clash is not None or bool(self.version_clashes)
 
 
+def component_setting_differences(a: ComponentRef, b: ComponentRef) -> list[str]:
+    """Return install-affecting setting fields that differ between two refs.
+
+    Compares ``source`` and, for presets only, ``priority`` and ``strategy``.
+    Versions are intentionally not compared.
+    """
+    different = []
+    if a.source != b.source:
+        different.append("source")
+    if a.kind == "presets":
+        if a.priority != b.priority:
+            different.append("priority")
+        if a.strategy != b.strategy:
+            different.append("strategy")
+    return different
+
+
 def detect_conflicts(
     manifest: BundleManifest,
     active_integration: str | None,
     installed: list[InstalledBundleRecord],
+    components: list[ComponentRef] | None = None,
 ) -> ConflictReport:
     report = ConflictReport()
 
@@ -43,7 +61,8 @@ def detect_conflicts(
                 (record.bundle_id, component.version)
             )
 
-    for component in manifest.components:
+    selected_components = manifest.components if components is None else components
+    for component in selected_components:
         for owner, version in already.get((component.kind, component.id), []):
             if owner == manifest.bundle.id:
                 continue

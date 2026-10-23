@@ -22,6 +22,28 @@ from .catalogs import (
 CatalogFetcher = Callable[[CatalogSource], dict]
 
 
+class ReleaseNotFoundError(BundlerError):
+    """A requested release is absent from the winning catalog entry."""
+
+    def __init__(
+        self,
+        bundle_id: str,
+        version: str,
+        source_id: str,
+        advertised: tuple[str, ...],
+    ) -> None:
+        self.bundle_id = bundle_id
+        self.version = version
+        self.source_id = source_id
+        self.advertised = advertised
+        offered = ", ".join(advertised)
+        super().__init__(
+            f"Bundle '{bundle_id}' has no release {version} in catalog source "
+            f"'{source_id}' (advertised: {offered}). Only the "
+            "highest-precedence source that lists a bundle is consulted."
+        )
+
+
 @dataclass
 class ResolvedBundle:
     entry: CatalogEntry
@@ -80,11 +102,11 @@ class CatalogStack:
             if entry is not None:
                 selected = select_release(entry, version)
                 if selected is None:
-                    advertised = ", ".join(available_versions(entry))
-                    raise BundlerError(
-                        f"Bundle '{bundle_id}' has no release {version} in catalog source "
-                        f"'{source.id}' (advertised: {advertised}). Only the "
-                        "highest-precedence source that lists a bundle is consulted."
+                    raise ReleaseNotFoundError(
+                        bundle_id=bundle_id,
+                        version=version,
+                        source_id=source.id,
+                        advertised=tuple(available_versions(entry)),
                     )
                 return ResolvedBundle(
                     entry=selected.with_provenance(source),

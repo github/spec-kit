@@ -14,6 +14,7 @@ from . import BundlerError
 from ._commands import (
     _build_stack,
     _bundle_overlaps,
+    _expand_manifest,
     _fail,
     _trust_badge,
     _trust_level,
@@ -21,6 +22,7 @@ from ._commands import (
 )
 from .project import find_project_root
 from .sources import _download_manifest
+from .versioning import same_version
 
 
 @bundle_app.command("info")
@@ -77,12 +79,28 @@ def bundle_info(
         # degrading to catalog `provides` counts, so users never mistake an
         # unverifiable bundle for a known/installable one.
         manifest = _download_manifest(resolved, offline=offline)
+        expanded = _expand_manifest(
+            project_root,
+            manifest,
+            offline=offline,
+            stack=stack,
+            download=_download_manifest,
+        )
     except BundlerError as exc:
         _fail(str(exc), as_json=as_json and isinstance(exc.__cause__, ProjectPolicyError))
         return
 
-    overlaps = _bundle_overlaps(project_root, manifest, offline=offline)
-    components = _manifest_component_view(manifest)
+    if expanded.has_references:
+        overlaps = _bundle_overlaps(
+            project_root,
+            manifest,
+            offline=offline,
+            components=expanded.components,
+        )
+    else:
+        # Preserve the flat command's established call shape and rendering.
+        overlaps = _bundle_overlaps(project_root, manifest, offline=offline)
+    components = _manifest_component_view(expanded)
 
     entry = resolved.entry
     if as_json:
@@ -106,6 +124,8 @@ def bundle_info(
             "components": components,
             "overlaps": overlaps,
         }
+        if expanded.has_references:
+            payload["references"] = _reference_view(expanded)
         print(_json.dumps(payload, indent=2))
         return
 
@@ -132,6 +152,11 @@ def bundle_info(
         )
     if manifest and manifest.integration:
         console.print(f"  Integration: {_escape_markup(str(manifest.integration.id))}")
+
+    if expanded.has_references:
+        console.print("\n  [bold]References:[/bold]")
+        for reference in expanded.references:
+            console.print(f"    - {_escape_markup(_format_reference(reference))}")
 
     if components:
         console.print("\n  [bold]Components[/bold] (added on install):")
@@ -161,23 +186,73 @@ def bundle_info(
         )
 
 
-def _manifest_component_view(manifest) -> list[dict]:
-    """Flatten a manifest's components to JSON-friendly dicts (id, version, ...)."""
-    if manifest is None:
+def _manifest_component_view(expanded) -> list[dict]:
+    """Flatten an expanded manifest to JSON-friendly component dictionaries."""
+    if expanded is None:
         return []
     view: list[dict] = []
-    for component in manifest.components:
+    for component in expanded.components:
         item = {
             "kind": component.kind,
             "id": component.id,
             "version": component.version,
         }
+        if expanded.has_references and component.source is not None:
+            item["source"] = component.source
         if component.priority is not None:
             item["priority"] = component.priority
         if component.strategy is not None:
             item["strategy"] = component.strategy
+        if expanded.has_references:
+            origin = expanded.origins.get((component.kind, component.id))
+            if origin is not None and origin.origin:
+                item["origin"] = list(origin.origin)
+            if origin is not None and origin.overrides:
+                item["overrides"] = [
+                    _component_provenance(override.component, override.origin)
+                    for override in origin.overrides
+                ]
         view.append(item)
     return view
+
+
+def _component_provenance(component, origin: tuple[str, ...]) -> dict:
+    item = {
+        "version": component.version,
+        "origin": list(origin),
+    }
+    if component.source is not None:
+        item["source"] = component.source
+    if component.priority is not None:
+        item["priority"] = component.priority
+    if component.strategy is not None:
+        item["strategy"] = component.strategy
+    return item
+
+
+def _reference_view(expanded) -> list[dict]:
+    return [
+        {
+            "id": reference.id,
+            "version": reference.version,
+            "source": reference.source_id,
+            "install_policy": (
+                "install-allowed" if reference.install_allowed else "discovery-only"
+            ),
+            "via": list(reference.via),
+        }
+        for reference in expanded.references
+    ]
+
+
+def _format_reference(reference) -> str:
+    label = f"{reference.id} v{reference.version} ({reference.source_id}"
+    if reference.via:
+        label += f"; via {' → '.join(reference.via)}"
+    if not reference.install_allowed:
+        label += "; discovery-only, not installable"
+    label += ")"
+    return label
 
 
 def _format_component(item: dict) -> str:
@@ -187,6 +262,42 @@ def _format_component(item: dict) -> str:
         extras.append(f"priority={item['priority']}")
     if item.get("strategy") is not None:
         extras.append(f"strategy={item['strategy']}")
+    origin = item.get("origin")
+    if origin:
+        extras.append(f"from {' → '.join(origin)}")
+    for override in item.get("overrides", []):
+        extras.append(_format_override(item, override))
     if extras:
         label += f" ({', '.join(extras)})"
     return label
+
+
+def _format_override(item: dict, override: dict) -> str:
+    """Describe the settings replaced by an overriding component."""
+    changed: list[str] = []
+    old_version = override.get("version")
+    current_version = item.get("version")
+    versions_differ = (old_version is None) != (current_version is None)
+    if (
+        versions_differ
+        or (
+            old_version is not None
+            and current_version is not None
+            and not same_version(current_version, old_version)
+        )
+    ):
+        changed.append(str(old_version) if old_version else "unpinned")
+
+    for field in ("source", "priority", "strategy"):
+        if override.get(field) != item.get(field):
+            value = override.get(field)
+            changed.append(f"{field}={value if value is not None else '<unset>'}")
+
+    # An override always differs in at least one install-affecting field, but
+    # retain the historical version-only marker if a caller supplies an
+    # incomplete provenance dictionary.
+    if not changed:
+        changed.append(str(old_version) if old_version else "unpinned")
+    marker = ", ".join(changed)
+    origin = " → ".join(override.get("origin", []))
+    return f"overrides {marker} from {origin}"

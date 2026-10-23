@@ -11,6 +11,9 @@ from .._download_security import (
     read_response_limited,
 )
 from . import BundlerError
+from .catalog_stack import ReleaseNotFoundError
+from .expansion import LoadedBundle, SourceMismatchError
+from .manifest import BundleRef
 from .versioning import same_version
 
 # ZIP magic-byte signatures cover local headers, empty archives, and spanning markers.
@@ -85,6 +88,67 @@ def _local_manifest_source(arg: str):
     raise BundlerError(
         f"'{candidate}' is not a recognised bundle source (.zip artifact, bundle "
         "directory, or bundle.yml)."
+    )
+
+
+class CatalogBundleLoader:
+    """Load referenced bundles from an already-resolved catalog stack.
+
+    The caller owns construction of the effective stack.  In particular, this
+    loader must not create a second stack: source precedence and project/user
+    overrides are part of the resolution contract for bundle references.
+    """
+
+    def __init__(self, stack, *, offline: bool, download=None) -> None:
+        self._stack = stack
+        self._offline = offline
+        self._download = download
+
+    def load(self, ref: BundleRef, chain: tuple[str, ...]) -> LoadedBundle:
+        """Resolve and download the exact release named by *ref*.
+
+        A source pin is an assertion about the winning catalog, rather than a
+        selector.  Consequently it is checked after stack resolution and
+        before the manifest download; a mismatch never falls through to a
+        lower-precedence catalog or performs network I/O.
+        """
+        try:
+            resolved = self._stack.resolve(ref.id, ref.version)
+        except ReleaseNotFoundError as exc:
+            missing = _missing_release_error(ref, chain, exc)
+            if missing is not None:
+                raise missing from exc
+            raise
+
+        if ref.source and resolved.source.id != ref.source:
+            raise SourceMismatchError(ref, resolved.source.id, chain)
+
+        download = self._download or _download_manifest
+        manifest = download(resolved, offline=self._offline)
+
+        return LoadedBundle(
+            manifest,
+            resolved.source.id,
+            resolved.install_allowed,
+        )
+
+
+def _missing_release_error(ref, chain, error: ReleaseNotFoundError):
+    """Format the catalog stack's exact-release failure for bundle authors.
+
+    ``CatalogStack.resolve`` provides the advertised versions and winning source
+    as structured exception attributes, so this translation does not depend on
+    the wording of its diagnostic message.
+    """
+    if ref.version is None:
+        return None
+
+    parent = chain[-1] if chain else "<root>"
+    offered = ", ".join(error.advertised)
+    return BundlerError(
+        f"'{parent}' pins {error.bundle_id} {error.version}, but catalog "
+        f"'{error.source_id}' offers {offered}. Update the reference to an "
+        "advertised version."
     )
 
 

@@ -16,7 +16,7 @@ from typing import Any
 
 from . import BundlerError
 from .yamlio import dump_json, ensure_within, load_json
-from .manifest import COMPONENT_KINDS, ComponentRef, _text
+from .manifest import COMPONENT_KINDS, BundleRef, ComponentRef, _text
 
 RECORDS_FILENAME = "bundle-records.json"
 RECORDS_SCHEMA_VERSION = "1.0"
@@ -30,6 +30,7 @@ class InstalledBundleRecord:
     required_components: tuple[ComponentRef, ...]
     installed_at: str
     installed_versions: dict[str, str] = field(default_factory=dict)
+    bundle_references: tuple[BundleRef, ...] = ()
 
     @classmethod
     def create(
@@ -40,6 +41,7 @@ class InstalledBundleRecord:
         installed_at: str | None = None,
         required_components: list[ComponentRef] | None = None,
         installed_versions: dict[str, str] | None = None,
+        bundle_references: list[BundleRef] | None = None,
     ) -> "InstalledBundleRecord":
         return cls(
             bundle_id=bundle_id,
@@ -51,6 +53,9 @@ class InstalledBundleRecord:
             installed_at=installed_at or _utc_now(),
             installed_versions=(
                 dict(installed_versions) if installed_versions is not None else {}
+            ),
+            bundle_references=(
+                tuple(bundle_references) if bundle_references is not None else ()
             ),
         )
 
@@ -68,6 +73,11 @@ class InstalledBundleRecord:
         }
         if self.installed_versions:
             data["installed_versions"] = dict(self.installed_versions)
+        if self.bundle_references:
+            data["bundle_references"] = [
+                _bundle_reference_to_dict(reference)
+                for reference in self.bundle_references
+            ]
         return data
 
     @classmethod
@@ -121,6 +131,16 @@ class InstalledBundleRecord:
         installed_versions = data.get("installed_versions", {})
         if not isinstance(installed_versions, dict):
             raise BundlerError("Corrupt record: 'installed_versions' must be a mapping.")
+        bundle_references_raw = data.get("bundle_references")
+        if bundle_references_raw is None:
+            bundle_references: tuple[BundleRef, ...] = ()
+        elif not isinstance(bundle_references_raw, list):
+            raise BundlerError("Corrupt record: 'bundle_references' must be a list.")
+        else:
+            bundle_references = tuple(
+                _bundle_reference_from_dict(reference)
+                for reference in bundle_references_raw
+            )
         keys = {f"{c.kind}:{c.id}" for c in required}
         for key, actual in installed_versions.items():
             if key not in keys or not isinstance(actual, str) or not actual.strip():
@@ -135,6 +155,7 @@ class InstalledBundleRecord:
             contributed_components=contributed,
             required_components=required,
             installed_versions=dict(installed_versions),
+            bundle_references=bundle_references,
         )
 
 
@@ -280,6 +301,45 @@ def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
     if ref.strategy is not None:
         data["strategy"] = ref.strategy
     return data
+
+
+def _bundle_reference_to_dict(reference: BundleRef) -> dict[str, Any]:
+    return {
+        "id": reference.id,
+        "version": reference.version,
+        "source": reference.source,
+    }
+
+
+def _bundle_reference_from_dict(data: Any) -> BundleRef:
+    if not isinstance(data, dict):
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entries must be mappings."
+        )
+    bundle_id = data.get("id")
+    version = data.get("version")
+    if (
+        not isinstance(bundle_id, str)
+        or not bundle_id.strip()
+        or not isinstance(version, str)
+        or not version.strip()
+    ):
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entries must have non-empty "
+            "string 'id' and 'version'."
+        )
+    source = data.get("source")
+    if source == "":
+        source = None
+    elif source is not None and not isinstance(source, str):
+        raise BundlerError(
+            "Corrupt record: 'bundle_references' entry 'source' must be a string."
+        )
+    return BundleRef(
+        id=bundle_id,
+        version=version,
+        source=source,
+    )
 
 
 def _component_from_dict(data: Any, *, label: str = "contributed") -> ComponentRef:

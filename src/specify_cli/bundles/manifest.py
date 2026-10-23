@@ -15,7 +15,7 @@ from . import BundlerError
 from .versioning import is_semver
 from .yamlio import load_yaml
 
-SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
+SUPPORTED_SCHEMA_VERSIONS = {"1.0", "1.1"}
 PRESET_STRATEGIES = {"replace", "prepend", "append", "wrap"}
 
 COMPONENT_KINDS = ("extensions", "presets", "steps", "workflows")
@@ -39,6 +39,18 @@ class ComponentRef:
 
     def label(self) -> str:
         return f"{self.kind[:-1]}:{self.id}@{self.version or 'unpinned'}"
+
+
+@dataclass(frozen=True)
+class BundleRef:
+    """A pointer to another bundle, pinned to an exact version."""
+
+    id: str
+    version: str | None = None
+    source: str | None = None  # expected winning bundle catalog ID
+
+    def label(self) -> str:
+        return f"bundle:{self.id}@{self.version or 'unpinned'}"
 
 
 @dataclass(frozen=True)
@@ -74,12 +86,16 @@ class BundleManifest:
     presets: list[ComponentRef] = field(default_factory=list)
     steps: list[ComponentRef] = field(default_factory=list)
     workflows: list[ComponentRef] = field(default_factory=list)
+    bundles: list[BundleRef] = field(default_factory=list)
     tags: tuple[str, ...] = ()
     source_path: Path | None = None
 
     @property
     def components(self) -> list[ComponentRef]:
-        """All installable component references in deterministic order."""
+        """Own installable component references in deterministic order.
+
+        Excludes ``bundles``: referenced bundles are expanded separately.
+        """
         return [*self.extensions, *self.presets, *self.steps, *self.workflows]
 
     # -- construction ---------------------------------------------------------
@@ -153,6 +169,7 @@ class BundleManifest:
             presets=_parse_refs("presets", provides.get("presets")),
             steps=_parse_refs("steps", provides.get("steps")),
             workflows=_parse_refs("workflows", provides.get("workflows")),
+            bundles=_parse_bundle_refs(provides.get("bundles")),
             tags=tuple(str(t) for t in tags_raw),
         )
         return manifest
@@ -223,6 +240,41 @@ class BundleManifest:
                     f"got {ref.priority}."
                 )
 
+        if self.bundles and self.schema_version != "1.1":
+            errors.append('Bundle references require schema_version "1.1".')
+
+        seen_bundles: set[str] = set()
+        for bundle_ref in self.bundles:
+            if not bundle_ref.id:
+                errors.append("A bundle reference is missing its 'id'.")
+            else:
+                if not _SAFE_BUNDLE_ID.match(bundle_ref.id):
+                    errors.append(
+                        f"Bundle reference id '{bundle_ref.id}' must be a slug "
+                        "(lowercase letters, digits, '.', '_', '-'; no path separators)."
+                    )
+                if bundle_ref.id in seen_bundles:
+                    errors.append(
+                        f"Duplicate bundle reference '{bundle_ref.id}' in provides; "
+                        "declare each bundle reference only once."
+                    )
+                seen_bundles.add(bundle_ref.id)
+                if bundle_ref.id == self.bundle.id:
+                    errors.append(
+                        f"Bundle reference '{bundle_ref.id}' is invalid: "
+                        "a bundle cannot reference itself."
+                    )
+            if not bundle_ref.version:
+                errors.append(
+                    f"bundle reference '{bundle_ref.id or '<unknown>'}' "
+                    "must be pinned to a 'version'."
+                )
+            elif not is_semver(bundle_ref.version):
+                errors.append(
+                    f"bundle reference '{bundle_ref.id}' has invalid version "
+                    f"'{bundle_ref.version}'."
+                )
+
         for ref in self.presets:
             if ref.priority is None:
                 errors.append(f"preset '{ref.id}' must declare an integer 'priority'.")
@@ -289,6 +341,25 @@ def _parse_refs(kind: str, raw: Any) -> list[ComponentRef]:
                 source=(str(item["source"]).strip() if item.get("source") else None),
                 priority=priority,
                 strategy=(str(item["strategy"]).strip() if item.get("strategy") else None),
+            )
+        )
+    return refs
+
+
+def _parse_bundle_refs(raw: Any) -> list[BundleRef]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise BundlerError("provides.bundles must be a list when present.")
+    refs: list[BundleRef] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise BundlerError("Each provides.bundles entry must be a mapping.")
+        refs.append(
+            BundleRef(
+                id=_text(item.get("id")),
+                version=(str(item["version"]).strip() if item.get("version") else None),
+                source=(str(item["source"]).strip() if item.get("source") else None),
             )
         )
     return refs

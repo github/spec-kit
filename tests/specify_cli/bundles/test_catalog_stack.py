@@ -6,7 +6,7 @@ import pytest
 
 from specify_cli.bundler import BundlerError
 from specify_cli.bundles.catalogs import CatalogSource, InstallPolicy, Scope
-from specify_cli.bundles.catalog_stack import CatalogStack
+from specify_cli.bundles.catalog_stack import CatalogStack, ReleaseNotFoundError
 from tests.specify_cli.bundles.helpers import catalog_entry_dict, catalog_payload
 
 
@@ -119,13 +119,19 @@ def test_resolve_does_not_fall_through_to_lower_source_with_the_version():
         {"high": catalog_payload({"history": high}), "low": catalog_payload({"history": low})},
     )
 
-    with pytest.raises(BundlerError) as excinfo:
+    with pytest.raises(ReleaseNotFoundError) as excinfo:
         stack.resolve("history", "0.9.0")
 
-    message = str(excinfo.value)
-    assert "no release 0.9.0 in catalog source 'high'" in message
-    assert "(advertised: 2.0.0, 1.0.0)" in message
-    assert "highest-precedence source" in message
+    error = excinfo.value
+    assert error.bundle_id == "history"
+    assert error.version == "0.9.0"
+    assert error.source_id == "high"
+    assert error.advertised == ("2.0.0", "1.0.0")
+    assert str(error) == (
+        "Bundle 'history' has no release 0.9.0 in catalog source 'high' "
+        "(advertised: 2.0.0, 1.0.0). Only the highest-precedence source that "
+        "lists a bundle is consulted."
+    )
 
 
 def test_resolve_keeps_discovery_only_winner_with_the_version():

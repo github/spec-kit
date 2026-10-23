@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 
 from specify_cli.bundler import BundlerError
+from specify_cli.bundles.expansion import LoadedBundle, expand_manifest
 from specify_cli.bundles.installer import install_bundle, remove_bundle
-from specify_cli.bundles.manifest import BundleManifest, ComponentRef
+from specify_cli.bundles.manifest import BundleManifest, BundleRef, ComponentRef
 from specify_cli.bundles.records import (
     InstalledBundleRecord,
     load_records,
@@ -20,8 +21,10 @@ from specify_cli.bundles.records import (
 )
 from specify_cli.bundles.resolver import resolve_install_plan
 from tests.specify_cli.bundles.helpers import (
+    FakeBundleLoader,
     FakeInstaller,
     make_project,
+    reference_manifest_dict,
     valid_manifest_dict,
 )
 
@@ -29,6 +32,26 @@ from tests.specify_cli.bundles.helpers import (
 def _plan(manifest):
     return resolve_install_plan(
         manifest, speckit_version="0.11.2", active_integration="copilot"
+    )
+
+
+def _expanded_plan(root_id: str, child: BundleManifest):
+    root = BundleManifest.from_dict(
+        reference_manifest_dict(
+            [{"id": child.bundle.id, "version": child.bundle.version}],
+            bundle_id=root_id,
+        )
+    )
+    expanded = expand_manifest(
+        root,
+        FakeBundleLoader({
+            (child.bundle.id, child.bundle.version): LoadedBundle(
+                child, "default", True
+            )
+        }),
+    )
+    return root, resolve_install_plan(
+        expanded, speckit_version="0.11.2", active_integration="copilot"
     )
 
 
@@ -88,6 +111,131 @@ def test_install_records_and_invokes_primitives(tmp_path: Path):
     records = load_records(tmp_path)
     assert len(records) == 1
     assert records[0].bundle_id == "demo-bundle"
+
+
+def test_install_records_expanded_components_and_bundle_references(tmp_path: Path):
+    make_project(tmp_path)
+    child = _bundle("child", ["ext-a"])
+    root, plan = _expanded_plan("team", child)
+    installer = FakeInstaller()
+
+    install_bundle(tmp_path, plan, installer, manifest=root)
+
+    record = load_records(tmp_path)[0]
+    assert record.required_components == tuple(plan.components)
+    assert record.contributed_components == tuple(plan.components)
+    assert record.bundle_references == (BundleRef("child", "1.0.0", "default"),)
+
+
+def test_refresh_drops_components_removed_from_expanded_plan(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first_root, first_plan = _expanded_plan(
+        "team", _bundle("child", ["ext-a", "ext-b"])
+    )
+    install_bundle(tmp_path, first_plan, installer, manifest=first_root)
+
+    second_root, second_plan = _expanded_plan(
+        "team", _bundle("child", ["ext-a"])
+    )
+    result = install_bundle(
+        tmp_path, second_plan, installer, manifest=second_root, refresh=True
+    )
+
+    assert ("extensions", "ext-b") in {
+        (component.kind, component.id) for component in result.uninstalled
+    }
+    assert ("extensions", "ext-b") not in installer.installed
+    assert load_records(tmp_path)[0].required_components == tuple(second_plan.components)
+    assert load_records(tmp_path)[0].bundle_references == (
+        BundleRef("child", "1.0.0", "default"),
+    )
+
+    flat = _bundle("team", ["ext-a"])
+    install_bundle(tmp_path, _plan(flat), installer, manifest=flat, refresh=True)
+    assert load_records(tmp_path)[0].bundle_references == ()
+
+
+def test_refresh_with_bumped_reference_version_updates_record(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    first_root, first_plan = _expanded_plan("team", _bundle("child", ["ext-a"]))
+    install_bundle(tmp_path, first_plan, installer, manifest=first_root)
+
+    child_v2 = _bundle("child", ["ext-a"], version="2.0.0")
+    second_root, second_plan = _expanded_plan("team", child_v2)
+    install_bundle(tmp_path, second_plan, installer, manifest=second_root, refresh=True)
+
+    assert load_records(tmp_path)[0].bundle_references == (
+        BundleRef("child", "2.0.0", "default"),
+    )
+
+
+def test_removal_keeps_expanded_component_required_by_standalone_bundle(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    standalone = _bundle("child", ["ext-a"])
+    install_bundle(tmp_path, _plan(standalone), installer, manifest=standalone)
+    root, plan = _expanded_plan("team", standalone)
+    install_bundle(tmp_path, plan, installer, manifest=root)
+
+    result = remove_bundle(tmp_path, "team", installer)
+
+    assert ("extensions", "ext-a") in {
+        (component.kind, component.id) for component in result.skipped
+    }
+    assert ("extensions", "ext-a") in installer.installed
+    assert [record.bundle_id for record in load_records(tmp_path)] == ["child"]
+
+
+def test_standalone_and_referencing_installs_share_expanded_components(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    child = _bundle("child", ["ext-a"])
+    install_bundle(tmp_path, _plan(child), installer, manifest=child)
+    root, plan = _expanded_plan("team", child)
+
+    result = install_bundle(tmp_path, plan, installer, manifest=root)
+
+    assert result.skipped == plan.components
+    records = {record.bundle_id: record for record in load_records(tmp_path)}
+    assert records["team"].contributed_components == tuple(plan.components)
+    assert installer.install_calls == [("extensions", "ext-a")]
+
+
+def test_removing_standalone_child_preserves_team_references_and_contributions(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    child = _bundle("child", ["ext-a"])
+    install_bundle(tmp_path, _plan(child), installer, manifest=child)
+    root, plan = _expanded_plan("team", child)
+    install_bundle(tmp_path, plan, installer, manifest=root)
+
+    remove_bundle(tmp_path, "child", installer)
+
+    records = {record.bundle_id: record for record in load_records(tmp_path)}
+    assert records["team"].bundle_references == (
+        BundleRef("child", "1.0.0", "default"),
+    )
+    assert records["team"].contributed_components == tuple(plan.components)
+    assert ("extensions", "ext-a") in installer.installed
+
+
+def test_conflict_from_expanded_component_blocks_install(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    installed = _bundle("installed", ["ext-a"], version="1.0.0")
+    install_bundle(tmp_path, _plan(installed), installer, manifest=installed)
+    root, plan = _expanded_plan("team", _bundle("child", ["ext-a"], version="2.0.0"))
+
+    with pytest.raises(BundlerError, match="ext-a"):
+        install_bundle(tmp_path, plan, installer, manifest=root)
+
+    assert [record.bundle_id for record in load_records(tmp_path)] == ["installed"]
 
 
 def test_install_is_idempotent(tmp_path: Path):

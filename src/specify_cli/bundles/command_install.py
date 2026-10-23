@@ -9,9 +9,11 @@ from rich.markup import escape as _escape_markup
 
 from .._console import console
 from . import BundlerError
+from .expansion import require_installable
 from ._commands import (
     _build_stack,
     _bundle_overlaps,
+    _expand_manifest,
     _default_script_type,
     _fail,
     _render_install_warnings,
@@ -75,6 +77,7 @@ def bundle_install(
         from .resolver import resolve_install_plan
 
         project_root = find_project_root()
+        stack = None
 
         local_manifest = _local_manifest_source(bundle_id)
         if local_manifest is not None:
@@ -94,6 +97,15 @@ def bundle_install(
                 )
             manifest = _download_manifest(resolved, offline=offline)
 
+        expanded = _expand_manifest(
+            project_root or Path.cwd(),
+            manifest,
+            offline=offline,
+            stack=stack,
+            download=_download_manifest,
+        )
+        require_installable(expanded)
+
         if project_root is None:
             init_integration = _resolve_init_integration(integration, manifest)
             # Resolve all hard compatibility gates before ``specify init``.
@@ -101,7 +113,7 @@ def bundle_install(
             # initialize a project and only then fail its version/integration
             # checks, leaving state behind after a failed install.
             resolve_install_plan(
-                manifest,
+                expanded,
                 speckit_version=_speckit_version(),
                 active_integration=init_integration,
                 integration_explicit=True,
@@ -115,7 +127,12 @@ def bundle_install(
             )
             project_root = require_project_root()
 
-        for overlap in _bundle_overlaps(project_root, manifest, offline=offline):
+        for overlap in _bundle_overlaps(
+            project_root,
+            manifest,
+            offline=offline,
+            components=expanded.components,
+        ):
             console.print(f"[yellow]![/yellow] {_escape_markup(str(overlap))}")
 
         # For an already-initialized project, the project's recorded active
@@ -125,7 +142,7 @@ def bundle_install(
         # target when the active integration cannot be determined.
         detected = active_integration(project_root)
         plan = resolve_install_plan(
-            manifest,
+            expanded,
             speckit_version=_speckit_version(),
             active_integration=detected if detected is not None else integration,
             integration_explicit=bool(integration) and detected is None,
