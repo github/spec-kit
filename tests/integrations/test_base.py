@@ -465,6 +465,55 @@ class TestResolveCommandRefs:
         assert result == "foo/speckit.planbar"
 
 
+class TestResolveHookInvocationPrefix:
+    """Tests for resolve_hook_invocation_prefix."""
+
+    HOOK_BLOCK = (
+        "    Command: `/{command}`\n"
+        "    Prompt: {prompt}\n"
+        "    To execute: `/{command}`\n"
+        "    Executing: `/{command}`\n"
+        "    EXECUTE_COMMAND: {command}\n"
+    )
+
+    def test_slash_prefix_leaves_content_untouched(self):
+        assert (
+            IntegrationBase.resolve_hook_invocation_prefix(self.HOOK_BLOCK, "/")
+            == self.HOOK_BLOCK
+        )
+
+    def test_dollar_prefix(self):
+        result = IntegrationBase.resolve_hook_invocation_prefix(
+            self.HOOK_BLOCK, "$"
+        )
+        assert "`/{command}`" not in result
+        assert result.count("`${command}`") == 3
+
+    def test_skill_colon_prefix(self):
+        result = IntegrationBase.resolve_hook_invocation_prefix(
+            self.HOOK_BLOCK, "/skill:"
+        )
+        assert "`/{command}`" not in result
+        assert result.count("`/skill:{command}`") == 3
+
+    def test_bare_command_token_is_not_rewritten(self):
+        """``EXECUTE_COMMAND`` carries the raw hook id, not an invocation."""
+        result = IntegrationBase.resolve_hook_invocation_prefix(
+            self.HOOK_BLOCK, "$"
+        )
+        assert "EXECUTE_COMMAND: {command}" in result
+        assert "Prompt: {prompt}" in result
+
+    @pytest.mark.parametrize("prefix", ["$", "/skill:"])
+    def test_idempotent(self, prefix):
+        once = IntegrationBase.resolve_hook_invocation_prefix(
+            self.HOOK_BLOCK, prefix
+        )
+        assert (
+            IntegrationBase.resolve_hook_invocation_prefix(once, prefix) == once
+        )
+
+
 class TestResolvePythonInterpreter:
     def test_returns_python_on_path(self, monkeypatch):
         # Positive: when python3 is on PATH it is preferred over python.
