@@ -238,9 +238,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if not has_non_whitespace_content(
-        paths.impl_plan.read_text(encoding="utf-8", errors="replace")
-    ):
+    try:
+        plan_content = paths.impl_plan.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        print(f"ERROR: plan.md is not readable in {paths.feature_dir}", file=sys.stderr)
+        print(
+            "Check its file permissions and rerun the prerequisite check.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not has_non_whitespace_content(plan_content):
         print(f"ERROR: plan.md is empty in {paths.feature_dir}", file=sys.stderr)
         print(
             "Populate it, or remove the empty file and rerun "

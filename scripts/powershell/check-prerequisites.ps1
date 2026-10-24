@@ -108,7 +108,15 @@ if (-not (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf)) {
     exit 1
 }
 
-if ([string]::IsNullOrWhiteSpace([System.IO.File]::ReadAllText($paths.IMPL_PLAN))) {
+try {
+    $planContent = [System.IO.File]::ReadAllText($paths.IMPL_PLAN)
+} catch {
+    [Console]::Error.WriteLine("ERROR: plan.md is not readable in $($paths.FEATURE_DIR)")
+    [Console]::Error.WriteLine("Check its file permissions and rerun the prerequisite check.")
+    exit 1
+}
+
+if ([string]::IsNullOrWhiteSpace($planContent)) {
     [Console]::Error.WriteLine("ERROR: plan.md is empty in $($paths.FEATURE_DIR)")
     $planCommand = Format-SpecKitCommand -CommandName 'plan' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine(

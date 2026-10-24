@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,66 @@ def _run(
         check=False,
         env=env or _clean_env(),
     )
+
+
+@contextmanager
+def _deny_plan_read(plan: Path):
+    if os.name != "nt":
+        mode = plan.stat().st_mode
+        try:
+            plan.chmod(0)
+            if os.access(plan, os.R_OK):
+                pytest.skip("current user can read files with no read permissions")
+            yield
+        finally:
+            plan.chmod(mode)
+        return
+
+    env = {**_clean_env(), "TEST_PLAN_PATH": str(plan)}
+    command = [_WINDOWS_POWERSHELL, "-NoProfile", "-Command"]
+    saved = _run(
+        [
+            *command,
+            "([System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH)).Sddl",
+        ],
+        plan.parent,
+        env=env,
+    )
+    assert saved.returncode == 0, saved.stderr
+    env["TEST_PLAN_SDDL"] = saved.stdout.strip()
+    try:
+        denied = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User; "
+                "$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("
+                "$sid, 'ReadData', 'Deny'); "
+                "$acl.AddAccessRule($rule); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert denied.returncode == 0, denied.stderr
+        with pytest.raises(PermissionError):
+            plan.read_bytes()
+        yield
+    finally:
+        restored = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$acl.SetSecurityDescriptorSddlForm($env:TEST_PLAN_SDDL, "
+                "[System.Security.AccessControl.AccessControlSections]::Access); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert restored.returncode == 0, restored.stderr
 
 
 def _json_stdout(result: subprocess.CompletedProcess[str]) -> object:
@@ -655,11 +716,22 @@ def test_plan_prerequisite_diagnostics(
         assert plan.stat().st_mtime_ns == before
 
 
-@requires_bash
-@pytest.mark.skipif(os.name == "nt", reason="requires POSIX read permissions")
+@pytest.mark.parametrize(
+    "port",
+    [
+        pytest.param("bash", marks=requires_bash),
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+            ),
+        ),
+        pytest.param("python"),
+    ],
+)
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-def test_bash_unreadable_plan_is_not_reported_as_empty(
-    prereq_repo: Path, json_mode: bool
+def test_unreadable_plan_is_not_reported_as_empty(
+    prereq_repo: Path, port: str, json_mode: bool
 ) -> None:
     _write_feature_json(prereq_repo)
     feature = prereq_repo / "specs" / "001-my-feature"
@@ -668,20 +740,18 @@ def test_bash_unreadable_plan_is_not_reported_as_empty(
     content = b"# Existing implementation plan\n"
     plan.write_bytes(content)
     before = plan.stat().st_mtime_ns
-    mode = plan.stat().st_mode
-    args = ("--json",) if json_mode else ()
+    if port == "powershell":
+        command_fn = _ps_cmd
+        args = ("-Json",) if json_mode else ()
+        paths_flag = "-PathsOnly"
+    else:
+        command_fn = _bash_cmd if port == "bash" else _py_cmd
+        args = ("--json",) if json_mode else ()
+        paths_flag = "--paths-only"
 
-    try:
-        plan.chmod(0)
-        if os.access(plan, os.R_OK):
-            pytest.skip("current user can read files with no read permissions")
-
-        result = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
-        paths_only = _run(
-            _bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo
-        )
-    finally:
-        plan.chmod(mode)
+    with _deny_plan_read(plan):
+        result = _run(command_fn(prereq_repo, *args), prereq_repo)
+        paths_only = _run(command_fn(prereq_repo, *args, paths_flag), prereq_repo)
 
     assert result.returncode == 1
     assert result.stdout == ""
@@ -692,7 +762,7 @@ def test_bash_unreadable_plan_is_not_reported_as_empty(
     assert paths_only.returncode == 0, paths_only.stderr
     assert plan.read_bytes() == content
     assert plan.stat().st_mtime_ns == before
-    readable = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    readable = _run(command_fn(prereq_repo, *args), prereq_repo)
     assert readable.returncode == 0, readable.stderr
 
 
