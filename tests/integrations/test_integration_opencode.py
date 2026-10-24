@@ -252,6 +252,14 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
                 b"*\n.*\n.specify/**\n",
                 b"*\n.*\n.specify/**\n!.specify/\n!.specify/**\n",
             ),
+            "bare-cr-comment": (
+                b"# user comment\r!.specify/\n!.specify/**\n",
+                b"# user comment\r!.specify/\n!.specify/**\n!.specify/\n",
+            ),
+            "unicode-separator-comment": (
+                "!.specify/\n!.specify/**\n# note\u2028.specify/memory\n".encode(),
+                "!.specify/\n!.specify/**\n# note\u2028.specify/memory\n".encode(),
+            ),
         }
         for name, (original, expected) in cases.items():
             root = tmp_path / name
@@ -281,6 +289,11 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
             (b"!.specify/\n!.specify/**\n.specify/memory/custom.md\n", "custom.md"),
             (b"!.specify/\n!.specify/**\n.specify/templates/plan-template.md\n", "plan-template.md"),
             (b"!.specify/\n!.specify/**\n.specify/memory\n!.specify/memory/*.md\n", "constitution.md"),
+            (b"!.specify/**\n*.md\n", "constitution.md"),
+            (
+                b"!.specify/\n!.specify/**\n.specify/memory/constitution.md\n!.specify/\n",
+                "constitution.md",
+            ),
         )):
             root = tmp_path / str(index)
             (root / ".specify" / "memory").mkdir(parents=True)

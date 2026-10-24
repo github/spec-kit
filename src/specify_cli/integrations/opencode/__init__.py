@@ -134,22 +134,34 @@ def _ignore_newline(raw: bytes) -> bytes:
     return b"\r\n" if b"\r\n" in raw else b"\n"
 
 
+def _split_ignore_lines(raw: bytes) -> list[bytes]:
+    lines = raw.split(b"\n")
+    last = len(lines) - 1
+    return [
+        line[:-1] if index < last and line.endswith(b"\r") else line
+        for index, line in enumerate(lines)
+    ]
+
+
 def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
     """Fail when *updated* still hides Spec Kit paths, evaluated in file order."""
     from ..._assets import _locate_core_pack, _repo_root
 
-    patterns = []
-    for line in updated.decode("utf-8").splitlines():
+    parsed = []
+    for raw_line in _split_ignore_lines(updated):
+        text = raw_line.decode("utf-8")
         try:
-            patterns.append(pathspec.GitIgnoreSpec.from_lines([line]).patterns[0])
-        except (ValueError, IndexError):
+            pathspec.GitIgnoreSpec.from_lines([text])
+        except ValueError:
             continue
+        parsed.append(text)
+    spec = pathspec.GitIgnoreSpec.from_lines(parsed)
 
-    def ignored(candidate: str) -> bool:
+    def ancestor_excluded(candidate: str) -> bool:
         state = False
-        for pattern in patterns:
-            hit = pattern.include is not None and pattern.match_file(candidate) is not None
-            state = bool(pattern.include) if hit else state
+        for pattern in spec.patterns:
+            if pattern.include is not None and pattern.match_file(candidate) is not None:
+                state = bool(pattern.include)
         return state
 
     def hides(probe: str) -> bool:
@@ -157,9 +169,9 @@ def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
         built, ancestors = "", parts if probe.endswith("/") else parts[:-1]
         for part in ancestors:
             built = f"{built}/{part}" if built else part
-            if ignored(built + "/"):
+            if ancestor_excluded(built + "/"):
                 return True
-        return not probe.endswith("/") and ignored(probe)
+        return not probe.endswith("/") and spec.match_file(probe)
 
     pack, repo = _locate_core_pack(), _repo_root()
     probes = {".specify/", ".specify/.gitignore", ".specify/memory/constitution.md"}
@@ -195,7 +207,7 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
         body = newline.join(rule.encode("ascii") for rule in _SPECIFY_IGNORE_RULES)
         return body + newline
 
-    present = set(raw.splitlines())
+    present = set(_split_ignore_lines(raw))
     missing = [
         rule
         for rule in _SPECIFY_IGNORE_RULES
