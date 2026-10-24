@@ -36,7 +36,7 @@ def _local_manifest_source(arg: str):
             raise BundlerError(f"No bundle.yml found in '{candidate}'.")
         return BundleManifest.from_file(manifest_path)
 
-    if candidate.suffix == ".zip":
+    if candidate.suffix.lower() == ".zip":
         import yaml as _yaml
 
         from .._download_security import open_zip_bounded, read_zip_member_limited
