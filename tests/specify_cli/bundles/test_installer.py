@@ -32,6 +32,49 @@ def _plan(manifest):
     )
 
 
+@pytest.mark.parametrize("action", ["install", "reuse", "refresh"])
+def test_install_returns_structured_patch_warnings_without_printing(
+    tmp_path: Path, capsys, action: str,
+):
+    from specify_cli.bundles.primitives import _bundled_pin_warning
+
+    class PatchInstaller(FakeInstaller):
+        def install(self, project_root, component):
+            super().install(project_root, component)
+            self.versions[self._key(component)] = "1.0.1"
+            return _bundled_pin_warning("Extension", component, "1.0.1")
+
+        def refresh(self, project_root, component):
+            super().refresh(project_root, component)
+            return _bundled_pin_warning("Extension", component, "1.0.1")
+
+        def bundled_patch_warning(self, component, actual):
+            return _bundled_pin_warning("Extension", component, actual)
+
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict(
+        provides={"extensions": [{"id": "x", "version": "1.0.0"}]},
+    ))
+    installer = PatchInstaller()
+    if action != "install":
+        install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+        capsys.readouterr()
+
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer,
+        manifest=manifest, refresh=action == "refresh",
+    )
+
+    assert capsys.readouterr() == ("", "")
+    assert len(result.warnings) == 1
+    warning = result.warnings[0]
+    assert warning.code == "bundled_patch_upgrade"
+    assert warning.details.component_id == "x"
+    assert warning.details.requested_version == "1.0.0"
+    assert warning.details.installed_version == "1.0.1"
+    assert "newer packaged patch" in warning.message
+
+
 def test_install_records_and_invokes_primitives(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
@@ -40,6 +83,7 @@ def test_install_records_and_invokes_primitives(tmp_path: Path):
     result = install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
 
     assert len(result.installed) == 4
+    assert result.warnings == []
     assert len(installer.install_calls) == 4
     records = load_records(tmp_path)
     assert len(records) == 1

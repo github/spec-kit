@@ -2,6 +2,106 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.3] - 2026-10-22
+
+### Changed
+
+- Feat/4913 workflow mcp inventory (#5054)
+- docs: correct built-in workflow step source paths (#5059)
+- fix(events): preserve dispatcher ownership during cleanup (#5055)
+- feat: add .presetignore support (#5020)
+- fix(scripts): write --json output of the Python helpers as ASCII (#5048)
+- Update Linear Weave extension to v1.0.2 (#5049)
+- fix(events): preserve unowned Vibe hooks files (#4646)
+- ci: shorten test runs with two workers and faster fixture shutdown (#5051)
+- fix(powershell): treat bracketed feature paths literally (#4970)
+- fix(cli): align integration guidance with available output (#5041)
+- fix(integrations): map Pi JSON dispatch to --mode json (#5043)
+- docs: organize agent-specific integration documentation (#5034)
+- feat(integration): add none for shared scaffolding only (#5030)
+- fix(extensions): reject malformed catalog entries before removal (#5033)
+- fix(integrations): map Kimi Code JSON dispatch to --output-format stream-json (#5031)
+- docs: streamline README onboarding and process guides (#5029)
+- docs: distinguish extension events from hooks (#5026)
+- fix(workflows): keep integer number inputs exact instead of rounding them (#5027)
+- docs: say how to replace an older install before specify init (#5004)
+- chore: release 1.2.2, begin 1.2.3.dev0 development (#5024)
+
+## [1.2.2] - 2026-10-19
+
+### Changed
+
+- Update SpecKit Grill Me extension to v1.0.2 (#5023)
+- fix(workflows): report a run failed by a raised step error under --json (#5015)
+- docs: point the upgrade guide's Copilot checks at .github/skills (#5010)
+- fix(events): leave JSON hook configs untouched when nothing is owned (#5017)
+- fix(extensions): scaffold new config templates on extension update (#5011)
+- fix(integrations): drop unsupported --model flag from ZCode dispatch (#5009)
+- fix(bundles): reject non-positive preset and extension priorities in validation (#5012)
+- fix(integrations): validate required options before switch uninstalls (#5008)
+- fix(presets): reject malformed catalog entries before removal (#4992)
+- Document the implemented extension architecture (#4978)
+- fix(bundles): don't refresh installed components on a repeated bundle init (#4963)
+- chore(deps): bump actions/download-artifact from 8.0.1 to 8.0.2 (#4989)
+- chore(deps): bump actions/setup-node from 7.0.0 to 7.1.0 (#4987)
+- Update Applied Epistemic Engineering extension to v1.5.2 (#5000)
+- Update DocGuard — CDD Enforcement to v0.45.1 (#5001)
+- Update Evaluator Contract extension to v1.1.2 (#4999)
+- Update Applied Epistemic Engineering extension to v1.5.1 (#4995)
+- chore(deps): bump the codeql-action group with 2 updates (#4985)
+- docs: define shared catalog contracts (#4977)
+- chore: release 1.2.1, begin 1.2.2.dev0 development (#4996)
+
+## [1.2.1] - 2026-10-16
+
+### Changed
+
+- docs: add catalog reference (#4976)
+- Update Applied Epistemic Engineering extension to v1.5.0 (#4982)
+- Update Evaluator Contract extension to v1.1.1 (#4980)
+- test(integrations): characterize delivery boundaries (#4975)
+- fix(extensions): list commands the way the active agent registers them (#4964)
+- feat(workflows): add opt-in output capture to command and prompt steps (#4957)
+- docs: add README capability map (#4974)
+- docs: target Windows PowerShell 5.1 (#4973)
+- docs(mcp): document the first-class version and artifact tools (#4969)
+- fix(workflows): load custom steps before update (#4768)
+- Add gh-address-cr extension to community catalog (#4971)
+- [bug-fix] Fix missing-plan-template: reject empty plan setup (#4962)
+- fix(powershell): preserve plans in literal feature paths (#4956)
+- fix(extensions): delete the catalog config when the last entry is removed (#4909)
+- fix(integrations): move extension artifacts on integration uninstall (#4911)
+- fix(integrations): show hyphenated command names for docker-agent and junie (#4910)
+- Update Reconcile Extension to v1.3.1 (#4950)
+- docs: add Korean (한국어) README (#4939)
+- docs: distinguish extension reconciliation from core SDD (#4948)
+- chore: release 1.2.0, begin 1.2.1.dev0 development (#4949)
+
+## [1.2.0] - 2026-10-13
+
+### Changed
+
+- fix: explain community submission title mismatches (#4946)
+- fix(workflows): confine workflow and step catalog cache writes (#4931)
+- docs: clarify delivery versus post-delivery spec persistence (#4945)
+- fix(bundles): allow newer packaged patch releases with warnings (#4942)
+- Update Applied Epistemic Engineering extension to v1.4.0 (#4941)
+- Update Applied Epistemic Engineering extension to v1.3.0 (#4936)
+- Persist project symlink policy at command boundaries (#4934)
+- [extension] Update DocGuard — CDD Enforcement extension to v0.44.3 (#4927)
+- fix(workflows): skip the right side of and/or when the left side decides (#4923)
+- Update OpenProject preset to v1.0.3 (#4928)
+- fix: narrow exceptions in get_speckit_version() from Exception to specific types (#3917)
+- Update adrkit extension to v0.1.5 (#4932)
+- Update OpenProject Integration extension to v0.2.0 (#4929)
+- feat(claude): add --no-model-invocation integration option (#4919)
+- Add built-in GitHub workflow step (#4905)
+- Add scoped FileHelper foundation for filesystem policy (#4908)
+- feat: add maintainer-triggered PR description assessment (#4902)
+- Update Architecture Governance preset to v0.6.2 (#4907)
+- Update Security Governance preset to v0.7.1 (#4903)
+- chore: release 1.1.3, begin 1.1.4.dev0 development (#4904)
+
 ## [1.1.3] - 2026-10-09
 
 ### Changed

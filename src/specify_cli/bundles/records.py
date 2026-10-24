@@ -3,11 +3,13 @@
 Records are stored as JSON at ``.specify/bundle-records.json``. Each record
 stores every required component for conflict detection and separately records
 which components the bundle contributed, so removal never touches independently
-installed components (FR-022, SC-004).
+installed components (FR-022, SC-004). Known installed
+versions are stored separately from requested pins to make patch substitutions
+visible without changing bundle ownership or manifest identity.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,7 @@ class InstalledBundleRecord:
     contributed_components: tuple[ComponentRef, ...]
     required_components: tuple[ComponentRef, ...]
     installed_at: str
+    installed_versions: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def create(
@@ -36,6 +39,7 @@ class InstalledBundleRecord:
         components: list[ComponentRef],
         installed_at: str | None = None,
         required_components: list[ComponentRef] | None = None,
+        installed_versions: dict[str, str] | None = None,
     ) -> "InstalledBundleRecord":
         return cls(
             bundle_id=bundle_id,
@@ -45,10 +49,13 @@ class InstalledBundleRecord:
                 components if required_components is None else required_components
             ),
             installed_at=installed_at or _utc_now(),
+            installed_versions=(
+                dict(installed_versions) if installed_versions is not None else {}
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "bundle_id": self.bundle_id,
             "version": self.version,
             "installed_at": self.installed_at,
@@ -59,6 +66,9 @@ class InstalledBundleRecord:
                 _component_to_dict(c) for c in self.required_components
             ],
         }
+        if self.installed_versions:
+            data["installed_versions"] = dict(self.installed_versions)
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> "InstalledBundleRecord":
@@ -108,12 +118,23 @@ class InstalledBundleRecord:
                 "Corrupt record: 'required_components' must include all "
                 "'contributed_components'."
             )
+        installed_versions = data.get("installed_versions", {})
+        if not isinstance(installed_versions, dict):
+            raise BundlerError("Corrupt record: 'installed_versions' must be a mapping.")
+        keys = {f"{c.kind}:{c.id}" for c in required}
+        for key, actual in installed_versions.items():
+            if key not in keys or not isinstance(actual, str) or not actual.strip():
+                raise BundlerError(
+                    "Corrupt record: 'installed_versions' must map required "
+                    "component keys (kind:id) to non-empty version strings."
+                )
         return cls(
             bundle_id=bundle_id,
             version=version,
             installed_at=_text(data.get("installed_at")),
             contributed_components=contributed,
             required_components=required,
+            installed_versions=dict(installed_versions),
         )
 
 

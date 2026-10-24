@@ -16,6 +16,7 @@ import ssl
 import urllib.error
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
@@ -25,6 +26,9 @@ from . import BundlerError
 from .catalogs import CatalogSource
 from .manifest import ComponentRef
 from .yamlio import loads_json
+
+if TYPE_CHECKING:
+    from .primitives import BundledPatchWarning
 
 COMMUNITY_CATALOG_URL = (
     "https://raw.githubusercontent.com/github/spec-kit/main/"
@@ -224,6 +228,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     HTTPS/host guarantee from ``_validate_remote_url`` is preserved end to end
     rather than only on the initial URL.
     """
+    from ..authentication.github import GitHubCliAuthError
     from ..authentication.http import RedirectPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
@@ -254,9 +259,9 @@ def _http_get_json(source_id: str, url: str) -> dict:
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc
-    except RedirectPolicyError as exc:
-        # Unsafe/malformed redirects are security failures and must surface as
-        # a hard error instead of being downgraded to catalog unavailability.
+    except (GitHubCliAuthError, RedirectPolicyError) as exc:
+        # Authentication and redirect-policy failures are definitive, not
+        # transient catalog unavailability.
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc
@@ -330,6 +335,22 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         return manager.installed_version(component)
 
+    def bundled_patch_warning(
+        self, component: ComponentRef, actual: str,
+    ) -> BundledPatchWarning | None:
+        from .primitives import _bundled_component_version, _bundled_pin_warning
+        from .versioning import is_newer_patch, same_version
+
+        packaged = _bundled_component_version(component)
+        if (
+            component.version
+            and packaged
+            and same_version(actual, packaged)
+            and is_newer_patch(actual, component.version)
+        ):
+            return _bundled_pin_warning(component.kind[:-1].capitalize(), component, actual)
+        return None
+
     def validate_source(self, project_root: Path, component: ComponentRef) -> None:
         if not self._allow_network:
             raise BundlerError(
@@ -354,13 +375,17 @@ class DefaultPrimitiveInstaller:
             f"'{component.source}': {detail}."
         )
 
-    def install(self, project_root: Path, component: ComponentRef) -> None:
+    def install(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
-        manager.install(component)
+        return manager.install(component)
 
-    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+    def refresh(
+        self, project_root: Path, component: ComponentRef,
+    ) -> BundledPatchWarning | None:
         manager = self._manager_for(component, project_root)
-        manager.refresh(component)
+        return manager.refresh(component)
 
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)

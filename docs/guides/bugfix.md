@@ -23,7 +23,7 @@ specify extension add bug
 Then launch your coding agent in that directory. The examples below use
 GitHub Copilot's default skills mode (`--integration copilot`). Other agents
 expose the same steps using their own
-[command invocation syntax](../reference/integrations.md#command-invocation).
+[command invocation syntax](../integrations/cli.md#command-invocation).
 Invoke each `/speckit-bug-*` skill separately in your agent's chat and review its
 output before continuing. These are agent skills, not terminal commands; the
 terminal command above only installs the extension.

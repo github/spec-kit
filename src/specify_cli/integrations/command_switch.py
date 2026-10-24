@@ -19,6 +19,17 @@ from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_s
 from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
+def _missing_required_options(integration, parsed_options) -> list[str]:
+    """Return the integration's required options that are absent or blank."""
+    parsed = parsed_options or {}
+    missing = []
+    for option in integration.options():
+        value = parsed.get(option.name.lstrip("-").replace("-", "_"))
+        if option.required and (value is None or (isinstance(value, str) and not value.strip())):
+            missing.append(option.name)
+    return missing
+
+
 @integration_app.command("switch")
 @external_lifecycle("switch")
 def integration_switch(
@@ -131,6 +142,16 @@ def integration_switch(
         target_integration, current, target, integration_options
     )
     target_integration.is_skills_mode(target_parsed_options, project_root)
+    # Required options are otherwise only enforced by setup(), which runs
+    # after Phase 1 has already removed the current integration.
+    missing_options = _missing_required_options(target_integration, target_parsed_options)
+    if missing_options:
+        console.print(
+            f"[red]Error:[/red] Integration '{escape(target)}' requires "
+            f"{', '.join(missing_options)} in --integration-options."
+        )
+        console.print("No files were changed.")
+        raise typer.Exit(1)
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:

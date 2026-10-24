@@ -109,7 +109,14 @@ not turn environment blockers into submission failures.
 
 This workflow is triggered by an `issues: labeled` event and is gated to the
 `bundle-submission` label. Before processing, verify that the issue title starts
-with `[Bundle]:`. If it does not, stop without commenting.
+with `[Bundle]:`.
+If it does not, emit one `add_comment` on the issue:
+
+> The bundle-submission workflow stopped before validation because the issue title does not start with `[Bundle]:`.
+
+Include `[Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+then stop without validation, label changes, catalog/docs edits, or PR creation.
+Do not substitute `noop` for this comment. Otherwise, continue to Step 1.
 
 ## Step 1 - Read and Parse the Issue
 

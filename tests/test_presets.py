@@ -194,19 +194,22 @@ class TestInitOptions:
     def test_save_uses_utf8_encoding(self, project_dir, monkeypatch):
         from specify_cli import save_init_options
 
-        original_write_text = Path.write_text
+        from specify_cli.file_helper import FileHelper
+
+        original_write_text = FileHelper.overwrite_text
         seen: dict[str, str | None] = {}
 
-        def spy_write_text(path, data, *args, **kwargs):
-            if path == project_dir / ".specify" / "init-options.json":
-                seen["encoding"] = kwargs.get("encoding")
-            return original_write_text(path, data, *args, **kwargs)
+        def spy_write_text(files, path, data, *args, **kwargs):
+            if files.root / path == project_dir / ".specify" / "init-options.json":
+                seen["encoding"] = kwargs.get("encoding", "utf-8")
+            return original_write_text(files, path, data, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "write_text", spy_write_text)
+        monkeypatch.setattr(FileHelper, "overwrite_text", spy_write_text)
 
         save_init_options(project_dir, {"label": "中文测试"})
 
         assert seen["encoding"] == "utf-8"
+        assert json.loads((project_dir / ".specify/init-options.json").read_bytes().decode("utf-8")) == {"label": "中文测试"}
 
     def test_load_uses_utf8_encoding(self, project_dir, monkeypatch):
         from specify_cli import load_init_options

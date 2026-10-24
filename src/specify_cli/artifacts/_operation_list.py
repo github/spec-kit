@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
+from .._file_policy import ProjectPolicyError, project_files
 from ..presets import PresetError
 from . import (
     ArtifactCatalog,
@@ -142,10 +143,12 @@ class ArtifactListProjectError(ArtifactListError):
 class ArtifactListResolutionError(ArtifactListError):
     """The artifact inventory could not be resolved."""
 
-    def __init__(self, project_directory: Path) -> None:
+    def __init__(
+        self, project_directory: Path, *, message: str = "artifact resolution failed",
+    ) -> None:
         super().__init__(
             code="artifact_resolution_failed",
-            message="artifact resolution failed",
+            message=message,
             details={"project_directory": str(project_directory)},
         )
 
@@ -235,7 +238,11 @@ def list_artifacts(request: ArtifactListRequest) -> ArtifactListResult:
     offset = _pagination_offset(request)
 
     try:
+        if project_directory.is_dir():
+            project_files(project_directory)
         rows = ArtifactCatalog(project_directory).list_artifacts_with_stack()
+    except ProjectPolicyError as exc:
+        raise ArtifactListResolutionError(project_directory, message=str(exc)) from exc
     except NotASpecKitProjectError as exc:
         raise ArtifactListProjectError(project_directory) from exc
     except (ArtifactResolutionError, OSError, PresetError) as exc:

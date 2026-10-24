@@ -4,7 +4,7 @@ Covers:
 - Step registry & auto-discovery
 - Base classes (StepBase, StepContext, StepResult)
 - Expression engine
-- All 12 built-in step types
+- All 14 built-in step types
 - Workflow definition loading & validation
 - Workflow engine execution & state persistence
 - Workflow catalog & registry
@@ -106,7 +106,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init", "slot",
+            "while", "do-while", "fan-out", "fan-in", "init", "slot", "github", "workflow",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -386,6 +386,35 @@ class TestExpressions:
 
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
+
+    @pytest.mark.parametrize(("expression", "expected"), [
+        ("inputs.payload != '' and (inputs.payload | from_json | length)", False),
+        ("inputs.payload == '' or (inputs.payload | from_json | length)", True),
+        ("false and true or true", True),
+        ("true or (false and (inputs.payload | from_json))", True),
+    ])
+    def test_boolean_short_circuits(self, expression, expected):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        assert evaluate_expression(
+            "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+        ) is expected
+
+    @pytest.mark.parametrize("expression", [
+        "true and (inputs.payload | from_json)",
+        "false or (inputs.payload | from_json)",
+        "(inputs.payload | from_json) and false",
+        "(inputs.payload | from_json) or true",
+    ])
+    def test_boolean_required_operand_still_raises(self, expression):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression(
+                "{{ " + expression + " }}", StepContext(inputs={"payload": ""})
+            )
 
     def test_list_literal_preserves_quoted_commas(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -7042,6 +7071,52 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
+
+    @pytest.mark.parametrize(
+        "number", [2**53 + 1, 1792234567890123456, 2**63 - 1, -(2**63 - 1)]
+    )
+    @pytest.mark.parametrize("as_string", [False, True])
+    def test_number_input_preserves_integer_precision(self, number, as_string):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        value = str(number) if as_string else number
+        resolved = WorkflowEngine._coerce_input("record_id", value, {"type": "number"})
+
+        assert resolved == number
+        assert isinstance(resolved, int)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("0", 0), (" +42 ", 42), ("-42", -42),
+            ("3.5", 3.5), ("5.0", 5), ("1e3", 1000),
+        ],
+    )
+    def test_number_input_retains_existing_numeric_forms(self, value, expected):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        resolved = WorkflowEngine._coerce_input("count", value, {"type": "number"})
+
+        assert resolved == expected
+        assert type(resolved) is type(expected)
+
+    @pytest.mark.parametrize(
+        "value", [True, False, None, [], "invalid", "nan", "inf", "-inf"]
+    )
+    def test_number_input_rejects_non_numbers_and_non_finite_values(self, value):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        with pytest.raises(ValueError, match="expected a number"):
+            WorkflowEngine._coerce_input("count", value, {"type": "number"})
+
+    def test_number_input_checks_enum_without_rounding(self):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        number = 2**53 + 1
+        definition = {"type": "number", "enum": [number]}
+        assert WorkflowEngine._coerce_input("record_id", str(number), definition) == number
+        with pytest.raises(ValueError, match="not in allowed values"):
+            WorkflowEngine._coerce_input("record_id", str(number - 1), definition)
 
     def test_coerce_number_input_rejects_infinity_cleanly(self):
         """An infinite float must surface as a clean ValueError (like NaN), not

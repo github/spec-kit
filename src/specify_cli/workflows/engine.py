@@ -714,6 +714,9 @@ class RunState:
         self.step_results: dict[str, dict[str, Any]] = {}
         self.execution: dict[str, Any] | None = None
         self._checkpoint_failed = False
+        # The exception this process just recorded as the run's failure (never
+        # persisted), so the CLI can tell it apart from an older failure.
+        self._recorded_exception: BaseException | None = None
         # Guards step_results mutation and save() so a concurrent fan-out cannot
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
@@ -1191,6 +1194,7 @@ class WorkflowEngine:
                 raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
+            state._recorded_exception = exc
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
             raise
@@ -1303,6 +1307,7 @@ class WorkflowEngine:
                 raise
             state.status = RunStatus.FAILED
             state.error = str(exc)
+            state._recorded_exception = exc
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
             raise
@@ -1479,7 +1484,15 @@ class WorkflowEngine:
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg)
             try:
-                value = float(value)
+                # Preserve integers (including CLI strings) before float can
+                # round identifiers or timestamps above 2**53.
+                if isinstance(value, (str, int)):
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        value = float(value)
+                else:
+                    value = float(value)
                 if value == int(value):
                     value = int(value)
             except (ValueError, TypeError, OverflowError):

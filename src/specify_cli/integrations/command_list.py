@@ -102,7 +102,7 @@ def integration_list(
             status = "[green]installed[/green]"
         else:
             status = ""
-        cli_req = "yes" if requires_cli else "no (IDE)"
+        cli_req = "yes" if requires_cli else "no"
         safe = "yes" if getattr(integration, "multi_install_safe", False) else "no"
         table.add_row(key, escape(str(name)), status, cli_req, safe)
 

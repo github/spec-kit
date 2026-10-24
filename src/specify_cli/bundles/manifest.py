@@ -211,6 +211,17 @@ class BundleManifest:
                 errors.append(
                     f"{ref.kind[:-1]} '{ref.id}' has invalid version '{ref.version}'."
                 )
+            # Preset and extension installs refuse a priority below 1, which
+            # would otherwise surface only mid-install, after earlier components.
+            if (
+                ref.kind in ("extensions", "presets")
+                and ref.priority is not None
+                and ref.priority < 1
+            ):
+                errors.append(
+                    f"{ref.kind[:-1]} '{ref.id}' priority must be 1 or higher, "
+                    f"got {ref.priority}."
+                )
 
         for ref in self.presets:
             if ref.priority is None:
