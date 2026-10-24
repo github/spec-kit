@@ -314,6 +314,39 @@ class TestVibeTomlMerging:
         remaining = self._parse(tmp_path)["hooks"]
         assert [h["name"] for h in remaining] == ["deny-rm-rf"]
 
+    @pytest.mark.parametrize(
+        "user_after",
+        (
+            "# NOTE: keep guard-bash first\n"
+            "[[hooks]]\n"
+            'name = "user-hook"\n'
+            'type = "pre_tool"\n'
+            'command = "guard-bash"\n',
+            "# notes about these hooks\n",
+        ),
+        ids=("comment-before-user-hook", "trailing-comment"),
+    )
+    def test_refresh_and_teardown_keep_comments_after_a_managed_hook(
+        self, tmp_path, user_after
+    ):
+        """A comment after a managed block is user content, not part of the block (#5079)."""
+        path = tmp_path / ".vibe" / "hooks.toml"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(
+            b'[[hooks]]\nname = "deny-rm-rf"\ntype = "pre_tool"\ncommand = "guard-rm"\n'
+        )
+        events = {"pre_tool_use": [{"command": "speckit.tdd.validate"}]}
+        integration, manifest = self._install(tmp_path, events)
+        path.write_bytes(path.read_bytes() + ("\n" + user_after).encode("utf-8"))
+
+        self._install(tmp_path, events)
+        assert user_after in path.read_text(encoding="utf-8")
+
+        remove_integration_events(integration, tmp_path, manifest)
+        remaining = path.read_text(encoding="utf-8")
+        assert user_after in remaining
+        assert "speckit_marker" not in remaining
+
     @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
     def test_merge_preserves_user_physical_line_bytes(self, tmp_path, newline):
         """A native Windows write must not expand retained CRLF to CRCRLF."""
@@ -540,6 +573,48 @@ class TestVibeTomlNoOpRemoval:
             f"name = \"user-hook\"{newline}"
             f"command = \"guard-bash\"{newline}"
         )
+        path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
+
+        removed_file = get_integration("vibe").remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_bytes() == user.encode()
+
+    def test_removal_keeps_a_comment_that_follows_a_managed_hook(self, tmp_path):
+        """The blank separator goes with the managed block; the comment stays (#5079)."""
+        managed = '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n'
+        user = (
+            "# NOTE: keep guard-bash first\n"
+            "[[hooks]]\n"
+            'name = "user-hook"\n'
+            'command = "guard-bash"\n'
+        )
+        path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
+
+        removed_file = get_integration("vibe").remove_vibe_event_hooks(
+            tmp_path, ensure_safe_destination=lambda _path: None
+        )
+
+        assert removed_file is False
+        assert path.read_bytes() == user.encode()
+
+    def test_removal_still_takes_comment_like_lines_inside_managed_values(self, tmp_path):
+        """Lines inside a managed multiline string or array belong to its block."""
+        managed = (
+            "[[hooks]]\n"
+            'name = "managed"\n'
+            "speckit_marker = true\n"
+            'command = """\n'
+            "# part of the command\n"
+            '"""\n'
+            "args = [\n"
+            "  # part of the array\n"
+            '  "a",\n'
+            "]\n"
+        )
+        user = '[[hooks]]\nname = "user-hook"\n'
         path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
 
         removed_file = get_integration("vibe").remove_vibe_event_hooks(
