@@ -132,6 +132,33 @@ def test_local_firstparty_bundle_installs_bundled_components_offline(
     assert registry["workflows"][bundle_id]["version"] == "1.0.0"
 
 
+@pytest.mark.parametrize("filename", ["demo-bundle.zip", "DEMO-BUNDLE.ZIP"])
+def test_local_zip_artifact_installs_regardless_of_extension_case(
+    project: Path, filename: str
+):
+    from specify_cli.bundles.records import load_records
+
+    artifact = project / filename
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict(provides={})))
+
+    result = runner.invoke(app, ["bundle", "install", str(artifact), "--offline"])
+
+    assert result.exit_code == 0, result.output
+    assert [record.bundle_id for record in load_records(project)] == ["demo-bundle"]
+
+
+def test_local_uppercase_zip_without_manifest_is_rejected(project: Path):
+    artifact = project / "broken.ZIP"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("README.md", "No manifest")
+
+    result = runner.invoke(app, ["bundle", "install", str(artifact), "--offline"])
+
+    assert result.exit_code == 1
+    assert "does not contain a bundle.yml" in " ".join(result.output.split())
+
+
 def test_local_bundle_rejects_mismatched_bundled_workflow_pin_offline(project: Path):
     bundle_dir = project / "mismatched-workflow-pin"
     (bundle_dir / "bundle.yml").parent.mkdir()
