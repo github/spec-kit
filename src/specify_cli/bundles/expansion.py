@@ -464,10 +464,10 @@ def _prefix_declarations(
 
 
 def _prefix_entry(entry: _Entry, prefix: tuple[str, ...]) -> _Entry:
-    return _Entry(
+    return _entry_for(
         entry.component,
-        _prefix_declarations(entry.declarations, prefix),
-        _prefix_declarations(entry.overrides, prefix),
+        declarations=_prefix_declarations(entry.declarations, prefix),
+        overrides=_prefix_declarations(entry.overrides, prefix),
     )
 
 
