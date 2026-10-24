@@ -232,7 +232,8 @@ def _expand(
             raise BundlerError(
                 f"Bundle '{ref.id}' is referenced at versions {old_version[0]} "
                 f"({format_chain(old_version[1])}) and {ref.version or '<unpinned>'} "
-                f"({format_chain(chain)})."
+                f"({format_chain(chain)}); choose referencing releases that pin "
+                "the same version on every route."
             )
         if old_version is None:
             state.versions[ref.id] = (ref.version or "", chain)

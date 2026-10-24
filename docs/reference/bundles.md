@@ -142,7 +142,8 @@ precedence; a mismatch is an error and does not fall through to another
 catalog. A referenced bundle from a discovery-only source can be inspected
 by `info`, but `install`, `update`, and online `validate` reject it as
 non-installable. Every bundle ID may have only one version in an expansion;
-cycles and a second version for the same ID are errors.
+cycles and a second version for the same ID are errors. Resolve a second
+version by choosing releases of the referencing bundles that agree on it.
 
 The expansion is one flat component plan. Referenced bundles are walked
 recursively in declaration order (depth-first), followed by the declaring

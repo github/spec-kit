@@ -466,6 +466,7 @@ def test_version_conflict_names_both_chains_and_matching_spellings_are_accepted(
     message = str(caught.value)
     assert "1.0.0 (root → first)" in message
     assert "2.0.0 (root → second)" in message
+    assert "choose referencing releases that pin the same version" in message
 
     accepted_first = manifest("accepted-first", bundles=[{"id": "leaf", "version": "v1.0.0"}])
     accepted_second = manifest("accepted-second", bundles=[{"id": "leaf", "version": "1.0.0"}])
