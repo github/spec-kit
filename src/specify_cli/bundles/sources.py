@@ -11,6 +11,9 @@ from .._download_security import (
     read_response_limited,
 )
 from . import BundlerError
+from .catalog_stack import BundleNotFoundError, ReleaseNotFoundError
+from .expansion import LoadedBundle, SourceMismatchError
+from .manifest import BundleRef
 from .versioning import same_version
 
 # ZIP magic-byte signatures cover local headers, empty archives, and spanning markers.
@@ -85,6 +88,107 @@ def _local_manifest_source(arg: str):
     raise BundlerError(
         f"'{candidate}' is not a recognised bundle source (.zip artifact, bundle "
         "directory, or bundle.yml)."
+    )
+
+
+class CatalogBundleLoader:
+    """Load referenced bundles from an already-resolved catalog stack.
+
+    The caller owns construction of the effective stack.  In particular, this
+    loader must not create a second stack: source precedence and project/user
+    overrides are part of the resolution contract for bundle references.
+    """
+
+    def __init__(self, stack, *, offline: bool, download=None) -> None:
+        self._stack = stack
+        self._offline = offline
+        self._download = download
+
+    def _offline_snapshot_may_lag(self, source_id: str | None = None) -> bool:
+        """Whether going online could change a miss.
+
+        Offline, a built-in catalog is the packaged snapshot, which can lag the
+        live catalog. With *source_id*, only that source counts (the winner of a
+        release lookup); otherwise any configured source does (a missing
+        bundle has no winner). Matching goes through the source, never its id,
+        so a project catalog named ``default`` is not mistaken for the built-in.
+        """
+        if not self._offline:
+            return False
+        return any(
+            source.is_builtin
+            for source in self._stack.sources
+            if source_id is None or source.id == source_id
+        )
+
+    def load(self, ref: BundleRef, chain: tuple[str, ...]) -> LoadedBundle:
+        """Resolve and download the exact release named by *ref*.
+
+        A source pin is an assertion about the winning catalog, rather than a
+        selector.  Consequently it is checked after stack resolution and
+        before the manifest download; a mismatch never falls through to a
+        lower-precedence catalog or performs network I/O.
+        """
+        try:
+            resolved = self._stack.resolve(ref.id, ref.version)
+        except BundleNotFoundError as exc:
+            if self._offline_snapshot_may_lag():
+                raise BundlerError(
+                    f"{exc} Network access disabled; a built-in catalog may be "
+                    f"outdated, so {ref.id}@{ref.version or '<unpinned>'} may "
+                    "resolve online. Re-run without --offline."
+                ) from exc
+            raise
+        except ReleaseNotFoundError as exc:
+            missing = _missing_release_error(
+                ref,
+                chain,
+                exc,
+                snapshot_may_lag=self._offline_snapshot_may_lag(exc.source_id),
+            )
+            if missing is not None:
+                raise missing from exc
+            raise
+
+        if ref.source and resolved.source.id != ref.source:
+            raise SourceMismatchError(ref, resolved.source.id, chain)
+
+        download = self._download or _download_manifest
+        manifest = download(resolved, offline=self._offline)
+
+        return LoadedBundle(
+            manifest,
+            resolved.source.id,
+            resolved.install_allowed,
+            resolved.entry.verified,
+        )
+
+
+def _missing_release_error(
+    ref, chain, error: ReleaseNotFoundError, *, snapshot_may_lag: bool = False
+):
+    """Format the catalog stack's exact-release failure for bundle authors.
+
+    ``CatalogStack.resolve`` provides the advertised versions and winning source
+    as structured exception attributes, so this translation does not depend on
+    the wording of its diagnostic message. When *snapshot_may_lag* is set, the
+    winner is an offline packaged snapshot, so the pin may be valid online and
+    the advice is to retry rather than to change the reference.
+    """
+    if ref.version is None:
+        return None
+
+    parent = chain[-1] if chain else "<root>"
+    offered = ", ".join(error.advertised)
+    advice = (
+        "Network access disabled; the built-in catalog may be outdated, so "
+        "the pin may resolve online. Re-run without --offline."
+        if snapshot_may_lag
+        else "Update the reference to an advertised version."
+    )
+    return BundlerError(
+        f"'{parent}' pins {error.bundle_id} {error.version}, but catalog "
+        f"'{error.source_id}' offers {offered}. {advice}"
     )
 
 
