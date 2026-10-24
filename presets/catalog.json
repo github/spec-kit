@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-08-04T00:00:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
+  "updated_at": "2026-10-23T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
       "name": "Lean Workflow",
@@ -47,6 +47,30 @@
         "governance",
         "templates",
         "compatibility"
+      ]
+    },
+    "hermes-desktop": {
+      "name": "Hermes Desktop Integration",
+      "id": "hermes-desktop",
+      "version": "0.1.0",
+      "description": "Interactive Spec-Kit panes for Hermes Desktop \u2014 SpecBuilder, TaskBoard, ConstitutionWizard with round-trip sync",
+      "author": "Justin Brenton",
+      "repository": "https://github.com/justinbrenton/spec-kit",
+      "license": "MIT",
+      "bundled": false,
+      "requires": {
+        "speckit_version": ">=0.16.0"
+      },
+      "provides": {
+        "commands": 10,
+        "templates": 5
+      },
+      "tags": [
+        "hermes",
+        "desktop",
+        "interactive",
+        "kanban",
+        "constitution"
       ]
     }
   }

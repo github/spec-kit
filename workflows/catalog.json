@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-10T00:00:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/catalog.json",
+  "updated_at": "2026-10-23T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/workflows/catalog.json",
   "workflows": {
     "speckit": {
       "id": "speckit",
@@ -10,28 +10,58 @@
       "author": "GitHub",
       "version": "1.0.1",
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/speckit/workflow.yml",
-      "tags": ["sdd", "full-cycle"],
+      "tags": [
+        "sdd",
+        "full-cycle"
+      ],
       "bundled": true
     },
     "bugfix": {
       "id": "bugfix",
       "name": "Guided Bug Fix",
-      "description": "Runs bug assess → human review gate → bug fix → bug test on a bug report",
+      "description": "Runs bug assess \u2192 human review gate \u2192 bug fix \u2192 bug test on a bug report",
       "author": "GitHub",
       "version": "1.0.0",
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/bugfix/workflow.yml",
-      "tags": ["bug", "triage", "workflow", "qa"],
+      "tags": [
+        "bug",
+        "triage",
+        "workflow",
+        "qa"
+      ],
       "bundled": true
     },
     "assess": {
       "id": "assess",
       "name": "Idea Assessment Pipeline",
-      "description": "Runs intake → research → define → shape → decide with a verdict review gate before a manual specify handoff",
+      "description": "Runs intake \u2192 research \u2192 define \u2192 shape \u2192 decide with a verdict review gate before a manual specify handoff",
       "author": "GitHub",
       "version": "1.0.0",
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/assess/workflow.yml",
-      "tags": ["assessment", "discovery", "triage", "product"],
+      "tags": [
+        "assessment",
+        "discovery",
+        "triage",
+        "product"
+      ],
       "bundled": true
+    },
+    "hermes-desktop": {
+      "id": "hermes-desktop",
+      "name": "Hermes Desktop Visual SDD",
+      "description": "Visual SDD workflow for Hermes Desktop with Constitution Wizard, SpecBuilder, TaskBoard, and convergence gates",
+      "author": "Justin Brenton",
+      "version": "0.1.0",
+      "url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/workflows/hermes-desktop/workflow.yml",
+      "tags": [
+        "hermes",
+        "desktop",
+        "visual",
+        "sdd",
+        "constitution",
+        "kanban"
+      ],
+      "bundled": false
     }
   }
 }

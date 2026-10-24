@@ -1,0 +1,48 @@
+name: "spec-kit-hermes"
+version: "0.1.0"
+description: "Spec-Kit integration for Hermes Desktop — SpecBuilder, TaskBoard, ConstitutionWizard"
+author: "Justin Brenton"
+license: "MIT"
+homepage: "https://github.com/justinbrenton/spec-kit"
+kind: "standalone"
+requires_hermes: ">=0.22.0"
+provides_tools: []
+provides_hooks: []
+config_schema:
+  specKitCatalogUrl:
+    type: string
+    default: "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/presets/catalog.json"
+    description: "Preset catalog URL for hermes-desktop preset"
+  specKitBundleUrl:
+    type: string
+    default: "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/bundles/catalog.json"
+    description: "Bundle catalog URL for hermes-desktop bundles"
+  specKitProfilePath:
+    type: string
+    default: ""
+    description: "Profile-specific config path (optional)"
+
+panes:
+  - id: spec-builder
+    title: "Spec Builder"
+    data:
+      placement: "right"
+      width: "400px"
+  - id: task-board
+    title: "Task Board"
+    data:
+      placement: "right"
+      width: "400px"
+  - id: constitution-wizard
+    title: "Constitution Wizard"
+    data:
+      placement: "right"
+      width: "400px"
+
+commands:
+  - id: spec-kit-init
+    label: "Initialize Spec-Kit Project"
+    description: "Run specify init with hermes-desktop preset and bundle"
+  - id: spec-kit-sync
+    label: "Sync Spec-Kit"
+    description: "Bidirectional pane ↔ .specify/ sync"

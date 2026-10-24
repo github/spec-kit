@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-28T16:20:28Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
+  "updated_at": "2026-10-23T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/extensions/catalog.json",
   "extensions": {
     "agent-context": {
       "name": "Coding Agent Context",
@@ -75,6 +75,23 @@
         "github",
         "issues",
         "integration"
+      ]
+    },
+    "hermes-desktop": {
+      "name": "Hermes Desktop Hooks",
+      "id": "hermes-desktop",
+      "version": "0.1.0",
+      "description": "Extension hooks for Hermes Desktop \u2014 git branch creation, constitution check, auto-convergence, PR preparation",
+      "author": "Justin Brenton",
+      "repository": "https://github.com/justinbrenton/spec-kit",
+      "bundled": false,
+      "tags": [
+        "hermes",
+        "desktop",
+        "hooks",
+        "git",
+        "constitution",
+        "convergence"
       ]
     }
   }

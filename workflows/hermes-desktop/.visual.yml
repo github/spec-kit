@@ -1,0 +1,61 @@
+nodes:
+  - id: "constitution"
+    position: {x: 100, y: 100}
+    color: "#9C27B0"
+    label: "Constitution"
+  - id: "specify"
+    position: {x: 300, y: 100}
+    color: "#2196F3"
+    label: "Specify"
+  - id: "clarify"
+    position: {x: 500, y: 100}
+    color: "#03A9F4"
+    label: "Clarify"
+  - id: "plan"
+    position: {x: 700, y: 100}
+    color: "#00BCD4"
+    label: "Plan"
+  - id: "tasks"
+    position: {x: 900, y: 100}
+    color: "#009688"
+    label: "Tasks"
+  - id: "analyze"
+    position: {x: 1100, y: 100}
+    color: "#4CAF50"
+    label: "Analyze"
+  - id: "implement"
+    position: {x: 1300, y: 100}
+    color: "#FF9800"
+    label: "Implement"
+  - id: "converge"
+    position: {x: 1500, y: 100}
+    color: "#F44336"
+    label: "Converge"
+  - id: "pr_prepare"
+    position: {x: 1700, y: 100}
+    color: "#795548"
+    label: "PR Prepare"
+
+edges:
+  - source: "constitution"
+    target: "specify"
+  - source: "specify"
+    target: "clarify"
+  - source: "clarify"
+    target: "plan"
+  - source: "plan"
+    target: "tasks"
+  - source: "tasks"
+    target: "analyze"
+  - source: "analyze"
+    target: "implement"
+  - source: "implement"
+    target: "converge"
+  - source: "converge"
+    target: "pr_prepare"
+
+gate_nodes:
+  - "constitution"
+  - "specify"
+  - "plan"
+  - "converge"

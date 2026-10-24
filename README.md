@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
+    <img src="https://raw.githubusercontent.com/justinbrenton/spec-kit/main/media/logo_small.webp" alt="Spec Kit Logo" width="200" height="200"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Build with a spec, fix a bug, or assess an idea — with your coding agent.</em></h3>
 </div>

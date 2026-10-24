@@ -1,0 +1,25 @@
+name: hermes-desktop
+version: 0.1.0
+description: Hermes Desktop integration hooks for Spec-Kit
+author: Justin Brenton
+license: MIT
+homepage: https://github.com/justinbrenton/spec-kit
+requires:
+  speckit: ">=0.16.0"
+hooks:
+  before_specify:
+    command: speckit.git.create-branch
+    optional: true
+    description: Create feature branch before specification
+  before_plan:
+    command: speckit.constitution.check
+    optional: true
+    description: Validate spec against constitution before planning
+  after_implement:
+    command: speckit.converge.auto
+    optional: true
+    description: Auto-run convergence check after implementation
+  after_converge:
+    command: speckit.pr.prepare
+    optional: true
+    description: Prepare PR with spec-kit context after convergence
