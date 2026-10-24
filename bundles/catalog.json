@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-09-10T00:00:00Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/bundles/catalog.json",
+  "updated_at": "2026-10-23T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/bundles/catalog.json",
   "bundles": {
     "bugfix": {
       "id": "bugfix",
@@ -22,7 +22,12 @@
         "steps": 0,
         "workflows": 1
       },
-      "tags": ["bug", "triage", "workflow", "qa"],
+      "tags": [
+        "bug",
+        "triage",
+        "workflow",
+        "qa"
+      ],
       "verified": true
     },
     "assess": {
@@ -44,8 +49,41 @@
         "steps": 0,
         "workflows": 1
       },
-      "tags": ["assessment", "discovery", "triage", "product"],
+      "tags": [
+        "assessment",
+        "discovery",
+        "triage",
+        "product"
+      ],
       "verified": true
+    },
+    "hermes-desktop": {
+      "id": "hermes-desktop",
+      "name": "Hermes Desktop Integration",
+      "version": "0.1.0",
+      "role": "developer",
+      "description": "Interactive Spec-Kit for Hermes Desktop \u2014 SpecBuilder, TaskBoard, ConstitutionWizard with Kanban sync and round-trip file sync",
+      "author": "Justin Brenton",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/bundles/hermes-desktop/bundle.yml",
+      "repository": "https://github.com/justinbrenton/spec-kit",
+      "requires": {
+        "speckit_version": ">=0.16.0"
+      },
+      "provides": {
+        "extensions": 1,
+        "presets": 1,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": [
+        "hermes",
+        "desktop",
+        "interactive",
+        "kanban",
+        "constitution"
+      ],
+      "verified": false
     }
   }
 }

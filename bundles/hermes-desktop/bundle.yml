@@ -1,0 +1,20 @@
+name: hermes-desktop
+version: 0.1.0
+description: Base Hermes Desktop integration bundle
+author: Justin Brenton
+license: MIT
+homepage: https://github.com/justinbrenton/spec-kit
+speckit_version: "^0.16.0"
+provides:
+  presets:
+    - hermes-desktop
+  extensions:
+    - hermes-desktop
+  workflows:
+    - hermes-desktop
+tags:
+  - hermes
+  - desktop
+  - interactive
+  - kanban
+  - constitution

@@ -1,0 +1,109 @@
+name: hermes-desktop
+version: 0.1.0
+description: Visual SDD workflow for Hermes Desktop with gates
+author: Justin Brenton
+license: MIT
+
+steps:
+  # Phase 1: Constitution
+  - id: constitution
+    type: command
+    command: speckit.constitution
+    args: ["--init"]
+    description: "Run Constitution Wizard (5-step guided flow)"
+    gate: true
+    gate_description: "Constitution ratified before proceeding"
+
+  # Phase 2: Specify
+  - id: specify
+    type: command
+    command: speckit.specify
+    args: ["{{feature_name}}", "--interactive"]
+    description: "Create specification in SpecBuilder pane"
+    gate: true
+    gate_description: "Spec ratified with constitution gates passed"
+
+  # Phase 3: Clarify
+  - id: clarify
+    type: command
+    command: speckit.clarify
+    args: ["{{feature_name}}", "--all"]
+    description: "Resolve all [NEEDS CLARIFICATION] markers"
+    gate: false
+
+  # Phase 4: Plan
+  - id: plan
+    type: command
+    command: speckit.plan
+    args: ["{{feature_name}}", "--interactive"]
+    description: "Generate implementation plan in PlanCanvas (v2)"
+    gate: true
+    gate_description: "Plan reviewed and approved"
+
+  # Phase 5: Tasks
+  - id: tasks
+    type: command
+    command: speckit.tasks
+    args: ["{{feature_name}}", "--interactive"]
+    description: "Generate tasks and sync to Kanban"
+    gate: false
+
+  # Phase 6: Analyze
+  - id: analyze
+    type: parallel
+    steps:
+      - id: analyze_codebase
+        type: command
+        command: speckit.analyze
+        args: ["{{feature_name}}", "--deep"]
+        description: "Analyze codebase impact"
+      - id: analyze_dependencies
+        type: command
+        command: speckit.analyze
+        args: ["{{feature_name}}", "--tasks=all"]
+        description: "Analyze task dependencies"
+    description: "Parallel codebase analysis"
+
+  # Phase 7: Implement
+  - id: implement
+    type: loop
+    over: "{{tasks}}"
+    steps:
+      - id: claim_task
+        type: command
+        command: hermes
+        args: ["kanban", "claim", "{{task.id}}"]
+        description: "Claim task in Kanban"
+      - id: implement_task
+        type: command
+        command: speckit.implement
+        args: ["{{task.id}}", "--goal"]
+        description: "Implement task via Hermes skill"
+      - id: converge_task
+        type: command
+        command: speckit.converge
+        args: ["{{task.id}}", "--checklist"]
+        description: "Run convergence checklist"
+      - id: complete_task
+        type: command
+        command: hermes
+        args: ["kanban", "complete", "{{task.id}}", "--summary={{task.summary}}"]
+        description: "Complete task in Kanban"
+    description: "Implement each task with convergence check"
+
+  # Phase 8: Converge
+  - id: converge
+    type: command
+    command: speckit.converge
+    args: ["{{feature_name}}", "--checklist"]
+    description: "Full feature convergence verification"
+    gate: true
+    gate_description: "All tasks converged, checklist passed"
+
+  # Phase 9: PR Preparation
+  - id: pr_prepare
+    type: command
+    command: speckit.pr.prepare
+    args: ["{{feature_name}}"]
+    description: "Prepare PR with spec-kit context"
+    gate: false

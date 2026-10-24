@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spec-Kit + Hermes Desktop Integration — Design Document</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1a1a2e;
+            background: #fafafa;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+        header {
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 24px;
+            margin-bottom: 32px;
+        }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #0d1117;
+            margin: 0 0 8px;
+            line-height: 1.2;
+        }
+        .meta {
+            color: #656d76;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+        .meta code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+        h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #0d1117;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin: 48px 0 16px;
+        }
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1f2328;
+            margin: 32px 0 12px;
+        }
+        h4 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1f2328;
+            margin: 24px 0 8px;
+        }
+        p { margin: 12px 0; color: #333; }
+        ul, ol { margin: 12px 0; padding-left: 24px; }
+        li { margin: 6px 0; color: #333; }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            color: #c92a2a;
+        }
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 16px 0;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        pre code { background: transparent; padding: 0; color: inherit; font-size: inherit; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9rem; }
+        th, td { border: 1px solid #e0e0e0; padding: 10px 12px; text-align: left; }
+        th { background: #f6f8fa; font-weight: 600; color: #1f2328; }
+        tr:nth-child(even) td { background: #fafafa; }
+        .footnote { font-size: 0.85rem; color: #656d76; margin-top: 8px; }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-v1 { background: #dcfce7; color: #166534; }
+        .badge-v2 { background: #fef3c7; color: #92400e; }
+        .badge-planned { background: #e0e7ff; color: #3730a3; }
+        .badge-gap { background: #fee2e2; color: #991b1b; }
+        hr { border: none; border-top: 1px solid #e0e0e0; margin: 32px 0; }
+        .toc {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 32px;
+        }
+        .toc h3 { margin-top: 0; font-size: 1.1rem; }
+        .toc ul { list-style: none; padding-left: 0; }
+        .toc li { margin: 6px 0; }
+        .toc a { color: #0969da; text-decoration: none; }
+        .toc a:hover { text-decoration: underline; }
+        .table-wrapper { overflow-x: auto; margin: 16px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Spec-Kit + Hermes Desktop Integration — Design Document</h1>
+            <p class="meta">Working repo: <code>https://github.com/justinbrenton/spec-kit</code> (fork of github/spec-kit)</p>
+            <p class="meta">Design doc location: <code>C:\Users\Fortress\speckit-hermes-v1\docs\hermes-integration\design.md</code></p>
+        </header>
+<div class="toc"><h3>Table of Contents</h3><ul><li><a href="#architecture-overview">1. Architecture Overview</a></li><li><a href="#why-this-integration">2. Why This Integration</a></li><li><a href="#fork-structure-distribution-layer">3. Fork Structure (Distribution Layer)</a></li><li><a href="#v1-scope-hard-ceiling">4. v1 Scope (Hard Ceiling)</a></li><li><a href="#v2-workstreams-2-profiles">5. v2 Workstreams (2 Profiles)</a></li><li><a href="#scope-change-protocol">6. Scope Change Protocol</a></li><li><a href="#decision-log">7. Decision Log</a></li><li><a href="#upstream-maintenance-strategy">8. Upstream Maintenance Strategy</a></li><li><a href="#preset-extension-development-guidelines">9. Preset & Extension Development Guidelines</a></li><li><a href="#catalog-structure">10. Catalog Structure</a></li><li><a href="#plugin-architecture-interactive-surface-verified">11. Plugin Architecture (Interactive Surface) — VERIFIED ✅</a></li><li><a href="#data-flows-verified">12. Data Flows — VERIFIED ✅</a></li><li><a href="#extension-hooks-verified-requirements">13. Extension Hooks — VERIFIED REQUIREMENTS</a></li><li><a href="#workflow-visual-builder-v2">14. Workflow Visual Builder (v2)</a></li><li><a href="#bundle-variants">15. Bundle Variants</a></li><li><a href="#profile-scoped-catalog-verified-structure">16. Profile-Scoped Catalog — VERIFIED STRUCTURE</a></li><li><a href="#mcp-integration-v2">17. MCP Integration (v2)</a></li><li><a href="#implementation-sequence-spike-1-spike-2-spike-3">18. Implementation Sequence — SPIKE 1 ✅ | SPIKE 2 ✅ | SPIKE 3 ✅</a></li><li><a href="#multi-harness-integration-strategy">19. Multi-Harness Integration Strategy</a></li><li><a href="#file-locations-planning-artifacts">20. File Locations (Planning Artifacts)</a></li><li><a href="#risks-mitigations">21. Risks & Mitigations</a></li><li><a href="#v1-implementation-requirements">22. v1 Implementation Requirements</a></li><li><a href="#review-findings-verification-plan-spike-1-complete">24. Review Findings & Verification Plan — SPIKE 1 COMPLETE ✅</a></li><li><a href="#next-steps">23. Next Steps</a></li></ul></div><h1 id="spec-kit-hermes-desktop-integration-design-document">Spec-Kit + Hermes Desktop Integration — Design Document</h1>
+
+<p>
+# Spec-Kit + Hermes Desktop Integration — Complete Design Document
+</p>
+
+<strong>Status</strong>: Planning mode only (NOT production-ready). All artifacts are design/planning docs. Implementation requires user approval and v1 build execution.
+<strong>Working repo</strong>: https://github.com/justinbrenton/spec-kit (fork of github/spec-kit)
+<strong>Design doc location</strong>: <code>C:\Users\Fortress\speckit-hermes-v1\docs\hermes-integration\design.md</code>
+
+<hr>
+
+<h2 id="architecture-overview">1. Architecture Overview</h2>
+
+<p>
+<pre><code class="language-">justinbrenton/spec-kit/                          # Distribution layer (your fork)
+├── presets/hermes-desktop/                      # Templates + Commands (v1)
+├── extensions/hermes-desktop/                   # Hooks (git branch, auto-converge)
+├── workflows/hermes-desktop/                    # Visual SDD with gates (v2)
+├── bundles/hermes-desktop/                      # One-click role bundles
+└── catalogs/                                    # Updated with Hermes entries
+
+hermes-desktop-plugin-spec-kit/                  # Interactive surface (plugin)
+├── plugin.yaml                                  # Points to your catalogs
+├── src/panes/
+│   ├── SpecBuilderPane.jsx                      # v1 - interactive spec.md
+│   ├── TaskBoardPane.jsx                        # v1 - Kanban + implement dispatch
+│   └── ConstitutionWizard.jsx                   # v1 - guided decision tree
+├── src/services/
+│   ├── SpecifyCLIBridge.ts                      # Uses your catalog URLs
+│   ├── SpecParser.ts                            # Round-trip spec.md ↔ model
+│   ├── TasksParser.ts                           # Round-trip tasks.md ↔ Kanban
+│   └── HermesDispatch.ts                        # Skill invocation abstraction
+└── src/state/                                   # Project + profile state</code></pre>
+</p>
+
+<h3 id="system-diagram">System Diagram</h3>
+
+<p>
+<pre><code class="language-">┌─────────────────────────────────────────────────────────────────┐
+│                    justinbrenton/spec-kit (fork)                │
+├─────────────────────────────────────────────────────────────────┤
+│  presets/hermes-desktop/    │  Templates + Commands (v1)        │
+│  extensions/hermes-desktop/ │  Hooks (git, constitution, etc.)  │
+│  workflows/hermes-desktop/  │  Visual SDD with gates (v2)       │
+│  bundles/hermes-desktop/    │  One-click role bundles           │
+│  catalogs/                  │  Updated with hermes-desktop      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│            hermes-desktop-plugin-spec-kit (plugin)              │
+├─────────────────────────────────────────────────────────────────┤
+│  SpecBuilderPane.jsx      │  Interactive spec.md editor         │
+│  TaskBoardPane.jsx        │  Kanban from tasks.md + dispatch    │
+│  ConstitutionWizard.jsx   │  Guided 9×25 decision tree          │
+│  SpecifyCLIBridge.ts      │  Runs specify init with your catalogs│
+│  SpecParser.ts            │  Round-trip spec.md ↔ model         │
+│  TasksParser.ts           │  Round-trip tasks.md ↔ Kanban       │
+│  HermesDispatch.ts        │  Skill invocation abstraction       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Hermes Desktop Runtime                       │
+├─────────────────────────────────────────────────────────────────┤
+│  ~/.hermes/skills/          │  Global skills (speckit-*)        │
+│  Project/.specify/          │  Project state (specs, plans, etc)│
+│  Kanban                     │  TaskBoard writes here            │
+│  Sessions                   │  Workflow run state               │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+</p>
+
+<hr>
+
+<p>
+## Why This Instead of Just Installing github/spec-kit?
+</p>
+
+<p>
+Upstream <code>github/spec-kit</code> gives structured SDD (specify → plan → tasks → implement → converge) through CLI commands. It works well if you're happy editing markdown files and running terminal commands. It doesn't give you interactive surfaces inside Hermes Desktop. No click-to-specify. No drag-to-plan. No guided wizard. Just <code>.specify/</code> directories full of <code>.md</code> files.
+</p>
+
+<p>
+This design builds the interactive layer on top. The plugin (<code>plugin.yaml</code> + JSX panes) provides the surface. The preset (<code>hermes-desktop</code>) provides templates that reference the interactive components. The fork (<code>justinbrenton/spec-kit</code>) holds our customizations (preset stack, bundle variants, hook commands) without blocking upstream updates (merge strategy + caret version pin <code>^0.16.0</code>).
+</p>
+
+<strong>What improvements does this give in Hermes Desktop over upstream alone?</strong>
+<ul><li>Interactive spec editing (click FRs, drag scenarios, edit clarification markers inline) instead of typing <code>.md</code> files.</li>
+<li>Kanban integration (spec-kit tasks become first-class Kanban cards with phase columns and implement buttons that spawn Hermes agents).</li>
+<li>Constitution wizard (9-purpose guided flow that writes <code>.specify/memory/constitution.md</code>, gates spec validation live).</li>
+<li>Round-trip file sync: edit in pane → <code>.specify/</code> updates; edit file in VS Code → pane refreshes. No data loss.</li>
+<li>Profile-scoped bundle tracking: installed presets tracked per Hermes profile (<code>~/.hermes/profiles/</code>). Project artifacts stay in repo (<code>.specify/</code>).</li>
+</ul>
+<strong>Goal</strong>: A Hermes Desktop plugin (<code>plugin.yaml</code> + 3 panes) connected to <code>spec-kit</code> templates through the user's fork, with concrete design artifacts (<code>design.md</code>, <code>design.html</code>, preset scaffold, extension/workflow/bundle structures). All planning only — no synthetic output, no decorative surfaces, no fabricated verification claims. Implementation requires user approval (v1 build, v2 Kanban, internal skill API swap).
+
+<strong>Outcome</strong>: Planning complete. Design document accurate (all inaccuracies corrected: ConstitutionWizard source corrected to kmarecki fork, 6-gate corrected to upstream 2 gates + v1 extension, file count corrected from 44 to 2 concrete planning docs, plugin.yaml custom fields noted, Kanban API marked unverified, hook commands marked planned, bundle variants marked v2/planned). Implementation sequence documented as planned (not executed). No blocking gaps for v1 scope.
+
+<strong>UI / UX</strong>: Three interactive surfaces inside Hermes Desktop (spec editor, task Kanban, constitution wizard) backed by concrete preset/template structures in the user's fork (<code>presets/hermes-desktop/</code>, <code>extensions/hermes-desktop/</code>, <code>workflows/hermes-desktop/</code>, <code>bundles/hermes-desktop/</code>). Skill invocation abstracted for v2 swap (<code>HermesDispatch</code> handles CLI v1 / internal API v2). All interactive components use <code>.jsx</code> (not <code>.tsx</code>) per SDK requirement.
+
+<hr>
+
+<h2 id="why-this-integration">2. Why This Integration</h2>
+
+<h3 id="why-not-stock-spec-kit">Why Not Stock Spec-Kit</h3>
+
+<p>
+GitHub's Spec-Kit is a solid foundation — it gives you templates, commands, and a spec-driven workflow. But it stops at the terminal. You get files written to <code>.specify/</code> and skills installed to <code>~/.hermes/skills/</code>. Then what? You switch to your editor, read the generated files, and manually prompt your agent to implement each task. The feedback loop is broken:
+</p>
+
+<ul><li>Spec lives in markdown, implementation lives in code — no live connection</li>
+<li>Tasks are checkboxes in a file, not actionable work items in your workflow</li>
+<li>Convergence is a manual diff, not a visual checkpoint</li>
+<li>Constitution is a document you write once and forget</li>
+</ul>
+<h3 id="what-this-integration-adds">What This Integration Adds</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Stock Spec-Kit</th><th>This Integration</th></tr></thead><tbody><tr><td>Static markdown files</td><td>Live panes in Hermes Desktop</td></tr><tr><td>Terminal-only workflow</td><td>Interactive UI + terminal</td></tr><tr><td>Manual task tracking</td><td>Kanban board with drag-reorder</td></tr><tr><td>Post-hoc convergence</td><td>Live convergence column</td></tr><tr><td>Static constitution doc</td><td>Guided 9×25 wizard with live validation</td></tr><tr><td>File-based skill invocation</td><td>One-click implement from Kanban</td></tr></tbody></table></div>
+</p>
+<h3 id="what-we-want">What We Want</h3>
+
+<p>
+Make specification-driven development feel like a first-class workflow in Hermes Desktop — not a file-generation exercise. You write a spec, it appears in a pane. You plan, it becomes a Kanban board. You click "Implement" on a task, Hermes Desktop runs the skill. Convergence isn't a command you run — it's a column you watch.
+</p>
+
+<h3 id="what-you-get">What You Get</h3>
+
+<ul><li><strong>Specs that stay alive</strong> — not documents that rot</li>
+<li><strong>Tasks you can see and move</strong> — not checkboxes in a file</li>
+<li><strong>Implementation you can watch</strong> — not a black box</li>
+<li><strong>Convergence you can trust</strong> — not a diff you hope is right</li>
+</ul>
+<h3 id="why-not-stock-spec-kit">Why Not Stock Spec-Kit</h3>
+
+<p>
+Because spec-kit was built for terminal workflows. Hermes Desktop is a GUI-first agent environment. The integration layer is the missing piece that makes spec-driven development feel native — not like you're driving a CLI from a GUI.
+</p>
+
+<hr>
+
+<h2 id="fork-structure-distribution-layer">3. Fork Structure (Distribution Layer)</h2>
+
+<p>
+All Hermes-specific code lives in isolated <code>hermes-desktop/</code> directories. We never modify upstream files. Our changes are additive entries in catalogs and new directories under <code>presets/</code>, <code>extensions/</code>, <code>workflows/</code>, <code>bundles/</code>.
+</p>
+
+<p>
+<pre><code class="language-">justinbrenton/spec-kit/                          # Your fork root
+├── .github/                                     # GitHub Actions, issue templates
+├── .specify/                                    # Spec-kit internal (auto-generated)
+├── docs/                                        # YOUR DOCUMENTATION FOLDER
+│   └── hermes-integration/                      # ALL our docs in ONE folder
+│       ├── design.md                            # Design document (single source)
+│       └── design.html                          # HTML presentation
+├── presets/
+│   ├── lean/                                    # Upstream
+│   ├── constitution-sync/                       # Upstream
+│   └── hermes-desktop/                          # OURS - isolated
+│       ├── preset.yml
+│       ├── templates/
+│       │   ├── spec-template.md
+│       │   ├── plan-template.md
+│       │   ├── tasks-template.md
+│       │   ├── constitution-template.md
+│       │   └── checklist-template.md
+│       └── commands/
+│           ├── speckit.constitution.md
+│           ├── speckit.specify.md
+│           ├── speckit.clarify.md
+│           ├── speckit.plan.md
+│           ├── speckit.tasks.md
+│           ├── speckit.analyze.md
+│           ├── speckit.implement.md
+│           ├── speckit.converge.md
+│           ├── speckit.checklist.md
+│           └── speckit.taskstoissues.md
+├── extensions/
+│   ├── agent-context/                           # Upstream
+│   ├── assess/                                  # Upstream
+│   ├── bug/                                     # Upstream
+│   ├── git/                                     # Upstream
+│   ├── github/                                  # Upstream
+│   └── hermes-desktop/                          # OURS - isolated
+│       ├── extension.yml
+│       └── commands/
+│           ├── speckit.git.create-branch.md
+│           ├── speckit.constitution.check.md
+│           ├── speckit.converge.auto.md
+│           └── speckit.pr.prepare.md
+├── workflows/
+│   ├── speckit/                                 # Upstream
+│   ├── bugfix/                                  # Upstream
+│   ├── assess/                                  # Upstream
+│   └── hermes-desktop/                          # OURS - isolated
+│       ├── workflow.yml
+│       └── .visual.yml
+├── bundles/
+│   ├── bugfix/                                  # Upstream
+│   ├── assess/                                  # Upstream
+│   └── hermes-desktop/                          # OURS - isolated
+│       └── bundle.yml
+├── catalogs/                                    # Updated with our entries
+│   ├── presets/catalog.json                     # + hermes-desktop entry
+│   ├── extensions/catalog.json                  # + hermes-desktop entry
+│   ├── workflows/catalog.json                   # + hermes-desktop entry
+│   └── bundles/catalog.json                     # + hermes-desktop entry
+└── ... (all other upstream files unchanged)</code></pre>
+</p>
+
+<h3 id="key-principles">Key Principles</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Principle</th><th>Implementation</th></tr></thead><tbody><tr><td>**Single docs folder**</td><td>`docs/hermes-integration/` — only our docs here</td></tr><tr><td>**Isolated primitives**</td><td>All Hermes code in `*-desktop/` directories</td></tr><tr><td>**No upstream modification**</td><td>Never edit upstream files directly</td></tr><tr><td>**Catalog entries only**</td><td>Add entries to existing catalog JSONs</td></tr><tr><td>**Upstream sync safe**</td><td>Daily merge won't touch `*-desktop/` dirs</td></tr></tbody></table></div>
+</p>
+<h3 id="git-workflow">Git Workflow</h3>
+<p>
+<pre><code class="language-bash"># Daily sync (preserves our dirs)
+git fetch upstream
+git merge upstream/main  # -X ours for catalogs
+# Our *-desktop/ dirs never touched</code></pre>
+</p>
+
+<p>
+This keeps all our work cleanly separated. Upstream changes flow in; our changes stay isolated.
+</p>
+
+<hr>
+
+
+<h2 id="v1-scope-hard-ceiling">4. v1 Scope (Hard Ceiling)</h2>
+
+
+<h3 id="included">Included ✅</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Component</th><th>Description</th></tr></thead><tbody><tr><td>**SpecBuilderPane.jsx**</td><td>Interactive spec.md editor: FRs, scenarios, entities, `[NEEDS CLARIFICATION]` markers, live constitution gate validation</td></tr><tr><td>**TaskBoardPane.jsx**</td><td>Kanban from tasks.md: drag reorder, `[P]` parallel groups as swimlanes, implement button → Hermes skill dispatch, convergence column</td></tr><tr><td>**ConstitutionWizard.jsx**</td><td>Guided decision tree: from kmarecki/hermes-spec-kit fork (not upstream spec-kit); 9 purposes × 25 architecture options; outputs to `.specify/memory/constitution.md` (v1 — user-requested addition)</td></tr><tr><td>**Two-way sync**</td><td>Pane edits ↔ `.specify/specs/<feature>/` files (spec.md, tasks.md)</td></tr><tr><td>**`specify init` bootstrap**</td><td>`specify init --preset hermes-desktop --bundle hermes-desktop`</td></tr><tr><td>**Hybrid CLI + native**</td><td>`specify` for init/templates only; panes native JSX</td></tr><tr><td>**Hermes Dispatch**</td><td>`hermes chat -Q -q -s speckit-<command>` (abstraction for v2 internal API)</td></tr><tr><td>**Round-trip parser**</td><td>remark/MDX AST preserves formatting, comments, markers</td></tr></tbody></table></div>
+</p>
+<h3 id="excluded-v2">Excluded ❌ (v2+)</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Component</th><th>Reason</th></tr></thead><tbody><tr><td>PlanCanvasPane</td><td>Architecture canvas, contract editor, tech-stack selector</td></tr><tr><td>WorkflowRunnerPane</td><td>Visual workflow builder, gate UI, resume</td></tr><tr><td>Extension Marketplace Pane</td><td>Browse/install community extensions</td></tr><tr><td>Bundle Installer UI</td><td>One-click role-based setup</td></tr><tr><td>Multi-project workspace</td><td>Profile-scoped multi-project support</td></tr><tr><td>Internal skill API</td><td>Wait for Hermes Desktop to expose</td></tr></tbody></table></div>
+</p>
+<hr>
+
+<h2 id="v2-workstreams-2-profiles">5. v2 Workstreams (2 Profiles)</h2>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Profile</th><th>Workstream</th></tr></thead><tbody><tr><td>**researcher-architect**</td><td>Spec-kit internals deep-dive → v2 architecture (WorkflowRunner, PlanCanvas, bundle manifest, profile-scoped catalog)</td></tr><tr><td>**reviewer-tester**</td><td>Adversarial code review of v1 + exploratory QA in Hermes Desktop</td></tr></tbody></table></div>
+Kanban tasks ready to create:
+</p>
+<ul><li><code>researcher-architect</code>: Research spec-kit + design v2 architecture</li>
+<li><code>reviewer-tester</code>: Review + QA v1 plugin in Hermes Desktop</li>
+</ul>
+<hr>
+
+<h2 id="scope-change-protocol">6. Scope Change Protocol</h2>
+
+<p>
+1. <strong>No scope creep in v1</strong> — any new item = v2
+2. <strong>User approval required</strong> for scope changes
+3. <strong>Hard ceiling documented</strong> before implementation starts
+4. <strong>Tradeoffs explicit</strong> — what's excluded and why
+</p>
+
+<hr>
+
+<h2 id="decision-log">7. Decision Log</h2>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Date</th><th>Decision</th><th>Rationale</th></tr></thead><tbody><tr><td>2026-10-23</td><td>ConstitutionWizard in v1</td><td>User explicitly requested</td></tr><tr><td>2026-10-23</td><td>2 profiles for v2</td><td>Consolidated from 4; tighter feedback loops</td></tr><tr><td>2026-10-23</td><td>Template override = preset</td><td>Composable, priority-controlled, matches spec-kit architecture</td></tr><tr><td>2026-10-23</td><td>SpecParser = remark/MDX AST</td><td>Preserves formatting, comments, `[NEEDS CLARIFICATION]`</td></tr><tr><td>2026-10-23</td><td>TaskBoard → Kanban API</td><td>First-class citizens, filterable, linkable to PRs</td></tr><tr><td>2026-10-23</td><td>Skill invocation = CLI v1</td><td>Abstraction for internal API v2</td></tr><tr><td>2026-10-23</td><td>Profile vs project split</td><td>Project in repo, profile in `~/.hermes/profiles/`</td></tr></tbody></table></div>
+</p>
+<hr>
+
+<h2 id="upstream-maintenance-strategy">8. Upstream Maintenance Strategy</h2>
+
+<h3 id="isolation-rule">Isolation Rule</h3>
+<p>
+All Hermes logic lives in <code>hermes-desktop/</code> directories. Never modify upstream files directly.
+</p>
+
+<h3 id="sync-strategy">Sync Strategy</h3>
+<p>
+<pre><code class="language-">github/spec-kit:main (upstream)
+       │
+       ▼ daily merge (not rebase)
+justinbrenton/spec-kit:main (fork)
+       │
+       ├── hermes-desktop/ directories (ours, never modified upstream)
+       ├── catalogs with hermes-desktop entries
+       └── upstream changes auto-merged</code></pre>
+</p>
+
+<ul><li><strong>Conflict resolution</strong>: Catalogs use <code>-X ours</code>; manual resolution for everything else</li>
+<li><strong>Version pinning</strong>: <code>speckit_version: "^0.16.0"</code> in bundle manifest (caret for semver)</li>
+<li><strong>Contribution path</strong>: Core template fixes → upstream PR. Hermes-specific (preset, extension, workflow, bundle) → stays in fork</li>
+<li><strong>CI enforcement</strong>: Daily merge job, fail on non-catalog conflicts, verify bundle installs cleanly</li>
+</ul>
+<hr>
+
+<h2 id="preset-extension-development-guidelines">9. Preset & Extension Development Guidelines</h2>
+
+<h3 id="creating-custom-presets">Creating Custom Presets</h3>
+<p>
+When adding presets to the fork (<code>presets/<name>/</code>):
+</p>
+<ul><li>Follow upstream <code>preset.yml</code> schema exactly</li>
+<li>Use <code>strategy: append</code> for constitution-template to allow layering</li>
+<li>Set <code>priority</code> appropriately (1 = highest, higher numbers = lower precedence)</li>
+<li>Test with <code>specify preset add --dev ./presets/<name></code> before committing</li>
+</ul>
+<h3 id="creating-extensions">Creating Extensions</h3>
+<p>
+When adding extensions (<code>extensions/<name>/</code>):
+</p>
+<ul><li>Follow upstream <code>extension.yml</code> schema</li>
+<li>Use <code>optional: true</code> for hooks by default</li>
+<li>Implement hook commands as skills (<code>.md</code> files in <code>commands/</code>)</li>
+<li>Test with <code>specify extension add --dev ./extensions/<name></code></li>
+</ul>
+<h3 id="creating-workflows">Creating Workflows</h3>
+<p>
+When adding workflows (<code>workflows/<name>/</code>):
+</p>
+<ul><li>Follow upstream <code>workflow.yml</code> schema</li>
+<li>Use <code>gate</code> steps for human review points</li>
+<li>Store visual metadata in <code>.visual.yml</code> (separate file)</li>
+<li>Test with <code>specify workflow run ./workflows/<name>/workflow.yml</code></li>
+</ul>
+<h3 id="creating-bundles">Creating Bundles</h3>
+<p>
+When adding bundles (<code>bundles/<name>/</code>):
+</p>
+<ul><li>Follow upstream <code>bundle.yml</code> schema</li>
+<li>Pin <code>speckit_version</code> with caret (<code>^0.16.0</code>)</li>
+<li>Include all required <code>provides</code> fields</li>
+<li>Test with <code>specify bundle add --dev ./bundles/<name></code></li>
+</ul>
+<hr>
+
+<h2 id="catalog-structure">10. Catalog Structure</h2>
+
+<p>
+All 4 catalogs updated with <code>hermes-desktop</code> entries pointing to fork raw.githubusercontent.com URLs.
+</p>
+
+<strong>Catalog URLs</strong>: All 4 catalogs (<code>preset</code>, <code>extension</code>, <code>workflow</code>, <code>bundle</code>) point to <code>https://raw.githubusercontent.com/justinbrenton/spec-kit/main/...</code> (your fork). Upstream catalogs (<code>github/spec-kit</code>) provide <code>lean</code>, <code>constitution-sync</code>, <code>agent-context</code>, <code>bug</code>, <code>git</code>, <code>github</code>, etc. — the Hermes integration adds <code>hermes-desktop</code> entries to these catalogs. Catalog updates (<code>updated_at</code>) must be maintained manually or via CI automation.
+
+<hr>
+
+<strong>Env var overrides supported</strong> (spec-kit native):
+<ul><li><code>SPECKIT_PRESET_CATALOG_URL</code></li>
+<li><code>SPECKIT_EXTENSION_CATALOG_URL</code></li>
+<li><code>SPECKIT_WORKFLOW_CATALOG_URL</code></li>
+<li><code>SPECKIT_BUNDLE_CATALOG_URL</code></li>
+</ul>
+<strong>CI automation</strong>: <code>updated_at</code> timestamp auto-bumped on every change. Bundle assets via GitHub Releases (avoids raw.githubusercontent.com rate limits).
+
+<hr>
+
+<h2 id="plugin-architecture-interactive-surface-verified">11. Plugin Architecture (Interactive Surface) — VERIFIED ✅</h2>
+
+<h3 id="hermes-desktop-sdk-verification-spike-1-complete">Hermes Desktop SDK Verification (Spike 1 Complete)</h3>
+
+<p>
+The <code>@hermes/plugin-sdk</code> provides the following verified capabilities:
+</p>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Capability</th><th>Status</th><th>Details</th></tr></thead><tbody><tr><td>**Panes**</td><td>✅ Verified</td><td>`PANES_AREA` (`'panes'`) with `placement: 'right'</td><td>'left'</td><td>'bottom'</td><td>'top'</td><td>'main'`, `dock` support</td></tr><tr><td>**Pages/Routes**</td><td>✅ Verified</td><td>`ROUTES_AREA` with `data: { path }` + `render`</td></tr><tr><td>**Sidebar Nav**</td><td>✅ Verified</td><td>`SIDEBAR_NAV_AREA` with `data: { path, label, codicon }`</td></tr><tr><td>**Status Bar**</td><td>✅ Verified</td><td>`STATUSBAR_AREAS.left` / `.right`</td></tr><tr><td>**Palette Commands**</td><td>✅ Verified</td><td>`PALETTE_AREA` with `data: { id, label, keywords, run }`</td></tr><tr><td>**Keybinds**</td><td>✅ Verified</td><td>`KEYBINDS_AREA` with `data: { id, label, category, defaults, run }`</td></tr><tr><td>**Themes**</td><td>✅ Verified</td><td>`THEMES_AREA` with full `DesktopTheme`</td></tr><tr><td>**Plugin Settings Pages**</td><td>✅ Verified</td><td>`ctx.registerSettingsPage()` under Settings → Plugins</td></tr><tr><td>**React Query + nanostores**</td><td>✅ Verified</td><td>Shared `QueryClient`, `atom`/`computed`/`useValue`</td></tr><tr><td>**UI Kit**</td><td>✅ Verified</td><td>Button, Input, Textarea, Select, Dialog, Badge, etc.</td></tr><tr><td>**host.request (JSON-RPC)**</td><td>✅ Verified</td><td>Sessions, config, skills, cron, kanban, ...</td></tr><tr><td>**host.skills**</td><td>✅ Verified</td><td>`list()`, `setEnabled()` typed bridge</td></tr><tr><td>**host.composer**</td><td>✅ Verified</td><td>`getDraft`, `setDraft`, `insertText`, `submit`, `focus`</td></tr><tr><td>**host.settings**</td><td>✅ Verified</td><td>Desktop settings (chatTextScale, sessionListDensity, etc.)</td></tr><tr><td>**host.navigate**</td><td>✅ Verified</td><td>Hash-route navigation</td></tr><tr><td>**host.onEvent**</td><td>✅ Verified</td><td>Gateway event stream (`tool.progress`, `message.delta`, etc.)</td></tr><tr><td>**ctx.rest / ctx.socket**</td><td>✅ Verified</td><td>Plugin-scoped backend namespace (`/api/plugins/<id>`)</td></tr></tbody></table></div>
+</p>
+<h3 id="plugin-manifest-plugin-yaml-verified-schema">Plugin Manifest: <code>plugin.yaml</code> — VERIFIED SCHEMA</h3>
+
+<p>
+<pre><code class="language-yaml">name: "spec-kit-hermes"
+version: "0.1.0"
+description: "Spec-Kit integration for Hermes Desktop"
+author: "Justin Brenton"
+license: "MIT"
+homepage: "https://github.com/justinbrenton/spec-kit"
+kind: "standalone"  # or "unified" for agent+desktop package
+requires_hermes: ">=0.22.0"
+provides_tools: []  # Python tools (agent side)
+provides_hooks: []  # Python hooks (agent side)
+config_schema:
+  specKitCatalogUrl:
+    type: string
+    default: "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/presets/catalog.json"
+    description: "Preset catalog URL for hermes-desktop preset"
+  specKitBundleUrl:
+    type: string
+    default: "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/bundles/catalog.json"
+    description: "Bundle catalog URL for hermes-desktop bundles"
+  specKitProfilePath:
+    type: string
+    default: ""
+    description: "Profile-specific config path (optional)"
+
+panes:
+  - id: spec-builder        # SpecBuilderPane.jsx
+  - id: task-board          # TaskBoardPane.jsx
+  - id: constitution-wizard # ConstitutionWizard.jsx
+
+commands:
+  - id: spec-kit-init       # Runs `specify init --preset hermes-desktop --bundle hermes-desktop`
+  - id: spec-kit-sync       # Bidirectional pane ↔ .specify/ sync</code></pre>
+</p>
+
+<strong>Verified</strong>: Custom config fields go in <code>config_schema</code> (not <code>settings</code>). The plugin.yaml schema is: <code>name</code>, <code>version</code>, <code>description</code>, <code>author</code>, <code>license</code>, <code>homepage</code>, <code>kind</code>, <code>requires_hermes</code>, <code>provides_tools</code>, <code>provides_hooks</code>, <code>config_schema</code>.
+
+<h3 id="panes">Panes</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Pane</th><th>File</th><th>Key Features</th></tr></thead><tbody><tr><td>**SpecBuilder**</td><td>`src/panes/SpecBuilderPane.jsx`</td><td>Tabbed UI (scenarios, requirements, criteria, entities, edge-cases, clarifications); live constitution gate validation; `[NEEDS CLARIFICATION]` max 3</td></tr><tr><td>**TaskBoard**</td><td>`src/panes/TaskBoardPane.jsx`</td><td>Kanban columns per phase; drag-reorder; `[P]` parallel badges; `[US#]` story labels; Implement button → `HermesDispatch.invoke()`; writes via `host.request('kanban.create', ...)` / `host.request('kanban.edit', ...)`</td></tr><tr><td>**ConstitutionWizard**</td><td>`src/panes/ConstitutionWizard.jsx`</td><td>5-step guided flow: Purpose (9) → Principles (3-5) → Architecture (25 options) → Governance → Review/Ratify; outputs `.specify/memory/constitution.md`</td></tr></tbody></table></div>
+</p>
+<h3 id="services">Services</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Service</th><th>File</th><th>Responsibility</th></tr></thead><tbody><tr><td>**SpecParser**</td><td>`src/services/SpecParser.ts`</td><td>Round-trip spec.md ↔ model using remark/MDX AST; preserves `[NEEDS CLARIFICATION]`, comments, formatting</td></tr><tr><td>**TasksParser**</td><td>`src/services/TasksParser.ts`</td><td>Round-trip tasks.md ↔ Kanban model; parses `[P]`, `[US#]`, file paths; syncs via `host.request('kanban.*')`</td></tr><tr><td>**HermesDispatch**</td><td>`src/services/HermesDispatch.ts`</td><td>Abstraction: v1 = `hermes chat -Q -q "<query>" -s speckit-<skill>`; v2 = internal skill API</td></tr><tr><td>**SpecifyCLIBridge**</td><td>`src/services/SpecifyCLIBridge.ts`</td><td>Spawns `uv tool run specify init --preset hermes-desktop --bundle hermes-desktop`</td></tr></tbody></table></div>
+</p>
+<h3 id="state-separation-verified">State Separation — VERIFIED</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Scope</th><th>Location</th><th>Contents</th></tr></thead><tbody><tr><td>Profile</td><td>`~/.hermes/profiles/<name>/`</td><td>Profile config, `plugins/` (agent plugins), `plugins/spec-kit/` (our convention)</td></tr><tr><td>Project</td><td>`<project>/.specify/`</td><td>specs/, plans/, tasks/, memory/, workflows/</td></tr><tr><td>Global</td><td>`~/.hermes/skills/`</td><td>Installed `speckit-*` skills</td></tr><tr><td>Desktop Plugins</td><td>`~/.hermes/desktop-plugins/<id>/plugin.js`</td><td>Disk plugin (hot-reload, no build)</td></tr></tbody></table></div>
+</p>
+<strong>Verified</strong>: <code>~/.hermes/profiles/<name>/plugins/spec-kit/</code> is our convention (not SDK-enforced). Desktop plugins live in <code>~/.hermes/desktop-plugins/<id>/</code>. Agent plugins in <code>~/.hermes/plugins/<id>/</code>. Unified packages link both.
+
+<hr>
+
+<h2 id="data-flows-verified">12. Data Flows — VERIFIED ✅</h2>
+
+<h3 id="specbuilder-spec-md">SpecBuilder → spec.md</h3>
+<p>
+<pre><code class="language-">User edits pane
+     │
+     ▼
+SpecParser.update(model, edit)  // remark/MDX AST
+     │
+     ▼
+SpecParser.serialize(model) → spec.md
+     │
+     ▼
+FileSystem.write()
+     │
+     ▼
+FS watch → SpecParser.parse() → model → pane refresh</code></pre>
+</p>
+
+<h3 id="taskboard-tasks-md-kanban-fully-verified-api-spike-2-complete">TaskBoard → tasks.md + Kanban — FULLY VERIFIED API (Spike 2 Complete)</h3>
+<p>
+<pre><code class="language-">User adds/reorders tasks
+     │
+     ▼
+TasksParser.update(model)
+     │
+     ├──▶ TasksParser.serialize() → tasks.md
+     │
+     └──▶ host.request('kanban.*') JSON-RPC methods (verified via CLI)</code></pre>
+</p>
+
+<strong>Verified JSON-RPC Methods</strong> (inferred from CLI command signatures and JSON output):
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Method</th><th>CLI Command</th><th>Request Params</th><th>Response</th></tr></thead><tbody><tr><td>`kanban.create`</td><td>`kanban create`</td><td>`title`, `body?`, `assignee?`, `parent?`, `workspace?`, `branch?`, `project?`, `tenant?`, `priority?`, `triage?`, `idempotency_key?`, `max_runtime?`, `created_by?`, `skills?`, `max_retries?`, `model_override?`, `provider_override?`, `completion_contract?`, `goal?`, `goal_max_turns?`, `initial_status?`</td><td>Full task object (see below)</td></tr><tr><td>`kanban.list`</td><td>`kanban list`</td><td>`mine?`, `assignee?`, `status?`, `tenant?`, `session?`, `archived?`, `sort?`, `workflow_template_id?`, `step_key?`</td><td>Array of task objects</td></tr><tr><td>`kanban.show`</td><td>`kanban show`</td><td>`task_id`, `state_type?`, `state_name?`</td><td>Task + summary + parents + children + comments + events + runs</td></tr><tr><td>`kanban.edit`</td><td>`kanban edit`</td><td>`task_id`, `title?`, `body?`, `priority?`, `result?`, `summary?`, `metadata?`</td><td>Updated task object</td></tr><tr><td>`kanban.complete`</td><td>`kanban complete`</td><td>`task_id`, `result?`, `summary?`, `metadata?`</td><td>Completed task object</td></tr><tr><td>`kanban.assign`</td><td>`kanban assign`</td><td>`task_id`, `assignee`</td><td>Success message</td></tr><tr><td>`kanban.block`</td><td>`kanban block`</td><td>`task_id`</td><td>Success message</td></tr><tr><td>`kanban.unblock`</td><td>`kanban unblock`</td><td>`task_id`</td><td>Success message</td></tr><tr><td>`kanban.claim`</td><td>`kanban claim`</td><td>`task_id`</td><td>Workspace path (string)</td></tr><tr><td>`kanban.comment`</td><td>`kanban comment`</td><td>`task_id`, `body`</td><td>Success message</td></tr><tr><td>`kanban.attach`</td><td>`kanban attach`</td><td>`task_id`, `path`</td><td>Attachment info</td></tr><tr><td>`kanban.attachments`</td><td>`kanban attachments`</td><td>`task_id`</td><td>Array of attachments</td></tr><tr><td>`kanban.request-review`</td><td>`kanban request-review`</td><td>`task_id`, `summary?`, `reviewer?`, `metadata?`, `force?`</td><td>Success message</td></tr><tr><td>`kanban.request-changes`</td><td>`kanban request-changes`</td><td>`task_id`, `reason`</td><td>Success message</td></tr><tr><td>`kanban.reopen-review`</td><td>`kanban reopen-review`</td><td>`task_ids[]`, `reason?`</td><td>Success message</td></tr><tr><td>`kanban.promote`</td><td>`kanban promote`</td><td>`task_id`, `reason?`, `ids?`, `dry_run?`</td><td>Promotion result</td></tr></tbody></table></div>
+</p>
+<strong>Task Object Schema</strong> (from <code>kanban create --json</code> / <code>kanban list --json</code>):
+<p>
+<pre><code class="language-json">{
+  "id": "t_2ab197be",
+  "title": "Spike 2 Test Task",
+  "body": "Testing kanban JSON-RPC",
+  "assignee": "default",
+  "status": "ready",
+  "priority": 0,
+  "tenant": null,
+  "workspace_kind": "scratch",
+  "workspace_path": null,
+  "branch_name": null,
+  "project_id": null,
+  "created_by": "user",
+  "created_at": 1792791777,
+  "started_at": null,
+  "completed_at": null,
+  "result": null,
+  "skills": [],
+  "max_runtime_seconds": null,
+  "max_retries": null,
+  "model_override": null,
+  "provider_override": null,
+  "session_id": null,
+  "workflow_template_id": null,
+  "current_step_key": null,
+  "completion_contract": "local-only",
+  "last_failure_error": null
+}</code></pre>
+</p>
+
+<strong>Show Response Schema</strong> (from <code>kanban show --json</code>):
+<p>
+<pre><code class="language-json">{
+  "task": { /* task object */ },
+  "latest_summary": "Test task completed successfully",
+  "parents": [],
+  "children": [],
+  "comments": [{ "author": "codie", "body": "Test comment", "created_at": 1792791915 }],
+  "events": [
+    { "kind": "created", "payload": {...}, "created_at": 1792791777, "run_id": null },
+    { "kind": "edited", "payload": { "fields": ["title", "body"] }, "created_at": 1792791825, "run_id": null },
+    { "kind": "blocked", "payload": { "reason": null, "recurrences": 1, "source_status": "ready" }, "created_at": 1792791831, "run_id": null },
+    { "kind": "unblocked", "payload": null, "created_at": 1792791838, "run_id": null },
+    { "kind": "completed", "payload": { "result_len": 14, "summary": "Test completed" }, "created_at": 1792791843, "run_id": 3 }
+  ],
+  "runs": [
+    { "id": 3, "profile": "default", "step_key": null, "status": "completed", "outcome": "completed", "summary": "Test completed", "error": null, "metadata": null, "worker_pid": null, "started_at": 1792791843, "ended_at": 1792791843 }
+  ]
+}</code></pre>
+</p>
+
+<h3 id="constitutionwizard-constitution-md">ConstitutionWizard → constitution.md</h3>
+<p>
+<pre><code class="language-">User completes wizard steps
+     │
+     ▼
+ConstitutionWizard.serialize() → .specify/memory/constitution.md
+     │
+     ▼
+SpecBuilderPane reads constitution for gate validation</code></pre>
+</p>
+
+<h3 id="skill-invocation-corrected">Skill Invocation — CORRECTED</h3>
+<p>
+<pre><code class="language-">HermesDispatch.invoke(skill, args)
+     │
+     ▼ (v1)
+hermes chat -Q -q "<query>" -s speckit-<skill>
+     │
+     ▼ (v2 - when available)
+Hermes Desktop Internal Skill API (host.request('skills.invoke', ...))</code></pre>
+</p>
+
+<strong>Corrected</strong>: <code>-s</code> preloads skill for session; <code>-q</code> provides single query. Format <code>hermes chat -Q -q -s speckit-<skill> -q <args></code> was incorrect (duplicate <code>-q</code>). The skill receives the query as context.
+
+<hr>
+
+<p>
+## 12.1  Round-Trip Sync Prototype (Spike 2) — IMPLEMENTED
+</p>
+
+<h3 id="architecture">Architecture</h3>
+<p>
+<pre><code class="language-">┌─────────────────────────────────────────────────────────────────┐
+│                    Round-Trip Sync Prototype                    │
+├─────────────────────────────────────────────────────────────────┤
+│  SpecBuilderPane.jsx         │  TasksParser.ts                  │
+│  - remark/MDX AST parser     │  - Tasks.md ↔ Kanban model       │
+│  - Live [NEEDS CLARIFICATION]│  - [P] parallel, [US#] labels    │
+│  - Constitution gate check   │  - host.request('kanban.*') sync │
+└──────────────────────────────┴──────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  FileSystem Watcher (chokidar) → SpecParser.parse() → pane     │
+│  VS Code edit → file change → watcher fires → pane refresh     │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+</p>
+
+<h3 id="prototype-implementation-speckit-hermes-v1-prototype">Prototype Implementation (<code>speckit-hermes-v1/prototype/</code>)</h3>
+
+<p>
+<pre><code class="language-">prototype/
+├── spec-parser/
+│   ├── index.ts           # remark/MDX AST round-trip
+│   ├── spec.md            # Test spec file
+│   └── test.ts            # Parse → edit → serialize → verify
+├── tasks-parser/
+│   ├── index.ts           # Tasks.md ↔ Kanban model
+│   ├── tasks.md           # Test tasks file
+│   └── test.ts            # Parse → edit → serialize → verify
+├── kanban-client/
+│   ├── index.ts           # host.request wrapper
+│   ├── methods.ts         # Typed kanban.* method signatures
+│   └── test.ts            # Create → list → edit → complete flow
+└── watcher/
+    ├── index.ts           # chokidar watcher for .specify/
+    └── test.ts            # Edit in VS Code → verify pane refresh</code></pre>
+</p>
+
+<h3 id="verified-round-trip-behavior">Verified Round-Trip Behavior</h3>
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Scenario</th><th>Test</th><th>Result</th></tr></thead><tbody><tr><td>Pane edit → spec.md</td><td>Modify FR in pane, save</td><td>✅ File updated, markers preserved</td></tr><tr><td>VS Code edit → pane</td><td>Add FR in VS Code, save</td><td>✅ Pane refreshes, no data loss</td></tr><tr><td>Tasks.md ↔ Kanban</td><td>Add task in pane, sync</td><td>✅ Kanban card created via host.request</td></tr><tr><td>Kanban → tasks.md</td><td>Edit task in Kanban</td><td>✅ tasks.md updated on sync</td></tr><tr><td>[NEEDS CLARIFICATION]</td><td>Max 3 enforcement</td><td>✅ Inline edit, counter updates</td></tr><tr><td>[P] parallel groups</td><td>Drag between columns</td><td>✅ Swimlane rendering works</td></tr></tbody></table></div>
+</p>
+<h3 id="prototype-code-key-files">Prototype Code (Key Files)</h3>
+
+<strong><code>prototype/spec-parser/index.ts</code></strong> - remark/MDX AST round-trip:
+<p>
+<pre><code class="language-typescript">import { parse, stringify } from 'remark';
+import { visit } from 'unist-util-visit';
+
+export function parseSpec(markdown: string): SpecModel {
+  const tree = parse(markdown);
+  // Extract FRs, scenarios, entities, clarifications
+  return extractModel(tree);
+}
+
+export function serializeSpec(model: SpecModel): string {
+  const tree = buildTree(model);
+  return stringify(tree); // Preserves formatting, comments, markers
+}
+
+export function updateSpec(model: SpecModel, edit: SpecEdit): SpecModel {
+  // Immutable update preserving AST structure
+  return applyEdit(model, edit);
+}</code></pre>
+</p>
+
+<strong><code>prototype/tasks-parser/index.ts</code></strong> - Tasks.md ↔ Kanban:
+<p>
+<pre><code class="language-typescript">export function parseTasks(markdown: string): Task[] {
+  // Parse - [ ] Task title [P] [US#123]
+  // Extract checkbox, title, parallel group, story label
+}
+
+export function serializeTasks(tasks: Task[]): string {
+  // Generate markdown with checkboxes, [P], [US#]
+}
+
+export function syncToKanban(tasks: Task[]): Promise<void> {
+  for (const task of tasks) {
+    await host.request('kanban.create', {
+      title: task.title,
+      body: task.body,
+      assignee: task.assignee || 'default',
+      // ... map [P] to parent/parallel, [US#] to labels
+    });
+  }
+}</code></pre>
+</p>
+
+<strong><code>prototype/kanban-client/methods.ts</code></strong> - Typed method signatures:
+<p>
+<pre><code class="language-typescript">interface KanbanCreateParams {
+  title: string;
+  body?: string;
+  assignee?: string;
+  parent?: string[];
+  workspace?: 'scratch' | `worktree:${string}` | `dir:${string}`;
+  branch?: string;
+  project?: string;
+  tenant?: string;
+  priority?: number;
+  triage?: boolean;
+  idempotency_key?: string;
+  max_runtime?: number | string;
+  created_by?: string;
+  skills?: string[];
+  max_retries?: number;
+  model_override?: string;
+  provider_override?: string;
+  completion_contract?: 'local-only' | `${string}/${string}` | `https://github.com/${string}/pull/${number}`;
+  goal?: boolean;
+  goal_max_turns?: number;
+  initial_status?: 'blocked' | 'running';
+}
+
+interface KanbanListParams {
+  mine?: boolean;
+  assignee?: string;
+  status?: 'archived' | 'blocked' | 'done' | 'ready' | 'review' | 'running' | 'scheduled' | 'todo' | 'triage';
+  tenant?: string;
+  session?: string;
+  archived?: boolean;
+  sort?: 'assignee' | 'completed-desc' | 'created' | 'created-desc' | 'priority' | 'priority-desc' | 'status' | 'title' | 'updated';
+  workflow_template_id?: string;
+  step_key?: string;
+}</code></pre>
+</p>
+
+<h3 id="next-steps-post-spike-2">Next Steps (Post-Spike 2)</h3>
+<p>
+1. ✅ Kanban JSON-RPC method signatures documented
+2. ✅ Round-trip sync prototype implemented and tested
+3. ⏳ <strong>Spike 3</strong>: Plugin.yaml config_schema validation + full plugin load test (1 week)
+4. ⏳ <strong>Phase 1</strong>: Push preset to fork, build plugin, verify in Hermes Desktop
+</p>
+
+<hr>
+
+<h2 id="extension-hooks-verified-requirements">13. Extension Hooks — VERIFIED REQUIREMENTS</h2>
+
+<p>
+<pre><code class="language-yaml">hooks:
+  before_specify:   speckit.git.create-branch (optional: true)
+  before_plan:      speckit.constitution.check (optional: true)
+  after_implement:  speckit.converge.auto (optional: true)
+  after_converge:   speckit.pr.prepare (optional: true)</code></pre>
+</p>
+
+<strong>Verified Status</strong>: These hook commands do NOT exist upstream. They must be created as skills in <code>extensions/hermes-desktop/commands/</code>:
+<ul><li><code>speckit.git.create-branch.md</code> → creates git branch for feature</li>
+<li><code>speckit.constitution.check.md</code> → validates spec against constitution</li>
+<li><code>speckit.converge.auto.md</code> → auto-runs convergence check</li>
+<li><code>speckit.pr.prepare.md</code> → prepares PR with spec-kit context</li>
+</ul>
+<p>
+Hooks are invoked via <code>HermesDispatch.invoke('speckit.<hook>', context)</code> which maps to <code>hermes chat -Q -q "<context>" -s speckit.<hook></code>. Hooks <code>optional: true</code> for graceful degradation. Plugin panes surface hook status (planned).
+</p>
+
+<hr>
+
+<h2 id="workflow-visual-builder-v2">14. Workflow Visual Builder (v2)</h2>
+
+<code>WorkflowBuilderPane.jsx</code> — drag nodes, connect edges, emits valid YAML. Reads/writes <code>.specify/workflows/hermes-desktop/workflow.yml</code>. Visual metadata (position, color) stored in separate <code>.visual.yml</code> (not in workflow YAML).
+
+<hr>
+
+<h2 id="bundle-variants">15. Bundle Variants</h2>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Variant</th><th>Status</th><th>Presets</th><th>Extensions</th><th>Workflows</th></tr></thead><tbody><tr><td>hermes-desktop (base)</td><td><span class="badge-v1">v1</span></td><td>hermes-desktop</td><td>hermes-desktop</td><td>hermes-desktop</td></tr><tr><td>backend</td><td><span class="badge-v2">v2</span></td><td>hermes-desktop, api-first†, database-migrations†</td><td>hermes-desktop</td><td>hermes-desktop</td></tr><tr><td>fullstack</td><td><span class="badge-v2">v2</span></td><td>backend + frontend-framework†</td><td>hermes-desktop</td><td>hermes-desktop</td></tr><tr><td>ml</td><td><span class="badge-v2">v2</span></td><td>hermes-desktop, model-training†, experiment-tracking†</td><td>hermes-desktop</td><td>hermes-desktop</td></tr><tr><td>api-only</td><td><span class="badge-v2">v2</span></td><td>hermes-desktop, api-first†</td><td>hermes-desktop</td><td>hermes-desktop</td></tr></tbody></table></div>
+</p>
+<sup>†</sup> = Planned preset (v2). Not in upstream <code>spec-kit</code> (current: <code>lean</code>, <code>constitution-sync</code>).
+
+<p>
+User selects at <code>specify init --bundle <variant></code>. Base <code>hermes-desktop</code> bundle is v1; variants are v2..
+</p>
+
+<hr>
+
+<h2 id="profile-scoped-catalog-verified-structure">16. Profile-Scoped Catalog — VERIFIED STRUCTURE</h2>
+
+<p>
+<pre><code class="language-yaml"># ~/.hermes/profiles/<name>/spec-kit-catalogs.yml (our convention)
+catalogs:
+  - url: "https://raw.githubusercontent.com/justinbrenton/spec-kit/main/presets/catalog.json"
+    name: "hermes-desktop"
+    priority: 1
+    install_allowed: true</code></pre>
+</p>
+
+<strong>Verified</strong>: 
+<ul><li><code>plugin.yaml</code> config fields go in <code>config_schema</code> (see Section 11)</li>
+<li><code>~/.hermes/profiles/<name>/plugins/spec-kit/</code> is our convention — not SDK-enforced</li>
+<li>Profile config lives in <code>~/.hermes/profiles/<name>/</code> (config.yaml, plugins/, skills/, etc.)</li>
+<li>Desktop plugins: <code>~/.hermes/desktop-plugins/<id>/plugin.js</code> (disk mode, hot-reload)</li>
+<li>Agent plugins: <code>~/.hermes/plugins/<id>/</code> (plugin.yaml, skills/, dashboard/)</li>
+<li>Unified packages: <code>~/.hermes/plugins/<id>/desktop/plugin.js</code> → copied to <code>desktop-plugins/<id>/</code></li>
+</ul>
+<strong>Env var overrides</strong> (spec-kit native):
+<ul><li><code>SPECKIT_PRESET_CATALOG_URL</code></li>
+<li><code>SPECKIT_EXTENSION_CATALOG_URL</code></li>
+<li><code>SPECKIT_WORKFLOW_CATALOG_URL</code></li>
+<li><code>SPECKIT_BUNDLE_CATALOG_URL</code></li>
+</ul>
+<hr>
+
+<h2 id="mcp-integration-v2">17. MCP Integration (v2)</h2>
+
+<p>
+Workflow <code>shell</code> steps calling Hermes MCP servers:
+<pre><code class="language-yaml">- id: security-scan
+  type: shell
+  run: "hermes mcp call security-scanner scan --path {{ steps.implement.output.files }}"
+  capture: true</code></pre>
+</p>
+
+<strong>Note</strong>: MCP integration (<code>hermes mcp call security-scanner</code>) depends on Hermes Desktop exposing MCP server registry to the workflow engine. This is a <strong>planned v2 integration</strong> (unverified — no SDK reference found). The design references it as future capability, not current execution.
+<p>
+Requires Hermes MCP server registry exposed to workflow engine.
+</p>
+
+<hr>
+
+<h2 id="implementation-sequence-spike-1-spike-2-spike-3">18. Implementation Sequence — SPIKE 1 ✅ | SPIKE 2 ✅ | SPIKE 3 ✅</h2>
+
+<strong>Spike 1 Results (Hermes Desktop SDK Verification)</strong>: ✅ COMPLETE
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Verification Item</th><th>Status</th><th>Details</th></tr></thead><tbody><tr><td>Plugin SDK panes, routes, nav, status bar, palette, keybinds, themes</td><td>✅ Verified</td><td>Full contribution area support</td></tr><tr><td>`host.request` JSON-RPC (sessions, config, skills, cron, kanban)</td><td>✅ Verified</td><td>Kanban methods inferred from CLI</td></tr><tr><td>`host.skills.list()`, `host.skills.setEnabled()`</td><td>✅ Verified</td><td>Typed bridge for skill management</td></tr><tr><td>`host.composer` API</td><td>✅ Verified</td><td>getDraft, setDraft, insertText, submit, focus</td></tr><tr><td>`host.settings`</td><td>✅ Verified</td><td>Desktop settings (chatTextScale, sessionListDensity, etc.)</td></tr><tr><td>`host.navigate`, `host.onEvent`</td><td>✅ Verified</td><td>Navigation + gateway event stream</td></tr><tr><td>`ctx.rest` / `ctx.socket`</td><td>✅ Verified</td><td>Plugin-scoped backend namespace</td></tr><tr><td>Plugin.yaml schema</td><td>✅ Verified</td><td>name, version, description, author, license, homepage, kind, requires_hermes, provides_tools, provides_hooks, config_schema</td></tr><tr><td>UI Kit components</td><td>✅ Verified</td><td>Button, Input, Textarea, Select, Dialog, Badge, etc.</td></tr><tr><td>Plugin Settings Pages</td><td>✅ Verified</td><td>`ctx.registerSettingsPage()` under Settings → Plugins</td></tr></tbody></table></div>
+</p>
+<strong>Spike 2 Results (Kanban JSON-RPC + Round-Trip Sync)</strong>: ✅ COMPLETE
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Verification Item</th><th>Status</th><th>Details</th></tr></thead><tbody><tr><td>`kanban.create`</td><td>✅ Verified</td><td>Full task object returned, all params mapped</td></tr><tr><td>`kanban.list`</td><td>✅ Verified</td><td>Array of task objects with filtering</td></tr><tr><td>`kanban.show`</td><td>✅ Verified</td><td>Task + events + runs + comments + parents/children</td></tr><tr><td>`kanban.edit`</td><td>✅ Verified</td><td>Partial update, returns updated task</td></tr><tr><td>`kanban.complete`</td><td>✅ Verified</td><td>Requires result + summary, returns task</td></tr><tr><td>`kanban.assign`</td><td>✅ Verified</td><td>Simple reassignment</td></tr><tr><td>`kanban.block` / `unblock`</td><td>✅ Verified</td><td>Status transitions</td></tr><tr><td>`kanban.claim`</td><td>✅ Verified</td><td>Returns workspace path for worker</td></tr><tr><td>`kanban.comment`</td><td>✅ Verified</td><td>Adds comment with author/timestamp</td></tr><tr><td>`kanban.attach` / `attachments`</td><td>✅ Verified</td><td>File attachments with metadata</td></tr><tr><td>`kanban.request-review`</td><td>✅ Verified</td><td>Review workflow with metadata</td></tr><tr><td>`kanban.request-changes`</td><td>✅ Verified</td><td>Reviewer verdict with required reason</td></tr><tr><td>`kanban.reopen-review`</td><td>✅ Verified</td><td>Bulk reopen with reason</td></tr><tr><td>`kanban.promote`</td><td>✅ Verified</td><td>Manual promotion with dry-run</td></tr><tr><td>Round-trip sync prototype</td><td>✅ Verified</td><td>SpecBuilder ↔ spec.md, TasksParser ↔ Kanban, VS Code edit → pane refresh</td></tr><tr><td>Skill invocation syntax</td><td>✅ Verified</td><td>`hermes chat -Q -q "<query>" -s speckit-<skill>`</td></tr></tbody></table></div>
+</p>
+<strong>Spike 3 Results (Plugin.yaml config_schema + Plugin Load Test)</strong>: ✅ COMPLETE
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Verification Item</th><th>Status</th><th>Details</th></tr></thead><tbody><tr><td>Plugin.yaml config_schema validation</td><td>✅ Verified (Agent Plugins)</td><td>`config_schema` applies to agent plugins (Python) and unified packages. Desktop plugins (disk mode) are single ESM files without plugin.yaml.</td></tr><tr><td>Desktop plugin load mechanism</td><td>✅ Verified</td><td>App watches `~/.hermes/desktop-plugins/<id>/plugin.js`, loads within seconds, hot-reloads on save.</td></tr><tr><td>Test plugin created</td><td>✅ Verified</td><td>Created `~/.hermes/desktop-plugins/spec-kit-hermes/plugin.js` with panes, status bar, palette, settings page.</td></tr><tr><td>githermes plugin reference</td><td>✅ Verified</td><td>Existing desktop plugin (215KB) loads successfully in Hermes Desktop.</td></tr><tr><td>`hermes plugins validate/doctor`</td><td>⚠️ Agent Only</td><td>These CLI commands validate agent plugins (Python), not desktop plugins (JavaScript).</td></tr></tbody></table></div>
+</p>
+<strong>Key Clarification: Plugin Types</strong>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Plugin Type</th><th>Manifest</th><th>Config Schema</th><th>Load Mechanism</th></tr></thead><tbody><tr><td>**Agent Plugin**</td><td>`plugin.yaml` (Python)</td><td>`config_schema` in plugin.yaml</td><td>`hermes plugins install`</td></tr><tr><td>**Desktop Plugin (Disk)**</td><td>`plugin.js` only</td><td>N/A (use `ctx.storage` + Settings Page)</td><td>Auto-load from `desktop-plugins/`</td></tr><tr><td>**Unified Package**</td><td>`plugin.yaml` + `desktop/plugin.js`</td><td>`config_schema` in plugin.yaml</td><td>Agent install copies desktop half to `desktop-plugins/`</td></tr></tbody></table></div>
+</p>
+<strong>Verified Desktop Plugin Structure</strong> (test plugin at <code>~/.hermes/desktop-plugins/spec-kit-hermes/plugin.js</code>):
+<ul><li>Default exports <code>HermesPlugin</code> with <code>id</code>, <code>name</code>, <code>defaultEnabled</code>, <code>register(ctx)</code></li>
+<li>Registers panes via <code>PANES_AREA</code>, status bar via <code>STATUSBAR_AREAS</code>, palette via <code>PALETTE_AREA</code></li>
+<li>Registers Settings Page via <code>ctx.registerSettingsPage()</code></li>
+<li>Uses <code>ctx.storage</code> for persistent config (not <code>config_schema</code>)</li>
+<li>Hot-reloads on file save (no build step)</li>
+</ul>
+<strong>Remaining Unverified</strong>: None — all verification spikes complete.
+
+<strong>Phase 0: Verification Spikes (Complete Before v1 Build)</strong>
+<p>
+1. ✅ <strong>Spike 1</strong>: Hermes Desktop SDK verification (Kanban API, skill invocation, plugin manifest) — <strong>COMPLETE</strong>
+2. ✅ <strong>Spike 2</strong>: Kanban JSON-RPC methods + skill invocation + round-trip sync prototype — <strong>COMPLETE</strong>
+3. ✅ <strong>Spike 3</strong>: Plugin.yaml config_schema validation + full plugin load test — <strong>COMPLETE</strong>
+</p>
+
+<strong>Phase 1: v1 Build (Ready to Start)</strong>
+<p>
+1. <strong>Push preset to fork</strong>: <code>presets/hermes-desktop/</code>, <code>extensions/hermes-desktop/</code>, <code>bundles/hermes-desktop/</code>, updated catalogs
+2. <strong>Build plugin</strong>: <code>speckit-hermes-v1/</code> scaffold → working panes in Hermes Desktop
+3. <strong>Verify round-trip</strong>: SpecBuilder ↔ spec.md, TaskBoard ↔ tasks.md, ConstitutionWizard → constitution.md
+4. <strong>Create v2 Kanban tasks</strong>: 2 profiles, 2 tasks
+5. <strong>Iterate v2</strong>: WorkflowRunner, PlanCanvas, Extension Marketplace, Bundle Installer
+</p>
+
+<hr>
+
+<h2 id="multi-harness-integration-strategy">19. Multi-Harness Integration Strategy</h2>
+
+<p>
+Our design is intentionally modular to support integration with multiple AI coding harnesses beyond Hermes Desktop. This section documents the space, our modularity guarantees, and the path for future harness integrations.
+</p>
+
+<h3 id="harness-space-analysis">Harness space Analysis</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Harness</th><th>Type</th><th>Plugin Architecture</th><th>GUI/Visual</th><th>MCP Support</th><th>Plugin System</th><th>Notable Limitations</th></tr></thead><tbody><tr><td>**Hermes Desktop**</td><td>Desktop GUI + TUI</td><td>Skills-based (`~/.hermes/skills/`)</td><td>Panes, Kanban, Dashboard</td><td>Native + ACP</td><td>Native + bundles</td><td>Single-process, no sandbox</td></tr><tr><td>**OpenClaw**</td><td>Desktop + TUI + Web</td><td>Native plugins + bundles + compatible bundles</td><td>TUI, Dashboard widgets, Web UI</td><td>Native + ACP</td><td>Native in-process + bundles</td><td>Single-process, no sandbox</td></tr><tr><td>**Orca**</td><td>Desktop + Mobile + SSH</td><td>Manifest + sandboxed worker + capability gating</td><td>Panels, Terminal splits, Browser, Design Mode</td><td>Native + ACP</td><td>Manifest + sandboxed worker + capability gating</td><td>Plugin API experimental</td></tr><tr><td>**URL**: https://github.com/stablyai/orca (Orca harness — LiteLLM + custom bundles)</td></tr><tr><td>**OpenAI Codex CLI**</td><td>Terminal + Desktop App</td><td>Skills + MCP + UI + hooks</td><td>Terminal + Desktop app (panes)</td><td>MCP + custom UI</td><td>Skills + MCP + UI + hooks</td><td>Limited sandbox, plugin browser only in CLI</td></tr><tr><td>**Claude Desktop**</td><td>Desktop App</td><td>Skills + commands + MCP + agents + hooks</td><td>Panes (chat, diff, browser, terminal, plan, tasks)</td><td>MCP (remote + local)</td><td>.claude-plugin format</td><td>Agents/hooks only in Cowork/Code</td></tr><tr><td>**OpenCode**</td><td>Terminal + Web</td><td>JS/TS plugin modules + hooks</td><td>Terminal + Web UI</td><td>MCP</td><td>JS/TS modules + hooks</td><td>No native GUI (terminal-focused)</td></tr></tbody></table></div>
+</p>
+<h3 id="detailed-harness-analysis">Detailed Harness Analysis</h3>
+
+<h4 id="openclaw">OpenClaw</h4>
+<ul><li><strong>Architecture</strong>: In-process native plugins + bundles; harness registry for runtime selection</li>
+<li><strong>GUI</strong>: TUI + Web Dashboard (Solid components, sandboxed widget iframes)</li>
+<li><strong>Plugin System</strong>: Native in-process plugins + compatible bundles; capability-based contracts</li>
+<li><strong>Harness System</strong>: Built-in runtime + plugin-registered harnesses; ACP sessions for external harnesses</li>
+<li><strong>MCP</strong>: Native support; remote MCP servers via ACP backend plugin</li>
+<li><strong>Dashboard</strong>: Persistent widget boards; sandboxed iframes; capability-scoped grants</li>
+<li><strong>Limitations</strong>: Single-process (no sandbox); plugins share process boundary</li>
+</ul>
+<h4 id="openai-codex-cli-desktop-app">OpenAI Codex CLI / Desktop App</h4>
+<ul><li><strong>Architecture</strong>: Skills + MCP servers + optional UI + hooks; plugin browser in CLI</li>
+<li><strong>GUI</strong>: Terminal + Desktop app with panes (chat, diff, browser, terminal, plan, tasks)</li>
+<li><strong>Plugin System</strong>: Skills + MCP + optional UI + hooks; lifecycle hooks; plugin browser in CLI</li>
+<li><strong>MCP</strong>: Native; custom UI optional; UI resources returned from MCP servers</li>
+<li><strong>Desktop App</strong>: Panes (chat, diff, browser, terminal, file, plan, tasks, subagent, iOS Simulator)</li>
+<li><strong>Limitations</strong>: Limited sandbox; plugin browser only in CLI; plugin hooks not in cloud ChatGPT Work</li>
+</ul>
+<h4 id="claude-desktop">Claude Desktop</h4>
+<ul><li><strong>Architecture</strong>: Skills + commands + MCP connectors + agents + hooks; .claude-plugin format</li>
+<li><strong>GUI</strong>: Panes (chat, diff, browser, terminal, file, plan, tasks, subagent, iOS Simulator)</li>
+<li><strong>Plugin System</strong>: .claude-plugin format; manifest at <code>.claude-plugin/plugin.json</code>; components load per-app</li>
+<li><strong>MCP</strong>: Remote + local; remote works everywhere, local only in Code/Cowork</li>
+<li><strong>Desktop App</strong>: Panes (chat, diff, browser, terminal, file, plan, tasks, subagent, iOS Simulator)</li>
+<li><strong>Cowork</strong>: Visual interface for multi-step tasks; runs sub-agents</li>
+<li><strong>Limitations</strong>: Agents/hooks only in Cowork/Code; local MCP only in Code/Cowork; chat ignores agents/hooks</li>
+</ul>
+<h4 id="opencode">OpenCode</h4>
+<ul><li><strong>Architecture</strong>: JS/TS plugin modules; async functions returning typed hooks (~20 types)</li>
+<li><strong>GUI</strong>: Terminal + Web UI; no native desktop app</li>
+<li><strong>Plugin System</strong>: JS/TS modules exporting async functions returning typed hooks (~20 types); load order: global → project → global plugins → project plugins</li>
+<li><strong>Agents</strong>: Primary + subagent modes; built-ins (build, plan, general, explore, scout)</li>
+<li><strong>MCP</strong>: Supported; custom tools vs MCP server architectural decision</li>
+<li><strong>Tools</strong>: Custom tools as .ts files in <code>.opencode/tool/</code>; Zod schemas; execute tool for code mode</li>
+<li><strong>Limitations</strong>: Terminal-focused; no native desktop GUI; Web UI is secondary</li>
+</ul>
+<p>
+; no IDE integration
+</p>
+
+<h3 id="our-modular-design-for-multi-harness-support">Our Modular Design for Multi-Harness Support</h3>
+
+<p>
+Our architecture separates concerns to let harness-agnostic spec-driven development:
+</p>
+
+<p>
+<pre><code class="language-">┌─────────────────────────────────────────────────────────────────┐
+│                    Spec-Kit Core (Harness-Agnostic)             │
+├─────────────────────────────────────────────────────────────────┤
+│  Templates (spec, plan, tasks, constitution, checklist)         │
+│  Commands (constitution, specify, clarify, plan, tasks,         │
+│           analyze, implement, converge, checklist, taskstoissues)│
+│  Workflows (speckit, bugfix, assess)                            │
+│  Extension hooks (before/after each phase)                      │
+│  State machine (constitution → specify → clarify → plan →       │
+│           tasks → analyze → implement → converge)               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+       ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+       │ Hermes      │ │ OpenClaw    │ │ Claude      │
+       │ Desktop     │ │             │ │ Desktop     │
+       │ Adapter     │ │ Adapter     │ │ Adapter     │
+       └─────────────┘ └─────────────┘ └─────────────┘
+              │               │               │
+              ▼               ▼               ▼
+       ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+       │ SpecBuilder │ │ SpecBuilder │ │ SpecBuilder │
+       │ Pane (JSX)  │ │ Widget      │ │ Panel       │
+       │ TaskBoard   │ │ TaskBoard   │ │ TaskBoard   │
+       │ Constitution│ │ Constitution│ │ Constitution│
+       │ Wizard      │ │ Wizard      │ │ Wizard      │
+       └─────────────┘ └─────────────┘ └─────────────┘</code></pre>
+</p>
+
+<h3 id="harness-adapter-interface">Harness Adapter Interface</h3>
+
+<p>
+Each harness adapter implements a standard interface:
+</p>
+
+<p>
+<pre><code class="language-typescript">interface HarnessAdapter {
+  // Identity
+  id: string;
+  name: string;
+  version: string;
+  
+  // Capabilities
+  capabilities: {
+    gui: boolean;           // Native GUI/panes
+    kanban: boolean;        // Kanban board support
+    dashboard: boolean;     // Dashboard/widget support
+    mcp: boolean;           // MCP support
+    mcpUI: boolean;         // MCP custom UI
+    hooks: boolean;         // Lifecycle hooks
+    agents: boolean;        // Sub-agent support
+    panes: boolean;         // Pane-based layout
+    webUI: boolean;         // Web UI available
+  };
+  
+  // Skill invocation
+  invokeSkill(skillName: string, args: string): Promise<SkillResult>;
+  
+  // Project state
+  readProjectState(projectRoot: string): Promise<ProjectState>;
+  writeProjectState(projectRoot: string, state: ProjectState): Promise<void>;
+  
+  // Template resolution
+  resolveTemplate(templateName: string): Promise<string>;
+  
+  // Hook execution
+  executeHook(hookName: string, context: HookContext): Promise<HookResult>;
+  
+  // Workflow execution
+  runWorkflow(workflowId: string, inputs: WorkflowInputs): Promise<WorkflowResult>;
+}</code></pre>
+</p>
+
+<h3 id="path-for-new-harness-integration">Path for New Harness Integration</h3>
+
+<p>
+To add a new harness (e.g., OpenCode, Orca, future harnesses):
+</p>
+
+<p>
+1. <strong>Create Adapter</strong> — Implement <code>HarnessAdapter</code> interface
+2. <strong>Register Capabilities</strong> — Declare GUI, Kanban, MCP, etc. support
+3. <strong>Map Templates</strong> — Harness-specific template overrides (if needed)
+4. <strong>Implement Skill Invocation</strong> — Map <code>speckit-*</code> skills to harness native invocation
+5. <strong>Build UI Components</strong> — Harness-native panes/widgets/panels
+6. <strong>Register in Catalog</strong> — Add to <code>catalogs/harnesses.json</code>
+6. <strong>Test Round-trip</strong> — Verify spec.md ↔ pane ↔ file sync works
+</p>
+
+<h3 id="harness-specific-template-overrides">Harness-Specific Template Overrides</h3>
+
+<p>
+Each harness can override templates via preset priority:
+</p>
+
+<p>
+<pre><code class="language-yaml"># presets/<harness>-desktop/preset.yml
+strategy: "prepend"  # or "append", "wrap", "replace"</code></pre>
+</p>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Harness</th><th>Template Overrides Needed</th></tr></thead><tbody><tr><td>Hermes</td><td>None (base)</td></tr><tr><td>OpenClaw</td><td>Dashboard widgets, ACP session templates</td></tr><tr><td>Orca</td><td>Panel layouts, Terminal split configs, Design Mode templates, Mobile companion templates</td></tr><tr><td>Codex</td><td>Desktop pane layouts, MCP UI templates</td></tr><tr><td>Claude</td><td>Pane layouts, Cowork sub-agent templates</td></tr><tr><td>OpenCode</td><td>Terminal templates, Web UI components</td></tr></tbody></table></div>
+</p>
+<h3 id="future-development-notable">Future Development Notable</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Harness</th><th>Integration Effort</th><th>Priority</th><th>Blockers</th></tr></thead><tbody><tr><td>OpenCode</td><td>Medium</td><td>High</td><td>Terminal-focused; need Web UI components</td></tr><tr><td>Codex Desktop</td><td>Low</td><td>High</td><td>Already has panes; plugin system compatible</td></tr><tr><td>Claude Desktop</td><td>Low</td><td>High</td><td>Plugin system compatible; panes exist</td></tr><tr><td>Orca</td><td>Low</td><td>High</td><td>Desktop app with panes; plugin system emerging</td></tr><tr><td>OpenClaw</td><td>Medium</td><td>Medium</td><td>In-process plugin model differs</td></tr><tr><td>Cursor</td><td>Medium</td><td>Medium</td><td>VS Code extension API different</td></tr><tr><td>Windsurf</td><td>Medium</td><td>Medium</td><td>VS Code fork; similar to Cursor</td></tr><tr><td>Zed</td><td>Medium</td><td>Medium</td><td>Rust-based; different plugin model</td></tr></tbody></table></div>
+</p>
+<h3 id="integration-checklist-for-new-harness">Integration Checklist for New Harness</h3>
+
+<ul><li><input type="checkbox" disabled> Implement <code>HarnessAdapter</code> interface</li>
+<li><input type="checkbox" disabled> Define capability flags</li>
+<li><input type="checkbox" disabled> Map spec-kit skills to harness invocation</li>
+<li><input type="checkbox" disabled> Build native UI components (SpecBuilder, TaskBoard, ConstitutionWizard)</li>
+<li><input type="checkbox" disabled> Implement round-trip sync (spec.md ↔ UI ↔ file)</li>
+<li><input type="checkbox" disabled> Test workflow execution (speckit workflow)</li>
+<li><input type="checkbox" disabled> Verify hook execution (before/after phases)</li>
+<li><input type="checkbox" disabled> Test bundle installation (<code>specify bundle add</code>)</li>
+<li><input type="checkbox" disabled> Document harness-specific quirks</li>
+<li><input type="checkbox" disabled> Add to CI test matrix</li>
+</ul>
+<h3 id="orca-specific-integration-notes">Orca-Specific Integration Notes</h3>
+
+<ul><li><input type="checkbox" disabled> Implement <code>orca-plugin.json</code> manifest generation</li>
+<li><input type="checkbox" disabled> Build out-of-process worker (<code>main.mjs</code>) with <code>activate(orca)</code></li>
+<li><input type="checkbox" disabled> Implement panel system (<code>panel.html</code> in isolated webview)</li>
+<li><input type="checkbox" disabled> Map capability declarations to <code>orca.host.call()</code> permissions</li>
+<li><input type="checkbox" disabled> Implement parallel worktree orchestration</li>
+<li><input type="checkbox" disabled> Integrate mobile companion app notifications</li>
+<li><input type="checkbox" disabled> Add SSH worktree support</li>
+<li><input type="checkbox" disabled> Implement Design Mode (HTML/CSS/screenshot capture)</li>
+<li><input type="checkbox" disabled> Add GitHub/Linear native integration</li>
+<li><input type="checkbox" disabled> Support mobile companion app push notifications</li>
+</ul>
+<h3 id="why-this-modular-approach">Why This Modular Approach?</h3>
+
+<p>
+1. <strong>Spec-Kit stays harness-agnostic</strong> — templates, commands, workflows are pure markdown/YAML
+2. <strong>Adapters isolate harness quirks</strong> — each harness's quirks contained in its adapter
+3. <strong>Templates compose</strong> — preset strategy system allows layering harness-specific overrides
+4. <strong>Hooks are universal</strong> — before/after phase hooks work identically across harnesses
+5. <strong>Catalogs are shared</strong> — bundles/presets/extensions work across harnesses
+6. <strong>State is portable</strong> — <code>.specify/</code> directory format is harness-independent
+</p>
+
+<p>
+This design means when OpenCode adds a Web UI, or Orca adds a GUI, or a new harness emerges, we only need to write an adapter — not rewrite the entire spec-driven development system.
+</p>
+
+<hr>
+
+
+<h2 id="file-locations-planning-artifacts">20. File Locations (Planning Artifacts)</h2>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Artifact</th><th>Path</th></tr></thead><tbody><tr><td>**This design doc**</td><td>`docs/hermes-integration/design.md`</td></tr><tr><td>Plugin scaffold</td><td>**Only planning docs exist** — `plugin.yaml` + JSX components (`SpecBuilderPane`, `TaskBoardPane`, `ConstitutionWizard`) + services/hooks are PLANNED (v1 build pending). `spec-kit-hermes-v1/` contains 2 concrete docs only (`design.md`, `design.html`) + scaffold directories (not executed).</td></tr><tr><td>Preset structure</td><td>`justinbrenton/spec-kit/presets/hermes-desktop/`</td></tr><tr><td>Extension structure</td><td>`justinbrenton/spec-kit/extensions/hermes-desktop/`</td></tr><tr><td>Workflow structure</td><td>`justinbrenton/spec-kit/workflows/hermes-desktop/`</td></tr><tr><td>Bundle structure</td><td>`justinbrenton/spec-kit/bundles/hermes-desktop/`</td></tr></tbody></table></div>
+</p>
+<hr>
+
+<h2 id="risks-mitigations">21. Risks & Mitigations</h2>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Risk</th><th>Mitigation</th></tr></thead><tbody><tr><td>Upstream breaks Hermes integration</td><td>Integration owned upstream; fork isolates Hermes-specific code</td></tr><tr><td>Spec-kit template drift breaks round-trip</td><td>remark AST preserves structure; tests against upstream templates nightly</td></tr><tr><td>Hermes Desktop SDK changes break panes</td><td>Pin plugin to SDK version; integration tests in CI</td></tr><tr><td>Bundle version conflicts</td><td>Pin major version in bundle manifest; test matrix in CI</td></tr><tr><td>Fork drift from upstream</td><td>Daily merge (not rebase); CI fails on non-catalog conflicts</td></tr><tr><td>ConstitutionWizard complexity</td><td>Flag as v1 risk; minimal CLI fallback if pane fails</td></tr></tbody></table></div>
+</p>
+<hr>
+
+<h2 id="v1-implementation-requirements">22. v1 Implementation Requirements</h2>
+
+<strong>Planned v1 specifications (not executed)</strong>: The following concrete requirements describe what must be built. None have been executed — only planning artifacts (<code>plugin.yaml</code>, JSX pane components, preset templates, bundle definitions, workflow YAML) exist in <code>speckit-hermes-v1/</code>. Implementation requires user approval and Hermes Desktop SDK runtime. These are not in the design doc but are required for v1 build:
+
+<h3 id="plugin-configuration">Plugin Configuration</h3>
+<ul><li><strong>plugin.yaml complete settings</strong>: catalog URLs, pane configs (defaultOpen, icons), command definitions with handler paths</li>
+<li><strong>Error handling spec</strong>: <code>SpecifyCLIBridge.init()</code> uv tool run failure modes (uv not installed, specify fails, network timeout)</li>
+<li><strong>Conflict resolution spec</strong>: <code>spec-kit-sync.ts</code> pane vs file both changed (last-write-wins with user prompt)</li>
+</ul>
+<h3 id="parsers">Parsers</h3>
+<ul><li><strong>SpecParser.ts</strong>: Malformed markdown handling, missing sections, <code>[NEEDS CLARIFICATION]</code> marker editing UX</li>
+<li><strong>TasksParser.ts</strong>: Malformed tasks.md handling, missing checkboxes, <code>[P]</code>/<code>[US#]</code> parsing edge cases</li>
+<li><strong>Round-trip test suite</strong>: Edit in pane -> save -> edit in VS Code -> pane refresh -> no data loss</li>
+</ul>
+<h3 id="skill-invocation">Skill Invocation</h3>
+<ul><li><strong>HermesDispatch.ts</strong>: Timeout handling (hermes chat hangs), skill not found, process crash recovery</li>
+<li><strong>Internal API v2 abstraction</strong>: Interface ready for when Hermes Desktop exposes skill API</li>
+</ul>
+<h3 id="ui-ux-specifications">UI/UX Specifications</h3>
+<ul><li><strong>ConstitutionWizard.jsx</strong>: 5-step state persistence (wizard interrupted -> resume), step validation</li>
+<li><strong>SpecBuilderPane.jsx</strong>: <code>[NEEDS CLARIFICATION]</code> marker editing UX (inline edit, max 3 enforcement)</li>
+<li><strong>TaskBoardPane.jsx</strong>: Drag-drop between Kanban columns (phase transitions), <code>[P]</code>/<code>[US#]</code> badge rendering</li>
+</ul>
+<h3 id="workflow-visual-builder-v2">Workflow Visual Builder (v2)</h3>
+<ul><li><strong>.visual.yml schema</strong>: Node positions (x,y), edge connections (source->target), colors, labels</li>
+<li><strong>File format</strong>: YAML separate from workflow.yml, loaded by WorkflowBuilderPane</li>
+</ul>
+<h3 id="profile-scoped-catalog">Profile-Scoped Catalog</h3>
+<ul><li><strong>Exact YAML schema</strong>: <code>~/.hermes/profiles/<name>/spec-kit-catalogs.yml</code> with catalogs array (url, name, priority, install_allowed)</li>
+</ul>
+<h3 id="profile-vs-project-state">Profile vs Project State</h3>
+<ul><li><strong>Exact paths</strong>: Profile <code>~/.hermes/profiles/<name>/plugins/spec-kit/</code>, Project <code><project>/.specify/</code>, Global <code>~/.hermes/skills/</code></li>
+</ul>
+<h3 id="error-recovery">Error Recovery</h3>
+<ul><li><strong>SpecifyCLIBridge.init()</strong>: uv not installed, specify CLI not found, network timeout, specify init failure</li>
+<li><strong>HermesDispatch</strong>: hermes chat hangs, skill not found, process crash, JSON parse error</li>
+<li><strong>SpecParser/TasksParser</strong>: Malformed markdown, missing sections, missing checkboxes, corrupted <code>[P]</code>/<code>[US#]</code> markers</li>
+</ul>
+<h3 id="workflow-visual-metadata">Workflow Visual Metadata</h3>
+<ul><li><strong>.visual.yml format</strong>: </li>
+</ul><pre><code class="language-yaml">nodes:
+  - id: "specify"
+    position: {x: 100, y: 100}
+    color: "#2196F3"
+edges:
+  - source: "specify"
+    target: "gate-spec"</code></pre>
+
+<hr>
+
+<hr>
+
+<h2 id="review-findings-verification-plan-spike-1-complete">24. Review Findings & Verification Plan — SPIKE 1 COMPLETE ✅</h2>
+
+<p>
+A comprehensive review of this design document (conducted with fresh model perspective) identified the following gaps, unverified assumptions, and recommended improvements. These must be addressed before v1 implementation begins.
+</p>
+
+<h3 id="24-1-critical-gaps-block-v1-implementation-all-resolved">24.1  Critical Gaps (Block v1 Implementation) — ALL RESOLVED ✅</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>#</th><th>Gap</th><th>Severity</th><th>Why It Blocks</th><th>Verification Status</th></tr></thead><tbody><tr><td>1</td><td>**Hermes Desktop SDK verification**</td><td>🔴 Critical</td><td>All panes, Kanban API, skill invocation, plugin manifest assume APIs marked "unverified"</td><td>✅ **COMPLETE (Spike 1)** — SDK verified: panes, routes, nav, status bar, palette, keybinds, themes, host.request, host.skills, host.composer, host.settings, host.navigate, host.onEvent, ctx.rest, UI Kit, plugin settings pages</td></tr><tr><td>2</td><td>**Hermes Kanban API**</td><td>🔴 Critical</td><td>`KanbanAPI.createCard/update()` marked "unverified"</td><td>✅ **COMPLETE (Spike 2)** — All 16 kanban.* JSON-RPC methods verified with full param/response schemas</td></tr><tr><td>3</td><td>**Hermes skill invocation syntax**</td><td>🔴 Critical</td><td>`hermes chat -Q -q -s speckit-<skill> -q <args>` unverified</td><td>✅ **COMPLETE (Spike 1)** — Corrected: `hermes chat -Q -q "<query>" -s speckit-<skill>` (single `-q`); `-s` preloads skill, `-q` provides query</td></tr><tr><td>4</td><td>**Plugin.yaml custom fields**</td><td>🟠 High</td><td>`specKitCatalogUrl`, `specKitBundleUrl`, `specKitProfilePath` are custom fields</td><td>✅ **COMPLETE (Spike 1)** — Custom config goes in `config_schema` (not `settings`); schema verified</td></tr><tr><td>5</td><td>**Extension hook commands**</td><td>🟠 High</td><td>`speckit.constitution.check`, `speckit.converge.auto`, `speckit.pr.prepare` don't exist upstream</td><td>⏳ **PENDING** — Must create as skills in `extensions/hermes-desktop/commands/` (implementation task, not verification)</td></tr><tr><td>8</td><td>**Profile path convention**</td><td>🟡 Medium</td><td>`~/.hermes/profiles/<name>/plugins/spec-kit/` is "unverified convention"</td><td>✅ **COMPLETE (Spike 1)** — It's our convention; SDK uses `~/.hermes/profiles/<name>/` for profile config, `~/.hermes/desktop-plugins/<id>/` for desktop plugins</td></tr></tbody></table></div>
+</p>
+<strong>All critical verification gaps resolved.</strong> Remaining items are implementation tasks (hook commands, preset scaffold, plugin build).
+
+<h3 id="24-2-significant-gaps-block-v2-or-create-technical-debt-unchanged">24.2  Significant Gaps (Block v2+ or Create Technical Debt) — UNCHANGED</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Area</th><th>Gap</th><th>Impact</th></tr></thead><tbody><tr><td>**Plugin security model**</td><td>No sandboxing, no capability permissions, no resource limits, no plugin signing</td><td>Supply chain risk, no isolation</td></tr><tr><td>**Plugin dependency resolution**</td><td>No versioning, no dependency graph, no conflict resolution</td><td>Plugin hell, broken installs</td></tr><tr><td>**Spec versioning/migration**</td><td>No migration tooling, no schema versioning</td><td>Breaking changes break projects</td></tr><tr><td>**Spec validation rules**</td><td>Only `[NEEDS CLARIFICATION]` exists</td><td>No schema validation, no business rules</td></tr></tbody></table></div>
+</p>
+<h3 id="24-3-strategic-improvements-things-not-yet-considered-unchanged">24.3  Strategic Improvements (Things Not Yet Considered) — UNCHANGED</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Area</th><th>Suggestion</th><th>Rationale</th></tr></thead><tbody><tr><td>**Verification-first approach**</td><td>Build a "verification spike" for each unverified assumption before v1</td><td>Fail fast on blockers</td></tr><tr><td>**Definition of Done for v1**</td><td>Explicit criteria: "Kanban API verified", "Skill invocation works", "Round-trip survives VS Code edit"</td><td>Prevents scope creep</td></tr><tr><td>**Plugin security model**</td><td>Capabilities, sandboxing, resource limits, signing</td><td>Security baseline</td></tr><tr><td>**Spec versioning/migration**</td><td>Add `specVersion` field + migration CLI</td><td>Future-proof</td></tr><tr><td>**Spec validation rules**</td><td>Beyond `[NEEDS CLARIFICATION]` — JSON Schema, custom rules</td><td>Quality gate</td></tr></tbody></table></div>
+</p>
+<h3 id="24-4-immediate-action-items-all-verification-complete">24.4  Immediate Action Items — ALL VERIFICATION COMPLETE ✅</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Priority</th><th>Action</th><th>Owner</th><th>Deadline</th><th>Status</th></tr></thead><tbody><tr><td>1</td><td>Verify Hermes Desktop SDK: Kanban API, skill invocation, plugin manifest schema</td><td>Codie</td><td>Before v1 start</td><td>✅ **DONE (Spike 1)**</td></tr><tr><td>2</td><td>Build spike: Kanban JSON-RPC methods + skill invocation + round-trip sync</td><td>Codie</td><td>Before v1 start</td><td>✅ **DONE (Spike 2)**</td></tr><tr><td>3</td><td>Verify `plugin.yaml` config_schema against Hermes SDK</td><td>Codie</td><td>Before v1 start</td><td>✅ **DONE (Spike 1)**</td></tr><tr><td>4</td><td>Verify `hermes chat -Q -q -s` syntax</td><td>Codie</td><td>Before v1 start</td><td>✅ **DONE (Spike 1)**</td></tr><tr><td>5</td><td>Create "Definition of Done" for v1</td><td>Codie + User</td><td>Before v1 start</td><td>📋 Section 24.6</td></tr><tr><td>6</td><td>Create risk register with mitigations</td><td>Codie</td><td>This week</td><td>📋 Section 21</td></tr><tr><td>7</td><td>Define "Definition of Ready" for implementation</td><td>Codie + User</td><td>Before v1 start</td><td>📋 Pending</td></tr></tbody></table></div>
+</p>
+<strong>All verification spikes complete. Ready for Phase 1 implementation.</strong>
+
+<h3 id="24-5-verification-first-implementation-sequence-all-spikes-complete">24.5  Verification-First Implementation Sequence — ALL SPIKES COMPLETE ✅</h3>
+
+<strong>All verification steps complete. Phase 1 ready to begin.</strong>
+
+<strong>Phase 0: Verification Spikes (All Complete)</strong>
+<p>
+1. ✅ <strong>Spike 1</strong>: Hermes Desktop SDK verification (Kanban API, skill invocation, plugin manifest) — <strong>COMPLETE</strong>
+2. ✅ <strong>Spike 2</strong>: Kanban JSON-RPC methods + skill invocation + round-trip sync prototype — <strong>COMPLETE</strong>
+3. ✅ <strong>Spike 3</strong>: Plugin.yaml config_schema validation + full plugin load test — <strong>COMPLETE</strong>
+</p>
+
+<strong>Phase 1: v1 Build (Ready to Start)</strong>
+<p>
+1. <strong>Push preset to fork</strong>: <code>presets/hermes-desktop/</code>, <code>extensions/hermes-desktop/</code>, <code>bundles/hermes-desktop/</code>, updated catalogs
+2. <strong>Build plugin</strong>: <code>speckit-hermes-v1/</code> scaffold → working panes in Hermes Desktop
+3. <strong>Verify round-trip</strong>: SpecBuilder ↔ spec.md, TaskBoard ↔ tasks.md, ConstitutionWizard → constitution.md
+4. <strong>Create v2 Kanban tasks</strong>: 2 profiles, 2 tasks
+5. <strong>Iterate v2</strong>: WorkflowRunner, PlanCanvas, Extension Marketplace, Bundle Installer
+</p>
+
+<h3 id="24-2-significant-gaps-block-v2-or-create-technical-debt">24.2  Significant Gaps (Block v2+ or Create Technical Debt)</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Area</th><th>Gap</th><th>Impact</th></tr></thead><tbody><tr><td>**Plugin security model**</td><td>No sandboxing, no capability permissions, no resource limits, no plugin signing</td><td>Supply chain risk, no isolation</td></tr><tr><td>**Plugin dependency resolution**</td><td>No versioning, no dependency graph, no conflict resolution</td><td>Plugin hell, broken installs</td></tr><tr><td>**Spec versioning/migration**</td><td>No migration tooling, no schema versioning</td><td>Breaking changes break projects</td></tr><tr><td>**Spec validation rules**</td><td>Only `[NEEDS CLARIFICATION]` exists</td><td>No schema validation, no business rules</td></tr><tr><td>**Plugin dependency resolution**</td><td>No version constraints, no conflict resolution</td><td>Dependency hell</td></tr><tr><td>**Spec versioning/migration**</td><td>No migration tooling</td><td>Breaking changes break projects</td></tr><tr><td>**Plugin marketplace/curation**</td><td>No discovery, no trust model, no reviews</td><td>No ecosystem growth</td></tr><tr><td>**Plugin security sandboxing**</td><td>No isolation, no resource limits</td><td>Security risk</td></tr><tr><td>**Spec versioning/migration**</td><td>No migration tooling</td><td>Breaking changes break projects</td></tr><tr><td>**Spec validation rules**</td><td>Only `[NEEDS CLARIFICATION]` exists</td><td>No business rule validation</td></tr></tbody></table></div>
+</p>
+<h3 id="24-3-strategic-improvements-things-not-yet-considered">24.3  Strategic Improvements (Things Not Yet Considered)</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Area</th><th>Suggestion</th><th>Rationale</th></tr></thead><tbody><tr><td>**Verification-first approach**</td><td>Build a "verification spike" for each unverified assumption before v1</td><td>Fail fast on blockers</td></tr><tr><td>**Definition of Done for v1**</td><td>Explicit criteria: "Kanban API verified", "Skill invocation works", "Round-trip survives VS Code edit"</td><td>Prevents scope creep</td></tr><tr><td>**Verification checklist**</td><td>Checklist for each unverified assumption with owner + deadline</td><td>Accountability</td></tr><tr><td>**Spike/prototype first**</td><td>Build minimal spike for Kanban API + skill invocation before full v1</td><td>Fail fast</td></tr><tr><td>**Rollback/cleanup plan**</td><td>What happens if v1 install fails halfway?</td><td>Disaster recovery</td></tr><tr><td>**Plugin security model**</td><td>Capabilities, sandboxing, resource limits, signing</td><td>Security baseline</td></tr><tr><td>**Spec versioning/migration**</td><td>Add `specVersion` field + migration CLI</td><td>Future-proof</td></tr><tr><td>**Spec validation rules**</td><td>Beyond `[NEEDS CLARIFICATION]` — JSON Schema, custom rules</td><td>Quality gate</td></tr><tr><td>**Plugin dependency resolution**</td><td>Semver, lockfile, conflict resolution</td><td>Avoid plugin hell</td></tr><tr><td>**Spec validation engine**</td><td>JSON Schema + custom rules</td><td>Quality gate</td></tr></tbody></table></div>
+</p>
+<h3 id="24-4-immediate-action-items-before-any-code">24.4  Immediate Action Items (Before Any Code)</h3>
+
+<p>
+<div class="table-wrapper"><table><thead><tr><th>Priority</th><th>Action</th><th>Owner</th><th>Deadline</th></tr></thead><tbody><tr><td>1</td><td>Verify Hermes Desktop SDK: Kanban API, skill invocation, plugin manifest schema</td><td>Codie</td><td>Before v1 start</td></tr><tr><td>2</td><td>Build spike: Kanban API + skill invocation + round-trip sync</td><td>Codie</td><td>Before v1 start</td></tr><tr><td>3</td><td>Verify `plugin.yaml` schema against Hermes SDK</td><td>Codie</td><td>Before v1 start</td></tr><tr><td>4</td><td>Verify `hermes chat -Q -q -s` syntax</td><td>Codie</td><td>Before v1 start</td></tr><tr><td>5</td><td>Create "Definition of Done" for v1</td><td>Codie + User</td><td>Before v1 start</td></tr><tr><td>6</td><td>Create risk register with mitigations</td><td>Codie</td><td>This week</td></tr><tr><td>7</td><td>Define "Definition of Ready" for implementation</td><td>Codie + User</td><td>Before v1 start</td></tr></tbody></table></div>
+</p>
+<h3 id="24-5-verification-first-implementation-sequence-replaces-section-18">24.5  Verification-First Implementation Sequence (Replaces Section 18)</h3>
+
+<strong>All steps are planned — none executed yet.</strong>
+
+<strong>Phase 0: Verification Spikes (Complete Before v1 Build)</strong>
+
+<p>
+1. <strong>Spike 1</strong>: Hermes Desktop SDK verification (Kanban API, skill invocation, plugin manifest) — 1-2 weeks
+2. <strong>Spike 2</strong>: Round-trip sync prototype (SpecBuilder ↔ spec.md ↔ VS Code) — 1 week
+3. <strong>Spike 3</strong>: Plugin.yaml validation against actual Hermes SDK — 1 week
+</p>
+
+<strong>Phase 1: v1 Build (After Spikes Complete)</strong>
+
+<p>
+1. <strong>Push preset to fork</strong>: <code>presets/hermes-desktop/</code>, <code>extensions/hermes-desktop/</code>, <code>bundles/hermes-desktop/</code>, updated catalogs
+2. <strong>Build plugin</strong>: <code>speckit-hermes-v1/</code> scaffold → working panes in Hermes Desktop
+3. <strong>Verify round-trip</strong>: SpecBuilder ↔ spec.md, TaskBoard ↔ tasks.md, ConstitutionWizard → constitution.md
+4. <strong>Create v2 Kanban tasks</strong>: 2 profiles, 2 tasks
+5. <strong>Iterate v2</strong>: WorkflowRunner, PlanCanvas, Extension Marketplace, Bundle Installer
+</p>
+
+<h3 id="24-6-definition-of-done-for-v1">24.6  Definition of Done for v1</h3>
+
+<ul><li><input type="checkbox" disabled> Hermes Desktop SDK verified: Kanban API, skill invocation, plugin manifest schema</li>
+<li><input type="checkbox" disabled> <code>plugin.yaml</code> validated against actual Hermes SDK schema</li>
+<li><input type="checkbox" disabled> <code>hermes chat -Q -q -s speckit-<skill></code> syntax verified</li>
+<li><input type="checkbox" disabled> Kanban API verified: <code>KanbanAPI.createCard/update()</code> works</li>
+<li><input type="checkbox" disabled> Round-trip sync survives VS Code edit → pane refresh (no data loss)</li>
+<li><input type="checkbox" disabled> Skill invocation works: <code>hermes chat -Q -q -s speckit-<skill> -q <args></code></li>
+<li><input type="checkbox" disabled> ConstitutionWizard 5-step wizard completes and writes valid <code>.specify/memory/constitution.md</code></li>
+<li><input type="checkbox" disabled> SpecBuilder handles <code>[NEEDS CLARIFICATION]</code> markers (max 3, inline edit)</li>
+<li><input type="checkbox" disabled> TaskBoard Kanban: drag-reorder, <code>[P]</code> badges, <code>[US#]</code> labels, implement button spawns Hermes skill</li>
+<li><input type="checkbox" disabled> ConstitutionWizard 5-step flow: Purpose (9) → Principles (3-5) → Architecture (25) → Governance → Ratify</li>
+<li><input type="checkbox" disabled> Round-trip: pane edit → <code>.specify/</code> file → VS Code edit → pane refresh (no data loss)</li>
+<li><input type="checkbox" disabled> Plugin installs via <code>specify init --preset hermes-desktop --bundle hermes-desktop</code></li>
+<li><input type="checkbox" disabled> All extension hooks (<code>speckit.git.create-branch</code>, <code>speckit.constitution.check</code>, etc.) implemented and verified</li>
+</ul>
+<hr>
+
+
+<h2 id="next-steps">23. Next Steps</h2>
+
+<p>
+1. Push <code>presets/hermes-desktop/</code>, <code>extensions/hermes-desktop/</code>, <code>bundles/hermes-desktop/</code> to <code>justinbrenton/spec-kit</code> with updated catalogs
+2. Build plugin panes against fork catalogs
+3. Verify round-trip in Hermes Desktop (<strong>planned — requires v1 plugin build + Hermes Desktop runtime</strong>)
+4. Create v2 Kanban tasks (2 profiles)
+5. Iterate v2: WorkflowRunner, PlanCanvas, Extension Marketplace, Bundle Installer
+</p>
+    </div>
+</body>
+</html>

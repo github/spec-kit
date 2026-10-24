@@ -1,0 +1,27 @@
+name: hermes-desktop
+version: 0.1.0
+description: Hermes Desktop integration for Spec-Kit — interactive panes, Kanban sync, Constitution Wizard
+author: Justin Brenton
+license: MIT
+homepage: https://github.com/justinbrenton/spec-kit
+requires:
+  speckit: ">=0.16.0"
+priority: 1
+strategy: append
+templates:
+  - spec-template.md
+  - plan-template.md
+  - tasks-template.md
+  - constitution-template.md
+  - checklist-template.md
+commands:
+  - speckit.constitution.md
+  - speckit.specify.md
+  - speckit.clarify.md
+  - speckit.plan.md
+  - speckit.tasks.md
+  - speckit.analyze.md
+  - speckit.implement.md
+  - speckit.converge.md
+  - speckit.checklist.md
+  - speckit.taskstoissues.md
