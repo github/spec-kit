@@ -148,7 +148,13 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
     exit 1
 fi
 
-if [[ ! -s "$IMPL_PLAN" ]]; then
+if [[ ! -r "$IMPL_PLAN" ]]; then
+    echo "ERROR: plan.md is not readable in $FEATURE_DIR" >&2
+    echo "Check its file permissions and rerun the prerequisite check." >&2
+    exit 1
+fi
+
+if ! file_has_non_whitespace_content "$IMPL_PLAN"; then
     echo "ERROR: plan.md is empty in $FEATURE_DIR" >&2
     echo "Populate it, or remove the empty file and rerun $(format_speckit_command plan "$REPO_ROOT") with a valid plan template." >&2
     exit 1

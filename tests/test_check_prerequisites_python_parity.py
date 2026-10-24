@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,66 @@ def _run(
         check=False,
         env=env or _clean_env(),
     )
+
+
+@contextmanager
+def _deny_plan_read(plan: Path):
+    if os.name != "nt":
+        mode = plan.stat().st_mode
+        try:
+            plan.chmod(0)
+            if os.access(plan, os.R_OK):
+                pytest.skip("current user can read files with no read permissions")
+            yield
+        finally:
+            plan.chmod(mode)
+        return
+
+    env = {**_clean_env(), "TEST_PLAN_PATH": str(plan)}
+    command = [_WINDOWS_POWERSHELL, "-NoProfile", "-Command"]
+    saved = _run(
+        [
+            *command,
+            "([System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH)).Sddl",
+        ],
+        plan.parent,
+        env=env,
+    )
+    assert saved.returncode == 0, saved.stderr
+    env["TEST_PLAN_SDDL"] = saved.stdout.strip()
+    try:
+        denied = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User; "
+                "$rule = New-Object System.Security.AccessControl.FileSystemAccessRule("
+                "$sid, 'ReadData', 'Deny'); "
+                "$acl.AddAccessRule($rule); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert denied.returncode == 0, denied.stderr
+        with pytest.raises(PermissionError):
+            plan.read_bytes()
+        yield
+    finally:
+        restored = _run(
+            [
+                *command,
+                "$ErrorActionPreference = 'Stop'; "
+                "$acl = [System.IO.File]::GetAccessControl($env:TEST_PLAN_PATH); "
+                "$acl.SetSecurityDescriptorSddlForm($env:TEST_PLAN_SDDL, "
+                "[System.Security.AccessControl.AccessControlSections]::Access); "
+                "[System.IO.File]::SetAccessControl($env:TEST_PLAN_PATH, $acl)",
+            ],
+            plan.parent,
+            env=env,
+        )
+        assert restored.returncode == 0, restored.stderr
 
 
 def _json_stdout(result: subprocess.CompletedProcess[str]) -> object:
@@ -670,7 +731,16 @@ def test_python_negative_errors_are_stderr_only(
     ],
 )
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
-@pytest.mark.parametrize("plan_state", ["missing", "empty", "nonempty", "whitespace"])
+@pytest.mark.parametrize(
+    "plan_state",
+    [
+        "missing", "empty", "nonempty", "padded",
+        "whitespace", "whitespace_crlf", "whitespace_controls",
+        "whitespace_nbsp", "whitespace_bom", "whitespace_bom_nbsp",
+        "whitespace_unicode", "bom_content", "utf16_content", "cp1252_content",
+        "non_whitespace_control", "internal_bom", "double_bom",
+    ],
+)
 def test_plan_prerequisite_diagnostics(
     tmp_path: Path, port: str, json_mode: bool, plan_state: str
 ) -> None:
@@ -683,7 +753,27 @@ def test_plan_prerequisite_diagnostics(
     feature = repo / "specs" / "001-my-feature"
     feature.mkdir(parents=True)
     plan = feature / "plan.md"
-    bodies = {"empty": b"", "nonempty": b"# Plan\n", "whitespace": b" \t\n"}
+    bodies = {
+        "empty": b"",
+        "nonempty": b"# Plan\n",
+        "padded": b" \t\n# Plan\n \t\r\n",
+        "whitespace": b" \t\n",
+        "whitespace_crlf": b" \t\r\n\r\n",
+        "whitespace_controls": b"\v\f\n",
+        "whitespace_nbsp": "\u00a0\n".encode(),
+        "whitespace_bom": b"\xef\xbb\xbf \t\r\n",
+        "whitespace_bom_nbsp": "\ufeff\u00a0\n".encode(),
+        "whitespace_unicode": (
+            "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+            "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\n"
+        ).encode(),
+        "bom_content": b"\xef\xbb\xbf \t# Plan\n",
+        "utf16_content": "# Plan\n".encode("utf-16"),
+        "cp1252_content": b"# \x93Plan\x94\n",
+        "non_whitespace_control": b"\x1c",
+        "internal_bom": b"\n\xef\xbb\xbf\n",
+        "double_bom": b"\xef\xbb\xbf\xef\xbb\xbf\n",
+    }
     if plan_state != "missing":
         plan.write_bytes(bodies[plan_state])
         before = plan.stat().st_mtime_ns
@@ -693,9 +783,9 @@ def test_plan_prerequisite_diagnostics(
         command_fn = _bash_cmd if port == "bash" else _py_cmd
         command = command_fn(repo, *(("--json",) if json_mode else ()))
 
-    result = _run(command, repo)
+    result = _run(command, repo, env={**_clean_env(), "LC_ALL": "C"})
 
-    if plan_state in {"missing", "empty"}:
+    if plan_state in {"missing", "empty"} or plan_state.startswith("whitespace"):
         assert result.returncode == 1
         assert result.stdout == ""
         lines = result.stderr.replace("\\", "/").splitlines()
@@ -718,6 +808,56 @@ def test_plan_prerequisite_diagnostics(
     else:
         assert plan.read_bytes() == bodies[plan_state]
         assert plan.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize(
+    "port",
+    [
+        pytest.param("bash", marks=requires_bash),
+        pytest.param(
+            "powershell",
+            marks=pytest.mark.skipif(
+                not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+            ),
+        ),
+        pytest.param("python"),
+    ],
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_unreadable_plan_is_not_reported_as_empty(
+    prereq_repo: Path, port: str, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    if port == "powershell":
+        command_fn = _ps_cmd
+        args = ("-Json",) if json_mode else ()
+        paths_flag = "-PathsOnly"
+    else:
+        command_fn = _bash_cmd if port == "bash" else _py_cmd
+        args = ("--json",) if json_mode else ()
+        paths_flag = "--paths-only"
+
+    with _deny_plan_read(plan):
+        result = _run(command_fn(prereq_repo, *args), prereq_repo)
+        paths_only = _run(command_fn(prereq_repo, *args, paths_flag), prereq_repo)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {feature}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(command_fn(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
 
 
 def test_python_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:

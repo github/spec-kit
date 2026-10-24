@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Common functions and variables for all scripts
 
+# Match Unicode White_Space, as PowerShell does, even under LC_ALL=C.
+# Remove only a file-leading UTF-8 BOM for the check; never rewrite the file.
+file_has_non_whitespace_content() {
+    LC_ALL=C sed $'1s/^\357\273\277//' "$1" |
+        LC_ALL=C grep -aEv $'^([[:space:]]|\302[\205\240]|\341\232\200|\342\200[\200-\212\250\251\257]|\342\201\237|\343\200\200)*$' >/dev/null
+}
+
 # Find repository root by searching upward for .specify directory
 # This is the primary marker for spec-kit projects
 find_specify_root() {
