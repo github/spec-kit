@@ -46,3 +46,4 @@ Runs after `/speckit.converge` via extension hook.
 ## Hermes Desktop Integration
 
 In Hermes Desktop, available as "Create PR" in TaskBoard convergence column.
+

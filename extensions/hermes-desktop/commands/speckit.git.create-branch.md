@@ -31,3 +31,4 @@ Runs before `/speckit.specify` via extension hook.
   "base": "main"
 }
 ```
+

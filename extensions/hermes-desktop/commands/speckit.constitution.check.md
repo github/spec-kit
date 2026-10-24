@@ -36,3 +36,4 @@ Runs before `/speckit.plan` via extension hook.
 ## On Failure
 
 Blocks `/speckit.plan` until resolved.
+
