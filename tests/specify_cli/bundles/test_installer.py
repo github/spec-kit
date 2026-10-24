@@ -1339,3 +1339,92 @@ def test_install_result_changed_reports_uninstalled():
     assert result.changed is False  # empty == no change
     result.uninstalled.append(ComponentRef(kind="presets", id="p1"))
     assert result.changed is True
+
+
+def test_reinstall_after_reference_reorder_does_not_require_refresh(tmp_path: Path):
+    make_project(tmp_path)
+    data_a = valid_manifest_dict()
+    data_a["bundle"]["id"] = "bundle-a"
+    data_a["bundle"]["version"] = "1.0.0"
+    data_a["provides"] = {"extensions": [{"id": "ext-a", "version": "1.0.0", "priority": 10}]}
+    bundle_a = BundleManifest.from_dict(data_a)
+
+    data_b = valid_manifest_dict()
+    data_b["bundle"]["id"] = "bundle-b"
+    data_b["bundle"]["version"] = "1.0.0"
+    data_b["provides"] = {"extensions": [{"id": "ext-a", "version": "1.0.0"}]}
+    bundle_b = BundleManifest.from_dict(data_b)
+
+    loader = FakeBundleLoader({
+        ("bundle-a", "1.0.0"): LoadedBundle(bundle_a, "default", True),
+        ("bundle-b", "1.0.0"): LoadedBundle(bundle_b, "default", True),
+    })
+    installer = FakeInstaller()
+
+    # First install: references [bundle-a, bundle-b]
+    root1 = BundleManifest.from_dict(
+        reference_manifest_dict(
+            [{"id": "bundle-a", "version": "1.0.0"}, {"id": "bundle-b", "version": "1.0.0"}],
+            bundle_id="root",
+        )
+    )
+    expanded1 = expand_manifest(root1, loader)
+    plan1 = resolve_install_plan(expanded1, speckit_version="0.11.2", active_integration="copilot")
+    install_bundle(tmp_path, plan1, installer, manifest=root1)
+
+    # Second install: reorder references to [bundle-b, bundle-a]
+    root2 = BundleManifest.from_dict(
+        reference_manifest_dict(
+            [{"id": "bundle-b", "version": "1.0.0"}, {"id": "bundle-a", "version": "1.0.0"}],
+            bundle_id="root",
+        )
+    )
+    expanded2 = expand_manifest(root2, loader)
+    plan2 = resolve_install_plan(expanded2, speckit_version="0.11.2", active_integration="copilot")
+
+    # Must succeed without --refresh
+    install_bundle(tmp_path, plan2, installer, manifest=root2)
+    assert installer.refresh_calls == []
+
+
+def test_reinstall_with_changed_extension_priority_requires_refresh(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    data1 = valid_manifest_dict()
+    data1["provides"] = {"extensions": [{"id": "ext-a", "version": "1.0.0", "priority": 5}]}
+    root1 = BundleManifest.from_dict(data1)
+    plan1 = _plan(root1)
+    install_bundle(tmp_path, plan1, installer, manifest=root1)
+
+    data2 = valid_manifest_dict()
+    data2["provides"] = {"extensions": [{"id": "ext-a", "version": "1.0.0", "priority": 10}]}
+    root2 = BundleManifest.from_dict(data2)
+    plan2 = _plan(root2)
+
+    with pytest.raises(BundlerError, match="--refresh"):
+        install_bundle(tmp_path, plan2, installer, manifest=root2)
+
+
+def test_reinstall_with_version_spelling_change_is_accepted(tmp_path: Path):
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    data1 = valid_manifest_dict()
+    data1["provides"] = {"extensions": [{"id": "ext-a", "version": "v1.0.0"}]}
+    root1 = BundleManifest.from_dict(data1)
+    plan1 = _plan(root1)
+    install_bundle(tmp_path, plan1, installer, manifest=root1)
+
+    # v1.0.0 -> 1.0.0 accepted without refresh
+    data2 = valid_manifest_dict()
+    data2["provides"] = {"extensions": [{"id": "ext-a", "version": "1.0.0"}]}
+    root2 = BundleManifest.from_dict(data2)
+    plan2 = _plan(root2)
+    install_bundle(tmp_path, plan2, installer, manifest=root2)
+
+    # 1.0.0 -> 2.0.0 rejected
+    data3 = valid_manifest_dict()
+    data3["provides"] = {"extensions": [{"id": "ext-a", "version": "2.0.0"}]}
+    root3 = BundleManifest.from_dict(data3)
+    plan3 = _plan(root3)
+    with pytest.raises(BundlerError, match="--refresh"):
+        install_bundle(tmp_path, plan3, installer, manifest=root3)

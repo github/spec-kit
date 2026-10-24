@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from . import BundlerError
-from .conflict import component_setting_differences, detect_conflicts
+from .conflict import component_setting_differences, detect_conflicts, same_requirement
 from .manifest import BundleManifest, BundleRef, ComponentRef
 from .primitives import BundledPatchWarning
 from .records import (
@@ -124,7 +124,10 @@ def install_bundle(
         and not refresh
         and (
             existing.version != plan.version
-            or not set(existing.contributed_components).issubset(plan.components)
+            or not all(
+                any(same_requirement(component, planned) for planned in plan.components)
+                for component in existing.contributed_components
+            )
         )
     ):
         raise BundlerError(
