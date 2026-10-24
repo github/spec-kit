@@ -481,3 +481,67 @@ def test_validate_reports_override_warning(project: Path, monkeypatch):
     result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
     assert result.exit_code == 0, result.output
     assert "overrides" in result.output
+
+
+def test_validate_inherited_component_error_names_origin_chain(project: Path, monkeypatch):
+    parent = reference_manifest_dict(
+        [{"id": "child", "version": "1.0.0"}],
+        bundle_id="parent",
+        extensions=[{"id": "own-ext", "version": "1.0.0"}],
+    )
+    child = valid_manifest_dict(
+        bundle={"id": "child", "name": "Child", "version": "1.0.0", "role": "developer", "description": "child", "author": "tests", "license": "MIT"},
+        provides={"extensions": [{"id": "child-ext", "version": "1.0.0"}]},
+    )
+    path = project / "bundle.yml"
+    path.write_text(yaml.safe_dump(parent), encoding="utf-8")
+    selected = SimpleNamespace(
+        entry=SimpleNamespace(id="child", version="1.0.0", verified=True),
+        source=SimpleNamespace(id="default"),
+        install_allowed=True,
+    )
+
+    class Stack:
+        def resolve(self, bundle_id, version=None):
+            return selected
+
+    monkeypatch.setattr("specify_cli.bundles._commands._build_stack", lambda *a, **k: Stack())
+    monkeypatch.setattr("specify_cli.bundles.command_validate._download_manifest", lambda *a, **k: BundleManifest.from_dict(child))
+    monkeypatch.setattr(
+        "specify_cli.bundles.references.make_reference_checker",
+        lambda *a, **k: lambda component: f"unresolved {component.id}",
+    )
+    result = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result.exit_code == 1, result.output
+    output = " ".join(result.output.split())
+    assert "Unresolved reference extension:child-ext@1.0.0 (from parent → child): unresolved child-ext" in output
+    assert "Unresolved reference extension:own-ext@1.0.0: unresolved own-ext" in output
+    assert "from parent" not in output.split("own-ext@1.0.0", 1)[1]
+
+
+def test_validate_offline_and_flat_error_text_unchanged(project: Path, monkeypatch):
+    flat_data = valid_manifest_dict(
+        bundle={"id": "flat-bundle", "name": "Flat", "version": "1.0.0", "role": "developer", "description": "flat", "author": "tests", "license": "MIT"},
+        provides={"extensions": [{"id": "ext-a", "version": "1.0.0"}]},
+    )
+    path = project / "bundle.yml"
+    path.write_text(yaml.safe_dump(flat_data), encoding="utf-8")
+    monkeypatch.setattr(
+        "specify_cli.bundles.references.make_reference_checker",
+        lambda *a, **k: lambda component: "flat problem",
+    )
+    result_flat = runner.invoke(app, ["bundle", "validate", "--path", str(path)])
+    assert result_flat.exit_code == 1
+    assert "Unresolved reference extension:ext-a@1.0.0: flat problem" in " ".join(result_flat.output.split())
+    assert "(from" not in result_flat.output
+
+    ref_data = reference_manifest_dict(
+        [{"id": "child", "version": "1.0.0"}],
+        bundle_id="parent-bundle",
+        extensions=[{"id": "own-ext", "version": "1.0.0"}],
+    )
+    path.write_text(yaml.safe_dump(ref_data), encoding="utf-8")
+    result_offline = runner.invoke(app, ["bundle", "validate", "--offline", "--path", str(path)])
+    assert result_offline.exit_code == 1
+    assert "Unresolved reference extension:own-ext@1.0.0: flat problem" in " ".join(result_offline.output.split())
+    assert "(from" not in result_offline.output

@@ -101,6 +101,7 @@ def _validate(manifest, manifest_path: Path, *, offline: bool) -> ValidationRepo
         manifest,
         reference_checker=checker,
         components=expanded.components,
+        origins={key: origin.origin for key, origin in expanded.origins.items()},
     )
     report.errors.extend(discovery_only_messages(expanded))
     report.warnings.extend(ref_warnings)
