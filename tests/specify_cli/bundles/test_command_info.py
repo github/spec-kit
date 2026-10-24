@@ -1268,3 +1268,57 @@ def test_override_marker_agrees_with_component_setting_differences(kind, field, 
         {} if old is None else {field: old},
     )
     assert (f"{field}=" in text.split("overrides", 1)[1]) is differs
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets", "steps", "workflows"])
+@pytest.mark.parametrize(
+    ("field", "old", "new"),
+    [
+        ("version", "1.0.0", "v1.0.0"),
+        ("version", "1.0.0", "2.0.0"),
+        ("version", None, "1.0.0"),
+        ("source", None, "catalog"),
+        ("source", "a", "b"),
+        ("priority", None, 10),
+        ("priority", 10, None),
+        ("priority", 5, 10),
+        ("strategy", None, "append"),
+        ("strategy", "append", "replace"),
+    ],
+)
+def test_format_override_agrees_with_component_differences(kind, field, old, new):
+    from specify_cli.bundles.conflict import component_differences
+    from specify_cli.bundles.command_info import _format_override
+
+    old_ref = ComponentRef(kind=kind, id="c", **({field: old} if old is not None else {}))
+    new_ref = ComponentRef(kind=kind, id="c", **({field: new} if new is not None else {}))
+
+    diffs = component_differences(old_ref, new_ref)
+
+    item = {
+        "kind": kind,
+        "id": "c",
+        "version": new_ref.version,
+        "source": new_ref.source,
+        "priority": new_ref.priority,
+        "strategy": new_ref.strategy,
+    }
+    override = {
+        "version": old_ref.version,
+        "source": old_ref.source,
+        "priority": old_ref.priority,
+        "strategy": old_ref.strategy,
+        "origin": ["child"],
+    }
+    text = _format_override(item, override)
+
+    if not diffs:
+        assert "also declared by" in text or "same as final" in text
+    else:
+        assert text.startswith("overrides ")
+        assert "from child" in text
+        if field in diffs:
+            if field == "version":
+                assert (str(old) if old else "unpinned") in text
+            else:
+                assert f"{field}=" in text
