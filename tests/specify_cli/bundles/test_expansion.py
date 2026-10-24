@@ -150,19 +150,40 @@ def test_shorter_route_updates_override_and_preserves_cached_subplan(monkeypatch
         extensions=[{"id": "e", "version": "2.0.0"}],
     )
     loader = FakeBundleLoader(loaded(leaf, long))
-    cached_subplans: dict[str, expansion_module._Subplan] = {}
+    calls: list[str] = []
+    first_subplans: dict[str, expansion_module._Subplan] = {}
+    snapshots: dict[str, tuple] = {}
+    states: list[expansion_module._ExpansionState] = []
     original_expand = expansion_module._expand
+
+    def snapshot(subplan):
+        return (
+            subplan.entries,
+            dict(subplan.reference_paths),
+            subplan.longest_path,
+            subplan.notices,
+        )
 
     def spy_expand(manifest, chain, state):
         subplan = original_expand(manifest, chain, state)
-        if manifest.bundle.id not in cached_subplans and manifest.bundle.id in state.subplans:
-            cached_subplans[manifest.bundle.id] = state.subplans[manifest.bundle.id]
+        bundle_id = manifest.bundle.id
+        calls.append(bundle_id)
+        states.append(state)
+        if bundle_id not in first_subplans:
+            first_subplans[bundle_id] = subplan
+            snapshots[bundle_id] = snapshot(subplan)
         return subplan
 
     monkeypatch.setattr(expansion_module, "_expand", spy_expand)
     expanded = expand_manifest(root, loader)
 
-    assert "leaf" in cached_subplans
+    # The shorter route root → leaf reuses the subplan cached via root → long
+    # → leaf; it neither re-expands, replaces, nor mutates it.
+    assert calls.count("leaf") == 1
+    state = states[-1]
+    for bundle_id in ("leaf", "long"):
+        assert state.subplans[bundle_id] is first_subplans[bundle_id]
+        assert snapshot(state.subplans[bundle_id]) == snapshots[bundle_id]
     assert expanded.origins[("extensions", "e")].origin == ()
     assert next(ref for ref in expanded.references if ref.id == "leaf").via == ()
     assert len(expanded.warnings) == 1
@@ -929,24 +950,61 @@ def test_agreeing_sibling_is_not_recorded_as_override():
 
 
 def test_agreeing_declarations_do_not_change_origin_or_order():
-    leaf = manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}])
+    leaf = manifest(
+        "leaf",
+        extensions=[
+            {"id": "inherited", "version": "1.0.0"},
+            {"id": "shared", "version": "v1.0.0"},
+        ],
+    )
     mid = manifest(
         "mid",
         bundles=[{"id": "leaf", "version": "1.0.0"}],
-        extensions=[{"id": "e", "version": "1.0.0"}],
+        extensions=[
+            {"id": "mid-ext", "version": "1.0.0"},
+            {"id": "shared", "version": "1.0.0"},
+        ],
+    )
+    other = manifest(
+        "other",
+        extensions=[
+            {"id": "other-ext", "version": "1.0.0"},
+            {"id": "shared", "version": "v1.0.0"},
+        ],
     )
     root = manifest(
         "root",
-        bundles=[{"id": "mid", "version": "1.0.0"}],
-        extensions=[{"id": "e", "version": "1.0.0"}],
+        bundles=[
+            {"id": "mid", "version": "1.0.0"},
+            {"id": "other", "version": "1.0.0"},
+        ],
+        extensions=[
+            {"id": "root-ext", "version": "1.0.0"},
+            {"id": "inherited", "version": "1.0.0"},
+        ],
     )
-    loader = FakeBundleLoader(loaded(leaf, mid))
-    expanded = expand_manifest(root, loader)
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(leaf, mid, other)))
 
-    origin = expanded.origins[("extensions", "e")]
-    assert origin.origin == ()
-    assert origin.overrides == ()
-    assert [c.id for c in expanded.components] == ["e"]
+    # Reference-derived keys in first-seen order, then root's own keys in
+    # manifest order; "inherited" is both, so it moves to the own section.
+    assert [c.id for c in expanded.components] == [
+        "mid-ext",
+        "shared",
+        "other-ext",
+        "root-ext",
+        "inherited",
+    ]
+    # mid's own spelling wins over leaf's agreeing copy and is the first
+    # spelling root sees; other's agreeing copy does not replace it.
+    shared = next(c for c in expanded.components if c.id == "shared")
+    assert shared.version == "1.0.0"
+    # The retained ("mid", "leaf") and ("other",) declarations do not displace
+    # the shortest, lexicographically first route.
+    assert expanded.origins[("extensions", "shared")].origin == ("mid",)
+    assert expanded.origins[("extensions", "inherited")].origin == ()
+    assert expanded.origins[("extensions", "mid-ext")].origin == ("mid",)
+    assert expanded.origins[("extensions", "other-ext")].origin == ("other",)
+    assert all(origin.overrides == () for origin in expanded.origins.values())
     assert expanded.warnings == []
 
 
