@@ -4,7 +4,12 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundles._commands import _bundle_overlaps
-from specify_cli.bundles.conflict import component_setting_differences, detect_conflicts
+from specify_cli.bundles.conflict import (
+    component_differences,
+    component_setting_differences,
+    detect_conflicts,
+    same_requirement,
+)
 from specify_cli.bundles.primitives import DEFAULT_PRIORITY
 from specify_cli.bundles.manifest import BundleManifest, ComponentRef
 from specify_cli.bundles.records import InstalledBundleRecord, save_records
@@ -252,3 +257,17 @@ def test_setting_differences_extension_priority_opt_out_ignores_priority():
     omitted = ComponentRef(kind="extensions", id="e")
     other = ComponentRef(kind="extensions", id="e", priority=DEFAULT_PRIORITY + 1)
     assert component_setting_differences(omitted, other, extension_priority=False) == []
+
+
+def test_component_differences_and_same_requirement():
+    a = ComponentRef(kind="extensions", id="e", version="v1.0.0")
+    b = ComponentRef(kind="extensions", id="e", version="1.0.0")
+    assert component_differences(a, b) == []
+    assert same_requirement(a, b) is True
+
+    c = ComponentRef(kind="extensions", id="e", version="2.0.0")
+    assert component_differences(a, c) == ["version"]
+    assert same_requirement(a, c) is False
+
+    d = ComponentRef(kind="extensions", id="other", version="v1.0.0")
+    assert same_requirement(a, d) is False

@@ -59,6 +59,38 @@ def component_setting_differences(
     ]
 
 
+def component_differences(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> list[str]:
+    """Install-affecting differences between two refs of the same kind:id.
+
+    Version is compared through ``same_version`` (``v1.0.0`` == ``1.0.0``);
+    ``source``, ``priority`` and ``strategy`` through ``effective_setting``.
+    An empty list means the two refs install identically.
+    """
+    different: list[str] = []
+    if a.version is None or b.version is None:
+        if a.version != b.version:
+            different.append("version")
+    elif not same_version(a.version, b.version):
+        different.append("version")
+    different.extend(
+        component_setting_differences(a, b, extension_priority=extension_priority)
+    )
+    return different
+
+
+def same_requirement(
+    a: ComponentRef, b: ComponentRef, *, extension_priority: bool = True
+) -> bool:
+    """True when *a* and *b* describe the same installable requirement."""
+    return (
+        a.kind == b.kind
+        and a.id == b.id
+        and not component_differences(a, b, extension_priority=extension_priority)
+    )
+
+
 def detect_conflicts(
     manifest: BundleManifest,
     active_integration: str | None,

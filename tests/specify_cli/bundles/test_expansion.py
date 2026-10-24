@@ -6,12 +6,12 @@ import re
 import pytest
 
 from specify_cli.bundles import BundlerError
+from specify_cli.bundles.conflict import component_differences
 import specify_cli.bundles.expansion as expansion_module
 from specify_cli.bundles.expansion import (
     MAX_REFERENCED_BUNDLES,
     ExpandedManifest,
     LoadedBundle,
-    _component_differences,
     expand_manifest,
     format_chain,
     require_installable,
@@ -138,7 +138,7 @@ def test_layered_shared_graph_expands_each_bundle_once(monkeypatch):
     assert set(calls) == {"root", "left", "right", "shared", "leaf"}
 
 
-def test_shorter_route_updates_override_and_preserves_cached_subplan():
+def test_shorter_route_updates_override_and_preserves_cached_subplan(monkeypatch):
     leaf = manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}])
     long = manifest("long", bundles=[{"id": "leaf", "version": "1.0.0"}])
     root = manifest(
@@ -150,23 +150,19 @@ def test_shorter_route_updates_override_and_preserves_cached_subplan():
         extensions=[{"id": "e", "version": "2.0.0"}],
     )
     loader = FakeBundleLoader(loaded(leaf, long))
-    state = expansion_module._ExpansionState(loader)
-    expansion_module._expand(long, ("root", "long"), state)
-    cached_subplans = dict(state.subplans)
-    root_plan = expansion_module._expand(root, ("root",), state)
-    assert all(state.subplans[key] == plan for key, plan in cached_subplans.items())
-    expanded = ExpandedManifest(
-        root,
-        [entry.component for entry in root_plan.entries],
-        {
-            (entry.component.kind, entry.component.id): expansion_module.ComponentOrigin(
-                entry.origin, entry.overrides
-            )
-            for entry in root_plan.entries
-        },
-        state.references,
-        expansion_module._format_warnings(root, root_plan.notices),
-    )
+    cached_subplans: dict[str, expansion_module._Subplan] = {}
+    original_expand = expansion_module._expand
+
+    def spy_expand(manifest, chain, state):
+        subplan = original_expand(manifest, chain, state)
+        if manifest.bundle.id not in cached_subplans and manifest.bundle.id in state.subplans:
+            cached_subplans[manifest.bundle.id] = state.subplans[manifest.bundle.id]
+        return subplan
+
+    monkeypatch.setattr(expansion_module, "_expand", spy_expand)
+    expanded = expand_manifest(root, loader)
+
+    assert "leaf" in cached_subplans
     assert expanded.origins[("extensions", "e")].origin == ()
     assert next(ref for ref in expanded.references if ref.id == "leaf").via == ()
     assert len(expanded.warnings) == 1
@@ -693,10 +689,10 @@ def test_require_installable_and_formatting():
 
 
 def test_component_difference_uses_strict_pinned_rules():
-    assert _component_differences(
+    assert component_differences(
         ComponentRef("steps", "lint", None), ComponentRef("steps", "lint", "1.0.0")
     ) == ["version"]
-    assert _component_differences(
+    assert component_differences(
         ComponentRef("extensions", "e", "v1.0.0"), ComponentRef("extensions", "e", "1.0.0")
     ) == []
 
@@ -882,3 +878,106 @@ def test_two_routes_to_one_declaring_bundle_stay_one_record():
 
     overrides = expanded.origins[("extensions", "e")].overrides
     assert [item.origin for item in overrides] == [("left", "shared")]
+
+
+def test_intermediate_agreeing_declaration_is_recorded_when_ancestor_overrides():
+    leaf = manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}])
+    mid = manifest(
+        "mid",
+        bundles=[{"id": "leaf", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "1.0.0"}],
+    )
+    root = manifest(
+        "root",
+        bundles=[{"id": "mid", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+    loader = FakeBundleLoader(loaded(leaf, mid))
+    expanded = expand_manifest(root, loader)
+
+    origin = expanded.origins[("extensions", "e")]
+    assert origin.origin == ()
+    assert len(origin.overrides) == 2
+    override_origins = {override.origin for override in origin.overrides}
+    assert override_origins == {("mid",), ("mid", "leaf")}
+    assert len(expanded.warnings) == 1
+    assert "root → mid" in expanded.warnings[0]
+    assert "root → mid → leaf" in expanded.warnings[0]
+
+
+def test_agreeing_sibling_is_not_recorded_as_override():
+    agree = manifest("agree", extensions=[{"id": "e", "version": "2.0.0"}])
+    differ = manifest("differ", extensions=[{"id": "e", "version": "1.0.0"}])
+    root = manifest(
+        "root",
+        bundles=[
+            {"id": "agree", "version": "1.0.0"},
+            {"id": "differ", "version": "1.0.0"},
+        ],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+    loader = FakeBundleLoader(loaded(agree, differ))
+    expanded = expand_manifest(root, loader)
+
+    origin = expanded.origins[("extensions", "e")]
+    assert origin.origin == ()
+    assert len(origin.overrides) == 1
+    assert origin.overrides[0].origin == ("differ",)
+    assert len(expanded.warnings) == 1
+    assert "root → differ" in expanded.warnings[0]
+    assert "agree" not in expanded.warnings[0]
+
+
+def test_agreeing_declarations_do_not_change_origin_or_order():
+    leaf = manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}])
+    mid = manifest(
+        "mid",
+        bundles=[{"id": "leaf", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "1.0.0"}],
+    )
+    root = manifest(
+        "root",
+        bundles=[{"id": "mid", "version": "1.0.0"}],
+        extensions=[{"id": "e", "version": "1.0.0"}],
+    )
+    loader = FakeBundleLoader(loaded(leaf, mid))
+    expanded = expand_manifest(root, loader)
+
+    origin = expanded.origins[("extensions", "e")]
+    assert origin.origin == ()
+    assert origin.overrides == ()
+    assert [c.id for c in expanded.components] == ["e"]
+    assert expanded.warnings == []
+
+
+def _layered_agreeing_intermediate_graph(layers: int):
+    def refs(*ids):
+        return [{"id": item, "version": "1.0.0"} for item in ids]
+
+    bundles = [
+        manifest("leaf", extensions=[{"id": "e", "version": "1.0.0"}]),
+        manifest(
+            "base",
+            bundles=refs("leaf"),
+            extensions=[{"id": "e", "version": "1.0.0"}],
+        ),
+    ]
+    previous: tuple[str, ...] = ("base",)
+    for layer in range(layers):
+        current = (f"l{layer}a", f"l{layer}b")
+        bundles.extend(manifest(name, bundles=refs(*previous)) for name in current)
+        previous = current
+    return bundles, previous
+
+
+@pytest.mark.parametrize("layers", [1, 4, 7])
+def test_layered_agreeing_intermediate_keeps_override_records_bounded(layers):
+    bundles, top = _layered_agreeing_intermediate_graph(layers)
+    root = manifest(
+        "root",
+        bundles=[{"id": name, "version": "1.0.0"} for name in top],
+        extensions=[{"id": "e", "version": "2.0.0"}],
+    )
+    expanded = expand_manifest(root, FakeBundleLoader(loaded(*bundles)))
+    overrides = expanded.origins[("extensions", "e")].overrides
+    assert len(overrides) == 2

@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Iterable, Protocol
 
 from . import BundlerError
-from .conflict import component_setting_differences
+from .conflict import component_differences
 from .manifest import COMPONENT_KINDS, BundleManifest, BundleRef, ComponentRef
 from .versioning import same_version
 
@@ -206,7 +206,7 @@ def _expand(
         return cached
 
     candidates: dict[tuple[str, str], list[_Entry]] = {}
-    ordered: list[tuple[str, str]] = []
+    reference_keys: list[tuple[str, str]] = []
     reference_paths: dict[str, tuple[str, ...]] = {}
     notices: list[_OverrideNotice] = []
     conflicts: list[str] = []
@@ -300,7 +300,7 @@ def _expand(
             _merge_candidate(
                 entry,
                 candidates,
-                ordered,
+                reference_keys,
                 own_keys,
                 conflicts,
                 chain,
@@ -309,22 +309,19 @@ def _expand(
             _append_notice(notices, _prefix_notice(notice, child_prefix))
 
     # Apply the current bundle's own declarations after all referenced plans.
+    own_manifest_keys = [(c.kind, c.id) for c in manifest.components]
     for component in manifest.components:
         key = component.kind, component.id
         existing = candidates.get(key, [])
         entry, notice = _declare_own(component, existing)
-        if existing:
-            # Removing and re-adding gives an override the position of the own
-            # declaration, rather than the first referenced occurrence.
-            ordered.remove(key)
         candidates[key] = [entry]
-        ordered.append(key)
         if notice is not None:
             _append_notice(notices, notice)
 
     if conflicts:
         raise BundlerError("Bundle component conflicts:\n" + "\n".join(conflicts))
 
+    ordered = [k for k in reference_keys if k not in own_keys] + own_manifest_keys
     entries = tuple(candidates[key][0] for key in _stable_keys(ordered))
     result = _Subplan(
         entries=entries,
@@ -336,10 +333,49 @@ def _expand(
     return result
 
 
+def _entry_for(
+    component: ComponentRef,
+    declarations: Iterable[ComponentOverride],
+    overrides: Iterable[ComponentOverride] = (),
+) -> _Entry:
+    """The only way to build an ``_Entry``; applies I3 to both histories.
+
+    This is the single rule for what counts as one declaration: the component
+    and the bundle that declared it. The route to it is display-only, so only
+    the shortest chain is kept, with ties broken on the chain itself so the
+    result does not depend on merge order. Routes to the same declaration
+    collapse (otherwise a shared graph grows exponentially), while distinct
+    declaring bundles stay separate records. It serves both the declarations
+    behind an entry and the override history discarded by a parent.
+    """
+    return _Entry(
+        component,
+        _merge_declarations(declarations),
+        _merge_declarations(overrides),
+    )
+
+
+def _merge_declarations(
+    *groups: Iterable[ComponentOverride],
+) -> tuple[ComponentOverride, ...]:
+    """Merge declaration records to one per component and declaring bundle."""
+    best: dict[tuple[ComponentRef, tuple[str, ...]], ComponentOverride] = {}
+    for group in groups:
+        for declaration in group:
+            key = (declaration.component, declaration.origin[-1:])
+            current = best.get(key)
+            if current is None or (len(declaration.origin), declaration.origin) < (
+                len(current.origin),
+                current.origin,
+            ):
+                best[key] = declaration
+    return tuple(best.values())
+
+
 def _merge_candidate(
     entry: _Entry,
     candidates: dict[tuple[str, str], list[_Entry]],
-    ordered: list[tuple[str, str]],
+    reference_keys: list[tuple[str, str]],
     own_keys: set[tuple[str, str]],
     conflicts: list[str],
     declaring_chain: tuple[str, ...],
@@ -348,11 +384,11 @@ def _merge_candidate(
     existing = candidates.get(key)
     if existing is None:
         candidates[key] = [entry]
-        ordered.append(key)
+        reference_keys.append(key)
         return
 
     differences = [
-        _component_differences(previous.component, entry.component)
+        component_differences(previous.component, entry.component)
         for previous in existing
     ]
     if any(differences) and key not in own_keys:
@@ -371,42 +407,16 @@ def _merge_candidate(
     for index, fields in enumerate(differences):
         if not fields:
             previous = existing[index]
-            existing[index] = _Entry(
+            existing[index] = _entry_for(
                 previous.component,
-                _merge_declarations(previous.declarations, entry.declarations),
-                _merge_declarations(previous.overrides, entry.overrides),
+                declarations=(*previous.declarations, *entry.declarations),
+                overrides=(*previous.overrides, *entry.overrides),
             )
             return
 
     if key in own_keys:
         existing.append(entry)
         return
-
-
-def _merge_declarations(
-    *groups: tuple[ComponentOverride, ...] | list[ComponentOverride],
-) -> tuple[ComponentOverride, ...]:
-    """Merge declaration records to one per component and declaring bundle.
-
-    This is the single rule for what counts as one declaration: the component
-    and the bundle that declared it. The route to it is display-only, so only
-    the shortest chain is kept, with ties broken on the chain itself so the
-    result does not depend on merge order. Routes to the same declaration
-    collapse (otherwise a shared graph grows exponentially), while distinct
-    declaring bundles stay separate records. It serves both the declarations
-    behind an entry and the override history discarded by a parent.
-    """
-    best: dict[tuple[ComponentRef, tuple[str, ...]], ComponentOverride] = {}
-    for group in groups:
-        for declaration in group:
-            key = (declaration.component, declaration.origin[-1:])
-            current = best.get(key)
-            if current is None or (len(declaration.origin), declaration.origin) < (
-                len(current.origin),
-                current.origin,
-            ):
-                best[key] = declaration
-    return tuple(best.values())
 
 
 def _declare_own(
@@ -417,17 +427,23 @@ def _declare_own(
     Every declaration of a differing referenced copy is discarded and recorded,
     one per declaring bundle. Agreeing copies are not overrides.
     """
-    inherited = _merge_declarations(*(entry.overrides for entry in existing))
+    inherited = tuple(ov for entry in existing for ov in entry.overrides)
     replaced = tuple(
         declaration
         for entry in existing
-        if _component_differences(entry.component, component)
+        if component_differences(entry.component, component)
         for declaration in entry.declarations
     )
-    entry = _Entry(
+    agreeing = tuple(
+        declaration
+        for entry in existing
+        if not component_differences(entry.component, component)
+        for declaration in entry.declarations
+    )
+    entry = _entry_for(
         component,
-        (ComponentOverride(component, ()),),
-        _merge_declarations(inherited, replaced),
+        declarations=(ComponentOverride(component, ()), *agreeing),
+        overrides=(*inherited, *replaced),
     )
     notice = _OverrideNotice(component, (), replaced) if replaced else None
     return entry, notice
@@ -489,17 +505,6 @@ def _shortest_path(
         paths[key] = path
 
 
-def _component_differences(a: ComponentRef, b: ComponentRef) -> list[str]:
-    different: list[str] = []
-    if a.version is None or b.version is None:
-        if a.version != b.version:
-            different.append("version")
-    elif not same_version(a.version, b.version):
-        different.append("version")
-    different.extend(component_setting_differences(a, b))
-    return different
-
-
 def _source_mismatch(
     ref: BundleRef, loaded: LoadedBundle, chain: tuple[str, ...]
 ) -> SourceMismatchError:
@@ -523,7 +528,7 @@ def _component_name(component: ComponentRef) -> str:
 def _format_conflict(
     a: _Entry, b: _Entry, declaring_chain: tuple[str, ...]
 ) -> str:
-    fields = _component_differences(a.component, b.component)
+    fields = component_differences(a.component, b.component)
     left = "; ".join(_field_text(a.component, field) for field in fields)
     right = "; ".join(_field_text(b.component, field) for field in fields)
     left_chain = format_chain(declaring_chain + a.origin)
@@ -543,7 +548,7 @@ def _format_warnings(
         own_chain = format_chain((root.bundle.id,) + notice.declaring)
         fields_by_entry: list[str] = []
         differences_by_entry = [
-            _component_differences(replaced.component, notice.component)
+            component_differences(replaced.component, notice.component)
             for replaced in notice.replaced
         ]
         for replaced, fields in zip(notice.replaced, differences_by_entry):
