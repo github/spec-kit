@@ -1428,3 +1428,36 @@ def test_reinstall_with_version_spelling_change_is_accepted(tmp_path: Path):
     plan3 = _plan(root3)
     with pytest.raises(BundlerError, match="--refresh"):
         install_bundle(tmp_path, plan3, installer, manifest=root3)
+
+
+def test_reinstall_guard_compares_each_component_once(tmp_path: Path, monkeypatch):
+    """An unchanged reinstall must not rescan the plan for every owned component.
+
+    The guard asks whether every owned component is still required with an
+    equivalent spelling. Same-version bundles therefore reach it on every plain
+    reinstall, so it indexes the plan by ``(kind, id)``; the nested scan it
+    replaced compared every owned component against every planned one.
+    """
+    from specify_cli.bundles import installer as installer_module
+
+    make_project(tmp_path)
+    installer = FakeInstaller()
+    extension_ids = [f"ext-{index}" for index in range(50)]
+    manifest = _bundle("demo", extension_ids)
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    installer.install_calls.clear()
+
+    real = installer_module.same_requirement
+    comparisons: list[tuple[ComponentRef, ComponentRef]] = []
+
+    def counting(component, planned):
+        comparisons.append((component, planned))
+        return real(component, planned)
+
+    monkeypatch.setattr(installer_module, "same_requirement", counting)
+    result = install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    # One candidate per owned component (the bound leaves room for a second
+    # comparison pass); a full scan would be 1275 comparisons for 50 components.
+    assert result.changed is False
+    assert len(comparisons) <= 2 * len(extension_ids)

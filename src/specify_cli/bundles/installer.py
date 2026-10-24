@@ -119,13 +119,26 @@ def install_bundle(
 
     result = InstallResult(bundle_id=plan.bundle_id)
     existing = find_record(records, plan.bundle_id)
+    # Index the plan by (kind, id) so an unchanged reinstall compares each owned
+    # component against its candidate instead of scanning the whole plan. Plan
+    # components are unique per key (structural_errors rejects duplicates), and
+    # same_requirement still applies the expansion normalization; the per-key
+    # list keeps `any` semantics if a plan ever repeats a key.
+    planned_by_key: dict[tuple[str, str], list[ComponentRef]] = {}
+    for planned in plan.components:
+        planned_by_key.setdefault((planned.kind, planned.id), []).append(planned)
     if (
         existing is not None
         and not refresh
         and (
             existing.version != plan.version
             or not all(
-                any(same_requirement(component, planned) for planned in plan.components)
+                any(
+                    same_requirement(component, candidate)
+                    for candidate in planned_by_key.get(
+                        (component.kind, component.id), ()
+                    )
+                )
                 for component in existing.contributed_components
             )
         )
