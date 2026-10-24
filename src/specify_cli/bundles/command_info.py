@@ -23,7 +23,7 @@ from ._commands import (
 from .conflict import effective_setting
 from .project import find_project_root
 from .sources import _download_manifest
-from .versioning import same_version
+from .versioning import same_version, strip_version_prefix
 
 
 @bundle_app.command("info")
@@ -249,7 +249,11 @@ def _reference_view(expanded) -> list[dict]:
 
 
 def _format_reference(reference) -> str:
-    label = f"{reference.id} v{reference.version} ({reference.source_id}"
+    # The label supplies its own "v", and an accepted pin may already carry one
+    # (``v1.0.1``); strip it here so the text shows one prefix. The JSON view
+    # keeps the recorded spelling.
+    label = f"{reference.id} v{strip_version_prefix(reference.version)}"
+    label += f" ({reference.source_id}"
     label += f"; {_trust_level(reference.verified)}"
     if reference.via:
         label += f"; via {' → '.join(reference.via)}"

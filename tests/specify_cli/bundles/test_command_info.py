@@ -1322,3 +1322,55 @@ def test_format_override_agrees_with_component_differences(kind, field, old, new
                 assert (str(old) if old else "unpinned") in text
             else:
                 assert f"{field}=" in text
+
+
+def test_info_strips_redundant_v_prefix_from_reference_label(
+    project: Path, monkeypatch
+):
+    """An accepted ``v1.0.1`` pin shows one prefix in text, raw in JSON."""
+    parent_dir = project / "parent-bundle"
+    child_dir = project / "child-bundle"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    parent_path = parent_dir / "bundle.yml"
+    child_path = child_dir / "bundle.yml"
+    parent_data = reference_manifest_dict(
+        [{"id": "child-bundle", "version": "v1.0.1"}]
+    )
+    child_data = reference_manifest_dict([])
+    child_data["bundle"]["id"] = "child-bundle"
+    child_data["bundle"]["version"] = "1.0.1"
+    parent_path.write_text(yaml.safe_dump(parent_data), encoding="utf-8")
+    child_path.write_text(yaml.safe_dump(child_data), encoding="utf-8")
+    catalog = project / "prefix-catalog.json"
+    write_catalog_file(
+        catalog,
+        {
+            "demo-bundle": catalog_entry_dict("demo-bundle"),
+            "child-bundle": catalog_entry_dict(
+                "child-bundle",
+                version="1.0.1",
+                download_url="https://example.com/child.zip",
+            ),
+        },
+    )
+    added = runner.invoke(app, ["bundle", "catalog", "add", str(catalog), "--id", "local"])
+    assert added.exit_code == 0, added.output
+
+    def fake_download(resolved, *, offline):
+        path = {"demo-bundle": parent_path, "child-bundle": child_path}[resolved.entry.id]
+        return BundleManifest.from_file(path)
+
+    monkeypatch.setattr("specify_cli.bundles.command_info._download_manifest", fake_download)
+
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert text.exit_code == 0, text.output
+    output = " ".join(strip_ansi(text.output).split())
+    assert "- child-bundle v1.0.1 (local; verified)" in output
+    assert "vv1.0.1" not in output
+
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    (reference,) = json.loads(result.output)["references"]
+    # JSON keeps the recorded pin, including the prefix.
+    assert reference["version"] == "v1.0.1"
