@@ -14,7 +14,8 @@ from pathlib import Path
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..base import SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
+from ..manifest import IntegrationManifest
 
 
 class DroidIntegration(SkillsIntegration):
@@ -35,6 +36,48 @@ class DroidIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     multi_install_safe = True
+
+    # Set by ``setup()`` from ``--no-model-invocation``; applies to core
+    # command skills only, since mandatory extension hooks rely on the model
+    # invoking the hook skill. Integrations are process-wide singletons, so
+    # preset overrides re-registered later in the same run see the same value.
+    # Commands that rewrite skills without calling ``setup()`` (e.g.
+    # ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        opts = super().options()
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true)"
+                ),
+            )
+        )
+        return opts
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        self._disable_model_invocation = (
+            (parsed_options or {}).get("no_model_invocation") is True
+        )
+        try:
+            return super().setup(
+                project_root, manifest, parsed_options=parsed_options, **opts
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
 
     @staticmethod
     def _inject_frontmatter_flag(content: str, key: str, value: str = "true") -> str:
@@ -75,6 +118,30 @@ class DroidIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                return name or None
+        return None
+
+    @staticmethod
+    def _is_core_command_skill(name: str | None) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
+
     def post_process_skill_content(self, content: str) -> str:
         """Inject Droid-specific skill frontmatter flags.
 
@@ -82,10 +149,19 @@ class DroidIntegration(SkillsIntegration):
         hyphenated ``/speckit-<name>`` invocations, not dotted ``/speckit.<name>``)
         and the Droid-specific ``user-invocable`` / ``disable-model-invocation``
         frontmatter flags so skills are both user- and Droid-invocable.
+
+        ``disable-model-invocation`` is ``true`` for core command skills when
+        the last ``setup()`` in this process was given
+        ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        disable = self._disable_model_invocation and self._is_core_command_skill(
+            self._skill_name_from_content(updated)
+        )
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "true" if disable else "false"
+        )
         return updated
 
     def build_exec_args(
