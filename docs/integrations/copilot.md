@@ -36,10 +36,14 @@ specify init my-project --integration copilot --integration-options="--no-model-
 
 This writes `disable-model-invocation: true` into the core command skills.
 VS Code's [agent skills documentation](https://code.visualstudio.com/docs/agent-customization/agent-skills)
-says this requires manual invocation through the `/` slash command only. That
-page does not say whether a skill with this flag keeps its description out of
-the model's context, and GitHub's Copilot CLI skills documentation does not
-list the field, so this option is documented for VS Code only.
+says this requires manual invocation through the `/` slash command only.
+GitHub's Copilot CLI skills documentation does not list the field, but in a
+manual check with Copilot CLI 1.0.70 the model called its `skill` tool for
+`speckit-specify` without the flag and did not with it, and an explicit
+`/speckit-specify` still ran. With the flag the model could still read the
+skill's `SKILL.md` as an ordinary file, so it is not a hard block. Neither
+source says whether a skill with this flag keeps its description out of the
+model's context.
 
 - The option has no effect with `--commands`: the `.agent.md` and `.prompt.md`
   files are not skills and no flag is written.
