@@ -34,6 +34,16 @@ def workflow_run(
         # explicitly names a project, in which case the strict override applies.
         override = cli._resolve_init_dir_override()
         project_root = override if override is not None else cli.Path.cwd()
+        from .._project import (
+            ProjectResolutionError,
+            preflight_project_policy,
+            render_project_error,
+        )
+
+        try:
+            preflight_project_policy(project_root)
+        except ProjectResolutionError as exc:
+            render_project_error(exc)
         cli._reject_unsafe_workflow_storage(project_root)
     else:
         project_root = cli._require_specify_project(load_integrations=False)
@@ -149,9 +159,11 @@ def workflow_run(
     except OSError as exc:
         cli._fail_workflow_execution(exc, json_output=json_output, state=engine._execution_state.get())
     except ValueError as exc:
+        cli._fail_recorded_run(exc, json_output=json_output, state=engine._execution_state.get())
         err.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
     except Exception as exc:
+        cli._fail_recorded_run(exc, json_output=json_output, state=engine._execution_state.get())
         err.print(f"[red]Workflow failed:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
 

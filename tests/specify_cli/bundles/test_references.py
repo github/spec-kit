@@ -287,6 +287,65 @@ def test_online_validation_warns_for_extension_http_protocol_error(
     assert len(warnings) == 1 and "unreachable" in warnings[0]
 
 
+@pytest.mark.parametrize("packaged_version", ["1.1.0", "2.0.0", "1.0.1-rc1"])
+@pytest.mark.parametrize("historical_version", ["1.0.0", "1.0.2", None])
+def test_incompatible_bundled_workflow_requires_exact_historical_release(
+    tmp_path: Path, monkeypatch, packaged_version: str, historical_version: str | None,
+):
+    import specify_cli._assets as assets
+    from specify_cli.bundles import component_catalog
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    root = make_project(tmp_path)
+    payload = root / "packaged-workflow"
+    payload.mkdir()
+    (payload / "workflow.yml").write_text(
+        yaml.safe_dump({"workflow": {"id": "x", "version": packaged_version}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(assets, "_locate_bundled_workflow", lambda cid: payload)
+    entry = {
+        "version": "3.0.0",
+        "url": "https://example.com/current.yml",
+        "sha256": "b" * 64,
+        "releases": {},
+    }
+    if historical_version is not None:
+        entry["releases"][historical_version] = {
+            "url": "https://example.com/historical.yml",
+            "sha256": "a" * 64,
+        }
+    _mock_catalog(monkeypatch, WorkflowCatalog, "workflows", "x", entry)
+    original_select = component_catalog.select_catalog_release
+    selections = []
+
+    def select(component, current):
+        selected = original_select(component, current)
+        selections.append((component.version, selected))
+        return selected
+
+    monkeypatch.setattr(component_catalog, "select_catalog_release", select)
+    warnings = []
+    check = make_reference_checker(root, allow_network=True, warnings=warnings)
+
+    problem = check(_ref("workflows", "x"))
+
+    assert len(selections) == 1
+    requested, selected = selections[0]
+    assert requested == "1.0.0"
+    if historical_version == "1.0.0":
+        assert problem is None
+        assert selected is not None
+        assert selected["version"] == "1.0.0"
+        assert selected["url"] == "https://example.com/historical.yml"
+        assert selected["sha256"] == "a" * 64
+    else:
+        assert problem is not None
+        assert "workflow 'x' at 1.0.0 is not available" in problem
+        assert selected is None
+    assert warnings == []
+
+
 def test_online_validation_checks_winning_exact_release_and_source(tmp_path, monkeypatch):
     import specify_cli._assets as assets
     from specify_cli.workflows.catalog import WorkflowCatalog

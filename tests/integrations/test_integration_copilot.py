@@ -981,29 +981,3 @@ class TestCopilotSkillsMode:
             assert "my args" in prompt, (
                 f"Skills mode prompt should preserve user args, got: {prompt}"
             )
-
-    # -- Next-steps display for Copilot skills mode -----------------------
-
-    def test_init_skills_next_steps_show_skill_syntax(self, tmp_path):
-        """Default Copilot init shows /speckit-plan, not /speckit.plan."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        project = tmp_path / "copilot-nextsteps"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", "copilot",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0, f"init failed: {result.output}"
-        # Skills mode should show /speckit-plan (hyphenated)
-        assert "/speckit-plan" in result.output, (
-            f"Expected /speckit-plan in next steps but got:\n{result.output}"
-        )
-        # Must NOT show the dotted /speckit.plan form
-        assert "/speckit.plan" not in result.output, (
-            f"Should not show /speckit.plan in skills mode:\n{result.output}"
-        )

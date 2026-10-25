@@ -21,16 +21,9 @@ MISSING_INIT_OPTIONS_FILE = _MissingInitOptionsFile()
 
 def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     """Persist the CLI options used during ``specify init``."""
-    dest = project_path / INIT_OPTIONS_FILE
-    from .integrations._file_changes import after_file_change, before_file_change
+    from ._file_policy import save_project_options
 
-    before_file_change(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    after_file_change(dest)
+    save_project_options(project_path, options)
 
 
 def load_init_options(project_path: Path) -> dict[str, Any]:

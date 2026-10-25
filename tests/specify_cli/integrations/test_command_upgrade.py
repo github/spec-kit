@@ -27,6 +27,41 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUpgradeDetailed:
+    @pytest.mark.parametrize("integration", ["claude", "copilot", "gemini"])
+    @pytest.mark.parametrize("force", [False, True])
+    def test_disabling_events_honors_modified_dispatcher_force(self, tmp_path, integration, force):
+        from specify_cli.events import install_integration_events
+        from specify_cli.integrations import get_integration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, integration)
+        manifest = IntegrationManifest.load(integration, project)
+        install_integration_events(
+            get_integration(integration), project, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = project / ".specify/events.py"
+        content = b"# User-modified dispatcher\n"
+        dispatcher.write_bytes(content)
+        args = [
+            "integration", "upgrade", integration,
+            "--integration-options", "--events false",
+        ]
+        if force:
+            args.append("--force")
+
+        result = _run_in_project(project, args)
+
+        assert result.exit_code == (0 if force else 1), result.output
+        if force:
+            assert not dispatcher.exists()
+            updated = IntegrationManifest.load(integration, project)
+            assert ".specify/events.py" not in updated.files
+        else:
+            assert dispatcher.read_bytes() == content
+            assert "modified" in result.output
+
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         _write_invalid_manifest(project, "claude")

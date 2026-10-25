@@ -889,14 +889,19 @@ def test_the_sink_is_cleared_even_when_the_probe_raises():
 
 
 def test_both_sides_of_a_boolean_are_reported():
-    """The load-bearing property: `_evaluate_simple_expression` evaluates both
-    operands of `and`/`or` and only then combines them. If it ever
-    short-circuits, the gate would stop seeing the right-hand operand and go
-    quietly blind -- so assert it here rather than rely on it silently.
-    """
+    """Probes must visit both operands even when runtime short-circuits."""
     assert _collect_leaves("inputs.a or bogus") == ["inputs.a", "bogus"]
+    assert _collect_leaves("true or bogus") == ["bogus"]
     assert _collect_leaves("false and bogus") == ["bogus"]
     assert _unresolvable_term("false and bogus") is not None
+
+
+@pytest.mark.parametrize("template", ["true or ({})", "false and ({})", "true or (false and ({}))"])
+@pytest.mark.parametrize("filtered", ["inputs.x | nosuchfilter", "inputs.x | join", "inputs.x | length(1)"])
+def test_filter_probe_checks_short_circuited_operands(template, filtered):
+    expression = template.format(filtered)
+    assert _evaluator_rejects(expression) is not None
+    assert "evaluator rejects" in format_condition_remediation(expression)
 
 
 def test_leaves_seen_before_a_probe_error_are_kept():

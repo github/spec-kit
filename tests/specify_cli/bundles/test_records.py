@@ -124,6 +124,42 @@ def test_from_dict_rejects_requirements_missing_contributed_pin(required):
         InstalledBundleRecord.from_dict(data)
 
 
+def test_record_preserves_requested_and_installed_versions(tmp_path: Path):
+    rec = InstalledBundleRecord.create(
+        bundle_id="demo", version="1.0.0",
+        components=[ComponentRef(kind="extensions", id="bug", version="1.0.0")],
+        installed_versions={"extensions:bug": "1.0.1"},
+    )
+    save_records(tmp_path, [rec])
+
+    loaded = load_records(tmp_path)[0]
+    assert loaded.contributed_components[0].version == "1.0.0"
+    assert loaded.installed_versions == {"extensions:bug": "1.0.1"}
+    assert loaded.to_dict()["installed_versions"] == {"extensions:bug": "1.0.1"}
+
+
+def test_legacy_record_has_no_installed_versions():
+    rec = InstalledBundleRecord.from_dict(
+        {"bundle_id": "demo", "version": "1.0.0", "contributed_components": []},
+    )
+    assert rec.installed_versions == {}
+    assert "installed_versions" not in rec.to_dict()
+
+
+@pytest.mark.parametrize("versions", [
+    None, [], "1.0.1", False,
+    {"extensions:bug": ""}, {"extensions:bug": "   "},
+    {"extensions:bug": 1}, {"extensions:other": "1.0.1"},
+])
+def test_record_rejects_invalid_installed_versions(versions):
+    with pytest.raises(BundlerError, match="installed_versions"):
+        InstalledBundleRecord.from_dict({
+            "bundle_id": "demo", "version": "1.0.0",
+            "contributed_components": [{"kind": "extensions", "id": "bug"}],
+            "installed_versions": versions,
+        })
+
+
 def test_load_missing_file_returns_empty(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     assert load_records(tmp_path) == []

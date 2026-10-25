@@ -74,7 +74,7 @@ specify bundle install <bundle_id | path>
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
 
-If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — already-installed components matching their pins are skipped. A missing or different installed version cannot satisfy a pin. Only `--refresh` can repair a drifted version owned exclusively by this bundle; independently installed components are skipped and never adopted or replaced. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
+If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — already-installed components matching their pins are skipped, as are bundle-owned compatible packaged patch releases with a warning (see below). Other differing or missing installed versions cannot satisfy a pin. Only `--refresh` can repair a drifted version owned exclusively by this bundle; independently installed components are skipped and never adopted or replaced. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
 
 Installed-bundle records store required component pins separately from contributed components. A compatible independently installed component satisfies a bundle's requirement but remains independently owned: its pin still blocks a later bundle from installing an incompatible version, while removing the bundle does not uninstall it. An unpinned install or refresh cannot replace a component another bundle requires at a pinned version; sharing an already installed matching version without refreshing remains allowed. Shared bundles must also agree on component source and, for presets, priority and strategy before installing or refreshing the shared component. Older records without the requirement list retain their known contributed pins; reinstall or refresh the bundle to record its full requirements.
 
@@ -87,6 +87,23 @@ specify bundle install ./new-release/bundle.yml --refresh
 The source may also be a bundle directory or `.zip` artifact. Refresh uses the same primitive update path as `bundle update`, re-applies components owned by a bundle, and removes previously owned components omitted from the new manifest unless another bundle still needs them. Components installed independently remain untouched and are not adopted. The success summary includes refreshed and removed counts. The bundle record advances only after the operation succeeds; as with `bundle update`, already-installed components modified during a failed refresh are not rolled back.
 
 A local bundle source supplies the manifest, not its component payloads. Components resolved through catalogs still require network access to refresh, even when already installed. Add `--offline` only when the components being installed or refreshed ship with Spec Kit; otherwise the command reports which component needs network access. Re-run without `--offline` to fetch that component through its catalog.
+
+**Packaged patch compatibility.** When an extension, preset, or workflow shipped
+with the CLI is a newer stable patch release within the pinned major/minor
+version, installation and refresh warn and use that packaged release. For
+example, a bundle pinning `bug` to `1.0.0` can use packaged `bug` `1.0.1` without
+editing its manifest. Validation reports the same warning. Downgrades,
+major/minor mismatches, and differing prerelease versions remain errors; an
+explicit component `source` also retains exact-pin enforcement. Catalog-resolved
+components still require exact matches. This exception improves compatibility
+across CLI upgrades, but a patch release is not a guarantee of unchanged behavior.
+
+Bundle records retain requested versions in `required_components` and
+`contributed_components` and
+store actual known installed versions under `installed_versions`, keyed by
+`kind:id` (for example, `"extensions:bug": "1.0.1"`). These are also visible in
+`specify bundle list --json`. Component version ranges, `latest`, and omitted
+extension versions are not supported.
 
 > **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
 
@@ -129,11 +146,11 @@ specify bundle update [<bundle_id>]
 | `--integration`  | Override the integration used when refreshing components; applied only when the project's active integration can't be determined |
 | `--offline`      | Do not access the network                                                                                             |
 
-Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
+Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions (or compatible newer packaged patches, with a warning) while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
 **Pinned catalog releases.** Extensions, presets, workflows, and steps with version pins select that exact release from the highest-priority active catalog entry. Historical releases must be advertised under `releases` with their own artifact URL and SHA-256 digest; the bundler never guesses an old URL from the current one or falls through to another catalog. Legacy extension and preset entries that advertise no version are an exception: the bundler uses the winning entry as-is and cannot enforce its pin or verify the installed archive's version. Publish a versioned entry to make that pin enforceable. The primitive installer uses the selected workflow or step record without re-reading the catalog, and verifies downloaded archive or workflow/step metadata against that release. A pinned workflow that ships with Spec Kit uses its bundled copy when the version matches, and the catalog release when it differs and network access is allowed. A step without a pin installs the current catalog release.
 
-Without an explicit `source`, bundled extensions and presets take precedence over catalog releases. Validation rejects a pin that differs from the bundled version even when a matching catalog release exists; specify the winning catalog as `source` to opt into its release.
+Without an explicit `source`, bundled extensions and presets take precedence over catalog releases. Validation rejects an incompatible pin even when a matching catalog release exists; compatible newer stable packaged patches produce a warning instead. Specify the winning catalog as `source` to opt into its exact release.
 
 > **One installed version per component ID.** Bundles sharing a component must agree on its pinned version. A different or unknown pin from another bundle is rejected before installation, including during `bundle update`; refreshing one bundle cannot replace a version required by another.
 
@@ -173,6 +190,8 @@ specify bundle init [<bundle_id>]
 | `--offline`      | Do not access the network                |
 
 Ensures the current directory is a Spec Kit project (initializing it idempotently if needed), then optionally installs the given bundle. Useful as an explicit one-step bootstrap for a new checkout.
+
+Repeating `bundle init` skips components already installed by the bundle and preserves their local edits. It follows the same rules as a normal [`bundle install`](#install-a-bundle): components newly added to the manifest are installed and recorded, but it fails without changing the installed bundle if the manifest changes the recorded bundle version, changes an owned component's version, source, preset priority, or strategy, or removes an owned component. To refresh components or apply such changes, use `bundle update <id>` for a catalog bundle or `bundle install <path> --refresh` for a local source.
 
 ## Validate a Bundle
 

@@ -32,6 +32,25 @@ SCRIPT = "resolve-template"
 TEMPLATE = "constitution-template"
 
 
+def test_python_json_preserves_constitution_on_legacy_stdout(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    template = repo / ".specify/templates/overrides/constitution-template.md"
+    template.parent.mkdir(parents=True)
+    expected = "# Конституція\n\nПравила: 功能 → звіт.\n"
+    template.write_bytes(expected.encode("utf-8"))
+    env = clean_env()
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    result = run(py_cmd(repo, SCRIPT, TEMPLATE, "--json"), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert json_stdout(result) == {
+        "TEMPLATE_NAME": TEMPLATE, "TEMPLATE_CONTENT": expected,
+    }
+    assert template.read_bytes() == expected.encode("utf-8")
+
+
 def _setup_repo(tmp_path: Path) -> tuple[Path, str]:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)

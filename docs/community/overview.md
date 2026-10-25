@@ -6,6 +6,9 @@ The Spec Kit community builds extensions, presets, bundles, workflow steps, walk
 > Review community source code before installation and use it at your own
 > discretion. A catalog listing is not an audit or endorsement.
 
+Learn how discovery-only community sources and approved private sources fit
+together in the [catalog reference](../reference/catalogs.md).
+
 ## Extensions
 
 Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. Over 130 community extensions are available from 70+ authors, covering everything from accessibility governance to multi-agent orchestration.
