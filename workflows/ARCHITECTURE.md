@@ -183,7 +183,7 @@ Registration is explicit — each step class is imported and instantiated. New s
 
 ## Expression Engine
 
-Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic values. The expression engine in `src/specify_cli/workflows/expressions.py` supports:
+Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic values. The expression engine in `src/specify_cli/workflows/expressions/` supports:
 
 | Feature | Syntax | Example |
 |---------|--------|---------|
@@ -290,7 +290,9 @@ src/specify_cli/
 │   ├── base.py              # StepBase, StepContext, StepResult, StepStatus, RunStatus
 │   ├── catalog.py           # WorkflowCatalog, WorkflowCatalogEntry, WorkflowRegistry
 │   ├── engine.py            # WorkflowDefinition, WorkflowEngine, RunState, validate_workflow()
-│   ├── expressions.py       # evaluate_expression(), evaluate_condition(), filters
+│   ├── expressions/         # expression engine package
+│   │   ├── engine.py        # the single engine selection point
+│   │   └── api.py           # evaluate_expression(), evaluate_condition()
 │   └── steps/
 │       ├── command/         # Dispatch command to AI integration
 │       ├── shell/           # Run shell command
