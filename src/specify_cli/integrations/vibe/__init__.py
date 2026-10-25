@@ -95,6 +95,14 @@ class VibeIntegration(SkillsIntegration):
     # still parse cleanly.
     events_context_envelope = {"*": "hook_specific_output"}
 
+    # Set by ``setup()`` from ``--no-model-invocation``; applies to core
+    # command skills only, since mandatory extension hooks rely on the model
+    # invoking the hook skill. Integrations are process-wide singletons, so
+    # preset overrides re-registered later in the same run see the same value.
+    # Commands that rewrite skills without calling ``setup()`` (e.g.
+    # ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         opts = super().options()
@@ -105,6 +113,17 @@ class VibeIntegration(SkillsIntegration):
                 default=True,
                 help="Install as agent skills",
             ),
+        )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true)"
+                ),
+            )
         )
         return opts
 
@@ -204,6 +223,14 @@ class VibeIntegration(SkillsIntegration):
         Reads the ``name:`` field of the first frontmatter block and strips
         the ``speckit-`` prefix. Returns ``None`` when no name is present.
         """
+        name = VibeIntegration._skill_name_from_content(content)
+        if name and name.startswith("speckit-"):
+            return name[len("speckit-"):]
+        return name
+
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
         dash_count = 0
         for line in content.splitlines():
             stripped = line.rstrip("\r\n")
@@ -214,10 +241,17 @@ class VibeIntegration(SkillsIntegration):
                 continue
             if dash_count == 1 and stripped.startswith("name:"):
                 name = stripped[len("name:"):].strip().strip('"').strip("'")
-                if name.startswith("speckit-"):
-                    return name[len("speckit-"):]
                 return name or None
         return None
+
+    @classmethod
+    def _is_core_command_skill(cls, content: str) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        name = cls._skill_name_from_content(content)
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Vibe-specific frontmatter flags.
@@ -225,10 +259,17 @@ class VibeIntegration(SkillsIntegration):
         Applied by every skill-generation path (setup, presets, extensions),
         so Vibe-specific frontmatter stays consistent however the SKILL.md
         was produced.
+
+        ``disable-model-invocation`` is ``true`` for core command skills when
+        the last ``setup()`` in this process was given
+        ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        disable = self._disable_model_invocation and self._is_core_command_skill(updated)
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "true" if disable else "false"
+        )
 
         stem = self._skill_stem_from_content(updated)
         if stem:
@@ -255,7 +296,16 @@ class VibeIntegration(SkillsIntegration):
             err=True,
         )
 
-        return super().setup(project_root, manifest, parsed_options=parsed_options, **opts)
+        self._disable_model_invocation = (
+            (parsed_options or {}).get("no_model_invocation") is True
+        )
+        try:
+            return super().setup(
+                project_root, manifest, parsed_options=parsed_options, **opts
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
 
     @staticmethod
     def _hook_target_os() -> str:
