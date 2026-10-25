@@ -22,7 +22,45 @@ See [integration management](cli.md) for activation, upgrades, and removal.
 Skills are installed as `.github/skills/speckit-<command>/SKILL.md`.
 Invoke them in the agent's chat as `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension. These are agent skills,
-not terminal commands.
+not terminal commands. Generated skills are both user- and model-invocable by
+default.
+
+## User-Invocable-Only Skills
+
+To stop Copilot loading the core Spec Kit command skills automatically in the
+skills layout:
+
+```bash
+specify init my-project --integration copilot --integration-options="--no-model-invocation"
+```
+
+This writes `disable-model-invocation: true` into the core command skills.
+VS Code's [agent skills documentation](https://code.visualstudio.com/docs/agent-customization/agent-skills)
+says this requires manual invocation through the `/` slash command only. That
+page does not say whether a skill with this flag keeps its description out of
+the model's context, and GitHub's Copilot CLI skills documentation does not
+list the field, so this option is documented for VS Code only.
+
+- The option has no effect with `--commands`: the `.agent.md` and `.prompt.md`
+  files are not skills and no flag is written.
+- Extension skills stay model-invocable, because mandatory extension hooks rely
+  on the model invoking them. If an extension's mandatory hook runs a core
+  command (its `command:` is a core `speckit.<command>`), leave this option off:
+  the model cannot run that hook while the core skill is user-invocable only.
+- The option is stored with the integration's other options and reapplied by
+  `specify integration upgrade copilot`. Passing `--integration-options` to
+  `upgrade` replaces all stored options;
+  `--integration-options=""` clears them. Re-running `specify init` likewise
+  stores only the options passed to it.
+- Core command skills that a preset overrides, or stops overriding, are reverted
+  to the default by commands that re-register preset skills without reinstalling
+  Copilot: commands that install, remove or update presets (including `specify
+  bundle` commands that carry presets), `specify integration use copilot`, and
+  `specify integration switch copilot` when Copilot is installed but not the
+  default. To reapply the option, run `specify integration upgrade copilot
+  --force` while Copilot is the default integration (`--force` is needed because
+  those commands modify installed skill files, and it overwrites local edits to
+  Spec Kit-managed files).
 
 ## Commands Layout
 
