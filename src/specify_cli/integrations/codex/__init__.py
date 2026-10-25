@@ -10,7 +10,10 @@ from pathlib import Path
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import yaml
+
 from ..base import IntegrationOption, SkillsIntegration
+from ..manifest import IntegrationManifest
 
 
 class CodexIntegration(SkillsIntegration):
@@ -44,6 +47,60 @@ class CodexIntegration(SkillsIntegration):
     events_config_file = ".codex/config.toml"
     events_format = "toml"
 
+    @staticmethod
+    def _openai_yaml_with_policy(path: Path) -> str:
+        """Return ``path``'s YAML with implicit invocation disabled, keeping its other keys."""
+        data: dict[str, Any] = {}
+        if path.is_file():
+            try:
+                loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+            except (yaml.YAMLError, OSError, UnicodeDecodeError):
+                loaded = None
+            if isinstance(loaded, dict):
+                data = loaded
+        policy = data.get("policy")
+        if not isinstance(policy, dict):
+            policy = {}
+        policy["allow_implicit_invocation"] = False
+        data["policy"] = policy
+        return yaml.safe_dump(data, sort_keys=False)
+
+    @staticmethod
+    def _is_core_command_skill_dir(name: str) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        return name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
+
+    def setup(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        parsed_options: dict[str, Any] | None = None,
+        **opts: Any,
+    ) -> list[Path]:
+        created = super().setup(
+            project_root, manifest, parsed_options=parsed_options, **opts
+        )
+        if (parsed_options or {}).get("no_model_invocation") is not True:
+            return created
+        # Codex has no SKILL.md frontmatter flag; the policy lives in a sibling
+        # ``agents/openai.yaml``. It is written for core command skills only,
+        # since mandatory extension hooks rely on the model invoking them.
+        for skill_file in [f for f in created if f.name == "SKILL.md"]:
+            if self._is_core_command_skill_dir(skill_file.parent.name):
+                dest = skill_file.parent / "agents" / "openai.yaml"
+                created.append(
+                    self.write_file_and_record(
+                        self._openai_yaml_with_policy(dest),
+                        dest,
+                        project_root,
+                        manifest,
+                    )
+                )
+        return created
+
     def build_exec_args(
         self,
         prompt: str,
@@ -75,6 +132,17 @@ class CodexIntegration(SkillsIntegration):
                 is_flag=True,
                 default=True,
                 help="Install as agent skills (default for Codex)",
+            )
+        )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(agents/openai.yaml: allow_implicit_invocation: false)"
+                ),
             )
         )
         return opts
