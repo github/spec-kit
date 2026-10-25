@@ -20,7 +20,7 @@ def workflow_step_catalog_add(
     try:
         status = catalog.add_catalog(url, name)
     except StepValidationError as exc:
-        cli.console.print(f"[red]Error:[/red] {exc}")
+        cli.console.print(f"[red]Error:[/red] {cli._escape_markup(str(exc))}")
         raise cli.typer.Exit(1)
 
     safe_url = cli._escape_markup(url.strip())

@@ -123,9 +123,13 @@ def workflow_run(
 
     if not json_output:
         cli.console.print(
-            f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})"
+            f"\n[bold cyan]Running workflow:[/bold cyan] "
+            f"{cli._escape_markup(definition.name)} "
+            f"({cli._escape_markup(definition.id)})"
         )
-        cli.console.print(f"[dim]Version: {definition.version}[/dim]\n")
+        cli.console.print(
+            f"[dim]Version: {cli._escape_markup(definition.version)}[/dim]\n"
+        )
 
     try:
         with cli._stdout_to_stderr_when(json_output):
