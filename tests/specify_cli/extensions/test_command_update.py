@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -349,10 +350,18 @@ class TestExtensionUpdateCLI:
         v2_dir = self._create_extension_source(tmp_path, "2.0.0")
 
         def fake_install_from_zip(
-            self_obj, _zip_path, speckit_version, *, catalog_name=None
+            self_obj,
+            _zip_path,
+            speckit_version,
+            *,
+            register_commands=True,
+            catalog_name=None,
         ):
             return self_obj.install_from_directory(
-                v2_dir, speckit_version, catalog_name=catalog_name
+                v2_dir,
+                speckit_version,
+                register_commands=register_commands,
+                catalog_name=catalog_name,
             )
 
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -666,6 +675,68 @@ class TestExtensionUpdateCLI:
         assert "does not ship a local copy" in flat
         assert "upgrade spec-kit" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
+
+    def test_update_preserves_skills_mode_registration(self, tmp_path, monkeypatch):
+        """Updating an extension must keep Claude skills in skills mode."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        project_dir = tmp_path / "project"
+        (project_dir / ".specify").mkdir(parents=True)
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "sh"}),
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0", register_commands=False)
+
+        skill_name = "speckit-test-ext-hello"
+        skill_file = project_dir / ".claude" / "skills" / skill_name / "SKILL.md"
+        original_skill = skill_file.read_text(encoding="utf-8")
+        old_entry = manager.registry.get("test-ext")
+        assert old_entry["registered_skills"] == [skill_name]
+        assert old_entry.get("registered_commands", {}) == {}
+
+        v2_dir = self._create_extension_source(tmp_path, "2.0.0")
+        zip_path = tmp_path / "test-ext-2.0.0.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            for path in v2_dir.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(v2_dir))
+
+        runner = CliRunner()
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch.object(
+                ExtensionCatalog,
+                "get_extension_info",
+                return_value={
+                    "id": "test-ext",
+                    "name": "Test Extension",
+                    "version": "2.0.0",
+                    "_install_allowed": True,
+                },
+            ),
+            patch.object(
+                ExtensionCatalog, "download_extension", return_value=zip_path
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        updated = ExtensionManager(project_dir).registry.get("test-ext")
+        assert updated["registered_skills"] == [skill_name]
+        assert updated.get("registered_commands", {}) == {}
+        assert skill_file.read_text(encoding="utf-8") == original_skill
 
     def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
         """Failed update should restore original registry, hooks, and command files."""

@@ -3215,6 +3215,7 @@ class ExtensionManager:
         priority: int = 10,
         force: bool = False,
         *,
+        register_commands: bool = True,
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
@@ -3230,6 +3231,8 @@ class ExtensionManager:
             priority: Resolution priority (lower = higher precedence, default 10)
             force: If True and extension is already installed, remove it first
                    before proceeding with installation
+            register_commands: Whether to register command files for the active
+                integration; skills are registered independently when enabled
             archive_file: Already-open archive stream to consume instead of
                           reopening ``zip_path``
 
@@ -3294,6 +3297,7 @@ class ExtensionManager:
             return self.install_from_directory(
                 extension_dir,
                 speckit_version,
+                register_commands=register_commands,
                 priority=priority,
                 force=force,
                 catalog_name=catalog_name,
@@ -3449,6 +3453,7 @@ class ExtensionManager:
         priority: int = 10,
         force: bool = False,
         *,
+        register_commands: bool = True,
         archive_file: BinaryIO | None = None,
         source_name: str | None = None,
         content_type: str | None = None,
@@ -3460,6 +3465,7 @@ class ExtensionManager:
         return self.install_from_archive(
             zip_path,
             speckit_version,
+            register_commands=register_commands,
             priority=priority,
             force=force,
             archive_file=archive_file,
