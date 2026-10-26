@@ -895,6 +895,20 @@ class TestNegative:
             _definition(project_dir, run["run_id"]), "Invalid bound workflow definition"
         )
 
+    def test_missing_bound_workflow_id_returns_json_error(self, project_dir):
+        _install(project_dir, "child", CHILD)
+        run = _run(project_dir, PARENT, "parent")
+
+        def corrupt(execution):
+            binding = execution["sequence"]["nodes"][0]["binding"]
+            binding.pop("workflow", None)
+            binding["definition"] = CHILD.replace("id: child, ", "")
+
+        self._mutate_state(project_dir, run["run_id"], corrupt)
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "Invalid bound workflow definition"
+        )
+
 
 class TestScopeSummaries:
     def test_status_scopes_use_a_single_tree_walk(self, project_dir, monkeypatch):

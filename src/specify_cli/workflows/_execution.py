@@ -230,6 +230,8 @@ def check_node(step, node, *, changed=None, new_children=()):
             if (
                 not isinstance(bound_definition, dict)
                 or not isinstance(bound_definition.get("workflow"), dict)
+                or not isinstance(binding.get("workflow"), str)
+                or not binding["workflow"]
                 or bound_definition["workflow"].get("id") != binding.get("workflow")
                 or not isinstance(binding.get("inputs"), dict)
                 or "workflow_dir" not in binding
