@@ -105,6 +105,8 @@ store actual known installed versions under `installed_versions`, keyed by
 `specify bundle list --json`. Component version ranges, `latest`, and omitted
 extension versions are not supported.
 
+> **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
+
 ## Bundle References
 
 A bundle can compose other bundles with exact, pinned references in
@@ -192,8 +194,6 @@ resolve or embed them.
 - A local bundle with references cannot be previewed with `bundle info`; local
   preview is deferred.
 - Broader schema versioning and CLI compatibility checks/ranges are deferred.
-
-> **Step payloads resolve through the step catalog only.** A bundle's `provides.steps` entries still resolve exclusively through the active step catalogs. Bundle-local `steps/<id>/` payloads and relative `provides.steps[].source` overrides are **not** resolved in this release, so a step declared that way cannot be installed offline. To ship a step with a bundle today, publish it to a step catalog the bundle's users can reach.
 
 ## Catalog Release History
 
