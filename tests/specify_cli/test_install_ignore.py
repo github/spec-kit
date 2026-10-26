@@ -192,3 +192,14 @@ def test_read_failure_is_propagated(tmp_path, ignore_contract, monkeypatch):
     monkeypatch.setattr(Path, "read_text", fail_read)
     with pytest.raises(PermissionError, match="ignore file is unreadable"):
         load_install_ignore(tmp_path, ignore_filename, validation_error)
+
+
+def test_directory_named_like_ignore_file_uses_callers_validation_error(tmp_path, ignore_contract):
+    ignore_filename, validation_error = ignore_contract
+    ignore_dir = tmp_path / ignore_filename
+    ignore_dir.mkdir()
+
+    with pytest.raises(validation_error) as caught:
+        load_install_ignore(tmp_path, ignore_filename, validation_error)
+
+    assert f"{ignore_filename} is not a regular file: {ignore_dir}" in str(caught.value)
