@@ -1224,24 +1224,27 @@ class ExtensionManager:
         aliases are intentionally free-form (see the comment there) and so
         can only be caught here, by comparing declared names' normalized
         on-disk form (see ``_normalize_shadow_name``) against core command
-        names rather than relying on ``_get_installed_command_name_map``,
-        which only knows about installed extensions.
+        names and names from installed extensions.
         """
         declared_names = self._collect_manifest_command_names(manifest)
         installed_names = self._get_installed_command_name_map(
             exclude_extension_id=manifest.id
         )
+        installed_shadow_names: dict[str, str] = {}
+        for name, ext_id in installed_names.items():
+            installed_shadow_names.setdefault(self._normalize_shadow_name(name), ext_id)
         core_shadow_names = {
             self._normalize_shadow_name(f"speckit.{name}") for name in CORE_COMMAND_NAMES
         }
 
         collisions = []
         for name in sorted(declared_names):
-            if name in installed_names:
+            shadow_name = self._normalize_shadow_name(name)
+            if shadow_name in installed_shadow_names:
                 collisions.append(
-                    f"{name} (already provided by extension '{installed_names[name]}')"
+                    f"{name} (already provided by extension '{installed_shadow_names[shadow_name]}')"
                 )
-            elif self._normalize_shadow_name(name) in core_shadow_names:
+            elif shadow_name in core_shadow_names:
                 collisions.append(f"{name} (conflicts with core command)")
 
         if collisions:

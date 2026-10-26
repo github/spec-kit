@@ -3125,6 +3125,45 @@ class TestExtensionManager:
         with pytest.raises(ValidationError, match="already provided by extension 'ext-one'"):
             manager.install_from_directory(second_dir, "0.1.0", register_commands=False)
 
+    def test_install_rejects_alias_with_same_skill_output_name(self, temp_dir, project_dir):
+        """A second extension must not overwrite an installed alias skill (#5081)."""
+        import yaml
+
+        (project_dir / ".specify" / "init-options.json").write_text(
+            json.dumps({"ai": "claude", "ai_skills": True, "script": "py"})
+        )
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+
+        def extension_source(ext_id, alias):
+            source = temp_dir / ext_id
+            (source / "commands").mkdir(parents=True)
+            (source / "commands" / "hello.md").write_text(
+                f"---\ndescription: {ext_id}\n---\n\nHello from {ext_id}\n"
+            )
+            (source / "extension.yml").write_text(yaml.safe_dump({
+                "schema_version": "1.0",
+                "extension": {"id": ext_id, "name": ext_id, "version": "1.0.0", "description": "Test"},
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {"commands": [{
+                    "name": f"speckit.{ext_id}.hello", "file": "commands/hello.md",
+                    "aliases": [alias],
+                }]},
+            }))
+            return source
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_source("alpha", "shared.sync"), "0.1.0")
+        skill = project_dir / ".claude" / "skills" / "speckit-shared-sync" / "SKILL.md"
+        original = skill.read_bytes()
+        assert b"alpha" in original
+
+        with pytest.raises(ValidationError, match="already provided by extension 'alpha'"):
+            manager.install_from_directory(extension_source("beta", "shared-sync"), "0.1.0")
+
+        assert manager.registry.is_installed("alpha")
+        assert not manager.registry.is_installed("beta")
+        assert skill.read_bytes() == original
+
     def test_install_rejects_alias_shadowing_core_command(self, temp_dir, project_dir):
         """An alias equal to a core command's qualified name must not install.
 
