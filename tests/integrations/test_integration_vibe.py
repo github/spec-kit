@@ -582,15 +582,37 @@ class TestVibeTomlNoOpRemoval:
         assert removed_file is False
         assert path.read_bytes() == user.encode()
 
-    def test_removal_keeps_a_comment_that_follows_a_managed_hook(self, tmp_path):
-        """The blank separator goes with the managed block; the comment stays (#5079)."""
-        managed = '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n'
-        user = (
-            "# NOTE: keep guard-bash first\n"
-            "[[hooks]]\n"
-            'name = "user-hook"\n'
-            'command = "guard-bash"\n'
-        )
+    @pytest.mark.parametrize(
+        ("managed", "user"),
+        (
+            (
+                '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n',
+                "# NOTE: keep guard-bash first\n"
+                "[[hooks]]\n"
+                'name = "user-hook"\n'
+                'command = "guard-bash"\n',
+            ),
+            # Blank lines after a kept comment stay with it.
+            (
+                '[[hooks]]\nname = "managed"\nspeckit_marker = true\n\n',
+                '# NOTE: keep guard-bash first\n\n\n[[hooks]]\nname = "user-hook"\n',
+            ),
+            # A comment followed by more keys of the managed block is inside it.
+            (
+                '[[hooks]]\nname = "managed"\n# inside\n\nspeckit_marker = true\n\n',
+                '[[hooks]]\nname = "user-hook"\n',
+            ),
+        ),
+        ids=(
+            "comment-before-user-hook",
+            "blank-lines-after-comment",
+            "comment-between-managed-keys",
+        ),
+    )
+    def test_removal_ends_a_managed_hook_at_its_last_toml_line(
+        self, tmp_path, managed, user
+    ):
+        """The blank separator goes with the managed block; a comment after it stays (#5079)."""
         path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
 
         removed_file = get_integration("vibe").remove_vibe_event_hooks(
