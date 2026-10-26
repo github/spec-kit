@@ -628,13 +628,13 @@ class TestVibeTomlNoOpRemoval:
             "[[hooks]]\n"
             'name = "managed"\n'
             "speckit_marker = true\n"
-            'command = """\n'
-            "# part of the command\n"
-            '"""\n'
             "args = [\n"
             "  # part of the array\n"
             '  "a",\n'
             "]\n"
+            'command = """\n'
+            "# part of the command\n"
+            '"""\n'
         )
         user = '[[hooks]]\nname = "user-hook"\n'
         path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
