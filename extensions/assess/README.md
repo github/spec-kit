@@ -2,7 +2,7 @@
 
 A five-stage assessment pipeline for Spec Kit that turns **any idea** into a defensible **go / needs-clarification / kill** decision *before* it enters Spec-Driven Development. It is the missing **discovery track** that sits in front of the SDD **delivery track** (`specify → clarify → plan → tasks → analyze → implement`).
 
-Discovery answers *"is this worth building?"* Delivery answers *"how do we build it?"* Only ideas that survive assessment hand off to `/speckit.specify`.
+Discovery answers *"is this worth building?"* Delivery answers *"how do we build it?"* Only ideas that survive assessment hand off to `/speckit-specify`.
 
 ## Overview
 
@@ -12,11 +12,11 @@ Each idea lives in its own directory under `.specify/assessments/<slug>/`, with 
 
 ```
 .specify/assessments/<slug>/
-├── intake.md      # speckit.assess.intake   — capture the raw idea
-├── research.md    # speckit.assess.research — gather (and challenge with) evidence
-├── problem.md     # speckit.assess.define   — define the problem, goals, metrics
-├── concept.md     # speckit.assess.shape    — shape solution options + appetite
-└── decision.md    # speckit.assess.decide   — go / needs-clarification / kill → handoff
+├── intake.md      # /speckit-assess-intake   — capture the raw idea
+├── research.md    # /speckit-assess-research — gather (and challenge with) evidence
+├── problem.md     # /speckit-assess-define   — define the problem, goals, metrics
+├── concept.md     # /speckit-assess-shape    — shape solution options + appetite
+└── decision.md    # /speckit-assess-decide   — go / needs-clarification / kill → handoff
 ```
 
 The pipeline is a **funnel**: most ideas should be killed or parked before `shape`. Killing an idea with a documented reason is a successful outcome, not a failure.
@@ -24,7 +24,7 @@ The pipeline is a **funnel**: most ideas should be killed or parked before `shap
 ```mermaid
 flowchart LR
     A[intake] --> R[research] --> D[define] --> S[shape] --> C{decide}
-    C -->|go| SPEC[/speckit.specify/]
+    C -->|go| SPEC[/"/speckit-specify"/]
     C -->|kill| X[closed, recorded]
     C -.->|needs-clarification| F[refine named artifact in place]
     F -.->|then revise decision.md| C
@@ -32,15 +32,13 @@ flowchart LR
 
 ## Commands
 
-| Command ID | Stage | Output |
+| Command | Stage | Output |
 |---------|-------|--------|
-| `speckit.assess.intake` | Capture & normalize a raw idea (text, URL, ticket, or codebase pointer). | `intake.md` |
-| `speckit.assess.research` | Gather users/market/prior-art/data evidence — and evidence *against* the idea. | `research.md` |
-| `speckit.assess.define` | Define the problem: users, goals, non-goals, success metrics, cost of inaction. | `problem.md` |
-| `speckit.assess.shape` | Shape 2–3 concept-level options with appetite and trade-offs; recommend one (or none). | `concept.md` |
-| `speckit.assess.decide` | Score against criteria and render the verdict; hand `go` ideas to `/speckit.specify`. | `decision.md` |
-
-The table lists canonical command IDs. Dotted `/speckit.*` references in this README identify commands; the invocation depends on your integration and installed mode. For example, intake is `/speckit-assess-intake` in GitHub Copilot's default skills mode, `$speckit-assess-intake` in Codex skills mode, and `/skill:speckit-assess-intake` in Kimi. Use the form exposed by your agent; see [Command invocation](https://github.github.io/spec-kit/integrations/cli.html#command-invocation) and [Copilot's commands layout](https://github.github.io/spec-kit/integrations/copilot.html#commands-layout).
+| `/speckit-assess-intake` | Capture & normalize a raw idea (text, URL, ticket, or codebase pointer). | `intake.md` |
+| `/speckit-assess-research` | Gather users/market/prior-art/data evidence — and evidence *against* the idea. | `research.md` |
+| `/speckit-assess-define` | Define the problem: users, goals, non-goals, success metrics, cost of inaction. | `problem.md` |
+| `/speckit-assess-shape` | Shape 2–3 concept-level options with appetite and trade-offs; recommend one (or none). | `concept.md` |
+| `/speckit-assess-decide` | Score against criteria and render the verdict; hand `go` ideas to `/speckit-specify`. | `decision.md` |
 
 Stages are meant to run in order but are not rigidly gated:
 
@@ -67,14 +65,14 @@ Then ask whether the new information clears the blocker and to update any downst
 
 When you add evidence, keep the source and confidence tags the research stage already uses (`ASSUMPTION` vs cited claims). Do not invent citations.
 
-Rerunning an earlier `speckit.assess.*` command is the exception (for example after a wrong slug or a discarded draft), not the default path for answering clarification markers.
+Rerunning an earlier assessment command is the exception (for example after a wrong slug or a discarded draft), not the default path for answering clarification markers.
 
 ## Slug Conventions
 
 A *slug* is the per-idea directory name under `.specify/assessments/`. It is the handle all five commands share.
 
 - **User-provided**: normalized to lowercase kebab-case (e.g. `offline-mode`, `cut-onboarding-friction`). Preserved verbatim after normalization — no timestamps or numbers appended.
-- **Asked for**: in interactive use, `speckit.assess.intake` asks for a slug when none is supplied, suggesting a kebab-case default derived from the idea.
+- **Asked for**: in interactive use, `/speckit-assess-intake` asks for a slug when none is supplied, suggesting a kebab-case default derived from the idea.
 - **Automated**: when no human is available, the agent generates a unique slug and never overwrites an existing assessment directory (appending `-2`, `-3`, … or a short date as needed).
 - **Reuse from context**: later stages reuse the slug reported earlier in the same session, confirmed by the presence of the assessment directory.
 
@@ -93,7 +91,11 @@ specify extension enable assess
 
 ## Typical Flow
 
-This example uses GitHub Copilot's default skills mode. Invoke each skill separately in your agent's chat, reviewing its artifact before continuing. These are not terminal commands.
+Run these skills in your agent's chat, not your terminal, one at a time,
+reviewing each result before continuing.
+
+This example uses GitHub Copilot's default skills syntax. For another agent,
+use its [equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
 
 ```text
 # 1. Capture an idea (pasted text, a URL, or "assess this repo")
@@ -115,11 +117,11 @@ This example uses GitHub Copilot's default skills mode. Invoke each skill separa
 
 ## Handoff
 
-`assess` is a **standalone pipeline you enter deliberately** — it registers no lifecycle hooks and never inserts itself into `/speckit.specify`. The only coupling runs forward and by choice: a `go` verdict from `/speckit.assess.decide` hands its `decision.md` summary to `/speckit.specify`. Discovery and specification stay separate processes.
+`assess` is a **standalone pipeline you enter deliberately** — it registers no lifecycle hooks and never inserts itself into `/speckit-specify`. The only coupling runs forward and by choice: a `go` verdict from `/speckit-assess-decide` hands its `decision.md` summary to `/speckit-specify`. Discovery and specification stay separate processes.
 
 ## Guardrails
 
-- Only `speckit.assess.*` commands write, and only inside `.specify/assessments/<slug>/`. **None of them modify source code** — solution design and implementation belong to the SDD lifecycle (`/speckit.specify` onward).
+- Only the five assessment commands write, and only inside `.specify/assessments/<slug>/`. **None of them modify source code** — solution design and implementation belong to the SDD lifecycle (`/speckit-specify` onward).
 - Web content fetched during `intake`/`research` is treated as untrusted data, governed by an explicit URL Trust Policy (allowlisted public sources fetched freely; unknown hosts prompted or skipped; loopback/RFC1918/metadata endpoints refused).
 - Evidence is never over-claimed: unsourced statements are tagged `ASSUMPTION`, and `research.md` always includes an *Evidence Against the Idea* section.
 - Verdicts are never over-claimed: a `go` requires a valid problem, `adequate`+ evidence (never weak/unknown), and a shaped concept; otherwise the honest verdict is `needs-clarification`.
@@ -128,4 +130,4 @@ This example uses GitHub Copilot's default skills mode. Invoke each skill separa
 
 ## Relationship to Other Extensions
 
-`assess` is deliberately the **generic, role-neutral** discovery track — usable by a founder, PM, BA, engineer, or designer. Richer or more specialized pre-SDD flows in the community catalog (e.g. product-lifecycle orchestrators, technical-discovery, intake-normalization, brownfield onboarding) can layer on top of or feed into it; `assess` aims to be the minimal, opinionated funnel that ends cleanly at the `/speckit.specify` handoff.
+`assess` is deliberately the **generic, role-neutral** discovery track — usable by a founder, PM, BA, engineer, or designer. Richer or more specialized pre-SDD flows in the community catalog (e.g. product-lifecycle orchestrators, technical-discovery, intake-normalization, brownfield onboarding) can layer on top of or feed into it; `assess` aims to be the minimal, opinionated funnel that ends cleanly at the `/speckit-specify` handoff.
