@@ -98,7 +98,10 @@ def discover_updates(
             continue
 
         try:
-            catalog_version = pkg_version.Version(str(ext_info.get("version")))
+            raw_catalog_version = ext_info.get("version")
+            if not isinstance(raw_catalog_version, str):
+                raise pkg_version.InvalidVersion(raw_catalog_version)
+            catalog_version = pkg_version.Version(raw_catalog_version)
         except pkg_version.InvalidVersion:
             console.print(
                 f"⚠  {safe_ext_id}: Invalid catalog version "

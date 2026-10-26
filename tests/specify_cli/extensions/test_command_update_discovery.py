@@ -75,7 +75,9 @@ def test_discovery_returns_typed_candidate():
     assert updates[0].catalog_name == "test"
 
 
-@pytest.mark.parametrize("version_field", [{}, {"version": None}, {"version": []}])
+@pytest.mark.parametrize(
+    "version_field", [{}, {"version": None}, {"version": []}, {"version": 2}]
+)
 def test_discovery_skips_catalog_entry_without_valid_version(capsys, version_field):
     manager = _Manager(
         [{"id": "broken-ext"}, {"id": "test-ext"}],
