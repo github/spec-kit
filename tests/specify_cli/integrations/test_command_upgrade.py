@@ -27,6 +27,36 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUpgradeDetailed:
+    @pytest.mark.parametrize(
+        "bad_handler",
+        [
+            {"command": "speckit.bad.check", "matcher": ["Bash"]},
+            {"command": "speckit.bad.check", "timeout": "30"},
+        ],
+        ids=["matcher-list", "timeout-string"],
+    )
+    def test_upgrade_skips_invalid_unregistered_extension_events(self, tmp_path, caplog, bad_handler):
+        project = _init_project(tmp_path, "claude")
+        for ext_id, handler in (
+            ("bad", bad_handler),
+            ("good", {"command": "speckit.good.check", "matcher": "Bash"}),
+        ):
+            ext_dir = project / ".specify" / "extensions" / ext_id
+            ext_dir.mkdir(parents=True)
+            (ext_dir / "extension.yml").write_text(
+                json.dumps({"events": {"pre_tool_use": handler}}), encoding="utf-8"
+            )
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--force"])
+
+        assert result.exit_code == 0, result.output
+        config = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        hooks = config["hooks"]["PreToolUse"]
+        commands = [item["command"] for group in hooks for item in group["hooks"]]
+        assert any("speckit.good.check" in command for command in commands)
+        assert all("speckit.bad.check" not in command for command in commands)
+        assert "bad" in caplog.text and "pre_tool_use" in caplog.text
+
     @pytest.mark.parametrize("integration", ["claude", "copilot", "gemini"])
     @pytest.mark.parametrize("force", [False, True])
     def test_disabling_events_honors_modified_dispatcher_force(self, tmp_path, integration, force):
