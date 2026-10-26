@@ -1135,3 +1135,205 @@ def test_unproven_dispatcher_cleanup_is_rejected_before_changes(tmp_path, kind):
     with pytest.raises(DestroyError, match="dispatcher ownership"):
         destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
     assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_preserve_constitution_uses_actual_case_insensitive_entry(tmp_path, force):
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    constitution = write(tmp_path, ".specify/Memory/Constitution.md", b"retain actual spelling")
+    if not (tmp_path / CONSTITUTION).exists():
+        pytest.skip("requires a case-insensitive filesystem")
+    record.record_existing(".specify/Memory/Constitution.md")
+    record.save()
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=force, preserve_constitution=True))
+    assert constitution.read_bytes() == b"retain actual spelling"
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_force_destroy_removes_modified_generic_extension_output(tmp_path, monkeypatch, skills):
+    monkeypatch.chdir(tmp_path)
+    options = "--commands-dir .custom/output" + (" --skills" if skills else "")
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", "generic", f"--integration-options={options}", "--extension", "git",
+    ])
+    assert result.exit_code == 0, result.output
+    registry = json.loads((tmp_path / ".specify/extensions/.registry").read_text())
+    relative = next(iter(registry["extensions"]["git"]["generic_artifact_hashes"]))
+    output = write(tmp_path, relative, b"customized extension output")
+    preview = destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert relative in preview.requires_force
+    before = snapshot(tmp_path)
+    with pytest.raises(DestroyError):
+        destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert snapshot(tmp_path) == before
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert not output.exists()
+    assert not (tmp_path / ".specify").exists()
+
+
+def test_native_config_validation_precedes_all_integration_teardown(tmp_path):
+    from specify_cli.integrations import get_integration
+
+    for key in ("claude", "gemini"):
+        record = manifest(tmp_path, key, f".{key}/skills/speckit-plan/SKILL.md")
+        get_integration(key).emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+        record.save()
+    write(tmp_path, ".claude/settings.json", b"{malformed")
+    before = snapshot(tmp_path)
+    with pytest.raises(DestroyError, match="native event cleanup"):
+        destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    with pytest.raises(DestroyError, match="native event cleanup"):
+        destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert snapshot(tmp_path) == before
+
+
+def test_dispatcher_preflight_uses_last_claimants_hash(tmp_path):
+    from specify_cli.integrations import get_integration
+
+    for key in ("claude", "gemini"):
+        record = manifest(tmp_path, key, f".{key}/skills/speckit-plan/SKILL.md")
+        get_integration(key).emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+        record.save()
+    write(tmp_path, ".specify/events.py", b"# old dispatcher")
+    earlier = IntegrationManifest.load("gemini", tmp_path)
+    earlier.record_existing(".specify/events.py")
+    earlier.save()
+    before = snapshot(tmp_path)
+    preview = destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert ".specify/events.py" in preview.requires_force
+    with pytest.raises(DestroyError):
+        destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("integration", ["copilot", "claude", "gemini"])
+def test_init_preset_output_needs_no_force_but_user_edits_still_do(tmp_path, monkeypatch, integration):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", integration, "--preset", "lean",
+    ])
+    assert result.exit_code == 0, result.output
+    assert not destroy_project(DestroyRequest(tmp_path, dry_run=True)).requires_force
+    record = IntegrationManifest.load(integration, tmp_path)
+    relative = next(name for name in record.files if "speckit" in name and not name.startswith(".specify"))
+    original = (tmp_path / relative).read_bytes()
+    write(tmp_path, relative, b"user edit")
+    assert relative in destroy_project(DestroyRequest(tmp_path, dry_run=True)).requires_force
+    write(tmp_path, relative, original)
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()
+
+
+def test_specs_directory_failure_preserves_project_marker_for_retry(tmp_path, monkeypatch):
+    from specify_cli.file_helper import FileHelper
+
+    config = write(tmp_path, ".specify/config")
+    (tmp_path / "specs/empty").mkdir(parents=True)
+    delete = FileHelper.delete
+
+    def fail(self, path, **kwargs):
+        if path == "specs":
+            raise PermissionError("specs directory is locked")
+        return delete(self, path, **kwargs)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(FileHelper, "delete", fail)
+        with pytest.raises(DestroyError, match="specs directory is locked"):
+            destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert config.exists()
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / "specs").exists()
+    assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_stacked_preset_skill_ownership_is_resolved_collectively(tmp_path, override):
+    import yaml
+
+    entries = {}
+    for identifier in ("lower", "winner"):
+        entries[identifier] = {"registered_skills": {"copilot": ["speckit-sample"]}}
+        write(tmp_path, f".specify/presets/{identifier}/preset.yml", yaml.safe_dump({
+            "schema_version": "1.0",
+            "preset": {"id": identifier, "name": identifier, "version": "1.0.0", "description": "test"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [
+                {"type": "command", "name": "speckit.sample", "file": "commands/sample.md"},
+            ]},
+        }).encode())
+        write(tmp_path, f".specify/presets/{identifier}/commands/sample.md", b"preset command")
+    write(tmp_path, ".specify/presets/.registry", json.dumps({"presets": entries}).encode())
+    source = "override:speckit.sample" if override else "preset:winner"
+    skill = write(tmp_path, ".github/skills/speckit-sample/SKILL.md",
+                  f"---\nmetadata:\n  source: {source}\n---\nManaged skill\n".encode())
+    preview = destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert ".github/skills/speckit-sample/SKILL.md" in preview.removed
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert not skill.exists()
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_case_insensitive_preserved_constitution_link_is_not_followed(tmp_path, force):
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    entry = write(tmp_path, ".specify/Memory/Constitution.md", b"original")
+    if not (tmp_path / CONSTITUTION).exists():
+        pytest.skip("requires a case-insensitive filesystem")
+    record.record_existing(".specify/Memory/Constitution.md")
+    record.save()
+    entry.unlink()
+    target = write(tmp_path, "user-principles.md", b"user data")
+    symlink(entry, target)
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=force, preserve_all=True))
+    assert entry.is_symlink()
+    assert target.read_bytes() == b"user data"
+
+
+@pytest.mark.parametrize("skills", [False, True])
+def test_failed_forced_generic_cleanup_retains_registration_and_can_retry(tmp_path, monkeypatch, skills):
+    monkeypatch.chdir(tmp_path)
+    options = "--commands-dir .custom/output" + (" --skills" if skills else "")
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", "generic", f"--integration-options={options}", "--extension", "git",
+    ])
+    assert result.exit_code == 0, result.output
+    registry = json.loads((tmp_path / ".specify/extensions/.registry").read_text())
+    relative = next(iter(registry["extensions"]["git"]["generic_artifact_hashes"]))
+    output = write(tmp_path, relative, b"modified command")
+    unlink = Path.unlink
+
+    def fail(path, **kwargs):
+        if path == output:
+            raise PermissionError("generic output locked")
+        return unlink(path, **kwargs)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(Path, "unlink", fail)
+        with pytest.raises(DestroyError, match="generic output locked"):
+            destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert (tmp_path / ".specify/integration.json").exists()
+    assert (tmp_path / ".specify/integrations/generic.manifest.json").exists()
+    assert json.loads((tmp_path / ".specify/init-options.json").read_text())["ai"] == "generic"
+    assert output.read_bytes() == b"modified command"
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert not output.exists()
+    assert not (tmp_path / ".specify").exists()
+
+
+def test_dispatcher_earlier_stale_hash_does_not_override_last_owner(tmp_path):
+    from specify_cli.integrations import get_integration
+
+    for key in ("claude", "gemini"):
+        record = manifest(tmp_path, key, f".{key}/skills/speckit-plan/SKILL.md")
+        get_integration(key).emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+        record.save()
+    write(tmp_path, ".specify/events.py", b"# managed historical dispatcher")
+    last = IntegrationManifest.load("claude", tmp_path)
+    last.record_existing(".specify/events.py")
+    last.save()
+    assert not destroy_project(DestroyRequest(tmp_path, dry_run=True)).requires_force
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()

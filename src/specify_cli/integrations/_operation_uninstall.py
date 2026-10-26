@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..file_helper import FileHelper
+from .._utils import same_path_entry
 from ..integration_state import (
     default_integration_key,
     installed_integration_keys,
@@ -63,14 +64,36 @@ def validate_uninstall_ownership(root: Path, key: str) -> dict | None:
     return binding
 
 
-def unregister_integration_artifacts(root: Path, key: str, *, require_complete: bool) -> tuple[str, ...]:
+def unregister_integration_artifacts(
+    root: Path, key: str, *, require_complete: bool, force: bool = False,
+) -> tuple[str, ...]:
     from ..extensions import ExtensionManager
     from ..presets import PresetManager
 
     warnings: list[str] = []
     for label, manager in (("extension", ExtensionManager), ("preset", PresetManager)):
         try:
-            manager(root).unregister_agent_artifacts(key)
+            instance = manager(root)
+            generic_paths = set()
+            if require_complete and key == "generic" and label == "extension":
+                for record in instance.registry.list().values():
+                    generic_paths.update(record.get("generic_artifact_hashes", {}))
+            if label == "extension" and force:
+                instance.unregister_agent_artifacts(key, force=True)
+            else:
+                instance.unregister_agent_artifacts(key)
+            if generic_paths:
+                from .._file_policy import project_files
+
+                files = project_files(root)
+                for relative in generic_paths:
+                    try:
+                        files.read_bytes(relative)
+                    except FileNotFoundError:
+                        continue
+                    raise IntegrationUninstallError(
+                        "cleanup_incomplete", f"Generic artifact was preserved: {relative}",
+                    )
         except Exception as exc:
             message = f"Could not clean up {label} artifacts for integration '{key}': {exc}"
             if require_complete:
@@ -144,7 +167,10 @@ def _uninstall(
                 recovery_manifest = IntegrationManifest.load(key, root)
             for preserved in request.preserved_paths:
                 for name in manifest.files:
-                    if Path(name).is_relative_to(preserved):
+                    if any(
+                        same_path_entry(root / ancestor, root / preserved)
+                        for ancestor in (Path(name), *Path(name).parents)
+                    ):
                         manifest.remove(name)
         except (ValueError, OSError) as exc:
             raise IntegrationUninstallError(
@@ -176,7 +202,7 @@ def _uninstall(
         except (OSError, ValueError) as exc:
             raise IntegrationUninstallError("cleanup_incomplete", str(exc)) from exc
     warnings.extend(unregister_integration_artifacts(
-        root, key, require_complete=request.require_complete,
+        root, key, require_complete=request.require_complete, force=request.force,
     ))
     if request.require_complete and skipped:
         raise IntegrationUninstallError(
@@ -292,7 +318,7 @@ def _uninstall_with_lifecycle(request: IntegrationUninstallRequest) -> Integrati
             for removed_key in records.keys() - set(remaining):
                 if removed_key != key:
                     warnings.extend(unregister_integration_artifacts(
-                        root, removed_key, require_complete=request.require_complete,
+                        root, removed_key, require_complete=request.require_complete, force=request.force,
                     ))
                 installer.remove_package(root, removed_key)
         return replace(result, warnings=tuple(warnings))

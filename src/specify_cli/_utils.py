@@ -19,6 +19,18 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
+def same_path_entry(left: Path, right: Path) -> bool:
+    """Compare alternate case spellings without following leaf symlinks."""
+    if left == right:
+        return True
+    if str(left).casefold() != str(right).casefold():
+        return False
+    try:
+        return os.path.samestat(left.lstat(), right.lstat())
+    except FileNotFoundError:
+        return False
+
+
 def docker_agent_command(executable: str | None = None) -> list[str] | None:
     """Return a runnable Docker Agent command, or ``None`` if unavailable.
 

@@ -13,6 +13,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from ._file_policy import project_files, read_project_options
+from ._utils import same_path_entry
 from .file_helper import FileHelper, FileHelperError
 from .integration_state import (
     default_integration_key,
@@ -140,7 +141,7 @@ def _tree(
     ):
         raise FileHelperError(f"Unsupported reparse point: {relative}")
     if stat.S_ISLNK(mode):
-        if preserve_constitution and relative == ".specify/memory":
+        if preserve_constitution and same_path_entry(path, files.root / ".specify/memory"):
             raise FileHelperError("Cannot preserve constitution through symlinked .specify/memory")
         if not files.allow_symlinks:
             raise FileHelperError(f"Refusing symlink during destroy: {relative}")
@@ -153,7 +154,7 @@ def _tree(
             children = sorted(entry.name for entry in entries)
         for name in children:
             child = f"{relative}/{name}"
-            if preserve_constitution and child == CONSTITUTION:
+            if preserve_constitution and same_path_entry(files.root / child, files.root / CONSTITUTION):
                 if not (path / name).is_file() and not (path / name).is_symlink():
                     raise ValueError(f"{CONSTITUTION} must be a file")
                 continue
@@ -180,7 +181,7 @@ def _project_artifacts(
         if (files.root / name).exists() or (files.root / name).is_symlink()
     )
     if CONSTITUTION in preserved:
-        directories.difference_update({".specify", ".specify/memory"})
+        directories = _without_constitution_parents(files.root, directories)
     if "specs" not in selected:
         specs = files.root / "specs"
         if specs.exists() and not specs.is_dir() and not specs.is_symlink():
@@ -189,6 +190,13 @@ def _project_artifacts(
         leaves.update(spec_files)
         directories.update(spec_directories)
     return leaves, directories, preserved
+
+
+def _without_constitution_parents(root: Path, directories: set[str]) -> set[str]:
+    return {
+        name for name in directories
+        if not any(same_path_entry(root / name, root / ancestor) for ancestor in (".specify", ".specify/memory"))
+    }
 
 
 def _contribution_paths(
@@ -203,6 +211,7 @@ def _contribution_paths(
     hashes: dict[str, set[str]] = {}
     agents: set[str] = set()
     global_paths: set[Path] = set()
+    preset_claims: dict[Path, tuple[set[str], set[str]]] = {}
     active_generic = read_project_options(root).get("ai") == "generic"
     for kind in ("extensions", "presets"):
         relative = f".specify/{kind}/.registry"
@@ -221,6 +230,11 @@ def _contribution_paths(
         for identifier, record in records.items():
             if not isinstance(record, dict):
                 raise TypeError(f"Invalid {kind} record: {identifier}")
+            override_sources: dict[str, str] = {}
+            if kind == "presets":
+                from .presets import PresetManager
+
+                override_sources = PresetManager(root).skill_ownership_sources(identifier)
             generic_hashes = record.get("generic_artifact_hashes", {})
             if not isinstance(generic_hashes, dict):
                 raise TypeError(f"Invalid generic_artifact_hashes for {identifier}")
@@ -285,6 +299,14 @@ def _contribution_paths(
                         agent, root, commands=[], skills=[skill], registrar_config=config,
                     )
                     for candidate in candidates:
+                        if kind == "presets":
+                            sources, owners = preset_claims.setdefault(candidate, (set(), set()))
+                            sources.add(f"preset:{identifier}")
+                            override = override_sources.get(skill)
+                            if override:
+                                sources.add(override)
+                            owners.add(agent)
+                            continue
                         relative = _relative(root, candidate / "SKILL.md")
                         try:
                             text = files.read_text(relative)
@@ -301,6 +323,21 @@ def _contribution_paths(
                             agents.add(agent)
                         elif not isinstance(skills, list):
                             raise ValueError(f"Cannot establish skill ownership at {candidate}")
+    for candidate, (sources, owners) in preset_claims.items():
+        relative = _relative(root, candidate / "SKILL.md")
+        try:
+            content = files.read_text(relative)
+        except FileNotFoundError:
+            if candidate.exists():
+                raise ValueError(f"Cannot establish skill ownership at {candidate}")
+            continue
+        frontmatter, _ = registrar.parse_frontmatter(content)
+        metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
+        source = metadata.get("source") if isinstance(metadata, dict) else None
+        if source not in sources:
+            raise ValueError(f"Cannot establish skill ownership at {candidate}")
+        paths.add(candidate)
+        agents.update(owners)
     return paths, hashes, agents, global_paths
 
 
@@ -343,6 +380,9 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
             ):
                 raise ValueError("Invalid installed_integrations")
         installed = installed_integration_keys(normalize_integration_state(state)) if state else []
+        normalized = normalize_integration_state(state or {})
+        default = default_integration_key(normalized)
+        order = tuple(key for key in installed if key != default) + ((default,) if default in installed else ())
         if state is None:
             legacy_agent = read_project_options(root).get("ai")
             if isinstance(legacy_agent, str) and legacy_agent:
@@ -363,7 +403,7 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
                 raise ValueError(f"Missing manifest for '{key}'; repair or uninstall that integration first")
 
         expected: dict[str, set[str]] = {}
-        dispatcher_owners: list[tuple[str, bool, str]] = []
+        dispatcher_owners: dict[str, tuple[str, bool, str]] = {}
         updated: set[str] = set()
         for manifest_path in manifests:
             key = Path(manifest_path).name.removesuffix(".manifest.json")
@@ -373,6 +413,14 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
             manifest = IntegrationManifest.load(key, root)
             if key != "speckit" and key not in installed:
                 raise ValueError(f"Integration '{key}' has a manifest but no installed integration state")
+            from .integrations import BUILTIN_INTEGRATION_KEYS, get_integration
+
+            integration = get_integration(key) if key in BUILTIN_INTEGRATION_KEYS else None
+            native_config = getattr(integration, "events_config_file", None) if integration else None
+            if native_config in manifest.files:
+                from .events import validate_integration_event_cleanup
+
+                validate_integration_event_cleanup(integration, root)
             for name, digest in manifest.files.items():
                 if Path(name).as_posix() != name:
                     raise ValueError(f"Noncanonical manifest path: {name}")
@@ -388,17 +436,11 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
                 if bindings.get(key) is not None:
                     mode = bindings[key].get("ownership_modes", {}).get(name, "shared")
                 if relative == ".specify/events.py":
-                    dispatcher_owners.append((mode, manifest.is_recovered(name), digest))
+                    dispatcher_owners[key] = (mode, manifest.is_recovered(name), digest)
                 if relative.startswith(".specify/"):
                     continue
                 if mode != "whole":
                     if (root / name).exists() or (root / name).is_symlink():
-                        from .integrations import (
-                            BUILTIN_INTEGRATION_KEYS,
-                            get_integration,
-                        )
-
-                        integration = get_integration(key) if key in BUILTIN_INTEGRATION_KEYS else None
                         if integration is not None and getattr(integration, "events_config_file", None) != name:
                             raise ValueError(
                                 f"Partial/shared ownership at {name}; no native event cleanup owns this file",
@@ -435,14 +477,13 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
         if dispatcher.exists() or dispatcher.is_symlink():
             from .events import dispatcher_content_matches
 
-            if not dispatcher_owners or any(
-                mode == "partial" or recovered for mode, recovered, _ in dispatcher_owners
-            ):
+            claimants = [key for key in order if key in dispatcher_owners]
+            if not claimants:
                 raise ValueError("Cannot prove managed dispatcher ownership of .specify/events.py; resolve it before destroy")
-            if not any(
-                dispatcher_content_matches(files.read_bytes(".specify/events.py"), digest)
-                for _, _, digest in dispatcher_owners
-            ):
+            mode, recovered, digest = dispatcher_owners[claimants[-1]]
+            if mode == "partial" or recovered:
+                raise ValueError("Cannot prove managed dispatcher ownership of .specify/events.py; resolve it before destroy")
+            if not dispatcher_content_matches(files.read_bytes(".specify/events.py"), digest):
                 requiring_force.add(".specify/events.py")
         for candidate in sorted(contributed | {root / name for name in expected}):
             relative = _relative(root, candidate)
@@ -465,12 +506,9 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
         for name in tuple(leaves) + tuple(directories):
             parent = Path(name).parent
             while parent != Path("."):
-                if parent.as_posix() not in {".specify", ".specify/memory"} or CONSTITUTION not in preserved:
+                if CONSTITUTION not in preserved or _without_constitution_parents(root, {parent.as_posix()}):
                     directories.add(parent.as_posix())
                 parent = parent.parent
-        normalized = normalize_integration_state(state or {})
-        default = default_integration_key(normalized)
-        order = tuple(key for key in installed if key != default) + ((default,) if default in installed else ())
         return DestroyPlan(
             root, tuple(sorted(leaves)),
             tuple(sorted(directories, key=lambda name: (-len(Path(name).parts), name))),
@@ -526,7 +564,7 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
             uninstalled.append(key)
         for key in set(plan.contribution_agents) - set(plan.integrations):
             warnings.extend(unregister_integration_artifacts(
-                plan.project_directory, key, require_complete=True,
+                plan.project_directory, key, require_complete=True, force=request.force,
             ))
         remaining = [
             name for name in plan.files
@@ -545,13 +583,23 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
             raise DestroyError("cleanup_incomplete", "The event lifecycle preserved .specify/events.py; resolve it before destroy.")
         # Re-inventory only after teardown has released all integration claims.
         leaves, directories, _ = _project_artifacts(files, request)
+        spec_leaves = {name for name in leaves if name == "specs" or name.startswith("specs/")}
+        spec_directories = {name for name in directories if name == "specs" or name.startswith("specs/")}
+        for name in sorted(spec_leaves):
+            files.delete(name)
+            removed.append(name)
+        for name in sorted(spec_directories, key=lambda name: (-len(Path(name).parts), name)):
+            files.delete(name)
+        leaves.difference_update(spec_leaves)
+        directories.difference_update(spec_directories)
+        planned_directories = set(plan.directories) - spec_directories
         registries = {name for name in leaves if Path(name).name == ".registry"}
         for name in sorted(leaves - registries, key=lambda name: (name.startswith(".specify/"), name)):
             files.delete(name)
             removed.append(name)
-        directories.update(plan.directories)
+        directories.update(planned_directories)
         if CONSTITUTION in plan.preserved:
-            directories.difference_update({".specify", ".specify/memory"})
+            directories = _without_constitution_parents(plan.project_directory, directories)
         metadata_parents = {
             parent.as_posix() for name in registries for parent in Path(name).parents
         }

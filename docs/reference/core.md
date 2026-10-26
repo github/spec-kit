@@ -119,6 +119,8 @@ specify destroy --yes --preserve-all
 Preserved artifacts keep their original bytes, including when an integration manifest
 tracks them. Both individual flags can be combined; combining either with
 `--preserve-all` is harmless. `--force` never overrides preservation.
+Preservation recognizes alternate case spellings on case-insensitive filesystems,
+including the constitution's parent directories, without following a preserved link.
 
 | Option | Description |
 | --- | --- |
@@ -146,6 +148,10 @@ integration lifecycle's registry, provenance-marker, and hash checks. A flat
 skill name alone does not establish ownership of same-named skills in other
 agents' directories. `--force` does **not** imply confirmation, establish
 ownership, override filesystem policy, or authorize deleting shared settings.
+For generic integration outputs, force permits removal of modified extension files
+only after the recorded command names, output paths, and ownership hashes have
+passed validation. Incomplete contribution cleanup retains the integration state
+needed to retry.
 For example:
 
 ```bash
@@ -159,9 +165,11 @@ removes Spec Kit's merged native event entries while preserving user entries and
 settings. The last installed integration referencing an owned `.specify/events.py`
 dispatcher releases and removes it under the existing ownership and force rules.
 Preview checks the dispatcher against its ownership records and the lifecycle's
-accepted generated content. A modified managed dispatcher requires force before
+accepted generated content, using the last claimant in uninstall order. A modified managed dispatcher requires force before
 any integration is uninstalled; missing, partial, or recovered ownership does not
 become deletion authority through force.
+Claimed built-in native settings are also parsed during planning, so malformed
+settings stop destruction before another integration is removed.
 If teardown preserves the dispatcher or leaves cleanup unresolved, destroy stops
 and retains recovery metadata instead of purging the remaining `.specify` tree.
 
@@ -200,6 +208,10 @@ If teardown raises after deleting its manifest, destroy restores the original
 ownership manifest so the recorded integration can be retried after the error
 is resolved. This preserves recovery evidence; it does not undo files that
 were already removed outside a lifecycle transaction.
+Specification files and directories are removed before remaining infrastructure:
+a locked `specs/` directory leaves the project marker available for retry.
+Human-readable failures list remaining paths and completed file/integration
+removals alongside the error; JSON errors expose the same recovery details.
 
 Legacy setups with only an `init-options.json` integration selection and no
 `integration.json` inventory are rejected during preview. Re-run `specify init`

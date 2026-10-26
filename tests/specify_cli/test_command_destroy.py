@@ -245,3 +245,21 @@ def test_directory_only_cleanup_prompts(tmp_path, monkeypatch, answer):
     assert result.exit_code == 0, result.output
     assert len(prompts) == 1
     assert empty.exists() is not answer
+
+
+def test_human_errors_show_recovery_paths_and_completed_integrations(tmp_path, monkeypatch):
+    from specify_cli._operation_destroy import DestroyError
+
+    def fail(*args, **kwargs):
+        raise DestroyError(
+            "cleanup_incomplete", "Cleanup needs attention",
+            paths=[".custom/commands/retained.md"], removed=[".specify/cache"],
+            uninstalled_integrations=["gemini"],
+        )
+
+    monkeypatch.setattr("specify_cli.command_destroy.destroy_project", fail)
+    result = runner.invoke(app, ["destroy", "--project", str(tmp_path), "--yes"])
+    assert result.exit_code == 1
+    assert ".custom/commands/retained.md" in result.output
+    assert ".specify/cache" in result.output
+    assert "gemini" in result.output

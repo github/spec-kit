@@ -160,6 +160,16 @@ def destroy(
             _emit_json_error(exc.code, exc.message, exc.details)
         else:
             console.print(f"[red]Error:[/red] {escape(exc.message)}")
+            for field, label in (
+                ("paths", "Paths requiring attention"),
+                ("removed", "Files already removed"),
+                ("uninstalled_integrations", "Integrations already uninstalled"),
+            ):
+                values = exc.details.get(field)
+                if isinstance(values, (list, tuple)) and values:
+                    console.print(f"{label}:")
+                    for value in values:
+                        console.print(f"  {escape(str(value))}")
         raise typer.Exit(1) from exc
     except Exception as exc:
         logger.debug("Unexpected destroy failure", exc_info=True)

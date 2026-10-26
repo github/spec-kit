@@ -1220,17 +1220,8 @@ class _PresetSkillMethods:
             else {}
         )
 
-    def _delete_agent_preset_skills(
-        self, agent_name: str, skill_names: List[str], pack_id: str
-    ) -> None:
-        """Delete still-preset-owned skills when an agent is deactivated."""
-        skills_dir = self._safe_skills_dir_for_agent(agent_name)
-        if skills_dir is None:
-            return
-
-
-        registrar = self._command_registrar()
-        marker = f"preset:{pack_id}"
+    def skill_ownership_sources(self, pack_id: str) -> Dict[str, str]:
+        """Map skill names to validated reconciled override provenance."""
         override_sources: Dict[str, str] = {}
         manifest = PresetResolver(self.project_root)._get_manifest(
             self.presets_dir / pack_id
@@ -1248,6 +1239,18 @@ class _PresetSkillMethods:
                         override_sources[skill_name] = (
                             f"override:{command_name}"
                         )
+        return override_sources
+
+    def _delete_agent_preset_skills(
+        self, agent_name: str, skill_names: List[str], pack_id: str
+    ) -> None:
+        """Delete still-preset-owned skills when an agent is deactivated."""
+        skills_dir = self._safe_skills_dir_for_agent(agent_name)
+        if skills_dir is None:
+            return
+        registrar = self._command_registrar()
+        marker = f"preset:{pack_id}"
+        override_sources = self.skill_ownership_sources(pack_id)
         for skill_name in skill_names:
             if not self._is_safe_registry_skill_name(skill_name):
                 continue

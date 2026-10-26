@@ -2099,7 +2099,7 @@ class ExtensionManager:
         return list(dict.fromkeys(registered + retained))
 
     def _remove_generic_artifact_paths(
-        self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True
+        self, extension_id: str, metadata: Dict[str, Any], *, skills: bool = True, force: bool = False,
     ) -> None:
         """Clean recorded generic paths even after the configured directory moves."""
         from ..shared_infra import _validate_safe_shared_directory
@@ -2129,6 +2129,8 @@ class ExtensionManager:
         for relative, expected in hashes.items():
             if not isinstance(relative, str) or not isinstance(expected, str):
                 continue
+            if force and not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+                continue
             name = Path(relative)
             if name.is_absolute() or ".." in name.parts:
                 continue
@@ -2151,7 +2153,7 @@ class ExtensionManager:
             if path.is_symlink() and not path.resolve().is_relative_to(source):
                 continue
             content = path.read_bytes()
-            if hashlib.sha256(content).hexdigest() != expected:
+            if not force and hashlib.sha256(content).hexdigest() != expected:
                 if path.is_symlink():
                     unlink(path)
                     write_bytes(path, content)
@@ -3666,6 +3668,7 @@ class ExtensionManager:
         *,
         enabled_only: bool = False,
         commands_only: bool = False,
+        force: bool = False,
     ) -> None:
         """Remove extension files registered for a specific agent.
 
@@ -3681,6 +3684,9 @@ class ExtensionManager:
         Set ``commands_only=True`` for command-directory reconciliation where
         skill artifacts are outside the target agent's lifecycle and must not
         be touched.
+
+        ``force=True`` also removes modified generic output files whose recorded
+        names, paths, and ownership hashes pass the existing cleanup checks.
 
         Skips cleanup when *agent_name* is not a supported agent to avoid
         losing registry entries while leaving orphaned files on disk.
@@ -3705,7 +3711,7 @@ class ExtensionManager:
 
             if agent_name == "generic":
                 self._remove_generic_artifact_paths(
-                    ext_id, metadata, skills=not commands_only
+                    ext_id, metadata, skills=not commands_only, force=force,
                 )
             updates: Dict[str, Any] = {}
 
