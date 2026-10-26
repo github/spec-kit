@@ -497,6 +497,20 @@ class TestVibeTomlMerging:
         remove_integration_events(integration, tmp_path, manifest)
         assert not (tmp_path / ".vibe" / "hooks.toml").exists()
 
+    def test_teardown_deletes_file_when_only_comments_remain(self, tmp_path):
+        """A trailing comment survives refresh, but a file left with only
+        comments is deleted, as for Codex's config.toml (#5079)."""
+        path = tmp_path / ".vibe" / "hooks.toml"
+        events = {"pre_tool_use": [{"command": "speckit.tdd.validate"}]}
+        integration, manifest = self._install(tmp_path, events)
+        path.write_bytes(path.read_bytes() + b"\n# notes about these hooks\n")
+
+        integration, manifest = self._install(tmp_path, events)
+        assert "# notes about these hooks" in path.read_text(encoding="utf-8")
+
+        remove_integration_events(integration, tmp_path, manifest)
+        assert not path.exists()
+
 
 class TestVibeTomlNoOpRemoval:
     """Unowned Vibe hooks.toml files survive no-op cleanup byte-for-byte."""
