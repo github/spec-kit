@@ -46,6 +46,13 @@ def _fail(message: str, *, as_json: bool = False) -> None:
     raise typer.Exit(code=1)
 
 
+def _fail_with_notes(exc: BaseException) -> None:
+    """Exit with the original error first, then any recovery notes."""
+    notes = [str(note) for note in getattr(exc, "__notes__", ())]
+    message = str(exc) if not notes else f"{exc}\n" + "\n".join(notes)
+    _fail(message)
+
+
 def _render_install_warnings(result: InstallResult) -> None:
     for warning in result.warnings:
         err_console.print(f"[yellow]Warning:[/yellow] {_escape_markup(warning.message)}")

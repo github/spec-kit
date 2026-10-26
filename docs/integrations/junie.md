@@ -29,6 +29,6 @@ hyphenated names.
 
 ## Workflow Dispatch
 
-Workflow steps use `junie -p <prompt>`, with `--model` when configured and
+Workflow steps use `junie --task <prompt>`, with `--model` when configured and
 `--output-format json` when structured output is requested.
 There are no integration-specific setup options.

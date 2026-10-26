@@ -24,8 +24,39 @@ Skills are installed as `.vibe/skills/speckit-<command>/SKILL.md`.
 Invoke them in the agent's chat, for example `/speckit-specify` or
 `/speckit-bug-assess` for the installed bug extension.
 
-Generated skills are both user- and model-invocable. The optional
+Generated skills are both user- and model-invocable by default. The optional
 `--integration-options="--skills"` flag restates the default.
+
+## User-Invocable-Only Skills
+
+To stop Mistral Vibe invoking the core Spec Kit command skills automatically:
+
+```bash
+specify init my-project --integration vibe --integration-options="--no-model-invocation"
+```
+
+This writes `disable-model-invocation: true` into the core command skills.
+Per Mistral Vibe's [README](https://github.com/mistralai/mistral-vibe#skills-system),
+such a skill is explicit-only: you can still invoke `/speckit-<command>`, but
+the model does not see or invoke it automatically.
+
+- Extension skills stay model-invocable, because mandatory extension hooks rely
+  on the model invoking them. If an extension's mandatory hook runs a core
+  command (its `command:` is a core `speckit.<command>`), leave this option off:
+  the model cannot run that hook while the core skill is user-invocable only.
+- The option is stored with the integration's other options and reapplied by
+  `specify integration upgrade vibe`. Passing `--integration-options` to
+  `upgrade` replaces all stored options; `--integration-options=""` clears
+  them. Re-running `specify init` likewise stores only the options passed to it.
+- Core command skills that a preset overrides, or stops overriding, are reverted
+  to the default by commands that re-register preset skills without reinstalling
+  Mistral Vibe: commands that install, remove or update presets (including
+  `specify bundle` commands that carry presets), `specify integration use vibe`,
+  and `specify integration switch vibe` when Mistral Vibe is installed but not
+  the default. To reapply the option, run `specify integration upgrade vibe
+  --force` while Mistral Vibe is the default integration (`--force` is needed
+  because those commands modify installed skill files, and it overwrites local
+  edits to Spec Kit-managed files).
 
 ## Runtime Events
 

@@ -228,6 +228,7 @@ def _http_get_json(source_id: str, url: str) -> dict:
     HTTPS/host guarantee from ``_validate_remote_url`` is preserved end to end
     rather than only on the initial URL.
     """
+    from ..authentication.github import GitHubCliAuthError
     from ..authentication.http import RedirectPolicyError, open_url
 
     def _validate_redirect(_old_url: str, new_url: str) -> None:
@@ -258,9 +259,9 @@ def _http_get_json(source_id: str, url: str) -> dict:
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc
-    except RedirectPolicyError as exc:
-        # Unsafe/malformed redirects are security failures and must surface as
-        # a hard error instead of being downgraded to catalog unavailability.
+    except (GitHubCliAuthError, RedirectPolicyError) as exc:
+        # Authentication and redirect-policy failures are definitive, not
+        # transient catalog unavailability.
         raise BundlerError(
             f"Failed to fetch catalog from {url}: {exc}"
         ) from exc

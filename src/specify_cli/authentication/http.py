@@ -133,6 +133,8 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
 
     Uses the first matching entry from ``auth.json`` whose token resolves.
     Returns a plain request when no entry matches or the file doesn't exist.
+    A ``github-cli`` acquisition failure raises immediately, without trying
+    later matching entries or returning an unauthenticated request.
     """
     headers: dict[str, str] = {}
     if extra_headers:
@@ -174,9 +176,12 @@ def open_url(
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
     1. Find ``auth.json`` entries whose hosts match the URL.
-    2. For each entry, resolve the token and try the request.
-    3. On 401/403 move to the next matching entry.
-    4. After all entries exhausted (or none matched), try unauthenticated.
+    2. For each entry, resolve the token and try the request. A ``github-cli``
+       acquisition failure raises immediately, with no credential or
+       unauthenticated fallback.
+    3. On HTTP 401/403 after successful acquisition, try the next matching entry.
+    4. After all entries exhausted without an acquisition failure (or none
+       matched), try unauthenticated.
     5. Non-auth errors (404, 500, network) raise immediately.
 
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
