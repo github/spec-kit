@@ -2459,9 +2459,9 @@
       "id": "gates",
       "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / pre-merge-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.4.1",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.1/gates-0.4.1.zip",
-      "sha256": "ecf445653d71d96b50480e04b741b142f08f2857f42e915ea76f7d64f1800f80",
+      "version": "0.4.2",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.4.2/gates-0.4.2.zip",
+      "sha256": "d65657962dabf0507d049389b0d9b478d31026b2dbdab600ebe135048453f290",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -2513,7 +2513,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-10-08T00:00:00Z"
+      "updated_at": "2026-10-26T00:00:00Z"
     },
     "gh-address-cr": {
       "name": "gh-address-cr",
