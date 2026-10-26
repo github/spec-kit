@@ -339,7 +339,7 @@ class TestVibeTomlMerging:
         integration, manifest = self._install(tmp_path, events)
         path.write_bytes(path.read_bytes() + ("\n" + user_after).encode("utf-8"))
 
-        self._install(tmp_path, events)
+        integration, manifest = self._install(tmp_path, events)
         assert user_after in path.read_text(encoding="utf-8")
 
         remove_integration_events(integration, tmp_path, manifest)
@@ -609,10 +609,13 @@ class TestVibeTomlNoOpRemoval:
             "comment-between-managed-keys",
         ),
     )
+    @pytest.mark.parametrize("newline", ("\n", "\r\n"), ids=("lf", "crlf"))
     def test_removal_ends_a_managed_hook_at_its_last_toml_line(
-        self, tmp_path, managed, user
+        self, tmp_path, managed, user, newline
     ):
         """The blank separator goes with the managed block; a comment after it stays (#5079)."""
+        managed = managed.replace("\n", newline)
+        user = user.replace("\n", newline)
         path, _ = self._user_hooks_file(tmp_path, (managed + user).encode())
 
         removed_file = get_integration("vibe").remove_vibe_event_hooks(
