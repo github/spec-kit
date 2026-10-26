@@ -27,6 +27,12 @@ HAS_PWSH = shutil.which("pwsh") is not None
 _WINDOWS_POWERSHELL = (
     shutil.which("powershell.exe") or shutil.which("powershell")
 ) if os.name == "nt" else None
+_GIT_EXE = shutil.which("git")
+_GIT_BASH = (
+    Path(_GIT_EXE).resolve().parent.parent / "bin" / "bash.exe"
+    if os.name == "nt" and _GIT_EXE
+    else None
+)
 
 
 def _install_scripts(repo: Path) -> None:
@@ -98,6 +104,12 @@ def _repo_copy_py_cmd(repo: Path, *args: str) -> list[str]:
 def _bash_cmd(repo: Path, *args: str) -> list[str]:
     script = repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     return ["bash", str(script), *args]
+
+
+def _git_bash_cmd(repo: Path, *args: str) -> list[str]:
+    assert _GIT_BASH is not None
+    script = repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    return [str(_GIT_BASH), "--noprofile", "--norc", script.as_posix(), *args]
 
 
 def _ps_cmd(repo: Path, *args: str) -> list[str]:
@@ -763,6 +775,46 @@ def test_unreadable_plan_is_not_reported_as_empty(
     assert plan.read_bytes() == content
     assert plan.stat().st_mtime_ns == before
     readable = _run(command_fn(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
+@pytest.mark.skipif(
+    _GIT_BASH is None or not _GIT_BASH.is_file(), reason="Git for Windows Bash required"
+)
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_git_bash_noacl_plan_read_failure(prereq_repo: Path, json_mode: bool) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    args = ("--json",) if json_mode else ()
+    feature_path = _run([str(_GIT_BASH), "-c", "pwd"], feature).stdout.strip()
+
+    with _deny_plan_read(plan):
+        probe = _run(
+            [str(_GIT_BASH), "-c", '[[ -r "$1" ]]', "bash", plan.as_posix()],
+            prereq_repo,
+        )
+        if probe.returncode != 0:
+            pytest.skip("Git Bash honors ACL readability on this mount")
+        result = _run(_git_bash_cmd(prereq_repo, *args), prereq_repo)
+        paths_only = _run(
+            _git_bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo
+        )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {feature_path}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(_git_bash_cmd(prereq_repo, *args), prereq_repo)
     assert readable.returncode == 0, readable.stderr
 
 
