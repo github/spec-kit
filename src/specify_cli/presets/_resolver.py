@@ -466,7 +466,7 @@ class PresetResolver:
         resolved_str = str(resolved)
 
         # Determine source attribution
-        if str(self.overrides_dir) in resolved_str:
+        if resolved.is_relative_to(self.overrides_dir):
             return {"path": resolved_str, "source": "project override"}
 
         if str(self.presets_dir) in resolved_str and self.presets_dir.exists():

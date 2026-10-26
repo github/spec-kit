@@ -468,6 +468,15 @@ class TestPresetResolver:
         assert result["source"] == "core"
         assert "spec-template.md" in result["path"]
 
+    def test_resolve_with_source_core_name_starting_with_overrides(self, project_dir):
+        """A core filename sharing the overrides prefix is still core."""
+        core = project_dir / ".specify" / "templates" / "overrides-report.md"
+        core.write_text("# Core report\n")
+
+        result = PresetResolver(project_dir).resolve_with_source("overrides-report")
+
+        assert result == {"path": str(core), "source": "core"}
+
     def test_resolve_with_source_override(self, project_dir):
         """Test resolve_with_source for override template."""
         overrides_dir = project_dir / ".specify" / "templates" / "overrides"
