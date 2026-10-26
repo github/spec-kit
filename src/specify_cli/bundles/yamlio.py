@@ -38,26 +38,41 @@ def ensure_within(root: Path, candidate: Path) -> Path:
     return candidate_resolved
 
 
-def load_yaml(path: Path) -> Any:
+def load_yaml(path: Path, *, max_bytes: int | None = None) -> Any:
     """Parse a YAML file, returning ``{}`` only for an *empty* document.
 
-    A non-empty document is returned exactly as parsed — including a
+    A non-empty document is returned exactly as parsed � including a
     non-mapping such as ``[]``, ``false``, ``0``, ``''``, or an explicit null
-    (``null``/``~``) — so callers can validate the top-level shape (e.g. reject
+    (``null``/``~``) � so callers can validate the top-level shape (e.g. reject
     a non-mapping config) instead of having it silently coerced to an empty
     mapping.
 
     ``yaml.safe_load`` returns ``None`` for *both* an empty document and an
     explicit null scalar, so ``yaml.compose`` (which yields no node only for a
     truly empty document) is used to tell them apart: an empty document becomes
-    ``{}`` while an explicit ``null``/``~`` is returned as ``None`` for the
+    ``{}`` while an explicit ``null`` is returned as ``None`` for the
     caller to reject.
+
+    When ``max_bytes`` is given the file is read through a bounded read, so a
+    file that grows after the size check (or is simply huge) never reaches the
+    YAML parser.
     """
     path = Path(path)
     if not path.exists():
         raise BundlerError(f"File not found: {path}")
     try:
-        text = path.read_text(encoding="utf-8")
+        if max_bytes is None:
+            text = path.read_text(encoding="utf-8")
+        else:
+            with open(path, "rb") as fh:
+                raw = fh.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise BundlerError(
+                    f"File {path} exceeds {max_bytes}-byte limit"
+                )
+            text = raw.decode("utf-8")
+    except BundlerError:
+        raise
     except (OSError, UnicodeError) as exc:
         # A non-UTF-8 file raises UnicodeDecodeError, which is a ValueError --
         # NOT an OSError -- so it escaped this module's "IO failures degrade
