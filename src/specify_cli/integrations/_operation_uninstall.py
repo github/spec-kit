@@ -275,7 +275,7 @@ def _uninstall_with_lifecycle(request: IntegrationUninstallRequest) -> Integrati
                                 + ", ".join(preserved) + "; manual event cleanup may be needed.",
                             )
                     manifest.save()
-            elif binding is not None:
+            elif binding is not None and (root / ".specify/integrations" / f"{key}.manifest.json").exists():
                 # Project metadata cannot promote a locally partial/shared claim.
                 manifest = IntegrationManifest.load(key, root)
                 for name in manifest.files:

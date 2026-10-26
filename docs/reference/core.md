@@ -158,6 +158,10 @@ switching defaults merely to remove the next integration. Their ordinary teardow
 removes Spec Kit's merged native event entries while preserving user entries and
 settings. The last installed integration referencing an owned `.specify/events.py`
 dispatcher releases and removes it under the existing ownership and force rules.
+Preview checks the dispatcher against its ownership records and the lifecycle's
+accepted generated content. A modified managed dispatcher requires force before
+any integration is uninstalled; missing, partial, or recovered ownership does not
+become deletion authority through force.
 If teardown preserves the dispatcher or leaves cleanup unresolved, destroy stops
 and retains recovery metadata instead of purging the remaining `.specify` tree.
 
@@ -190,10 +194,16 @@ metadata is retained for recovery. Repeating destroy with the same preservation
 flags succeeds without further changes. A retained constitution by itself is
 a no-op with `--preserve-constitution` or `--preserve-all`; without those flags,
 its deletion still requires confirmation.
+Extension and preset registries are retained until their package files and
+directories have been removed, so a failed package purge can be retried.
 If teardown raises after deleting its manifest, destroy restores the original
 ownership manifest so the recorded integration can be retried after the error
 is resolved. This preserves recovery evidence; it does not undo files that
 were already removed outside a lifecycle transaction.
+
+Legacy setups with only an `init-options.json` integration selection and no
+`integration.json` inventory are rejected during preview. Re-run `specify init`
+for the selected integration to migrate that inventory before using destroy.
 
 For removing just one integration while retaining Spec Kit tooling, use
 [`specify integration uninstall`](../integrations/cli.md#uninstall-an-integration).

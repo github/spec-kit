@@ -346,7 +346,10 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
         if state is None:
             legacy_agent = read_project_options(root).get("ai")
             if isinstance(legacy_agent, str) and legacy_agent:
-                installed = [legacy_agent]
+                raise ValueError(
+                    "Legacy integration inventory has no .specify/integration.json. "
+                    "Re-run specify init for the recorded integration to migrate before destroy.",
+                )
         manifests = sorted(
             name for name in leaves
             if name.startswith(".specify/integrations/") and name.endswith(".manifest.json")
@@ -360,6 +363,7 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
                 raise ValueError(f"Missing manifest for '{key}'; repair or uninstall that integration first")
 
         expected: dict[str, set[str]] = {}
+        dispatcher_owners: list[tuple[str, bool, str]] = []
         updated: set[str] = set()
         for manifest_path in manifests:
             key = Path(manifest_path).name.removesuffix(".manifest.json")
@@ -380,11 +384,13 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
                     raise ValueError("Manifests must record files, not the .specify root")
                 if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
                     raise ValueError(f"Invalid manifest digest: {name}")
-                if relative.startswith(".specify/"):
-                    continue
                 mode = manifest.ownership_modes[name]
                 if bindings.get(key) is not None:
                     mode = bindings[key].get("ownership_modes", {}).get(name, "shared")
+                if relative == ".specify/events.py":
+                    dispatcher_owners.append((mode, manifest.is_recovered(name), digest))
+                if relative.startswith(".specify/"):
+                    continue
                 if mode != "whole":
                     if (root / name).exists() or (root / name).is_symlink():
                         from .integrations import (
@@ -425,6 +431,19 @@ def plan_destroy(request: DestroyRequest) -> DestroyPlan:
         for name, digests in contribution_hashes.items():
             expected.setdefault(name, set()).update(digests)
         requiring_force: set[str] = set()
+        dispatcher = root / ".specify/events.py"
+        if dispatcher.exists() or dispatcher.is_symlink():
+            from .events import dispatcher_content_matches
+
+            if not dispatcher_owners or any(
+                mode == "partial" or recovered for mode, recovered, _ in dispatcher_owners
+            ):
+                raise ValueError("Cannot prove managed dispatcher ownership of .specify/events.py; resolve it before destroy")
+            if not any(
+                dispatcher_content_matches(files.read_bytes(".specify/events.py"), digest)
+                for _, _, digest in dispatcher_owners
+            ):
+                requiring_force.add(".specify/events.py")
         for candidate in sorted(contributed | {root / name for name in expected}):
             relative = _relative(root, candidate)
             if relative == CONSTITUTION or relative.startswith(".specify/"):
@@ -526,12 +545,28 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
             raise DestroyError("cleanup_incomplete", "The event lifecycle preserved .specify/events.py; resolve it before destroy.")
         # Re-inventory only after teardown has released all integration claims.
         leaves, directories, _ = _project_artifacts(files, request)
-        for name in sorted(leaves, key=lambda name: (name.startswith(".specify/"), name)):
+        registries = {name for name in leaves if Path(name).name == ".registry"}
+        for name in sorted(leaves - registries, key=lambda name: (name.startswith(".specify/"), name)):
             files.delete(name)
             removed.append(name)
         directories.update(plan.directories)
         if CONSTITUTION in plan.preserved:
             directories.difference_update({".specify", ".specify/memory"})
+        metadata_parents = {
+            parent.as_posix() for name in registries for parent in Path(name).parents
+        }
+        # Package trees must disappear before their ownership registries are discarded.
+        for name in sorted(directories - metadata_parents, key=lambda name: (-len(Path(name).parts), name)):
+            try:
+                files.delete(name)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST} or name.startswith(".specify/"):
+                    raise
+        for name in sorted(registries):
+            files.delete(name)
+            removed.append(name)
         for name in sorted(directories, key=lambda name: (-len(Path(name).parts), name)):
             try:
                 files.delete(name)

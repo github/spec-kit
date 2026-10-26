@@ -358,7 +358,7 @@ def test_invalid_integration_state_blocks_every_deletion(tmp_path, state):
 def test_legacy_init_options_cannot_hide_missing_manifest(tmp_path):
     write(tmp_path, ".specify/init-options.json", b'{"ai":"copilot"}')
     before = snapshot(tmp_path)
-    with pytest.raises(DestroyError, match="Missing manifest"):
+    with pytest.raises(DestroyError, match="integration.json"):
         destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
     assert snapshot(tmp_path) == before
 
@@ -601,7 +601,7 @@ def test_destroy_does_not_purge_a_dispatcher_preserved_by_event_teardown(tmp_pat
     )
     record.save()
     dispatcher = write(tmp_path, ".specify/events.py", b"# customized dispatcher")
-    with pytest.raises(DestroyError, match="preserved .specify/events.py"):
+    with pytest.raises(DestroyError, match="retry with --force"):
         destroy_project(DestroyRequest(tmp_path, confirmed=True))
     assert dispatcher.read_bytes() == b"# customized dispatcher"
     retained = IntegrationManifest.load("claude", tmp_path)
@@ -644,7 +644,7 @@ def test_force_can_remove_a_modified_owned_dispatcher_after_native_cleanup(tmp_p
     assert not (tmp_path / ".specify").exists()
 
 
-def test_later_cleanup_failure_reports_prior_uninstalls_and_retains_remaining_state(tmp_path):
+def test_later_cleanup_failure_reports_prior_uninstalls_and_retains_remaining_state(tmp_path, monkeypatch):
     from specify_cli.integration_state import try_read_integration_json
     from specify_cli.integrations import get_integration
 
@@ -654,7 +654,10 @@ def test_later_cleanup_failure_reports_prior_uninstalls_and_retains_remaining_st
             tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]},
         )
         record.save()
-    write(tmp_path, ".specify/events.py", b"# customized dispatcher")
+    def fail(*args, **kwargs):
+        raise PermissionError("late teardown failure")
+
+    monkeypatch.setattr(get_integration("claude"), "teardown", fail)
     with pytest.raises(DestroyError) as caught:
         destroy_project(DestroyRequest(tmp_path, confirmed=True))
     assert caught.value.details["uninstalled_integrations"] == ["gemini"]
@@ -1014,3 +1017,121 @@ def test_preserved_specs_are_not_traversed_or_read(tmp_path, monkeypatch):
         destroy_project(DestroyRequest(tmp_path, confirmed=True, preserve_specs=True))
     assert spec.read_bytes() == b"private specification"
     assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_tracked_constitution_symlink_preservation(tmp_path, force):
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    record.record_file(CONSTITUTION, b"original")
+    record.save()
+    (tmp_path / CONSTITUTION).unlink()
+    target = write(tmp_path, "principles.md", b"user principles")
+    symlink(tmp_path / CONSTITUTION, target)
+    destroy_project(DestroyRequest(tmp_path, confirmed=True, force=force, preserve_constitution=True))
+    assert (tmp_path / CONSTITUTION).is_symlink()
+    assert target.read_bytes() == b"user principles"
+
+
+def test_dotted_contribution_symlink_is_preflighted_before_uninstall(tmp_path):
+    manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    write(tmp_path, ".specify/extensions/.registry", json.dumps({
+        "extensions": {"sample": {"registered_commands": {"claude": ["speckit.sample.test"]}}},
+    }).encode())
+    target = write(tmp_path, "outside/SKILL.md", b"unrelated")
+    symlink(tmp_path / ".claude/skills/speckit.sample.test", target.parent, directory=True)
+    before = snapshot(tmp_path)
+    with pytest.raises(DestroyError, match="symlink"):
+        destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert snapshot(tmp_path) == before
+    assert target.read_bytes() == b"unrelated"
+
+
+def test_legacy_inventory_is_rejected_during_preview_without_changes(tmp_path):
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    (tmp_path / ".specify/integration.json").unlink()
+    write(tmp_path, ".specify/init-options.json", b'{"ai":"claude"}')
+    before = snapshot(tmp_path)
+    with pytest.raises(DestroyError, match="integration.json"):
+        destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert snapshot(tmp_path) == before
+    assert record.manifest_path.exists()
+
+
+def test_modified_dispatcher_is_reported_before_any_integration_uninstalls(tmp_path):
+    from specify_cli.integrations import get_integration
+
+    for key in ("claude", "gemini"):
+        record = manifest(tmp_path, key, f".{key}/skills/speckit-plan/SKILL.md")
+        get_integration(key).emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+        record.save()
+    write(tmp_path, ".specify/events.py", b"# user modified dispatcher")
+    before = snapshot(tmp_path)
+    preview = destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert ".specify/events.py" in preview.requires_force
+    with pytest.raises(DestroyError) as caught:
+        destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert caught.value.code == "modified_files"
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("kind", ["extensions", "presets"])
+@pytest.mark.parametrize("failure", ["file", "directory"])
+def test_package_purge_keeps_registry_until_package_is_removed(tmp_path, monkeypatch, kind, failure):
+    from specify_cli.file_helper import FileHelper
+
+    registry = write(tmp_path, f".specify/{kind}/.registry", json.dumps({kind: {"sample": {}}}).encode())
+    package = write(tmp_path, f".specify/{kind}/sample/payload.txt")
+    delete = FileHelper.delete
+    blocked = f".specify/{kind}/sample" + ("/payload.txt" if failure == "file" else "")
+
+    def fail(self, path, **kwargs):
+        if path == blocked:
+            raise PermissionError("package locked")
+        return delete(self, path, **kwargs)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(FileHelper, "delete", fail)
+        with pytest.raises(DestroyError, match="package locked"):
+            destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert registry.exists()
+    assert package.parent.exists()
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"])
+def test_regenerated_dispatcher_with_stale_manifest_hash_needs_no_force(tmp_path, newline):
+    from specify_cli.integrations import get_integration
+
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    get_integration("claude").emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+    record.save()
+    path = record.manifest_path
+    data = json.loads(path.read_text())
+    data["files"][".specify/events.py"] = "a" * 64
+    path.write_text(json.dumps(data))
+    dispatcher = tmp_path / ".specify/events.py"
+    dispatcher.write_bytes(dispatcher.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", newline))
+    preview = destroy_project(DestroyRequest(tmp_path, dry_run=True))
+    assert ".specify/events.py" not in preview.requires_force
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()
+
+
+@pytest.mark.parametrize("kind", ["partial", "recovered", "unowned"])
+def test_unproven_dispatcher_cleanup_is_rejected_before_changes(tmp_path, kind):
+    from specify_cli.integrations import get_integration
+
+    record = manifest(tmp_path, "claude", ".claude/skills/speckit-plan/SKILL.md")
+    get_integration("claude").emit_events(tmp_path, record, {"pre_tool_use": [{"command": "speckit.test"}]})
+    if kind == "partial":
+        record.set_ownership(".specify/events.py", "partial")
+    elif kind == "recovered":
+        record.record_existing(".specify/events.py", recovered=True)
+    else:
+        record.remove(".specify/events.py")
+    record.save()
+    before = snapshot(tmp_path)
+    with pytest.raises(DestroyError, match="dispatcher ownership"):
+        destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+    assert snapshot(tmp_path) == before

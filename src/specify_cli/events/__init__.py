@@ -1692,6 +1692,14 @@ def _other_event_integrations_reference_dispatcher(
     return False
 
 
+def dispatcher_content_matches(content: bytes, expected_hash: str) -> bool:
+    """Accept the recorded copy or an exact regenerated LF/CRLF dispatcher."""
+    return hashlib.sha256(content).hexdigest() == expected_hash or content in (
+        _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
+        _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
+    )
+
+
 def _cleanup_shared_dispatcher(
     integration: IntegrationBase, project_root: Path, manifest: IntegrationManifest,
     *,
@@ -1738,11 +1746,7 @@ def _cleanup_shared_dispatcher(
                 return
             # Another integration may have regenerated the shared file since
             # this manifest recorded it. Accept only exact generated LF/CRLF.
-            matches = hashlib.sha256(content).hexdigest() == expected_hash or content in (
-                _EVENTS_DISPATCHER_TEMPLATE.encode("utf-8"),
-                _EVENTS_DISPATCHER_TEMPLATE.replace("\n", "\r\n").encode("utf-8"),
-            )
-            if not matches:
+            if not dispatcher_content_matches(content, expected_hash):
                 logger.warning("Preserving modified dispatcher: %s", dispatcher_path)
                 return
         _unlink_file(dispatcher_path, missing_ok=True)

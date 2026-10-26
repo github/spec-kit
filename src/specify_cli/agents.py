@@ -1419,11 +1419,17 @@ class CommandRegistrar:
         paths: set[Path] = set()
         for name in commands:
             output_name = self._compute_output_name(agent_name, name, config)
+            names = [output_name]
+            if output_name != name:
+                names.append(name)
             for destination in destinations:
-                if config["extension"] == "/SKILL.md":
-                    paths.add(destination / output_name / "SKILL.md")
-                else:
-                    paths.add(destination / f"{output_name}{config['extension']}")
+                for cleanup_name in names:
+                    if not self._is_safe_command_name(cleanup_name) or cleanup_name in {"", ".", ".."}:
+                        raise ValueError(f"Invalid formatted artifact name: {cleanup_name!r}")
+                    if config["extension"] == "/SKILL.md":
+                        paths.add(destination / cleanup_name / "SKILL.md")
+                    else:
+                        paths.add(destination / f"{cleanup_name}{config['extension']}")
             if agent_name == "copilot":
                 paths.add(project_root / ".github/prompts" / f"{name}.prompt.md")
         if skills:

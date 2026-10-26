@@ -200,6 +200,20 @@ def test_destroy_uses_trusted_external_lifecycle_and_contribution_cleanup(tmp_pa
     assert not (project / ".specify").exists()
 
 
+def test_healthy_external_uninstall_without_manifest_removes_stale_package(tmp_path, server):
+    publish(server)
+    project = catalog_project(tmp_path, server)
+    install(project)
+    (project / f".specify/integrations/{KEY}.manifest.json").unlink()
+    rejected = run(project, ["destroy", "--dry-run", "--json"])
+    assert rejected.exit_code == 1
+    assert "Missing manifest" in rejected.stderr
+    result = run(project, ["integration", "uninstall", KEY])
+    assert result.exit_code == 0, result.output
+    assert not read_records(project)
+    assert not (project / ".specify/integration.json").exists()
+
+
 @pytest.mark.parametrize("force", [False, True])
 def test_destroy_preserves_constitution_recorded_by_a_trusted_adapter(tmp_path, server, force):
     body = '''    def setup(self, project_root, manifest, **kwargs):
