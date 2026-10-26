@@ -146,7 +146,40 @@ def _resolve_init_integration(override: str | None, manifest) -> str:
     return resolve_default_init_integration()
 
 
-def _bundle_overlaps(project_root: Path, manifest, *, offline: bool) -> list[str]:
+def _expand_manifest(
+    project_root: Path,
+    manifest,
+    *,
+    offline: bool,
+    stack=None,
+    download,
+):
+    """Expand referenced bundles through the effective catalog stack.
+
+    Flat manifests deliberately bypass stack construction: local bundles with
+    no references must retain their existing offline, no-network behavior.
+    ``download`` is supplied by the calling command so its established
+    monkeypatch point also controls referenced-manifest downloads.
+    """
+    from .expansion import ExpandedManifest, expand_manifest
+
+    if not manifest.bundles:
+        return ExpandedManifest.flat(manifest)
+    from .sources import CatalogBundleLoader
+
+    if stack is None:
+        stack = _build_stack(project_root, offline=offline)
+    loader = CatalogBundleLoader(stack, offline=offline, download=download)
+    return expand_manifest(manifest, loader)
+
+
+def _bundle_overlaps(
+    project_root: Path,
+    manifest,
+    *,
+    offline: bool,
+    components=None,
+) -> list[str]:
     """Return informational overlaps between *manifest* and installed bundles."""
     if manifest is None:
         return []
@@ -157,6 +190,7 @@ def _bundle_overlaps(project_root: Path, manifest, *, offline: bool) -> list[str
             manifest,
             active_integration(project_root),
             load_records(project_root),
+            components=components,
         )
         return [*report.overlaps, *report.version_clashes]
     except BundlerError:

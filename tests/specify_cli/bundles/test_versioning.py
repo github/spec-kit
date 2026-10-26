@@ -4,7 +4,12 @@ from __future__ import annotations
 import pytest
 
 from specify_cli.bundler import BundlerError
-from specify_cli.bundles.versioning import is_newer_patch, is_semver, satisfies
+from specify_cli.bundles.versioning import (
+    is_newer_patch,
+    is_semver,
+    satisfies,
+    strip_version_prefix,
+)
 
 
 @pytest.mark.parametrize("actual,pinned,expected", [
@@ -144,3 +149,18 @@ def test_valid_constraints_are_unaffected(constraint, expected):
     from specify_cli.bundles.versioning import parse_constraint
 
     assert str(parse_constraint(constraint)) == expected
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("1.0.0", "1.0.0"),
+    ("v1.0.0", "1.0.0"),
+    ("V1.0.0", "1.0.0"),
+    ("v1.2.3-rc1", "1.2.3-rc1"),
+    ("1.2.3-rc1", "1.2.3-rc1"),
+    ("v0.8.0.dev0", "0.8.0.dev0"),
+    ("vv1.0.0", "v1.0.0"),
+    ("", ""),
+])
+def test_strip_version_prefix_removes_only_one_prefix(value: str, expected: str):
+    """Display keeps prerelease spelling; only the leading v/V is dropped."""
+    assert strip_version_prefix(value) == expected
