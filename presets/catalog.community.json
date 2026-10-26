@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-12T00:00:00Z",
+  "updated_at": "2026-10-26T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -969,14 +969,14 @@
     "security-governance": {
       "name": "Security Governance",
       "id": "security-governance",
-      "version": "0.7.1",
+      "version": "0.7.4",
       "description": "Adds secure coding, memory-safe-language guidance, security-gate and supply-chain evidence, and scoped GDPR, NIS2, CRA, EU AI Act, and DORA screening to Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.7.1.zip",
-      "sha256": "c85a4b924e741a3981dc369adc6233b6f323013fb1d46735555038d322cda18a",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.7.4.zip",
+      "sha256": "222697829118be22c6ddf6675852f1375dbb415061e5fe2fd31a5c82d65a5dcb",
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.7.1/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/v0.7.4/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -993,7 +993,7 @@
         "regulatory"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-10-09T00:00:00Z"
+      "updated_at": "2026-10-26T00:00:00Z"
     },
     "sicario-core": {
       "name": "SicarioSpec Core",
