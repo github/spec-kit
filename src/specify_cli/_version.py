@@ -356,13 +356,13 @@ def _expand_prefix(prefix: str) -> Path | None:
     for token in _UNRESOLVED_ENV_VAR_RE.findall(prefix):
         if not os.environ.get(token.strip("${}%")):
             return None
-    expanded = os.path.expanduser(prefix)
+    expanded = prefix
     if "%LOCALAPPDATA%" in expanded:
         local_app_data = os.environ.get("LOCALAPPDATA")
         if not local_app_data:
             return None
         expanded = expanded.replace("%LOCALAPPDATA%", local_app_data)
-    expanded = os.path.expandvars(expanded)
+    expanded = os.path.expanduser(os.path.expandvars(expanded))
     if _UNRESOLVED_ENV_VAR_RE.search(expanded):
         return None
     try:

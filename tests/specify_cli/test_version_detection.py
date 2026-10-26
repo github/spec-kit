@@ -25,6 +25,24 @@ from tests.specify_cli.self_upgrade_helpers import (
 
 
 class TestRelocatedToolDetection:
+    @pytest.mark.parametrize("environment,expected", [
+        ("specify-cli", _InstallMethod.PIPX),
+        ("specify-cli2", _InstallMethod.UNSUPPORTED),
+    ])
+    def test_pipx_home_with_tilde(self, monkeypatch, tmp_path, environment, expected):
+        home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.setenv("PIPX_HOME", "~/pipx-home")
+        entrypoint = home / "pipx-home" / "venvs" / environment / "bin" / "specify"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
+            "specify_cli._version.subprocess.run"
+        ) as registry_lookup:
+            assert _detect_install_method(str(entrypoint)) == expected
+        registry_lookup.assert_not_called()
+
     @pytest.mark.parametrize("env_name,suffix,method", [
         ("UV_TOOL_DIR", "specify-cli/bin/specify", _InstallMethod.UV_TOOL),
         ("XDG_DATA_HOME", "uv/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
