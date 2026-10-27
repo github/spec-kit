@@ -43,10 +43,31 @@ class TestRelocatedToolDetection:
             assert _detect_install_method(str(entrypoint)) == expected
         registry_lookup.assert_not_called()
 
+    @pytest.mark.parametrize("value", ["./pipx-home", "../pipx-home"])
+    @pytest.mark.parametrize("environment,expected", [
+        ("specify-cli", _InstallMethod.PIPX),
+        ("specify-cli2", _InstallMethod.UNSUPPORTED),
+    ])
+    def test_relative_pipx_home(self, monkeypatch, tmp_path, value, environment, expected):
+        working_dir = tmp_path / "working"
+        working_dir.mkdir()
+        monkeypatch.chdir(working_dir)
+        monkeypatch.setenv("PIPX_HOME", value)
+        entrypoint = (working_dir / value / "venvs" / environment / "bin" / "specify").resolve()
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
+            "specify_cli._version.subprocess.run"
+        ) as registry_lookup:
+            assert _detect_install_method(str(entrypoint)) == expected
+        registry_lookup.assert_not_called()
+
     @pytest.mark.parametrize("env_name,suffix,method", [
         ("UV_TOOL_DIR", "specify-cli/bin/specify", _InstallMethod.UV_TOOL),
         ("XDG_DATA_HOME", "uv/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
         ("APPDATA", "uv/data/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
+        ("APPDATA", "uv/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
+        ("HOME", "Library/Application Support/uv/tools/specify-cli/bin/specify", _InstallMethod.UV_TOOL),
         ("PIPX_HOME", "venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
         ("XDG_DATA_HOME", "pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
         ("LOCALAPPDATA", "pipx/pipx/venvs/specify-cli/bin/specify", _InstallMethod.PIPX),
@@ -72,11 +93,15 @@ class TestRelocatedToolDetection:
 
     @pytest.mark.parametrize("env_name,suffix", [
         ("UV_TOOL_DIR", "specify-cli2/bin/specify"),
+        ("APPDATA", "uv/tools/specify-cli2/bin/specify"),
+        ("HOME", "Library/Application Support/uv/tools/specify-cli2/bin/specify"),
         ("XDG_DATA_HOME", "uv/tools/specify-cli2/bin/specify"),
         ("PIPX_HOME", "venvs/specify-cli2/bin/specify"),
     ])
     def test_sibling_environment_is_not_accepted(self, monkeypatch, tmp_path, env_name, suffix):
         monkeypatch.setenv(env_name, str(tmp_path))
+        if env_name == "HOME":
+            monkeypatch.setenv("USERPROFILE", str(tmp_path))
         entrypoint = tmp_path / suffix
         entrypoint.parent.mkdir(parents=True)
         entrypoint.write_text("#!/usr/bin/env python\n")

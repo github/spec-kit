@@ -185,7 +185,9 @@ _INSTALLER_PATH_PREFIXES: dict[str, list[str]] = {
         "${UV_TOOL_DIR}/specify-cli/",
         "${XDG_DATA_HOME}/uv/tools/specify-cli/",
         "~/.local/share/uv/tools/specify-cli/",
+        "${APPDATA}/uv/tools/specify-cli/",
         "${APPDATA}/uv/data/tools/specify-cli/",
+        "~/Library/Application Support/uv/tools/specify-cli/",
         "%LOCALAPPDATA%\\uv\\tools\\specify-cli\\",
     ],
     "pipx": [
@@ -367,7 +369,10 @@ def _expand_prefix(prefix: str) -> Path | None:
         return None
     try:
         expanded_path = Path(expanded)
-        return expanded_path.resolve() if expanded_path.is_absolute() else expanded_path
+        # pipx resolves a relative PIPX_HOME against the installer working directory.
+        if expanded_path.is_absolute() or prefix.startswith("${PIPX_HOME}/"):
+            return expanded_path.resolve()
+        return expanded_path
     except OSError:
         return None
 
