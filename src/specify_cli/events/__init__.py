@@ -1151,7 +1151,10 @@ def collect_extension_events(project_root: Path) -> ResolvedEvents:
                     _validate_resolved_event(event, [handler])
                 except ValidationError as exc:
                     logger.warning(
-                        "Extension %s: skipping invalid event '%s': %s", ext_id, event, exc
+                        "Extension %s: skipping invalid event handler for '%s': %s",
+                        ext_id,
+                        event,
+                        exc,
                     )
                     continue
                 events.setdefault(event, []).append(handler)
