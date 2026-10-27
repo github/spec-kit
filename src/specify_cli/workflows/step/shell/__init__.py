@@ -66,11 +66,21 @@ class ShellStep(StepBase):
             # Decode in this thread so malformed output becomes a step
             # failure on Windows too, where subprocess uses reader threads.
             # Preserve text=True's locale encoding and universal newlines.
-            output = {"exit_code": proc.returncode}
+            output = {"exit_code": proc.returncode, "stdout": "", "stderr": ""}
             encoding = locale.getpreferredencoding(False)
+            decode_errors = []
             for name in ("stdout", "stderr"):
-                with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
-                    output[name] = stream.read()
+                try:
+                    with io.TextIOWrapper(io.BytesIO(getattr(proc, name)), encoding=encoding) as stream:
+                        output[name] = stream.read()
+                except UnicodeDecodeError as exc:
+                    decode_errors.append(f"Shell command {name} could not be decoded: {exc}")
+            if decode_errors:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error="; ".join(decode_errors),
+                    output=output,
+                )
             if proc.returncode != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -103,13 +113,6 @@ class ShellStep(StepBase):
                 status=StepStatus.FAILED,
                 error=f"Shell command timed out after {timeout} seconds.",
                 output={"exit_code": -1, "stdout": "", "stderr": "timeout"},
-            )
-        except UnicodeDecodeError as exc:
-            error = f"Shell command output could not be decoded: {exc}"
-            return StepResult(
-                status=StepStatus.FAILED,
-                error=error,
-                output={"exit_code": -1, "stdout": "", "stderr": str(exc)},
             )
         except OSError as exc:
             return StepResult(

@@ -26,14 +26,16 @@ def _python_run(project_dir: Path, body: str) -> str:
     return f'"{sys.executable}" "{script}"'
 
 
-@pytest.mark.parametrize("stream", [1, 2], ids=["stdout", "stderr"])
+@pytest.mark.parametrize("stream", [1, 2, "both"], ids=["stdout", "stderr", "both"])
+@pytest.mark.parametrize("exit_code", [0, 3], ids=["zero-exit", "nonzero-exit"])
 @pytest.mark.parametrize("output_format", [None, "json"], ids=["text", "json"])
-def test_undecodable_output_fails_step(project_dir, utf8_locale, stream, output_format):
-    stdout = b'{"message": "\xff"}' if stream == 1 else b'{"message": "ok"}'
-    stderr = b"\xff" if stream == 2 else b""
+def test_undecodable_output_fails_step(project_dir, utf8_locale, stream, exit_code, output_format):
+    stdout = b'{"message": "\xff"}' if stream in (1, "both") else b'{"message": "ok"}'
+    stderr = b"\xff" if stream in (2, "both") else b"diagnostic\r\n"
     run = _python_run(
         project_dir,
-        f"import os\nos.write(1, {stdout!r})\nos.write(2, {stderr!r})\n",
+        f"import os\nos.write(1, {stdout!r})\nos.write(2, {stderr!r})\n"
+        f"raise SystemExit({exit_code})\n",
     )
     config = {"id": "invalid-output", "type": "shell", "run": run}
     if output_format is not None:
@@ -44,9 +46,12 @@ def test_undecodable_output_fails_step(project_dir, utf8_locale, stream, output_
     assert result.status == StepStatus.FAILED
     assert "could not be decoded" in result.error
     assert "utf-8" in result.error
-    assert result.output["exit_code"] == -1
-    assert result.output["stdout"] == ""
-    assert "utf-8" in result.output["stderr"]
+    assert result.output["exit_code"] == exit_code
+    assert result.output["stdout"] == ("" if stream in (1, "both") else '{"message": "ok"}')
+    assert result.output["stderr"] == ("" if stream in (2, "both") else "diagnostic\n")
+    for name, number in (("stdout", 1), ("stderr", 2)):
+        if stream in (number, "both"):
+            assert f"{name} could not be decoded" in result.error
     assert "data" not in result.output
 
 
@@ -108,3 +113,56 @@ def test_decoding_failure_respects_continue_on_error(project_dir, utf8_locale, c
     else:
         assert state.status == RunStatus.FAILED
         assert "after" not in state.step_results
+
+
+@pytest.mark.parametrize("branch_type", ["if", "switch"])
+def test_decoding_failure_preserves_exit_code_for_branching(project_dir, utf8_locale, branch_type):
+    run = _python_run(
+        project_dir,
+        "import os\nos.write(1, b'usable output')\nos.write(2, bytes([255]))\n"
+        "raise SystemExit(3)\n",
+    )
+    recovery = [{"id": "recovery", "type": "shell", "run": "echo recovery-ran"}]
+    fallback = [{"id": "wrong-exit", "type": "shell", "run": "echo wrong-exit"}]
+    branch = {"id": "route", "type": branch_type}
+    if branch_type == "if":
+        branch.update({
+            "condition": "{{ steps.invalid-output.output.exit_code == 3 }}",
+            "then": recovery,
+            "else": fallback,
+        })
+    else:
+        branch.update({
+            "expression": "{{ steps.invalid-output.output.exit_code }}",
+            "cases": {"3": recovery},
+            "default": fallback,
+        })
+    definition = WorkflowDefinition.from_string(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {
+            "id": "shell-decode-branching",
+            "name": "Shell Decode Branching",
+            "version": "1.0.0",
+        },
+        "steps": [
+            {
+                "id": "invalid-output",
+                "type": "shell",
+                "run": run,
+                "continue_on_error": True,
+            },
+            branch,
+        ],
+    }))
+
+    state = WorkflowEngine(project_dir).execute(definition)
+
+    assert state.status == RunStatus.COMPLETED
+    assert "recovery" in state.step_results
+    assert "wrong-exit" not in state.step_results
+    result = state.step_results["invalid-output"]
+    assert result["status"] == "failed"
+    assert result["output"]["exit_code"] == 3
+    assert result["output"]["stdout"] == "usable output"
+    assert result["output"]["stderr"] == ""
+    assert "stderr could not be decoded" in result["error"]
