@@ -386,6 +386,14 @@ class TestComposition:
         assert sum(sizes) > budget
         monkeypatch.setattr(_commands, "_MAX_JSON_NODES", budget)
 
+        byte_sizes = [len(json.dumps(payload["definition"], indent=2))] + [
+            len(json.dumps(s["definition"], indent=2))
+            for s in payload["workflow_scopes"]
+        ]
+        byte_budget = max(byte_sizes)
+        assert sum(byte_sizes) > byte_budget
+        monkeypatch.setattr(_commands, "_MAX_JSON_BYTES", byte_budget)
+
         result = _definition(project_dir, run["run_id"])
 
         assert result.exit_code == 0, result.stderr
@@ -804,6 +812,22 @@ class TestNegative:
             {"refs": [{big[:1000]}] * 50}, max_nodes=_commands._MAX_JSON_NODES
         )
         assert len(json.loads(capsys.readouterr().out)["refs"]) == 50
+
+    def test_byte_budget_stops_nested_alias_indentation_expansion(self, project_dir):
+        # A 150-level nested list referenced 150 times has ~34k nodes and almost
+        # no string content, but indent=2 expands its brackets and whitespace
+        # to ~9 MB of serialized JSON, above the 5 MiB per-definition cap.
+        depth = 150
+        lines = ["n0: &n0 []"]
+        for i in range(1, depth):
+            lines.append(f"n{i}: &n{i} [*n{i - 1}]")
+        refs = ", ".join([f"*n{depth - 1}"] * 150)
+        lines.append(f"metadata: [{refs}]")
+        run = _run(project_dir, GATE_WF + "\n".join(lines) + "\n")
+
+        result = _definition(project_dir, run["run_id"])
+
+        _assert_json_error(result, "exceeds 5242880 bytes")
 
     def test_byte_budget_is_opt_in(self, capsys):
         from specify_cli.workflows import _commands

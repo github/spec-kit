@@ -1081,9 +1081,9 @@ def _run_outcome_exit_code(status_value: str) -> int:
 # emit user-authored definitions pass it as ``max_nodes``.
 _MAX_JSON_NODES = 100000
 
-# Byte cap on the emitted definition. Nodes do not bound size: one alias can
-# repeat a large string many times, so every emitted string (including
-# stringified scalars) is charged by its JSON length.
+# Byte cap on each emitted definition. Nodes do not bound size: one alias can
+# repeat a large string or deeply indented container many times, so strings are
+# charged during traversal and the complete serialized JSON is checked at the end.
 _MAX_JSON_BYTES = 5 * 1024 * 1024
 
 
@@ -1189,7 +1189,16 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
         return text
 
     try:
-        return plain_json(payload, set())
+        plain = plain_json(payload, set())
+        if (
+            remaining_bytes is not None
+            and len(json.dumps(plain, indent=2)) > _MAX_JSON_BYTES
+        ):
+            raise ValueError(
+                "Workflow JSON output is too large to represent: it "
+                f"exceeds {_MAX_JSON_BYTES} bytes"
+            )
+        return plain
     except RecursionError:
         raise ValueError(
             "Workflow JSON output is nested too deeply to represent"
