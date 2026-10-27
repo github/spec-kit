@@ -230,7 +230,7 @@ fit_branch_name() {
     local branch_suffix="$2"
     local branch_name="${feature_num}-${branch_suffix}"
 
-    if [ "$(branch_byte_count "${branch_name}")" -gt "${MAX_BRANCH_LENGTH}" ]; then
+    if [ "$(branch_byte_count "$branch_name")" -gt "$MAX_BRANCH_LENGTH" ]; then
         local prefix_length=$((${#feature_num} + 1))
         local max_suffix_length=$((MAX_BRANCH_LENGTH - prefix_length))
         local truncated_suffix
@@ -289,13 +289,10 @@ generate_branch_name() {
     # Common stop words to filter out
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
 
-    # Convert to lowercase and split into words. LC_ALL=C for the same
-    # collation reason documented on clean_branch_name, and so the `grep -qw`
-    # acronym probe below uses ASCII word boundaries like the Python twin's
-    # (?<![0-9A-Za-z_]) lookarounds.
-    local -x LC_ALL=C
-    clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
+    # Use a UTF-8 locale for character-safe length checks and split words.
+    local -x LC_ALL="$UNICODE_LOCALE"
     local clean_name
+    clean_name=$(unicode_words "$description" ' ') || return 1
 
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     local meaningful_words=()
