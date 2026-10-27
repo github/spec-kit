@@ -483,29 +483,62 @@ def _register_presets_for_agent(
         )
 
 
+def _snapshot_manifest_before_registration(
+    project_root: Path, agent_key: str,
+) -> tuple[Any, set[str]]:
+    """Snapshot an installed manifest's unmodified files before rescaffolding (#5078)."""
+    try:
+        from .manifest import IntegrationManifest
+
+        manifest = IntegrationManifest.load(agent_key, project_root)
+        return manifest, set(manifest.files) - set(manifest.check_modified())
+    except FileNotFoundError:
+        return None, set()
+    except Exception as manifest_err:  # noqa: BLE001 - manifest refresh is best-effort
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "snapshot manifest hashes for",
+            "integration",
+            agent_key,
+            manifest_err,
+            continuing="Continuing without refreshing manifest hashes.",
+        )
+        return None, set()
+
+
 def _resync_manifest_after_registration(
     new_manifest: Any,
     agent_key: str,
     *,
     continuing: str,
+    unmodified_files: set[str] | None = None,
 ) -> None:
     """Refresh tracked-file hashes after extensions/presets re-registration.
 
     ``_register_extensions_for_agent`` / ``_register_presets_for_agent`` run
     after ``new_manifest`` is saved and can overwrite files it already
     tracks (e.g. a preset overriding a core command rendered as a skill).
-    Nothing else touches the project between the manifest save and these
-    calls, so any tracked file whose bytes now differ was changed by our own
-    registration step, not by the user — re-hash it and persist the refresh
-    so ``check_modified()`` doesn't misreport a legitimate override as
-    tampering (see #4696).
+    For ``upgrade`` (#4696) and a new-target ``switch`` (#5078), nothing else
+    touches the project between the manifest save and these calls, so any
+    tracked file whose bytes now differ was changed by registration. Re-hash
+    it so ``check_modified()`` doesn't misreport a legitimate override.
+
+    ``use`` and installed-target ``switch`` reuse an older manifest (#5078).
+    They must pass ``unmodified_files`` from before registration; only those
+    files whose bytes changed are refreshed, preserving earlier user edits.
 
     Best-effort: registration itself is best-effort, so a failure here must
     not abort the surrounding upgrade/use/switch transaction.
     """
     try:
         changed = False
+        modified_files = set(new_manifest.check_modified()) if unmodified_files is not None else None
         for rel in new_manifest.files:
+            if unmodified_files is not None and (
+                rel not in unmodified_files or rel not in modified_files
+            ):
+                continue
             abs_path = new_manifest.project_root / rel
             try:
                 if abs_path.is_symlink() or not abs_path.is_file():

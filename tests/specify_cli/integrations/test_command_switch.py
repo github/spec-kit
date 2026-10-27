@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -26,6 +27,58 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationSwitch:
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_switch_syncs_manifest_hash_for_preset_override(
+        self, tmp_path, tasks_preset_src, installed
+    ):
+        """Both switch paths must record the preset's final bytes (#5078)."""
+        project = _init_project(tmp_path, "claude")
+        if installed:
+            result = _run_in_project(project, [
+                "integration", "install", "codex", "--script", "sh",
+            ])
+            assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+
+        rel = ".agents/skills/speckit-tasks/SKILL.md"
+        content = (project / rel).read_bytes()
+        assert b"Preset tasks body" in content
+        manifest = json.loads((project / ".specify/integrations/codex.manifest.json").read_bytes())
+        assert manifest["files"][rel] == hashlib.sha256(content).hexdigest(), (
+            "manifest hash must match the preset-overridden skill (#5078)"
+        )
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+
+    @pytest.mark.parametrize("command", ["plan", "tasks"])
+    def test_switch_installed_target_preserves_modified_manifest_hash(
+        self, tmp_path, tasks_preset_src, command
+    ):
+        """Rescaffolding must not bless earlier user edits as pristine (#5078)."""
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        rel = f".agents/skills/speckit-{command}/SKILL.md"
+        before = IntegrationManifest.load("codex", project).files[rel]
+        (project / rel).write_bytes(b"User-edited skill\n")
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+        manifest = IntegrationManifest.load("codex", project)
+        assert manifest.files[rel] == before, "pre-existing edits must not be recorded as pristine"
+        assert rel in manifest.check_modified()
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        assert result.exit_code == 1, result.output
+        assert "modified since installation" in result.output
+
     @pytest.mark.parametrize("command", ["install", "switch"])
     def test_invalid_incoming_manifest_does_not_block_rollback(self, tmp_path, monkeypatch, caplog, command):
         from specify_cli.integrations.copilot import CopilotIntegration
