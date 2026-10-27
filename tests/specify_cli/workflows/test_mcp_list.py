@@ -142,6 +142,39 @@ def test_real_registry_result_warnings_and_limit(tmp_path):
     assert json.loads(response.content[0].text) == data
 
 
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_invalid_project_roots_return_not_a_project(tmp_path, kind):
+    root = tmp_path / "not-a-project"
+    if kind == "file":
+        root.write_text("not a directory", encoding="utf-8")
+    server = create_server(launch_directory=tmp_path)
+    response = _run(
+        server.call_tool("specify_workflow_list", {"project_directory": str(root)})
+    )
+    assert response.is_error is True
+    assert response.structured_content["error"]["code"] == "not_a_spec_kit_project"
+    assert str(root) not in response.model_dump_json()
+
+
+@pytest.mark.parametrize("kind", ["policy", "storage"])
+def test_unsafe_project_storage_keeps_structured_error(tmp_path, kind):
+    root = _project(tmp_path / "project", {})
+    if kind == "policy":
+        path = root / ".specify" / "init-options.json"
+        path.write_text('{"allow_symlinks": "yes"}', encoding="utf-8")
+    else:
+        path = root / ".specify" / "workflows" / "runs"
+        path.write_text("not a directory", encoding="utf-8")
+    response = _run(
+        create_server(launch_directory=tmp_path).call_tool(
+            "specify_workflow_list", {"project_directory": str(root)}
+        )
+    )
+    assert response.is_error is True
+    assert response.structured_content["error"]["code"] == "unsafe_workflow_storage"
+    assert str(root) not in response.model_dump_json()
+
+
 def test_launch_directory_captured_and_explicit_projects_are_independent(
     tmp_path, monkeypatch
 ):

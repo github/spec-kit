@@ -99,6 +99,61 @@ def test_relative_and_nonproject_directories_are_rejected(tmp_path):
     assert exc.value.code == "not_a_spec_kit_project"
 
 
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_invalid_project_roots_are_rejected_before_policy_loading(
+    tmp_path, monkeypatch, kind
+):
+    root = tmp_path / "not-a-project"
+    if kind == "file":
+        root.write_text("not a directory", encoding="utf-8")
+    policy_calls = []
+    original = operation.project_files
+
+    def load_policy(path):
+        policy_calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(operation, "project_files", load_policy)
+    with pytest.raises(operation.WorkflowListError) as exc:
+        operation.list_workflows(operation.WorkflowListRequest(root))
+    assert exc.value.code == "not_a_spec_kit_project"
+    assert policy_calls == []
+
+
+@pytest.mark.parametrize("boundary", ["root", "policy", "storage"])
+def test_project_access_errors_remain_unsafe_storage(tmp_path, monkeypatch, boundary):
+    (tmp_path / ".specify").mkdir()
+
+    def denied(*args, **kwargs):
+        raise PermissionError("private filesystem details")
+
+    if boundary == "root":
+        original_stat = Path.stat
+
+        def root_stat(path, *args, **kwargs):
+            if path == tmp_path:
+                return denied()
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", root_stat)
+    else:
+        name = "project_files" if boundary == "policy" else "validate_workflow_storage"
+        monkeypatch.setattr(operation, name, denied)
+    with pytest.raises(operation.WorkflowListError) as exc:
+        operation.list_workflows(operation.WorkflowListRequest(tmp_path))
+    assert exc.value.code == "unsafe_workflow_storage"
+
+
+def test_invalid_project_policy_remains_unsafe_storage(tmp_path):
+    (tmp_path / ".specify").mkdir()
+    (tmp_path / ".specify" / "init-options.json").write_text(
+        '{"allow_symlinks": "yes"}', encoding="utf-8"
+    )
+    with pytest.raises(operation.WorkflowListError) as exc:
+        operation.list_workflows(operation.WorkflowListRequest(tmp_path))
+    assert exc.value.code == "unsafe_workflow_storage"
+
+
 @pytest.mark.parametrize(
     "suffix",
     [
@@ -112,8 +167,9 @@ def test_nondirectory_storage_is_rejected(tmp_path, suffix):
     target = tmp_path / suffix
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("not a directory", encoding="utf-8")
-    with pytest.raises(operation.WorkflowListError):
+    with pytest.raises(operation.WorkflowListError) as exc:
         operation.list_workflows(operation.WorkflowListRequest(tmp_path))
+    assert exc.value.code == "unsafe_workflow_storage"
 
 
 @pytest.mark.parametrize(
@@ -147,8 +203,10 @@ def test_symlinked_storage_is_rejected(tmp_path, suffix):
         } or getattr(exc, "winerror", None) in {50, 1314}:
             pytest.skip(f"Host cannot create symlinks: {exc}")
         raise
-    with pytest.raises(operation.WorkflowListError):
+    with pytest.raises(operation.WorkflowListError) as exc:
         operation.list_workflows(operation.WorkflowListRequest(root))
+    expected = "workflow_registry_read_failed" if is_file else "unsafe_workflow_storage"
+    assert exc.value.code == expected
 
 
 def test_operation_has_no_writes_network_execution_or_rendering(

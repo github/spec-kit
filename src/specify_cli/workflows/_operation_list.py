@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
+import stat
 from typing import Literal
 
 from .._file_policy import ProjectPolicyError, project_files
@@ -95,8 +96,18 @@ def list_workflows(request: WorkflowListRequest) -> WorkflowListResult:
             "invalid_limit", f"limit must be between 1 and {WORKFLOW_LIST_MAX_LIMIT}"
         )
     try:
+        # Unlike is_dir(), stat() preserves permission errors on Python 3.14.
+        try:
+            root_is_directory = stat.S_ISDIR(root.stat().st_mode)
+        except (FileNotFoundError, NotADirectoryError):
+            root_is_directory = False
+        if not root_is_directory:
+            raise WorkflowListError(
+                "not_a_spec_kit_project",
+                "Not a Spec Kit project (no .specify/ directory)",
+            )
         files = project_files(root)
-        if not root.is_dir() or not (root / ".specify").is_dir():
+        if not (root / ".specify").is_dir():
             raise WorkflowListError(
                 "not_a_spec_kit_project",
                 "Not a Spec Kit project (no .specify/ directory)",
