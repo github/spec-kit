@@ -1139,6 +1139,7 @@ class TestResolveContent:
         content = PresetResolver(project_dir).resolve_content("speckit.demo", "command")
 
         assert content is not None
+        assert "CORE BODY" in content
         assert "APPENDED" in content
         assert "just a note" not in content
 
