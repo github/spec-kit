@@ -733,6 +733,13 @@ def test_plan_prerequisite_diagnostics(
     [
         pytest.param("bash", marks=requires_bash),
         pytest.param(
+            "git-bash",
+            marks=pytest.mark.skipif(
+                _GIT_BASH is None or not _GIT_BASH.is_file(),
+                reason="Git for Windows Bash required",
+            ),
+        ),
+        pytest.param(
             "powershell",
             marks=pytest.mark.skipif(
                 not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
@@ -757,9 +764,18 @@ def test_unreadable_plan_is_not_reported_as_empty(
         args = ("-Json",) if json_mode else ()
         paths_flag = "-PathsOnly"
     else:
-        command_fn = _bash_cmd if port == "bash" else _py_cmd
+        command_fn = {
+            "bash": _bash_cmd,
+            "git-bash": _git_bash_cmd,
+            "python": _py_cmd,
+        }[port]
         args = ("--json",) if json_mode else ()
         paths_flag = "--paths-only"
+    feature_path = str(feature)
+    if port in {"bash", "git-bash"}:
+        path = _run([command_fn(prereq_repo)[0], "-c", "pwd"], feature)
+        assert path.returncode == 0, path.stderr
+        feature_path = path.stdout.strip()
 
     with _deny_plan_read(plan):
         result = _run(command_fn(prereq_repo, *args), prereq_repo)
@@ -768,13 +784,56 @@ def test_unreadable_plan_is_not_reported_as_empty(
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
-        f"ERROR: plan.md is not readable in {feature}",
+        f"ERROR: plan.md is not readable in {feature_path}",
         "Check its file permissions and rerun the prerequisite check.",
     ]
     assert paths_only.returncode == 0, paths_only.stderr
     assert plan.read_bytes() == content
     assert plan.stat().st_mtime_ns == before
     readable = _run(command_fn(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
+@pytest.mark.skipif(
+    os.name == "nt" and (_GIT_BASH is None or not _GIT_BASH.is_file()),
+    reason="Git for Windows Bash required",
+)
+@pytest.mark.parametrize("posix_mode", ["option", "environment"])
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_bash_posix_plan_read_failure(
+    prereq_repo: Path, posix_mode: str, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    content = b"# Existing implementation plan\n"
+    plan.write_bytes(content)
+    before = plan.stat().st_mtime_ns
+    command_fn = _git_bash_cmd if os.name == "nt" else _bash_cmd
+    command = command_fn(prereq_repo, *(("--json",) if json_mode else ()))
+    env = _clean_env()
+    if posix_mode == "option":
+        command.insert(1, "--posix")
+    else:
+        env["POSIXLY_CORRECT"] = "1"
+    path = _run([command[0], "-c", "pwd"], feature)
+    assert path.returncode == 0, path.stderr
+
+    with _deny_plan_read(plan):
+        result = _run(command, prereq_repo, env=env)
+        paths_only = _run([*command, "--paths-only"], prereq_repo, env=env)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {path.stdout.strip()}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.read_bytes() == content
+    assert plan.stat().st_mtime_ns == before
+    readable = _run(command, prereq_repo, env=env)
     assert readable.returncode == 0, readable.stderr
 
 

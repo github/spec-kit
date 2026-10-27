@@ -149,7 +149,7 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
 fi
 
 # Open the file because -r can ignore Windows ACLs on noacl mounts.
-if ! { : < "$IMPL_PLAN"; } 2>/dev/null; then
+if ! { true < "$IMPL_PLAN"; } 2>/dev/null; then
     echo "ERROR: plan.md is not readable in $FEATURE_DIR" >&2
     echo "Check its file permissions and rerun the prerequisite check." >&2
     exit 1
