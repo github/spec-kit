@@ -2,6 +2,31 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.2.4] - 2026-10-27
+
+### Changed
+
+- Update Secure Development Assurance Governance preset to v0.1.8 (#5139)
+- feat(bundles): allow bundles to reference other bundles (#5067)
+- fix: report a non-file .extensionignore or .presetignore as a validation error (#5131)
+- fix(presets): attribute core templates with overrides-prefixed names correctly (#5129)
+- ci: select pytest worker count automatically (#5132)
+- feat(vibe): add --no-model-invocation integration option (#5119)
+- refactor(workflows): split the expression evaluator into a package (#5114)
+- fix: make bundle step refresh rollback transactional (#4827)
+- Update Security Governance preset to v0.7.4 (#5128)
+- Update Quality Gates (Enforcement Layer) extension to v0.4.2 (#5127)
+- Update Product Spec Extension to v2.1.0 (#5126)
+- Fix local bundle installation for uppercase .ZIP artifacts (#5106)
+- fix: preserve feature numbering during reinitialization (#5101)
+- fix: retain event hooks when override omits events (#5102)
+- feat(auth): support GitHub CLI credentials (#4960)
+- fix(integrations): pass the Junie dispatch prompt via --task (#5065)
+- chore(deps): bump the codeql-action group with 2 updates (#5066)
+- Add CSDD — Controlled Spec-Driven Development extension to community catalog (#5062)
+- Add Entalpa to Community Friends (#4993)
+- chore: release 1.2.3, begin 1.2.4.dev0 development (#5063)
+
 ## [1.2.3] - 2026-10-22
 
 ### Changed
