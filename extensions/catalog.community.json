@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-26T00:00:00Z",
+  "updated_at": "2026-10-27T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -3118,6 +3118,60 @@
       "stars": 0,
       "created_at": "2026-08-10T00:00:00Z",
       "updated_at": "2026-09-18T00:00:00Z"
+    },
+    "knowledge": {
+      "name": "Shared Knowledge",
+      "id": "knowledge",
+      "description": "Inject cross-repo decisions, contracts, and conventions into your spec-kit workflow.",
+      "author": "Raúl Noa Pedroso",
+      "version": "1.10.2",
+      "download_url": "https://github.com/rnoap/spec-kit-shared-knowledge/archive/refs/tags/v1.10.2.zip",
+      "sha256": "aa263c365ec05d444aae33c731992493770d683c96a48dbbef116736cc42d23e",
+      "repository": "https://github.com/rnoap/spec-kit-shared-knowledge",
+      "homepage": "https://github.com/rnoap/spec-kit-shared-knowledge",
+      "documentation": "https://github.com/rnoap/spec-kit-shared-knowledge/blob/main/README.md",
+      "changelog": "https://github.com/rnoap/spec-kit-shared-knowledge/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.15.2",
+        "tools": [
+          {
+            "name": "git",
+            "version": ">=2.25",
+            "required": true
+          },
+          {
+            "name": "timeout",
+            "required": false
+          },
+          {
+            "name": "gtimeout",
+            "required": false
+          },
+          {
+            "name": "perl",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 4
+      },
+      "tags": [
+        "cross-repo",
+        "knowledge",
+        "context",
+        "shared-decisions",
+        "contracts"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-27T00:00:00Z",
+      "updated_at": "2026-10-27T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",

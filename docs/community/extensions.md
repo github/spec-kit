@@ -153,6 +153,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | SDD Utilities | Resume interrupted workflows, validate project health, and verify spec-to-task traceability | `process` | Read+Write | [speckit-utils](https://github.com/mvanhorn/speckit-utils) |
 | Security Review | Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews | `code` | Read+Write | [security-review](https://github.com/DyanGalih/security-review) |
 | SFSpeckit | Enterprise Salesforce SDLC with 18 commands for the full SDD lifecycle. | `process` | Read+Write | [spec-kit-sf](https://github.com/ysumanth06/spec-kit-sf) |
+| Shared Knowledge | Inject cross-repo decisions, contracts, and conventions into your spec-kit workflow. | `integration` | Read+Write | [spec-kit-shared-knowledge](https://github.com/rnoap/spec-kit-shared-knowledge) |
 | Ship Release Extension | Automates release pipeline: pre-flight checks, branch sync, changelog generation, CI verification, and PR creation | `process` | Read+Write | [spec-kit-ship](https://github.com/arunt14/spec-kit-ship) |
 | Spec Changelog | Auto-generate changelogs and release notes from spec git history and requirement diffs | `docs` | Read-only | [spec-kit-changelog](https://github.com/Quratulain-bilal/spec-kit-changelog) |
 | Spec Critique Extension | Dual-lens critical review of spec and plan from product strategy and engineering risk perspectives | `docs` | Read-only | [spec-kit-critique](https://github.com/arunt14/spec-kit-critique) |
