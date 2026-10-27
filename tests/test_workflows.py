@@ -1555,12 +1555,13 @@ class TestExpressions:
 
     def test_null_literals(self):
         """``none``/``null`` (any case) resolve to ``None``, not to a path."""
-        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.expressions import _collect_leaves, evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext()
         for literal in ("none", "null", "None", "NULL", "nUlL"):
             assert evaluate_expression("{{ " + literal + " }}", ctx) is None, literal
+            assert _collect_leaves(literal) == [], literal
 
     def test_filter_map_dot_path_attribute(self):
         """``map('a.b')`` walks nested dicts, not just a top-level key."""
@@ -1584,16 +1585,32 @@ class TestExpressions:
         """``default`` fires for an empty string too, not only for ``None``.
 
         ``_filter_default`` treats both as absent; only the ``None`` half was
-        covered.
+        covered. Other falsy values (0, False, [], {}) are preserved.
         """
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        ctx = StepContext(inputs={"empty": "", "value": "kept", "missing": None})
+        ctx = StepContext(
+            inputs={
+                "empty": "",
+                "value": "kept",
+                "missing": None,
+                "zero": 0,
+                "boolean": False,
+                "empty_list": [],
+                "empty_dict": {},
+            }
+        )
         assert evaluate_expression("{{ inputs.empty | default('fb') }}", ctx) == "fb"
         assert evaluate_expression("{{ inputs.missing | default('fb') }}", ctx) == "fb"
         # A non-empty value is passed through unchanged.
         assert evaluate_expression("{{ inputs.value | default('fb') }}", ctx) == "kept"
+        # Documented falsy values (0, False, [], {}) are passed through unchanged.
+        res_zero = evaluate_expression("{{ inputs.zero | default('fb') }}", ctx)
+        assert res_zero == 0 and res_zero is not False
+        assert evaluate_expression("{{ inputs.boolean | default('fb') }}", ctx) is False
+        assert evaluate_expression("{{ inputs.empty_list | default('fb') }}", ctx) == []
+        assert evaluate_expression("{{ inputs.empty_dict | default('fb') }}", ctx) == {}
 
     def test_filter_from_json_returns_non_object_types(self):
         """``from_json`` yields the parsed value for every JSON type, not only
