@@ -67,6 +67,14 @@ unsupported handlers are skipped with a warning.
 `--integration-options="--events false"` disables Spec Kit event handlers.
 See [runtime events](cli.md#runtime-events).
 
+Spec Kit refreshes and removes only the `[[hooks]]` entries it wrote, which
+carry `speckit_marker = true`. Each entry ends after its last TOML line and the
+blank lines right after it, so a comment that follows a Spec Kit entry, such as
+a note above your own hook, stays in the file. If removing Spec Kit's entries
+leaves only comments and blank lines, Spec Kit deletes `.vibe/hooks.toml`, and
+those comments are deleted with it. Spec Kit applies the same rule to Codex's
+`.codex/config.toml`.
+
 ## Workflow Dispatch
 
 Workflow steps use `vibe -p <prompt>` and request `--output json` for structured

@@ -395,6 +395,10 @@ class VibeIntegration(SkillsIntegration):
         headers. A parser validity gate and the scanner both return ``None``
         for malformed or ambiguous input so callers can leave the source
         byte-for-byte untouched.
+
+        A block ends after its last line of TOML and the blank lines right
+        after it. A standalone comment that follows stays with the content
+        after it, such as the user hook it introduces (#5079).
         """
         try:
             tomllib.loads(source)
@@ -403,6 +407,8 @@ class VibeIntegration(SkillsIntegration):
 
         spans: list[tuple[int, int]] = []
         current_start: int | None = None
+        current_end = 0
+        current_after_comment = False
         current_is_hooks = False
         current_has_marker = False
         multiline: str | None = None
@@ -486,7 +492,7 @@ class VibeIntegration(SkillsIntegration):
             )
             if header_path is not None:
                 if current_start is not None and current_has_marker:
-                    spans.append((current_start, offset))
+                    spans.append((current_start, current_end))
                 current_start = offset
                 current_is_hooks = is_array and header_path == ("hooks",)
                 current_has_marker = False
@@ -515,12 +521,22 @@ class VibeIntegration(SkillsIntegration):
                         if array_depth < 0:
                             return None
 
+            # Lines inside a multiline string or array are part of the value,
+            # even when they look like comments.
+            if line_starts_in_array or line_has_multiline_string or code.strip(" \t"):
+                current_end = offset + len(line)
+                current_after_comment = False
+            elif content.strip(" \t"):
+                current_after_comment = True
+            elif not current_after_comment:
+                current_end = offset + len(line)
+
             offset += len(line)
 
         if multiline is not None or array_depth:
             return None
         if current_start is not None and current_has_marker:
-            spans.append((current_start, len(source)))
+            spans.append((current_start, current_end))
         return spans
 
     @classmethod
