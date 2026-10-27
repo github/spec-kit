@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import stat
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -113,6 +116,25 @@ steps:
         def __exit__(self, *a):
             return False
 
+    @staticmethod
+    def _workflow_download(data, source_type):
+        """Build equivalent YAML and complete archive downloads."""
+        if source_type == "yml":
+            return "https://example.com/workflow.yml", data
+        output = io.BytesIO()
+        files = {"workflow.yml": data, "README.md": b"Workflow companion file"}
+        if source_type == "zip":
+            with zipfile.ZipFile(output, "w") as archive:
+                for name, content in files.items():
+                    archive.writestr(name, content)
+        else:
+            with tarfile.open(fileobj=output, mode="w:gz") as archive:
+                for name, content in files.items():
+                    entry = tarfile.TarInfo(name)
+                    entry.size = len(content)
+                    archive.addfile(entry, io.BytesIO(content))
+        return f"https://example.com/workflow.{source_type}", output.getvalue()
+
     def test_update_no_workflows_installed(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -199,26 +221,41 @@ steps:
         assert "All checked workflows are up to date" in result.output
         assert "skipped" in result.output
 
-    def test_update_installs_newer_catalog_version(self, project_dir, monkeypatch):
+    @pytest.mark.parametrize("source_type", ["yml", "zip", "tar.gz"])
+    @pytest.mark.parametrize(
+        ("installed_version", "available_version"),
+        [
+            ("1.0.0", "2.0.0"),
+            ("2024.01.15", "2024.02.01"),
+            ("2024.01.15", "2024.2.1"),
+            ("2024.1.15", "2024.02.01"),
+        ],
+    )
+    def test_update_installs_newer_catalog_version(
+        self, project_dir, monkeypatch, source_type, installed_version, available_version
+    ):
         from unittest.mock import patch
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
+        url, data = self._workflow_download(
+            self.WORKFLOW_YAML.format(version=available_version).encode(), source_type
+        )
         registry = WorkflowRegistry(project_dir)
         registry.add("align-wf", {
             "name": "Align Workflow",
-            "version": "1.0.0",
+            "version": installed_version,
             "description": "CLI alignment test workflow",
             "source": "catalog",
             "catalog_name": "test-catalog",
-            "url": "https://example.com/workflow.yml",
+            "url": url,
         })
         wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
         wf_dir.mkdir(parents=True)
         (wf_dir / "workflow.yml").write_text(
-            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+            self.WORKFLOW_YAML.format(version=installed_version), encoding="utf-8"
         )
 
         monkeypatch.setattr(
@@ -227,13 +264,12 @@ steps:
             lambda self, wid: {
                 "id": wid,
                 "name": "Align Workflow",
-                "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
+                "version": available_version,
+                "url": url,
                 "_install_allowed": True,
                 "_catalog_name": "test-catalog",
             },
         )
-        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
@@ -241,10 +277,13 @@ steps:
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
         assert result.exit_code == 0, result.output
-        assert "1.0.0" in result.output and "2.0.0" in result.output
         meta = WorkflowRegistry(project_dir).get("align-wf")
-        assert meta["version"] == "2.0.0"
-        assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+        assert meta["version"] == available_version
+        assert (wf_dir / "workflow.yml").read_text(encoding="utf-8") == (
+            self.WORKFLOW_YAML.format(version=available_version)
+        )
+        if source_type != "yml":
+            assert (wf_dir / "README.md").read_bytes() == b"Workflow companion file"
 
     def test_update_installs_newer_workflow_with_project_custom_step(
         self, project_dir, monkeypatch
@@ -575,7 +614,10 @@ steps:
         # The previously installed workflow must survive.
         assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
-    def test_update_rejects_version_mismatch_from_stale_url(self, project_dir, monkeypatch):
+    @pytest.mark.parametrize("source_type", ["yml", "zip", "tar.gz"])
+    def test_update_rejects_version_mismatch_from_stale_url(
+        self, project_dir, monkeypatch, source_type
+    ):
         """A URL serving a different version than the catalog advertised must fail the update."""
         from unittest.mock import patch
         from typer.testing import CliRunner
@@ -583,13 +625,16 @@ steps:
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
+        url, data = self._workflow_download(
+            self.WORKFLOW_YAML.format(version="1.0.0").encode(), source_type
+        )
         WorkflowRegistry(project_dir).add("align-wf", {
             "name": "Align Workflow",
             "version": "1.0.0",
             "description": "CLI alignment test workflow",
             "source": "catalog",
             "catalog_name": "test-catalog",
-            "url": "https://example.com/workflow.yml",
+            "url": url,
         })
         wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
         wf_dir.mkdir(parents=True)
@@ -604,23 +649,24 @@ steps:
                 "id": wid,
                 "name": "Align Workflow",
                 "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
+                "url": url,
                 "_install_allowed": True,
                 "_catalog_name": "test-catalog",
             },
         )
         # The URL still serves the old 1.0.0 payload.
-        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
             side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code == 1, result.output
         assert "does not match the catalog version" in result.output
         assert "Failed to update" in result.output
         meta = WorkflowRegistry(project_dir).get("align-wf")
         assert meta["version"] == "1.0.0"
+        assert not (wf_dir / "README.md").exists()
         assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
     def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
@@ -924,12 +970,13 @@ steps:
         ]
         assert leftovers == []
 
+    @pytest.mark.parametrize("source_type", ["yml", "zip", "tar.gz"])
     @pytest.mark.parametrize(
         ("replacement_source", "replacement_version"),
         [("local", "1.0.0"), ("catalog", "1.5.0")],
     )
     def test_update_rechecks_registry_after_confirmation(
-        self, project_dir, monkeypatch, replacement_source, replacement_version
+        self, project_dir, monkeypatch, replacement_source, replacement_version, source_type
     ):
         from unittest.mock import patch
 
@@ -939,6 +986,9 @@ steps:
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
+        url, catalog_data = self._workflow_download(
+            self.WORKFLOW_YAML.format(version="2.0.0").encode(), source_type
+        )
         registry = WorkflowRegistry(project_dir)
         registry.add(
             "align-wf",
@@ -947,7 +997,7 @@ steps:
                 "version": "1.0.0",
                 "description": "",
                 "source": "catalog",
-                "url": "https://example.com/workflow.yml",
+                "url": url,
             },
         )
         workflow_file = (
@@ -975,7 +1025,7 @@ steps:
                 "id": wid,
                 "name": "Align Workflow",
                 "version": "2.0.0",
-                "url": "https://example.com/workflow.yml",
+                "url": url,
                 "_install_allowed": True,
                 "_catalog_name": "test-catalog",
             },
@@ -995,7 +1045,6 @@ steps:
             return True
 
         monkeypatch.setattr(_commands.typer, "confirm", replace_while_confirming)
-        catalog_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
         with patch(
             "specify_cli.authentication.http.open_url",
             side_effect=lambda url, timeout=None, extra_headers=None,
