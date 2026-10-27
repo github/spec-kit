@@ -32,6 +32,10 @@ flowchart LR
 
 ## Commands
 
+Slash commands in this README use GitHub Copilot's default skills syntax.
+For another agent, use its
+[equivalent invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
+
 | Command | Stage | Output |
 |---------|-------|--------|
 | `/speckit-assess-intake` | Capture & normalize a raw idea (text, URL, ticket, or codebase pointer). | `intake.md` |
