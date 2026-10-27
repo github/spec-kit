@@ -3078,6 +3078,47 @@
       "created_at": "2026-06-08T00:00:00Z",
       "updated_at": "2026-06-24T00:00:00Z"
     },
+    "keel": {
+      "name": "Keel Connect",
+      "id": "keel",
+      "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent.",
+      "author": "Keel Discovery",
+      "version": "2.3.1",
+      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v2.3.1.zip",
+      "repository": "https://github.com/keeldiscovery/spec-kit-keel",
+      "homepage": "https://keeldiscovery.com",
+      "documentation": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/README.md",
+      "changelog": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "integration",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=1.0.0,<2.0.0",
+        "tools": [
+          {
+            "name": "python3",
+            "version": ">=3.9",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "keel",
+        "runtime",
+        "connect",
+        "agent",
+        "infrastructure"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-08-10T00:00:00Z",
+      "updated_at": "2026-09-18T00:00:00Z"
+    },
     "knowledge": {
       "name": "Shared Knowledge",
       "id": "knowledge",
@@ -3131,47 +3172,6 @@
       "stars": 0,
       "created_at": "2026-10-27T00:00:00Z",
       "updated_at": "2026-10-27T00:00:00Z"
-    },
-    "keel": {
-      "name": "Keel Connect",
-      "id": "keel",
-      "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent.",
-      "author": "Keel Discovery",
-      "version": "2.3.1",
-      "download_url": "https://github.com/keeldiscovery/spec-kit-keel/archive/refs/tags/v2.3.1.zip",
-      "repository": "https://github.com/keeldiscovery/spec-kit-keel",
-      "homepage": "https://keeldiscovery.com",
-      "documentation": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/README.md",
-      "changelog": "https://github.com/keeldiscovery/spec-kit-keel/blob/main/CHANGELOG.md",
-      "license": "Apache-2.0",
-      "category": "integration",
-      "effect": "read-only",
-      "requires": {
-        "speckit_version": ">=1.0.0,<2.0.0",
-        "tools": [
-          {
-            "name": "python3",
-            "version": ">=3.9",
-            "required": true
-          }
-        ]
-      },
-      "provides": {
-        "commands": 2,
-        "hooks": 0
-      },
-      "tags": [
-        "keel",
-        "runtime",
-        "connect",
-        "agent",
-        "infrastructure"
-      ],
-      "verified": false,
-      "downloads": 0,
-      "stars": 0,
-      "created_at": "2026-08-10T00:00:00Z",
-      "updated_at": "2026-09-18T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
