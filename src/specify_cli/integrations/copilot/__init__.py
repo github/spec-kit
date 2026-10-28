@@ -597,15 +597,16 @@ class CopilotIntegration(IntegrationBase):
                 created = self._setup_skills(project_root, manifest, parsed_options, **opts)
             else:
                 created = self._setup_commands(project_root, manifest, parsed_options, **opts)
+
+            # Install agent runtime events
+            event_files = self.emit_events(
+                project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
+                force=opts.get("force", False),
+            )
         except BaseException:
             self._disable_model_invocation = False
             raise
 
-        # Install agent runtime events
-        event_files = self.emit_events(
-            project_root, manifest, events=opts.get("events"), parsed_options=parsed_options,
-            force=opts.get("force", False),
-        )
         created.extend(event_files)
         return created
 

@@ -1102,9 +1102,11 @@ class TestCopilotNoModelInvocationOption:
         result = i.post_process_skill_content("---\nname: speckit-plan\n---\n\nBody\n")
         assert "disable-model-invocation" not in result
 
-    def test_failed_setup_does_not_leave_option_set(self, tmp_path):
+    @pytest.mark.parametrize("failing", ["setup", "emit_events"])
+    def test_failed_setup_does_not_leave_option_set(self, tmp_path, failing):
         i = get_integration("copilot")
-        with patch.object(SkillsIntegration, "setup", side_effect=RuntimeError("boom")):
+        target = SkillsIntegration if failing == "setup" else type(i)
+        with patch.object(target, failing, side_effect=RuntimeError("boom")):
             with pytest.raises(RuntimeError):
                 i.setup(
                     tmp_path,
