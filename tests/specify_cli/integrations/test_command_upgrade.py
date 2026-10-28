@@ -1478,8 +1478,13 @@ class TestIntegrationUpgradeDetailed:
         assert reloaded["files"]["ok.md"] == ok_hash
         assert reloaded["files"]["bad.md"] == stale_hash
 
+    @pytest.mark.parametrize(
+        "unmodified_files",
+        [None, {"bad.md", "ok.md"}],
+        ids=["upgrade", "use-or-switch-snapshot"],
+    )
     def test_resync_manifest_probe_error_does_not_abort_remaining_files(
-        self, tmp_path, capsys
+        self, tmp_path, capsys, unmodified_files
     ):
         """An ``OSError`` from the pre-rehash filesystem probes must warn
         and continue, not abort the whole resync loop.
@@ -1487,7 +1492,9 @@ class TestIntegrationUpgradeDetailed:
         ``is_symlink()``/``is_file()`` run before the per-file ``try`` that
         wraps ``record_existing()``. If one of those probes raises (e.g. an
         inaccessible path), it must not jump past the remaining files in
-        ``new_manifest.files`` and leave their hashes stale.
+        ``new_manifest.files`` and leave their hashes stale. With
+        ``unmodified_files`` (``use`` and installed-target ``switch``, #5078)
+        the changed-bytes check also runs per file, inside that ``try``.
         """
         from specify_cli.integrations._helpers import (
             _resync_manifest_after_registration,
@@ -1521,7 +1528,10 @@ class TestIntegrationUpgradeDetailed:
 
         with mock.patch.object(Path, "is_file", fake_is_file):
             _resync_manifest_after_registration(
-                manifest, "claude", continuing="Continuing."
+                manifest,
+                "claude",
+                continuing="Continuing.",
+                unmodified_files=unmodified_files,
             )
 
         captured = strip_ansi(capsys.readouterr().out)
@@ -1534,6 +1544,160 @@ class TestIntegrationUpgradeDetailed:
             "a probe error on an earlier file must not abort rehashing of "
             "the remaining tracked files"
         )
+
+    def test_resync_with_snapshot_skips_files_registration_left_unchanged(
+        self, tmp_path
+    ):
+        """With ``unmodified_files`` only changed bytes are re-recorded (#5078).
+
+        ``record_existing()`` clears a file's recovered marker, so a file
+        that registration didn't touch must keep its entry as it was.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "kept.md").write_text("kept content\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("kept.md", recovered=True)
+        manifest.record_existing("ok.md")
+        manifest.save()
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+
+        _resync_manifest_after_registration(
+            manifest,
+            "claude",
+            continuing="Continuing.",
+            unmodified_files={"kept.md", "ok.md"},
+        )
+
+        reloaded = IntegrationManifest.load("claude", project)
+        assert reloaded.is_recovered("kept.md")
+        ok_hash = hashlib.sha256((project / "ok.md").read_bytes()).hexdigest()
+        assert reloaded.files["ok.md"] == ok_hash
+
+    def test_snapshot_follows_check_modified_rules_one_file_at_a_time(
+        self, tmp_path, capsys
+    ):
+        """The snapshot matches ``check_modified()`` for paths in the project.
+
+        A deleted file counts as unmodified, an edited one as modified, and a
+        file that can't be probed only drops itself from the snapshot (#5078),
+        with a warning, since its hash won't be refreshed.
+        """
+        import unittest.mock as mock
+
+        from specify_cli.integrations._helpers import (
+            _snapshot_manifest_before_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        for name in ("ok.md", "edited.md", "deleted.md", "bad.md"):
+            (project / name).write_bytes(f"{name} content\n".encode())
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        for name in ("ok.md", "edited.md", "deleted.md", "bad.md"):
+            manifest.record_existing(name)
+        manifest.save()
+        (project / "edited.md").write_bytes(b"user edit\n")
+        (project / "deleted.md").unlink()
+
+        real_is_file = Path.is_file
+
+        def fake_is_file(self):
+            if self.name == "bad.md":
+                raise OSError("permission denied")
+            return real_is_file(self)
+
+        with mock.patch.object(Path, "is_file", fake_is_file):
+            snapshot, unmodified = _snapshot_manifest_before_registration(
+                project, "claude"
+            )
+
+        assert snapshot is not None, "one unreadable file must not drop the snapshot"
+        assert unmodified == {"ok.md", "deleted.md"}
+
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "'bad.md'" in captured, "an unreadable file was skipped silently"
+        assert "edited.md" not in captured, "a user edit is not an error"
+
+    @pytest.mark.parametrize("escape", ["dotdot", "symlinked-parent"])
+    def test_snapshot_skips_manifest_paths_outside_the_project(
+        self, tmp_path, capsys, escape
+    ):
+        """Paths that record_existing() rejects stay out of the snapshot.
+
+        They are never hashed either, so the snapshot and the resync's
+        changed-bytes check (#5078) can't read a file outside the project.
+        """
+        import unittest.mock as mock
+
+        from specify_cli.integrations import manifest as manifest_module
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+            _snapshot_manifest_before_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret = outside / "secret.md"
+        secret.write_text("outside project\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        if escape == "dotdot":
+            escaping_key = "../outside/secret.md"
+        else:
+            try:
+                (project / "outside-link").symlink_to(
+                    outside, target_is_directory=True
+                )
+            except OSError as exc:
+                pytest.skip(f"symlinks unavailable: {exc}")
+            escaping_key = "outside-link/secret.md"
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("ok.md")
+        manifest._files[escaping_key] = hashlib.sha256(secret.read_bytes()).hexdigest()
+        manifest.save()
+
+        hashed: list[str] = []
+        real_sha256 = manifest_module._sha256
+
+        def recording_sha256(path):
+            hashed.append(Path(path).name)
+            return real_sha256(path)
+
+        with mock.patch.object(manifest_module, "_sha256", recording_sha256):
+            snapshot, unmodified = _snapshot_manifest_before_registration(
+                project, "claude"
+            )
+            assert snapshot is not None
+            assert unmodified == {"ok.md"}
+            assert "secret.md" not in hashed, "the snapshot hashed a path outside the project"
+            assert f"'{escaping_key}'" in strip_ansi(capsys.readouterr().out), (
+                "a path left out of the snapshot was skipped silently"
+            )
+
+            # The resync checks paths itself too, as a new-target switch
+            # passes every tracked file.
+            _resync_manifest_after_registration(
+                snapshot,
+                "claude",
+                continuing="Continuing.",
+                unmodified_files=set(snapshot.files),
+            )
+            assert "secret.md" not in hashed, "the resync hashed a path outside the project"
 
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
