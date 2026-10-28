@@ -433,8 +433,8 @@ class ExtensionManifest:
                             "expected a mapping or list of mappings"
                         )
                     command = entry.get("command")
-                    # #5080: same rule as extension events (#17). A truthy
-                    # non-string (e.g. command: [foo]) passed a bare
+                    # #5080: same rule as validate_events() in events/__init__.py.
+                    # A truthy non-string (e.g. command: [foo]) passed a bare
                     # truthiness check and crashed hook registration mid-install.
                     if not isinstance(command, str) or not command.strip():
                         raise ValidationError(
