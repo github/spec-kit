@@ -761,6 +761,35 @@ class TestNegative:
             f"Invalid run state for {run['run_id']}",
         )
 
+    @pytest.mark.parametrize(
+        "make_scalar",
+        [
+            lambda: 10 ** 4000,
+            lambda: "x" * 200_000,
+        ],
+        ids=["int", "str"],
+    )
+    def test_byte_budget_covers_every_scalar_type(self, make_scalar):
+        from specify_cli.workflows import _commands
+
+        big = make_scalar()
+        payload = {"refs": [big] * 100_000}
+        with pytest.raises(ValueError, match="exceeds 5242880 bytes"):
+            _commands._plain_workflow_json(payload, max_nodes=10**6)
+
+    def test_aliased_large_integer_returns_json_error(self, project_dir):
+        run = _run(project_dir, GATE_WF)
+        big = "9" * 4000
+        refs = ", ".join(["*n"] * 3000)
+        _snapshot(project_dir, run["run_id"]).write_text(
+            GATE_WF + f"metadata:\n  n: &n {big}\n  refs: [{refs}]\n",
+            encoding="utf-8",
+        )
+
+        _assert_json_error(
+            _definition(project_dir, run["run_id"]), "too large to represent"
+        )
+
     def test_node_budget_is_opt_in(self, capsys):
         from specify_cli.workflows import _commands
 

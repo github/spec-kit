@@ -30,6 +30,34 @@ from ..integration_state import (
 from .base import RunStatus, StepContext
 
 
+# -- Safe parsing ---------------------------------------------------------
+
+
+def _safe_yaml_load(source: Any, label: str) -> Any:
+    """``yaml.safe_load`` that reports every parse failure as ``ValueError``.
+
+    Pathologically nested documents raise ``RecursionError``, which callers
+    relying on the documented ``ValueError`` contract would not expect.
+    """
+    try:
+        return yaml.safe_load(source)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {label}: {exc}") from exc
+    except RecursionError:
+        raise ValueError(f"Invalid YAML in {label}: nested too deeply") from None
+
+
+def _safe_json_load(stream: Any, label: str) -> Any:
+    """``json.load`` that reports excessive nesting as ``ValueError``.
+
+    ``json.JSONDecodeError`` is already a ``ValueError`` and is left as is.
+    """
+    try:
+        return json.load(stream)
+    except RecursionError:
+        raise ValueError(f"Invalid {label}: nested too deeply") from None
+
+
 # -- Workflow Definition --------------------------------------------------
 
 
@@ -94,11 +122,7 @@ class WorkflowDefinition:
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
         with open(path, encoding="utf-8") as f:
-            try:
-                data = yaml.safe_load(f)
-            except yaml.YAMLError as exc:
-                msg = f"Invalid YAML in {path}: {exc}"
-                raise ValueError(msg) from exc
+            data = _safe_yaml_load(f, str(path))
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -107,11 +131,7 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        try:
-            data = yaml.safe_load(content)
-        except yaml.YAMLError as exc:
-            msg = f"Invalid YAML: {exc}"
-            raise ValueError(msg) from exc
+        data = _safe_yaml_load(content, "workflow definition")
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -878,7 +898,7 @@ class RunState:
 
         try:
             with open(state_path, encoding="utf-8") as f:
-                state_data = json.load(f)
+                state_data = _safe_json_load(f, f"run state for {run_id}")
         except FileNotFoundError:
             msg = f"Run state not found: {state_path}"
             raise FileNotFoundError(msg)
@@ -972,7 +992,7 @@ class RunState:
         inputs_path = runs_dir / "inputs.json"
         if "inputs" not in state_data and inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
-                inputs_data = json.load(f)
+                inputs_data = _safe_json_load(f, f"run inputs for {run_id}")
             if not isinstance(inputs_data, dict):
                 raise ValueError(
                     "Invalid run inputs: expected a JSON object"

@@ -8705,12 +8705,42 @@ steps:
         with pytest.raises(FileNotFoundError):
             state.load_definition()
 
-    @pytest.mark.parametrize("content", [": : :\n  - [", "- a\n- b\n"])
+    @pytest.mark.parametrize(
+        "content", [": : :\n  - [", "- a\n- b\n", "a: " + "[" * 100000]
+    )
     def test_load_definition_rejects_corrupt_snapshot(self, project_dir, content):
         _, state = self._gated_run(project_dir)
         state.definition_path.write_text(content, encoding="utf-8")
         with pytest.raises(ValueError):
             state.load_definition()
+
+    def test_deeply_nested_yaml_raises_value_error(self, tmp_path):
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        nested = "a: " + "[" * 100000
+        path = tmp_path / "workflow.yml"
+        path.write_text(nested, encoding="utf-8")
+        with pytest.raises(ValueError, match="nested too deeply"):
+            WorkflowDefinition.from_yaml(path)
+        with pytest.raises(ValueError, match="nested too deeply"):
+            WorkflowDefinition.from_string(nested)
+
+    @pytest.mark.parametrize("name", ["state.json", "inputs.json"])
+    def test_run_state_load_deeply_nested_json_raises_value_error(
+        self, project_dir, name
+    ):
+        from specify_cli.workflows.engine import RunState
+
+        _, state = self._gated_run(project_dir)
+        target = state.runs_dir / name
+        if name == "inputs.json":
+            # inputs.json is only read when state.json carries no "inputs"
+            data = json.loads((state.runs_dir / "state.json").read_text("utf-8"))
+            data.pop("inputs", None)
+            (state.runs_dir / "state.json").write_text(json.dumps(data), "utf-8")
+        target.write_text("[" * 100000, encoding="utf-8")
+        with pytest.raises(ValueError):
+            RunState.load(state.run_id, project_dir)
 
     def test_snapshot_storage_contract(self, project_dir):
         """``runs/<id>/workflow.yml`` is read by ``resume`` and ``workflow

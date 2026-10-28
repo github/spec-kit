@@ -1082,9 +1082,26 @@ def _run_outcome_exit_code(status_value: str) -> int:
 _MAX_JSON_NODES = 100000
 
 # Byte cap on each emitted definition. Nodes do not bound size: one alias can
-# repeat a large string or deeply indented container many times, so strings are
-# charged during traversal and the complete serialized JSON is checked at the end.
+# repeat a large scalar or deeply indented container many times, so the cap is
+# enforced on the encoded output itself rather than estimated per value type.
 _MAX_JSON_BYTES = 5 * 1024 * 1024
+
+
+def _check_json_byte_budget(plain: Any) -> None:
+    """Raise ``ValueError`` once *plain* encodes to more than the byte cap.
+
+    The encoding is streamed and discarded, so memory stays bounded even when
+    aliases expand a small input into a huge document, and no value type can
+    escape the budget.
+    """
+    total = 0
+    for chunk in json.JSONEncoder(indent=2).iterencode(plain):
+        total += len(chunk)
+        if total > _MAX_JSON_BYTES:
+            raise ValueError(
+                "Workflow JSON output is too large to represent: it "
+                f"exceeds {_MAX_JSON_BYTES} bytes"
+            )
 
 
 def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
@@ -1101,14 +1118,14 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
     exponentially even though it is linear on disk. Cycle detection alone
     lets that terminate, so a caller emitting user-authored definitions passes
     ``max_nodes`` to bound the expansion instead of rejecting every reused
-    alias. Each call has its own node and byte budget, so independent
-    definitions can be budgeted separately. The budget is opt-in: payloads
-    such as ``workflow status --json`` grow with the number of runs and must
-    not be capped. Excessive nesting depth is always reported as
+    alias. The byte budget is measured by streaming the encoded output, so it
+    covers every value type. Each call has its own node and byte budget, so
+    independent definitions can be budgeted separately. The budget is opt-in:
+    payloads such as ``workflow status --json`` grow with the number of runs
+    and must not be capped. Excessive nesting depth is always reported as
     ``ValueError``.
     """
     remaining_nodes = max_nodes
-    remaining_bytes = _MAX_JSON_BYTES if max_nodes is not None else None
 
     def json_key(key: Any) -> str:
         """Canonicalize a mapping key to the property name json.dumps emits."""
@@ -1117,18 +1134,6 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
         if isinstance(key, (int, float, bool)) or key is None:
             return json.dumps(key)
         return str(key)
-
-    def charge(text: str) -> None:
-        """Debit the byte budget by the length of *text* as emitted JSON."""
-        nonlocal remaining_bytes
-        if remaining_bytes is None:
-            return
-        remaining_bytes -= len(json.dumps(text))
-        if remaining_bytes < 0:
-            raise ValueError(
-                "Workflow JSON output is too large to represent: it "
-                f"exceeds {_MAX_JSON_BYTES} bytes"
-            )
 
     def plain_json(value: Any, active_containers: set[int]) -> Any:
         nonlocal remaining_nodes
@@ -1139,8 +1144,6 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
                     "Workflow JSON output is too large to represent: it "
                     f"exceeds {max_nodes} nodes"
                 )
-        if isinstance(value, str):
-            charge(value)
         if isinstance(value, dict):
             container_id = id(value)
             if container_id in active_containers:
@@ -1157,7 +1160,6 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
                             "Workflow JSON output cannot represent duplicate "
                             f"mapping key {canonical!r}"
                         )
-                    charge(canonical)
                     result[canonical] = plain_json(item, active_containers)
                 return result
             finally:
@@ -1176,28 +1178,18 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
             finally:
                 active_containers.remove(container_id)
         if isinstance(value, (bytes, bytearray)):
-            placeholder = f"<binary: {len(value)} bytes>"
-            charge(placeholder)
-            return placeholder
+            return f"<binary: {len(value)} bytes>"
         if isinstance(value, (set, frozenset)):
             items = [plain_json(item, active_containers) for item in value]
             return sorted(items, key=json.dumps)
         if isinstance(value, (str, int, float)) or value is None:
             return value
-        text = str(value)
-        charge(text)
-        return text
+        return str(value)
 
     try:
         plain = plain_json(payload, set())
-        if (
-            remaining_bytes is not None
-            and len(json.dumps(plain, indent=2)) > _MAX_JSON_BYTES
-        ):
-            raise ValueError(
-                "Workflow JSON output is too large to represent: it "
-                f"exceeds {_MAX_JSON_BYTES} bytes"
-            )
+        if max_nodes is not None:
+            _check_json_byte_budget(plain)
         return plain
     except RecursionError:
         raise ValueError(
