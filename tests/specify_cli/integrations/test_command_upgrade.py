@@ -1552,12 +1552,13 @@ class TestIntegrationUpgradeDetailed:
         assert reloaded.files["ok.md"] == ok_hash
 
     def test_snapshot_follows_check_modified_rules_one_file_at_a_time(
-        self, tmp_path
+        self, tmp_path, capsys
     ):
         """The snapshot matches ``check_modified()`` for paths in the project.
 
         A deleted file counts as unmodified, an edited one as modified, and a
-        file that can't be probed only drops itself from the snapshot (#5078).
+        file that can't be probed only drops itself from the snapshot (#5078),
+        with a warning, since its hash won't be refreshed.
         """
         import unittest.mock as mock
 
@@ -1593,9 +1594,14 @@ class TestIntegrationUpgradeDetailed:
         assert snapshot is not None, "one unreadable file must not drop the snapshot"
         assert unmodified == {"ok.md", "deleted.md"}
 
+        captured = strip_ansi(capsys.readouterr().out)
+        assert "Warning:" in captured
+        assert "'bad.md'" in captured, "an unreadable file was skipped silently"
+        assert "edited.md" not in captured, "a user edit is not an error"
+
     @pytest.mark.parametrize("escape", ["dotdot", "symlinked-parent"])
     def test_snapshot_skips_manifest_paths_outside_the_project(
-        self, tmp_path, escape
+        self, tmp_path, capsys, escape
     ):
         """Paths that record_existing() rejects stay out of the snapshot.
 
@@ -1649,6 +1655,9 @@ class TestIntegrationUpgradeDetailed:
             assert snapshot is not None
             assert unmodified == {"ok.md"}
             assert "secret.md" not in hashed, "the snapshot hashed a path outside the project"
+            assert f"'{escaping_key}'" in strip_ansi(capsys.readouterr().out), (
+                "a path left out of the snapshot was skipped silently"
+            )
 
             # The resync checks paths itself too, as a new-target switch
             # passes every tracked file.

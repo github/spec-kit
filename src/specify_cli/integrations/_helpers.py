@@ -490,7 +490,8 @@ def _snapshot_manifest_before_registration(
 
     Same rules as ``check_modified()``, applied one file at a time after
     ``record_existing()``'s path check, so no file outside the project is
-    read. A path that fails the check or can't be read counts as modified.
+    read. A path that fails the check or can't be read counts as modified,
+    with a warning: its hash isn't refreshed after registration.
     """
     try:
         from .manifest import IntegrationManifest, _sha256, _validate_record_path
@@ -505,8 +506,16 @@ def _snapshot_manifest_before_registration(
                     abs_path.is_file() and _sha256(abs_path) == expected_hash
                 ):
                     unmodified.add(rel)
-            except (OSError, RuntimeError, ValueError):
-                continue
+            except (OSError, RuntimeError, ValueError) as file_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "snapshot manifest hash for",
+                    "file",
+                    rel,
+                    file_err,
+                    continuing="Its hash won't be refreshed after registration.",
+                )
         return manifest, unmodified
     except FileNotFoundError:
         return None, set()
