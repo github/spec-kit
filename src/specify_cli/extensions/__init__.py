@@ -5308,6 +5308,11 @@ class ConfigManager:
     def _get_extension_defaults(self) -> Dict[str, Any]:
         """Get default configuration from extension manifest.
 
+        Reads the top-level ``defaults`` key documented in the extension
+        template and API reference, and ``config.defaults`` used by the
+        bundled git extension. When both are present they are merged, with
+        ``config.defaults`` winning on conflicting keys.
+
         Returns:
             Default configuration dictionary
         """
@@ -5316,6 +5321,9 @@ class ConfigManager:
             return {}
 
         manifest_data = self._load_yaml_config(manifest_path)
+        top_level_defaults = manifest_data.get("defaults", {})
+        if not isinstance(top_level_defaults, dict):
+            top_level_defaults = {}
         # _load_yaml_config already coerces a non-mapping *root* to {}, but
         # extension.yml's top-level 'config' key is unvalidated by
         # ExtensionManifest (only 'provides.config' is checked there -- a
@@ -5332,9 +5340,11 @@ class ConfigManager:
         # deeper in the manifest's own 'config' section.
         config_section = manifest_data.get("config", {})
         if not isinstance(config_section, dict):
-            return {}
+            return top_level_defaults
         defaults = config_section.get("defaults", {})
-        return defaults if isinstance(defaults, dict) else {}
+        if not isinstance(defaults, dict):
+            return top_level_defaults
+        return self._merge_configs(top_level_defaults, defaults)
 
     def _get_project_config(self) -> Dict[str, Any]:
         """Get project-level configuration.
