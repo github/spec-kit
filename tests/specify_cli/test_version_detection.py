@@ -25,6 +25,34 @@ from tests.specify_cli.self_upgrade_helpers import (
 
 
 class TestRelocatedToolDetection:
+    @pytest.mark.parametrize("value", ["./tools", "../tools"])
+    @pytest.mark.parametrize("environment,expected", [
+        ("specify-cli", _InstallMethod.UV_TOOL),
+        ("specify-cli2", _InstallMethod.UNSUPPORTED),
+    ])
+    def test_relative_uv_tool_dir(self, monkeypatch, tmp_path, value, environment, expected):
+        working_dir = tmp_path / "working"
+        working_dir.mkdir()
+        monkeypatch.chdir(working_dir)
+        monkeypatch.setenv("UV_TOOL_DIR", value)
+        entrypoint = (working_dir / value / environment / "bin" / "specify").resolve()
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("#!/usr/bin/env python\n")
+        with patch("specify_cli._version._editable_marker_seen", return_value=False), patch(
+            "specify_cli._version.subprocess.run"
+        ) as registry_lookup:
+            assert _detect_install_method(str(entrypoint)) == expected
+        registry_lookup.assert_not_called()
+
+    @pytest.mark.parametrize("suffix", ["uv/tools/specify-cli/", "pipx/venvs/specify-cli/"])
+    def test_relative_xdg_data_home_is_not_accepted(self, monkeypatch, tmp_path, suffix):
+        from specify_cli._version import _expand_prefix, _path_is_within_prefix
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("XDG_DATA_HOME", "./data")
+        prefix = _expand_prefix("${XDG_DATA_HOME}/" + suffix)
+        assert not _path_is_within_prefix((tmp_path / "data" / suffix / "bin/specify"), prefix)
+
     @pytest.mark.parametrize("environment,expected", [
         ("specify-cli", _InstallMethod.PIPX),
         ("specify-cli2", _InstallMethod.UNSUPPORTED),

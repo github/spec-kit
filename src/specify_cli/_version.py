@@ -369,8 +369,8 @@ def _expand_prefix(prefix: str) -> Path | None:
         return None
     try:
         expanded_path = Path(expanded)
-        # pipx resolves a relative PIPX_HOME against the installer working directory.
-        if expanded_path.is_absolute() or prefix.startswith("${PIPX_HOME}/"):
+        # uv and pipx resolve their relative tool directories against the working directory.
+        if expanded_path.is_absolute() or prefix.startswith(("${UV_TOOL_DIR}/", "${PIPX_HOME}/")):
             return expanded_path.resolve()
         return expanded_path
     except OSError:
