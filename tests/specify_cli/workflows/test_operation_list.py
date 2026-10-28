@@ -167,6 +167,9 @@ def test_nondirectory_storage_is_rejected(tmp_path, suffix):
     target = tmp_path / suffix
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("not a directory", encoding="utf-8")
+    with pytest.raises(operation.WorkflowStorageError) as storage_error:
+        operation.validate_workflow_storage(tmp_path)
+    assert str(storage_error.value) == f"{suffix} path exists but is not a directory"
     with pytest.raises(operation.WorkflowListError) as exc:
         operation.list_workflows(operation.WorkflowListRequest(tmp_path))
     assert exc.value.code == "unsafe_workflow_storage"

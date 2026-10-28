@@ -19,4 +19,4 @@ def validate_workflow_storage(project_root: Path) -> None:
         if path.is_symlink():
             raise WorkflowStorageError(f"Refusing to use symlinked {suffix} path")
         if path.exists() and not path.is_dir():
-            raise WorkflowStorageError(f"{suffix} exists but is not a directory")
+            raise WorkflowStorageError(f"{suffix} path exists but is not a directory")
