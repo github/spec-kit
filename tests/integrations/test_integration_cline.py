@@ -82,6 +82,28 @@ class TestClineIntegration(MarkdownIntegrationTests):
         rewritten = cline._rewrite_handoff_references(content)
         assert rewritten == "---\nagent: speckit-plan\n---\n"
 
+    def test_cline_body_refs_keep_md_file_names(self):
+        """Command references are hyphenated but ``speckit.*.md`` file names keep ``.md``."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Edit `.specify/extensions/git/commands/speckit.git.commit.md`, "
+            "then run /speckit.git.commit."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Edit `.specify/extensions/git/commands/speckit.git.commit.md`, "
+            "then run /speckit-git-commit."
+        )
+
+    def test_cline_frontmatter_refs_keep_md_file_names(self):
+        """Frontmatter string values get the same ``.md`` file name protection."""
+        from specify_cli.agents import CommandRegistrar
+
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.plan", "file": "commands/speckit.git.commit.md"}
+        )
+        assert refs == {"agent": "speckit-plan", "file": "commands/speckit.git.commit.md"}
+
     def test_cline_hook_instruction_injection(self):
         """Verify Cline injects the dot-to-hyphen note for hooks."""
         cline = get_integration("cline")
