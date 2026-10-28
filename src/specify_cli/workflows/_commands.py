@@ -183,16 +183,13 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
 
 def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     """Refuse symlinked workflow storage directories before workflow commands run."""
-    _reject_unsafe_dir(project_root / ".specify", ".specify")
-    _reject_unsafe_dir(project_root / ".specify" / "workflows", ".specify/workflows")
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "runs",
-        ".specify/workflows/runs",
-    )
-    _reject_unsafe_dir(
-        project_root / ".specify" / "workflows" / "overlays",
-        ".specify/workflows/overlays",
-    )
+    from ._storage import WorkflowStorageError, validate_workflow_storage
+
+    try:
+        validate_workflow_storage(project_root)
+    except WorkflowStorageError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
 
 
 def _resolve_installed_workflow_ownership(
