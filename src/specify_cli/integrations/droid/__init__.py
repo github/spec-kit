@@ -148,7 +148,8 @@ class DroidIntegration(SkillsIntegration):
         Applies the shared hook-command normalization note (skills agents use
         hyphenated ``/speckit-<name>`` invocations, not dotted ``/speckit.<name>``)
         and the Droid-specific ``user-invocable`` / ``disable-model-invocation``
-        frontmatter flags so skills are both user- and Droid-invocable.
+        frontmatter flags so skills are both user- and Droid-invocable by
+        default.
 
         ``disable-model-invocation`` is ``true`` for core command skills when
         the last ``setup()`` in this process was given
