@@ -8774,6 +8774,66 @@ class TestConfigManagerNonMappingManifestConfigSection:
         assert executor._evaluate_condition("config.x is set", "jira") is False
 
 
+class TestConfigManagerTopLevelManifestDefaults:
+    """A top-level `defaults:` in extension.yml must be loaded (#5084).
+
+    The extension template and EXTENSION-API-REFERENCE.md put defaults under a
+    top-level ``defaults:`` key, but ``_get_extension_defaults`` only read
+    ``config.defaults``, so an extension built from the template silently had
+    no defaults at runtime.
+    """
+
+    def _make(self, tmp_path, manifest_body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "myext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(manifest_body, encoding="utf-8")
+        return ConfigManager(tmp_path, "myext")
+
+    def test_top_level_defaults_load(self, tmp_path):
+        cm = self._make(tmp_path, "defaults:\n  feature:\n    enabled: true\n")
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
+    def test_shipped_template_defaults_load(self, tmp_path):
+        """The defaults in extensions/template/extension.yml reach get_config()."""
+        template = (
+            Path(__file__).resolve().parent.parent
+            / "extensions" / "template" / "extension.yml"
+        ).read_text(encoding="utf-8")
+        expected = yaml.safe_load(template)["defaults"]
+        assert expected, "template no longer ships example defaults"
+        cm = self._make(tmp_path, template)
+        assert cm.get_config() == expected
+
+    def test_config_defaults_win_on_conflict(self, tmp_path):
+        cm = self._make(
+            tmp_path,
+            "defaults:\n  feature:\n    enabled: true\n    auto_sync: true\n"
+            "config:\n  defaults:\n    feature:\n      auto_sync: false\n",
+        )
+        assert cm.get_config() == {"feature": {"enabled": True, "auto_sync": False}}
+
+    def test_project_config_merges_over_top_level_defaults(self, tmp_path):
+        cm = self._make(
+            tmp_path, "defaults:\n  feature:\n    enabled: true\n    auto_sync: true\n"
+        )
+        (cm.extension_dir / "myext-config.yml").write_text(
+            "feature:\n  enabled: false\n", encoding="utf-8"
+        )
+        assert cm.get_config() == {"feature": {"enabled": False, "auto_sync": True}}
+
+    def test_non_mapping_top_level_defaults_is_ignored(self, tmp_path):
+        cm = self._make(
+            tmp_path,
+            "defaults:\n  - foo\nconfig:\n  defaults:\n    feature:\n      enabled: true\n",
+        )
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
+    def test_hook_condition_sees_top_level_default(self, tmp_path):
+        self._make(tmp_path, "defaults:\n  feature:\n    enabled: true\n")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.feature.enabled is set", "myext") is True
+
+
 class TestConfigManagerEnvPrefixCollision:
     """Prefix-colliding env vars must not crash or clobber nested config."""
 
