@@ -1448,8 +1448,13 @@ class TestIntegrationUpgradeDetailed:
         assert reloaded["files"]["ok.md"] == ok_hash
         assert reloaded["files"]["bad.md"] == stale_hash
 
+    @pytest.mark.parametrize(
+        "unmodified_files",
+        [None, {"bad.md", "ok.md"}],
+        ids=["upgrade", "use-or-switch-snapshot"],
+    )
     def test_resync_manifest_probe_error_does_not_abort_remaining_files(
-        self, tmp_path, capsys
+        self, tmp_path, capsys, unmodified_files
     ):
         """An ``OSError`` from the pre-rehash filesystem probes must warn
         and continue, not abort the whole resync loop.
@@ -1457,7 +1462,9 @@ class TestIntegrationUpgradeDetailed:
         ``is_symlink()``/``is_file()`` run before the per-file ``try`` that
         wraps ``record_existing()``. If one of those probes raises (e.g. an
         inaccessible path), it must not jump past the remaining files in
-        ``new_manifest.files`` and leave their hashes stale.
+        ``new_manifest.files`` and leave their hashes stale. With
+        ``unmodified_files`` (``use`` and installed-target ``switch``, #5078)
+        the changed-bytes check also runs per file, inside that ``try``.
         """
         from specify_cli.integrations._helpers import (
             _resync_manifest_after_registration,
@@ -1491,7 +1498,10 @@ class TestIntegrationUpgradeDetailed:
 
         with mock.patch.object(Path, "is_file", fake_is_file):
             _resync_manifest_after_registration(
-                manifest, "claude", continuing="Continuing."
+                manifest,
+                "claude",
+                continuing="Continuing.",
+                unmodified_files=unmodified_files,
             )
 
         captured = strip_ansi(capsys.readouterr().out)
@@ -1504,6 +1514,42 @@ class TestIntegrationUpgradeDetailed:
             "a probe error on an earlier file must not abort rehashing of "
             "the remaining tracked files"
         )
+
+    def test_resync_with_snapshot_skips_files_registration_left_unchanged(
+        self, tmp_path
+    ):
+        """With ``unmodified_files`` only changed bytes are re-recorded (#5078).
+
+        ``record_existing()`` clears a file's recovered marker, so a file
+        that registration didn't touch must keep its entry as it was.
+        """
+        from specify_cli.integrations._helpers import (
+            _resync_manifest_after_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "kept.md").write_text("kept content\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("kept.md", recovered=True)
+        manifest.record_existing("ok.md")
+        manifest.save()
+        (project / "ok.md").write_text("ok content v2\n", encoding="utf-8")
+
+        _resync_manifest_after_registration(
+            manifest,
+            "claude",
+            continuing="Continuing.",
+            unmodified_files={"kept.md", "ok.md"},
+        )
+
+        reloaded = IntegrationManifest.load("claude", project)
+        assert reloaded.is_recovered("kept.md")
+        ok_hash = hashlib.sha256((project / "ok.md").read_bytes()).hexdigest()
+        assert reloaded.files["ok.md"] == ok_hash
 
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.

@@ -532,16 +532,19 @@ def _resync_manifest_after_registration(
     not abort the surrounding upgrade/use/switch transaction.
     """
     try:
+        from .manifest import _sha256
+
         changed = False
-        modified_files = set(new_manifest.check_modified()) if unmodified_files is not None else None
-        for rel in new_manifest.files:
-            if unmodified_files is not None and (
-                rel not in unmodified_files or rel not in modified_files
-            ):
+        for rel, expected_hash in new_manifest.files.items():
+            if unmodified_files is not None and rel not in unmodified_files:
                 continue
             abs_path = new_manifest.project_root / rel
             try:
                 if abs_path.is_symlink() or not abs_path.is_file():
+                    continue
+                # Only re-hash bytes registration changed: record_existing()
+                # also clears a file's recovered marker.
+                if unmodified_files is not None and _sha256(abs_path) == expected_hash:
                     continue
                 new_manifest.record_existing(rel)
                 changed = True
