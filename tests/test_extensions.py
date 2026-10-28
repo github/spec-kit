@@ -878,6 +878,26 @@ provides:
         with pytest.raises(ValidationError, match="Invalid hook 'after_tasks'"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize("as_list", [False, True])
+    @pytest.mark.parametrize("command", [
+        pytest.param(["speckit.test-ext.hello"], id="list"),
+        pytest.param({"name": "speckit.test-ext.hello"}, id="mapping"),
+        pytest.param(123, id="integer"),
+        pytest.param(True, id="boolean"),
+        pytest.param("  ", id="blank"),
+    ])
+    def test_hook_command_must_be_a_string(
+        self, temp_dir, valid_manifest_data, command, as_list
+    ):
+        """Reject non-string commands before hook registration can fail (#5080)."""
+        entry = {"command": command}
+        valid_manifest_data["hooks"]["after_tasks"] = [entry] if as_list else entry
+        manifest_path = temp_dir / "extension.yml"
+        manifest_path.write_text(yaml.safe_dump(valid_manifest_data), encoding="utf-8")
+
+        with pytest.raises(ValidationError, match="Hook 'after_tasks' missing required 'command' string"):
+            ExtensionManifest(manifest_path)
+
     def test_hook_single_mapping_still_accepted(self, extension_dir):
         """Existing single-mapping hook manifests parse unchanged (regression)."""
         manifest_path = extension_dir / "extension.yml"

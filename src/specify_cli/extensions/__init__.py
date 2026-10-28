@@ -432,9 +432,13 @@ class ExtensionManifest:
                             f"Invalid hook '{hook_name}': "
                             "expected a mapping or list of mappings"
                         )
-                    if not entry.get("command"):
+                    command = entry.get("command")
+                    # #5080: same rule as validate_events() in events/__init__.py.
+                    # A truthy non-string (e.g. command: [foo]) passed a bare
+                    # truthiness check and crashed hook registration mid-install.
+                    if not isinstance(command, str) or not command.strip():
                         raise ValidationError(
-                            f"Hook '{hook_name}' missing required 'command' field"
+                            f"Hook '{hook_name}' missing required 'command' string"
                         )
                     if "priority" in entry:
                         priority = entry["priority"]
