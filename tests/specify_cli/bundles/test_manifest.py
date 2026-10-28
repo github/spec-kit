@@ -230,3 +230,28 @@ def test_non_list_bundles_rejected(bundles):
 def test_non_mapping_bundle_entry_rejected(entry):
     with pytest.raises(BundlerError, match=r"provides\.bundles entry must be a mapping"):
         _manifest(reference_manifest_dict([entry]))
+
+
+@pytest.mark.parametrize(
+    "bad_integration",
+    [{}, {"name": "claude"}, {"id": ""}, {"id": "   "}, {"id": None}],
+)
+def test_integration_mapping_without_usable_id_rejected(bad_integration):
+    data = valid_manifest_dict(integration=bad_integration)
+    with pytest.raises(
+        BundlerError, match="'integration' mapping must include a non-empty 'id'"
+    ):
+        _manifest(data)
+
+
+def test_integration_mapping_with_id_accepted_and_stripped():
+    manifest = _manifest(valid_manifest_dict(integration={"id": " claude "}))
+    assert manifest.integration is not None
+    assert manifest.integration.id == "claude"
+    assert not manifest.is_agnostic()
+
+
+def test_absent_integration_stays_agnostic():
+    manifest = _manifest(valid_manifest_dict())
+    assert manifest.integration is None
+    assert manifest.is_agnostic()
