@@ -70,13 +70,17 @@ explicitly indicates omitted entries; increase `limit` to retrieve more, up to
 
 Missing registry files produce an empty list. Corrupt or unreadable registry
 files produce `workflow_registry_read_failed`; unsafe storage produces
-`unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`,
-`not_a_spec_kit_project`, and `invalid_limit`. Errors contain `code`, `message`,
+`unsafe_workflow_storage`. Other expected errors are `invalid_project_directory`
+and `not_a_spec_kit_project`. Errors contain `code`, `message`,
 `details`, and `retryable` under `error`, with `isError: true`.
 Unexpected failures use sanitized `internal_error`; invalid operation outcomes
 use `invalid_operation_result`. Responses exceeding 1 MiB produce a retryable
 `response_too_large` error instead of partial success; retry with a smaller
 limit. Registry exception details are not exposed through MCP.
+
+Out-of-range `limit` values are rejected before the operation runs and produce
+text-only input-validation errors with no structured content; see
+[Input validation errors](#input-validation-errors).
 
 Workflow listing reads registry content through the selected project's
 `FileHelper` policy owner, rejecting Windows junctions and unsupported reparse
