@@ -78,6 +78,37 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, result.output
         assert IntegrationManifest.load("codex", project).is_recovered(rel)
 
+    @pytest.mark.parametrize("state", ["missing", "corrupt"])
+    def test_switch_installed_target_without_readable_manifest_skips_hash_refresh(
+        self, tmp_path, tasks_preset_src, state
+    ):
+        """A missing or unreadable target manifest skips the hash refresh, nothing else (#5078)."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        else:
+            manifest_path.write_text("{invalid", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        skill = project / ".agents/skills/speckit-tasks/SKILL.md"
+        assert b"Preset tasks body" in skill.read_bytes(), "registration must still run"
+        output = strip_ansi(result.output)
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        else:
+            assert manifest_path.read_text(encoding="utf-8") == "{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+
     @pytest.mark.parametrize("command", ["plan", "tasks"])
     def test_switch_installed_target_preserves_modified_manifest_hash(
         self, tmp_path, tasks_preset_src, command
