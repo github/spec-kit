@@ -2807,7 +2807,7 @@ class TestShellStep:
         def fake_run(*args, **kwargs):
             captured["timeout"] = kwargs.get("timeout")
             return subprocess.CompletedProcess(
-                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+                args=args[0] if args else "", returncode=0, stdout=b"", stderr=b""
             )
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -2830,7 +2830,7 @@ class TestShellStep:
         def fake_run(*args, **kwargs):
             captured["timeout"] = kwargs.get("timeout")
             return subprocess.CompletedProcess(
-                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+                args=args[0] if args else "", returncode=0, stdout=b"", stderr=b""
             )
 
         monkeypatch.setattr(subprocess, "run", fake_run)
