@@ -567,3 +567,30 @@ class TestCodexNoModelInvocationOwnership:
         self._init(tmp_path)
         assert not path.exists()
         assert self._other_policies(tmp_path) == []
+
+    def test_teardown_strips_policy_from_edited_generated_file(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_deletes_generated_file_after_cosmetic_change(self, tmp_path):
+        manifest = self._setup(tmp_path)
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert not path.exists()
+
+    def test_user_file_whose_policy_cannot_be_removed_stays_tracked(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._setup(tmp_path).save()
+        broken = path.read_bytes() + b"interface: [broken\n"
+        path.write_bytes(broken)
+        manifest = self._setup(tmp_path, enabled=False)
+        assert path.read_bytes() == broken
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"

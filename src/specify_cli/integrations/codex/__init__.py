@@ -177,12 +177,14 @@ class CodexIntegration(SkillsIntegration):
             if self._is_generated(project_root, rel, prior):
                 generated._files[rel] = recorded_hash
                 continue
-            self._remove_policy(project_root, rel)
+            cleaned = self._remove_policy(project_root, rel)
             path = project_root / rel
-            if modes[rel] == "whole" and path.is_file() and not path.is_symlink():
+            if (modes[rel] == "whole" or not cleaned) and path.is_file() and not path.is_symlink():
                 # A generated file the user edited is theirs now, even if it no
                 # longer parses. Track it as partial so upgrade's stale-file
-                # pass, which deletes whole files with force, leaves it alone.
+                # pass, which deletes whole files with force, leaves it alone;
+                # a file whose policy could not be removed stays tracked so a
+                # later run can retry.
                 try:
                     manifest.record_existing(rel, ownership="partial")
                 except (OSError, ValueError) as exc:
@@ -232,10 +234,10 @@ class CodexIntegration(SkillsIntegration):
                     plan = self._plan_policy(root, dest.relative_to(root).as_posix(), prior)
                     if plan is not None:
                         planned.append(plan)
-        if prior is not None:
-            self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
         for rel, content, ownership in planned:
             created.append(manifest.record_file(rel, content, ownership=ownership))
+        if prior is not None:
+            self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
         return created
 
     def teardown(
@@ -247,13 +249,21 @@ class CodexIntegration(SkillsIntegration):
     ) -> tuple[list[Path], list[Path]]:
         # ``manifest.uninstall`` never touches partial files, so remove the
         # managed policy from user-owned ``openai.yaml`` files here, and do not
-        # report the ones cleaned as preserved modified files.
+        # report the ones cleaned as preserved modified files. Generated files
+        # are left to ``uninstall``: content-equal ones are re-hashed so it
+        # deletes them, and edited ones lose only the policy unless forced.
         root = project_root.resolve()
-        cleaned = {
-            root / rel
-            for rel, mode in manifest.ownership_modes.items()
-            if mode != "whole" and self._is_policy_rel(rel) and self._remove_policy(root, rel)
-        }
+        cleaned: set[Path] = set()
+        for rel, mode in manifest.ownership_modes.items():
+            if not self._is_policy_rel(rel):
+                continue
+            if mode != "whole":
+                if self._remove_policy(root, rel):
+                    cleaned.add(root / rel)
+            elif self._is_generated(root, rel, manifest):
+                manifest.record_existing(rel)
+            elif not force:
+                self._remove_policy(root, rel)
         removed, skipped = super().teardown(project_root, manifest, force=force)
         return removed, [path for path in skipped if path not in cleaned]
 
