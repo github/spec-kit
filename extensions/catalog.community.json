@@ -1944,6 +1944,50 @@
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
     },
+    "domain-spec": {
+      "name": "Domain Spec Maintenance",
+      "id": "domain-spec",
+      "description": "Keeps canonical per-domain specs: read before specify/plan, updated after implement",
+      "author": "Jina Park",
+      "version": "0.1.0",
+      "download_url": "https://github.com/jinaparkdev/spec-kit-domain-spec/archive/refs/tags/v0.1.0.zip",
+      "sha256": "de5909b5eea0c4fef48cebba42e88cfc6cab06ae443a315106dbad51e5c5b6a1",
+      "repository": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "homepage": "https://github.com/jinaparkdev/spec-kit-domain-spec",
+      "documentation": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/README.md",
+      "changelog": "https://github.com/jinaparkdev/spec-kit-domain-spec/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.5",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          },
+          {
+            "name": "rg",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 3
+      },
+      "tags": [
+        "documentation",
+        "governance",
+        "specs",
+        "living-docs"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-10-28T00:00:00Z"
+    },
     "dotdog": {
       "name": "Dotdog",
       "id": "dotdog",
