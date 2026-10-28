@@ -49,10 +49,16 @@ description in Codex's context.
   `specify integration upgrade codex`. Passing `--integration-options` to
   `upgrade` replaces all stored options (to keep both, pass
   `--integration-options="--events false --no-model-invocation"`);
-  `--integration-options=""` clears them and removes the generated `agents/openai.yaml` files. Re-running
-  `specify init` likewise stores only the options passed to it.
-- An existing `agents/openai.yaml` keeps its other keys; only
-  `policy.allow_implicit_invocation` is set. Skills that commands other than
+  `--integration-options=""` clears them and undoes the policy. Re-running
+  `specify init` likewise stores only the options passed to it, and re-running
+  it without the option undoes the policy too.
+- Undoing the policy (clearing the option or `specify integration uninstall
+  codex`) deletes the `agents/openai.yaml` files Spec Kit generated. An
+  `agents/openai.yaml` that already existed, or that you edited, keeps its other
+  keys: only `policy.allow_implicit_invocation` is set, and later removed again.
+  One that already sets it to `false` is left untouched. If an existing file
+  cannot be read, is not valid YAML, or is not a mapping, setup stops with an
+  error naming the file and leaves it unchanged. Skills that commands other than
   `init`, `install` and `upgrade` register (for example presets that add core
   skills) get no `agents/openai.yaml` until `specify integration upgrade codex
   --force` is run.

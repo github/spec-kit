@@ -5,15 +5,20 @@ Commands are deprecated; ``--skills`` defaults to ``True``.
 """
 
 from __future__ import annotations
-from pathlib import Path
 
+import hashlib
+import logging
 from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
 
+from .._file_changes import write_bytes
 from ..base import IntegrationOption, SkillsIntegration
-from ..manifest import IntegrationManifest
+from ..manifest import IntegrationManifest, _validate_record_path
+
+logger = logging.getLogger(__name__)
 
 
 class CodexIntegration(SkillsIntegration):
@@ -48,22 +53,127 @@ class CodexIntegration(SkillsIntegration):
     events_format = "toml"
 
     @staticmethod
-    def _openai_yaml_with_policy(path: Path) -> str:
-        """Return ``path``'s YAML with implicit invocation disabled, keeping its other keys."""
-        data: dict[str, Any] = {}
-        if path.is_file():
-            try:
-                loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-            except (yaml.YAMLError, OSError, UnicodeDecodeError):
-                loaded = None
-            if isinstance(loaded, dict):
-                data = loaded
-        policy = data.get("policy")
-        if not isinstance(policy, dict):
-            policy = {}
+    def _load_openai_yaml(path: Path, rel: str) -> dict[str, Any]:
+        """Parse an existing ``openai.yaml``; raise rather than guess at unusable content."""
+        try:
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Cannot update {rel}: {exc}") from exc
+        if loaded is None:  # an empty file holds nothing to preserve
+            return {}
+        if not isinstance(loaded, dict):
+            raise ValueError(
+                f"Cannot update {rel}: expected a YAML mapping, got {type(loaded).__name__}"
+            )
+        policy = loaded.get("policy")
+        if policy is not None and not isinstance(policy, dict):
+            raise ValueError(
+                f"Cannot update {rel}: 'policy' must be a mapping, got {type(policy).__name__}"
+            )
+        return loaded
+
+    def _is_policy_rel(self, rel: str) -> bool:
+        parts = PurePosixPath(rel).parts
+        skills = PurePosixPath(self.registrar_config["dir"]).parts
+        return (
+            len(parts) == len(skills) + 3
+            and parts[: len(skills)] == skills
+            and parts[-2:] == ("agents", "openai.yaml")
+        )
+
+    def _prior_manifest(self, project_root: Path) -> IntegrationManifest | None:
+        """Return the on-disk manifest, which setup's callers save only afterwards."""
+        try:
+            return IntegrationManifest.load(self.key, project_root)
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Could not read prior manifest for '%s'; leaving earlier "
+                "agents/openai.yaml policies in place: %s",
+                self.key, exc,
+            )
+            return None
+
+    @staticmethod
+    def _matches_recorded(path: Path, manifest: IntegrationManifest, rel: str) -> bool:
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest() == manifest.files.get(rel)
+        except OSError:
+            return False
+
+    def _plan_policy(
+        self, project_root: Path, rel: str, prior: IntegrationManifest | None
+    ) -> tuple[str, str, str] | None:
+        """Return ``(rel, content, ownership)`` to write, or ``None`` to leave a user file alone."""
+        path = project_root / rel
+        # Checks every ancestor for symlinks before anything is read or written.
+        _validate_record_path(Path(rel), project_root)
+        tracked = prior is not None and rel in prior.files
+        if not path.exists():
+            data: dict[str, Any] = {}
+            ownership = "whole"
+        elif not path.is_file():
+            raise ValueError(f"Cannot update {rel}: not a regular file")
+        else:
+            data = self._load_openai_yaml(path, rel)
+            generated = (
+                tracked
+                and prior.ownership_modes[rel] == "whole"
+                and self._matches_recorded(path, prior, rel)
+            )
+            ownership = "whole" if generated else "partial"
+        policy = data.get("policy") or {}
+        if ownership == "partial" and not tracked and policy.get("allow_implicit_invocation") is False:
+            # The user already set it; claiming it would let cleanup remove their setting.
+            return None
         policy["allow_implicit_invocation"] = False
         data["policy"] = policy
-        return yaml.safe_dump(data, sort_keys=False)
+        return rel, yaml.safe_dump(data, sort_keys=False), ownership
+
+    def _remove_policy(self, project_root: Path, rel: str) -> bool:
+        """Drop the managed policy from a user-owned file; return whether the file remains."""
+        path = project_root / rel
+        try:
+            _validate_record_path(Path(rel), project_root)
+            if not path.is_file():
+                return False
+            data = self._load_openai_yaml(path, rel)
+        except (OSError, ValueError) as exc:
+            logger.warning("Leaving %s unchanged: %s", rel, exc)
+            return False
+        policy = data.get("policy")
+        if isinstance(policy, dict) and policy.get("allow_implicit_invocation") is False:
+            del policy["allow_implicit_invocation"]
+            if not policy:
+                del data["policy"]
+            write_bytes(path, yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
+        return True
+
+    def _release_prior_policies(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        prior: IntegrationManifest,
+        keep: set[str],
+    ) -> None:
+        """Undo policies an earlier install wrote that this setup no longer writes.
+
+        Unmodified generated files are deleted; in user files only the policy is removed.
+        """
+        generated = IntegrationManifest(self.key, project_root, version="policy-cleanup")
+        modes = prior.ownership_modes
+        for rel, recorded_hash in prior.files.items():
+            if rel in keep or not self._is_policy_rel(rel):
+                continue
+            path = project_root / rel
+            if modes[rel] == "whole" and self._matches_recorded(path, prior, rel):
+                generated._files[rel] = recorded_hash
+            elif self._remove_policy(project_root, rel) and modes[rel] == "whole":
+                # A generated file the user edited is theirs now. Track it as
+                # partial so upgrade's stale-file pass does not delete it.
+                manifest.record_existing(rel, ownership="partial")
+        generated.uninstall(project_root, remove_manifest=False)
 
     @staticmethod
     def _is_core_command_skill_dir(name: str) -> bool:
@@ -83,23 +193,42 @@ class CodexIntegration(SkillsIntegration):
         created = super().setup(
             project_root, manifest, parsed_options=parsed_options, **opts
         )
-        if (parsed_options or {}).get("no_model_invocation") is not True:
-            return created
         # Codex has no SKILL.md frontmatter flag; the policy lives in a sibling
         # ``agents/openai.yaml``. It is written for core command skills only,
         # since mandatory extension hooks rely on the model invoking them.
-        for skill_file in [f for f in created if f.name == "SKILL.md"]:
-            if self._is_core_command_skill_dir(skill_file.parent.name):
-                dest = skill_file.parent / "agents" / "openai.yaml"
-                created.append(
-                    self.write_file_and_record(
-                        self._openai_yaml_with_policy(dest),
-                        dest,
-                        project_root,
-                        manifest,
+        # Every file is validated before any is written.
+        planned: list[tuple[str, str, str]] = []
+        prior = self._prior_manifest(project_root)
+        if (parsed_options or {}).get("no_model_invocation") is True:
+            for skill_file in [f for f in created if f.name == "SKILL.md"]:
+                if self._is_core_command_skill_dir(skill_file.parent.name):
+                    dest = skill_file.parent / "agents" / "openai.yaml"
+                    plan = self._plan_policy(
+                        project_root, dest.relative_to(project_root).as_posix(), prior
                     )
-                )
+                    if plan is not None:
+                        planned.append(plan)
+        if prior is not None:
+            self._release_prior_policies(
+                project_root, manifest, prior, {rel for rel, _, _ in planned}
+            )
+        for rel, content, ownership in planned:
+            created.append(manifest.record_file(rel, content, ownership=ownership))
         return created
+
+    def teardown(
+        self,
+        project_root: Path,
+        manifest: IntegrationManifest,
+        *,
+        force: bool = False,
+    ) -> tuple[list[Path], list[Path]]:
+        # ``manifest.uninstall`` never touches partial files, so remove the
+        # managed policy from user-owned ``openai.yaml`` files here.
+        for rel, mode in manifest.ownership_modes.items():
+            if mode != "whole" and self._is_policy_rel(rel):
+                self._remove_policy(project_root, rel)
+        return super().teardown(project_root, manifest, force=force)
 
     def build_exec_args(
         self,

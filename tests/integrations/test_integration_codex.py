@@ -1,6 +1,9 @@
 """Tests for CodexIntegration."""
 
+import os
 from pathlib import Path
+
+import pytest
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
@@ -324,3 +327,195 @@ class TestCodexNoModelInvocationOption:
             "interface": {"display_name": "Plan"},
             "policy": {"allow_implicit_invocation": False},
         }
+
+
+class TestCodexNoModelInvocationOwnership:
+    """``agents/openai.yaml`` handling must never destroy user configuration (#2654)."""
+
+    PLAN_REL = ".agents/skills/speckit-plan/agents/openai.yaml"
+    POLICY = {"allow_implicit_invocation": False}
+
+    @staticmethod
+    def _setup(project, enabled=True, manifest=None):
+        manifest = manifest or IntegrationManifest("codex", project)
+        get_integration("codex").setup(
+            project,
+            manifest,
+            parsed_options={"no_model_invocation": True} if enabled else None,
+            script_type="sh",
+        )
+        return manifest
+
+    @staticmethod
+    def _init(project, *options):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        args = ["init", "--here", "--force", "--integration", "codex",
+                "--script", "sh", "--ignore-agent-tools"]
+        if options:
+            args += ["--integration-options", " ".join(options)]
+        result = _run_in_project(project, args)
+        assert result.exit_code == 0, result.output
+        return result
+
+    @staticmethod
+    def _manifest(project):
+        return IntegrationManifest.load("codex", project)
+
+    @staticmethod
+    def _yaml(path):
+        import yaml
+
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def _seed(self, project, content=b"interface:\n  display_name: Plan\n"):
+        path = project / self.PLAN_REL
+        path.parent.mkdir(parents=True)
+        path.write_bytes(content)
+        return path
+
+    def _other_policies(self, project):
+        return [
+            p for p in (project / ".agents" / "skills").glob("*/agents/openai.yaml")
+            if p.relative_to(project).as_posix() != self.PLAN_REL
+        ]
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"interface: [unclosed\n",
+            b"- not\n- a mapping\n",
+            b"policy: not-a-mapping\n",
+            b"\xff\xfe\x00 invalid utf-8\n",
+        ],
+        ids=["invalid-yaml", "list-root", "scalar-policy", "invalid-utf8"],
+    )
+    def test_unusable_existing_file_aborts_without_overwriting(self, tmp_path, content):
+        path = self._seed(tmp_path, content)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        assert path.read_bytes() == content
+        assert self._other_policies(tmp_path) == []
+
+    def test_unreadable_existing_file_aborts_without_overwriting(self, tmp_path, monkeypatch):
+        path = self._seed(tmp_path)
+        original = path.read_bytes()
+        real_read_text = Path.read_text
+
+        def read_text(self, *args, **kwargs):
+            if self.name == "openai.yaml":
+                raise PermissionError("denied")
+            return real_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", read_text)
+        with pytest.raises(ValueError, match="speckit-plan/agents/openai.yaml"):
+            self._setup(tmp_path)
+        monkeypatch.undo()
+        assert path.read_bytes() == original
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @pytest.mark.parametrize("linked", ["file", "agents-dir"])
+    def test_symlink_outside_project_is_not_written(self, tmp_path, linked):
+        project = tmp_path / "proj"
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        external = outside / "openai.yaml"
+        external.write_bytes(b"interface:\n  display_name: External\n")
+        agents_dir = project / ".agents" / "skills" / "speckit-plan" / "agents"
+        if linked == "file":
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "openai.yaml").symlink_to(external)
+        else:
+            agents_dir.parent.mkdir(parents=True)
+            agents_dir.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(ValueError, match="symlink"):
+            self._setup(project)
+        assert external.read_bytes() == b"interface:\n  display_name: External\n"
+
+    def test_existing_user_file_is_partial_and_keeps_its_keys(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        assert self._yaml(path) == {
+            "interface": {"display_name": "Plan"},
+            "policy": self.POLICY,
+        }
+        assert manifest.ownership_modes[self.PLAN_REL] == "partial"
+        generated = self._other_policies(tmp_path)[0].relative_to(tmp_path).as_posix()
+        assert manifest.ownership_modes[generated] == "whole"
+
+    def test_user_file_already_disabling_implicit_invocation_is_not_claimed(self, tmp_path):
+        content = b"policy:\n  allow_implicit_invocation: false\n"
+        path = self._seed(tmp_path, content)
+        manifest = self._setup(tmp_path)
+        assert self.PLAN_REL not in manifest.files
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert path.read_bytes() == content
+
+    def test_teardown_removes_only_the_managed_policy_from_user_file(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        get_integration("codex").teardown(tmp_path, manifest)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_user_file_survives_upgrade_option_clearing_and_uninstall(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        path = self._seed(tmp_path)
+        self._init(tmp_path, "--no-model-invocation")
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "partial"
+        assert self._yaml(path)["policy"] == self.POLICY
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+        assert not [k for k in self._manifest(tmp_path).files if k.endswith("openai.yaml")]
+
+        result = _run_in_project(
+            tmp_path,
+            ["integration", "upgrade", "codex", "--force",
+             "--integration-options", "--no-model-invocation"],
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path)["policy"] == self.POLICY
+
+        result = _run_in_project(tmp_path, ["integration", "uninstall", "codex"])
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_reinit_without_option_reconciles_previous_policies(self, tmp_path):
+        path = self._seed(tmp_path)
+        self._init(tmp_path, "--no-model-invocation")
+        assert self._other_policies(tmp_path)
+
+        self._init(tmp_path)
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+        assert not list((tmp_path / ".agents" / "skills").glob("speckit-specify/agents"))
+        assert not [k for k in self._manifest(tmp_path).files if k.endswith("openai.yaml")]
+
+    def test_clearing_option_keeps_user_edits_to_a_generated_file(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "whole"
+        path.write_text(
+            "interface:\n  display_name: Plan\npolicy:\n  allow_implicit_invocation: false\n",
+            encoding="utf-8",
+        )
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
