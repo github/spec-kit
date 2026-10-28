@@ -156,6 +156,18 @@ def test_invalid_project_roots_return_not_a_project(tmp_path, kind):
     assert str(root) not in response.model_dump_json()
 
 
+def test_absolute_project_path_with_embedded_nul_returns_not_a_project(tmp_path):
+    root = tmp_path / "invalid\x00project"
+    assert root.is_absolute()
+    response = _run(
+        create_server(launch_directory=tmp_path).call_tool(
+            "specify_workflow_list", {"project_directory": str(root)}
+        )
+    )
+    assert response.is_error is True
+    assert response.structured_content["error"]["code"] == "not_a_spec_kit_project"
+
+
 @pytest.mark.parametrize("kind", ["policy", "storage"])
 def test_unsafe_project_storage_keeps_structured_error(tmp_path, kind):
     root = _project(tmp_path / "project", {})

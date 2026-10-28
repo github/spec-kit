@@ -99,7 +99,7 @@ def list_workflows(request: WorkflowListRequest) -> WorkflowListResult:
         # Unlike is_dir(), stat() preserves permission errors on Python 3.14.
         try:
             root_is_directory = stat.S_ISDIR(root.stat().st_mode)
-        except (FileNotFoundError, NotADirectoryError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             root_is_directory = False
         if not root_is_directory:
             raise WorkflowListError(
