@@ -199,6 +199,8 @@
       href: community/overview.md
     - name: Extensions
       href: community/extensions.md
+    - name: Publishing Extensions
+      href: extensions/publishing.md
     - name: Presets
       href: community/presets.md
     - name: Bundles

@@ -7,6 +7,7 @@
           "toc.yml",
           "community/*.md",
           "concepts/*.md",
+          "extensions/*.md",
           "guides/*.md",
           "integrations/*.md",
           "reference/*.md",

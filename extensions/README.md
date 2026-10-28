@@ -92,7 +92,7 @@ To add your extension to the community catalog:
 3. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template with all required metadata
 4. **Wait for review** — a maintainer will review the submission, update the catalog, and close the issue
 
-See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed step-by-step instructions.
+See the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html) for detailed step-by-step instructions.
 
 ### Submission Checklist
 
