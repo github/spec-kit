@@ -131,6 +131,18 @@ def _run(
     )
 
 
+def _require_shell_read_denial(
+    shell: list[str], plan: Path, env: dict[str, str] | None = None
+) -> None:
+    probe = _run(
+        [*shell, "-c", 'cat -- "$1" >/dev/null', "bash", plan.as_posix()],
+        plan.parent,
+        env=env,
+    )
+    if probe.returncode == 0:
+        pytest.skip("selected shell retains read access to the denied plan")
+
+
 @contextmanager
 def _deny_plan_read(plan: Path):
     if os.name != "nt":
@@ -778,6 +790,8 @@ def test_unreadable_plan_is_not_reported_as_empty(
         feature_path = path.stdout.strip()
 
     with _deny_plan_read(plan):
+        if port in {"bash", "git-bash"}:
+            _require_shell_read_denial([command_fn(prereq_repo)[0]], plan)
         result = _run(command_fn(prereq_repo, *args), prereq_repo)
         paths_only = _run(command_fn(prereq_repo, *args, paths_flag), prereq_repo)
 
@@ -794,9 +808,50 @@ def test_unreadable_plan_is_not_reported_as_empty(
     assert readable.returncode == 0, readable.stderr
 
 
-@pytest.mark.skipif(
-    os.name == "nt" and (_GIT_BASH is None or not _GIT_BASH.is_file()),
-    reason="Git for Windows Bash required",
+@requires_bash
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux procfs required")
+@pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
+def test_bash_plan_open_success_does_not_hide_read_failure(
+    prereq_repo: Path, json_mode: bool
+) -> None:
+    _write_feature_json(prereq_repo)
+    feature = prereq_repo / "specs" / "001-my-feature"
+    feature.mkdir(parents=True)
+    plan = feature / "plan.md"
+    plan.symlink_to("/proc/self/mem")
+    before = plan.lstat()
+    args = ("--json",) if json_mode else ()
+    opened = _run(["bash", "-c", 'true < "$1"', "bash", str(plan)], prereq_repo)
+    assert opened.returncode == 0, opened.stderr
+    path = _run(["bash", "-c", "pwd"], feature)
+    assert path.returncode == 0, path.stderr
+
+    result = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    paths_only = _run(_bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        f"ERROR: plan.md is not readable in {path.stdout.strip()}",
+        "Check its file permissions and rerun the prerequisite check.",
+    ]
+    assert paths_only.returncode == 0, paths_only.stderr
+    assert plan.is_symlink()
+    assert plan.readlink() == Path("/proc/self/mem")
+    assert plan.lstat().st_mtime_ns == before.st_mtime_ns
+    plan.unlink()
+    plan.write_text("# Restored plan\n", encoding="utf-8")
+    readable = _run(_bash_cmd(prereq_repo, *args), prereq_repo)
+    assert readable.returncode == 0, readable.stderr
+
+
+@(
+    pytest.mark.skipif(
+        _GIT_BASH is None or not _GIT_BASH.is_file(),
+        reason="Git for Windows Bash required",
+    )
+    if os.name == "nt"
+    else requires_bash
 )
 @pytest.mark.parametrize("posix_mode", ["option", "environment"])
 @pytest.mark.parametrize("json_mode", [True, False], ids=["json", "text"])
@@ -812,15 +867,21 @@ def test_bash_posix_plan_read_failure(
     before = plan.stat().st_mtime_ns
     command_fn = _git_bash_cmd if os.name == "nt" else _bash_cmd
     command = command_fn(prereq_repo, *(("--json",) if json_mode else ()))
+    shell = [command[0]]
     env = _clean_env()
     if posix_mode == "option":
         command.insert(1, "--posix")
+        shell.append("--posix")
     else:
         env["POSIXLY_CORRECT"] = "1"
-    path = _run([command[0], "-c", "pwd"], feature)
+    syntax = _run([*shell, "-c", "true < <(true)"], prereq_repo, env=env)
+    if syntax.returncode != 0:
+        pytest.skip("selected POSIX Bash does not support process substitution")
+    path = _run([*shell, "-c", "pwd"], feature, env=env)
     assert path.returncode == 0, path.stderr
 
     with _deny_plan_read(plan):
+        _require_shell_read_denial(shell, plan, env=env)
         result = _run(command, prereq_repo, env=env)
         paths_only = _run([*command, "--paths-only"], prereq_repo, env=env)
 
@@ -859,6 +920,7 @@ def test_git_bash_noacl_plan_read_failure(prereq_repo: Path, json_mode: bool) ->
         )
         if probe.returncode != 0:
             pytest.skip("Git Bash honors ACL readability on this mount")
+        _require_shell_read_denial([str(_GIT_BASH)], plan)
         result = _run(_git_bash_cmd(prereq_repo, *args), prereq_repo)
         paths_only = _run(
             _git_bash_cmd(prereq_repo, *args, "--paths-only"), prereq_repo
