@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 
 
@@ -277,6 +278,7 @@ steps:
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
         assert result.exit_code == 0, result.output
+        assert f"{Version(installed_version)} → {Version(available_version)}" in result.output
         meta = WorkflowRegistry(project_dir).get("align-wf")
         assert meta["version"] == available_version
         assert (wf_dir / "workflow.yml").read_text(encoding="utf-8") == (
