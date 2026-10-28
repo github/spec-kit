@@ -603,7 +603,7 @@ Submit to the community catalog for public discovery:
    - Users copy the entry to their own `catalog.json`
    - Users install with: `specify extension add my-ext` (from their catalog)
 
-See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed submission instructions.
+See the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html) for detailed submission instructions.
 
 ---
 

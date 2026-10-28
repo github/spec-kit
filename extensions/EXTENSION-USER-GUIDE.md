@@ -1022,7 +1022,7 @@ After creating tasks, sync to Jira:
 - **Extension Issues**: Report to extension repository (see `specify extension info`)
 - **Spec Kit Issues**: <https://github.com/statsperform/spec-kit/issues>
 - **Extension Catalog**: <https://github.com/statsperform/spec-kit/tree/main/extensions>
-- **Documentation**: See EXTENSION-DEVELOPMENT-GUIDE.md and EXTENSION-PUBLISHING-GUIDE.md
+- **Documentation**: See EXTENSION-DEVELOPMENT-GUIDE.md and the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html)
 
 ---
 
