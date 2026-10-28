@@ -1,10 +1,12 @@
 """Installer execution, verification, and error-path tests for `specify self upgrade`."""
 
 import errno
+import os
 import subprocess
 from unittest.mock import patch
 
 from specify_cli import app
+from specify_cli._version import _runs_from_uv_tool_env_on_windows
 
 from tests.specify_cli.self_upgrade_helpers import (
     route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
@@ -541,3 +543,66 @@ class TestInstallerFailed:
         assert "Previous version was not an exact stable release tag" in out
         assert "https://github.com/github/spec-kit/releases" in out
         assert "git+https://github.com/github/spec-kit.git@v1.0.0rc1" not in out
+
+
+class TestWindowsUvToolEnvironment:
+    """Windows uv-tool installs cannot reinstall the environment they run from."""
+
+    def test_windows_uv_tool_prints_command_without_running_installer(
+        self, uv_tool_argv0, clean_environ
+    ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="uv"
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.2.2"
+        ), patch(
+            "specify_cli._version._runs_from_uv_tool_env_on_windows", return_value=True
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.2.4"})
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 0
+        out = strip_ansi(result.output)
+        assert "Not upgrading specify-cli 1.2.2 → v1.2.4" in out
+        assert (
+            "  uv tool install specify-cli --force --from "
+            "git+https://github.com/github/spec-kit.git@v1.2.4"
+        ) in out
+        assert "Upgrade failed" not in out
+        assert mock_run.call_count == 0
+
+    def test_windows_pipx_still_runs_installer(self, pipx_argv0, clean_environ):
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
+            "specify_cli._version.shutil.which", return_value="pipx"
+        ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
+            "specify_cli._version._get_installed_version", return_value="1.2.2"
+        ), patch(
+            "specify_cli._version._runs_from_uv_tool_env_on_windows", return_value=True
+        ):
+            mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.2.4"})
+            mock_run.side_effect = [
+                _completed_process(0),  # installer
+                _completed_process(0, stdout="specify 1.2.4\n"),  # verify
+            ]
+            result = runner.invoke(app, ["self", "upgrade"])
+
+        assert result.exit_code == 0
+        assert "Upgraded specify-cli: 1.2.2 → 1.2.4" in strip_ansi(result.output)
+        assert mock_run.call_count == 2
+
+    def test_detects_uv_tool_environment_on_windows(self, tmp_path, monkeypatch):
+        (tmp_path / "uv-receipt.toml").write_text("[tool]\n")
+        monkeypatch.setattr("sys.prefix", str(tmp_path))
+        monkeypatch.setattr(os, "name", "nt")
+        assert _runs_from_uv_tool_env_on_windows() is True
+
+    def test_ignores_environment_without_uv_receipt(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.prefix", str(tmp_path))
+        monkeypatch.setattr(os, "name", "nt")
+        assert _runs_from_uv_tool_env_on_windows() is False
+
+    def test_ignores_uv_tool_environment_off_windows(self, tmp_path, monkeypatch):
+        (tmp_path / "uv-receipt.toml").write_text("[tool]\n")
+        monkeypatch.setattr("sys.prefix", str(tmp_path))
+        monkeypatch.setattr(os, "name", "posix")
+        assert _runs_from_uv_tool_env_on_windows() is False

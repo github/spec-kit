@@ -73,6 +73,8 @@ def self_upgrade(
         _parse_version_text,
         _render_argv,
         _run_installer,
+        _runs_from_uv_tool_env_on_windows,
+        _source_spec,
         _validate_tag,
         _verify_upgrade,
         console,
@@ -152,6 +154,24 @@ def self_upgrade(
         ):
             console.print(f"Already on requested release: {target_tag}")
             raise typer.Exit(0)
+
+    if plan.method == _InstallMethod.UV_TOOL and _runs_from_uv_tool_env_on_windows():
+        # uv deletes the tool environment before reinstalling it, and Windows
+        # will not delete the python.exe this process is running from, so uv
+        # would leave the environment without its packages. Leave the
+        # reinstall to the user's shell instead.
+        console.print(
+            f"Not upgrading specify-cli {plan.current_version} → {target_tag}: "
+            "on Windows, uv cannot replace the tool environment specify is "
+            "running from. No changes were made.",
+            soft_wrap=True,
+        )
+        console.print("Run it yourself once this command exits:", soft_wrap=True)
+        console.print(
+            f"  uv tool install specify-cli --force --from {_source_spec(target_tag)}",
+            soft_wrap=True,
+        )
+        raise typer.Exit(0)
 
     installed_version = _parse_version_text(plan.current_version)
     verb = (

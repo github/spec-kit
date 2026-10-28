@@ -673,6 +673,13 @@ def _installer_binary_name(method: _InstallMethod) -> str | None:
     return None
 
 
+def _runs_from_uv_tool_env_on_windows() -> bool:
+    """Return whether this process runs from a uv tool environment on Windows."""
+    return os.name == "nt" and os.path.isfile(
+        os.path.join(sys.prefix, "uv-receipt.toml")
+    )
+
+
 def _is_path_like_command(value: str) -> bool:
     """Return whether an argv[0] names a path rather than a bare command."""
     return Path(value).parent != Path(".") or "/" in value or "\\" in value
