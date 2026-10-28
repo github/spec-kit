@@ -728,6 +728,16 @@ def _validate_local_workflow_package(package_dir: Path) -> None:
                 raise ValueError(f"Workflow package contains unsupported file: {path}")
 
 
+def _workflow_versions_match(actual: object, expected: str) -> bool:
+    """Compare workflow versions without treating equivalent spellings as changes."""
+    from packaging import version as pkg_version
+
+    try:
+        return pkg_version.Version(str(actual)) == pkg_version.Version(expected)
+    except pkg_version.InvalidVersion:
+        return str(actual) == expected
+
+
 def _install_workflow_package(
     project_root: Path,
     workflows_dir: Path,
@@ -737,6 +747,7 @@ def _install_workflow_package(
     expected_id: str | None = None,
     expected_version: str | None = None,
     expected_requires: dict[str, Any] | None = None,
+    exact_version: bool = False,
     expected_installed_version: str | None = None,
     catalog_info: dict[str, Any] | None = None,
 ) -> None:
@@ -774,7 +785,11 @@ def _install_workflow_package(
             f"workflow ID ({_escape_markup(repr(expected_id))})."
         )
         raise typer.Exit(1)
-    if expected_version is not None and str(definition.version) != expected_version:
+    if expected_version is not None and not (
+        str(definition.version) == expected_version
+        if exact_version
+        else _workflow_versions_match(definition.version, expected_version)
+    ):
         console.print(
             f"[red]Error:[/red] Downloaded workflow version "
             f"({_escape_markup(str(definition.version))}) does not match the catalog "
@@ -824,7 +839,9 @@ def _install_workflow_package(
             if expected_installed_version is not None and (
                 not isinstance(existing, dict)
                 or existing.get("source") != "catalog"
-                or str(existing.get("version")) != expected_installed_version
+                or not _workflow_versions_match(
+                    existing.get("version"), expected_installed_version
+                )
             ):
                 console.print(
                     f"[yellow]Warning:[/yellow] Workflow "
@@ -1123,16 +1140,6 @@ def _install_workflow_from_catalog(
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
 
-    def versions_match(actual: object, expected: str) -> bool:
-        from packaging import version as pkg_version
-
-        try:
-            return pkg_version.Version(str(actual)) == pkg_version.Version(
-                expected
-            )
-        except pkg_version.InvalidVersion:
-            return str(actual) == expected
-
     safe_wf_id = _escape_markup(workflow_id)
 
     if selected_info is not None:
@@ -1335,6 +1342,7 @@ def _install_workflow_from_catalog(
                     expected_requires=(
                         info.get("requires") if requested_version is not None else None
                     ),
+                    exact_version=requested_version is not None,
                     expected_installed_version=expected_installed_version,
                     catalog_info={**info, "url": workflow_url},
                 )
@@ -1389,7 +1397,7 @@ def _install_workflow_from_catalog(
     if expected_version is not None and not (
         str(definition.version) == expected_version
         if requested_version is not None
-        else versions_match(definition.version, expected_version)
+        else _workflow_versions_match(definition.version, expected_version)
     ):
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
@@ -1424,7 +1432,7 @@ def _install_workflow_from_catalog(
                 if (
                     not isinstance(current, dict)
                     or current.get("source") != "catalog"
-                    or not versions_match(
+                    or not _workflow_versions_match(
                         current.get("version"), expected_installed_version
                     )
                 ):
