@@ -8828,6 +8828,23 @@ class TestConfigManagerTopLevelManifestDefaults:
         )
         assert cm.get_config() == {"feature": {"enabled": True}}
 
+    @pytest.mark.parametrize(
+        "config_section",
+        [
+            "config:\n  - foo\n",
+            "config: just-a-string\n",
+            "config:\n  defaults:\n    - foo\n",
+            "config:\n  defaults: just-a-string\n",
+        ],
+        ids=["list-config", "scalar-config", "list-defaults", "scalar-defaults"],
+    )
+    def test_top_level_defaults_survive_non_mapping_config(self, tmp_path, config_section):
+        """A malformed `config` or `config.defaults` must not drop valid top-level defaults."""
+        cm = self._make(
+            tmp_path, "defaults:\n  feature:\n    enabled: true\n" + config_section
+        )
+        assert cm.get_config() == {"feature": {"enabled": True}}
+
     def test_hook_condition_sees_top_level_default(self, tmp_path):
         self._make(tmp_path, "defaults:\n  feature:\n    enabled: true\n")
         executor = HookExecutor(tmp_path)
