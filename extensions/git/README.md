@@ -87,6 +87,11 @@ each listed event you want to enable, as shown for `after_specify` above. To use
 the default for an event, remove its entire section; removing only `enabled`
 while leaving `message` does not enable the fallback.
 
+With `commit_style: fixed`, removing the section also removes its custom
+message. A fallback commit uses `[Spec Kit] Auto-commit after specify` for
+`after_specify` (and the corresponding phase and command for other events).
+Keep the section and set `enabled: true` to retain its custom message.
+
 `{author}` is derived from Git config and sanitized for branch names. `{app}` is derived from the Spec Kit init directory name. Custom templates must not put `{slug}` before `{number}`, and must put `{number}-` at the start of the final path segment so generated names remain valid feature branches. For a monorepo project at `apps/web/.specify/`, a template such as `{author}/{app}/{number}-{slug}` produces branches like `jdoe/web/008-guided-tour`.
 
 For simple namespace-only customization, `branch_prefix` is also accepted as a shorthand and expands to `<branch_prefix>/{number}-{slug}`.

@@ -60,6 +60,9 @@ auto_commit:
 Listed events need `enabled: true` to opt in, even when `default` is `true`.
 Remove an event's entire section to use the default; leaving its `message`
 entry still prevents fallback.
+With `commit_style: fixed`, removing the section also drops its custom message:
+`after_specify` then uses `[Spec Kit] Auto-commit after specify`. Keep the
+section with `enabled: true` to retain its configured message.
 
 ## Graceful Degradation
 
