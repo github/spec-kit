@@ -56,7 +56,8 @@ description in Codex's context.
   codex`) deletes the `agents/openai.yaml` files Spec Kit generated. An
   `agents/openai.yaml` that already existed, or that you edited, keeps its other
   keys: only `policy.allow_implicit_invocation` is set, and later removed again.
-  One that already sets it to `false` is left untouched. If an existing file
+  Such a file is rewritten as plain YAML, so its comments and formatting are
+  not kept. One that already sets it to `false` is left untouched. If an existing file
   cannot be read, is not valid YAML, or is not a mapping, setup stops with an
   error naming the file and leaves it unchanged. Skills that commands other than
   `init`, `install` and `upgrade` register (for example presets that add core

@@ -52,6 +52,8 @@ class CodexIntegration(SkillsIntegration):
     events_config_file = ".codex/config.toml"
     events_format = "toml"
 
+    _GENERATED_POLICY: dict[str, Any] = {"policy": {"allow_implicit_invocation": False}}
+
     @staticmethod
     def _load_openai_yaml(path: Path, rel: str) -> dict[str, Any]:
         """Parse an existing ``openai.yaml``; raise rather than guess at unusable content."""
@@ -95,11 +97,22 @@ class CodexIntegration(SkillsIntegration):
             )
             return None
 
-    @staticmethod
-    def _matches_recorded(path: Path, manifest: IntegrationManifest, rel: str) -> bool:
+    def _is_generated(self, root: Path, rel: str, prior: IntegrationManifest | None) -> bool:
+        """Whether ``rel`` is a policy-only file an earlier install generated.
+
+        Content equality also counts, so a CRLF checkout or an added comment
+        does not turn Spec Kit's own file into a user file.
+        """
+        path = root / rel
+        if prior is None or prior.ownership_modes.get(rel) != "whole":
+            return False
+        if path.is_symlink() or not path.is_file():
+            return False
         try:
-            return hashlib.sha256(path.read_bytes()).hexdigest() == manifest.files.get(rel)
-        except OSError:
+            if hashlib.sha256(path.read_bytes()).hexdigest() == prior.files[rel]:
+                return True
+            return self._load_openai_yaml(path, rel) == self._GENERATED_POLICY
+        except (OSError, ValueError):
             return False
 
     def _plan_policy(
@@ -117,12 +130,7 @@ class CodexIntegration(SkillsIntegration):
             raise ValueError(f"Cannot update {rel}: not a regular file")
         else:
             data = self._load_openai_yaml(path, rel)
-            generated = (
-                tracked
-                and prior.ownership_modes[rel] == "whole"
-                and self._matches_recorded(path, prior, rel)
-            )
-            ownership = "whole" if generated else "partial"
+            ownership = "whole" if self._is_generated(project_root, rel, prior) else "partial"
         policy = data.get("policy") or {}
         if ownership == "partial" and not tracked and policy.get("allow_implicit_invocation") is False:
             # The user already set it; claiming it would let cleanup remove their setting.
@@ -132,22 +140,22 @@ class CodexIntegration(SkillsIntegration):
         return rel, yaml.safe_dump(data, sort_keys=False), ownership
 
     def _remove_policy(self, project_root: Path, rel: str) -> bool:
-        """Drop the managed policy from a user-owned file; return whether the file remains."""
+        """Drop the managed policy from a user-owned file; return whether it is now policy-free."""
         path = project_root / rel
         try:
             _validate_record_path(Path(rel), project_root)
             if not path.is_file():
                 return False
             data = self._load_openai_yaml(path, rel)
+            policy = data.get("policy")
+            if isinstance(policy, dict) and policy.get("allow_implicit_invocation") is False:
+                del policy["allow_implicit_invocation"]
+                if not policy:
+                    del data["policy"]
+                write_bytes(path, yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
         except (OSError, ValueError) as exc:
             logger.warning("Leaving %s unchanged: %s", rel, exc)
             return False
-        policy = data.get("policy")
-        if isinstance(policy, dict) and policy.get("allow_implicit_invocation") is False:
-            del policy["allow_implicit_invocation"]
-            if not policy:
-                del data["policy"]
-            write_bytes(path, yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
         return True
 
     def _release_prior_policies(
@@ -166,14 +174,21 @@ class CodexIntegration(SkillsIntegration):
         for rel, recorded_hash in prior.files.items():
             if rel in keep or not self._is_policy_rel(rel):
                 continue
-            path = project_root / rel
-            if modes[rel] == "whole" and self._matches_recorded(path, prior, rel):
+            if self._is_generated(project_root, rel, prior):
                 generated._files[rel] = recorded_hash
-            elif self._remove_policy(project_root, rel) and modes[rel] == "whole":
-                # A generated file the user edited is theirs now. Track it as
-                # partial so upgrade's stale-file pass does not delete it.
-                manifest.record_existing(rel, ownership="partial")
-        generated.uninstall(project_root, remove_manifest=False)
+                continue
+            self._remove_policy(project_root, rel)
+            path = project_root / rel
+            if modes[rel] == "whole" and path.is_file() and not path.is_symlink():
+                # A generated file the user edited is theirs now, even if it no
+                # longer parses. Track it as partial so upgrade's stale-file
+                # pass, which deletes whole files with force, leaves it alone.
+                try:
+                    manifest.record_existing(rel, ownership="partial")
+                except (OSError, ValueError) as exc:
+                    logger.warning("Could not keep tracking %s: %s", rel, exc)
+        # Each entry was checked above, content-equal ones included.
+        generated.uninstall(project_root, force=True, remove_manifest=False)
 
     @staticmethod
     def _is_core_command_skill_dir(name: str) -> bool:
@@ -190,28 +205,35 @@ class CodexIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        created = super().setup(
-            project_root, manifest, parsed_options=parsed_options, **opts
-        )
         # Codex has no SKILL.md frontmatter flag; the policy lives in a sibling
         # ``agents/openai.yaml``. It is written for core command skills only,
         # since mandatory extension hooks rely on the model invoking them.
-        # Every file is validated before any is written.
+        root = project_root.resolve()
+        enabled = (parsed_options or {}).get("no_model_invocation") is True
+        prior = self._prior_manifest(root)
+        if enabled:
+            # Reject unusable existing policy files before anything is written.
+            from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+            skills = PurePosixPath(self.registrar_config["dir"])
+            for name in sorted(CORE_COMMAND_NAMES):
+                rel = (skills / f"speckit-{name}" / "agents" / "openai.yaml").as_posix()
+                agents_dir = (root / rel).parent
+                if agents_dir.exists() or agents_dir.is_symlink():
+                    self._plan_policy(root, rel, prior)
+        created = super().setup(
+            project_root, manifest, parsed_options=parsed_options, **opts
+        )
         planned: list[tuple[str, str, str]] = []
-        prior = self._prior_manifest(project_root)
-        if (parsed_options or {}).get("no_model_invocation") is True:
+        if enabled:
             for skill_file in [f for f in created if f.name == "SKILL.md"]:
                 if self._is_core_command_skill_dir(skill_file.parent.name):
                     dest = skill_file.parent / "agents" / "openai.yaml"
-                    plan = self._plan_policy(
-                        project_root, dest.relative_to(project_root).as_posix(), prior
-                    )
+                    plan = self._plan_policy(root, dest.relative_to(root).as_posix(), prior)
                     if plan is not None:
                         planned.append(plan)
         if prior is not None:
-            self._release_prior_policies(
-                project_root, manifest, prior, {rel for rel, _, _ in planned}
-            )
+            self._release_prior_policies(root, manifest, prior, {rel for rel, _, _ in planned})
         for rel, content, ownership in planned:
             created.append(manifest.record_file(rel, content, ownership=ownership))
         return created
@@ -224,11 +246,16 @@ class CodexIntegration(SkillsIntegration):
         force: bool = False,
     ) -> tuple[list[Path], list[Path]]:
         # ``manifest.uninstall`` never touches partial files, so remove the
-        # managed policy from user-owned ``openai.yaml`` files here.
-        for rel, mode in manifest.ownership_modes.items():
-            if mode != "whole" and self._is_policy_rel(rel):
-                self._remove_policy(project_root, rel)
-        return super().teardown(project_root, manifest, force=force)
+        # managed policy from user-owned ``openai.yaml`` files here, and do not
+        # report the ones cleaned as preserved modified files.
+        root = project_root.resolve()
+        cleaned = {
+            root / rel
+            for rel, mode in manifest.ownership_modes.items()
+            if mode != "whole" and self._is_policy_rel(rel) and self._remove_policy(root, rel)
+        }
+        removed, skipped = super().teardown(project_root, manifest, force=force)
+        return removed, [path for path in skipped if path not in cleaned]
 
     def build_exec_args(
         self,

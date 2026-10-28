@@ -396,6 +396,7 @@ class TestCodexNoModelInvocationOwnership:
             self._setup(tmp_path)
         assert path.read_bytes() == content
         assert self._other_policies(tmp_path) == []
+        assert not list((tmp_path / ".agents" / "skills").glob("*/SKILL.md"))
 
     def test_unreadable_existing_file_aborts_without_overwriting(self, tmp_path, monkeypatch):
         path = self._seed(tmp_path)
@@ -518,4 +519,51 @@ class TestCodexNoModelInvocationOwnership:
         )
         assert result.exit_code == 0, result.output
         assert self._yaml(path) == {"interface": {"display_name": "Plan"}}
+        assert self._other_policies(tmp_path) == []
+
+    def test_teardown_does_not_report_cleaned_user_file_as_preserved(self, tmp_path):
+        path = self._seed(tmp_path)
+        manifest = self._setup(tmp_path)
+        _, skipped = get_integration("codex").teardown(tmp_path, manifest)
+        assert path.resolve() not in [p.resolve() for p in skipped]
+
+    def test_setup_accepts_unresolved_project_root(self, tmp_path):
+        if not hasattr(os, "symlink"):
+            pytest.skip("symlinks are unavailable")
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real, target_is_directory=True)
+        manifest = self._setup(link)
+        assert self._yaml(real / self.PLAN_REL) == {"policy": self.POLICY}
+        assert self.PLAN_REL in manifest.files
+
+    def test_clearing_option_keeps_unparseable_edit_of_generated_file(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(b"interface: [half-edited\n")
+
+        result = _run_in_project(
+            tmp_path, ["integration", "upgrade", "codex", "--force", "--integration-options", ""]
+        )
+        assert result.exit_code == 0, result.output
+        assert path.read_bytes() == b"interface: [half-edited\n"
+        assert self._other_policies(tmp_path) == []
+
+    def test_clearing_option_deletes_generated_file_after_cosmetic_change(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _run_in_project
+
+        self._init(tmp_path, "--no-model-invocation")
+        path = tmp_path / self.PLAN_REL
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+
+        result = _run_in_project(tmp_path, ["integration", "upgrade", "codex", "--force"])
+        assert result.exit_code == 0, result.output
+        assert self._manifest(tmp_path).ownership_modes[self.PLAN_REL] == "whole"
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"# note\r\n")
+
+        self._init(tmp_path)
+        assert not path.exists()
         assert self._other_policies(tmp_path) == []
