@@ -398,9 +398,13 @@ def integration_switch(
         continuing="The integration switch succeeded, but installed presets may need re-registration.",
     )
 
+    # The manifest was saved right before registration, so every tracked
+    # file is unmodified; passing them all keeps recovered markers on files
+    # registration didn't change.
     _resync_manifest_after_registration(
         manifest,
         target,
+        unmodified_files=set(manifest.files),
         continuing="The integration switch succeeded, but its manifest hashes may be stale.",
     )
 

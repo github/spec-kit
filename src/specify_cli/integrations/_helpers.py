@@ -486,21 +486,27 @@ def _register_presets_for_agent(
 def _snapshot_manifest_before_registration(
     project_root: Path, agent_key: str,
 ) -> tuple[Any, set[str]]:
-    """Snapshot an installed manifest's unmodified files before rescaffolding (#5078)."""
+    """Snapshot an installed manifest's unmodified files before rescaffolding (#5078).
+
+    Same rules as ``check_modified()``, applied one file at a time after
+    ``record_existing()``'s path check, so no file outside the project is
+    read. A path that fails the check or can't be read counts as modified.
+    """
     try:
-        from .manifest import IntegrationManifest, _validate_record_path
+        from .manifest import IntegrationManifest, _sha256, _validate_record_path
 
         manifest = IntegrationManifest.load(agent_key, project_root)
         unmodified: set[str] = set()
-        for rel in set(manifest.files) - set(manifest.check_modified()):
-            # Same path check as record_existing(), so the resync never
-            # hashes a file outside the project. RuntimeError is a symlink
-            # loop in Path.resolve() before Python 3.13.
+        for rel, expected_hash in manifest.files.items():
+            # RuntimeError is a symlink loop in Path.resolve() before 3.13.
             try:
-                _validate_record_path(Path(rel), manifest.project_root)
+                abs_path = _validate_record_path(Path(rel), manifest.project_root)
+                if not abs_path.exists() or (
+                    abs_path.is_file() and _sha256(abs_path) == expected_hash
+                ):
+                    unmodified.add(rel)
             except (OSError, RuntimeError, ValueError):
                 continue
-            unmodified.add(rel)
         return manifest, unmodified
     except FileNotFoundError:
         return None, set()
@@ -537,12 +543,14 @@ def _resync_manifest_after_registration(
     ``use`` and installed-target ``switch`` reuse an older manifest (#5078).
     They must pass ``unmodified_files`` from before registration; only those
     files whose bytes changed are refreshed, preserving earlier user edits.
+    A new-target ``switch`` passes every tracked file, so files registration
+    didn't change keep their recovered markers.
 
     Best-effort: registration itself is best-effort, so a failure here must
     not abort the surrounding upgrade/use/switch transaction.
     """
     try:
-        from .manifest import _sha256
+        from .manifest import _sha256, _validate_record_path
 
         changed = False
         for rel, expected_hash in new_manifest.files.items():
@@ -553,12 +561,15 @@ def _resync_manifest_after_registration(
                 if abs_path.is_symlink() or not abs_path.is_file():
                     continue
                 # Only re-hash bytes registration changed: record_existing()
-                # also clears a file's recovered marker.
-                if unmodified_files is not None and _sha256(abs_path) == expected_hash:
+                # also clears a file's recovered marker. Check the path the
+                # way record_existing() does before reading it.
+                if unmodified_files is not None and _sha256(
+                    _validate_record_path(Path(rel), new_manifest.project_root)
+                ) == expected_hash:
                     continue
                 new_manifest.record_existing(rel)
                 changed = True
-            except (ValueError, OSError) as file_err:
+            except (ValueError, OSError, RuntimeError) as file_err:
                 from .. import _print_cli_warning
 
                 _print_cli_warning(

@@ -54,6 +54,30 @@ class TestIntegrationSwitch:
         result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
         assert result.exit_code == 0, result.output
 
+    def test_switch_new_target_keeps_recovered_markers(self, tmp_path, monkeypatch):
+        """The new-target resync must not re-record unchanged files (#5078).
+
+        ``record_existing()`` clears a recovered marker, and ownership checks
+        such as the events dispatcher cleanup rely on it.
+        """
+        from specify_cli.integrations.codex import CodexIntegration
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        rel = ".agents/skills/speckit-plan/SKILL.md"
+        original_setup = CodexIntegration.setup
+
+        def setup_with_recovered_file(self, project_root, manifest, *args, **kwargs):
+            created = original_setup(self, project_root, manifest, *args, **kwargs)
+            manifest.record_existing(rel, recovered=True)
+            return created
+
+        project = _init_project(tmp_path, "claude")
+        monkeypatch.setattr(CodexIntegration, "setup", setup_with_recovered_file)
+
+        result = _run_in_project(project, ["integration", "switch", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        assert IntegrationManifest.load("codex", project).is_recovered(rel)
+
     @pytest.mark.parametrize("command", ["plan", "tasks"])
     def test_switch_installed_target_preserves_modified_manifest_hash(
         self, tmp_path, tasks_preset_src, command
