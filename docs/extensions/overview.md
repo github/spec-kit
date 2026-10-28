@@ -198,9 +198,6 @@ Extensions add skills that appear in GitHub Copilot:
 ```text
 # In GitHub Copilot
 > /speckit-jira-specstoissues
-
-# Or use a namespaced alias (if provided)
-> /speckit-jira-sync
 ```
 
 ### Extension Configuration
