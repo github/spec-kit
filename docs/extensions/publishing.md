@@ -303,7 +303,7 @@ A: Extensions should be free and open-source. Commercial support/services are al
 
 - **Catalog Issues**: <https://github.com/statsperform/spec-kit/issues>
 - **Extension Template**: <https://github.com/statsperform/spec-kit-extension-template> (coming soon)
-- **Development Guide**: See the [Extension Development Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md)
+- **Development Guide**: See [Developing extensions](developing.md)
 - **Community**: Discussions and Q&A
 
 ---

@@ -141,6 +141,8 @@
   items:
     - name: Overview
       href: extensions/overview.md
+    - name: Developing
+      href: extensions/developing.md
     - name: Publishing
       href: extensions/publishing.md
 

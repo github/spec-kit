@@ -1002,7 +1002,7 @@ After creating tasks, sync to Jira:
 - **Extension Issues**: Report to extension repository (see `specify extension info`)
 - **Spec Kit Issues**: <https://github.com/github/spec-kit/issues>
 - **Extension Catalog**: <https://github.com/github/spec-kit/tree/main/extensions>
-- **Documentation**: See the [Extension Development Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md) and [Extension Publishing Guide](publishing.md)
+- **Documentation**: See [Developing extensions](developing.md) and [Extension Publishing Guide](publishing.md)
 
 ---
 
