@@ -33,7 +33,9 @@ def self_upgrade(
     Detection classifies the runtime into uv-tool / pipx / uvx (ephemeral) /
     source-checkout / unsupported. Only uv-tool and pipx are upgraded
     automatically; the other three paths print path-specific guidance and
-    exit 0.
+    exit 0. On Windows, uv cannot replace the uv-tool environment specify is
+    running from, so uv-tool installs print the uv command to run once
+    specify exits, and exit 0 without changes.
 
     Exit codes:
       0      success or no-op-success (already on latest, --dry-run, or
@@ -74,7 +76,7 @@ def self_upgrade(
         _render_argv,
         _run_installer,
         _runs_from_uv_tool_env_on_windows,
-        _source_spec,
+        _uv_tool_manual_command,
         _validate_tag,
         _verify_upgrade,
         console,
@@ -112,6 +114,13 @@ def self_upgrade(
         console.print("Dry run — no changes will be made.")
         for line in plan.preview_summary.splitlines():
             console.print(line)
+        if (
+            plan.method == _InstallMethod.UV_TOOL
+            and plan.installer_argv is not None
+            and _runs_from_uv_tool_env_on_windows()
+        ):
+            console.print("Run it yourself once this command exits:", soft_wrap=True)
+            console.print(f"  {_uv_tool_manual_command(plan.target_tag)}", soft_wrap=True)
         raise typer.Exit(0)
 
     if plan.method in (
@@ -167,10 +176,7 @@ def self_upgrade(
             soft_wrap=True,
         )
         console.print("Run it yourself once this command exits:", soft_wrap=True)
-        console.print(
-            f"  uv tool install specify-cli --force --from {_source_spec(target_tag)}",
-            soft_wrap=True,
-        )
+        console.print(f"  {_uv_tool_manual_command(target_tag)}", soft_wrap=True)
         raise typer.Exit(0)
 
     installed_version = _parse_version_text(plan.current_version)

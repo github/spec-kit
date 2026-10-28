@@ -680,6 +680,11 @@ def _runs_from_uv_tool_env_on_windows() -> bool:
     )
 
 
+def _uv_tool_manual_command(target_tag: str | None) -> str:
+    """Return the uv command a Windows uv-tool user runs after specify exits."""
+    return f"uv tool install specify-cli --force --from {_source_spec(target_tag)}"
+
+
 def _is_path_like_command(value: str) -> bool:
     """Return whether an argv[0] names a path rather than a bare command."""
     return Path(value).parent != Path(".") or "/" in value or "\\" in value
@@ -735,6 +740,12 @@ def _build_upgrade_plan(
     if argv is None and method in (_InstallMethod.UV_TOOL, _InstallMethod.PIPX):
         command_preview = (
             f"(installer {_installer_binary_name(method)} not found on PATH)"
+        )
+    elif method == _InstallMethod.UV_TOOL and _runs_from_uv_tool_env_on_windows():
+        # self_upgrade prints the uv command instead of running it.
+        command_preview = (
+            "(none — on Windows, uv cannot replace the tool environment specify "
+            "is running from)"
         )
     else:
         command_preview = (
