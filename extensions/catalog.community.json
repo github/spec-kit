@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-27T00:00:00Z",
+  "updated_at": "2026-10-28T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "adrkit": {
@@ -5359,14 +5359,15 @@
       "name": "SFSpeckit — Salesforce Spec-Driven Development",
       "id": "sf",
       "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
-      "author": "Sumanth Yanamala",
-      "version": "1.0.0",
-      "download_url": "https://github.com/ysumanth06/spec-kit-sf/archive/refs/tags/v1.0.0.zip",
-      "repository": "https://github.com/ysumanth06/spec-kit-sf",
-      "homepage": "https://ysumanth06.github.io/spec-kit-sf/",
-      "documentation": "https://ysumanth06.github.io/spec-kit-sf/introduction.html",
-      "changelog": "https://github.com/ysumanth06/spec-kit-sf/blob/main/CHANGELOG.md",
-      "license": "MIT",
+      "author": "Sumanth Yanamala / Evernorth",
+      "version": "2.0.1",
+      "download_url": "https://github.com/Evernorth/spec-kit-sf/archive/refs/tags/v2.0.1.zip",
+      "sha256": "f066096cd556c94f3666167b4e2ae8d49b9bdb6f1577bfa78dfeed2d815e8256",
+      "repository": "https://github.com/Evernorth/spec-kit-sf",
+      "homepage": "https://github.com/Evernorth/spec-kit-sf",
+      "documentation": "https://github.com/Evernorth/spec-kit-sf#readme",
+      "changelog": "https://github.com/Evernorth/spec-kit-sf/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
       "category": "process",
       "effect": "read-write",
       "requires": {
@@ -5385,7 +5386,7 @@
         ]
       },
       "provides": {
-        "commands": 18,
+        "commands": 19,
         "hooks": 2
       },
       "tags": [
@@ -5399,7 +5400,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-13T22:11:30Z",
-      "updated_at": "2026-04-13T22:11:30Z"
+      "updated_at": "2026-10-28T00:00:00Z"
     },
     "ship": {
       "name": "Ship Release Extension",
