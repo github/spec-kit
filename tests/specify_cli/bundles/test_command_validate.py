@@ -125,6 +125,17 @@ def test_validate_reports_invalid_manifest(project: Path):
     assert "license" in result.output
 
 
+@pytest.mark.parametrize("bad_integration", [{}, {"name": "claude"}])
+def test_validate_rejects_integration_mapping_without_id(
+    project: Path, bad_integration
+):
+    data = valid_manifest_dict(integration=bad_integration)
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+    assert result.exit_code == 1
+    assert "integration" in result.output
+
+
 @pytest.mark.parametrize("version", ["1.2.0", "1.20.30-12alpha.1+build.01", "V10.20.30"])
 def test_validate_accepts_valid_manifest(project: Path, version: str):
     data = valid_manifest_dict()

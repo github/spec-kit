@@ -145,8 +145,19 @@ class BundleManifest:
         # leaving the bundle wrongly integration-agnostic. Reject it instead.
         if integration_raw is not None and not isinstance(integration_raw, dict):
             raise BundlerError("'integration' must be a mapping when present.")
-        if isinstance(integration_raw, dict) and integration_raw.get("id"):
-            integration = IntegrationRef(id=str(integration_raw["id"]).strip())
+        if isinstance(integration_raw, dict):
+            # A mapping without a usable id was silently mishandled: a
+            # missing or empty id fell through to integration=None (the
+            # declared integration was dropped and the bundle validated as
+            # integration-agnostic), while a whitespace-only id passed the
+            # old truthiness check and became IntegrationRef(id="").
+            # Reject all three instead.
+            integration_id = _text(integration_raw.get("id"))
+            if not integration_id:
+                raise BundlerError(
+                    "'integration' mapping must include a non-empty 'id'."
+                )
+            integration = IntegrationRef(id=integration_id)
 
         provides = data.get("provides")
         if provides is None:
