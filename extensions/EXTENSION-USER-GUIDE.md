@@ -348,7 +348,7 @@ Extensions can have multiple configuration files:
 ```text
 .specify/extensions/jira/
 ├── jira-config.yml           # Main config (version controlled)
-├── jira-config.local.yml     # Local overrides (gitignored)
+├── local-config.yml          # Local overrides (gitignored)
 └── jira-config.template.yml  # Template (reference)
 ```
 
@@ -358,7 +358,7 @@ Configuration is merged in this order (highest priority last):
 
 1. **Extension defaults** (from `extension.yml`)
 2. **Project config** (`jira-config.yml`)
-3. **Local overrides** (`jira-config.local.yml`)
+3. **Local overrides** (`local-config.yml`)
 4. **Environment variables** (`SPECKIT_JIRA_*`)
 
 ### Example: Jira Configuration
@@ -374,7 +374,7 @@ defaults:
     labels: ["spec-driven"]
 ```
 
-**Local override** (`.specify/extensions/jira/jira-config.local.yml`):
+**Local override** (`.specify/extensions/jira/local-config.yml`):
 
 ```yaml
 project:
@@ -868,7 +868,7 @@ specify extension add --dev /path/to/extension
 
 - `.specify/extensions/.cache/` (catalog cache)
 - `.specify/extensions/.backup/` (config backups)
-- `.specify/extensions/*/*.local.yml` (local overrides)
+- `.specify/extensions/*/local-config.yml` (local overrides)
 - `.specify/extensions/.registry` (installation state)
 
 Add to `.gitignore`:
@@ -876,7 +876,7 @@ Add to `.gitignore`:
 ```gitignore
 .specify/extensions/.cache/
 .specify/extensions/.backup/
-.specify/extensions/*/*.local.yml
+.specify/extensions/*/local-config.yml
 .specify/extensions/.registry
 ```
 
@@ -907,7 +907,7 @@ To install: `specify extension add jira`
 Use local config for development:
 
 ```yaml
-# .specify/extensions/jira/jira-config.local.yml
+# .specify/extensions/jira/local-config.yml
 project:
   key: "DEVTEST"  # Your test project
 

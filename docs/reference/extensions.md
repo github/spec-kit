@@ -276,7 +276,7 @@ Most extensions include configuration files in their install directory:
 ```text
 .specify/extensions/<ext>/
 ├── <ext>-config.yml           # Project config (version controlled)
-├── <ext>-config.local.yml     # Local overrides (gitignored)
+├── local-config.yml           # Local overrides (gitignored)
 └── <ext>-config.template.yml  # Template reference
 ```
 
@@ -284,7 +284,7 @@ Configuration is merged in this order (highest priority last):
 
 1. **Extension defaults** (from `extension.yml`)
 2. **Project config** (`<ext>-config.yml`)
-3. **Local overrides** (`<ext>-config.local.yml`)
+3. **Local overrides** (`local-config.yml`)
 4. **Environment variables** (`SPECKIT_<EXT>_*`)
 
 To set up configuration for a newly installed extension, copy the template:

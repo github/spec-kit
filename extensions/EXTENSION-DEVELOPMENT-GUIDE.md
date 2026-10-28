@@ -385,7 +385,7 @@ In your command, load config with layered precedence:
 
 1. Extension defaults (`extension.yml` → `defaults`)
 2. Project config (`.specify/extensions/my-ext/my-ext-config.yml`)
-3. Local overrides (`.specify/extensions/my-ext/my-ext-config.local.yml` - gitignored)
+3. Local overrides (`.specify/extensions/my-ext/local-config.yml` - gitignored)
 4. Environment variables (`SPECKIT_MY_EXT_*`)
 
 **Example loading script**:

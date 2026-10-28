@@ -1,4 +1,5 @@
 # Local configuration overrides
+local-config.yml
 *-config.local.yml
 
 # Python
