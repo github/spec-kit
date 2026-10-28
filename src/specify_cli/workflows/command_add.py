@@ -97,12 +97,26 @@ def workflow_add(
     )
 
     def _validate_and_install_local(
-        yaml_path: cli.Path, source_label: str, expected_id: str | None = None
+        yaml_path: cli.Path,
+        source_label: str,
+        expected_id: str | None = None,
+        *,
+        use_project_file_mode: bool = False,
     ) -> None:
-        """Validate and install a workflow from a local YAML file."""
+        """Validate and install a workflow from a local YAML file.
+
+        A caller-supplied file keeps its mode. A URL download passes
+        ``use_project_file_mode`` because its ``NamedTemporaryFile`` is
+        created mode 0600; copying that mode would install ``workflow.yml``
+        privately, unlike a catalog install. A new file is created mode
+        0666 so the process umask supplies the normal project-file mode.
+        Reinstall keeps the mode of an existing ``workflow.yml``.
+        """
         try:
             with yaml_path.open("rb") as source_file:
-                source_mode = cli.os.fstat(source_file.fileno()).st_mode & 0o7777
+                source_mode: int | None = None
+                if not use_project_file_mode:
+                    source_mode = cli.os.fstat(source_file.fileno()).st_mode & 0o7777
                 source_content = source_file.read()
             definition = WorkflowDefinition.from_string(source_content.decode("utf-8"))
         except OSError as exc:
@@ -151,7 +165,12 @@ def workflow_add(
         existed_before = dest_dir.is_dir()
 
         try:
-            staged_file = cli._stage_workflow_file(dest_dir)
+            staged_file = cli._stage_workflow_file(
+                dest_dir,
+                use_project_file_mode=(
+                    use_project_file_mode and not dest_file.exists()
+                ),
+            )
         except OSError as exc:
             cli.console.print(
                 f"[red]Error:[/red] Failed to install workflow "
@@ -163,7 +182,8 @@ def workflow_add(
             # Write the exact bytes parsed above so a concurrent source edit
             # cannot desynchronize installed content from validated metadata.
             staged_file.write_bytes(source_content)
-            staged_file.set_mode(source_mode)
+            if source_mode is not None:
+                staged_file.set_mode(source_mode)
         except OSError as exc:
             cli._safe_discard_staged_workflow_file(
                 staged_file, dest_dir, existed_before
@@ -449,6 +469,7 @@ def workflow_add(
                     tmp_path,
                     download_url,
                     expected_id=source if from_url else None,
+                    use_project_file_mode=True,
                 )
             else:
                 with tempfile.TemporaryDirectory(
