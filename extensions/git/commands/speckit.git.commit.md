@@ -46,9 +46,11 @@ In `.specify/extensions/git/git-config.yml`:
 commit_style: fixed
 
 auto_commit:
-  default: false          # Fallback for events without a section
+  # Fallback for events without a section
+  default: false
   after_specify:
-    enabled: true          # Override per-command
+    # Override per-command
+    enabled: true
     message: "[Spec Kit] Add specification"
   after_plan:
     enabled: false
