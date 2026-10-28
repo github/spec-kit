@@ -770,6 +770,35 @@ class IntegrationBase(ABC):
         )
 
     @staticmethod
+    def resolve_hook_invocation_prefix(
+        content: str, prefix: str = "/"
+    ) -> str:
+        """Resolve the hard-coded ``/`` in hook-block ``{command}`` invocations.
+
+        The command templates and the bundled extension commands spell the
+        hook output block with a literal slash (``Command: `/{command}```,
+        ``Executing: `/{command}```, ``To execute: `/{command}```).  Agents
+        whose native skills invocation is not a bare slash -- ``$`` for
+        Codex, ``/skill:`` for Kimi -- are then told to emit an invocation
+        they cannot run, contradicting the dot-to-hyphen note injected
+        alongside it.  Only the prefix is resolved; ``{command}`` stays a
+        placeholder for the agent to fill from ``extensions.yml``.
+
+        Idempotent, because the rewritten text no longer carries the bare
+        ``/`` form that is matched.
+
+        This is a temporary compatibility shim for agents whose invocation
+        prefix is not ``/``, not a supported extension API.  Rewriting
+        ``/{command}`` may change or be removed without backward
+        compatibility, so extension authors should not introduce new
+        dependencies on this behaviour: keep writing the generic
+        ``/{command}`` form in hook blocks.
+        """
+        if prefix == "/":
+            return content
+        return content.replace("`/{command}`", f"`{prefix}{{command}}`")
+
+    @staticmethod
     def resolve_python_interpreter(project_root: Path | None = None) -> str:
         """Resolve a portable Python interpreter command for ``{SCRIPT}``.
 
@@ -1819,13 +1848,15 @@ class SkillsIntegration(IntegrationBase):
 
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
-        transformations.  The base implementation injects shared skills
-        guidance for converting dotted hook command names to the agent-native
-        hyphenated command invocation (e.g. ``/speckit-git-commit`` or
-        ``$speckit-git-commit``).  Subclasses may override -- see
-        ``ClaudeIntegration``.
+        transformations.  The base implementation rewrites the hook blocks'
+        hard-coded ``/{command}`` invocations to the agent's native prefix
+        and injects shared skills guidance for converting dotted hook
+        command names to the agent-native hyphenated command invocation
+        (e.g. ``/speckit-git-commit`` or ``$speckit-git-commit``).
+        Subclasses may override -- see ``ClaudeIntegration``.
         """
         invocation_prefix = get_invocation_prefix(self.key, True)
+        content = self.resolve_hook_invocation_prefix(content, invocation_prefix)
         return self._inject_hook_command_note(content, invocation_prefix)
 
     def setup(
