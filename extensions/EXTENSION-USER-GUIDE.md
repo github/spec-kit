@@ -868,7 +868,7 @@ specify extension add --dev /path/to/extension
 
 - `.specify/extensions/.cache/` (catalog cache)
 - `.specify/extensions/.backup/` (config backups)
-- `.specify/extensions/*/*.local.yml` (local overrides)
+- `.specify/extensions/*/local-config.yml` (local overrides)
 - `.specify/extensions/.registry` (installation state)
 
 Add to `.gitignore`:
@@ -876,7 +876,7 @@ Add to `.gitignore`:
 ```gitignore
 .specify/extensions/.cache/
 .specify/extensions/.backup/
-.specify/extensions/*/*.local.yml
+.specify/extensions/*/local-config.yml
 .specify/extensions/.registry
 ```
 
