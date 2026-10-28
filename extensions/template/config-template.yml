@@ -71,5 +71,5 @@ advanced:
 # Note: Use uppercase and replace dots with underscores
 
 # Local Overrides:
-# For local development, create my-extension-config.local.yml (gitignored)
+# For local development, create local-config.yml (gitignored)
 # to override settings without affecting the team configuration

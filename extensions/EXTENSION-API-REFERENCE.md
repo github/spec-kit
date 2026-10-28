@@ -562,7 +562,7 @@ field_mappings:
 
 1. **Extension Defaults** (from `extension.yml` `defaults` section)
 2. **Project Config** (`{extension-id}-config.yml`)
-3. **Local Override** (`{extension-id}-config.local.yml`, gitignored)
+3. **Local Override** (`local-config.yml`, gitignored)
 4. **Environment Variables** (`SPECKIT_{EXTENSION}_*`)
 
 ### Environment Variable Pattern
@@ -884,7 +884,7 @@ satisfied = version_satisfies("1.2.3", ">=1.0.0,<2.0.0")  # bool
 │   ├── {extension-id}/         # Extension directory
 │   │   ├── extension.yml       # Manifest
 │   │   ├── {ext}-config.yml    # User config
-│   │   ├── {ext}-config.local.yml  # Local overrides (gitignored)
+│   │   ├── local-config.yml    # Local overrides (gitignored)
 │   │   ├── {ext}-config.template.yml  # Template
 │   │   ├── commands/           # Command files
 │   │   │   └── *.md
