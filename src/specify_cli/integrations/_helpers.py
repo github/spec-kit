@@ -488,10 +488,20 @@ def _snapshot_manifest_before_registration(
 ) -> tuple[Any, set[str]]:
     """Snapshot an installed manifest's unmodified files before rescaffolding (#5078)."""
     try:
-        from .manifest import IntegrationManifest
+        from .manifest import IntegrationManifest, _validate_record_path
 
         manifest = IntegrationManifest.load(agent_key, project_root)
-        return manifest, set(manifest.files) - set(manifest.check_modified())
+        unmodified: set[str] = set()
+        for rel in set(manifest.files) - set(manifest.check_modified()):
+            # Same path check as record_existing(), so the resync never
+            # hashes a file outside the project. RuntimeError is a symlink
+            # loop in Path.resolve() before Python 3.13.
+            try:
+                _validate_record_path(Path(rel), manifest.project_root)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            unmodified.add(rel)
+        return manifest, unmodified
     except FileNotFoundError:
         return None, set()
     except Exception as manifest_err:  # noqa: BLE001 - manifest refresh is best-effort

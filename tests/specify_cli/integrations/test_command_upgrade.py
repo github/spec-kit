@@ -1551,6 +1551,51 @@ class TestIntegrationUpgradeDetailed:
         ok_hash = hashlib.sha256((project / "ok.md").read_bytes()).hexdigest()
         assert reloaded.files["ok.md"] == ok_hash
 
+    @pytest.mark.parametrize("escape", ["dotdot", "symlinked-parent"])
+    def test_snapshot_skips_manifest_paths_outside_the_project(
+        self, tmp_path, escape
+    ):
+        """Paths that record_existing() rejects stay out of the snapshot.
+
+        Otherwise the resync's changed-bytes check (#5078) would hash a
+        file outside the project before ``record_existing()`` refuses it.
+        """
+        from specify_cli.integrations._helpers import (
+            _snapshot_manifest_before_registration,
+        )
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret = outside / "secret.md"
+        secret.write_text("outside project\n", encoding="utf-8")
+        (project / "ok.md").write_text("ok content\n", encoding="utf-8")
+
+        if escape == "dotdot":
+            escaping_key = "../outside/secret.md"
+        else:
+            try:
+                (project / "outside-link").symlink_to(
+                    outside, target_is_directory=True
+                )
+            except OSError as exc:
+                pytest.skip(f"symlinks unavailable: {exc}")
+            escaping_key = "outside-link/secret.md"
+
+        manifest = IntegrationManifest("claude", project, version="test")
+        manifest.record_existing("ok.md")
+        manifest._files[escaping_key] = hashlib.sha256(secret.read_bytes()).hexdigest()
+        manifest.save()
+
+        snapshot, unmodified = _snapshot_manifest_before_registration(
+            project, "claude"
+        )
+
+        assert snapshot is not None
+        assert unmodified == {"ok.md"}
+
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
 
