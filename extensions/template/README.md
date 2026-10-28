@@ -70,7 +70,7 @@ Starter template for creating a Spec Kit extension.
 - **Development Guide**: See EXTENSION-DEVELOPMENT-GUIDE.md
 - **API Reference**: See EXTENSION-API-REFERENCE.md
 - **Publishing Guide**: See the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html)
-- **User Guide**: See EXTENSION-USER-GUIDE.md
+- **User Guide**: See the [Extension User Guide](https://github.github.io/spec-kit/extensions/overview.html)
 
 ## Template Version
 

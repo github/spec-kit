@@ -1,4 +1,4 @@
-# Extension User Guide
+# Extensions Overview
 
 Complete guide for using Spec Kit extensions to enhance your workflow.
 
@@ -68,8 +68,8 @@ specify extension add jira
 vim .specify/extensions/jira/jira-config.yml
 
 # 5. Use it
-# (Commands are now available in Claude Code)
-/speckit.jira.specstoissues
+# (Skills are now available in GitHub Copilot)
+/speckit-jira-specstoissues
 ```
 
 ---
@@ -179,30 +179,13 @@ Jira Integration (v1.0.0)
   Create Jira Epics, Stories, and Issues from spec-kit artifacts
 
 Provided commands:
-  • speckit.jira.specstoissues - Create Jira hierarchy from spec and tasks
-  • speckit.jira.discover-fields - Discover Jira custom fields for configuration
-  • speckit.jira.sync-status - Sync task completion status to Jira
+  • speckit-jira-specstoissues - Create Jira hierarchy from spec and tasks
+  • speckit-jira-discover-fields - Discover Jira custom fields for configuration
+  • speckit-jira-sync-status - Sync task completion status to Jira
 
 ⚠  Configuration may be required
    Check: .specify/extensions/jira/
 ```
-
-Command names are listed the way your agent registers them. Skills-based integrations such as Claude Code and Codex, projects initialized with `--integration-options="--skills"`, and agents such as Cline, Forge, and Junie show hyphenated names (for example `speckit-jira-specstoissues`).
-
-### Automatic Agent Skill Registration
-
-If your project uses a skills-based integration (e.g., `--integration claude`, `--integration codex`) or was initialized with `--integration-options="--skills"`, extension commands are **automatically registered as agent skills** during installation. This ensures that extensions are discoverable by agents that use the [agentskills.io](https://agentskills.io) skill specification.
-
-```text
-✓ Extension installed successfully!
-
-Jira Integration (v1.0.0)
-  ...
-
-✓ 3 agent skill(s) auto-registered
-```
-
-When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
 
 ---
 
@@ -210,14 +193,11 @@ When an extension is removed, its corresponding skills are also cleaned up autom
 
 ### Using Extension Commands
 
-Extensions add commands that appear in your coding agent (Claude Code):
+Extensions add skills that appear in GitHub Copilot:
 
 ```text
-# In Claude Code
-> /speckit.jira.specstoissues
-
-# Or use a namespaced alias (if provided)
-> /speckit.jira.sync
+# In GitHub Copilot
+> /speckit-jira-specstoissues
 ```
 
 ### Extension Configuration
@@ -243,21 +223,21 @@ vim .specify/extensions/jira/jira-config.yml
 
 Some extensions provide hooks that execute after core commands:
 
-**Example**: Jira extension hooks into `/speckit.tasks`
+**Example**: Jira extension hooks into `/speckit-tasks`
 
 ```text
 # Run core command
-> /speckit.tasks
+> /speckit-tasks
 
 # Output includes:
 ## Extension Hooks
 
 **Optional Hook**: jira
-Command: `/speckit.jira.specstoissues`
+Command: `/speckit-jira-specstoissues`
 Description: Automatically create Jira hierarchy after task generation
 
 Prompt: Create Jira issues from tasks?
-To execute: `/speckit.jira.specstoissues`
+To execute: `/speckit-jira-specstoissues`
 ```
 
 You can then choose to run the hook or skip it.
@@ -348,7 +328,7 @@ Extensions can have multiple configuration files:
 ```text
 .specify/extensions/jira/
 ├── jira-config.yml           # Main config (version controlled)
-├── jira-config.local.yml     # Local overrides (gitignored)
+├── local-config.yml         # Local overrides (gitignored)
 └── jira-config.template.yml  # Template (reference)
 ```
 
@@ -358,7 +338,7 @@ Configuration is merged in this order (highest priority last):
 
 1. **Extension defaults** (from `extension.yml`)
 2. **Project config** (`jira-config.yml`)
-3. **Local overrides** (`jira-config.local.yml`)
+3. **Local overrides** (`local-config.yml`)
 4. **Environment variables** (`SPECKIT_JIRA_*`)
 
 ### Example: Jira Configuration
@@ -374,7 +354,7 @@ defaults:
     labels: ["spec-driven"]
 ```
 
-**Local override** (`.specify/extensions/jira/jira-config.local.yml`):
+**Local override** (`.specify/extensions/jira/local-config.yml`):
 
 ```yaml
 project:
@@ -805,11 +785,11 @@ specify extension add --dev /path/to/extension
 **Solutions**:
 
 1. Check extension is enabled: `specify extension list`
-2. Restart coding agent (Claude Code)
-3. Check command file exists:
+2. Restart GitHub Copilot
+3. Check the skill file exists:
 
    ```bash
-   ls .claude/commands/speckit.jira.*.md
+   ls .github/skills/speckit-jira-*/SKILL.md
    ```
 
 4. Reinstall extension
@@ -868,7 +848,7 @@ specify extension add --dev /path/to/extension
 
 - `.specify/extensions/.cache/` (catalog cache)
 - `.specify/extensions/.backup/` (config backups)
-- `.specify/extensions/*/*.local.yml` (local overrides)
+- `.specify/extensions/*/local-config.yml` (local overrides)
 - `.specify/extensions/.registry` (installation state)
 
 Add to `.gitignore`:
@@ -876,7 +856,7 @@ Add to `.gitignore`:
 ```gitignore
 .specify/extensions/.cache/
 .specify/extensions/.backup/
-.specify/extensions/*/*.local.yml
+.specify/extensions/*/local-config.yml
 .specify/extensions/.registry
 ```
 
@@ -907,7 +887,7 @@ To install: `specify extension add jira`
 Use local config for development:
 
 ```yaml
-# .specify/extensions/jira/jira-config.local.yml
+# .specify/extensions/jira/local-config.yml
 project:
   key: "DEVTEST"  # Your test project
 
@@ -966,9 +946,9 @@ Document extension usage in your project:
 ## Working with Jira
 
 After creating tasks, sync to Jira:
-1. Run `/speckit.tasks` to generate tasks
-2. Run `/speckit.jira.specstoissues` to create Jira issues
-3. Run `/speckit.jira.sync-status` to update status
+1. Run `/speckit-tasks` to generate tasks
+2. Run `/speckit-jira-specstoissues` to create Jira issues
+3. Run `/speckit-jira-sync-status` to update status
 ```
 
 ---
@@ -1020,11 +1000,13 @@ After creating tasks, sync to Jira:
 ## Support
 
 - **Extension Issues**: Report to extension repository (see `specify extension info`)
-- **Spec Kit Issues**: <https://github.com/statsperform/spec-kit/issues>
-- **Extension Catalog**: <https://github.com/statsperform/spec-kit/tree/main/extensions>
-- **Documentation**: See EXTENSION-DEVELOPMENT-GUIDE.md and the [Extension Publishing Guide](https://github.github.com/spec-kit/extensions/publishing.html)
+- **Spec Kit Issues**: <https://github.com/github/spec-kit/issues>
+- **Extension Catalog**: <https://github.com/github/spec-kit/tree/main/extensions>
+- **Documentation**: See the [Extension Development Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-DEVELOPMENT-GUIDE.md) and [Extension Publishing Guide](publishing.md)
 
 ---
 
 *Last Updated: 2026-01-28*
 *Spec Kit Version: 0.1.0*
+
+> Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](../integrations/cli.md#command-invocation).

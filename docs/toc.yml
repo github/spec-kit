@@ -135,6 +135,15 @@
     - name: Contributing Integrations
       href: integrations/contributing.md
 
+# Extensions
+- name: Extensions
+  href: extensions/overview.md
+  items:
+    - name: Overview
+      href: extensions/overview.md
+    - name: Publishing
+      href: extensions/publishing.md
+
 # Reference
 - name: Reference
   items:
@@ -199,8 +208,6 @@
       href: community/overview.md
     - name: Extensions
       href: community/extensions.md
-    - name: Publishing Extensions
-      href: extensions/publishing.md
     - name: Presets
       href: community/presets.md
     - name: Bundles

@@ -120,4 +120,4 @@ specify extension add <extension-name> --from https://github.com/<org>/<repo>/ar
 specify extension list
 ```
 
-For more information, see the [Extension User Guide](EXTENSION-USER-GUIDE.md).
+For more information, see the [Extension User Guide](../docs/extensions/overview.md).

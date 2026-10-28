@@ -33,6 +33,7 @@ To build the documentation locally:
 - `guides/assessment.md` - Idea assessment walkthrough
 - `guides/customization.md` - Choosing and combining customization building blocks
 - `reference/catalogs.md` - Catalog discovery, trust, private sources, and precedence
+- `extensions/overview.md` - Extension user guide
 - `extensions/publishing.md` - Extension publishing and catalog submission guide
 - `integrations/index.md` - Integration directory and shared setup guidance
 - `integrations/cli.md` - Shared integration management CLI reference
