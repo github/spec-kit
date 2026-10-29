@@ -16,7 +16,10 @@ not be links, independently of the operational `allow_symlinks` setting. Saves
 validate the destination before file-change observers or directory creation
 and preserve the existing registry text I/O and metadata behavior. This
 migration covers registry persistence only, not the remaining preset lifecycle
-filesystem operations.
+filesystem operations. Shared artifact list/info operations translate registry
+`FileHelperError` failures into their existing resolution errors, preserving
+the CLI JSON envelope and MCP `artifact_resolution_failed` code. Contribution
+lookup likewise translates registry failures into an artifact resolution error.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in

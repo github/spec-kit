@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 import yaml
 
+from ..file_helper import FileHelperError
 from ._identifiers import (
     IdentifierComponentError,
     derive_hook_lookup_id,
@@ -430,7 +431,7 @@ class ArtifactCatalog:
                 resolved = self._find_extension_contribution(
                     resolver, source_id, kind, name
                 )
-        except (OSError, PresetError) as exc:
+        except (FileHelperError, OSError, PresetError) as exc:
             raise ArtifactResolutionError() from exc
         if resolved is None:
             raise ContributionNotFoundError(lookup_id)
