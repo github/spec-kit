@@ -159,12 +159,15 @@ function Save-FeatureJson {
 }
 
 function Resolve-FeatureDirectoryPath {
-    param([string]$Path, [int]$LinkCount = 0)
+    param([string]$Path, [ref]$LinkCount = ([ref]0))
 
-    if ($LinkCount -gt 40) { throw 'Too many symbolic links in feature directory' }
     $root = [System.IO.Path]::GetPathRoot($Path)
     if (-not $root) { throw 'Feature directory must be absolute' }
     $resolved = $root
+    $pathComparison = [System.StringComparison]::Ordinal
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
+    }
     $separators = [regex]::Escape(
         [string][System.IO.Path]::DirectorySeparatorChar +
         [string][System.IO.Path]::AltDirectorySeparatorChar
@@ -184,15 +187,20 @@ function Resolve-FeatureDirectoryPath {
         } elseif (Test-Path -LiteralPath $resolved -PathType Container) {
             # Parent enumeration also sees dangling links on Windows PowerShell 5.1.
             $entry = Get-ChildItem -LiteralPath $resolved -Force -ErrorAction Stop |
-                Where-Object { $_.Name -eq $component } | Select-Object -First 1
+                Where-Object { $_.Name.Equals($component, $pathComparison) } |
+                Select-Object -First 1
         }
-        if ($entry -and ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        # Cloud placeholders can be reparse directories without redirecting names.
+        if ($entry -and ($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and
+            ($entry.LinkType -in @('SymbolicLink', 'Junction') -or $entry.Target)) {
+            $LinkCount.Value += 1
+            if ($LinkCount.Value -gt 40) { throw 'Too many symbolic links in feature directory' }
             $target = @($entry.Target)[0]
             if (-not $target) { throw "Cannot resolve reparse point: $candidate" }
             if (-not [System.IO.Path]::IsPathRooted($target)) {
                 $target = Join-Path $resolved $target
             }
-            $resolved = Resolve-FeatureDirectoryPath -Path $target -LinkCount ($LinkCount + 1)
+            $resolved = Resolve-FeatureDirectoryPath -Path $target -LinkCount $LinkCount
         } elseif ($entry -and -not $entry.PSIsContainer) {
             throw "Feature directory component is not a directory: $candidate"
         } else {

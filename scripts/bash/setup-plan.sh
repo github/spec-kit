@@ -48,15 +48,17 @@ if [[ -f "$IMPL_PLAN" ]]; then
         echo "Plan already exists at $IMPL_PLAN, skipping template copy"
     fi
 else
-    template_file=$(mktemp)
-    trap 'rm -f "$template_file"' EXIT
+    template_dir=$(mktemp -d "$FEATURE_DIR/.plan-template.XXXXXX")
+    template_file="$template_dir/plan.md"
+    trap 'rm -f "$template_file"; rmdir "$template_dir"' EXIT
     if resolve_template_content "plan-template" "$REPO_ROOT" > "$template_file"; then
         if [[ ! -s "$template_file" ]]; then
             echo "ERROR: Plan template is empty; no new plan.md was created." >&2
             echo "Restore a valid plan template and rerun plan setup." >&2
             exit 1
         fi
-        if ! (set -o noclobber; cat "$template_file" > "$IMPL_PLAN"); then
+        # link(1) publishes atomically without opening any existing destination.
+        if ! link "$template_file" "$IMPL_PLAN"; then
             echo "ERROR: Cannot create plan: $IMPL_PLAN" >&2
             exit 1
         fi

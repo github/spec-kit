@@ -166,12 +166,11 @@ def get_feature_paths(
         if not feature_dir.is_absolute():
             feature_dir = repo_root / feature_dir
         try:
-            # Non-strict resolve() tolerates link loops on newer Python versions.
             try:
-                feature_dir.stat()
+                feature_dir = feature_dir.resolve(strict=True)
             except FileNotFoundError:
-                pass
-            feature_dir = feature_dir.resolve()
+                # Missing feature directories are valid; other resolution errors are not.
+                feature_dir = feature_dir.resolve()
             feature_dir.relative_to(repo_root.resolve())
         except (OSError, RuntimeError, ValueError) as exc:
             print(

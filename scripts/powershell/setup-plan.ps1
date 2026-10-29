@@ -38,8 +38,12 @@ if (-not $paths) {
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
+$pathComparison = [System.StringComparison]::Ordinal
+if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+    $pathComparison = [System.StringComparison]::OrdinalIgnoreCase
+}
 $planEntry = Get-ChildItem -LiteralPath $paths.FEATURE_DIR -Force -ErrorAction Stop |
-    Where-Object { $_.Name -eq 'plan.md' } | Select-Object -First 1
+    Where-Object { $_.Name.Equals('plan.md', $pathComparison) } | Select-Object -First 1
 if ($planEntry -and ($planEntry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
     [Console]::Error.WriteLine("ERROR: Plan destination must not be a symbolic link.")
     exit 1
