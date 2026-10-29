@@ -96,12 +96,28 @@ class CommandRegistrar:
 
     @staticmethod
     def _hyphenate_ref_match(match: "re.Match[str]") -> str:
-        """Hyphenate one dotted speckit reference, leaving ``.md`` file names alone."""
+        """Hyphenate one dotted speckit reference, leaving ``.md`` file names alone.
+
+        ``speckit.<extension>.<command>`` may legitimately end in ``.md`` when the
+        command itself is named ``md`` (``/speckit.foo.md``), so the suffix alone
+        is not enough.  A ``.md`` token is treated as a file name only when it has
+        more segments than any command reference can have
+        (``speckit.git.commit.md``) or sits inside a path
+        (``commands/speckit.plan.md``).
+        """
         ref = match.group(0)
         if ref.endswith(".md"):
-            # ``speckit.git.commit.md`` is a command file name, not a command
-            # reference; rewriting it would drop the extension.
-            return ref
+            if ref.count(".") > 2:
+                return ref
+            start = match.start()
+            text = match.string
+            if (
+                start >= 2
+                and text[start - 1] in "/\\"
+                and not text[start - 2].isspace()
+                and text[start - 2] not in "`'\"("
+            ):
+                return ref
         return ref.replace(".", "-")
 
     @staticmethod

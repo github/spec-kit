@@ -95,6 +95,23 @@ class TestClineIntegration(MarkdownIntegrationTests):
             "then run /speckit-git-commit."
         )
 
+    def test_cline_body_refs_hyphenate_a_command_named_md(self):
+        """An extension command whose name is ``md`` is still a command reference."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Run /speckit.foo.md, or open commands/speckit.plan.md "
+            "and agents/speckit.foo.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Run /speckit-foo-md, or open commands/speckit.plan.md "
+            "and agents/speckit.foo.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.foo.md", "next": "/speckit.foo.md"}
+        )
+        assert refs == {"agent": "speckit-foo-md", "next": "/speckit-foo-md"}
+
     def test_cline_frontmatter_refs_keep_md_file_names(self):
         """Frontmatter string values get the same ``.md`` file name protection."""
         from specify_cli.agents import CommandRegistrar
