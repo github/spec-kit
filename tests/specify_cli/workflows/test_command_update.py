@@ -15,6 +15,33 @@ import pytest
 from packaging.version import Version
 
 
+@pytest.mark.parametrize("mode", ["unattended", "decline", "accept", "flag"])
+def test_update_requires_custom_step_consent(project_dir, monkeypatch, mode):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    marker = write_step_import_probe(project_dir)
+    monkeypatch.chdir(project_dir)
+    force_workflow_stdin(monkeypatch, tty=mode in {"decline", "accept"})
+    arguments = ["workflow", "update"]
+    if mode == "flag":
+        arguments.append("--trust-steps")
+
+    result = CliRunner().invoke(
+        app, arguments, input="n\n" if mode == "decline" else "y\n",
+    )
+
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    assert ("No workflows installed" in result.output) is approved
+
+
 
 class TestWorkflowCliAlignment:
     """CLI alignment with extension/preset commands (#2342)."""
@@ -338,7 +365,9 @@ steps:
                 side_effect=lambda url, timeout=None, extra_headers=None,
                 redirect_validator=None: self._FakeResponse(data, url),
             ):
-                result = CliRunner().invoke(app, ["workflow", "update"], input="y\n")
+                result = CliRunner().invoke(
+                    app, ["workflow", "update", "--trust-steps"], input="y\n"
+                )
 
             assert result.exit_code == 0, result.output
             assert custom_type in workflows.STEP_REGISTRY
@@ -424,7 +453,9 @@ steps:
             with patch(
                 "specify_cli.authentication.http.open_url", side_effect=response_for
             ):
-                result_a = runner.invoke(app, ["workflow", "update"], input="y\n")
+                result_a = runner.invoke(
+                    app, ["workflow", "update", "--trust-steps"], input="y\n"
+                )
             assert result_a.exit_code == 0, result_a.output
             assert type_a in workflows.STEP_REGISTRY
 
@@ -513,7 +544,9 @@ steps:
                 side_effect=lambda url, timeout=None, extra_headers=None,
                 redirect_validator=None: self._FakeResponse(data, url),
             ):
-                result = CliRunner().invoke(app, ["workflow", "update"], input="y\n")
+                result = CliRunner().invoke(
+                    app, ["workflow", "update", "--trust-steps"], input="y\n"
+                )
 
             assert result.exit_code != 0
             assert "invalid type 'unknown-update-step'" in result.output

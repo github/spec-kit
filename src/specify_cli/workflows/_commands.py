@@ -62,6 +62,41 @@ def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | N
     raise typer.Exit(1) from exc
 
 
+def _load_custom_steps(
+    project_root: Path, *, trust_steps: bool = False, json_output: bool = False,
+) -> None:
+    """Collect per-invocation CLI consent before the domain imports step code."""
+    from . import CustomStepTrustError, load_custom_steps
+
+    try:
+        load_custom_steps(project_root, trusted=trust_steps)
+    except CustomStepTrustError:
+        if not sys.stdin.isatty():
+            raise
+        _error_console(json_output).print(
+            "[yellow]Warning:[/yellow] Custom workflow step packages in "
+            f"'{_escape_markup(str(project_root / '.specify' / 'workflows' / 'steps'))}' "
+            "execute Python with your privileges, including packages not referenced "
+            "by the requested workflow. Review all package code before approving."
+        )
+        try:
+            approved = typer.confirm(
+                "Trust all custom workflow step code for this invocation?",
+                default=False,
+                err=json_output,
+            )
+        except (EOFError, typer.Abort) as exc:
+            raise CustomStepTrustError(
+                "Custom workflow step execution was not approved. "
+                "Review the code and approve interactively or pass --trust-steps."
+            ) from exc
+        if not approved:
+            raise CustomStepTrustError(
+                "Custom workflow step execution was not approved."
+            )
+        load_custom_steps(project_root, trusted=True)
+
+
 def _fail_workflow_execution(
     exc: Exception, *, json_output: bool, state: Any, resume: bool = False,
 ):

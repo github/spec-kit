@@ -102,15 +102,21 @@ def _unload_custom_steps() -> None:
     _CUSTOM_STEP_MODULES.clear()
 
 
-def load_custom_steps(project_root: Path) -> list[str]:
+class CustomStepTrustError(PermissionError):
+    """Project step code requires explicit consent before it can be imported."""
+
+
+def load_custom_steps(project_root: Path, *, trusted: bool = False) -> list[str]:
     """Load community-installed custom step types into STEP_REGISTRY.
 
     Scans ``.specify/workflows/steps/`` for installed step packages.
     Each valid package must contain ``step.yml`` (with a ``step.type_key``
     field) and ``__init__.py`` (a ``StepBase`` subclass).
 
-    Returns a list of type_keys that were successfully loaded.
-    Silently skips packages that fail to import or validate.
+    ``trusted`` authorizes executing all discovered step packages for this call
+    only. Repository files and installation registry entries do not grant trust.
+    Raises ``CustomStepTrustError`` before importing any unapproved package.
+    Returns the loaded type_keys, skipping packages that fail import/validation.
     """
     import hashlib as _hashlib
     import importlib.util as _importlib_util
@@ -161,6 +167,13 @@ def load_custom_steps(project_root: Path) -> list[str]:
             # Skip if already registered (e.g. built-in or previously loaded)
             if type_key in STEP_REGISTRY:
                 continue
+
+            if not trusted:
+                raise CustomStepTrustError(
+                    f"Custom workflow step code in '{steps_dir}' requires approval. "
+                    "Review all step packages, then approve the interactive prompt "
+                    "or pass --trust-steps for this invocation."
+                )
 
             # Sanitize type_key so the synthetic module name is a valid identifier
             # (e.g. "test-custom" → "_speckit_custom_step_test_custom_<hash>").
@@ -228,6 +241,8 @@ def load_custom_steps(project_root: Path) -> list[str]:
                         k for k in _sys.modules if k.startswith(submodule_prefix)
                     ]:
                         _sys.modules.pop(_mod_key, None)
+        except CustomStepTrustError:
+            raise
         except Exception:  # noqa: BLE001, S112
             # Silently skip broken step packages at load time
             continue

@@ -22,6 +22,15 @@ The default community catalog is discovery-only, not an install or trust
 endorsement. Review external step code before installing it: loading a package
 imports and executes its Python module.
 
+Loading project step code also requires consent for the current invocation.
+`load_custom_steps(project_root, trusted=False)` refuses imports by default;
+neither files on disk nor `step-registry.json` grant trust. CLI commands that
+load custom steps (`workflow add`, `update`, `run`, and `resume`) ask for
+confirmation on interactive stdin, defaulting to refusal. `--trust-steps`
+explicitly authorizes all custom step packages in that project for that
+invocation, including unreferenced packages, and works without a terminal.
+Approval is never persisted or inherited by subsequent invocations.
+
 ## Step contract
 
 Subclass `StepBase` from `src/specify_cli/workflows/base.py`, set `type_key`

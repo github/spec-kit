@@ -22,6 +22,40 @@ from specify_cli import app
 runner = CliRunner()
 
 
+@pytest.mark.parametrize("mode", ["unattended", "decline", "accept", "flag"])
+def test_add_requires_custom_step_consent(project_dir, monkeypatch, mode):
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    marker = write_step_import_probe(project_dir)
+    source = project_dir / "workflow.yml"
+    source.write_text(
+        'schema_version: "1.0"\n'
+        "workflow:\n  id: trust-add\n  name: Trust add\n  version: 1.0.0\n"
+        "steps:\n  - id: probe\n    type: import-probe\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(project_dir)
+    force_workflow_stdin(monkeypatch, tty=mode in {"decline", "accept"})
+    arguments = ["workflow", "add", str(source), "--dev"]
+    if mode == "flag":
+        arguments.append("--trust-steps")
+
+    result = runner.invoke(
+        app, arguments, input="n\n" if mode == "decline" else "y\n",
+    )
+
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    installed = project_dir / ".specify" / "workflows" / "trust-add" / "workflow.yml"
+    assert installed.exists() is approved
+    if not approved:
+        assert "custom" in result.output.lower()
+
+
 
 class TestWorkflowAddCaseInsensitiveSuffix:
     """`workflow add` must detect a local YAML file case-insensitively, matching
@@ -128,7 +162,9 @@ class TestAddStep(StepBase):
             encoding="utf-8",
         )
         monkeypatch.chdir(temp_dir)
-        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(src), "--trust-steps"]
+        )
 
         assert result.exit_code == 0, result.output
         installed_workflow = (

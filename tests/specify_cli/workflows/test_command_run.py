@@ -13,6 +13,90 @@ import yaml
 from tests.specify_cli.workflows.helpers import force_gate_stdin as _force_gate_stdin
 
 
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize(
+    "mode", ["unattended", "decline", "default", "eof", "accept", "flag", "interactive-flag"],
+)
+def test_run_requires_custom_step_consent(tmp_path, monkeypatch, json_output, mode):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    marker = write_step_import_probe(tmp_path)
+    workflow = tmp_path / "workflow.yml"
+    workflow.write_text(TestWorkflowRunGateOutcomeJson._WF_PLAIN, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    force_workflow_stdin(monkeypatch, tty=mode not in {"unattended", "flag"})
+    arguments = ["workflow", "run", str(workflow)]
+    if json_output:
+        arguments.append("--json")
+    if mode in {"flag", "interactive-flag"}:
+        arguments.append("--trust-steps")
+    answers = {"decline": "n\n", "default": "\n", "eof": "", "accept": "y\n"}
+    result = CliRunner().invoke(app, arguments, input=answers.get(mode, "y\n"))
+
+    approved = mode in {"accept", "flag", "interactive-flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    if json_output:
+        payload = json.loads(result.stdout)
+        assert payload["status"] == ("completed" if approved else "failed")
+        if not approved:
+            assert payload["run_id"] is None
+            assert "approval" in payload["error"] or "not approved" in payload["error"]
+    if mode in {"accept", "decline", "default", "eof"}:
+        assert "Trust all custom workflow step code" in result.output
+        assert "not referenced" in result.output
+        if json_output:
+            assert "Trust all custom workflow step code" in result.stderr
+    else:
+        assert "Trust all custom workflow step code" not in result.output
+
+
+def test_run_does_not_reuse_prior_cli_approval(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from tests.specify_cli.workflows.helpers import write_step_import_probe
+
+    marker = write_step_import_probe(tmp_path)
+    workflow = tmp_path / "workflow.yml"
+    workflow.write_text(TestWorkflowRunGateOutcomeJson._WF_PLAIN, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    arguments = ["workflow", "run", str(workflow), "--json"]
+    approved = runner.invoke(app, [*arguments, "--trust-steps"])
+    assert approved.exit_code == 0, approved.output
+    assert marker.exists()
+    marker.unlink()
+
+    refused = runner.invoke(app, arguments, input="y\n")
+
+    assert refused.exit_code == 1, refused.output
+    assert json.loads(refused.stdout)["status"] == "failed"
+    assert not marker.exists()
+
+
+def test_missing_workflow_cannot_trigger_unapproved_step_import(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+    from tests.specify_cli.workflows.helpers import write_step_import_probe
+
+    marker = write_step_import_probe(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["workflow", "run", "missing", "--json"])
+
+    assert result.exit_code == 1, result.output
+    assert "--trust-steps" in json.loads(result.stdout)["error"]
+    assert not marker.exists()
+
+
 class TestWorkflowRunNumberInputs:
     @pytest.mark.parametrize("source", ["cli", "default", "enum-default"])
     def test_run_preserves_integer_input_in_file_and_state(

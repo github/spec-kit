@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from . import _command_resume_state as resume_state
 from . import _commands as cli
 
@@ -17,17 +19,24 @@ def workflow_resume(
         "--json",
         help="Emit the resume outcome as a single JSON object instead of formatted text.",
     ),
+    trust_steps: Annotated[
+        bool,
+        cli.typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ):
     """Resume a paused or failed workflow run."""
     from ..integrations.installer import IntegrationInstallError
-    from . import load_custom_steps
     from ._execution import CheckpointError
     from .engine import RunState, WorkflowEngine
 
     project_root = cli._require_specify_project(load_integrations=False)
     try:
         with cli._stdout_to_stderr_when(json_output):
-            load_custom_steps(project_root)
+            cli._load_custom_steps(
+                project_root, trust_steps=trust_steps, json_output=json_output,
+            )
             engine = WorkflowEngine(project_root)
             engine._load_integrations()
     except (IntegrationInstallError, OSError) as exc:

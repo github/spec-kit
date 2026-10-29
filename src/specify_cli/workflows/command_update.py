@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from . import _commands as cli
 
 
@@ -10,15 +12,23 @@ def workflow_update(
     workflow_id: str | None = cli.typer.Argument(
         None, help="Workflow ID to update (default: all)"
     ),
+    trust_steps: Annotated[
+        bool,
+        cli.typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ):
     """Update installed workflow(s) to the latest catalog version."""
     from packaging import version as pkg_version
 
-    from . import load_custom_steps
     from .catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = cli._require_specify_project()
-    load_custom_steps(project_root)
+    try:
+        cli._load_custom_steps(project_root, trust_steps=trust_steps)
+    except OSError as exc:
+        cli._fail_integration_load(exc, json_output=False)
     registry = cli._open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     cli._reject_unsafe_dir(project_root / ".specify", ".specify")

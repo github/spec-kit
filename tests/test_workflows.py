@@ -11350,7 +11350,7 @@ class TestCustomStep(StepBase):
 """
         (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
 
-        loaded = load_custom_steps(project_dir)
+        loaded = load_custom_steps(project_dir, trusted=True)
         assert "test-custom" in loaded
         assert "test-custom" in STEP_REGISTRY
 
@@ -11424,7 +11424,7 @@ class TestCustomStep(StepBase):
         )
 
         # Should not propagate exception
-        loaded = load_custom_steps(project_dir)
+        loaded = load_custom_steps(project_dir, trusted=True)
         assert "broken-step" not in loaded
 
     def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
@@ -11451,7 +11451,7 @@ class HyphenStep(StepBase):
 """
         (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
 
-        loaded = load_custom_steps(project_dir)
+        loaded = load_custom_steps(project_dir, trusted=True)
         assert "my-hyphen-step" in loaded
         assert "my-hyphen-step" in STEP_REGISTRY
         # Synthetic module name must be a valid identifier (hyphens → underscores)
@@ -11489,7 +11489,7 @@ class PkgStep(StepBase):
 """
         (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
 
-        loaded = load_custom_steps(project_dir)
+        loaded = load_custom_steps(project_dir, trusted=True)
         assert "pkg-step" in loaded
         assert "pkg-step" in STEP_REGISTRY
         # Verify the relative import actually resolved; module name includes hash suffix.
