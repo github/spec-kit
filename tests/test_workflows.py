@@ -453,10 +453,10 @@ class TestExpressions:
         silently evaluates to ``[1, 2, None]`` instead of raising or
         resolving the index. It must not be misclassified as one literal.
 
-        The grammar-based engine (A2) refuses the shape at the parser, with
-        the position in the message; the hand-written engine fell through to
-        unresolvable (``None``). Both avoid the wrong-looking list; the parse
-        error is the louder signal, so this test pins it.
+        The grammar-based engine refuses the shape at the parser, with
+        the position in the message; the former hand-written engine fell
+        through to unresolvable (``None``). Both avoid the wrong-looking list;
+        the parse error is the louder signal, so this test pins it.
         """
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
@@ -613,7 +613,7 @@ class TestExpressions:
         # mis-wired form must raise rather than silently fall through to the
         # unknown-filter path and return the unparsed value. Parenthesized
         # forms reach the strict dispatcher; trailing garbage after the filter
-        # name is refused by the parser instead (A2: the grammar, not a regex,
+        # name is refused by the parser instead (the grammar, not a regex,
         # is the strictness), so those carry the parse message.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
@@ -919,7 +919,7 @@ class TestExpressions:
         # length/to_json. Every mis-wired form must raise naming the filter
         # rather than silently falling through to the unknown-filter path.
         # Parenthesized forms reach the strict dispatcher; trailing garbage
-        # after the name is a parse error (A2).
+        # after the name is a parse error.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -1089,7 +1089,7 @@ class TestExpressions:
         # A trailing operator/token after a filter comes out as a parse error
         # rather than being silently discarded. The grammar makes the filter
         # chain a complete expression: a comparison after it and garbage after
-        # its closing paren both fail to parse (A2 — previously the hand-written
+        # its closing paren both fail to parse (previously the hand-written
         # parser routed these to an "unsupported form" ValueError instead).
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression

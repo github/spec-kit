@@ -263,8 +263,8 @@ def _check_json_keys(value: Any) -> None:
 # -- The filter table ------------------------------------------------------
 #
 # One entry per filter: the function, the call forms it accepts, and the usage
-# text the error messages advertise. ``_REGISTERED_FILTERS``, ``_ZERO_ARG_FILTERS``
-# and the "expected one of ..." sentence are derived from this table, so a new
+# text the error messages advertise. ``_REGISTERED_FILTERS`` and the
+# "expected one of ..." sentence are derived from this table, so a new
 # filter is one row here — not a row here, a branch in the dispatcher and a
 # second edit to the message. The table order is the order the message lists.
 
@@ -317,12 +317,3 @@ _EXPECTED_FILTERS = (
     + ", or "
     + list(FILTER_TABLE.values())[-1].usage
 )
-
-
-# Filters that take no arguments and tolerate no trailing tokens. Keyed by name
-# so a dispatcher can recognize a mis-wired form of any of them from the
-# leading filter name alone. ``default`` is deliberately absent: it is the one
-# filter that is valid both bare and with an argument.
-_ZERO_ARG_FILTERS: dict[str, Callable[[Any], Any]] = {
-    name: spec.function for name, spec in FILTER_TABLE.items() if not spec.argument
-}

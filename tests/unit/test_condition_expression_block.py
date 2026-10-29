@@ -422,8 +422,8 @@ def test_wrapping_an_open_quote_is_not_a_repair():
 
     The unwrapped form interpolates verbatim into non-empty text, so the
     condition reads true. The "wrapped" form is an expression the evaluator
-    refuses: the grammar-based engine (A2) raises a parse error for the
-    unterminated quote instead of the hand-written engine's silent ``False``.
+    refuses: the parser raises an error for the unterminated quote
+    instead of the former hand-written engine's silent ``False``.
     Either way, pasting the "correction" does not repair the condition.
     """
     ctx = StepContext(inputs={"name": "Bob"})
@@ -558,7 +558,7 @@ MULTI_POSITION_UNFIXABLE = [
     ("inputs.f(]", "brackets do not balance"),
     ("inputs.items | truncate", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
-    # The grammar-based engine (A2) names the position instead of classifying
+    # The grammar-based engine names the position instead of classifying
     # the text: `he said ...` fails at the second word, `count+1` at the `+`.
     # Previously: "is not a name the evaluator can resolve" / "is not a valid
     # path segment".
@@ -882,8 +882,7 @@ def test_the_group_is_transparent_to_the_leaf_walk():
     """The gate's operands are the names the evaluator's tree contains.
 
     A parenthesised group is not itself a name: its operands are the leaves.
-    The old probe got this from the evaluator unwrapping the group; the
-    parse-tree walk (A2) gets it from the grammar, so the assertion holds
+    The parse-tree walk gets this from the grammar, so the assertion holds
     without touching engine internals.
     """
     grouped = "(inputs.a or inputs.b) and inputs.c"
@@ -986,7 +985,7 @@ def test_gate_reads_the_shared_indexed_segment_definition(monkeypatch):
     be enough; if the gate keeps its own copy of the shape (as `_PATH_SEGMENT`
     used to), this fails.
 
-    With the grammar-based engine (A2) this also pins that the parser's `PATH`
+    With the grammar-based engine this also pins that the parser's `PATH`
     terminal is *derived* from `namespace`: the cache is keyed on the patterns,
     so the widened definition rebuilds the parser instead of serving a stale
     one. A grammar that hard-coded the segment shape would fail here.

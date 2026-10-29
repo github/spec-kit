@@ -9,7 +9,7 @@ them, not just ``_evaluate_template``.
 
 from __future__ import annotations
 
-from .engine_lark_a2 import (
+from .engine_lark import (
     _COMPARISON_OPERATORS,
     _WORD_OPERATORS,
     _collect_leaves,

@@ -1,13 +1,10 @@
-"""Variant A2: Lark (LALR) as the parser, used the way the library is meant to be.
+"""Lark (LALR) engine for workflow expressions.
 
-The Earley spike (``engine_lark.py``) emulated ``engine_current``'s internals:
-an if-chain filter dispatcher rebuilt from strings, the probe walk with its
-leaf sink, and a grammar that accepted shapes the current parser refuses. This
-engine answers the question A/C left open -- what a grammar-based parser costs
-and buys when it is not written to mimic the old code:
+The grammar replaces the former hand-written parser; the expression language
+is unchanged. Only the block body is parsed here:
 
 * **The precedence guards are in the grammar, not in a post-check.** A filter
-  chain is only valid where the current parser allows one: the head is a plain
+  chain is only valid where the language allows one: the head is a plain
   operand, and the chain is a whole expression or sits in parentheses, a list
   element or a filter argument. ``count > limit | default(5)``, ``not x |
   default(1)`` and ``x | default(0) > 5`` do not parse at all; the first two
