@@ -76,9 +76,18 @@ def test_discovery_returns_typed_candidate():
 
 
 @pytest.mark.parametrize(
-    "version_field", [{}, {"version": None}, {"version": []}, {"version": 2}]
+    ("version_field", "warning"),
+    [
+        ({}, "Missing catalog version"),
+        ({"version": None}, "Invalid catalog version: expected a string, got NoneType"),
+        ({"version": []}, "Invalid catalog version: expected a string, got list"),
+        ({"version": 2}, "Invalid catalog version: expected a string, got int"),
+        ({"version": "not-a-version"}, "Invalid catalog version 'not-a-version'"),
+    ],
 )
-def test_discovery_skips_catalog_entry_without_valid_version(capsys, version_field):
+def test_discovery_skips_catalog_entry_without_valid_version(
+    capsys, version_field, warning
+):
     manager = _Manager(
         [{"id": "broken-ext"}, {"id": "test-ext"}],
         {"broken-ext": {"version": "1.0.0"}, "test-ext": {"version": "1.0.0"}},
@@ -93,8 +102,7 @@ def test_discovery_skips_catalog_entry_without_valid_version(capsys, version_fie
     updates, blocked, has_installed = discover_updates(manager, catalog, None)
 
     output = " ".join(capsys.readouterr().out.split())
-    assert "broken-ext: Invalid catalog version" in output
-    assert "(skipping)" in output
+    assert f"broken-ext: {warning} (skipping)" in output
     assert [update.extension_id for update in updates] == ["test-ext"]
     assert blocked == []
     assert has_installed is True

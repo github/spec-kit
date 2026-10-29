@@ -693,7 +693,7 @@ class TestExtensionUpdateCLI:
 
         flat = " ".join(result.output.split())
         assert result.exit_code == 0, result.output
-        assert "test-ext: Invalid catalog version 'None' (skipping)" in flat
+        assert "test-ext: Missing catalog version (skipping)" in flat
         assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
 
     def test_update_failure_rolls_back_registry_hooks_and_commands(self, tmp_path, monkeypatch):
