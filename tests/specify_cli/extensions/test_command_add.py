@@ -400,7 +400,8 @@ class TestExtensionAddCLI:
         # It must not emit the space-containing display name as the command target.
         assert "add Jira Integration --from" not in output
 
-    def test_add_discovery_only_error_neutralizes_unsafe_id(self, tmp_path):
+    @pytest.mark.parametrize("malicious_id", ["foo; rm -rf ~", "foo\n"])
+    def test_add_discovery_only_error_neutralizes_unsafe_id(self, tmp_path, malicious_id):
         """A catalog-controlled ID with shell metacharacters must never be
         interpolated into the suggested command; it is replaced by a literal
         placeholder so copying the command can't execute injected shell text."""
@@ -413,7 +414,6 @@ class TestExtensionAddCLI:
         (project_dir / ".specify").mkdir()
         (project_dir / ".specify" / "extensions").mkdir(parents=True)
 
-        malicious_id = "foo; rm -rf ~"
         mock_catalog = MagicMock()
         mock_catalog.get_extension_info.return_value = {
             "id": malicious_id,
