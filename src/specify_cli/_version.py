@@ -481,6 +481,42 @@ def _editable_marker_seen() -> bool:
     return editable_root is not None and _git_ancestor(editable_root) is not None
 
 
+def _find_installer(name: str) -> str | None:
+    """Find an installer outside the working directory and current Git tree."""
+    cwd = Path.cwd().resolve()
+    project_root = _git_ancestor(cwd)
+    suffixes = [""]
+    if sys.platform == "win32":
+        # Python 3.11's which() does not expand PATHEXT for absolute commands.
+        suffixes = [
+            suffix
+            for suffix in (os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(
+                ";"
+            )
+            if suffix
+        ]
+
+    for entry in os.get_exec_path():
+        if sys.platform == "win32":
+            entry = entry.strip('"')
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        resolved_directory = directory.resolve()
+        if directory == cwd or resolved_directory == cwd:
+            continue
+        if project_root is not None and (
+            directory.is_relative_to(project_root)
+            or resolved_directory.is_relative_to(project_root)
+        ):
+            continue
+        for suffix in suffixes:
+            found = shutil.which(str(directory / f"{name}{suffix}"))
+            if found is not None:
+                return found
+    return None
+
+
 def _detect_install_method(
     argv0: str | None = None,
     include_signals: bool = False,
@@ -534,7 +570,7 @@ def _detect_install_method(
     consulted: list[str] = []
     if _tier3_registry_lookup_allowed(argv0_path):
         uv_tool_match = False
-        uv_bin = shutil.which("uv")
+        uv_bin = _find_installer("uv")
         if uv_bin is not None:
             consulted.append("uv tool list")
             try:
@@ -554,7 +590,7 @@ def _detect_install_method(
                 pass
 
         pipx_match = False
-        pipx_bin = shutil.which("pipx")
+        pipx_bin = _find_installer("pipx")
         if pipx_bin is not None:
             consulted.append("pipx list --json")
             try:
@@ -635,7 +671,7 @@ def _assemble_installer_argv(
     source_spec = _source_spec(target_tag)
 
     if method == _InstallMethod.UV_TOOL:
-        uv_bin = shutil.which("uv")
+        uv_bin = _find_installer("uv")
         if uv_bin is None:
             return None
         return [
@@ -651,7 +687,7 @@ def _assemble_installer_argv(
     if method == _InstallMethod.PIPX:
         # pipx 1.5+ removed `--spec`; PACKAGE_SPEC is now positional and the
         # package name is auto-detected from the source's pyproject.toml.
-        pipx_bin = shutil.which("pipx")
+        pipx_bin = _find_installer("pipx")
         if pipx_bin is None:
             return None
         return [

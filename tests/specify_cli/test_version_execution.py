@@ -150,7 +150,7 @@ class TestInstallerMissing:
             raise FileNotFoundError(str(fake_uv))
 
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which",
+            "specify_cli._version._find_installer",
             side_effect=lambda name: str(fake_uv) if name == "uv" else None,
         ), patch("specify_cli._version.subprocess.run", side_effect=fake_run), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
