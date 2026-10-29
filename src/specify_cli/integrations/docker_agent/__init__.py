@@ -50,23 +50,16 @@ class DockerAgentIntegration(SkillsIntegration):
     # ``agents.<name>.hooks``. Spec Kit does not edit that user-owned file, so
     # hooks are intentionally not exposed through the integration event system.
 
-    def _agent_command(self, project_root: Path | None = None) -> list[str]:
+    def _agent_command(self, project_root: Path | None = None) -> list[str] | None:
         """Return the available Docker Agent command form."""
 
         # The shared executable override supports both a standalone
         # ``docker-agent`` binary and the Docker CLI plugin form.
         executable = self._resolve_executable()
-        command = docker_agent_command(
+        return docker_agent_command(
             None if executable == self.key else executable,
             project_root=project_root,
         )
-        if command is None:
-            raise ValueError(
-                "Docker Agent executable is unavailable. Install Docker Agent "
-                "on an absolute PATH outside the working directory, or set "
-                "SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE explicitly."
-            )
-        return command
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -131,7 +124,10 @@ class DockerAgentIntegration(SkillsIntegration):
                     "reference, for example ./agent.yaml"
                 )
 
-        args = [*self._agent_command(project_root), "--exec"]
+        command = self._agent_command(project_root)
+        if command is None:
+            return None
+        args = [*command, "--exec"]
 
         args.extend(runtime_args or legacy_args)
 

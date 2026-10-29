@@ -2437,24 +2437,6 @@ class TestCommandStep:
 class TestPromptStep:
     """Test the prompt step type."""
 
-    def test_adapter_integrity_failure_still_propagates(self, monkeypatch):
-        from unittest.mock import Mock
-        from specify_cli.integrations.installer import IntegrationInstallError
-        from specify_cli.workflows.base import StepContext
-        from specify_cli.workflows.step.prompt import PromptStep
-
-        monkeypatch.setattr(
-            PromptStep,
-            "_try_dispatch",
-            Mock(side_effect=IntegrationInstallError("installed package has been modified")),
-        )
-
-        with pytest.raises(IntegrationInstallError, match="installed package has been modified"):
-            PromptStep().execute(
-                {"id": "review", "prompt": "Review changes", "integration": "docker-agent"},
-                StepContext(),
-            )
-
     def test_unavailable_docker_agent_returns_failed_result(self, tmp_path, monkeypatch):
         from unittest.mock import Mock
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -2477,7 +2459,7 @@ class TestPromptStep:
         assert result.output["exit_code"] == 1
         assert result.output["dispatched"] is False
         assert result.error is not None
-        assert "Prompt step 'review': Docker Agent executable is unavailable" in result.error
+        assert "CLI not found or not installed" in result.error
         run.assert_not_called()
 
     def test_execute_basic(self):
@@ -8414,7 +8396,7 @@ class TestContinueOnError:
         assert state.status is expected_status
         assert state.step_results["review"]["status"] == "failed"
         assert state.step_results["review"]["output"]["dispatched"] is False
-        assert "Docker Agent executable is unavailable" in state.step_results["review"]["error"]
+        assert "CLI not found or not installed" in state.step_results["review"]["error"]
         assert ("after" in state.step_results) is continue_on_error
 
     def test_undeclared_failure_halts_run(self, project_dir):

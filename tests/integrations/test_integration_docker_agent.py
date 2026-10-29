@@ -333,7 +333,7 @@ def test_dispatch_rejects_checkout_local_executable(tmp_path, monkeypatch, strea
     run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""))
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(ValueError, match="Docker Agent executable is unavailable"):
+    with pytest.raises(NotImplementedError, match="does not support CLI dispatch"):
         DockerAgentIntegration().dispatch_command(
             "speckit.plan",
             project_root=tmp_path,
@@ -376,7 +376,7 @@ def test_dispatch_stops_after_failed_plugin_probe(tmp_path, monkeypatch):
     run = Mock(return_value=subprocess.CompletedProcess([], 1))
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(ValueError, match="Docker Agent executable is unavailable"):
+    with pytest.raises(NotImplementedError, match="does not support CLI dispatch"):
         DockerAgentIntegration().dispatch_command(
             "speckit.plan",
             stream=False,
@@ -411,7 +411,7 @@ def test_dispatch_excludes_runtime_project_from_another_cwd(
     run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""))
     monkeypatch.setattr(subprocess, "run", run)
 
-    with pytest.raises(ValueError, match="Docker Agent executable is unavailable"):
+    with pytest.raises(NotImplementedError, match="does not support CLI dispatch"):
         DockerAgentIntegration().dispatch_command(
             "speckit.plan",
             project_root=project,
@@ -454,3 +454,12 @@ def test_dispatch_from_another_cwd_uses_external_install(tmp_path, monkeypatch, 
     assert run.call_args.args[0][0] == str(installed / filename)
     assert run.call_args.kwargs["cwd"] == str(project)
     assert run.call_count == (2 if name == "docker" else 1)
+
+
+def test_unavailable_executable_cannot_build_dispatch_args(monkeypatch):
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+    monkeypatch.setenv("PATH", "")
+
+    assert DockerAgentIntegration().build_exec_args(
+        "prompt", integration_args=["./agent.yaml"]
+    ) is None

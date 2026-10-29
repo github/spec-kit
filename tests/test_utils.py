@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import inspect
 import os
 import shutil
@@ -255,3 +256,101 @@ def test_docker_discovery_rejects_case_aliases_of_checkout(
 
     assert docker_agent_command() is None
     run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize(
+    "stage",
+    ["directory-resolve", "directory-identity", "executable-resolve", "executable-identity", "which"],
+)
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError("access denied"),
+        OSError(errno.ELOOP, "too many symbolic links"),
+        RuntimeError("Symlink loop from candidate"),
+    ],
+)
+def test_docker_discovery_skips_failed_candidates(
+    tmp_path, monkeypatch, name, stage, error
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    inaccessible = tmp_path / "inaccessible"
+    inaccessible.mkdir()
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    for directory in (inaccessible, installed):
+        executable = directory / filename
+        executable.touch()
+        executable.chmod(0o755)
+    original_resolve = type(tmp_path).resolve
+    original_samefile = type(tmp_path).samefile
+    original_which = shutil.which
+
+    def resolve(path, *args, **kwargs):
+        if (
+            (stage == "directory-resolve" and path == inaccessible)
+            or (stage == "executable-resolve" and path == inaccessible / filename)
+        ):
+            raise error
+        return original_resolve(path, *args, **kwargs)
+
+    def samefile(path, other):
+        if (
+            (stage == "directory-identity" and path == inaccessible)
+            or (stage == "executable-identity" and path == inaccessible / filename)
+        ):
+            raise error
+        return original_samefile(path, other)
+
+    def which(command):
+        if stage == "which" and command == str(inaccessible / filename):
+            raise error
+        return original_which(command)
+
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(inaccessible), str(installed)]))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    monkeypatch.setattr(type(tmp_path), "resolve", resolve)
+    monkeypatch.setattr(type(tmp_path), "samefile", samefile)
+    monkeypatch.setattr(shutil, "which", which)
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.warns(UserWarning, match="Skipping Docker executable search candidate"):
+        command = docker_agent_command()
+
+    expected = str(installed / filename)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])
+    if name == "docker":
+        assert run.call_args.args[0] == [expected, "agent", "version"]
+        run.assert_called_once()
+    else:
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+def test_docker_discovery_skips_cyclic_directory(tmp_path, monkeypatch, name):
+    project = tmp_path / "project"
+    project.mkdir()
+    loop = tmp_path / "loop"
+    _symlink_or_skip(loop, loop, target_is_directory=True)
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    executable = installed / filename
+    executable.touch()
+    executable.chmod(0o755)
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(loop), str(installed)]))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.warns(UserWarning, match="Skipping Docker executable search candidate"):
+        command = docker_agent_command()
+
+    expected = str(executable)
+    assert command == ([expected, "agent", "run"] if name == "docker" else [expected, "run"])

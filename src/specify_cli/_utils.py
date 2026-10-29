@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import warnings
 import yaml
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -54,18 +55,32 @@ def _find_docker_executable(
         directory = Path(entry)
         if not directory.is_absolute():
             continue
-        directory = directory.resolve()
-        if _docker_path_is_excluded(directory, roots):
+        try:
+            directory = directory.resolve()
+            if _docker_path_is_excluded(directory, roots):
+                continue
+        except (OSError, RuntimeError) as exc:
+            warnings.warn(
+                f"Skipping Docker executable search candidate {directory}: {exc}",
+                stacklevel=2,
+            )
             continue
         # A qualified name bypasses Python 3.11's implicit Windows CWD search.
         for filename in names:
-            resolved = shutil.which(str(directory / filename))
-            if resolved is not None:
-                executable = Path(resolved)
-                if executable.is_absolute() and not _docker_path_is_excluded(
-                    executable.resolve(), roots
-                ):
-                    return str(executable)
+            candidate = directory / filename
+            try:
+                resolved = shutil.which(str(candidate))
+                if resolved is not None:
+                    executable = Path(resolved)
+                    if executable.is_absolute() and not _docker_path_is_excluded(
+                        executable.resolve(), roots
+                    ):
+                        return str(executable)
+            except (OSError, RuntimeError) as exc:
+                warnings.warn(
+                    f"Skipping Docker executable search candidate {candidate}: {exc}",
+                    stacklevel=2,
+                )
     return None
 
 
