@@ -109,6 +109,12 @@ configuration does not mean its sources or components were approved. Run the
 relevant `catalog list` command and inspect every install-allowed source before
 installing or running components from an unfamiliar project.
 
+Shared archive validation limits the decompressed tar.gz stream to 54 MiB,
+including tar headers, padding, and GNU/PAX metadata as well as file contents.
+The limit applies before tar metadata is parsed during format detection and
+extraction; ordinary member-size and total-file-size limits still apply.
+Packages that exceed it must be reduced before installation.
+
 ## Host a private catalog
 
 1. Review and approve the entries and release artifacts before registering an

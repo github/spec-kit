@@ -1,7 +1,8 @@
-"""Tests for bounded download and ZIP extraction helpers."""
+"""Tests for bounded download and archive extraction helpers."""
 
 from __future__ import annotations
 
+import gzip
 import io
 import stat
 import struct
@@ -12,6 +13,7 @@ import zlib
 
 import pytest
 
+from specify_cli import _download_security
 from specify_cli._download_security import (
     MAX_ZIP_CENTRAL_DIRECTORY_BYTES,
     archive_format_from_content_type,
@@ -26,6 +28,150 @@ from specify_cli._download_security import (
     safe_extract_tar,
     safe_extract_zip,
 )
+
+
+@pytest.mark.parametrize(
+    "metadata_type",
+    [tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK],
+)
+@pytest.mark.parametrize(
+    "operation, later",
+    [
+        ("detect", False),
+        ("extract", False),
+        ("extract", True),
+        ("combined", False),
+        ("combined", True),
+    ],
+)
+def test_tar_metadata_is_bounded_before_parsing(
+    tmp_path, monkeypatch, metadata_type, later, operation
+):
+    monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 2048)
+    plain = io.BytesIO()
+    with tarfile.open(fileobj=plain, mode="w") as archive:
+        if later:
+            archive.addfile(tarfile.TarInfo("safe.txt"), io.BytesIO())
+        info = tarfile.TarInfo("././@LongLink")
+        info.type = metadata_type
+        payload = b"4096 comment=" + b"x" * (4096 - 14) + b"\n"
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+        archive.addfile(tarfile.TarInfo("file.txt"), io.BytesIO())
+    archive_path = tmp_path / "metadata.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain.getvalue()))
+    out_dir = tmp_path / "out"
+    original_read = gzip.GzipFile.read
+
+    def bounded_read(stream, size=-1):
+        assert 0 <= size <= 2048
+        return original_read(stream, size)
+
+    monkeypatch.setattr(gzip.GzipFile, "read", bounded_read)
+
+    with archive_path.open("rb") as source:
+        with pytest.raises(_CustomZipError, match="maximum decompressed"):
+            if operation == "detect":
+                detect_archive_format(
+                    archive_path, archive_file=source, error_type=_CustomZipError
+                )
+            else:
+                extractor = (
+                    safe_extract_tar if operation == "extract" else safe_extract_archive
+                )
+                extractor(
+                    archive_path, out_dir, archive_file=source,
+                    error_type=_CustomZipError,
+                )
+        assert not source.closed
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize("archive_format", [tarfile.PAX_FORMAT, tarfile.GNU_FORMAT])
+def test_tar_accepts_bounded_metadata_and_preserves_caller_stream(
+    tmp_path, monkeypatch, archive_format
+):
+    monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 4096)
+    archive_path = tmp_path / "metadata.tar.gz"
+    name = "a" * 150 + "/" + "b" * 150
+    with tarfile.open(archive_path, "w:gz", format=archive_format) as archive:
+        info = tarfile.TarInfo(name)
+        info.size = 8
+        if archive_format == tarfile.PAX_FORMAT:
+            info.pax_headers = {"comment": "normal metadata"}
+        archive.addfile(info, io.BytesIO(b"contents"))
+        second = tarfile.TarInfo("second.txt")
+        second.size = 6
+        archive.addfile(second, io.BytesIO(b"second"))
+    out_dir = tmp_path / "out"
+
+    with archive_path.open("rb") as source:
+        assert safe_extract_archive(
+            archive_path, out_dir, archive_file=source
+        ) == "tar.gz"
+        assert not source.closed
+        source.seek(0)
+        assert detect_archive_format(archive_path, archive_file=source) == "tar.gz"
+        assert source.tell() == 0
+    assert (out_dir / name).read_bytes() == b"contents"
+    assert (out_dir / "second.txt").read_bytes() == b"second"
+
+
+@pytest.mark.parametrize("excess_bytes", [0, 1, 513])
+def test_tar_stream_budget_includes_headers_padding_and_skipped_data(
+    tmp_path, monkeypatch, excess_bytes
+):
+    info = tarfile.TarInfo("file.txt")
+    info.size = 1
+    plain = info.tobuf() + b"x" + b"\0" * 511 + b"\0" * 512
+    monkeypatch.setattr(
+        _download_security, "MAX_TAR_STREAM_BYTES", len(plain) - excess_bytes
+    )
+    archive_path = tmp_path / "budget.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain))
+    out_dir = tmp_path / "out"
+
+    if excess_bytes:
+        with pytest.raises(_CustomZipError, match="maximum decompressed"):
+            safe_extract_tar(archive_path, out_dir, error_type=_CustomZipError)
+        assert not out_dir.exists()
+    else:
+        safe_extract_tar(archive_path, out_dir)
+        assert (out_dir / "file.txt").read_bytes() == b"x"
+
+
+@pytest.mark.parametrize("access", ["read", "seek", "relative_seek", "seek_end"])
+def test_tar_reader_rejects_unbounded_access_before_decompression(
+    tmp_path, monkeypatch, access
+):
+    monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 16)
+    archive_path = tmp_path / "stream.gz"
+    archive_path.write_bytes(gzip.compress(b"x" * 32))
+    with _download_security._BoundedTarGzipFile(archive_path, "rb") as source:
+        assert source.read(8) == b"x" * 8
+        if access == "seek_end":
+            with pytest.raises(io.UnsupportedOperation):
+                source.seek(0, io.SEEK_END)
+        else:
+            with pytest.raises(tarfile.ReadError, match="maximum decompressed"):
+                if access == "read":
+                    source.read(9)
+                elif access == "seek":
+                    source.seek(17)
+                else:
+                    source.seek(9, io.SEEK_CUR)
+        assert source.tell() == 8
+        assert source.read(8) == b"x" * 8
+
+
+def test_tar_reader_bounds_unsized_reads(tmp_path, monkeypatch):
+    monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 16)
+    archive_path = tmp_path / "stream.gz"
+    archive_path.write_bytes(gzip.compress(b"x" * 32))
+    with _download_security._BoundedTarGzipFile(archive_path, "rb") as source:
+        with pytest.raises(tarfile.ReadError, match="maximum decompressed"):
+            source.read()
+        assert gzip.GzipFile.seek(source, 0, io.SEEK_CUR) == 17
 
 
 @pytest.mark.parametrize(
