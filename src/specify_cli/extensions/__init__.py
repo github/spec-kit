@@ -47,6 +47,7 @@ from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
+from ..file_helper import FileHelper, FileHelperError, UnsupportedPathError
 from ..integration_state import (
     INTEGRATION_STATE_SCHEMA,
     default_integration_key,
@@ -761,25 +762,19 @@ class ExtensionRegistry:
         Args:
             extensions_dir: Path to .specify/extensions/ directory
         """
-        self.extensions_dir = extensions_dir
-        self.registry_path = extensions_dir / self.REGISTRY_FILE
+        self.extensions_dir = extensions_dir.absolute()
+        self.registry_path = self.extensions_dir / self.REGISTRY_FILE
+        # Trust the project root, not the repository-controlled storage hierarchy.
+        root = self.extensions_dir.parent.parent
+        while not root.exists() and not root.is_symlink():
+            root = root.parent
+        self._files = FileHelper(root)
         self.data = self._load()
 
     def _load(self) -> dict:
         """Load registry from disk."""
-        if not self.registry_path.exists():
-            return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
-
-        # A non-regular file (e.g. a directory at the registry path) is not a
-        # readable registry. Recover to empty so construction — used by the
-        # install/enable/disable flows — does not crash. Resolution paths that
-        # must fail closed consult is_corrupt() instead of relying on this.
-        if not self.registry_path.is_file():
-            return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
-
         try:
-            with open(self.registry_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = json.loads(self._files.read_text(self.registry_path))
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
                 return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
@@ -795,6 +790,11 @@ class ExtensionRegistry:
             # is deliberately not caught: the data may be intact on disk, and
             # starting fresh would let a later _save() wipe it.
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+        except UnsupportedPathError:
+            # Preserve recovery for non-regular registry leaves, not unsafe parents.
+            if not self.registry_path.is_file():
+                return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
+            raise
 
     def is_corrupt(self) -> bool:
         """Report whether an existing registry file is present but unreadable.
@@ -810,17 +810,11 @@ class ExtensionRegistry:
         or dangling symlink, non-regular file, unreadable file, non-mapping
         root, or non-mapping ``extensions`` value returns ``True``.
         """
-        # os.path.lexists (not Path.exists) so a dangling symlink is detected
-        # rather than followed to a non-existent target and mistaken for an
-        # absent registry — which would reopen the fail-open directory scan.
-        if not os.path.lexists(self.registry_path):
-            return False
-        if not self.registry_path.is_file():
-            return True
         try:
-            with open(self.registry_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            data = json.loads(self._files.read_text(self.registry_path))
+        except FileNotFoundError:
+            return False
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError, FileHelperError):
             return True
         if not isinstance(data, dict):
             return True
@@ -832,10 +826,14 @@ class ExtensionRegistry:
         """Save registry to disk."""
         from ..integrations._file_changes import after_file_change, before_file_change
 
+        # Reject linked destinations before lifecycle observers can read them.
+        try:
+            self._files.read_bytes(self.registry_path)
+        except FileNotFoundError:
+            pass
         before_file_change(self.registry_path)
-        self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        self._files.mkdir(self.extensions_dir, parents=True, exist_ok=True)
+        self._files.overwrite_text(self.registry_path, json.dumps(self.data, indent=2))
         after_file_change(self.registry_path)
 
     def add(self, extension_id: str, metadata: dict):

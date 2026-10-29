@@ -43,6 +43,7 @@ from specify_cli.extensions import (
     normalize_priority,
 )
 from specify_cli._utils import version_satisfies
+from specify_cli.file_helper import SymlinkDeniedError
 
 # Minimal valid ZIP (empty end-of-central-directory record). Passes
 # zipfile.is_zipfile() so --from download tests exercise the content guard.
@@ -1322,6 +1323,132 @@ class TestExtensionManifestTemplatesAndScripts:
 
 class TestExtensionRegistry:
     """Test ExtensionRegistry operations."""
+
+    @pytest.mark.parametrize("linked_entry", [".specify", "extensions", ".registry"])
+    @pytest.mark.parametrize("target_exists", [False, True])
+    def test_load_rejects_symlink_hierarchy(self, tmp_path, linked_entry, target_exists):
+        project = tmp_path / "project"
+        extensions_dir = project / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        is_directory = linked_entry != ".registry"
+        if target_exists:
+            if is_directory:
+                outside.mkdir()
+            else:
+                outside.write_text('{"extensions": {"external": {}}}', encoding="utf-8")
+        link = {
+            ".specify": project / ".specify",
+            "extensions": extensions_dir,
+            ".registry": extensions_dir / ".registry",
+        }[linked_entry]
+        if link.is_dir():
+            shutil.rmtree(link)
+        try:
+            link.symlink_to(outside, target_is_directory=is_directory)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        with pytest.raises(SymlinkDeniedError):
+            ExtensionRegistry(extensions_dir)
+
+        assert outside.exists() is target_exists
+        if target_exists and not is_directory:
+            assert outside.read_text(encoding="utf-8") == '{"extensions": {"external": {}}}'
+
+    @pytest.mark.parametrize("linked_entry", [".specify", "extensions", ".registry"])
+    @pytest.mark.parametrize("target_exists", [False, True])
+    def test_save_rejects_symlink_hierarchy(self, tmp_path, monkeypatch, linked_entry, target_exists):
+        from specify_cli.integrations import _file_changes
+
+        project = tmp_path / "project"
+        extensions_dir = project / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        registry = ExtensionRegistry(extensions_dir)
+        outside = tmp_path / "outside"
+        is_directory = linked_entry != ".registry"
+        if target_exists:
+            if is_directory:
+                outside.mkdir()
+            else:
+                outside.write_text("external content", encoding="utf-8")
+        link = {
+            ".specify": project / ".specify",
+            "extensions": extensions_dir,
+            ".registry": extensions_dir / ".registry",
+        }[linked_entry]
+        if link.is_dir():
+            shutil.rmtree(link)
+        try:
+            link.symlink_to(outside, target_is_directory=is_directory)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+        before = MagicMock()
+        after = MagicMock()
+        monkeypatch.setattr(_file_changes, "before_file_change", before)
+        monkeypatch.setattr(_file_changes, "after_file_change", after)
+
+        with pytest.raises(SymlinkDeniedError):
+            registry.add("test-ext", {"version": "1.0.0"})
+
+        before.assert_not_called()
+        after.assert_not_called()
+        assert outside.exists() is target_exists
+        if target_exists:
+            if is_directory:
+                assert list(outside.iterdir()) == []
+            else:
+                assert outside.read_text(encoding="utf-8") == "external content"
+
+    @pytest.mark.parametrize("project_exists", [False, True])
+    def test_registry_creates_missing_storage(self, tmp_path, project_exists):
+        project = tmp_path / "project"
+        if project_exists:
+            project.mkdir()
+        extensions_dir = project / ".specify" / "extensions"
+        registry = ExtensionRegistry(extensions_dir)
+        assert not extensions_dir.exists()
+        assert registry.data["extensions"] == {}
+        assert not registry.is_corrupt()
+
+        registry.add("test-ext", {"version": "1.0.0"})
+
+        assert ExtensionRegistry(extensions_dir).get("test-ext")["version"] == "1.0.0"
+
+    def test_registry_observers_wrap_successful_write(self, tmp_path, monkeypatch):
+        from specify_cli.integrations import _file_changes
+
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        registry = ExtensionRegistry(extensions_dir)
+        observed = []
+        monkeypatch.setattr(
+            _file_changes, "before_file_change",
+            lambda path: observed.append(("before", path.exists())),
+        )
+        monkeypatch.setattr(
+            _file_changes, "after_file_change",
+            lambda path: observed.append(("after", json.loads(path.read_text())["extensions"])),
+        )
+
+        registry.add("test-ext", {"version": "1.0.0"})
+
+        assert observed[0] == ("before", False)
+        assert observed[1][0] == "after"
+        assert observed[1][1]["test-ext"]["version"] == "1.0.0"
+
+    def test_corruption_probe_rejects_replaced_registry(self, tmp_path):
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        registry = ExtensionRegistry(extensions_dir)
+        outside = tmp_path / "outside"
+        outside.write_text('{"extensions": {}}', encoding="utf-8")
+        try:
+            registry.registry_path.symlink_to(outside)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        assert registry.is_corrupt()
+        assert outside.read_text(encoding="utf-8") == '{"extensions": {}}'
 
     def test_empty_registry(self, temp_dir):
         """Test creating a new empty registry."""
@@ -9274,6 +9401,7 @@ class TestExtensionConfigScaffolding:
         from specify_cli.extensions import ExtensionManager
         project = tmp_path / "project"
         project.mkdir()
+        manager = ExtensionManager(project)
         outside = tmp_path / "outside"
         outside.mkdir()
         (project / ".specify").symlink_to(outside, target_is_directory=True)
@@ -9287,7 +9415,6 @@ class TestExtensionConfigScaffolding:
         }])
         (ext_dir / "config-template.yml").write_text("setting: default")
 
-        manager = ExtensionManager(project)
         deployed, skipped, failed = manager.scaffold_config("test-ext")
 
         assert deployed == []

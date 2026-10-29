@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.presets import (
     PresetManager,
     PresetRegistry,
@@ -435,8 +436,8 @@ class TestPresetResolver:
             extensions_dir / "does-not-exist"
         )
 
-        registry = ExtensionRegistry(extensions_dir)
-        assert registry.is_corrupt()
+        with pytest.raises(SymlinkDeniedError):
+            ExtensionRegistry(extensions_dir)
         resolver = PresetResolver(project_dir)
         with pytest.raises(PresetValidationError, match="Invalid extension registry"):
             resolver.resolve("custom-template")

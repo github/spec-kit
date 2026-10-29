@@ -88,6 +88,17 @@ file-change observer snapshots it, then retain the before/after observer hooks
 around the write. Downstream init failures therefore remain covered by the
 existing lifecycle rollback, including prior policy and unrelated options.
 
+Extension registry I/O also uses a deny-mode helper rooted at the project, so
+`.specify`, `extensions`, and `.registry` are not trusted aliases. Registry
+reads and writes reject linked storage regardless of operational symlink
+policy. For a not-yet-created project, the nearest existing ancestor supplies
+the root without creating storage during reads. Writes validate the destination
+before file-change observers run and preserve the existing non-atomic text-write
+and metadata semantics. Missing or malformed registries retain their recovery
+behavior; symlink policy violations
+are errors, not empty registries. This boundary has the portable helper's
+concurrent-mutation limits described below.
+
 ```python
 from specify_cli.file_helper import FileHelper
 

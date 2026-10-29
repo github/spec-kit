@@ -8,6 +8,7 @@ import yaml
 
 from .._utils import dump_frontmatter
 from ..extensions import ExtensionRegistry, normalize_priority
+from ..file_helper import FileHelperError
 from ._manifest import VALID_PRESET_STRATEGIES, PresetManifest, PresetValidationError
 from ._registry import PresetRegistry
 
@@ -166,7 +167,13 @@ class PresetResolver:
         if not self.extensions_dir.exists():
             return []
 
-        registry = ExtensionRegistry(self.extensions_dir)
+        try:
+            registry = ExtensionRegistry(self.extensions_dir)
+        except FileHelperError as exc:
+            raise PresetValidationError(
+                f"Invalid extension registry {self.extensions_dir / ExtensionRegistry.REGISTRY_FILE}: "
+                f"{exc}"
+            ) from exc
         # Fail closed on a corrupt registry. ExtensionRegistry._load() recovers
         # by normalizing an unreadable registry to an empty mapping, which would
         # otherwise cause the directory scan below to admit every on-disk
