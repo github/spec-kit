@@ -8,20 +8,9 @@ from typer.core import TyperGroup
 
 from .._console import console
 from .._download_security import read_response_limited as _read_response_limited
-from ..file_helper import FileHelperError, SymlinkDeniedError
+from ..file_helper import FileHelperError
 
 read_response_limited = _read_response_limited
-
-
-def _registry_file_error(error: FileHelperError) -> ValueError:
-    """Translate filesystem policy failures without suggesting registry opt-in."""
-    if isinstance(error, SymlinkDeniedError):
-        return ValueError(
-            "Cannot access preset registry: registry files and parent directories "
-            "must not be symlinks. Replace linked entries with regular files or "
-            "directories; allow_symlinks does not apply to preset registry metadata."
-        )
-    return ValueError(f"Cannot access preset registry: {error}")
 
 
 class _PresetGroup(TyperGroup):
@@ -32,7 +21,7 @@ class _PresetGroup(TyperGroup):
             return super().invoke(ctx)
         except FileHelperError as error:
             console.print(
-                f"[red]Error:[/red] {_escape_markup(str(_registry_file_error(error)))}"
+                f"[red]Error:[/red] {_escape_markup(str(error))}", soft_wrap=True,
             )
             raise typer.Exit(1) from error
 

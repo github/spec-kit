@@ -20,11 +20,20 @@ filesystem operations. Shared artifact list/info operations translate registry
 `FileHelperError` failures into their existing resolution errors, preserving
 the CLI JSON envelope and MCP `artifact_resolution_failed` code. Contribution
 lookup likewise translates registry failures into an artifact resolution error.
-The preset CLI group reports filesystem policy failures across the entire
-invocation, including manager/resolver construction. Registry symlink errors
-in text and JSON output direct users to replace linked entries with regular
-files/directories, not enable operational symlinks. JSON list/info retain a
-single error envelope with no stdout output.
+Registry reads and writes translate `SymlinkDeniedError` at the persistence
+boundary, preserving the registry path and directing users to replace linked
+entries with regular files/directories, not enable operational symlinks.
+The preset CLI renders that diagnostic without rewriting it, including for
+manager/resolver construction failures; integration registration warnings and
+bundle errors receive the same guidance. JSON list/info retain a single error
+envelope with no stdout output.
+
+Integration upgrade layout guards reuse the same deny-mode registry text
+reader, while retaining their stricter ownership/JSON validation. Only genuine
+absence means no installed presets. Symlinked files or parents, including
+dangling links, and other read/parse failures become
+`_PresetRegistryUnreadableError`, refusing command-root or command/skills
+migrations before mutation while preset ownership is unknown.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in

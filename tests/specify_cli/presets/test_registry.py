@@ -286,6 +286,30 @@ class TestPresetRegistry:
 
 
 class TestPresetRegistrySymlinks:
+    @pytest.mark.parametrize("operation", ["mkdir", "overwrite_text"])
+    def test_save_policy_errors_preserve_registry_path_and_guidance(
+        self, tmp_path, monkeypatch, operation,
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        registry = PresetRegistry(project / ".specify" / "presets")
+        registry.add("example", {"version": "1.0"})
+        original = registry.registry_path.read_bytes()
+
+        def fail(*args, **kwargs):
+            raise SymlinkDeniedError("explicitly allow symlinks")
+
+        monkeypatch.setattr(FileHelper, operation, fail)
+
+        with pytest.raises(SymlinkDeniedError) as exc_info:
+            registry.update("example", {"version": "2.0"})
+
+        assert str(registry.registry_path) in str(exc_info.value)
+        assert "Replace linked entries" in str(exc_info.value)
+        assert "explicitly allow symlinks" not in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, SymlinkDeniedError)
+        assert registry.registry_path.read_bytes() == original
+
     @pytest.mark.parametrize("relative", [False, True])
     def test_regular_registry_preserves_persistence_and_observers(
         self, tmp_path, monkeypatch, relative
@@ -362,11 +386,17 @@ class TestPresetRegistrySymlinks:
             target = target / ".registry"
         else:
             link = packs_dir
-        link.symlink_to(target, target_is_directory=linked_entry == "presets")
+        try:
+            link.symlink_to(target, target_is_directory=linked_entry == "presets")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
 
-        with pytest.raises(SymlinkDeniedError):
+        with pytest.raises(SymlinkDeniedError) as exc_info:
             PresetRegistry(packs_dir)
 
+        assert str(packs_dir / ".registry") in str(exc_info.value)
+        assert "Replace linked entries" in str(exc_info.value)
+        assert "explicitly allow symlinks" not in str(exc_info.value)
         assert sentinel.read_bytes() == b"not registry JSON"
         assert link.is_symlink()
         assert not (outside / "missing").exists()
@@ -400,7 +430,10 @@ class TestPresetRegistrySymlinks:
         target = outside / "missing" if dangling else outside
         if linked_entry == ".registry":
             target = target / ".registry"
-        link.symlink_to(target, target_is_directory=linked_entry != ".registry")
+        try:
+            link.symlink_to(target, target_is_directory=linked_entry != ".registry")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
         observed = []
         monkeypatch.setattr(
             "specify_cli.integrations._file_changes.before_file_change", observed.append
@@ -409,12 +442,15 @@ class TestPresetRegistrySymlinks:
             "specify_cli.integrations._file_changes.after_file_change", observed.append
         )
 
-        with pytest.raises(SymlinkDeniedError):
+        with pytest.raises(SymlinkDeniedError) as exc_info:
             if operation == "remove":
                 registry.remove("example")
             else:
                 getattr(registry, operation)("example", {"version": "2.0"})
 
+        assert str(registry.registry_path) in str(exc_info.value)
+        assert "Replace linked entries" in str(exc_info.value)
+        assert "explicitly allow symlinks" not in str(exc_info.value)
         assert sentinel.read_bytes() == b"do not overwrite"
         assert not (outside / "missing").exists()
         assert link.is_symlink()
@@ -432,7 +468,10 @@ class TestPresetRegistrySymlinks:
         link = packs_dir if linked_entry == "presets" else registry.registry_path
         target = project / "contained"
         link.rename(target)
-        link.symlink_to(target, target_is_directory=linked_entry == "presets")
+        try:
+            link.symlink_to(target, target_is_directory=linked_entry == "presets")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
 
         with pytest.raises(SymlinkDeniedError):
             PresetRegistry(packs_dir)

@@ -44,7 +44,10 @@ def symlinked_preset_registry(
         target = outside / "missing"
     if is_directory:
         packs_dir.rmdir()
-    link.symlink_to(target, target_is_directory=is_directory)
+    try:
+        link.symlink_to(target, target_is_directory=is_directory)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"Symlinks unavailable: {error}")
 
     yield spec_kit_project
 

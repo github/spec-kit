@@ -6,6 +6,82 @@ import pytest
 
 
 class TestIntegrationUpgradeLayout:
+    @pytest.mark.parametrize("entry", [".specify", "presets", ".registry"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize("include_skills", [False, True])
+    def test_preset_registry_links_fail_closed(
+        self, tmp_path, entry, dangling, include_skills,
+    ):
+        from specify_cli.file_helper import SymlinkDeniedError
+        from specify_cli.integrations._command_upgrade_layout import (
+            _PresetRegistryUnreadableError,
+            _installed_presets_affecting_agent,
+        )
+
+        project = tmp_path / "project"
+        presets = project / ".specify" / "presets"
+        presets.mkdir(parents=True)
+        (project / ".specify" / "init-options.json").write_text(
+            '{"allow_symlinks": true}', encoding="utf-8",
+        )
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        sentinel = (
+            outside / "presets" / ".registry"
+            if entry == ".specify"
+            else outside / ".registry"
+        )
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        content = '{"presets": {}}'
+        sentinel.write_text(content, encoding="utf-8")
+        link = {
+            ".specify": project / ".specify",
+            "presets": presets,
+            ".registry": presets / ".registry",
+        }[entry]
+        if entry != ".registry":
+            link.rename(project / "original")
+        target = outside / "missing" if dangling else (
+            sentinel if entry == ".registry" else outside
+        )
+        try:
+            link.symlink_to(target, target_is_directory=entry != ".registry")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        with pytest.raises(_PresetRegistryUnreadableError) as exc_info:
+            _installed_presets_affecting_agent(
+                project, "bob", include_skills=include_skills,
+            )
+
+        assert isinstance(exc_info.value.__cause__, SymlinkDeniedError)
+        assert str(presets / ".registry") in str(exc_info.value)
+        assert "Replace linked entries" in str(exc_info.value)
+        assert "explicitly allow symlinks" not in str(exc_info.value)
+        assert sentinel.read_text(encoding="utf-8") == content
+        assert link.is_symlink()
+        assert not (outside / "missing").exists()
+
+    def test_preset_registry_permission_error_is_not_treated_as_absence(
+        self, tmp_path, monkeypatch,
+    ):
+        from specify_cli.file_helper import FileHelper
+        from specify_cli.integrations._command_upgrade_layout import (
+            _PresetRegistryUnreadableError,
+            _installed_presets_affecting_agent,
+        )
+
+        def fail(*args, **kwargs):
+            raise PermissionError("registry access denied")
+
+        monkeypatch.setattr(FileHelper, "read_text", fail)
+
+        with pytest.raises(_PresetRegistryUnreadableError) as exc_info:
+            _installed_presets_affecting_agent(tmp_path, "bob")
+
+        assert isinstance(exc_info.value.__cause__, PermissionError)
+        assert "registry access denied" in str(exc_info.value)
+
     def test_installed_presets_affecting_agent_absent_vs_unreadable(self, tmp_path):
         """Unit (review #3415, 4744636079): fail closed only when unreadable.
 

@@ -15,11 +15,13 @@ from specify_cli.presets import PresetManager, PresetRegistry, PresetResolver
 from tests.conftest import strip_ansi
 
 
-REGISTRY_SYMLINK_ERROR = (
-    "Cannot access preset registry: registry files and parent directories must "
-    "not be symlinks. Replace linked entries with regular files or directories; "
-    "allow_symlinks does not apply to preset registry metadata."
-)
+def _registry_error(project: Path) -> str:
+    registry = project / ".specify" / "presets" / ".registry"
+    return (
+        f"Cannot access preset registry {registry}: registry files and parent "
+        "directories must not be symlinks. Replace linked entries with regular "
+        "files or directories; allow_symlinks does not apply to preset registry metadata."
+    )
 
 
 @pytest.fixture(params=["directory", "file", "dangling-directory", "dangling-file"])
@@ -82,7 +84,7 @@ def test_text_commands_report_registry_specific_symlink_error(
 
     assert result.exit_code == 1
     assert " ".join(strip_ansi(result.stdout).split()) == (
-        f"Error: {REGISTRY_SYMLINK_ERROR}"
+        f"Error: {_registry_error(linked_registry)}"
     )
     assert result.stderr == ""
 
@@ -106,7 +108,7 @@ def test_json_commands_report_registry_specific_symlink_error(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert json.loads(result.stderr) == {"error": REGISTRY_SYMLINK_ERROR}
+    assert json.loads(result.stderr) == {"error": _registry_error(linked_registry)}
     assert result.stderr.count("\n") == 1
 
 
@@ -123,9 +125,7 @@ def test_mutating_commands_handle_registry_save_errors(
             manager.registry.update("test-pack", {"enabled": False})
 
     def fail_save(self):
-        raise SymlinkDeniedError(
-            "Refusing symlink; explicitly allow symlinks on this FileHelper"
-        )
+        raise SymlinkDeniedError(_registry_error(project_dir))
 
     monkeypatch.setattr(PresetRegistry, "_save", fail_save)
     monkeypatch.chdir(project_dir)
@@ -139,7 +139,7 @@ def test_mutating_commands_handle_registry_save_errors(
 
     assert result.exit_code == 1
     output = " ".join(strip_ansi(result.stdout).split())
-    assert REGISTRY_SYMLINK_ERROR in output
+    assert _registry_error(project_dir) in output
     assert "explicitly allow symlinks" not in output
     assert "Traceback" not in result.output
 
@@ -149,7 +149,7 @@ def test_resolve_handles_filesystem_errors_at_each_phase(
     project_dir: Path, monkeypatch: pytest.MonkeyPatch, phase: str,
 ):
     def fail(*args, **kwargs):
-        raise SymlinkDeniedError("explicitly allow symlinks")
+        raise SymlinkDeniedError(_registry_error(project_dir))
 
     if phase == "construction":
         monkeypatch.setattr("specify_cli.presets.PresetResolver", fail)
@@ -168,7 +168,7 @@ def test_resolve_handles_filesystem_errors_at_each_phase(
     )
 
     assert result.exit_code == 1
-    assert REGISTRY_SYMLINK_ERROR in " ".join(strip_ansi(result.stdout).split())
+    assert _registry_error(project_dir) in " ".join(strip_ansi(result.stdout).split())
     assert "explicitly allow symlinks" not in result.output
     assert "composition error" not in result.output
 
@@ -181,7 +181,7 @@ def test_update_replacement_policy_error_preserves_removal_context(
     )
 
     def fail_add(**kwargs):
-        raise SymlinkDeniedError("explicitly allow symlinks")
+        raise SymlinkDeniedError(_registry_error(project_dir))
 
     monkeypatch.setattr(
         "specify_cli.presets._commands.preset_remove", lambda preset_id: None,
@@ -197,7 +197,7 @@ def test_update_replacement_policy_error_preserves_removal_context(
     output = " ".join(strip_ansi(result.stdout).split())
     assert "previous preset was removed" in output
     assert "specify preset add" in output
-    assert REGISTRY_SYMLINK_ERROR in output
+    assert _registry_error(project_dir) in output
     assert "explicitly allow symlinks" not in output
 
 
@@ -217,7 +217,7 @@ def test_other_file_helper_errors_keep_their_diagnostics(
     result = CliRunner().invoke(app, arguments, catch_exceptions=False)
 
     assert result.exit_code == 1
-    message = "Cannot access preset registry: unsupported registry path [red]"
+    message = "unsupported registry path [red]"
     if json_output:
         assert result.stdout == ""
         assert json.loads(result.stderr) == {"error": message}

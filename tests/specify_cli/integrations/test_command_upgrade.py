@@ -27,6 +27,67 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUpgradeDetailed:
+    @pytest.mark.parametrize("agent", ["bob", "kilocode"])
+    @pytest.mark.parametrize("entry", ["presets", ".registry"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    def test_layout_migration_rejects_registry_links_before_mutation(
+        self, tmp_path, agent, entry, dangling,
+    ):
+        if agent == "bob":
+            project = _init_project(
+                tmp_path, agent, integration_options="--legacy-commands",
+            )
+            old_root = project / ".bob" / "commands"
+            new_root = project / ".bob" / "skills"
+            options = ["--integration-options", "--skills"]
+        else:
+            project = _init_project(tmp_path, agent)
+            new_root, old_root = _move_kilocode_install_to_legacy_layout(project)
+            options = []
+        commands = {path: path.read_bytes() for path in old_root.glob("speckit.*.md")}
+        assert commands
+        manifest = project / ".specify" / "integrations" / f"{agent}.manifest.json"
+        manifest_before = manifest.read_bytes()
+        config = project / ".specify" / "init-options.json"
+        options_data = json.loads(config.read_text(encoding="utf-8"))
+        options_data["allow_symlinks"] = True
+        config.write_text(json.dumps(options_data), encoding="utf-8")
+        config_before = config.read_bytes()
+        presets = project / ".specify" / "presets"
+        presets.mkdir(parents=True, exist_ok=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        sentinel = outside / ".registry"
+        sentinel.write_text('{"presets": {}}', encoding="utf-8")
+        link = presets if entry == "presets" else presets / ".registry"
+        if entry == "presets":
+            presets.rename(project / "original-presets")
+        else:
+            link.unlink(missing_ok=True)
+        target = outside / "missing" if dangling else (
+            outside if entry == "presets" else sentinel
+        )
+        try:
+            link.symlink_to(target, target_is_directory=entry == "presets")
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", agent, *options, "--script", "sh", "--force"],
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "preset registry" in result.output.lower()
+        assert "Replace linked entries" in result.output
+        assert "explicitly allow symlinks" not in result.output
+        assert not new_root.exists()
+        assert manifest.read_bytes() == manifest_before
+        assert config.read_bytes() == config_before
+        assert all(path.read_bytes() == content for path, content in commands.items())
+        assert sentinel.read_text(encoding="utf-8") == '{"presets": {}}'
+        assert link.is_symlink()
+        assert not (outside / "missing").exists()
+
     @pytest.mark.parametrize(
         "bad_handler",
         [

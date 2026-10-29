@@ -11,8 +11,7 @@ from ._catalog_versions import available_versions
 from .._installed_info_json import preset_info_item
 from .._installed_list_json import InstalledListJSONCommand, emit_json, emit_json_error
 from .._project import resolve_specify_project_root
-from ..file_helper import FileHelperError
-from ._commands import _registry_file_error, preset_app
+from ._commands import preset_app
 
 
 @preset_app.command("info", cls=InstalledListJSONCommand)
@@ -37,8 +36,6 @@ def preset_info(
             manager = PresetManager(resolve_specify_project_root())
             emit_json(preset_info_item(manager.list_installed(), manager, preset_id))
             return
-        except FileHelperError as error:
-            emit_json_error(_registry_file_error(error))
         except Exception as error:  # noqa: BLE001 - emit the JSON error contract
             emit_json_error(error)
 
