@@ -344,9 +344,9 @@ def test_shared_helper_allowed_links_restore_in_public_external_lifecycle(
     def late_failure(*args, **kwargs):
         if kind == "gitignore":
             from specify_cli.shared_infra import SPECIFY_GITIGNORE_CONTENT
-            assert target_file.read_text() == SPECIFY_GITIGNORE_CONTENT
+            assert target_file.read_text(encoding="utf-8") == SPECIFY_GITIGNORE_CONTENT
         else:
-            assert target_file.read_text() == ("# new plan\n" if kind == "templates-root" else "# new common\n")
+            assert target_file.read_text(encoding="utf-8") == ("# new plan\n" if kind == "templates-root" else "# new common\n")
         raise OSError("sample late shared failure")
 
     if operation == "init":

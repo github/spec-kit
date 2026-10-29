@@ -97,10 +97,10 @@ def test_allowed_links_preserve_overwrite_and_manifest_decisions(shared_project,
         destination.rename(target)
         destination.symlink_to(target)
         link = destination
-    original = target.read_text()
+    original = target.read_text(encoding="utf-8")
     if mode in {"customized", "recovered", "force"}:
         target.write_text("user customization\n")
-        original = target.read_text()
+        original = target.read_text(encoding="utf-8")
     if mode == "recovered":
         (project / ".specify/integrations/speckit.manifest.json").unlink()
         install(project, core, files=files)
@@ -120,7 +120,7 @@ def test_allowed_links_preserve_overwrite_and_manifest_decisions(shared_project,
     )
     assert link.is_symlink()
     expected = replacement if mode in {"refresh", "force"} else original
-    assert target.read_text() == expected
+    assert target.read_text(encoding="utf-8") == expected
     manifest = IntegrationManifest.load("speckit", project, files=files)
     assert relative in manifest.files
     assert all(not key.startswith("user-target") for key in manifest.files)
@@ -532,7 +532,7 @@ def test_stale_policy_failure_precedes_shared_file_updates(
             parent.rmdir()
             if kind == "dangling-parent":
                 target = project / "missing"
-                error, message = FileNotFoundError, "No such file"
+                error, message = FileNotFoundError, target.name
             else:
                 target = parent
                 error, message = UnsupportedPathError, "Symlink cycle"
@@ -559,6 +559,7 @@ def test_stale_policy_failure_precedes_shared_file_updates(
             arguments.append("--allow-symlinks")
         result = CliRunner().invoke(specify_cli.app, arguments, catch_exceptions=False)
         assert result.exit_code == 1, result.output
+        assert "Failed to install shared infrastructure" in result.output
         assert message in result.output
     else:
         with pytest.raises(error):
