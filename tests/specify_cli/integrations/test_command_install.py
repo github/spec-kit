@@ -26,6 +26,41 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationInstall:
+    @pytest.mark.parametrize("existing_target", [True, False])
+    @pytest.mark.parametrize("allow_symlinks", [False, True])
+    def test_install_rejects_symlinked_state_before_setup(
+        self, tmp_path, existing_target, allow_symlinks,
+    ):
+        project = _init_project(tmp_path, "claude")
+        options_path = project / ".specify" / "init-options.json"
+        options = json.loads(options_path.read_text(encoding="utf-8"))
+        options["allow_symlinks"] = allow_symlinks
+        options_path.write_text(json.dumps(options), encoding="utf-8")
+        destination = project / ".specify" / "integration.json"
+        target = tmp_path / "external-state.json"
+        original = b'{"integration": "claude"}\n'
+        if existing_target:
+            target.write_bytes(original)
+        destination.unlink()
+        try:
+            destination.symlink_to(target)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex", "--script", "sh",
+        ])
+
+        assert result.exit_code != 0, result.output
+        assert "symlink" in strip_ansi(result.output).lower()
+        assert destination.is_symlink()
+        if existing_target:
+            assert target.read_bytes() == original
+        else:
+            assert not target.exists()
+        assert not (project / ".agents").exists()
+        assert not (project / ".specify" / "integrations" / "codex.manifest.json").exists()
+
     def test_historical_catalog_versions_are_not_install_options(self):
         result = runner.invoke(
             app, ["integration", "install", "copilot", "--version", "1.0.0"]
