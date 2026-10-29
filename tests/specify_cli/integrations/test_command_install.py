@@ -52,7 +52,10 @@ class TestIntegrationInstall:
         ])
 
         assert result.exit_code != 0, result.output
-        assert "symlink" in strip_ansi(result.output).lower()
+        output = " ".join(strip_ansi(result.output).split())
+        assert "Replace linked entries" in output
+        assert "allow_symlinks does not apply to integration state" in output
+        assert "explicitly allow symlinks" not in output
         assert destination.is_symlink()
         if existing_target:
             assert target.read_bytes() == original

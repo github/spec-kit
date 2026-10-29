@@ -144,6 +144,9 @@ def test_read_integration_json_rejects_symlinks(linked_integration_state, reader
     assert error is not None
     assert error.kind == "os"
     assert "symlink" in error.detail.lower()
+    assert "Replace linked entries" in error.detail
+    assert "allow_symlinks does not apply to integration state" in error.detail
+    assert "explicitly allow symlinks" not in error.detail
     assert link.is_symlink()
 
 
@@ -154,12 +157,15 @@ def test_write_integration_json_rejects_symlinks_before_observer(linked_integrat
     changes = []
     token = file_change_observer.set(lambda *args: changes.append(args))
     try:
-        with pytest.raises(SymlinkDeniedError, match="symlink"):
+        with pytest.raises(SymlinkDeniedError, match="symlink") as exc_info:
             write_integration_json(project, version="1.2.3", integration_key="codex")
     finally:
         file_change_observer.reset(token)
 
     assert changes == []
+    assert "Replace linked entries" in str(exc_info.value)
+    assert "allow_symlinks does not apply to integration state" in str(exc_info.value)
+    assert "explicitly allow symlinks" not in str(exc_info.value)
     assert link.is_symlink()
     assert link.readlink() == target
     assert (outside / "integration.json").read_bytes() == original

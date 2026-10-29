@@ -7,11 +7,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .file_helper import FileHelper, FileHelperError
+from .file_helper import FileHelper, FileHelperError, SymlinkDeniedError
 
 
 INTEGRATION_JSON = ".specify/integration.json"
 INTEGRATION_STATE_SCHEMA = 1
+_SYMLINK_STATE_ERROR = (
+    f"Refusing symlinked integration state at {INTEGRATION_JSON}. "
+    "Replace linked entries in this path with a real directory or regular file; "
+    "allow_symlinks does not apply to integration state."
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,8 @@ def _read_integration_json_data(
         )
     except UnicodeDecodeError as exc:
         return None, IntegrationReadError(kind="decode", detail=str(exc))
+    except SymlinkDeniedError:
+        return None, IntegrationReadError(kind="os", detail=_SYMLINK_STATE_ERROR)
     except (OSError, FileHelperError) as exc:
         return None, IntegrationReadError(kind="os", detail=str(exc))
     try:
@@ -244,6 +251,8 @@ def write_integration_json(
         files.read_bytes(INTEGRATION_JSON)
     except FileNotFoundError:
         pass
+    except SymlinkDeniedError as exc:
+        raise SymlinkDeniedError(_SYMLINK_STATE_ERROR) from exc
     dest = project_root / INTEGRATION_JSON
 
     integration_key = clean_integration_key(integration_key)
@@ -270,7 +279,10 @@ def write_integration_json(
 
     from .integrations._file_changes import after_file_change, before_file_change
 
-    before_file_change(dest)
-    files.mkdir(".specify", exist_ok=True)
-    files.overwrite_text(INTEGRATION_JSON, json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    after_file_change(dest)
+    try:
+        before_file_change(dest)
+        files.mkdir(".specify", exist_ok=True)
+        files.overwrite_text(INTEGRATION_JSON, json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        after_file_change(dest)
+    except SymlinkDeniedError as exc:
+        raise SymlinkDeniedError(_SYMLINK_STATE_ERROR) from exc
