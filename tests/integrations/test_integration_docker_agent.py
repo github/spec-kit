@@ -47,7 +47,7 @@ def test_extra_args_are_applied_to_build_exec_args(monkeypatch):
         "./agent.yaml --agent root --model openai/gpt-5",
     )
     monkeypatch.setattr(
-        "shutil.which",
+        "specify_cli._utils._find_docker_executable",
         lambda name: "/usr/bin/docker" if name == "docker" else None,
     )
     monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: type("Result", (), {"returncode": 0})())
@@ -55,7 +55,7 @@ def test_extra_args_are_applied_to_build_exec_args(monkeypatch):
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
     assert args == [
-        "docker",
+        "/usr/bin/docker",
         "agent",
         "run",
         "--exec",
@@ -72,7 +72,7 @@ def test_extra_args_are_applied_to_build_exec_args(monkeypatch):
 def test_per_step_runtime_config_builds_ordered_argv(monkeypatch):
     monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
     monkeypatch.setattr(
-        "shutil.which",
+        "specify_cli._utils._find_docker_executable",
         lambda name: "/usr/bin/docker-agent" if name == "docker-agent" else None,
     )
 
@@ -88,7 +88,7 @@ def test_per_step_runtime_config_builds_ordered_argv(monkeypatch):
     )
 
     assert args == [
-        "docker-agent",
+        "/usr/bin/docker-agent",
         "run",
         "--exec",
         "./agent.yaml",
@@ -107,7 +107,7 @@ def test_per_step_args_ignore_legacy_extra_flags(monkeypatch):
     monkeypatch.setenv(
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "--hide-tool-results"
     )
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -131,7 +131,7 @@ def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS",
         legacy_value,
     )
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -151,7 +151,7 @@ def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
 
 def test_command_step_model_is_the_only_model_source(monkeypatch):
     monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -212,7 +212,7 @@ def test_prompt_is_passed_after_agent_config(monkeypatch):
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml"
     )
     monkeypatch.setattr(
-        "shutil.which",
+        "specify_cli._utils._find_docker_executable",
         lambda name: "/usr/bin/docker" if name == "docker" else None,
     )
     monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: type("Result", (), {"returncode": 0})())
@@ -222,7 +222,7 @@ def test_prompt_is_passed_after_agent_config(monkeypatch):
     )
 
     assert args == [
-        "docker",
+        "/usr/bin/docker",
         "agent",
         "run",
         "--exec",
@@ -234,7 +234,7 @@ def test_prompt_is_passed_after_agent_config(monkeypatch):
 
 def test_prompt_starting_with_flag_is_delimited(monkeypatch):
     monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
 
     args = DockerAgentIntegration().build_exec_args("--help", output_json=False)
 
@@ -257,22 +257,25 @@ def test_legacy_agent_config_cannot_resolve_to_empty_token_list(monkeypatch):
 def test_uses_standalone_executable(monkeypatch):
     monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
     monkeypatch.setattr(
-        "shutil.which",
+        "specify_cli._utils._find_docker_executable",
         lambda name: "/usr/bin/docker-agent" if name == "docker-agent" else None,
     )
 
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
-    assert args == ["docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+    assert args == ["/usr/bin/docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
 
 
 def test_standalone_executable_has_priority(monkeypatch):
     monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker-agent")
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: "/usr/bin/docker-agent",
+    )
 
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
-    assert args == ["docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+    assert args == ["/usr/bin/docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
 
 
 def test_executable_override(monkeypatch):

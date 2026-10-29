@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import yaml
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -19,6 +20,34 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
+def _find_docker_executable(name: str) -> str | None:
+    """Search absolute PATH entries outside the CWD subtree for a Docker CLI."""
+    cwd = Path.cwd().resolve()
+    names = [name]
+    if sys.platform == "win32":
+        # Python 3.11's which() does not expand PATHEXT for qualified names.
+        names = [
+            name + extension
+            for extension in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
+            if extension
+        ]
+    for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
+        directory = Path(entry)
+        if not directory.is_absolute():
+            continue
+        directory = directory.resolve()
+        if directory.is_relative_to(cwd):
+            continue
+        # A qualified name bypasses Python 3.11's implicit Windows CWD search.
+        for filename in names:
+            resolved = shutil.which(str(directory / filename))
+            if resolved is not None:
+                executable = Path(resolved)
+                if executable.is_absolute() and not executable.resolve().is_relative_to(cwd):
+                    return str(executable)
+    return None
+
+
 def docker_agent_command(executable: str | None = None) -> list[str] | None:
     """Return a runnable Docker Agent command, or ``None`` if unavailable.
 
@@ -27,11 +56,11 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
     is verified with a bounded, read-only version probe so a plain Docker CLI
     is not mistaken for an installed Docker Agent.
     """
-    resolved_from_path = executable is None
     if executable is None:
-        if shutil.which("docker-agent"):
-            return ["docker-agent", "run"]
-        executable = shutil.which("docker")
+        standalone = _find_docker_executable("docker-agent")
+        if standalone is not None:
+            return [standalone, "run"]
+        executable = _find_docker_executable("docker")
         if executable is None:
             return None
 
@@ -54,7 +83,7 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
         return None
     if result.returncode != 0:
         return None
-    return ["docker", "agent", "run"] if resolved_from_path else run_command
+    return run_command
 
 
 def relative_extension_path_violation(value: Any) -> str | None:

@@ -121,7 +121,7 @@ class TestCheckToolOther:
             return "/usr/bin/docker" if name == "docker" else None
 
         with (
-            patch("shutil.which", side_effect=fake_which),
+            patch("specify_cli._utils._find_docker_executable", side_effect=fake_which),
             patch("subprocess.run") as run,
         ):
             run.return_value.returncode = 0
@@ -135,7 +135,7 @@ class TestCheckToolOther:
 
     def test_docker_agent_missing(self):
         """docker-agent should be missing when neither form is installed."""
-        with patch("shutil.which", return_value=None):
+        with patch("specify_cli._utils._find_docker_executable", return_value=None):
             assert check_tool("docker-agent") is False
 
     def test_docker_agent_plugin_missing(self):
@@ -144,7 +144,7 @@ class TestCheckToolOther:
             return "/usr/bin/docker" if name == "docker" else None
 
         with (
-            patch("shutil.which", side_effect=fake_which),
+            patch("specify_cli._utils._find_docker_executable", side_effect=fake_which),
             patch("subprocess.run") as run,
         ):
             run.return_value.returncode = 1
