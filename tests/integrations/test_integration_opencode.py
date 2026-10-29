@@ -537,3 +537,64 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
         assert result.exit_code != 0
         assert "later failure" in result.output
         assert ignore.read_bytes() == original
+
+    def test_forced_upgrade_rejects_bad_ignore_before_shared_writes(self, tmp_path):
+        from tests.specify_cli.integrations._helpers import _init_project, _run_in_project
+
+        project = _init_project(tmp_path, "opencode")
+        template = project / ".specify" / "templates" / "plan-template.md"
+        script = project / ".specify" / "scripts" / "bash" / "common.sh"
+        template.write_text("custom template\n", encoding="utf-8")
+        script.write_text("# custom script\n", encoding="utf-8")
+        outside = tmp_path / "outside-ignore"
+        outside.write_bytes(b"secret\n")
+        ignore = project / ".ignore"
+        for setup_ignore, match in (
+            (lambda: ignore.symlink_to(outside), "symlinked"),
+            (lambda: ignore.write_bytes(b"!.specify/\n!.specify/**\n.specify/**\n"), "later exclusion"),
+        ):
+            setup_ignore()
+            result = _run_in_project(
+                project,
+                [
+                    "integration",
+                    "upgrade",
+                    "opencode",
+                    "--force",
+                    "--integration-options",
+                    "--configure-ignore-file",
+                ],
+            )
+            assert result.exit_code != 0
+            assert match in " ".join(result.output.split())
+            assert template.read_text(encoding="utf-8") == "custom template\n"
+            assert script.read_text(encoding="utf-8") == "# custom script\n"
+            assert outside.read_bytes() == b"secret\n"
+            ignore.unlink()
+
+    def test_ignore_check_skips_script_variants_setup_does_not_install(self, tmp_path):
+        integration = get_integration(self.KEY)
+        rules = b"!.specify/\n!.specify/**\n.specify/scripts/powershell/check-prerequisites.ps1\n"
+        sh_root = tmp_path / "sh"
+        sh_root.mkdir()
+        (sh_root / ".ignore").write_bytes(rules)
+        integration.setup(
+            sh_root, IntegrationManifest(self.KEY, sh_root),
+            parsed_options=_OPT_IN, script_type="sh",
+        )
+        assert (sh_root / ".ignore").read_bytes() == rules
+
+        for name, script_type, present in (("ps", "ps", False), ("sh-present", "sh", True)):
+            root = tmp_path / name
+            root.mkdir()
+            (root / ".ignore").write_bytes(rules)
+            if present:
+                installed = root / ".specify" / "scripts" / "powershell"
+                installed.mkdir(parents=True)
+                (installed / "check-prerequisites.ps1").write_text("x\n")
+            with pytest.raises(ValueError, match="check-prerequisites.ps1"):
+                integration.setup(
+                    root, IntegrationManifest(self.KEY, root),
+                    parsed_options=_OPT_IN, script_type=script_type,
+                )
+            assert (root / ".ignore").read_bytes() == rules

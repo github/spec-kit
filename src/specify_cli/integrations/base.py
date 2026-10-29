@@ -998,6 +998,20 @@ class IntegrationBase(ABC):
 
         return content
 
+    def preflight_setup(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None = None,
+        *,
+        script_type: str | None = None,
+    ) -> None:
+        """Reject a planned ``setup()`` before the CLI writes shared files.
+
+        Install, switch and upgrade call this before touching shared
+        infrastructure. Raise ``ValueError`` or ``OSError`` to refuse.
+        The default accepts every setup.
+        """
+
     def setup(
         self,
         project_root: Path,

@@ -87,14 +87,26 @@ class OpencodeIntegration(MarkdownIntegration):
         ownership. Without the flag the root ``.ignore`` is left alone.
         """
         configure = (parsed_options or {}).get("configure_ignore_file") is True
+        script_type = opts.get("script_type")
         if configure:
-            _preflight_root_ignore(manifest)
+            _preflight_root_ignore(manifest.project_root, script_type)
         created = super().setup(
             project_root, manifest, parsed_options=parsed_options, **opts
         )
         if configure:
-            created.append(_configure_root_ignore(manifest))
+            created.append(_configure_root_ignore(manifest, script_type))
         return created
+
+    def preflight_setup(
+        self,
+        project_root: Path,
+        parsed_options: dict[str, Any] | None = None,
+        *,
+        script_type: str | None = None,
+    ) -> None:
+        """Refuse an unusable ``.ignore`` before shared files are written."""
+        if (parsed_options or {}).get("configure_ignore_file") is True:
+            _preflight_root_ignore(project_root, script_type)
 
     def build_exec_args(
         self,
@@ -143,9 +155,17 @@ def _split_ignore_lines(raw: bytes) -> list[bytes]:
     ]
 
 
-def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
-    """Fail when *updated* still hides Spec Kit paths, evaluated in file order."""
+def _reject_hidden_specify_paths(
+    path: Path, updated: bytes, script_type: str | None = None
+) -> None:
+    """Fail when *updated* still hides Spec Kit paths, evaluated in file order.
+
+    Bundled scripts are probed only for the variants *script_type* installs
+    (every variant when it is unknown); files already under ``.specify/``
+    are always probed.
+    """
     from ..._assets import _locate_core_pack, _repo_root
+    from ...shared_infra import script_variant_dirs
 
     parsed = []
     for raw_line in _split_ignore_lines(updated):
@@ -175,12 +195,15 @@ def _reject_hidden_specify_paths(path: Path, updated: bytes) -> None:
 
     pack, repo = _locate_core_pack(), _repo_root()
     probes = {".specify/", ".specify/.gitignore", ".specify/memory/constitution.md"}
+    variants = None if script_type is None else set(script_variant_dirs(script_type))
     for kind in ("templates", "scripts"):
         base = (pack if pack and (pack / kind).is_dir() else repo) / kind
         walk = () if not base.is_dir() else (base.iterdir() if kind == "templates" else base.rglob("*"))
         probes.update(
             f".specify/{kind}/{item.relative_to(base).as_posix()}"
             for item in walk
+            if kind == "templates" or variants is None
+            or item.relative_to(base).parts[0] in variants
             if item.is_file() and "__pycache__" not in item.parts
             and not item.name.startswith(".") and item.name != "vscode-settings.json"
         )
@@ -222,8 +245,10 @@ def _with_specify_ignore_rules(raw: bytes) -> bytes:
     return raw + addition
 
 
-def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, bytes]:
-    path = manifest.project_root / ".ignore"
+def _preflight_root_ignore(
+    project_root: Path, script_type: str | None = None
+) -> tuple[Path, bytes, bytes]:
+    path = project_root / ".ignore"
     if path.is_symlink():
         raise ValueError(f"Refusing to configure symlinked .ignore: {path}")
     if path.exists() and not path.is_file():
@@ -242,7 +267,7 @@ def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, 
             "Convert it to UTF-8 and rerun; ripgrep stops at the first invalid byte."
         ) from exc
     updated = _with_specify_ignore_rules(raw)
-    _reject_hidden_specify_paths(path, updated)
+    _reject_hidden_specify_paths(path, updated, script_type)
     if updated != raw and path.exists() and not os.access(path, os.W_OK):
         raise PermissionError(f"Cannot update .ignore at {path}")
     if updated != raw and not os.access(path.parent, os.W_OK):
@@ -252,9 +277,11 @@ def _preflight_root_ignore(manifest: IntegrationManifest) -> tuple[Path, bytes, 
     return path, raw, updated
 
 
-def _configure_root_ignore(manifest: IntegrationManifest) -> Path:
+def _configure_root_ignore(
+    manifest: IntegrationManifest, script_type: str | None = None
+) -> Path:
     """Recheck root ``.ignore``, write it atomically, and record partial ownership."""
-    path, raw, updated = _preflight_root_ignore(manifest)
+    path, raw, updated = _preflight_root_ignore(manifest.project_root, script_type)
     if updated == raw and path.is_file():
         from .._file_changes import before_file_change
 

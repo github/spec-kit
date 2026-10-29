@@ -16,7 +16,7 @@ from ..integration_state import (
 )
 from ._commands import integration_app
 from ._lifecycle import external_lifecycle, lifecycle_owns_rollback, lifecycle_success
-from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
+from ._helpers import _MANIFEST_READ_ERRORS, _SharedTemplateRefreshError, _clear_init_options_for_integration, _cli_error_detail, _cli_phase_label, _get_speckit_version, _preflight_setup_or_exit, _read_integration_json, _register_extensions_for_agent, _register_presets_for_agent, _remove_integration_json, _resolve_integration_options, _resolve_script_type, _set_default_integration, _set_default_integration_or_exit, _unregister_extensions_for_agent, _unregister_presets_for_agent, _write_integration_json
 
 
 def _missing_required_options(integration, parsed_options) -> list[str]:
@@ -152,6 +152,13 @@ def integration_switch(
         )
         console.print("No files were changed.")
         raise typer.Exit(1)
+    _preflight_setup_or_exit(
+        target_integration,
+        project_root,
+        target_parsed_options,
+        selected_script,
+        "switch to",
+    )
 
     # Phase 1: Uninstall current integration (if any)
     if installed_key:

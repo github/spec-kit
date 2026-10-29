@@ -246,6 +246,27 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     return parsed or None
 
 
+def _preflight_setup_or_exit(
+    integration: Any,
+    project_root: Path,
+    parsed_options: dict[str, Any] | None,
+    script_type: str,
+    action: str,
+) -> None:
+    """Run ``integration.preflight_setup()`` and exit before any write on refusal."""
+    try:
+        integration.preflight_setup(
+            project_root, parsed_options, script_type=script_type
+        )
+    except (ValueError, OSError) as exc:
+        console.print(
+            f"[red]Error:[/red] Cannot {action} integration "
+            f"'{escape(integration.key)}': {escape(_cli_error_detail(exc))}"
+        )
+        console.print("No files were changed.")
+        raise typer.Exit(1) from exc
+
+
 def _resolve_integration_options(
     integration: Any,
     state: dict[str, Any],
