@@ -9,6 +9,7 @@ import typer
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from ..file_helper import FileHelperError
 from . import _commands
 from ._commands import preset_app
 
@@ -90,6 +91,9 @@ def preset_update(
             dev=dev,
             priority=priority,
         )
+    except FileHelperError:
+        report_add_failure()
+        raise
     except typer.Exit as error:
         report_add_failure()
         raise typer.Exit(error.exit_code or 1)

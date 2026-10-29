@@ -45,6 +45,14 @@ may omit the digest.
 
 > **Note:** All preset commands require a project already initialized with `specify init`.
 
+The preset registry at `.specify/presets/.registry` and its parent directories
+must not be symlinks, including dangling links. This metadata restriction
+applies even when `allow_symlinks` is enabled for project operations. Replace
+linked registry entries with regular files or directories; enabling operational
+symlinks does not make registry links usable. Registry access failures exit 1
+with a human-readable diagnostic, or a single JSON error on stderr for
+`preset list --json` and `preset info --json`.
+
 ### Exclude development files with `.presetignore`
 
 Place a UTF-8 `.presetignore` (with or without a byte-order mark) beside

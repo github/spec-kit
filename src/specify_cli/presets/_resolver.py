@@ -263,7 +263,9 @@ class PresetResolver:
             return override
 
         # Priority 2: Installed presets (sorted by priority — lower number wins)
-        if not skip_presets and self.presets_dir.exists():
+        if not skip_presets and (
+            self.presets_dir.exists() or self.presets_dir.is_symlink()
+        ):
             for pack_id, _metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # The preset manifest is authoritative: if it declares this
@@ -559,7 +561,7 @@ class PresetResolver:
             })
 
         # Priority 2: Installed presets (sorted by priority — lower number = higher precedence)
-        if self.presets_dir.exists():
+        if self.presets_dir.exists() or self.presets_dir.is_symlink():
             for pack_id, metadata in self._get_all_presets_by_priority():
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest

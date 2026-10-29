@@ -13,7 +13,8 @@ from .._installed_list_json import (
     installed_list_item,
 )
 from .._project import resolve_specify_project_root
-from ._commands import preset_app
+from ..file_helper import FileHelperError
+from ._commands import _registry_file_error, preset_app
 
 
 @preset_app.command("list", cls=InstalledListJSONCommand)
@@ -39,6 +40,8 @@ def preset_list(
                 [installed_list_item(pack, include_hooks=False) for pack in installed]
             )
             return
+        except FileHelperError as error:
+            emit_json_error(_registry_file_error(error))
         except Exception as error:  # noqa: BLE001 - emit the JSON error contract
             emit_json_error(error)
 

@@ -20,6 +20,11 @@ filesystem operations. Shared artifact list/info operations translate registry
 `FileHelperError` failures into their existing resolution errors, preserving
 the CLI JSON envelope and MCP `artifact_resolution_failed` code. Contribution
 lookup likewise translates registry failures into an artifact resolution error.
+The preset CLI group reports filesystem policy failures across the entire
+invocation, including manager/resolver construction. Registry symlink errors
+in text and JSON output direct users to replace linked entries with regular
+files/directories, not enable operational symlinks. JSON list/info retain a
+single error envelope with no stdout output.
 
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in

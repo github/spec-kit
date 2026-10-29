@@ -8,6 +8,7 @@ import typer
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from ..file_helper import FileHelperError
 from ._commands import preset_app
 
 
@@ -63,6 +64,8 @@ def preset_resolve(
             # Verify composition is actually possible
             try:
                 composed = resolver.resolve_content(template_name, template_type)
+            except FileHelperError:
+                raise
             except Exception as exc:  # noqa: BLE001 - render composition failures
                 composed = None
                 console.print(

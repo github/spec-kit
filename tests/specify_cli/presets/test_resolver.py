@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from specify_cli.extensions import ExtensionRegistry
+from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.presets import (
     PresetManager,
     PresetRegistry,
@@ -21,6 +22,25 @@ from tests.specify_cli.presets._helpers import (
 
 class TestPresetResolver:
     """Test PresetResolver priority stack."""
+
+    @pytest.mark.parametrize(
+        "method", ["resolve", "resolve_with_source", "collect_all_layers", "resolve_content"],
+    )
+    def test_dangling_preset_directory_is_not_treated_as_missing(
+        self, project_dir, method,
+    ):
+        presets = project_dir / ".specify" / "presets"
+        target = project_dir.parent / "missing-presets"
+        try:
+            presets.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            pytest.skip(f"Symlinks unavailable: {error}")
+
+        with pytest.raises(SymlinkDeniedError):
+            getattr(PresetResolver(project_dir), method)("spec-template")
+
+        assert presets.is_symlink()
+        assert not target.exists()
 
     def test_resolve_core_template(self, project_dir):
         """Test resolving a core template."""
