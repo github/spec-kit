@@ -143,6 +143,8 @@
       href: extensions/overview.md
     - name: Developing
       href: extensions/developing.md
+    - name: API Reference
+      href: extensions/api.md
     - name: Publishing
       href: extensions/publishing.md
 
