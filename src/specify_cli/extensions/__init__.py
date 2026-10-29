@@ -47,7 +47,7 @@ from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
-from ..file_helper import FileHelper, FileHelperError, UnsupportedPathError
+from ..file_helper import FileHelper, FileHelperError
 from ..integration_state import (
     INTEGRATION_STATE_SCHEMA,
     default_integration_key,
@@ -774,6 +774,8 @@ class ExtensionRegistry:
     def _load(self) -> dict:
         """Load registry from disk."""
         try:
+            if not stat.S_ISREG(self._files.stat(self.registry_path).st_mode):
+                return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
             data = json.loads(self._files.read_text(self.registry_path))
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
@@ -790,11 +792,6 @@ class ExtensionRegistry:
             # is deliberately not caught: the data may be intact on disk, and
             # starting fresh would let a later _save() wipe it.
             return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
-        except UnsupportedPathError:
-            # Preserve recovery for non-regular registry leaves, not unsafe parents.
-            if not self.registry_path.is_file():
-                return {"schema_version": self.SCHEMA_VERSION, "extensions": {}}
-            raise
 
     def is_corrupt(self) -> bool:
         """Report whether an existing registry file is present but unreadable.
@@ -5373,7 +5370,7 @@ class ConfigManager:
         absorbing its ``SPECKIT_<sibling>_*`` env vars into no one. The
         registry is the source of truth for "installed".
 
-        Returns an empty list if the registry is missing or corrupted
+        Returns an empty list if the registry is missing, corrupted, or forbidden
         (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
         to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
         kept alongside ``OSError`` as belt-and-braces: ``_load()`` now starts
@@ -5388,7 +5385,7 @@ class ConfigManager:
         extensions_dir = self.project_root / ".specify" / "extensions"
         try:
             return list(ExtensionRegistry(extensions_dir).keys())
-        except (OSError, UnicodeError):
+        except (OSError, UnicodeError, FileHelperError):
             return []
 
     def _get_env_config(self) -> Dict[str, Any]:

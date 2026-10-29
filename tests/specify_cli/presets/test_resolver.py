@@ -442,6 +442,28 @@ class TestPresetResolver:
         with pytest.raises(PresetValidationError, match="Invalid extension registry"):
             resolver.resolve("custom-template")
 
+    @pytest.mark.parametrize("parent", [".specify", "extensions"])
+    @pytest.mark.parametrize("target_exists", [False, True])
+    def test_linked_registry_parent_does_not_fall_back_to_core(
+        self, project_dir, tmp_path, parent, target_exists
+    ):
+        target = tmp_path / "external"
+        if target_exists:
+            target.mkdir()
+        link = project_dir / ".specify"
+        if parent == "extensions":
+            link /= "extensions"
+        else:
+            import shutil
+            shutil.rmtree(link)
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        with pytest.raises(PresetValidationError, match="Invalid extension registry"):
+            PresetResolver(project_dir)._get_all_extensions_by_priority()
+
     def test_resolve_pack_over_extension(self, project_dir, pack_dir, temp_dir, valid_pack_data):
         """Test that pack templates take priority over extension templates."""
         # Create extension with templates

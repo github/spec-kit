@@ -17,10 +17,10 @@ def extension_enable(
     extension: str = typer.Argument(help="Extension ID or name to enable"),
 ):
     """Enable a disabled extension."""
-    from . import ExtensionError, ExtensionManager, HookExecutor
+    from . import ExtensionError, HookExecutor
 
     project_root = _commands._require_specify_project()
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     hook_executor = HookExecutor(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)

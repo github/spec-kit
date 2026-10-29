@@ -19,10 +19,8 @@ def extension_remove(
     force: bool = typer.Option(False, "--force", help="Skip confirmation"),
 ):
     """Uninstall an extension."""
-    from . import ExtensionManager
-
     project_root = _commands._require_specify_project()
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
 
     # Resolve extension ID from argument (handles ambiguous names)
     installed = manager.list_installed()

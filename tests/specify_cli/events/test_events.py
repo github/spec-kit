@@ -1506,6 +1506,45 @@ class TestOpencodePluginMerging:
 class TestCommandRunner:
     """Test the core command/script resolution and runner."""
 
+    @pytest.mark.parametrize("probe", ["disabled_ids", "manifest"])
+    def test_linked_registry_cannot_execute_disabled_command(
+        self, tmp_path, monkeypatch, capsys, probe
+    ):
+        import specify_cli.events as events
+
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        commands = extensions_dir / "disabled" / "commands"
+        commands.mkdir(parents=True)
+        (commands / "speckit.disabled.boot.md").write_text(
+            "---\nscripts:\n  sh: scripts/boot.sh\n---\n", encoding="utf-8"
+        )
+        external = tmp_path / "external-registry"
+        external.write_text(
+            '{"extensions": {"disabled": {"enabled": false}}}', encoding="utf-8"
+        )
+        try:
+            (extensions_dir / ".registry").symlink_to(external)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+        execute = MagicMock()
+        execute.return_value.stdout = ""
+        execute.return_value.stderr = ""
+        execute.return_value.returncode = 0
+        monkeypatch.setattr(events.subprocess, "run", execute)
+        monkeypatch.setattr(events, "_resolve_event_command_argv", lambda *args: ["unused"])
+        if probe == "manifest":
+            monkeypatch.setattr(events, "_disabled_extension_ids", lambda _: set())
+
+        result = resolve_and_run_event_command(
+            "speckit.disabled.boot", "session_start", "{}", tmp_path
+        )
+
+        assert result == 2
+        execute.assert_not_called()
+        output = capsys.readouterr()
+        assert output.out == ""
+        assert "symlink" in output.err
+
     def test_run_command_not_found(self, tmp_path):
         code = resolve_and_run_event_command("nonexistent.command", "session_start", "{}", tmp_path)
         assert code == 0  # no-ops gracefully

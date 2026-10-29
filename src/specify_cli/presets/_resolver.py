@@ -164,9 +164,6 @@ class PresetResolver:
         Returns:
             List of (priority, ext_id, metadata_or_none) tuples sorted by priority.
         """
-        if not self.extensions_dir.exists():
-            return []
-
         try:
             registry = ExtensionRegistry(self.extensions_dir)
         except FileHelperError as exc:
@@ -174,6 +171,8 @@ class PresetResolver:
                 f"Invalid extension registry {self.extensions_dir / ExtensionRegistry.REGISTRY_FILE}: "
                 f"{exc}"
             ) from exc
+        if not self.extensions_dir.exists():
+            return []
         # Fail closed on a corrupt registry. ExtensionRegistry._load() recovers
         # by normalizing an unreadable registry to an empty mapping, which would
         # otherwise cause the directory scan below to admit every on-disk

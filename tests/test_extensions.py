@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 from specify_cli import extensions as _ext_module
@@ -43,7 +44,7 @@ from specify_cli.extensions import (
     normalize_priority,
 )
 from specify_cli._utils import version_satisfies
-from specify_cli.file_helper import SymlinkDeniedError
+from specify_cli.file_helper import SymlinkDeniedError, UnsupportedPathError
 
 # Minimal valid ZIP (empty end-of-central-directory record). Passes
 # zipfile.is_zipfile() so --from download tests exercise the content guard.
@@ -1323,6 +1324,37 @@ class TestExtensionManifestTemplatesAndScripts:
 
 class TestExtensionRegistry:
     """Test ExtensionRegistry operations."""
+
+    @pytest.mark.parametrize("parent", [".specify", "extensions"])
+    @pytest.mark.parametrize("leaf", ["missing", "directory"])
+    def test_load_rejects_parent_reparse_before_leaf_recovery(
+        self, tmp_path, monkeypatch, parent, leaf
+    ):
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        if leaf == "directory":
+            (extensions_dir / ".registry").mkdir()
+        reparse = tmp_path / ".specify" if parent == ".specify" else extensions_dir
+        lstat = Path.lstat
+
+        def reparse_lstat(path, **kwargs):
+            entry = lstat(path, **kwargs)
+            if path == reparse:
+                return SimpleNamespace(st_mode=entry.st_mode, st_file_attributes=0x400)
+            return entry
+
+        monkeypatch.setattr(Path, "lstat", reparse_lstat)
+        with pytest.raises(UnsupportedPathError, match="reparse"):
+            ExtensionRegistry(extensions_dir)
+
+    def test_load_recovers_ordinary_registry_directory(self, tmp_path):
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        (extensions_dir / ".registry").mkdir(parents=True)
+
+        registry = ExtensionRegistry(extensions_dir)
+
+        assert registry.keys() == set()
+        assert registry.is_corrupt()
 
     @pytest.mark.parametrize("linked_entry", [".specify", "extensions", ".registry"])
     @pytest.mark.parametrize("target_exists", [False, True])
@@ -9048,6 +9080,22 @@ class TestConfigManagerCrossExtensionEnvLeak:
         # truth for "installed" (a bare directory can be a config-only leftover
         # from ``ExtensionManager.remove(..., keep_config=True)``).
         ExtensionRegistry(extensions_dir).add(ext_id, {})
+
+    def test_linked_registry_does_not_crash_config_read(self, tmp_path, monkeypatch):
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        external = tmp_path / "external-registry"
+        external.write_text('{"extensions": {"git-hooks": {}}}', encoding="utf-8")
+        try:
+            (extensions_dir / ".registry").symlink_to(external)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "value")
+
+        assert ConfigManager(tmp_path, "git")._get_env_config() == {
+            "hooks": {"url": "value"},
+        }
+        assert external.read_text(encoding="utf-8") == '{"extensions": {"git-hooks": {}}}'
 
     def test_sibling_owns_longer_prefix_env(self, tmp_path, monkeypatch):
         """SPECKIT_GIT_HOOKS_URL belongs to git-hooks when co-installed with git."""

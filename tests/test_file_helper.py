@@ -3,6 +3,7 @@
 from dataclasses import FrozenInstanceError
 import errno
 import os
+import stat
 from pathlib import Path, PureWindowsPath
 import subprocess
 from types import SimpleNamespace
@@ -58,6 +59,33 @@ def test_plain_operations(root, allow):
     assert not (root / "binary").exists()
     files.delete("nested", recursive=True)
     assert list(root.iterdir()) == []
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_stat_reads_metadata_without_creating_missing_paths(root, allow):
+    files = FileHelper(root, allow_symlinks=allow)
+    (root / "file").write_bytes(b"content")
+
+    assert files.stat("file").st_size == 7
+    assert stat.S_ISREG(files.stat("file").st_mode)
+    assert stat.S_ISDIR(files.stat(root).st_mode)
+    with pytest.raises(FileNotFoundError):
+        files.stat("missing/child")
+    assert not (root / "missing").exists()
+    with pytest.raises(PathEscapeError):
+        files.stat("../outside")
+
+
+def test_stat_follows_only_allowed_contained_links(root, link):
+    target = root / "file"
+    target.write_bytes(b"content")
+    alias = link(root / "alias", target)
+
+    assert FileHelper(root, allow_symlinks=True).stat(alias) == target.stat()
+    external = root.parent / "outside"
+    external.write_bytes(b"external")
+    outside_alias = link(root / "outside-alias", external)
+    with pytest.raises(PathEscapeError):
+        FileHelper(root, allow_symlinks=True).stat(outside_alias)
 
 
 @pytest.mark.parametrize("allow", [False, True])
@@ -164,7 +192,7 @@ def test_overwrite_text_rejects_invalid_destination(root, path, allow):
     assert (root / "directory").is_dir()
 
 
-@pytest.mark.parametrize("operation", ["read_bytes", "write_bytes", "create_bytes", "mkdir", "delete"])
+@pytest.mark.parametrize("operation", ["stat", "read_bytes", "write_bytes", "create_bytes", "mkdir", "delete"])
 @pytest.mark.parametrize("kind", ["leaf", "parent", "dangling"])
 def test_deny_rejects_accessed_links_without_mutation(root, link, operation, kind):
     target = root / "target"
@@ -960,6 +988,8 @@ def test_directory_reparse_entries_rejected_before_traversal_portably(
     monkeypatch.setattr(Path, "lstat", directory_reparse)
     files = FileHelper(root, allow_symlinks=allow)
     for operation in (
+        lambda: files.stat(junction / "keep"),
+        lambda: files.stat(junction / "missing"),
         lambda: files.read_bytes(junction / "keep"),
         lambda: files.write_bytes(junction / "keep", b"bad"),
         lambda: files.overwrite_text(junction / "keep", "bad"),
@@ -1036,6 +1066,8 @@ def test_native_windows_junctions_never_traversed_or_deleted(root, junction, all
     alias = junction(tree / "z-junction", target)
     files = FileHelper(root, allow_symlinks=allow)
     for operation in (
+        lambda: files.stat(alias / "keep"),
+        lambda: files.stat(alias / "missing"),
         lambda: files.read_text(alias / "keep"),
         lambda: files.write_text(alias / "keep", "bad"),
         lambda: files.create_text(alias / "new", "bad"),

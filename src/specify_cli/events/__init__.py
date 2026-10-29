@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 import typer
 
+from ..file_helper import FileHelperError
 from ..integrations._file_changes import unlink as _unlink_file, write_text as _write_text
 
 if TYPE_CHECKING:
@@ -559,6 +560,8 @@ def _find_command_template(command_name: str, project_root: Path) -> tuple[Path 
                     candidate = exts_dir / ext_id / cmd["file"]
                     if candidate.exists():
                         return candidate, ext_id
+    except FileHelperError:
+        raise
     except Exception:
         # Fall through to the on-disk scan if the registry/manifests can't be
         # read; event dispatch should degrade gracefully, not crash.
@@ -789,7 +792,11 @@ def resolve_and_run_event_command(
     by the Claude Code hooks spec Gemini/Tabnine/Devin derive from). Only
     used when *envelope* is ``hookSpecificOutput``.
     """
-    template_path, ext_id = _find_command_template(command_name, project_root)
+    try:
+        template_path, ext_id = _find_command_template(command_name, project_root)
+    except FileHelperError as exc:
+        sys.stderr.write(f"Event command {command_name} error: {exc}\n")
+        return 2
     if not template_path:
         logger.warning("Event command '%s' not found", command_name)
         return 0
@@ -1060,13 +1067,13 @@ def _disabled_extension_ids(project_root: Path) -> set[str]:
 
     exts_dir = project_root / ".specify" / "extensions"
     disabled_ids: set[str] = set()
-    if not exts_dir.is_dir():
-        return disabled_ids
     try:
         registry = ExtensionRegistry(exts_dir)
         for ext_id, meta in registry.list_by_priority(include_disabled=True):
             if not isinstance(meta, dict) or not meta.get("enabled", True):
                 disabled_ids.add(ext_id)
+    except FileHelperError:
+        raise
     except Exception:
         pass
     return disabled_ids

@@ -95,8 +95,12 @@ policy. For a not-yet-created project, the nearest existing ancestor supplies
 the root without creating storage during reads. Writes validate the destination
 before file-change observers run and preserve the existing non-atomic text-write
 and metadata semantics. Missing or malformed registries retain their recovery
-behavior; symlink policy violations
-are errors, not empty registries. This boundary has the portable helper's
+behavior, but parent policy is validated even for a missing or directory-valued
+registry. Artifact inventory, template resolution, and event command resolution
+fail closed on forbidden storage. CLI commands preserve their diagnostics and
+JSON error envelopes; warning-only dependency and configuration probes preserve
+their no-results fallback without reading through forbidden paths.
+This boundary has the portable helper's
 concurrent-mutation limits described below.
 
 ```python
@@ -147,6 +151,7 @@ helpers for independent project/source/managed boundaries.
 
 | Operation | Default deny | Explicit allow |
 |---|---|---|
+| Read metadata | Reject accessed parent or leaf links | Follow only existing contained regular-file or directory targets |
 | Read file | Reject accessed parent or leaf links | Follow only existing contained regular-file targets |
 | Create directory | Reject accessed links before creating parents | Follow contained directory links; reject dangling targets |
 | Exclusively create file | Reject accessed links | Follow contained parents; reject an existing leaf without opening its target |
@@ -159,6 +164,8 @@ helpers for independent project/source/managed boundaries.
 ## API and failures
 
 - `mkdir(path, parents=False, exist_ok=False)` creates directories.
+- `stat(path)` reads file or directory metadata after applying the accessed-path
+  policy to the full hierarchy, including when a later component is missing.
 - `read_bytes(path)` / `read_text(path, encoding="utf-8")` read regular files.
 - `create_bytes(path, content, mode=0o644)` / `create_text(...)` exclusively
   create files with existing parents. A no-follow `lstat` preflight rejects

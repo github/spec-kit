@@ -40,6 +40,17 @@ def _require_specify_project(*args, **kwargs):
     from .. import _require_specify_project as _f
     return _f(*args, **kwargs)
 
+def _extension_manager(project_root: Path):
+    """Translate registry policy failures for human-readable CLI commands."""
+    from ..file_helper import FileHelperError
+    from . import ExtensionManager
+
+    try:
+        return ExtensionManager(project_root)
+    except FileHelperError as exc:
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1) from exc
+
 
 def _locate_bundled_extension(*args, **kwargs):
     from .. import _locate_bundled_extension as _f

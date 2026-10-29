@@ -159,6 +159,10 @@ class FileHelper:
         destination = self._path(path, allow_missing=True)
         destination.mkdir(parents=parents, exist_ok=exist_ok)
 
+    def stat(self, path: Path | str) -> os.stat_result:
+        """Read metadata under the same traversal policy as file contents."""
+        return self._path(path).stat()
+
     def read_bytes(self, path: Path | str) -> bytes:
         destination = self._path(path)
         self._require_file(destination)

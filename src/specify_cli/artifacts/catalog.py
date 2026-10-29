@@ -210,12 +210,14 @@ def _validate_project(project_root: Path) -> None:
 
 def _validate_extension_registry(project_root: Path) -> None:
     extensions_dir = project_root / ".specify" / "extensions"
-    if not extensions_dir.exists():
-        return
-
     from ..extensions import ExtensionRegistry
+    from ..file_helper import FileHelperError
 
-    if ExtensionRegistry(extensions_dir).is_corrupt():
+    try:
+        registry = ExtensionRegistry(extensions_dir)
+    except FileHelperError as exc:
+        raise ArtifactResolutionError() from exc
+    if registry.is_corrupt():
         raise ArtifactResolutionError()
 
 

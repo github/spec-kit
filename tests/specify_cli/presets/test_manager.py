@@ -769,6 +769,22 @@ class TestPresetExtensionDependencies:
             manifest
         ) == []
 
+    def test_linked_registry_does_not_abort_dependency_probe(
+        self, project_dir, temp_dir, valid_pack_data, tmp_path
+    ):
+        manifest = self._manifest(temp_dir, valid_pack_data, ["speckit-inventory"])
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True, exist_ok=True)
+        external = tmp_path / "external-registry"
+        external.write_text('{"extensions": {}}', encoding="utf-8")
+        try:
+            (extensions_dir / ".registry").symlink_to(external)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        assert PresetManager(project_dir).find_unmet_extension_dependencies(manifest) == []
+        assert external.read_text(encoding="utf-8") == '{"extensions": {}}'
+
 
 
     def test_exact_duplicate_declarations_warn_once(
