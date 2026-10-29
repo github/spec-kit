@@ -1,18 +1,45 @@
 """Command tests for ``specify self upgrade``."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
 
 from specify_cli import app
-from tests.specify_cli.self_upgrade_helpers import runner, strip_ansi
+from tests.specify_cli.self_upgrade_helpers import _InstallMethod, runner, strip_ansi
+
+
+@pytest.mark.parametrize(("method", "name"), [("uv-tool", "uv"), ("pipx", "pipx")])
+@pytest.mark.parametrize("absolute", [False, True])
+def test_unsafe_installer_lookup_aborts_without_execution(
+    monkeypatch, tmp_path, method, name, absolute
+):
+    monkeypatch.chdir(tmp_path)
+    decoy = tmp_path / name
+    decoy.write_text("decoy; must never be executed\n", encoding="utf-8")
+    decoy.chmod(0o755)
+    unsafe_path = str(decoy) if absolute else f"./{name}"
+
+    with patch(
+        "specify_cli._version._detect_install_method",
+        return_value=_InstallMethod(method),
+    ), patch(
+        "specify_cli._version.shutil.which", return_value=unsafe_path
+    ), patch(
+        "specify_cli._version._get_installed_version", return_value="0.7.5"
+    ), patch("specify_cli._version.subprocess.run") as mock_run:
+        result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+
+    assert result.exit_code == 3
+    assert f"Installer {name} not found on PATH" in strip_ansi(result.output)
+    mock_run.assert_not_called()
 
 
 class TestTagValidation:
     """--tag option parsing and command help."""
 
     def test_valid_stable_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -22,7 +49,7 @@ class TestTagValidation:
         assert result.exit_code == 0
 
     def test_valid_dev_suffix_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -33,7 +60,7 @@ class TestTagValidation:
         assert "Target version: v0.8.0.dev0" in strip_ansi(result.output)
 
     def test_valid_rc_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -45,7 +72,7 @@ class TestTagValidation:
     def test_valid_beta_dot_tag_uses_pep440_equivalent_for_noop(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0b1"
         ):
             result = runner.invoke(
@@ -58,7 +85,7 @@ class TestTagValidation:
         )
 
     def test_valid_build_metadata_tag(self, uv_tool_argv0, clean_environ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -71,7 +98,7 @@ class TestTagValidation:
     def test_uppercase_v_prefix_is_folded_to_lowercase(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -84,7 +111,7 @@ class TestTagValidation:
     def test_valid_prerelease_with_build_metadata_tag(
         self, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=sys.executable), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(

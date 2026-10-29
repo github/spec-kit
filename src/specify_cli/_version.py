@@ -477,6 +477,19 @@ def _editable_marker_seen() -> bool:
     return editable_root is not None and _git_ancestor(editable_root) is not None
 
 
+def _find_installer(name: str) -> str | None:
+    """Resolve an installer without trusting working-directory executables."""
+    resolved = shutil.which(name)
+    if resolved is None:
+        return None
+    installer = Path(resolved)
+    # Windows lookup may prepend cwd even when PATH contains only absolute
+    # directories. Never absolutize that result or fall back to a bare command.
+    if not installer.is_absolute() or installer.resolve().parent == Path.cwd().resolve():
+        return None
+    return resolved
+
+
 def _detect_install_method(
     argv0: str | None = None,
     include_signals: bool = False,
@@ -530,7 +543,7 @@ def _detect_install_method(
     consulted: list[str] = []
     if _tier3_registry_lookup_allowed(argv0_path):
         uv_tool_match = False
-        uv_bin = shutil.which("uv")
+        uv_bin = _find_installer("uv")
         if uv_bin is not None:
             consulted.append("uv tool list")
             try:
@@ -550,7 +563,7 @@ def _detect_install_method(
                 pass
 
         pipx_match = False
-        pipx_bin = shutil.which("pipx")
+        pipx_bin = _find_installer("pipx")
         if pipx_bin is not None:
             consulted.append("pipx list --json")
             try:
@@ -631,7 +644,7 @@ def _assemble_installer_argv(
     source_spec = _source_spec(target_tag)
 
     if method == _InstallMethod.UV_TOOL:
-        uv_bin = shutil.which("uv")
+        uv_bin = _find_installer("uv")
         if uv_bin is None:
             return None
         return [
@@ -647,7 +660,7 @@ def _assemble_installer_argv(
     if method == _InstallMethod.PIPX:
         # pipx 1.5+ removed `--spec`; PACKAGE_SPEC is now positional and the
         # package name is auto-detected from the source's pyproject.toml.
-        pipx_bin = shutil.which("pipx")
+        pipx_bin = _find_installer("pipx")
         if pipx_bin is None:
             return None
         return [
