@@ -485,6 +485,30 @@ def _find_installer(name: str) -> str | None:
     """Find an installer outside the working directory and current Git tree."""
     cwd = Path.cwd().resolve()
     project_root = _git_ancestor(cwd)
+
+    def outside_project(path: Path) -> bool:
+        if project_root is None:
+            return True
+        pending = [path]
+        seen: set[Path] = set()
+        while pending:
+            current = pending.pop()
+            for ancestor in (current, *current.parents):
+                if ancestor in seen:
+                    continue
+                seen.add(ancestor)
+                if ancestor.is_relative_to(
+                    project_root
+                ) or ancestor.resolve().is_relative_to(project_root):
+                    return False
+                if ancestor.is_symlink():
+                    # Preserve intermediate targets when links enter and then leave the worktree.
+                    target = ancestor.readlink()
+                    pending.append(
+                        target if target.is_absolute() else ancestor.parent / target
+                    )
+        return True
+
     suffixes = [""]
     if sys.platform == "win32":
         # Python 3.11's which() does not expand PATHEXT for absolute commands.
@@ -500,20 +524,25 @@ def _find_installer(name: str) -> str | None:
         if sys.platform == "win32":
             entry = entry.strip('"')
         directory = Path(entry)
-        if not directory.is_absolute():
-            continue
-        resolved_directory = directory.resolve()
-        if directory == cwd or resolved_directory == cwd:
-            continue
-        if project_root is not None and (
-            directory.is_relative_to(project_root)
-            or resolved_directory.is_relative_to(project_root)
+        if (
+            not directory.is_absolute()
+            or directory.resolve() == cwd
+            or not outside_project(directory)
         ):
             continue
         for suffix in suffixes:
             found = shutil.which(str(directory / f"{name}{suffix}"))
             if found is not None:
-                return found
+                executable = Path(found)
+                if not executable.is_absolute():
+                    continue
+                resolved_executable = executable.resolve()
+                if (
+                    executable.parent.resolve() != cwd
+                    and resolved_executable.parent != cwd
+                    and outside_project(executable)
+                ):
+                    return str(resolved_executable)
     return None
 
 

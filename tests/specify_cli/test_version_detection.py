@@ -84,6 +84,7 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_when_registry_lists_exact_name(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
@@ -91,10 +92,10 @@ class TestDetectionUvTool:
 
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "uv" if name == "uv" else None
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -113,12 +114,12 @@ class TestDetectionUvTool:
         assert signals.matched_tier == 3
         assert "uv tool list" in signals.installer_registries_consulted
 
-    def test_unresolved_bare_argv0_skips_tier3_registry_detection(self, monkeypatch):
+    def test_unresolved_bare_argv0_skips_tier3_registry_detection(self, installer_paths, monkeypatch):
         monkeypatch.setattr("sys.argv", ["specify"])
 
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "uv" if name == "uv" else None
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
             return subprocess.CompletedProcess(
@@ -136,7 +137,7 @@ class TestDetectionUvTool:
         assert signals.installer_registries_consulted == ()
 
     def test_bare_argv0_missing_path_resolution_allows_tier3_registry_detection(
-        self, monkeypatch, tmp_path
+        self, installer_paths, monkeypatch, tmp_path
     ):
         missing_specify = tmp_path / "missing" / "specify"
         monkeypatch.setattr("sys.argv", ["specify"])
@@ -146,11 +147,11 @@ class TestDetectionUvTool:
             if name == "specify":
                 return str(missing_specify)
             if name == "uv":
-                return "uv"
+                return installer_paths["uv"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -196,14 +197,15 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_ignores_substring_false_positive(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "uv" if name == "uv" else None
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -222,14 +224,15 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_does_not_override_absolute_unsupported_entrypoint(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "uv" if name == "uv" else None
+            return installer_paths["uv"] if name == "uv" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -248,6 +251,7 @@ class TestDetectionUvTool:
 
     def test_tier3_uv_tool_does_not_override_resolved_bare_unsupported_entrypoint(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
@@ -263,11 +267,11 @@ class TestDetectionUvTool:
             if name == "specify":
                 return str(fake_specify)
             if name == "uv":
-                return "uv"
+                return installer_paths["uv"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -332,11 +336,11 @@ class TestArgv0Resolution:
 class TestArgvAssemblyUvTool:
     """uv-tool installer argv shape."""
 
-    def test_stable_tag_produces_expected_argv(self):
-        with patch("specify_cli._version.shutil.which", return_value="uv"):
+    def test_stable_tag_produces_expected_argv(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6")
         assert argv == [
-            "uv",
+            installer_paths["uv"],
             "tool",
             "install",
             "specify-cli",
@@ -345,8 +349,8 @@ class TestArgvAssemblyUvTool:
             "git+https://github.com/github/spec-kit.git@v0.7.6",
         ]
 
-    def test_dev_suffix_tag_embedded_literally(self):
-        with patch("specify_cli._version.shutil.which", return_value="uv"):
+    def test_dev_suffix_tag_embedded_literally(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]):
             argv = _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.8.0.dev0")
         assert "git+https://github.com/github/spec-kit.git@v0.8.0.dev0" in argv
         assert (
@@ -365,6 +369,152 @@ class TestInstallerLookupSecurity:
         executable.write_bytes(b"installer lookup fixture; never executed\n")
         executable.chmod(0o755)
         return executable
+
+    @pytest.mark.parametrize(
+        "method,name",
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize(
+        "kind",
+        ["aliased-directory", "directory-target", "file", "file-aliased-directory"],
+    )
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_symlink_bypasses_are_rejected(
+        self, monkeypatch, tmp_path, method, name, kind, operation, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        try:
+            if kind != "file":
+                self.executable(external, name)
+                (project / "bin").symlink_to(external, target_is_directory=True)
+                alias = tmp_path / "alias"
+                alias.symlink_to(project, target_is_directory=True)
+                if kind == "aliased-directory":
+                    unsafe = alias / "bin"
+                elif kind == "directory-target":
+                    unsafe = tmp_path / "directory-target"
+                    unsafe.symlink_to(project / "bin", target_is_directory=True)
+                else:
+                    unsafe = tmp_path / "file-bin"
+                    unsafe.mkdir()
+                    executable_name = f"{name}.exe" if os.name == "nt" else name
+                    (unsafe / executable_name).symlink_to(
+                        alias / "bin" / executable_name
+                    )
+            else:
+                malicious = self.executable(project, name)
+                (external / malicious.name).symlink_to(malicious)
+                unsafe = external
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(unsafe), str(trusted)] if fallback else [str(unsafe)]),
+        )
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                argv = _assemble_installer_argv(method, "v0.7.6")
+                if fallback:
+                    assert argv is not None
+                    assert Path(argv[0]) == expected
+                else:
+                    assert argv is None
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                detected = _detect_install_method()
+                assert detected == (method if fallback else _InstallMethod.UNSUPPORTED)
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method", return_value=method
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == (0 if fallback else 3)
+                if not fallback:
+                    assert f"Installer {name} not found on PATH" in strip_ansi(
+                        result.output
+                    )
+
+        if fallback:
+            run.assert_called_once()
+            assert Path(run.call_args.args[0][0]) == expected
+        else:
+            run.assert_not_called()
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_external_file_symlink_is_resolved_and_accepted(
+        self, monkeypatch, tmp_path, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        installed = tmp_path / "installed"
+        installed.mkdir()
+        expected = self.executable(installed, name)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        try:
+            (bin_dir / expected.name).symlink_to(expected)
+        except OSError:
+            pytest.skip("file symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        found = specify_cli._version._find_installer(name)
+
+        assert found is not None
+        assert Path(found) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_relative_lookup_result_is_rejected(self, monkeypatch, tmp_path, name):
+        project = tmp_path / "project"
+        project.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(trusted))
+        with patch("specify_cli._version.shutil.which", return_value=name):
+            assert specify_cli._version._find_installer(name) is None
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_file_symlink_to_non_project_cwd_is_rejected(
+        self, monkeypatch, tmp_path, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        malicious = self.executable(project, name)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        try:
+            (bin_dir / malicious.name).symlink_to(malicious)
+        except OSError:
+            pytest.skip("file symlinks are unavailable")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        assert specify_cli._version._find_installer(name) is None
 
     @pytest.mark.parametrize(
         "method,name",
@@ -680,9 +830,9 @@ class TestInstallerLookupSecurity:
 class TestBareUpgradeUvTool:
     """uv-tool happy path, bare invocation."""
 
-    def test_happy_path_end_to_end(self, uv_tool_argv0, clean_environ):
+    def test_happy_path_end_to_end(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -701,11 +851,11 @@ class TestBareUpgradeUvTool:
         for call in mock_run.call_args_list:
             assert call.kwargs.get("shell", False) is False
 
-    def test_one_user_action_no_prompt(self, uv_tool_argv0, clean_environ):
+    def test_one_user_action_no_prompt(self, installer_paths, uv_tool_argv0, clean_environ):
         # The single `invoke` represents the single user action — no prompt.
         # If a prompt existed, runner.invoke would hang waiting for input.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -722,12 +872,12 @@ class TestAlreadyLatestUvTool:
     """already on latest, no installer launched."""
 
     def test_already_latest_exits_zero_no_subprocess(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.6"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -737,7 +887,7 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_trailing_zero_equivalent_version_reports_latest_not_newer(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         # Version("1.0") == Version("1.0.0") under packaging even though their
         # canonical strings differ. The no-op message must use Version equality
@@ -745,7 +895,7 @@ class TestAlreadyLatestUvTool:
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="1.0"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v1.0.0"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -757,12 +907,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_dev_build_ahead_of_release_reports_newer_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.7.dev0"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -772,12 +922,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_unparseable_current_version_does_not_false_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             mock_run.side_effect = [
@@ -793,12 +943,12 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 2
 
     def test_unparseable_resolved_target_fails_before_literal_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="release-main"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "release-main"})
             result = runner.invoke(app, ["self", "upgrade"])
@@ -811,9 +961,9 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 0
 
     def test_pinned_older_tag_still_runs_installer(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.6"
@@ -833,9 +983,9 @@ class TestAlreadyLatestUvTool:
         assert mock_run.call_count == 2
 
     def test_pinned_rc_tag_uses_canonical_version_equality_for_noop(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
-        with patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version._get_installed_version", return_value="1.0.0rc1"
         ):
             result = runner.invoke(app, ["self", "upgrade", "--tag", "v1.0.0-rc1"])
@@ -849,13 +999,14 @@ class TestDryRunUvTool:
 
     def test_dry_run_without_tag_resolves_network_but_no_subprocess(
         self,
+        installer_paths,
         uv_tool_argv0,
         clean_environ,
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
             result = runner.invoke(app, ["self", "upgrade", "--dry-run"])
@@ -869,11 +1020,11 @@ class TestDryRunUvTool:
         assert "Command that would be executed:" in out
         assert mock_run.call_count == 0
 
-    def test_dry_run_with_tag_skips_network(self, uv_tool_argv0, clean_environ):
+    def test_dry_run_with_tag_skips_network(self, installer_paths, uv_tool_argv0, clean_environ):
         # --dry-run with --tag must NOT hit the network.
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
-        ), patch("specify_cli._version.shutil.which", return_value="uv"), patch(
+        ), patch("specify_cli._version.shutil.which", return_value=installer_paths["uv"]), patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
             result = runner.invoke(
@@ -885,12 +1036,12 @@ class TestDryRunUvTool:
         mock_urlopen.assert_not_called()
 
     def test_dry_run_rejects_unparseable_network_tag_before_preview(
-        self, uv_tool_argv0, clean_environ
+        self, installer_paths, uv_tool_argv0, clean_environ
     ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
             "specify_cli._version.subprocess.run"
         ) as mock_run, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version._get_installed_version", return_value="0.7.5"):
             mock_urlopen.return_value = mock_urlopen_response(
                 {"tag_name": "v0.9.0;echo unsafe"}
@@ -937,6 +1088,7 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_when_no_prefix_match_but_registry_lists_it(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
@@ -944,10 +1096,10 @@ class TestDetectionPipx:
 
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "pipx" if name == "pipx" else None
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["pipx", "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -968,14 +1120,15 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_does_not_override_absolute_unsupported_entrypoint(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "pipx" if name == "pipx" else None
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["pipx", "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -994,14 +1147,15 @@ class TestDetectionPipx:
 
     def test_tier3_pipx_ignores_malformed_json_output(
         self,
+        installer_paths,
         unsupported_argv0,
     ):
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
-            return "pipx" if name == "pipx" else None
+            return installer_paths["pipx"] if name == "pipx" else None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["pipx", "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -1020,6 +1174,7 @@ class TestDetectionPipx:
 
     def test_tier3_both_uv_tool_and_pipx_match_is_treated_as_unsupported(
         self,
+        installer_paths,
         monkeypatch,
         tmp_path,
     ):
@@ -1028,20 +1183,20 @@ class TestDetectionPipx:
         def fake_which(name):
             name = Path(name).stem if Path(name).is_absolute() else name
             if name == "uv":
-                return "uv"
+                return installer_paths["uv"]
             if name == "pipx":
-                return "pipx"
+                return installer_paths["pipx"]
             return None
 
         def fake_run(argv, *args, **kwargs):
-            if argv[:3] == ["uv", "tool", "list"]:
+            if argv[:3] == [installer_paths["uv"], "tool", "list"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
                     stdout="specify-cli v0.7.6\n",
                     stderr="",
                 )
-            if argv[:3] == ["pipx", "list", "--json"]:
+            if argv[:3] == [installer_paths["pipx"], "list", "--json"]:
                 return subprocess.CompletedProcess(
                     args=argv,
                     returncode=0,
@@ -1128,9 +1283,9 @@ class TestEditableInstallMetadata:
 
 
 class TestTagValidationWhitespace:
-    def test_tag_whitespace_is_trimmed_before_validation(self, uv_tool_argv0, clean_environ):
+    def test_tag_whitespace_is_trimmed_before_validation(self, installer_paths, uv_tool_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="uv"
+            "specify_cli._version.shutil.which", return_value=installer_paths["uv"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -1148,11 +1303,11 @@ class TestTagValidationWhitespace:
 class TestArgvAssemblyPipx:
     """pipx installer argv shape — pipx 1.5+ uses positional PACKAGE_SPEC, never `--spec` or `upgrade`."""
 
-    def test_pipx_argv_uses_install_force_positional_not_upgrade(self):
-        with patch("specify_cli._version.shutil.which", return_value="pipx"):
+    def test_pipx_argv_uses_install_force_positional_not_upgrade(self, installer_paths):
+        with patch("specify_cli._version.shutil.which", return_value=installer_paths["pipx"]):
             argv = _assemble_installer_argv(_InstallMethod.PIPX, "v0.7.6")
         assert argv == [
-            "pipx",
+            installer_paths["pipx"],
             "install",
             "--force",
             "git+https://github.com/github/spec-kit.git@v0.7.6",
@@ -1168,9 +1323,9 @@ class TestArgvAssemblyPipx:
 class TestBareUpgradePipx:
     """pipx happy path."""
 
-    def test_happy_path(self, pipx_argv0, clean_environ):
+    def test_happy_path(self, installer_paths, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="pipx"
+            "specify_cli._version.shutil.which", return_value=installer_paths["pipx"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):
@@ -1204,9 +1359,9 @@ class TestDetectionShortCircuit:
 
 
 class TestDryRunPipx:
-    def test_dry_run_preview_names_pipx(self, pipx_argv0, clean_environ):
+    def test_dry_run_preview_names_pipx(self, installer_paths, pipx_argv0, clean_environ):
         with patch("specify_cli.authentication.http.urllib.request.urlopen") as mock_urlopen, patch(
-            "specify_cli._version.shutil.which", return_value="pipx"
+            "specify_cli._version.shutil.which", return_value=installer_paths["pipx"]
         ), patch("specify_cli._version.subprocess.run") as mock_run, patch(
             "specify_cli._version._get_installed_version", return_value="0.7.5"
         ):

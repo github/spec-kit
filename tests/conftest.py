@@ -176,6 +176,19 @@ def clean_environ(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
 
+@pytest.fixture
+def installer_paths(tmp_path):
+    bin_dir = tmp_path / "installer-bin"
+    bin_dir.mkdir()
+    paths = {}
+    for name in ("uv", "pipx"):
+        executable = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
+        executable.write_bytes(b"installer fixture; never executed\n")
+        executable.chmod(0o755)
+        paths[name] = str(executable)
+    return paths
+
+
 def _fake_self_upgrade_argv0(monkeypatch, tmp_path, env_name, path_parts):
     """Create a fake executable under tmp_path and point sys.argv[0] at it."""
     monkeypatch.setenv(env_name, str(tmp_path))
