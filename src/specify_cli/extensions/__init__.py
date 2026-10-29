@@ -324,7 +324,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not re.fullmatch(r"[a-z0-9-]+", ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"

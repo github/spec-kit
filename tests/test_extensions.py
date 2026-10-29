@@ -384,11 +384,25 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="not valid UTF-8"):
             ExtensionManifest(manifest_path)
 
-    def test_invalid_extension_id(self, temp_dir, valid_manifest_data):
+    @pytest.mark.parametrize(
+        "extension_id",
+        [
+            "Invalid_ID",
+            "",
+            "../test-ext",
+            "test-ext\n",
+            "test-ext\r\n",
+            "test\next",
+            "test-ext ",
+            " test-ext",
+        ],
+    )
+    def test_invalid_extension_id(self, temp_dir, valid_manifest_data, extension_id):
         """Test manifest with invalid extension ID format."""
         import yaml
 
-        valid_manifest_data["extension"]["id"] = "Invalid_ID"  # Uppercase not allowed
+        valid_manifest_data["extension"]["id"] = extension_id
+        valid_manifest_data["provides"]["commands"] = []
 
         manifest_path = temp_dir / "extension.yml"
         with open(manifest_path, 'w') as f:
