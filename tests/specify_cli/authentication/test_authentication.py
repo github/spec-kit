@@ -924,6 +924,15 @@ class TestGitHubAuth:
 
 
 class TestAzureDevOpsAuth:
+    @pytest.fixture(params=["az.exe", "az.cmd"] if os.name == "nt" else ["az"])
+    def az_cli_executable(self, monkeypatch, tmp_path, request):
+        executable = tmp_path / "bin" / request.param
+        executable.parent.mkdir()
+        executable.write_text("test executable", encoding="utf-8")
+        executable.chmod(0o755)
+        monkeypatch.setenv("PATH", str(executable.parent))
+        return executable
+
     def test_basic_pat_headers(self):
         headers = AzureDevOpsAuth().auth_headers("my-pat", "basic-pat")
         encoded = base64.b64encode(b":my-pat").decode("ascii")
@@ -969,7 +978,7 @@ class TestAzureDevOpsAuth:
         assert "azure-cli" in schemes
         assert "azure-ad" in schemes
 
-    def test_resolve_token_azure_cli_success(self):
+    def test_resolve_token_azure_cli_success(self, az_cli_executable):
         """azure-cli acquires token via az CLI."""
         from unittest.mock import patch, MagicMock
         entry = AuthConfigEntry(
@@ -981,7 +990,7 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
             assert AzureDevOpsAuth().resolve_token(entry) == "cli-acquired-token"
 
-    def test_resolve_token_azure_cli_failure_returns_none(self):
+    def test_resolve_token_azure_cli_failure_returns_none(self, az_cli_executable):
         """azure-cli returns None when az CLI fails."""
         from unittest.mock import patch, MagicMock
         entry = AuthConfigEntry(
@@ -993,41 +1002,40 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", return_value=result):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
-    def test_resolve_token_azure_cli_resolves_executable(self):
+    def test_resolve_token_azure_cli_resolves_executable(self, az_cli_executable):
         """The az executable is resolved via shutil.which before invocation, so
         the .cmd/.bat shim on Windows (CreateProcess ignores PATHEXT) is used."""
         from unittest.mock import patch, MagicMock
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
-        # Build the absolute path with the HOST's rules: the production code
-        # calls os.path.isabs(), so a hardcoded Windows path would read as
-        # RELATIVE on POSIX runners and silently exercise the fallback branch
-        # instead of the one under test.
-        resolved_path = os.path.join(os.path.abspath(os.sep), "opt", "az", "az.CMD")
-        assert os.path.isabs(resolved_path)
+        resolved_path = str(az_cli_executable)
         result = MagicMock()
         result.returncode = 0
         result.stdout = '{"accessToken": "tok"}'
         with patch(
             "specify_cli.authentication.azure_devops.shutil.which",
             return_value=resolved_path,
-        ), patch(
+        ) as which, patch(
             "specify_cli.authentication.azure_devops.subprocess.run",
             return_value=result,
         ) as run:
             assert AzureDevOpsAuth().resolve_token(entry) == "tok"
         argv = run.call_args.args[0]
+        which.assert_called_once_with(str(az_cli_executable.parent / "az"))
         assert argv[0] == resolved_path
         assert argv[1:4] == ["account", "get-access-token", "--resource"]
 
-    @pytest.mark.parametrize("which_result", [None, r".\az.CMD", "az.cmd", "./az"])
-    def test_resolve_token_azure_cli_falls_back_to_bare_az(self, which_result):
-        """Fall back to the bare "az" when shutil.which finds nothing OR returns a
-        NON-ABSOLUTE path. On Windows shutil.which searches the current directory
-        first, so a stray .\\az.cmd must never be executed for a credential
-        operation; the bare name also preserves the not-installed OSError path."""
+    @pytest.mark.parametrize(
+        "which_result", [None, r".\az.CMD", r".\az.exe", "az.cmd", "./az", "absolute-cwd"]
+    )
+    def test_resolve_token_azure_cli_rejects_unresolved_executable(
+        self, which_result, az_cli_executable
+    ):
+        """Missing, relative, or current-directory results must not launch a process."""
         from unittest.mock import patch, MagicMock
+        if which_result == "absolute-cwd":
+            which_result = os.path.join(os.getcwd(), "az.exe")
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
@@ -1041,10 +1049,58 @@ class TestAzureDevOpsAuth:
             "specify_cli.authentication.azure_devops.subprocess.run",
             return_value=result,
         ) as run:
-            assert AzureDevOpsAuth().resolve_token(entry) == "tok"
-        assert run.call_args.args[0][0] == "az", which_result
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+        run.assert_not_called()
 
-    def test_resolve_token_azure_cli_not_installed_returns_none(self):
+    @pytest.mark.parametrize("path_entry", ["", ".", "relative-bin", "current", "symlink"])
+    @pytest.mark.parametrize("trusted_install", [False, True])
+    def test_resolve_token_azure_cli_ignores_untrusted_search_directories(
+        self, monkeypatch, tmp_path, az_cli_executable, path_entry, trusted_install
+    ):
+        from unittest.mock import MagicMock, patch
+
+        project = tmp_path / "project"
+        project.mkdir()
+        local_executable = project / az_cli_executable.name
+        local_executable.write_text("untrusted executable", encoding="utf-8")
+        local_executable.chmod(0o755)
+        relative_bin = project / "relative-bin"
+        relative_bin.mkdir()
+        relative_executable = relative_bin / az_cli_executable.name
+        relative_executable.write_text("untrusted executable", encoding="utf-8")
+        relative_executable.chmod(0o755)
+        if path_entry == "current":
+            path_entry = str(project)
+        elif path_entry == "symlink":
+            if os.name == "nt":
+                pytest.skip("Directory symlink creation requires Windows privileges")
+            alias = tmp_path / "project-alias"
+            alias.symlink_to(project, target_is_directory=True)
+            path_entry = str(alias)
+        monkeypatch.chdir(project)
+        search_path = [path_entry]
+        if trusted_install:
+            search_path.append(str(az_cli_executable.parent))
+        monkeypatch.setenv("PATH", os.pathsep.join(search_path))
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout='{"accessToken": "tok"}')
+
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            token = AzureDevOpsAuth().resolve_token(entry)
+
+        if trusted_install:
+            assert token == "tok"
+            assert run.call_args.args[0][0] == str(az_cli_executable)
+        else:
+            assert token is None
+            run.assert_not_called()
+
+    def test_resolve_token_azure_cli_not_installed_returns_none(self, az_cli_executable):
         """azure-cli returns None when az is not installed."""
         from unittest.mock import patch
         entry = AuthConfigEntry(
@@ -1053,7 +1109,7 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=OSError("not found")):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
-    def test_resolve_token_azure_cli_undecodable_output_returns_none(self):
+    def test_resolve_token_azure_cli_undecodable_output_returns_none(self, az_cli_executable):
         """Undecodable az output returns None, not a crash. With text=True,
         subprocess.run decodes stdout with the locale encoding and raises
         UnicodeDecodeError (not a JSONDecodeError) when it can't — the helper's
@@ -1068,7 +1124,7 @@ class TestAzureDevOpsAuth:
 
     @pytest.mark.parametrize("payload", [[], {"accessToken": None}, {"accessToken": 123}])
     def test_resolve_token_azure_cli_unexpected_json_shape_returns_none(
-        self, payload
+        self, payload, az_cli_executable
     ):
         from unittest.mock import MagicMock, patch
 

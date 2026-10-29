@@ -72,25 +72,26 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
-            # Windows: ``subprocess.run`` calls ``CreateProcess``, which does
-            # not consult ``PATHEXT``, so a bare ``"az"`` (installed as
-            # ``az.cmd``) fails with ``WinError 2`` even after ``az login``.
-            # Resolve via ``shutil.which`` (which honors ``PATHEXT``) so the
-            # ``.cmd`` shim works. On POSIX this is a harmless lookup that
-            # returns the same executable.
-            #
-            # Require an ABSOLUTE result: on Windows ``shutil.which`` prepends
-            # the current directory to the search path (unless
-            # ``NoDefaultCurrentDirectoryInExePath`` is set), so a stray
-            # ``.\az.cmd`` in the working directory would otherwise be resolved
-            # ahead of the real Azure CLI and run for a credential operation. A
-            # legitimate install always resolves to an absolute path, so this
-            # costs nothing; falling back to the bare ``"az"`` preserves the
-            # prior behavior (and the existing OSError path) when ``az`` is
-            # absent.
-            resolved = shutil.which("az")
-            az = resolved if resolved and os.path.isabs(resolved) else "az"
-            result = subprocess.run(  # noqa: S603, S607
+            # Absolute candidates bypass Windows' implicit current-directory
+            # search while retaining PATHEXT support for the az.cmd shim.
+            cwd = os.path.normcase(os.path.realpath(os.getcwd()))
+            for directory in os.get_exec_path():
+                if (
+                    not os.path.isabs(directory)
+                    or os.path.normcase(os.path.realpath(directory)) == cwd
+                ):
+                    continue
+                az = shutil.which(os.path.join(directory, "az"))
+                if (
+                    az
+                    and os.path.isabs(az)
+                    and os.path.normcase(os.path.dirname(os.path.realpath(az))) != cwd
+                ):
+                    break
+            else:
+                return None
+
+            result = subprocess.run(  # noqa: S603
                 [
                     az,
                     "account",

@@ -223,6 +223,13 @@ hostname, so list the web hostname explicitly.
 
 Requires `az login` to have been run beforehand.
 
+Azure CLI must be installed in an absolute `PATH` directory outside the current
+working directory. Specify ignores relative `PATH` entries and entries resolving
+to the current directory, including symlink aliases, to prevent project-local
+executables from being used for authentication. If no eligible Azure CLI
+executable is found, this provider returns no token; it never falls back to
+running a bare `az` command.
+
 **Example — Azure AD service principal (CI/automation):**
 
 ```json
