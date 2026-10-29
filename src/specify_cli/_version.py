@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.error
@@ -481,29 +482,48 @@ def _editable_marker_seen() -> bool:
 def _find_installer(name: str) -> str | None:
     """Find an installer outside the working directory and current Git tree."""
     cwd = Path.cwd().resolve()
-    cwd_comparison = _strip_extended_length_prefix(cwd)
+    cwd_status = cwd.stat()
     project_root = _git_ancestor(cwd)
+    project_status = project_root.stat() if project_root is not None else None
 
-    def outside_project(path: Path) -> bool:
-        if project_root is None:
-            return True
-        pending = [path]
-        seen: set[Path] = set()
+    def eligible(path: Path, *, executable: bool) -> bool:
+        # Check that traversal terminates before inspecting intermediate links.
+        path.resolve(strict=True)
+        if not executable and os.path.samestat(path.stat(), cwd_status):
+            return False
+        pending = [(path, executable)]
+        seen: set[tuple[Path, bool]] = set()
         while pending:
-            current = pending.pop()
+            current, leaf_executable = pending.pop()
+            if leaf_executable and os.path.samestat(current.parent.stat(), cwd_status):
+                return False
             for ancestor in (current, *current.parents):
-                if ancestor in seen:
+                is_executable = leaf_executable and ancestor == current
+                key = (ancestor, is_executable)
+                if key in seen:
                     continue
-                seen.add(ancestor)
-                if _path_is_within_prefix(
-                    ancestor, project_root
-                ) or _path_is_within_prefix(ancestor.resolve(), project_root):
+                seen.add(key)
+                entry_status = ancestor.lstat()
+                is_link = stat.S_ISLNK(entry_status.st_mode)
+                if (
+                    getattr(entry_status, "st_file_attributes", 0)
+                    & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                    and not is_link
+                ):
                     return False
-                if ancestor.is_symlink():
-                    # Preserve intermediate targets when links enter and then leave the worktree.
+                if project_status is not None and os.path.samestat(
+                    entry_status, project_status
+                ):
+                    return False
+                if is_link:
                     target = ancestor.readlink()
                     pending.append(
-                        target if target.is_absolute() else ancestor.parent / target
+                        (
+                            target
+                            if target.is_absolute()
+                            else ancestor.parent / target,
+                            is_executable,
+                        )
                     )
         return True
 
@@ -522,27 +542,28 @@ def _find_installer(name: str) -> str | None:
         if sys.platform == "win32":
             entry = entry.strip('"')
         directory = Path(entry)
-        if (
-            not directory.is_absolute()
-            or _strip_extended_length_prefix(directory.resolve()) == cwd_comparison
-            or not outside_project(directory)
-        ):
+        if not directory.is_absolute():
             continue
-        for suffix in suffixes:
-            found = shutil.which(str(directory / f"{name}{suffix}"))
-            if found is not None:
-                executable = Path(found)
-                if not executable.is_absolute():
-                    continue
-                resolved_executable = executable.resolve()
-                if (
-                    _strip_extended_length_prefix(executable.parent.resolve())
-                    != cwd_comparison
-                    and _strip_extended_length_prefix(resolved_executable.parent)
-                    != cwd_comparison
-                    and outside_project(executable)
-                ):
-                    return str(resolved_executable)
+        try:
+            if not eligible(directory, executable=False):
+                continue
+            for suffix in suffixes:
+                found = shutil.which(str(directory / f"{name}{suffix}"))
+                if found is not None:
+                    executable = Path(found)
+                    if executable.is_absolute() and eligible(
+                        executable, executable=True
+                    ):
+                        return str(executable)
+        except FileNotFoundError:
+            continue
+        except (OSError, RuntimeError) as exc:
+            console.print(
+                f"Skipping installer PATH entry {directory} while finding {name}: {exc}",
+                style="yellow",
+                markup=False,
+                soft_wrap=True,
+            )
     return None
 
 

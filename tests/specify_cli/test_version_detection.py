@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -398,7 +399,13 @@ class TestInstallerLookupSecurity:
     )
     @pytest.mark.parametrize(
         "kind",
-        ["aliased-directory", "directory-target", "file", "file-aliased-directory"],
+        [
+            "aliased-directory",
+            "directory-target",
+            "file",
+            "file-aliased-directory",
+            "cwd-file-chain",
+        ],
     )
     @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
     @pytest.mark.parametrize("fallback", [False, True])
@@ -407,14 +414,23 @@ class TestInstallerLookupSecurity:
     ):
         project = tmp_path / "project"
         project.mkdir()
-        (project / ".git").mkdir()
+        if kind != "cwd-file-chain":
+            (project / ".git").mkdir()
         external = tmp_path / "external"
         external.mkdir()
         trusted = tmp_path / "trusted"
         trusted.mkdir()
         expected = self.executable(trusted, name)
         try:
-            if kind != "file":
+            if kind == "cwd-file-chain":
+                payload_dir = tmp_path / "payload"
+                payload_dir.mkdir()
+                payload = self.executable(payload_dir, name)
+                malicious = project / payload.name
+                malicious.symlink_to(payload)
+                (external / payload.name).symlink_to(malicious)
+                unsafe = external
+            elif kind != "file":
                 self.executable(external, name)
                 (project / "bin").symlink_to(external, target_is_directory=True)
                 alias = tmp_path / "alias"
@@ -486,28 +502,229 @@ class TestInstallerLookupSecurity:
             run.assert_not_called()
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
-    def test_external_file_symlink_is_resolved_and_accepted(
-        self, monkeypatch, tmp_path, name
+    @pytest.mark.parametrize("operation", ["lookup", "upgrade"])
+    def test_external_file_symlink_preserves_dispatch_name(
+        self, monkeypatch, tmp_path, name, operation
     ):
         project = tmp_path / "project"
         project.mkdir()
         (project / ".git").mkdir()
         installed = tmp_path / "installed"
         installed.mkdir()
-        expected = self.executable(installed, name)
+        dispatcher = self.executable(installed, "dispatcher")
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
+        selected = bin_dir / (f"{name}.exe" if os.name == "nt" else name)
         try:
-            (bin_dir / expected.name).symlink_to(expected)
+            selected.symlink_to(dispatcher)
         except OSError:
             pytest.skip("file symlinks are unavailable")
         monkeypatch.chdir(project)
         monkeypatch.setenv("PATH", str(bin_dir))
 
-        found = specify_cli._version._find_installer(name)
+        if operation == "lookup":
+            found = specify_cli._version._find_installer(name)
+            assert found is not None
+            assert Path(found) == selected
+        else:
+            method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+            with (
+                patch(
+                    "specify_cli._version._detect_install_method", return_value=method
+                ),
+                patch(
+                    "specify_cli._version._get_installed_version", return_value="0.7.5"
+                ),
+                patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+                patch(
+                    "specify_cli._version.subprocess.run",
+                    return_value=_completed_process(0),
+                ) as run,
+            ):
+                result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+            assert result.exit_code == 0
+            assert Path(run.call_args.args[0][0]) == selected
 
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("git_project", [False, True])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_case_aliases_are_rejected_on_case_insensitive_volumes(
+        self, monkeypatch, tmp_path, name, git_project, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        alias = project.with_name("PROJECT")
+        if not alias.exists() or not alias.samefile(project):
+            pytest.skip("case-insensitive volume required")
+        unsafe = project
+        if git_project:
+            (project / ".git").mkdir()
+            unsafe = project / "bin"
+            unsafe.mkdir()
+        self.executable(unsafe, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        entry = alias / "bin" if git_project else alias
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(entry), str(trusted)] if fallback else [str(entry)]),
+        )
+
+        found = specify_cli._version._find_installer(name)
+        if fallback:
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            assert found is None
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("stage", ["resolve", "lstat"])
+    @pytest.mark.parametrize(
+        "error", [PermissionError("denied"), RuntimeError("link loop")]
+    )
+    def test_inspection_failure_warns_and_checks_later_entries(
+        self, monkeypatch, tmp_path, capsys, name, stage, error
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        bad = tmp_path / "bad"
+        bad.mkdir()
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([str(bad), str(trusted)]))
+        original = getattr(Path, stage)
+
+        def inspect(path, *args, **kwargs):
+            if path == bad:
+                raise error
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, stage, inspect)
+
+        found = specify_cli._version._find_installer(name)
         assert found is not None
         assert Path(found) == expected
+        output = capsys.readouterr().out
+        assert "Skipping installer PATH entry" in output
+        assert str(bad) in output
+        assert str(error) in output
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    def test_non_symlink_reparse_entries_are_rejected_portably(
+        self, monkeypatch, tmp_path, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        reparse = tmp_path / "reparse"
+        reparse.mkdir()
+        self.executable(reparse, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", os.pathsep.join([str(reparse), str(trusted)]))
+        original = Path.lstat
+
+        def lstat(path, *args, **kwargs):
+            result = original(path, *args, **kwargs)
+            if path == reparse:
+                return SimpleNamespace(
+                    st_mode=result.st_mode,
+                    st_file_attributes=0x400,
+                    st_ino=result.st_ino,
+                    st_dev=result.st_dev,
+                )
+            return result
+
+        monkeypatch.setattr(Path, "lstat", lstat)
+
+        found = specify_cli._version._find_installer(name)
+        assert found is not None
+        assert Path(found) == expected
+
+    @pytest.mark.skipif(
+        os.name != "nt", reason="Native Windows namespace paths required"
+    )
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("git_project", [False, True])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_native_windows_extended_path_entries_are_rejected(
+        self, monkeypatch, tmp_path, name, git_project, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        unsafe = project
+        if git_project:
+            (project / ".git").mkdir()
+            unsafe = project / "bin"
+            unsafe.mkdir()
+        self.executable(unsafe, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        raw = str(unsafe)
+        extended = (
+            "\\\\?\\UNC\\" + raw[2:] if raw.startswith("\\\\") else "\\\\?\\" + raw
+        )
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([extended, str(trusted)] if fallback else [extended]),
+        )
+
+        found = specify_cli._version._find_installer(name)
+        if fallback:
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            assert found is None
+
+    @pytest.mark.skipif(os.name != "nt", reason="Native Windows junctions required")
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("fallback", [False, True])
+    def test_native_windows_junction_chain_is_rejected(
+        self, monkeypatch, tmp_path, name, fallback
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        self.executable(external, name)
+        trusted = tmp_path / "trusted"
+        trusted.mkdir()
+        expected = self.executable(trusted, name)
+        alias = tmp_path / "alias"
+        for path, target in ((project / "bin", external), (alias, project / "bin")):
+            result = subprocess.run(
+                ["cmd.exe", "/c", "mklink", "/J", str(path), str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode:
+                pytest.skip(
+                    f"Windows junction creation unavailable: {result.stderr or result.stdout}"
+                )
+        assert not alias.is_symlink()
+        monkeypatch.chdir(project)
+        monkeypatch.setenv(
+            "PATH",
+            os.pathsep.join([str(alias), str(trusted)] if fallback else [str(alias)]),
+        )
+
+        found = specify_cli._version._find_installer(name)
+        if fallback:
+            assert found is not None
+            assert Path(found) == expected
+        else:
+            assert found is None
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     def test_relative_lookup_result_is_rejected(self, monkeypatch, tmp_path, name):
@@ -719,6 +936,8 @@ class TestInstallerLookupSecurity:
         trusted = tmp_path / "trusted"
         trusted.mkdir()
         expected = str(trusted / f"{name}.EXE")
+        Path(expected).write_bytes(b"installer fixture; never executed\n")
+        Path(expected).chmod(0o755)
         monkeypatch.chdir(project)
         monkeypatch.setenv("PATH", f'"{trusted}"' if quoted_path else str(trusted))
         if pathext is None:
