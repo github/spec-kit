@@ -53,6 +53,8 @@ def test_strict_rejects_run_expressions_before_execution(monkeypatch, run):
     ({"strict": "true"}, "'strict' must be a boolean"),
     ({"strict": 1}, "'strict' must be a boolean"),
     ({"strict": None}, "'strict' must be a boolean"),
+    ({"strict": True, "run": None}, "'run' must be a string in strict mode"),
+    ({"strict": True, "run": ["echo", "hello"]}, "'run' must be a string in strict mode"),
     ({"env": None}, "'env' must be a mapping"),
     ({"env": []}, "'env' must be a mapping"),
     ({"env": "NAME=value"}, "'env' must be a mapping"),
