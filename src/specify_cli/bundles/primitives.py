@@ -277,16 +277,23 @@ def primitive_manager(
 
 @contextlib.contextmanager
 def _chdir(path: Path):
-    """Temporarily switch the working directory.
+    """Bind delegated CLI project resolution to an absolute root.
 
-    The delegated workflow/step command callables resolve the project via
-    ``Path.cwd()``; this makes that resolution land on *path*.
+    Pin the override too, so a relative SPECIFY_INIT_DIR is not reinterpreted
+    after changing directories. Restore both caller settings on exit.
     """
+    root = path.resolve()
     previous = Path.cwd()
-    os.chdir(path)
+    previous_override = os.environ.get("SPECIFY_INIT_DIR")
+    os.chdir(root)
     try:
+        os.environ["SPECIFY_INIT_DIR"] = str(root)
         yield
     finally:
+        if previous_override is None:
+            os.environ.pop("SPECIFY_INIT_DIR", None)
+        else:
+            os.environ["SPECIFY_INIT_DIR"] = previous_override
         os.chdir(previous)
 
 
@@ -498,13 +505,13 @@ class _WorkflowKindManager:
     ) -> None:
         from ..workflows.catalog import WorkflowRegistry
 
-        self._root = project_root
+        self._root = project_root.resolve()
         self._allow_network = allow_network
         self._trust_steps = trust_steps
         self._approved_step_projects = (
             approved_step_projects if approved_step_projects is not None else set()
         )
-        self._registry = WorkflowRegistry(project_root)
+        self._registry = WorkflowRegistry(self._root)
 
     def _approve_steps(self) -> bool:
         from ..workflows import _commands as cli

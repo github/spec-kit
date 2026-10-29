@@ -36,6 +36,9 @@ delegates. Bundle metadata, offline mode, and refresh do not imply trust.
 An interactive approval is shared by the bundle invocation's primitive
 installer for that project, so subsequent workflow delegates do not prompt
 again. The approval is discarded with that invocation, never stored globally.
+Workflow delegates remain bound to the approved absolute project root. Their
+temporary project override must not reinterpret a relative `SPECIFY_INIT_DIR`
+from a changed working directory, and must restore the caller's override afterward.
 
 ## Step contract
 

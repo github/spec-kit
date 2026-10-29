@@ -35,11 +35,13 @@ runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
 
 
+@pytest.mark.parametrize("project_override", [None, "member"])
 @pytest.mark.parametrize("mode", ["unattended", "flag", "accept", "decline"])
 @pytest.mark.parametrize("source", ["bundled", "catalog", "mixed", "mixed-reversed"])
 @pytest.mark.parametrize("command", ["add", "install", "refresh", "update", "init"])
 def test_bundle_forwards_custom_step_consent(
     project: Path, monkeypatch, mode: str, source: str, command: str,
+    project_override: str | None,
 ):
     from specify_cli.bundles.manifest import ComponentRef
     from specify_cli.bundles.records import InstalledBundleRecord, save_records
@@ -49,6 +51,13 @@ def test_bundle_forwards_custom_step_consent(
         write_step_import_probe,
     )
 
+    launch_root = Path.cwd()
+    nested_marker = None
+    if project_override is not None:
+        project = project / project_override
+        nested_marker = write_step_import_probe(project / project_override)
+        monkeypatch.setenv("SPECIFY_INIT_DIR", project_override)
+    original_override = os.environ.get("SPECIFY_INIT_DIR")
     marker = write_step_import_probe(project)
     force_workflow_stdin(monkeypatch, tty=mode in {"accept", "decline"})
     workflow_sources = {
@@ -152,7 +161,10 @@ def test_bundle_forwards_custom_step_consent(
 
     approved = mode in {"accept", "flag"}
     assert result.exit_code == (0 if approved else 1), result.output
+    assert nested_marker is None or not nested_marker.exists()
     assert marker.exists() is approved
+    assert Path.cwd() == launch_root
+    assert os.environ.get("SPECIFY_INIT_DIR") == original_override
     assert result.output.count("Trust all custom workflow step code") == (
         1 if mode in {"accept", "decline"} else 0
     )
@@ -178,6 +190,9 @@ def test_bundle_forwards_custom_step_consent(
                 assert path.read_bytes() == original[wid]
             else:
                 assert not path.exists()
+    assert nested_marker is None or not nested_marker.exists()
+    assert Path.cwd() == launch_root
+    assert os.environ.get("SPECIFY_INIT_DIR") == original_override
 
 
 @pytest.mark.parametrize("refresh", [False, True])

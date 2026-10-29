@@ -464,7 +464,10 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     assert calls == [(str(bundled / "workflow.yml"), True, None, False)]
 
 
-def test_step_approval_is_shared_only_within_installer_and_project(tmp_path, monkeypatch):
+@pytest.mark.parametrize("relative_root", [False, True])
+def test_step_approval_is_shared_only_within_installer_and_project(
+    tmp_path, monkeypatch, relative_root,
+):
     import specify_cli
     from specify_cli.workflows import _commands as workflow_cli
 
@@ -490,17 +493,20 @@ def test_step_approval_is_shared_only_within_installer_and_project(tmp_path, mon
     project_b = tmp_path / "b"
     for project in (project_a, project_b):
         (project / ".specify").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    root_a = Path("a") if relative_root else project_a
+    root_b = Path("b") if relative_root else project_b
     installer = DefaultPrimitiveInstaller(allow_network=False)
     component = _component("workflows", "bundled-wf")
 
-    installer.install(project_a, component)
-    installer.install(project_a, component)
-    installer.install(project_b, component)
+    installer.install(root_a, component)
+    installer.install(root_a, component)
+    installer.install(root_b, component)
 
     assert approvals == [project_a.resolve(), project_b.resolve()]
     assert forwarded == [True, True, True]
 
-    DefaultPrimitiveInstaller(allow_network=False).install(project_a, component)
+    DefaultPrimitiveInstaller(allow_network=False).install(root_a, component)
     assert approvals == [project_a.resolve(), project_b.resolve(), project_a.resolve()]
 
 
