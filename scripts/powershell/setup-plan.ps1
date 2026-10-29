@@ -38,6 +38,13 @@ if (-not $paths) {
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
+$planEntry = Get-ChildItem -LiteralPath $paths.FEATURE_DIR -Force -ErrorAction Stop |
+    Where-Object { $_.Name -eq 'plan.md' } | Select-Object -First 1
+if ($planEntry -and ($planEntry.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+    [Console]::Error.WriteLine("ERROR: Plan destination must not be a symbolic link.")
+    exit 1
+}
+
 # Copy plan template if plan doesn't already exist
 if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
     if ($Json) {
@@ -56,7 +63,21 @@ if (Test-Path -LiteralPath $paths.IMPL_PLAN -PathType Leaf) {
             exit 1
         }
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
+        try {
+            $plan = [System.IO.File]::Open(
+                $paths.IMPL_PLAN, [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write, [System.IO.FileShare]::None
+            )
+            try {
+                $bytes = $utf8NoBom.GetBytes($content)
+                $plan.Write($bytes, 0, $bytes.Length)
+            } finally {
+                $plan.Dispose()
+            }
+        } catch {
+            [Console]::Error.WriteLine("ERROR: Cannot create plan: $($_.Exception.Message)")
+            exit 1
+        }
         # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
         # in -Json mode so stdout stays pure JSON, matching the sibling messages.
         if ($Json) {

@@ -160,6 +160,36 @@ _persist_feature_json() {
     fi
 }
 
+# Resolve existing links and missing directory suffixes without creating anything.
+_resolve_feature_directory() {
+    local remaining="$1" resolved="/" component target links=0
+    while [[ -n "$remaining" ]]; do
+        component="${remaining%%/*}"
+        if [[ "$remaining" == */* ]]; then
+            remaining="${remaining#*/}"
+        else
+            remaining=""
+        fi
+        case "$component" in
+            ""|.) continue ;;
+            ..) resolved="$(dirname -- "$resolved")"; continue ;;
+        esac
+        target="${resolved%/}/$component"
+        if [[ -L "$target" ]]; then
+            links=$((links + 1))
+            [[ "$links" -le 40 ]] || return 1
+            target="$(readlink -- "$target")" || return 1
+            remaining="$target${remaining:+/$remaining}"
+            [[ "$target" != /* ]] || resolved="/"
+        elif [[ -e "$target" && ! -d "$target" ]]; then
+            return 1
+        else
+            resolved="$target"
+        fi
+    done
+    printf '%s\n' "$resolved"
+}
+
 get_feature_paths() {
     # Read-only callers (e.g. check-prerequisites.sh --paths-only) pass
     # --no-persist so pure path resolution never writes .specify/feature.json,
@@ -193,8 +223,8 @@ get_feature_paths() {
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
-        # Persist to feature.json so future sessions without the env var still
-        # work — unless the caller opted out for read-only resolution (#3025).
+        # Persist unless read-only resolution was requested (#3025). External
+        # paths still require the explicit override on subsequent invocations.
         if [[ "$no_persist" != true ]]; then
             _persist_feature_json "$repo_root" "$SPECIFY_FEATURE_DIRECTORY"
         fi
@@ -205,6 +235,13 @@ get_feature_paths() {
             feature_dir="$_fd"
             # Normalize relative paths to absolute under repo root
             [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
+            local physical_root
+            physical_root=$(CDPATH="" cd -- "$repo_root" && pwd -P) || return 1
+            if ! feature_dir=$(_resolve_feature_directory "$feature_dir") ||
+                [[ "$feature_dir" != "$physical_root" && "$feature_dir" != "$physical_root/"* ]]; then
+                echo "ERROR: Stored feature directory is invalid or outside the project. Set SPECIFY_FEATURE_DIRECTORY explicitly to use an external directory." >&2
+                return 1
+            fi
         else
             echo "ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory." >&2
             return 1

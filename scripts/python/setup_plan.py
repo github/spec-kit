@@ -57,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
 
     paths.feature_dir.mkdir(parents=True, exist_ok=True)
 
+    if paths.impl_plan.is_symlink():
+        print("ERROR: Plan destination must not be a symbolic link.", file=sys.stderr)
+        return 1
+
     # Status messages go to stderr in JSON mode so stdout stays pure JSON.
     status_stream = sys.stderr if json_mode else sys.stdout
     if paths.impl_plan.is_file():
@@ -81,7 +85,12 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            paths.impl_plan.write_bytes(template_content.encode("utf-8"))
+            try:
+                with paths.impl_plan.open("xb") as plan:
+                    plan.write(template_content.encode("utf-8"))
+            except OSError as exc:
+                print(f"ERROR: Cannot create plan: {exc}", file=sys.stderr)
+                return 1
             print(f"Copied plan template to {paths.impl_plan}", file=status_stream)
         else:
             print(

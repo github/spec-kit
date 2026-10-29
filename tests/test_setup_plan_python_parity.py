@@ -10,6 +10,8 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     POWERSHELL_EXE,
+    WINDOWS_POWERSHELL,
+    _bash_posix_path,
     bash_cmd,
     break_wrap_layer,
     clean_env,
@@ -33,10 +35,23 @@ PORTS = [
         marks=pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available"),
     ),
     pytest.param("python"),
+    pytest.param(
+        "windows-powershell",
+        marks=pytest.mark.skipif(
+            not WINDOWS_POWERSHELL, reason="Windows PowerShell 5.1 not available"
+        ),
+    ),
 ]
 
 
 def _command(repo: Path, port: str, json_mode: bool) -> list[str]:
+    if port == "windows-powershell":
+        assert WINDOWS_POWERSHELL
+        return [
+            WINDOWS_POWERSHELL, "-NoProfile", "-File",
+            str(repo / ".specify" / "scripts" / "powershell" / f"{SCRIPT}.ps1"),
+            *(("-Json",) if json_mode else ()),
+        ]
     if port == "powershell":
         return ps_cmd(repo, SCRIPT, *(("-Json",) if json_mode else ()))
     command = bash_cmd if port == "bash" else py_cmd
@@ -58,6 +73,133 @@ def _setup_repo(tmp_path: Path, name: str = "proj", template: bool = True) -> Pa
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize(
+    "kind",
+    ["relative", "absolute", "prefix", "ancestor_link", "dangling_ancestor", "link_parent"],
+)
+def test_stored_feature_cannot_escape_project(
+    repo: Path, port: str, kind: str
+) -> None:
+    outside = repo.parent / ("proj-other" if kind == "prefix" else "outside")
+    if kind in {"ancestor_link", "dangling_ancestor", "link_parent"}:
+        if kind != "dangling_ancestor":
+            outside.mkdir()
+        try:
+            (repo / "linked").symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Cannot create directory symlink: {exc}")
+        value = "linked/new-feature"
+        if kind == "link_parent":
+            value = "linked/../outside/new-feature"
+    elif kind == "relative":
+        value = "../outside/new-feature"
+    else:
+        value = (
+            _bash_posix_path(outside / "new-feature")
+            if port == "bash" else str(outside / "new-feature")
+        )
+    write_feature_json(repo, value)
+    before = (repo / ".specify" / "feature.json").read_bytes()
+
+    result = run(_command(repo, port, True), repo)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "outside the project" in result.stderr
+    assert not (outside / "new-feature").exists()
+    assert (repo / ".specify" / "feature.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("port", PORTS)
+def test_stored_feature_link_loop_is_rejected(repo: Path, port: str) -> None:
+    try:
+        (repo / "loop").symlink_to("loop", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Cannot create directory symlink: {exc}")
+    write_feature_json(repo, "loop/new-feature")
+
+    result = run(_command(repo, port, True), repo, timeout=15)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "outside the project" in result.stderr
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("absolute", [False, True])
+def test_external_feature_requires_override_on_every_invocation(
+    repo: Path, port: str, absolute: bool
+) -> None:
+    outside = repo.parent / "outside" / "new-feature"
+    env = clean_env()
+    absolute_value = _bash_posix_path(outside) if port == "bash" else str(outside)
+    env["SPECIFY_FEATURE_DIRECTORY"] = absolute_value if absolute else "../outside/new-feature"
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert (outside / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    retry = run(_command(repo, port, True), repo)
+    assert retry.returncode != 0
+    assert "outside the project" in retry.stderr
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_plan_symlink_is_rejected(
+    repo: Path, port: str, existing: bool, override: bool
+) -> None:
+    target = repo.parent / "target.md"
+    if existing:
+        target.write_bytes(b"preserve me")
+    plan = repo / "specs" / "001-my-feature" / "plan.md"
+    try:
+        plan.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"Cannot create file symlink: {exc}")
+    env = clean_env()
+    if override:
+        env["SPECIFY_FEATURE_DIRECTORY"] = (
+            _bash_posix_path(plan.parent) if port == "bash" else str(plan.parent)
+        )
+
+    result = run(_command(repo, port, True), repo, env)
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "symbolic link" in result.stderr
+    assert plan.is_symlink()
+    assert target.exists() == existing
+    if existing:
+        assert target.read_bytes() == b"preserve me"
+
+
+@pytest.mark.parametrize("port", PORTS)
+@pytest.mark.parametrize("kind", ["relative", "absolute", "normalized", "internal_link"])
+def test_contained_stored_feature_is_supported(repo: Path, port: str, kind: str) -> None:
+    feature = repo / "specs" / "new-feature"
+    value = "specs/new-feature"
+    if kind == "absolute":
+        value = _bash_posix_path(feature) if port == "bash" else str(feature)
+    elif kind == "normalized":
+        value = "specs/unused/../new-feature"
+    elif kind == "internal_link":
+        try:
+            (repo / "linked").symlink_to(repo / "specs", target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"Cannot create directory symlink: {exc}")
+        value = "linked/new-feature"
+    write_feature_json(repo, value)
+
+    result = run(_command(repo, port, True), repo)
+
+    assert result.returncode == 0, result.stderr
+    assert (feature / "plan.md").read_text(encoding="utf-8") == TEMPLATE_BODY
+    assert not (repo / "specs" / "unused").exists()
 
 
 def test_python_json_preserves_non_ascii_feature_on_legacy_stdout(repo: Path) -> None:

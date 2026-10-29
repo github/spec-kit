@@ -35,6 +35,11 @@ unset _paths_output
 # Ensure the feature directory exists
 mkdir -p "$FEATURE_DIR"
 
+if [[ -L "$IMPL_PLAN" ]]; then
+    echo "ERROR: Plan destination must not be a symbolic link." >&2
+    exit 1
+fi
+
 # Copy plan template if plan doesn't already exist
 if [[ -f "$IMPL_PLAN" ]]; then
     if $JSON_MODE; then
@@ -51,7 +56,10 @@ else
             echo "Restore a valid plan template and rerun plan setup." >&2
             exit 1
         fi
-        cat "$template_file" > "$IMPL_PLAN"
+        if ! (set -o noclobber; cat "$template_file" > "$IMPL_PLAN"); then
+            echo "ERROR: Cannot create plan: $IMPL_PLAN" >&2
+            exit 1
+        fi
         if $JSON_MODE; then
             echo "Copied plan template to $IMPL_PLAN" >&2
         else
