@@ -353,6 +353,12 @@ def _eval(node: Any, namespace_: dict[str, Any]) -> Any:
         return _safe_compare(left, right, op)
 
     left = _eval(node[1], namespace_)
+    # Skip the right operand when the left one decides, so a guard protects it.
+    # Validation walks the parse tree instead, so it still visits both sides.
+    if tag == "or" and bool(left):
+        return True
+    if tag == "and" and not bool(left):
+        return False
     right = _eval(node[2], namespace_)
     if tag == "or":
         return bool(left) or bool(right)
