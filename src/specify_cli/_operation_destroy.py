@@ -132,6 +132,8 @@ def _tree(
     while parent != files.root:
         if parent.is_symlink():
             raise FileHelperError(f"Refusing destroy through symlinked directory: {parent}")
+        if getattr(parent.lstat(), "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise FileHelperError(f"Unsupported reparse point: {parent}")
         parent = parent.parent
 
     entry = path.lstat()
@@ -147,7 +149,6 @@ def _tree(
             raise FileHelperError(f"Refusing symlink during destroy: {relative}")
         leaves.add(relative)
     elif stat.S_ISREG(mode):
-        files.read_bytes(relative)
         leaves.add(relative)
     elif stat.S_ISDIR(mode):
         with os.scandir(path) as entries:
@@ -211,7 +212,8 @@ def _contribution_paths(
     hashes: dict[str, set[str]] = {}
     agents: set[str] = set()
     global_paths: set[Path] = set()
-    preset_claims: dict[Path, tuple[set[str], set[str]]] = {}
+    preset_claims: dict[Path, dict[str, set[str]]] = {}
+    explicit_preset_claims: set[Path] = set()
     active_generic = read_project_options(root).get("ai") == "generic"
     for kind in ("extensions", "presets"):
         relative = f".specify/{kind}/.registry"
@@ -233,7 +235,14 @@ def _contribution_paths(
             override_sources: dict[str, str] = {}
             if kind == "presets":
                 from .presets import PresetManager
+                from .presets._resolver import PresetResolver
 
+                if not PresetResolver._is_safe_registry_id(identifier):
+                    raise ValueError(f"Invalid preset ID: {identifier!r}")
+                try:
+                    metadata_files.read_bytes(f".specify/presets/{identifier}/preset.yml")
+                except FileNotFoundError:
+                    pass
                 override_sources = PresetManager(root).skill_ownership_sources(identifier)
             generic_hashes = record.get("generic_artifact_hashes", {})
             if not isinstance(generic_hashes, dict):
@@ -298,14 +307,28 @@ def _contribution_paths(
                     candidates = registrar.registered_artifact_paths(
                         agent, root, commands=[], skills=[skill], registrar_config=config,
                     )
+                    agent_config = config or registrar.AGENT_CONFIGS.get(agent, {})
+                    if kind == "presets" and agent_config.get("extension") == "/SKILL.md":
+                        candidates = {
+                            registrar._resolve_agent_dir(agent, agent_config, root) / skill,
+                        }
                     for candidate in candidates:
+                        if not candidate.is_relative_to(root) and not (
+                            agent in global_scopes and candidate.is_relative_to(global_scopes[agent])
+                        ):
+                            if kind == "presets" and isinstance(skills, list):
+                                continue
+                            raise ValueError(
+                                f"Contribution output is outside its declared uninstall scope: {candidate}",
+                            )
                         if kind == "presets":
-                            sources, owners = preset_claims.setdefault(candidate, (set(), set()))
-                            sources.add(f"preset:{identifier}")
+                            sources = preset_claims.setdefault(candidate, {})
+                            sources.setdefault(f"preset:{identifier}", set()).add(agent)
                             override = override_sources.get(skill)
                             if override:
-                                sources.add(override)
-                            owners.add(agent)
+                                sources.setdefault(override, set()).add(agent)
+                            if not isinstance(skills, list):
+                                explicit_preset_claims.add(candidate)
                             continue
                         relative = _relative(root, candidate / "SKILL.md")
                         try:
@@ -323,21 +346,29 @@ def _contribution_paths(
                             agents.add(agent)
                         elif not isinstance(skills, list):
                             raise ValueError(f"Cannot establish skill ownership at {candidate}")
-    for candidate, (sources, owners) in preset_claims.items():
-        relative = _relative(root, candidate / "SKILL.md")
+    for candidate, sources in preset_claims.items():
+        scope_files = files if candidate.is_relative_to(root) else FileHelper(
+            Path.home(), allow_symlinks=files.allow_symlinks,
+        )
+        relative = _relative(scope_files.root, candidate / "SKILL.md")
         try:
-            content = files.read_text(relative)
+            content = scope_files.read_text(relative)
         except FileNotFoundError:
-            if candidate.exists():
+            if candidate in explicit_preset_claims and (candidate.exists() or candidate.is_symlink()):
                 raise ValueError(f"Cannot establish skill ownership at {candidate}")
             continue
         frontmatter, _ = registrar.parse_frontmatter(content)
         metadata = frontmatter.get("metadata", {}) if isinstance(frontmatter, dict) else {}
         source = metadata.get("source") if isinstance(metadata, dict) else None
         if source not in sources:
-            raise ValueError(f"Cannot establish skill ownership at {candidate}")
-        paths.add(candidate)
-        agents.update(owners)
+            if candidate in explicit_preset_claims:
+                raise ValueError(f"Cannot establish skill ownership at {candidate}")
+            continue
+        if candidate.is_relative_to(root):
+            paths.add(candidate)
+        else:
+            global_paths.add(candidate)
+        agents.update(sources[source])
     return paths, hashes, agents, global_paths
 
 
@@ -546,8 +577,20 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
         )
     files = project_files(plan.project_directory)
     removed: list[str] = []
+    global_removed: set[str] = set()
     warnings: list[str] = []
     uninstalled: list[str] = []
+
+    def reconcile_removals() -> None:
+        removed.extend(
+            name for name in plan.files if name not in removed
+            and not (plan.project_directory / name).exists()
+            and not (plan.project_directory / name).is_symlink()
+        )
+        global_removed.update(
+            name for name in plan.global_files if not Path(name).exists() and not Path(name).is_symlink()
+        )
+
     try:
         from .integrations._operation_uninstall import (
             IntegrationUninstallRequest,
@@ -560,6 +603,15 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
                 plan.project_directory, key, request.force, require_complete=True,
                 preserved_paths=(CONSTITUTION, "specs"),
             ))
+            for path in result.removed:
+                if path.exists() or path.is_symlink():
+                    continue
+                if path.is_relative_to(plan.project_directory):
+                    relative = path.relative_to(plan.project_directory).as_posix()
+                    if relative not in removed:
+                        removed.append(relative)
+                else:
+                    global_removed.add(str(path))
             warnings.extend(result.warnings)
             uninstalled.append(key)
         for key in set(plan.contribution_agents) - set(plan.integrations):
@@ -629,24 +681,23 @@ def destroy_project(request: DestroyRequest) -> DestroyResult:
                 ):
                     raise
     except DestroyError as exc:
+        reconcile_removals()
+        exc.details["removed"] = removed
+        exc.details["global_files"] = sorted(global_removed)
         exc.details["uninstalled_integrations"] = uninstalled
         raise
     except (OSError, ValueError, RuntimeError) as exc:
+        reconcile_removals()
         raise DestroyError(
             "destroy_failed",
             f"Uninstall stopped: {exc}. Some files may already have been removed.",
             removed=removed,
+            global_files=sorted(global_removed),
             uninstalled_integrations=uninstalled,
         ) from exc
-    removed.extend(
-        name for name in plan.files if name not in removed
-        and not (plan.project_directory / name).exists()
-        and not (plan.project_directory / name).is_symlink()
-    )
+    reconcile_removals()
     return DestroyResult(
         str(plan.project_directory), False, tuple(removed), plan.preserved,
         updated=plan.updated, warnings=tuple(warnings), global_scopes=plan.global_scopes,
-        global_files=tuple(
-            name for name in plan.global_files if not Path(name).exists() and not Path(name).is_symlink()
-        ),
+        global_files=tuple(sorted(global_removed)),
     )

@@ -1337,3 +1337,202 @@ def test_dispatcher_earlier_stale_hash_does_not_override_last_owner(tmp_path):
     assert not destroy_project(DestroyRequest(tmp_path, dry_run=True)).requires_force
     destroy_project(DestroyRequest(tmp_path, confirmed=True))
     assert not (tmp_path / ".specify").exists()
+
+
+def test_inventory_does_not_read_arbitrary_tree_payloads(tmp_path, monkeypatch):
+    from specify_cli.file_helper import FileHelper
+
+    write(tmp_path, ".specify/cache/large.bin", b"unreadable but deletable")
+    write(tmp_path, "specs/001/assets/large.bin", b"unreadable but deletable")
+    read = FileHelper.read_bytes
+
+    def deny_payload(self, path):
+        if str(path).endswith(".bin"):
+            raise PermissionError("payload must not be read")
+        return read(self, path)
+
+    monkeypatch.setattr(FileHelper, "read_bytes", deny_payload)
+    assert len(plan_destroy(DestroyRequest(tmp_path)).files) == 2
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()
+    assert not (tmp_path / "specs").exists()
+
+
+def test_inventory_still_rejects_reparse_point_ancestors_without_payload_reads(tmp_path, monkeypatch):
+    import stat
+    from types import SimpleNamespace
+
+    manifest(tmp_path)
+    lstat = Path.lstat
+
+    def junction(path, **kwargs):
+        entry = lstat(path, **kwargs)
+        if path == tmp_path / ".github":
+            return SimpleNamespace(
+                st_mode=entry.st_mode, st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        return entry
+
+    monkeypatch.setattr(Path, "lstat", junction)
+    with pytest.raises(DestroyError, match="Unsupported reparse point"):
+        plan_destroy(DestroyRequest(tmp_path))
+
+
+@pytest.mark.parametrize("identifier", ["../outside", "/outside", "bad\\id", "sample\n"])
+def test_preset_ids_are_validated_before_provenance_reads(tmp_path, monkeypatch, identifier):
+    from specify_cli.presets import PresetManager
+
+    write(tmp_path, ".specify/presets/.registry", json.dumps({
+        "presets": {identifier: {"registered_skills": {}}},
+    }).encode())
+
+    def unexpected(*args):
+        pytest.fail("unsafe preset ID reached provenance reader")
+
+    monkeypatch.setattr(PresetManager, "skill_ownership_sources", unexpected)
+    with pytest.raises(DestroyError, match="Invalid preset"):
+        plan_destroy(DestroyRequest(tmp_path))
+
+
+def test_preset_manifest_symlink_is_denied_even_when_project_links_are_allowed(tmp_path, monkeypatch):
+    from specify_cli.presets import PresetManager
+
+    write(tmp_path, ".specify/init-options.json", b'{"allow_symlinks":true}')
+    write(tmp_path, ".specify/presets/.registry", b'{"presets":{"sample":{}}}')
+    target = write(tmp_path, "user-preset.yml", b"not metadata")
+    link = tmp_path / ".specify/presets/sample/preset.yml"
+    link.parent.mkdir()
+    symlink(link, target)
+
+    def unexpected(*args):
+        pytest.fail("linked preset manifest reached provenance reader")
+
+    monkeypatch.setattr(PresetManager, "skill_ownership_sources", unexpected)
+    with pytest.raises(DestroyError, match="symlink"):
+        plan_destroy(DestroyRequest(tmp_path))
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_preset_flat_skill_candidates_do_not_claim_unrelated_agents(tmp_path, legacy):
+    write(tmp_path, ".specify/presets/.registry", json.dumps({
+        "presets": {"sample": {
+            "registered_skills": ["speckit-sample"] if legacy else {
+                "copilot": ["speckit-sample"], "claude": ["speckit-sample"],
+            },
+        }},
+    }).encode())
+    owned = write(tmp_path, ".github/skills/speckit-sample/SKILL.md",
+                  b"---\nmetadata:\n  source: preset:sample\n---\nOwned\n")
+    unrelated = write(tmp_path, ".claude/skills/speckit-sample/SKILL.md", b"user skill")
+    if not legacy:
+        with pytest.raises(DestroyError, match="Cannot establish skill ownership"):
+            destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+        assert owned.exists()
+    else:
+        destroy_project(DestroyRequest(tmp_path, confirmed=True, force=True))
+        assert not owned.exists()
+        assert not (tmp_path / ".specify").exists()
+    assert unrelated.read_bytes() == b"user skill"
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_hermes_dotted_preset_skill_uses_declared_home_scope(tmp_path, monkeypatch, installed):
+    home = tmp_path / "home"
+    home.mkdir()
+    root = tmp_path / "project"
+    root.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    if installed:
+        manifest(root, "hermes", ".hermes/marker")
+    write(root, ".specify/presets/.registry", json.dumps({
+        "presets": {"sample": {"registered_skills": {"hermes": ["speckit.sample"]}}},
+    }).encode())
+    skill = write(home, ".hermes/skills/speckit.sample/SKILL.md",
+                  b"---\nmetadata:\n  source: preset:sample\n---\nOwned\n")
+    unrelated = write(home, ".hermes/skills/user/SKILL.md", b"user")
+    if not installed:
+        before = snapshot(tmp_path)
+        with pytest.raises(DestroyError, match="outside its declared uninstall scope"):
+            destroy_project(DestroyRequest(root, confirmed=True, force=True))
+        assert snapshot(tmp_path) == before
+        return
+    preview = plan_destroy(DestroyRequest(root))
+    assert str(skill) in preview.global_files
+    destroy_project(DestroyRequest(root, confirmed=True))
+    assert not skill.exists()
+    assert unrelated.read_bytes() == b"user"
+    assert not (root / ".specify").exists()
+
+
+@pytest.mark.parametrize("failure", ["teardown", "final_cleanup", "incomplete"])
+def test_failures_report_completed_project_and_home_deletions(tmp_path, monkeypatch, failure):
+    from specify_cli.file_helper import FileHelper
+    from specify_cli.integrations import get_integration
+
+    home = tmp_path / "home"
+    home.mkdir()
+    root = tmp_path / "project"
+    root.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    record = manifest(root, "hermes", ".hermes/generated")
+    project_file = root / ".hermes/generated"
+    global_file = write(home, ".hermes/skills/speckit-sample-check/SKILL.md")
+    write(root, ".specify/extensions/.registry", json.dumps({
+        "extensions": {"sample": {"registered_commands": {"hermes": ["speckit.sample.check"]}}},
+    }).encode())
+    blocked = write(root, ".specify/blocked")
+    teardown = get_integration("hermes").teardown
+    delete = FileHelper.delete
+
+    def fail_teardown(*args, **kwargs):
+        result = teardown(*args, **kwargs)
+        if failure == "teardown":
+            raise PermissionError("after teardown")
+        if failure == "incomplete":
+            write(root, ".specify/events.py", b"unexpected retained dispatcher")
+        return result
+
+    def fail_delete(self, path, **kwargs):
+        if self.root / path == blocked:
+            raise PermissionError("after integration cleanup")
+        return delete(self, path, **kwargs)
+
+    monkeypatch.setattr(get_integration("hermes"), "teardown", fail_teardown)
+    if failure == "final_cleanup":
+        monkeypatch.setattr(FileHelper, "delete", fail_delete)
+    with pytest.raises(DestroyError) as caught:
+        destroy_project(DestroyRequest(root, confirmed=True))
+    assert ".hermes/generated" in caught.value.details["removed"]
+    assert str(global_file) in caught.value.details["global_files"]
+    assert not project_file.exists()
+    assert not global_file.exists()
+    assert record.manifest_path.exists() is (failure != "final_cleanup"), str(caught.value)
+
+
+@pytest.mark.parametrize("integration", ["copilot", "claude", "gemini"])
+def test_later_preset_add_refreshes_only_managed_overwrites(tmp_path, monkeypatch, integration):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools",
+        "--integration", integration,
+    ])
+    assert result.exit_code == 0, result.output
+    record = IntegrationManifest.load(integration, tmp_path)
+    untouched = ".specify/templates/untouched.md"
+    record.record_file(untouched, b"original template")
+    record.save()
+    write(tmp_path, untouched, b"user customization")
+    result = runner.invoke(app, ["preset", "add", "lean"])
+    assert result.exit_code == 0, result.output
+    assert plan_destroy(DestroyRequest(tmp_path)).requires_force == ()
+    refreshed = IntegrationManifest.load(integration, tmp_path)
+    assert untouched in refreshed.check_modified()
+    relative = next(name for name in refreshed.files if "speckit" in name and not name.startswith(".specify/"))
+    original = (tmp_path / relative).read_bytes()
+    write(tmp_path, relative, b"user edit")
+    assert relative in plan_destroy(DestroyRequest(tmp_path)).requires_force
+    write(tmp_path, relative, original)
+    write(tmp_path, untouched, b"original template")
+    destroy_project(DestroyRequest(tmp_path, confirmed=True))
+    assert not (tmp_path / ".specify").exists()

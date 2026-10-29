@@ -141,6 +141,8 @@ Only the literal project-local `specs/` directory is removed: feature-directory
 overrides, including `SPECIFY_FEATURE_DIRECTORY` and `.specify/feature.json`, do
 not expand the deletion scope. A directory without a `.specify` project marker
 is a no-op, even if it contains `specs/`.
+An invalid `SPECIFY_INIT_DIR` remains an error; an explicit `--project` takes
+precedence over that environment override.
 
 Modified hash-tracked generated files outside `.specify` stop cleanup before
 deletion unless `--force` is explicit. Contribution cleanup uses the existing
@@ -152,6 +154,9 @@ For generic integration outputs, force permits removal of modified extension fil
 only after the recorded command names, output paths, and ownership hashes have
 passed validation. Incomplete contribution cleanup retains the integration state
 needed to retry.
+Managed preset rendering refreshes hashes only for tracked files it writes,
+both during `init --preset` and a later `preset add`. Unchanged user edits
+are not adopted as generated content.
 For example:
 
 ```bash
@@ -191,7 +196,9 @@ to identify agent artifacts; allowed leaf links are unlinked without deleting
 their targets. An explicitly preserved constitution or `specs/` entry may be a link and is
 left untouched. Otherwise the persisted symlink policy applies; targets are
 never recursively traversed merely because a link is selected for deletion.
-Metadata is always read without following links.
+Metadata is always read without following links. Tree inventory inspects paths
+without reading arbitrary caches or specification assets; payload reads are
+limited to ownership metadata, provenance checks, and tracked-file hashes.
 
 Preview, rejected confirmation, and validation failures leave files unchanged.
 An I/O failure during deletion can leave a partial uninstall and is reported
@@ -204,14 +211,18 @@ a no-op with `--preserve-constitution` or `--preserve-all`; without those flags,
 its deletion still requires confirmation.
 Extension and preset registries are retained until their package files and
 directories have been removed, so a failed package purge can be retried.
-If teardown raises after deleting its manifest, destroy restores the original
-ownership manifest so the recorded integration can be retried after the error
-is resolved. This preserves recovery evidence; it does not undo files that
-were already removed outside a lifecycle transaction.
+If strict cleanup fails, destroy restores the original ownership manifest,
+installation inventory, and init options together so the recorded integration
+can be retried after the error is resolved. Skipped contribution cleanup retains
+its registration rather than discarding ownership evidence. This preserves
+recovery evidence; it does not undo files that were already removed outside a
+lifecycle transaction.
 Specification files and directories are removed before remaining infrastructure:
 a locked `specs/` directory leaves the project marker available for retry.
 Human-readable failures list remaining paths and completed file/integration
 removals alongside the error; JSON errors expose the same recovery details.
+Completed home-scoped deletions are reported separately in `global_files`,
+including when teardown fails after deleting only some of its outputs.
 
 Legacy setups with only an `init-options.json` integration selection and no
 `integration.json` inventory are rejected during preview. Re-run `specify init`

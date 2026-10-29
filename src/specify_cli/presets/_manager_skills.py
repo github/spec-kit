@@ -14,7 +14,7 @@ from .._init_options import is_ai_skills_enabled
 from .._invocation_style import get_invocation_prefix
 from .._utils import dump_frontmatter
 from ..integrations.base import IntegrationBase
-from ..integrations._registration import project_registration
+from ..integrations._registration import managed_registration, project_registration
 from ._manager_commands import _substitute_core_template
 from ._manifest import PresetManifest, PresetValidationError
 from ._resolver import PresetResolver
@@ -619,6 +619,7 @@ class _PresetSkillMethods:
         return restore_index
 
     @project_registration
+    @managed_registration
     def _register_skills(
         self,
         manifest: "PresetManifest",
@@ -1242,11 +1243,14 @@ class _PresetSkillMethods:
         return override_sources
 
     def _delete_agent_preset_skills(
-        self, agent_name: str, skill_names: List[str], pack_id: str
+        self, agent_name: str, skill_names: List[str], pack_id: str, *, require_complete: bool = False,
     ) -> None:
         """Delete still-preset-owned skills when an agent is deactivated."""
         skills_dir = self._safe_skills_dir_for_agent(agent_name)
         if skills_dir is None:
+            candidate = self._resolve_agent_skills_dir(agent_name)
+            if require_complete and (candidate.exists() or candidate.is_symlink()):
+                raise ValueError(f"Preset skills directory was preserved: {candidate}")
             return
         registrar = self._command_registrar()
         marker = f"preset:{pack_id}"
@@ -1258,13 +1262,19 @@ class _PresetSkillMethods:
             if not self._validate_skill_subdir(
                 skill_subdir, create=False, skills_root=skills_dir
             ):
+                if require_complete:
+                    raise ValueError(f"Preset skill was preserved: {skill_subdir}")
                 continue
             skill_file = skill_subdir / "SKILL.md"
             if not skill_file.is_file():
+                if require_complete and (skill_subdir.exists() or skill_subdir.is_symlink()):
+                    raise ValueError(f"Preset skill was preserved: {skill_subdir}")
                 continue
             try:
                 content = skill_file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
+                if require_complete:
+                    raise
                 continue
             frontmatter, _ = registrar.parse_frontmatter(content)
             metadata = frontmatter.get("metadata")

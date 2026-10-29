@@ -179,11 +179,12 @@ def install(project):
     return result
 
 
-def test_destroy_uses_trusted_external_lifecycle_and_contribution_cleanup(tmp_path, server):
+@pytest.mark.parametrize("contribution", [("extension", "git"), ("preset", "lean")])
+def test_destroy_uses_trusted_external_lifecycle_and_contribution_cleanup(tmp_path, server, contribution):
     publish(server)
     project = catalog_project(tmp_path, server)
     install(project)
-    added = run(project, ["extension", "add", "git"])
+    added = run(project, [contribution[0], "add", contribution[1]])
     assert added.exit_code == 0, added.output
     source = project / "src/app.py"
     source.parent.mkdir()

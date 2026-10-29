@@ -78,10 +78,10 @@ def unregister_integration_artifacts(
             if require_complete and key == "generic" and label == "extension":
                 for record in instance.registry.list().values():
                     generic_paths.update(record.get("generic_artifact_hashes", {}))
+            cleanup_options = {"require_complete": True} if require_complete else {}
             if label == "extension" and force:
-                instance.unregister_agent_artifacts(key, force=True)
-            else:
-                instance.unregister_agent_artifacts(key)
+                cleanup_options["force"] = True
+            instance.unregister_agent_artifacts(key, **cleanup_options)
             if generic_paths:
                 from .._file_policy import project_files
 
@@ -90,7 +90,9 @@ def unregister_integration_artifacts(
                     try:
                         files.read_bytes(relative)
                     except FileNotFoundError:
-                        continue
+                        path = root / relative
+                        if not path.exists() and not path.is_symlink():
+                            continue
                     raise IntegrationUninstallError(
                         "cleanup_incomplete", f"Generic artifact was preserved: {relative}",
                     )
@@ -103,26 +105,36 @@ def unregister_integration_artifacts(
 
 
 @contextmanager
-def _retain_recovery_manifest(request: IntegrationUninstallRequest, key: str | None):
-    """Strict cleanup keeps its original ownership evidence even if teardown raises."""
+def _retain_recovery_state(request: IntegrationUninstallRequest, key: str | None):
+    """Keep ownership and installation metadata together until strict cleanup completes."""
     if not request.require_complete or key is None:
         yield
         return
-    relative = f".specify/integrations/{key}.manifest.json"
     files = FileHelper(request.project_directory)
-    try:
-        original = files.read_bytes(relative)
-    except FileNotFoundError:
-        yield
-        return
+    originals: dict[str, bytes | None] = {}
+    for relative in (
+        f".specify/integrations/{key}.manifest.json",
+        ".specify/integration.json", ".specify/init-options.json",
+    ):
+        try:
+            originals[relative] = files.read_bytes(relative)
+        except FileNotFoundError:
+            originals[relative] = None
     try:
         yield
     except Exception:
         from ._file_changes import changing_file
 
-        with changing_file(request.project_directory / relative):
-            files.mkdir(".specify/integrations", parents=True, exist_ok=True)
-            files.write_bytes(relative, original)
+        for relative, original in originals.items():
+            with changing_file(request.project_directory / relative, removal=original is None):
+                if original is None:
+                    try:
+                        files.delete(relative)
+                    except FileNotFoundError:
+                        pass
+                else:
+                    files.mkdir(Path(relative).parent, parents=True, exist_ok=True)
+                    files.write_bytes(relative, original)
         raise
 
 
@@ -189,7 +201,12 @@ def _uninstall(
                     validate_integration_event_cleanup(integration, root)
                 except (OSError, ValueError) as exc:
                     raise IntegrationUninstallError("cleanup_incomplete", str(exc)) from exc
-            removed, skipped = integration.teardown(root, manifest, force=request.force)
+            try:
+                removed, skipped = integration.teardown(root, manifest, force=request.force)
+            except SystemExit as exc:
+                raise IntegrationUninstallError(
+                    "uninstall_failed", f"Integration '{key}' teardown exited before cleanup completed (code {exc.code}).",
+                ) from exc
 
     if (
         integration is not None and request.require_complete and recovery_manifest is not None
@@ -309,18 +326,18 @@ def _uninstall_with_lifecycle(request: IntegrationUninstallRequest) -> Integrati
                     if mode != manifest.ownership_modes[name]:
                         manifest.set_ownership(name, mode)
                 manifest.save()
-            with _retain_recovery_manifest(request, key):
+            with _retain_recovery_state(request, key):
                 result = _uninstall(request, warnings)
-            new_state, error = try_read_integration_json(root)
-            if error:
-                raise IntegrationUninstallError("invalid_state", f"Cannot read integration state: {error.detail}")
-            remaining = installed_integration_keys(new_state or {})
-            for removed_key in records.keys() - set(remaining):
-                if removed_key != key:
-                    warnings.extend(unregister_integration_artifacts(
-                        root, removed_key, require_complete=request.require_complete, force=request.force,
-                    ))
-                installer.remove_package(root, removed_key)
+                new_state, error = try_read_integration_json(root)
+                if error:
+                    raise IntegrationUninstallError("invalid_state", f"Cannot read integration state: {error.detail}")
+                remaining = installed_integration_keys(new_state or {})
+                for removed_key in records.keys() - set(remaining):
+                    if removed_key != key:
+                        warnings.extend(unregister_integration_artifacts(
+                            root, removed_key, require_complete=request.require_complete, force=request.force,
+                        ))
+                    installer.remove_package(root, removed_key)
         return replace(result, warnings=tuple(warnings))
     except IntegrationUninstallError:
         raise

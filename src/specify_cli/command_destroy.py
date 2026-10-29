@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
@@ -18,6 +17,7 @@ from rich.markup import escape
 from typer.core import TyperCommand
 
 from ._console import console
+from ._project import ProjectResolutionError, _resolve_init_dir_override_unrendered
 from ._operation_destroy import (
     DestroyError,
     DestroyRequest,
@@ -97,7 +97,11 @@ def destroy(
 ) -> None:
     """Uninstall Spec Kit and remove .specify/ and specs/ unless explicitly preserved."""
     try:
-        root = (project or Path(os.environ.get("SPECIFY_INIT_DIR") or Path.cwd())).absolute()
+        try:
+            root = project if project is not None else _resolve_init_dir_override_unrendered() or Path.cwd()
+            root = root.absolute()
+        except ProjectResolutionError as exc:
+            raise DestroyError("invalid_project_directory", str(exc)) from exc
         request = DestroyRequest(
             root, confirmed=yes, force=force, dry_run=True,
             preserve_constitution=preserve_constitution, preserve_specs=preserve_specs,
@@ -163,6 +167,7 @@ def destroy(
             for field, label in (
                 ("paths", "Paths requiring attention"),
                 ("removed", "Files already removed"),
+                ("global_files", "Home-scoped paths already removed"),
                 ("uninstalled_integrations", "Integrations already uninstalled"),
             ):
                 values = exc.details.get(field)

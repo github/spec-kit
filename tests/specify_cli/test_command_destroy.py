@@ -179,6 +179,42 @@ def test_current_directory_and_project_override(tmp_path, monkeypatch):
     assert not (target / ".specify").exists()
 
 
+def test_invalid_environment_override_is_not_a_successful_noop(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path))
+    result = runner.invoke(app, ["destroy", "--yes", "--json"])
+    assert result.exit_code == 1
+    error = json.loads(result.stderr)["error"]
+    assert error["code"] == "invalid_project_directory"
+    assert "SPECIFY_INIT_DIR is not a Spec Kit project" in error["message"]
+    explicit = runner.invoke(app, ["destroy", "--project", str(tmp_path), "--yes", "--json"])
+    assert explicit.exit_code == 0, explicit.output
+
+
+@pytest.mark.parametrize("exit_code", [0, 3])
+def test_teardown_system_exit_uses_json_error_contract(tmp_path, monkeypatch, exit_code):
+    from specify_cli.integrations import get_integration
+    from tests.specify_cli.integrations._helpers import _init_project
+
+    project = _init_project(tmp_path, "claude")
+    record = project / ".specify/integrations/claude.manifest.json"
+    original = record.read_bytes()
+
+    def teardown(root, manifest, **kwargs):
+        manifest.uninstall(root, **kwargs)
+        raise SystemExit(exit_code)
+
+    monkeypatch.setattr(get_integration("claude"), "teardown", teardown)
+    result = runner.invoke(app, ["destroy", "--project", str(project), "--yes", "--json"])
+    assert result.exit_code == 1
+    assert not result.stdout
+    error = json.loads(result.stderr)["error"]
+    assert error["code"] == "destroy_failed"
+    assert "teardown exited" in error["message"]
+    assert error["details"]["removed"]
+    assert record.read_bytes() == original
+    assert (project / ".specify/integration.json").exists()
+
+
 def test_json_error_sanitizes_unexpected_failure(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("private detail")

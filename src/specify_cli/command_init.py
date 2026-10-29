@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shlex
 import shutil
@@ -872,11 +871,6 @@ def register(app: typer.Typer) -> None:
                     try:
                         from .presets import PresetCatalog, PresetError, PresetManager
 
-                        before_preset = {
-                            name: hashlib.sha256((project_path / name).read_bytes()).hexdigest()
-                            for name in manifest.files
-                            if (project_path / name).is_file() and not (project_path / name).is_symlink()
-                        }
                         preset_manager = PresetManager(project_path)
                         speckit_ver = get_speckit_version()
 
@@ -938,17 +932,6 @@ def register(app: typer.Typer) -> None:
                                                 zip_path.unlink(missing_ok=True)
                                             except OSError:
                                                 pass
-                        changed = False
-                        for name, previous in before_preset.items():
-                            path = project_path / name
-                            if (
-                                path.is_file() and not path.is_symlink()
-                                and hashlib.sha256(path.read_bytes()).hexdigest() != previous
-                            ):
-                                manifest.record_existing(name)
-                                changed = True
-                        if changed:
-                            manifest.save()
                     except Exception as preset_err:
                         if lifecycle_owns_rollback():
                             raise

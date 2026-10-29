@@ -10,6 +10,7 @@ from pathlib import Path
 file_change_observer: ContextVar[Callable[[Path, bool, bool], None] | None] = ContextVar(
     "integration_file_change_observer", default=None
 )
+registration_changes: ContextVar[set[Path] | None] = ContextVar("registration_changes", default=None)
 
 
 def before_file_change(path: Path, *, removal: bool = False) -> None:
@@ -22,6 +23,9 @@ def after_file_change(path: Path) -> None:
     observer = file_change_observer.get()
     if observer is not None:
         observer(path, False, False)
+    changes = registration_changes.get()
+    if changes is not None:
+        changes.add(path)
 
 
 @contextmanager

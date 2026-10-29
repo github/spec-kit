@@ -16,6 +16,7 @@ from .._init_options import (
 )
 from ..extensions import ExtensionRegistry
 from ..integrations._file_changes import write_text as _write_text
+from ..integrations._registration import managed_registration
 from ._manifest import PresetManifest
 from ._resolver import PresetResolver
 
@@ -92,6 +93,7 @@ def _substitute_core_template(
 class _PresetCommandMethods:
     """Command artifact methods shared through PresetManager's lifecycle state."""
 
+    @managed_registration
     def _register_commands(
         self,
         manifest: PresetManifest,
@@ -670,7 +672,7 @@ class _PresetCommandMethods:
                 pack_id, {"registered_skills": merged_skills}
             )
 
-    def unregister_agent_artifacts(self, agent_name: str) -> None:
+    def unregister_agent_artifacts(self, agent_name: str, *, require_complete: bool = False) -> None:
         """Remove ``agent_name``'s tracked preset command/skill artifacts.
 
         Mirrors ``ExtensionManager.unregister_agent_artifacts()`` (#2948):
@@ -686,6 +688,9 @@ class _PresetCommandMethods:
         tracking, and preset packs themselves are left untouched, and no
         priority-stack reconciliation runs — this is agent-scoped cleanup
         only, not preset removal.
+
+        ``require_complete`` retains registration metadata and raises when an
+        owned output is skipped, so strict uninstall can be retried.
         """
         if not agent_name:
             return
@@ -701,6 +706,7 @@ class _PresetCommandMethods:
 
         for pack_id, metadata in list(self.registry.list().items()):
             updates: Dict[str, Any] = {}
+            pending_paths: set[Path] = set()
 
             raw_skills = metadata.get("registered_skills", [])
             if isinstance(raw_skills, list) and raw_skills:
@@ -784,6 +790,12 @@ class _PresetCommandMethods:
                         if name not in shared_names
                     ]
                 if command_names_to_unregister:
+                    if require_complete:
+                        pending_paths.update(registrar.registered_artifact_paths(
+                            agent_name, self.project_root,
+                            commands=command_names_to_unregister, skills=[],
+                            registrar_config=agent_config,
+                        ))
                     self._unregister_commands(
                         {agent_name: command_names_to_unregister}
                     )
@@ -799,7 +811,7 @@ class _PresetCommandMethods:
             ):
                 if agent_skill_names:
                     self._delete_agent_preset_skills(
-                        agent_name, agent_skill_names, pack_id
+                        agent_name, agent_skill_names, pack_id, require_complete=require_complete,
                     )
                 remaining = {
                     other_agent: names
@@ -808,6 +820,9 @@ class _PresetCommandMethods:
                 }
                 updates["registered_skills"] = remaining
 
+            retained = sorted(path for path in pending_paths if path.exists() or path.is_symlink())
+            if retained:
+                raise ValueError("Preset artifacts were preserved: " + ", ".join(str(path) for path in retained))
             if updates:
                 self.registry.update(pack_id, updates)
 
@@ -1232,6 +1247,7 @@ class _PresetCommandMethods:
             only_agent=only_agent, extra_agents=extra_agents,
         )
 
+    @managed_registration
     def _register_for_non_skill_agents(
         self,
         registrar: Any,
