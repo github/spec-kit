@@ -52,6 +52,7 @@ _PRERELEASE_TAG_PATTERN = re.compile(
 )
 _TIER3_REGISTRY_TIMEOUT_SECS = 5
 _VERIFY_TIMEOUT_SECS = 10
+_WINDOWS_MOUNT_POINT_TAG = 0xA0000003  # IO_REPARSE_TAG_MOUNT_POINT
 
 
 def _get_installed_version() -> str:
@@ -505,17 +506,25 @@ def _find_installer(name: str) -> str | None:
                 seen.add(key)
                 entry_status = ancestor.lstat()
                 is_link = stat.S_ISLNK(entry_status.st_mode)
-                if (
+                is_reparse = bool(
                     getattr(entry_status, "st_file_attributes", 0)
                     & stat.FILE_ATTRIBUTE_REPARSE_POINT
-                    and not is_link
-                ):
+                )
+                is_junction = (
+                    is_reparse
+                    and stat.S_ISDIR(entry_status.st_mode)
+                    and getattr(entry_status, "st_reparse_tag", 0)
+                    == _WINDOWS_MOUNT_POINT_TAG
+                )
+                if is_reparse and not (is_link or is_junction):
                     return False
                 if project_status is not None and os.path.samestat(
                     entry_status, project_status
                 ):
                     return False
-                if is_link:
+                if is_link or is_junction:
+                    if os.path.samestat(ancestor.parent.stat(), cwd_status):
+                        return False
                     target = ancestor.readlink()
                     pending.append(
                         (

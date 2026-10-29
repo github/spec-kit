@@ -3,6 +3,7 @@
 import importlib.metadata
 import json
 import os
+import stat
 import subprocess
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
@@ -393,6 +394,19 @@ class TestInstallerLookupSecurity:
         executable.chmod(0o755)
         return executable
 
+    @staticmethod
+    def junction(path, target):
+        result = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(path), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            pytest.skip(
+                f"Windows junction creation unavailable: {result.stderr or result.stdout}"
+            )
+
     @pytest.mark.parametrize(
         "method,name",
         [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
@@ -405,6 +419,7 @@ class TestInstallerLookupSecurity:
             "file",
             "file-aliased-directory",
             "cwd-file-chain",
+            "cwd-directory-chain",
         ],
     )
     @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
@@ -414,7 +429,7 @@ class TestInstallerLookupSecurity:
     ):
         project = tmp_path / "project"
         project.mkdir()
-        if kind != "cwd-file-chain":
+        if kind not in {"cwd-file-chain", "cwd-directory-chain"}:
             (project / ".git").mkdir()
         external = tmp_path / "external"
         external.mkdir()
@@ -422,7 +437,14 @@ class TestInstallerLookupSecurity:
         trusted.mkdir()
         expected = self.executable(trusted, name)
         try:
-            if kind == "cwd-file-chain":
+            if kind == "cwd-directory-chain":
+                payload_dir = tmp_path / "payload"
+                payload_dir.mkdir()
+                self.executable(payload_dir, name)
+                (project / "bin").symlink_to(payload_dir, target_is_directory=True)
+                unsafe = external / "alias"
+                unsafe.symlink_to(project / "bin", target_is_directory=True)
+            elif kind == "cwd-file-chain":
                 payload_dir = tmp_path / "payload"
                 payload_dir.mkdir()
                 payload = self.executable(payload_dir, name)
@@ -615,8 +637,9 @@ class TestInstallerLookupSecurity:
         assert str(error) in output
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("tag", [0, 0x8000001B])
     def test_non_symlink_reparse_entries_are_rejected_portably(
-        self, monkeypatch, tmp_path, name
+        self, monkeypatch, tmp_path, name, tag
     ):
         project = tmp_path / "project"
         project.mkdir()
@@ -637,6 +660,7 @@ class TestInstallerLookupSecurity:
                 return SimpleNamespace(
                     st_mode=result.st_mode,
                     st_file_attributes=0x400,
+                    st_reparse_tag=tag,
                     st_ino=result.st_ino,
                     st_dev=result.st_dev,
                 )
@@ -647,6 +671,92 @@ class TestInstallerLookupSecurity:
         found = specify_cli._version._find_installer(name)
         assert found is not None
         assert Path(found) == expected
+
+    @pytest.mark.parametrize("name", ["uv", "pipx"])
+    @pytest.mark.parametrize("operation", ["lookup", "registry", "upgrade"])
+    @pytest.mark.parametrize(
+        "native",
+        [
+            False,
+            pytest.param(
+                True,
+                marks=pytest.mark.skipif(
+                    os.name != "nt", reason="Native Windows junctions required"
+                ),
+            ),
+        ],
+    )
+    def test_external_junction_preserves_installer_paths(
+        self, monkeypatch, tmp_path, name, operation, native
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / ".git").mkdir()
+        install = tmp_path / "install"
+        install.mkdir()
+        version = install / "version"
+        version.mkdir()
+        scripts = version / "Scripts"
+        scripts.mkdir()
+        executable = self.executable(scripts, name)
+        current = install / "current"
+        if native:
+            self.junction(current, version)
+            assert not current.is_symlink()
+        else:
+            try:
+                current.symlink_to(version, target_is_directory=True)
+            except OSError:
+                pytest.skip("directory symlinks are unavailable")
+            original = Path.lstat
+
+            def lstat(path, *args, **kwargs):
+                result = original(path, *args, **kwargs)
+                if path == current:
+                    return SimpleNamespace(
+                        st_mode=stat.S_IFDIR | 0o755,
+                        st_file_attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                        st_reparse_tag=0xA0000003,
+                        st_ino=result.st_ino,
+                        st_dev=result.st_dev,
+                    )
+                return result
+
+            monkeypatch.setattr(Path, "lstat", lstat)
+        selected = current / "Scripts" / executable.name
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(selected.parent))
+        monkeypatch.setattr("sys.argv", [str(project / "missing" / "specify")])
+        method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
+        stdout = (
+            "specify-cli v0.7.6\n" if name == "uv" else '{"venvs":{"specify-cli":{}}}'
+        )
+
+        with (
+            patch("specify_cli._version._editable_marker_seen", return_value=False),
+            patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
+            patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
+            patch(
+                "specify_cli._version.subprocess.run",
+                return_value=_completed_process(0, stdout=stdout),
+            ) as run,
+        ):
+            if operation == "lookup":
+                argv = _assemble_installer_argv(method, "v0.7.6")
+                assert argv is not None
+                assert Path(argv[0]) == selected
+                run.assert_not_called()
+                return
+            if operation == "registry":
+                assert _detect_install_method() == method
+            else:
+                with patch(
+                    "specify_cli._version._detect_install_method", return_value=method
+                ):
+                    result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
+                assert result.exit_code == 0
+        run.assert_called_once()
+        assert Path(run.call_args.args[0][0]) == selected
 
     @pytest.mark.skipif(
         os.name != "nt", reason="Native Windows namespace paths required"
@@ -688,12 +798,14 @@ class TestInstallerLookupSecurity:
     @pytest.mark.skipif(os.name != "nt", reason="Native Windows junctions required")
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     @pytest.mark.parametrize("fallback", [False, True])
+    @pytest.mark.parametrize("git_project", [False, True])
     def test_native_windows_junction_chain_is_rejected(
-        self, monkeypatch, tmp_path, name, fallback
+        self, monkeypatch, tmp_path, name, fallback, git_project
     ):
         project = tmp_path / "project"
         project.mkdir()
-        (project / ".git").mkdir()
+        if git_project:
+            (project / ".git").mkdir()
         external = tmp_path / "external"
         external.mkdir()
         self.executable(external, name)
@@ -702,16 +814,7 @@ class TestInstallerLookupSecurity:
         expected = self.executable(trusted, name)
         alias = tmp_path / "alias"
         for path, target in ((project / "bin", external), (alias, project / "bin")):
-            result = subprocess.run(
-                ["cmd.exe", "/c", "mklink", "/J", str(path), str(target)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode:
-                pytest.skip(
-                    f"Windows junction creation unavailable: {result.stderr or result.stdout}"
-                )
+            self.junction(path, target)
         assert not alias.is_symlink()
         monkeypatch.chdir(project)
         monkeypatch.setenv(
