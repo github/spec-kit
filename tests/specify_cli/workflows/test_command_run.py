@@ -14,13 +14,17 @@ from tests.specify_cli.workflows.helpers import force_gate_stdin as _force_gate_
 
 
 @pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("console_width", [13, 80])
 @pytest.mark.parametrize(
     "mode", ["unattended", "decline", "default", "eof", "accept", "flag", "interactive-flag"],
 )
-def test_run_requires_custom_step_consent(tmp_path, monkeypatch, json_output, mode):
+def test_run_requires_custom_step_consent(
+    tmp_path, monkeypatch, json_output, console_width, mode,
+):
     from typer.testing import CliRunner
 
     from specify_cli import app
+    from specify_cli.workflows import _commands as cli
     from tests.specify_cli.workflows.helpers import (
         force_workflow_stdin,
         write_step_import_probe,
@@ -30,6 +34,8 @@ def test_run_requires_custom_step_consent(tmp_path, monkeypatch, json_output, mo
     workflow = tmp_path / "workflow.yml"
     workflow.write_text(TestWorkflowRunGateOutcomeJson._WF_PLAIN, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli.console, "width", console_width)
+    monkeypatch.setattr(cli.err_console, "width", console_width)
     force_workflow_stdin(monkeypatch, tty=mode not in {"unattended", "flag"})
     arguments = ["workflow", "run", str(workflow)]
     if json_output:
@@ -50,7 +56,7 @@ def test_run_requires_custom_step_consent(tmp_path, monkeypatch, json_output, mo
             assert "approval" in payload["error"] or "not approved" in payload["error"]
     if mode in {"accept", "decline", "default", "eof"}:
         assert "Trust all custom workflow step code" in result.output
-        assert "not referenced" in result.output
+        assert "not referenced" in " ".join(result.output.split())
         if json_output:
             assert "Trust all custom workflow step code" in result.stderr
     else:

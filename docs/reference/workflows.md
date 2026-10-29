@@ -1029,6 +1029,10 @@ never saved: each invocation requires confirmation or `--trust-steps` again.
 Projects without custom step packages need no approval. Under `--json`, trust
 prompts go to stderr and refusal produces a single JSON failure object on stdout.
 
+The [bundle commands](bundles.md#install-a-bundle) that install or refresh
+workflows (`add`, `install`, `update`, and `init`) accept and forward the same
+`--trust-steps` option for that bundle invocation.
+
 #### Listing, running, and removing
 
 Installed custom steps appear in `specify workflow step list` and are loaded

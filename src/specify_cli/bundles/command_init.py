@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 from rich.markup import escape as _escape_markup
 
@@ -23,6 +25,12 @@ def bundle_init(
     bundle: str = typer.Argument(None, help="Optional bundle to install after init"),
     integration: str = typer.Option(None, "--integration", help="Integration override"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+    trust_steps: Annotated[
+        bool,
+        typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ) -> None:
     """Ensure the project is initialized (idempotent), then optionally install a bundle."""
     from .project import find_project_root
@@ -53,4 +61,5 @@ def bundle_init(
             integration=integration,
             offline=offline,
             refresh=False,
+            trust_steps=trust_steps,
         )

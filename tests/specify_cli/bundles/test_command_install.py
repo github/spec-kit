@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import shutil
@@ -31,6 +33,98 @@ from tests.specify_cli.bundles.helpers import (
 
 runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
+
+
+@pytest.mark.parametrize("trust_steps", [False, True])
+@pytest.mark.parametrize("source", ["bundled", "catalog"])
+@pytest.mark.parametrize("command", ["add", "install", "refresh", "update", "init"])
+def test_bundle_forwards_custom_step_consent(
+    project: Path, monkeypatch, trust_steps: bool, source: str, command: str,
+):
+    from specify_cli.bundles.manifest import ComponentRef
+    from specify_cli.bundles.records import InstalledBundleRecord, save_records
+    from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+    from tests.specify_cli.workflows.helpers import write_step_import_probe
+
+    marker = write_step_import_probe(project)
+    workflow_dir = project / "workflow-source"
+    workflow_dir.mkdir()
+    workflow_bytes = (
+        'schema_version: "1.0"\n'
+        "workflow:\n  id: trust-workflow\n  name: Trust workflow\n  version: 1.0.0\n"
+        "steps:\n  - id: probe\n    type: import-probe\n"
+    ).encode()
+    (workflow_dir / "workflow.yml").write_bytes(workflow_bytes)
+    monkeypatch.setattr(
+        "specify_cli._assets._locate_bundled_workflow",
+        lambda wid: workflow_dir if source == "bundled" and wid == "trust-workflow" else None,
+    )
+    workflow_url = "https://example.com/trust-workflow.yml"
+    catalog_source = SimpleNamespace(
+        name="test", url="https://example.com/catalog.json", install_allowed=True,
+    )
+    monkeypatch.setattr(WorkflowCatalog, "get_active_catalogs", lambda self: [catalog_source])
+    monkeypatch.setattr(
+        WorkflowCatalog, "_fetch_single_catalog",
+        lambda self, entry: {"workflows": {"trust-workflow": {
+            "id": "trust-workflow", "version": "1.0.0", "url": workflow_url,
+            "sha256": hashlib.sha256(workflow_bytes).hexdigest(),
+        }}},
+    )
+
+    class WorkflowResponse(io.BytesIO):
+        def geturl(self):
+            return workflow_url
+
+    monkeypatch.setattr(
+        "specify_cli.authentication.http.open_url",
+        lambda *args, **kwargs: WorkflowResponse(workflow_bytes),
+    )
+    manifest_data = _bundled_workflow_manifest("trust-workflow")
+    manifest = BundleManifest.from_dict(manifest_data)
+    bundle_path = write_manifest(project / "bundle-source", manifest_data)
+    installed = project / ".specify" / "workflows" / "trust-workflow" / "workflow.yml"
+    original = workflow_bytes + b"# Previously installed workflow\n"
+    if command in {"update", "refresh"}:
+        component = ComponentRef("workflows", "trust-workflow", "1.0.0")
+        save_records(project, [
+            InstalledBundleRecord.create("demo-bundle", "1.2.0", [component]),
+        ])
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(original)
+        WorkflowRegistry(project).add("trust-workflow", {"version": "1.0.0"})
+    if command == "update":
+        resolved = SimpleNamespace(install_allowed=True)
+        monkeypatch.setattr(
+            "specify_cli.bundles.command_update._build_stack",
+            lambda *args, **kwargs: SimpleNamespace(resolve=lambda *args: resolved),
+        )
+        monkeypatch.setattr(
+            "specify_cli.bundles.command_update._download_manifest",
+            lambda *args, **kwargs: manifest,
+        )
+        arguments = ["bundle", "update", "demo-bundle"]
+    else:
+        arguments = ["bundle", "install" if command == "refresh" else command, str(bundle_path)]
+        if command == "refresh":
+            arguments.append("--refresh")
+    if source == "bundled":
+        arguments.append("--offline")
+    if trust_steps:
+        arguments.append("--trust-steps")
+
+    result = runner.invoke(app, arguments, input="y\n")
+
+    assert result.exit_code == (0 if trust_steps else 1), result.output
+    assert marker.exists() is trust_steps
+    if trust_steps:
+        assert installed.read_bytes() == workflow_bytes
+    else:
+        assert "--trust-steps" in " ".join(result.output.split())
+        if command in {"update", "refresh"}:
+            assert installed.read_bytes() == original
+        else:
+            assert not installed.exists()
 
 
 @pytest.mark.parametrize("refresh", [False, True])

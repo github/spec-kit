@@ -30,6 +30,9 @@ confirmation on interactive stdin, defaulting to refusal. `--trust-steps`
 explicitly authorizes all custom step packages in that project for that
 invocation, including unreferenced packages, and works without a terminal.
 Approval is never persisted or inherited by subsequent invocations.
+Bundle `add`, `install`, `update`, and `init` commands forward the same explicit
+consent through their primitive installer to both bundled and catalog workflow
+delegates. Bundle metadata, offline mode, and refresh do not imply trust.
 
 ## Step contract
 

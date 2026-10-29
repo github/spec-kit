@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 from rich.markup import escape as _escape_markup
 
@@ -29,6 +31,12 @@ def bundle_update(
     ),
     integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
+    trust_steps: Annotated[
+        bool,
+        typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ) -> None:
     """Re-resolve and refresh a bundle's components via each primitive's update path."""
     try:
@@ -46,7 +54,9 @@ def bundle_update(
         from .installer import install_bundle
         from .resolver import resolve_install_plan
 
-        installer = DefaultPrimitiveInstaller(allow_network=not offline)
+        installer = DefaultPrimitiveInstaller(
+            allow_network=not offline, trust_steps=trust_steps,
+        )
         for target in targets:
             if not any(r.bundle_id == target for r in records):
                 raise BundlerError(f"Bundle '{target}' is not installed.")

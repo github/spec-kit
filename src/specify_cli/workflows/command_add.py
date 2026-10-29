@@ -63,12 +63,13 @@ def _prepare_workflow_add(
 
 def _install_preselected_workflow(
     workflow_id: str, *, version: str | None, selected_info: dict,
+    trust_steps: bool = False,
 ) -> None:
     """Install a bundle-selected release with the normal workflow preflights."""
     project_root = cli._require_specify_project()
     workflows_dir = _prepare_workflow_add(
         project_root, workflow_id, dev=False, from_url=None,
-        version=version, selected_catalog=True,
+        version=version, selected_catalog=True, trust_steps=trust_steps,
     )
     cli._install_workflow_from_catalog(
         project_root, workflows_dir, workflow_id,

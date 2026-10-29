@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.markup import escape as _escape_markup
@@ -49,6 +50,12 @@ def bundle_install(
         "--version",
         help="Install an exact bundle release from the catalog",
     ),
+    trust_steps: Annotated[
+        bool,
+        typer.Option(
+            "--trust-steps", help="Authorize all custom step Python for this invocation",
+        ),
+    ] = False,
 ) -> None:
     """Install a bundle's full component set through each primitive's machinery.
 
@@ -155,7 +162,7 @@ def bundle_install(
         result = install_bundle(
             project_root,
             plan,
-            DefaultPrimitiveInstaller(allow_network=not offline),
+            DefaultPrimitiveInstaller(allow_network=not offline, trust_steps=trust_steps),
             manifest=manifest,
             refresh=refresh,
         )

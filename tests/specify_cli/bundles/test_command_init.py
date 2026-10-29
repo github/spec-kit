@@ -33,7 +33,7 @@ def test_bundle_init_delegates_without_refresh(project, monkeypatch, bundle):
         install.assert_not_called()
     else:
         install.assert_called_once_with(
-            bundle, integration=None, offline=True, refresh=False,
+            bundle, integration=None, offline=True, refresh=False, trust_steps=False,
         )
 
 

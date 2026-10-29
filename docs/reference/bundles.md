@@ -71,8 +71,17 @@ specify bundle install <bundle_id | path>
 | `--offline`      | Do not access the network                                          |
 | `--refresh`      | Refresh owned components from the supplied bundle source           |
 | `--version`      | Install an exact historical or current catalog release             |
+| `--trust-steps`  | Authorize all project custom step Python for this invocation       |
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack, unless the manifest declares `provides.bundles`. A local parent with bundle references resolves those children through the catalog stack at command time, so it needs catalog and network access (see [Bundle references](#bundle-references)).
+
+When a workflow install or refresh loads custom step Python, the same
+[per-invocation trust approval](workflows.md#custom-step-trust) applies as for
+direct workflow commands. `bundle install`, its `bundle add` alias, `bundle
+update`, and `bundle init` forward `--trust-steps` to both bundled and catalog
+workflow installers. Without the switch, interactive invocations ask for
+approval and unattended invocations refuse to load custom steps. Neither
+`--offline` nor `--refresh` implies approval, and consent is never persisted.
 
 If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — already-installed components matching their pins are skipped, as are bundle-owned compatible packaged patch releases with a warning (see below). Other differing or missing installed versions cannot satisfy a pin. Only `--refresh` can repair a drifted version owned exclusively by this bundle; independently installed components are skipped and never adopted or replaced. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
 
@@ -233,6 +242,7 @@ specify bundle update [<bundle_id>]
 | `--all`          | Update every installed bundle                                                                                         |
 | `--integration`  | Override the integration used when refreshing components; applied only when the project's active integration can't be determined |
 | `--offline`      | Do not access the network                                                                                             |
+| `--trust-steps`  | Authorize all project custom step Python for this invocation                                                          |
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions (or compatible newer packaged patches, with a warning) while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
@@ -276,6 +286,7 @@ specify bundle init [<bundle_id>]
 | ---------------- | ---------------------------------------- |
 | `--integration`  | Integration override                     |
 | `--offline`      | Do not access the network                |
+| `--trust-steps`  | Authorize all project custom step Python for this invocation |
 
 Ensures the current directory is a Spec Kit project (initializing it idempotently if needed), then optionally installs the given bundle. Useful as an explicit one-step bootstrap for a new checkout.
 
