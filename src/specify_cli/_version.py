@@ -24,12 +24,13 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import typer
 from packaging.version import InvalidVersion, Version
 from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
+from .file_helper import _strip_extended_length_prefix
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
 _RESOLUTION_FAILURE_OFFLINE = "offline or timeout"
@@ -359,17 +360,13 @@ def _expand_prefix(prefix: str) -> Path | None:
         return None
 
 
-def _path_is_within_prefix(path: Path, prefix: Path) -> bool:
+def _path_is_within_prefix(path: PurePath, prefix: PurePath) -> bool:
     """Return whether absolute `path` is under absolute `prefix`."""
     if not path.is_absolute() or not prefix.is_absolute():
         return False
-    try:
-        common = os.path.commonpath(
-            [os.path.normcase(str(path)), os.path.normcase(str(prefix))]
-        )
-    except ValueError:
-        return False
-    return common == os.path.normcase(str(prefix))
+    return _strip_extended_length_prefix(path).is_relative_to(
+        _strip_extended_length_prefix(prefix)
+    )
 
 
 def _resolve_path_or_original(path: Path) -> Path:
@@ -484,6 +481,7 @@ def _editable_marker_seen() -> bool:
 def _find_installer(name: str) -> str | None:
     """Find an installer outside the working directory and current Git tree."""
     cwd = Path.cwd().resolve()
+    cwd_comparison = _strip_extended_length_prefix(cwd)
     project_root = _git_ancestor(cwd)
 
     def outside_project(path: Path) -> bool:
@@ -497,9 +495,9 @@ def _find_installer(name: str) -> str | None:
                 if ancestor in seen:
                     continue
                 seen.add(ancestor)
-                if ancestor.is_relative_to(
-                    project_root
-                ) or ancestor.resolve().is_relative_to(project_root):
+                if _path_is_within_prefix(
+                    ancestor, project_root
+                ) or _path_is_within_prefix(ancestor.resolve(), project_root):
                     return False
                 if ancestor.is_symlink():
                     # Preserve intermediate targets when links enter and then leave the worktree.
@@ -526,7 +524,7 @@ def _find_installer(name: str) -> str | None:
         directory = Path(entry)
         if (
             not directory.is_absolute()
-            or directory.resolve() == cwd
+            or _strip_extended_length_prefix(directory.resolve()) == cwd_comparison
             or not outside_project(directory)
         ):
             continue
@@ -538,8 +536,10 @@ def _find_installer(name: str) -> str | None:
                     continue
                 resolved_executable = executable.resolve()
                 if (
-                    executable.parent.resolve() != cwd
-                    and resolved_executable.parent != cwd
+                    _strip_extended_length_prefix(executable.parent.resolve())
+                    != cwd_comparison
+                    and _strip_extended_length_prefix(resolved_executable.parent)
+                    != cwd_comparison
                     and outside_project(executable)
                 ):
                     return str(resolved_executable)

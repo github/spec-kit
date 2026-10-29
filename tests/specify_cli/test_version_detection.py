@@ -4,7 +4,7 @@ import importlib.metadata
 import json
 import os
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 import pytest
@@ -360,6 +360,28 @@ class TestArgvAssemblyUvTool:
     def test_missing_uv_returns_no_installer_argv(self):
         with patch("specify_cli._version.shutil.which", return_value=None):
             assert _assemble_installer_argv(_InstallMethod.UV_TOOL, "v0.7.6") is None
+
+
+class TestWindowsPathContainment:
+    @pytest.mark.parametrize("unc", [False, True])
+    @pytest.mark.parametrize("root_extended", [False, True])
+    @pytest.mark.parametrize("target_extended", [False, True])
+    @pytest.mark.parametrize("location", ["root", "child", "sibling"])
+    def test_namespace_spellings_share_containment(
+        self, unc, root_extended, target_extended, location
+    ):
+        plain = r"\\server\share\project" if unc else r"C:\project"
+        extended = r"\\?\UNC\server\share\project" if unc else r"\\?\C:\project"
+        root = PureWindowsPath(extended if root_extended else plain)
+        target = PureWindowsPath(extended if target_extended else plain)
+        if location == "child":
+            target /= "bin"
+        elif location == "sibling":
+            target = target.with_name("project-sibling") / "bin"
+
+        assert specify_cli._version._path_is_within_prefix(target, root) is (
+            location != "sibling"
+        )
 
 
 class TestInstallerLookupSecurity:
