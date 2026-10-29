@@ -69,11 +69,15 @@ adapters. Commands using another established root call `project_files` on
 their actually selected root. Retain a helper only for the current operation;
 a later invocation resolves a new helper, so manual edits take effect.
 
-Integration state (`.specify/integration.json`) is an explicit managed-metadata
-exception to this handoff. Reads and writes always use deny mode, including
-contained links when `allow_symlinks` is true. This preserves the
+The `specify_cli.integration_state` helpers are an explicit managed-metadata
+exception to this handoff. Their reads and writes of `.specify/integration.json`
+always use deny mode, including contained links when `allow_symlinks` is true.
+This preserves the
 [integration lifecycle's restriction](integration.md#storage-loading-and-lifecycle)
 against symlinked write destinations before snapshotting and mutation.
+This guarantee does not cover unmigrated consumers such as
+`bundles.project.active_integration`, whose containment-checked reads can still
+follow contained state-file links.
 
 Existing Path-returning resolvers preflight policy without changing their return
 type or domain constructors. They do not implicitly equip unmigrated domain
