@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import locale
+import os
 import sys
 from pathlib import Path
 
@@ -111,6 +112,101 @@ def test_environment_expression_error_fails_before_execution(monkeypatch):
     assert "upper" in result.error
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process environment encoding")
+@pytest.mark.parametrize("value", ["\ud800", "\udc00"])
+@pytest.mark.parametrize("template", ["literal", "{{ inputs.value }}", "value={{ inputs.value }}"])
+@pytest.mark.parametrize("strict", [False, True])
+def test_unencodable_environment_fails_before_execution(monkeypatch, value, template, strict):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("Unencodable environment values must never reach subprocess.run")
+
+    monkeypatch.setattr("subprocess.run", unexpected_run)
+    config = {
+        "id": "unencodable-env", "strict": strict, "run": "echo hello",
+        "env": {"VALUE": value if template == "literal" else template},
+    }
+    step = ShellStep()
+    errors = step.validate(config)
+    if template == "literal":
+        assert any("env 'VALUE'" in error and "encoded" in error for error in errors)
+    else:
+        assert errors == []
+
+    result = step.execute(config, StepContext(inputs={"value": value}))
+    assert result.status == StepStatus.FAILED
+    assert "env 'VALUE'" in result.error
+    assert "encoded" in result.error
+    assert result.output["exit_code"] == -1
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process environment encoding")
+@pytest.mark.parametrize("value", ["caf\u00e9", "byte-\udcff"])
+def test_encodable_environment_preserves_unicode_and_surrogateescape(project_dir, value):
+    run = _python_run(
+        project_dir, "import os\nprint(os.fsencode(os.environ['VALUE']).hex())\n",
+    )
+    config = {
+        "id": "encodable-env", "strict": True, "run": run,
+        "env": {"VALUE": "{{ inputs.value }}"},
+    }
+    assert ShellStep().validate(config) == []
+    result = ShellStep().execute(config, StepContext(
+        project_root=str(project_dir), inputs={"value": value},
+    ))
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["stdout"].strip() == os.fsencode(value).hex()
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    (42, "n=42"),
+    (None, "n="),
+    (False, "n=False"),
+    ([1, 2], "n=[1, 2]"),
+    ({"key": "value"}, "n={'key': 'value'}"),
+])
+def test_mixed_environment_template_converts_embedded_values(project_dir, value, expected):
+    run = _python_run(project_dir, "import os\nprint(os.environ['VALUE'])\n")
+    config = {
+        "id": "mixed-env", "strict": True, "run": run,
+        "env": {"VALUE": "n={{ inputs.value }}"},
+    }
+    assert ShellStep().validate(config) == []
+    result = ShellStep().execute(config, StepContext(
+        project_root=str(project_dir), inputs={"value": value},
+    ))
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["stdout"] == expected + "\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process environment encoding")
+@pytest.mark.parametrize("continue_on_error", [False, True])
+def test_unencodable_environment_respects_continue_on_error(project_dir, continue_on_error):
+    definition = WorkflowDefinition.from_string(yaml.safe_dump({
+        "schema_version": "1.0",
+        "workflow": {"id": "env-encoding", "name": "Env Encoding", "version": "1.0.0"},
+        "inputs": {"encoded": {"type": "string", "default": r'"\ud800"'}},
+        "steps": [
+            {
+                "id": "invalid", "type": "shell", "strict": True, "run": "echo hello",
+                "env": {"VALUE": "{{ inputs.encoded | from_json }}"},
+                "continue_on_error": continue_on_error,
+            },
+            {"id": "after", "type": "shell", "strict": True, "run": "echo after"},
+        ],
+    }))
+    engine = WorkflowEngine(project_dir)
+    assert engine.validate(definition) == []
+    state = engine.execute(definition)
+    assert state.step_results["invalid"]["status"] == "failed"
+    assert "encoded" in state.step_results["invalid"]["error"]
+    if continue_on_error:
+        assert state.status == RunStatus.COMPLETED
+        assert state.step_results["after"]["status"] == "completed"
+    else:
+        assert state.status == RunStatus.FAILED
+        assert "after" not in state.step_results
+
+
 @pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("expression", [
     "{{ inputs.value }}",
@@ -121,7 +217,6 @@ def test_environment_preserves_dynamic_values_as_data(
     project_dir, monkeypatch, strict, expression,
 ):
     import json
-    import os
 
     payload = """'"; echo injected; $(echo substituted) `echo substituted` | & %PATH%
 {{ inputs.other }}"""

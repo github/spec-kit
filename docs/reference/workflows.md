@@ -1294,9 +1294,16 @@ An optional per-step `env` mapping is available in both strict and non-strict
 mode. Names must match `[A-Za-z_][A-Za-z0-9_]*`; names are literal, not
 expressions. Values must be strings and may contain workflow expressions.
 Each value is evaluated once and must resolve to a string without NUL
-characters; numbers, booleans, null, lists, and mappings are rejected rather
-than silently converted. To serialize structured data, explicitly use
-`to_json`. Invalid bindings fail the step before launching a process.
+characters. On POSIX, the string must also be encodable for the process
+environment using the filesystem encoding and its error handler.
+Invalid bindings fail the step before launching a process.
+
+Single-expression bindings preserve the expression's result type:
+`COUNT: "{{ inputs.count }}"` rejects a number, boolean, null, list, or mapping
+instead of converting it to text. Mixed templates use standard expression
+interpolation: `COUNT: "n={{ inputs.count }}"` produces `n=42` for integer
+`42`; embedded null becomes empty text, and other values use their string
+representation. To serialize structured data explicitly, use `to_json`.
 
 Bindings override inherited environment values for that subprocess only;
 they do not modify the parent process or subsequent steps. An empty string is

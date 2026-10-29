@@ -46,7 +46,8 @@ successful default or an unhandled exception.
 The built-in shell step preserves raw `run` interpolation by default.
 Per-step `strict: true` rejects expression markers in `run` during validation
 and execution. Its optional `env` mapping evaluates string templates separately,
-requires NUL-free string results, and overrides only the child environment.
+requires NUL-free string results encodable for the process environment on
+POSIX, and overrides only the child environment.
 `SPECKIT_WORKFLOW_DIR` remains engine-owned. This prevents workflow expression
 values from becoming shell source in strict mode; it is not a sandbox or a
 guarantee that an authored script handles environment data safely.

@@ -153,6 +153,11 @@ class ShellStep(StepBase):
             return f"env {name!r} must be a string, got {type(value).__name__}."
         if "\x00" in value:
             return f"env {name!r} must not contain NUL characters."
+        if os.name == "posix":
+            try:
+                os.fsencode(value)
+            except UnicodeEncodeError:
+                return f"env {name!r} cannot be encoded for the process environment."
         return None
 
     @classmethod
