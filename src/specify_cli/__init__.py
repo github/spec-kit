@@ -191,7 +191,13 @@ def _install_shared_infra(
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
     )
-    if config_file.exists() or config_file.is_symlink():
+    projection_dir = config_file.parent / "hook-dispatch"
+    if (
+        config_file.exists() or config_file.is_symlink()
+        or projection_dir.exists() or projection_dir.is_symlink()
+    ):
+        from .extensions import HookExecutor
+
         HookExecutor(project_path).migrate_project_config()
     return result
 

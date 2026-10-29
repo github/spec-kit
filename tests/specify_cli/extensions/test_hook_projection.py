@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from specify_cli import save_init_options
-from specify_cli.extensions import HookExecutor
+from specify_cli.extensions import ExtensionManifest, HookExecutor
 from specify_cli.extensions._hook_projection import project_hooks
 
 
@@ -350,6 +350,107 @@ def test_shared_infrastructure_refresh_projects_existing_config(tmp_path, monkey
     monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
     assert specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
     _assert_snapshot(tmp_path)
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+def test_shared_infrastructure_refresh_retires_projection_without_config(
+    tmp_path, monkeypatch, opt_in
+):
+    import specify_cli
+
+    executor = _enabled_executor(tmp_path)
+    executor.save_project_config(_config())
+    executor.config_file.unlink()
+    save_init_options(tmp_path, {"native_extension_hooks": opt_in})
+    monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
+
+    assert specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
+    assert not (tmp_path / ".specify/hook-dispatch").exists()
+    assert not executor.config_file.exists()
+
+
+def test_shared_infrastructure_refresh_rejects_symlinked_projection_without_config(
+    tmp_path, monkeypatch
+):
+    import specify_cli
+
+    root = tmp_path / ".specify"
+    root.mkdir()
+    target = tmp_path / "external"
+    target.mkdir()
+    marker = target / "before_plan.json"
+    marker.write_bytes(b"untouched")
+    cache = root / "hook-dispatch"
+    cache.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(specify_cli, "_install_shared_infra_impl", lambda *args, **kwargs: True)
+
+    with pytest.raises(ValueError, match="symlinked hook projection"):
+        specify_cli._install_shared_infra(tmp_path, "sh", refresh_managed=True)
+    assert cache.is_symlink()
+    assert marker.read_bytes() == b"untouched"
+    assert not (root / "extensions.yml").exists()
+
+
+@pytest.mark.parametrize("cache_state", ["missing", "stale"])
+@pytest.mark.parametrize("has_hooks", [False, True])
+def test_unchanged_native_registration_refreshes_projection_without_rewriting_yaml(
+    tmp_path, extension_dir, cache_state, has_hooks
+):
+    if not has_hooks:
+        manifest_path = extension_dir / "extension.yml"
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        data["hooks"] = {}
+        manifest_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    manifest = ExtensionManifest(extension_dir / "extension.yml")
+    executor = _enabled_executor(tmp_path)
+    executor.register_hooks(manifest)
+    original = b"# Preserve this comment\r\n" + executor.config_file.read_bytes().replace(
+        b"\n", b"\r\n"
+    )
+    executor.config_file.write_bytes(original)
+    cache = tmp_path / ".specify/hook-dispatch"
+    if cache_state == "missing":
+        for child in cache.iterdir():
+            child.unlink()
+        cache.rmdir()
+    else:
+        (cache / "events.txt").write_bytes(b"before_plan\n")
+        (cache / "before_plan.json").write_bytes(b"stale")
+
+    executor.register_hooks(manifest)
+
+    assert executor.config_file.read_bytes() == original
+    assert (cache / "source.yml").read_bytes() == original
+    expected = project_hooks(yaml.safe_load(original))
+    index = "".join(f"{event}\n" for event in expected).encode("utf-8")
+    assert (cache / "events.txt").read_bytes() == index
+    assert (cache / "events.txt.sha256").read_text().strip() == hashlib.sha256(index).hexdigest()
+    for event, payload in expected.items():
+        assert (cache / f"{event}.json").read_bytes() == payload
+        assert (cache / f"{event}.json.sha256").read_text().strip() == hashlib.sha256(payload).hexdigest()
+    assert not (cache / "before_plan.json").exists()
+
+
+def test_unchanged_native_registration_reports_projection_failure(
+    tmp_path, extension_dir, monkeypatch
+):
+    import specify_cli.extensions._hook_projection as projection
+
+    manifest = ExtensionManifest(extension_dir / "extension.yml")
+    executor = _enabled_executor(tmp_path)
+    executor.register_hooks(manifest)
+    original = executor.config_file.read_bytes()
+    real_write = projection.write_bytes
+
+    def fail_index(path, content):
+        if path.name == "events.txt":
+            raise OSError("disk full")
+        return real_write(path, content)
+
+    monkeypatch.setattr(projection, "write_bytes", fail_index)
+    with pytest.raises(OSError, match="disk full.*refresh-shared-infra"):
+        executor.register_hooks(manifest)
+    assert executor.config_file.read_bytes() == original
 
 
 def test_project_hooks_is_pure():

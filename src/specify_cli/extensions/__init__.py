@@ -3748,12 +3748,21 @@ class ExtensionManager:
                 manifest = self.get_extension(extension_id)
                 if manifest is None:
                     raise ExtensionError(f"Cannot read manifest for '{extension_id}'")
-                previous = [
-                    {"event": event, "command": entry["command"], "enabled": entry.get("enabled", True)}
-                    for event, entries in manifest.hooks.items()
-                    for entry in coerce_hook_entries(entries)
-                    if isinstance(entry, dict) and entry.get("command")
-                ]
+                previous = []
+                for event, entries in manifest.hooks.items():
+                    # Match registration's last-write-wins values and order.
+                    states = {}
+                    for entry in coerce_hook_entries(entries):
+                        if not isinstance(entry, dict) or not entry.get("command"):
+                            continue
+                        command = entry["command"]
+                        if command in states:
+                            del states[command]
+                        states[command] = {
+                            "event": event, "command": command,
+                            "enabled": entry.get("enabled", True),
+                        }
+                    previous.extend(states.values())
             owned = [
                 (event, hook)
                 for event, hooks in config.get("hooks", {}).items()
@@ -6262,6 +6271,8 @@ class HookExecutor:
 
         if changed:
             self.save_project_config(config)
+        elif native_hooks:
+            self.migrate_project_config()
 
     def unregister_hooks(self, extension_id: str):
         """Remove extension hooks from project config.

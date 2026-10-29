@@ -191,6 +191,47 @@ class TestExtensionEnableCLI:
         config = yaml.safe_load((project_dir / ".specify/extensions.yml").read_text())
         assert [hook["enabled"] for hook in config["hooks"]["before_plan"]] == [False, True]
 
+    @pytest.mark.parametrize("last_enabled", [False, True])
+    def test_enable_older_disabled_extension_deduplicates_manifest_last_write_wins(
+        self, project_dir, extension_dir, last_enabled
+    ):
+        enable_native_hooks(project_dir)
+        manifest_path = extension_dir / "extension.yml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["hooks"] = {
+            "before_plan": [
+                {"command": "speckit.test-ext.hello", "enabled": not last_enabled},
+                {"command": "speckit.test-ext.other", "enabled": True},
+                {"command": "speckit.test-ext.hello", "enabled": last_enabled},
+            ],
+            "after_plan": {"command": "speckit.test-ext.hello", "enabled": True},
+        }
+        manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        executor = HookExecutor(project_dir)
+        original_hooks = executor.load_project_config_for_update()["hooks"]
+        assert [
+            hook["command"] for hook in original_hooks["before_plan"]
+        ] == ["speckit.test-ext.other", "speckit.test-ext.hello"]
+        assert manager.disable("test-ext")
+        metadata = manager.registry.get("test-ext")
+        metadata.pop("disabled_hook_states")
+        manager.registry.restore("test-ext", metadata)
+
+        assert manager.enable("test-ext")
+        assert executor.load_project_config_for_update()["hooks"] == original_hooks
+        assert manager.registry.get("test-ext")["enabled"] is True
+        cache = project_dir / ".specify/hook-dispatch"
+        assert [
+            hook["command"] for hook in json.loads((cache / "before_plan.json").read_text())["hooks"]
+        ] == ["speckit.test-ext.other"] + (
+            ["speckit.test-ext.hello"] if last_enabled else []
+        )
+        assert [
+            hook["command"] for hook in json.loads((cache / "after_plan.json").read_text())["hooks"]
+        ] == ["speckit.test-ext.hello"]
+
     def test_cli_enable_keeps_manifest_disabled_hook_out_of_projection(
         self, project_dir, extension_dir
     ):

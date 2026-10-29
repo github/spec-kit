@@ -319,8 +319,9 @@ or perform an extension configuration update. Only the literal JSON boolean
 markdown/YAML hook behavior unchanged, without producing a projection.
 Other values for this key are rejected. Turning the option off retires an
 existing projection on the next configuration save or shared-infrastructure
-refresh. Run only one Specify CLI mutation against a project at a time;
-simultaneous CLI changes to the same project are unsupported.
+refresh, even if `extensions.yml` has been removed. Run only one Specify CLI
+mutation against a project at a time; simultaneous CLI changes to the same
+project are unsupported.
 
 When opted in, extension configuration saves publish a validated projection in
 `.specify/hook-dispatch/`: one `<event>.json` response and SHA-256 digest per
@@ -331,7 +332,9 @@ Only enabled hooks with no condition appear in the projection,
 in their YAML declaration order (regardless of priority). Each response
 includes `extension`, `command`, `optional`, `description`, `prompt`, and
 `priority`. Existing projects receive a projection when their shared
-infrastructure is refreshed; configuration writes regenerate it. Invalid
+infrastructure is refreshed; configuration writes regenerate it. Re-registering
+an unchanged extension also refreshes the projection without rewriting the
+configuration's comments or line endings. Invalid
 hook entries and unsafe projection paths prevent publication when opted in. Current installed
 commands continue using their existing hook resolution; the projection does
 not change execution behavior. For projection portability, missing or invalid
