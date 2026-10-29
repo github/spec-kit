@@ -17,6 +17,37 @@
 
 ---
 
+## Breaking: core `taskstoissues` removal
+
+The core `speckit.taskstoissues` command has been removed. GitHub issue conversion
+is now opt-in through the bundled `github` extension and its canonical
+`speckit.github.taskstoissues` command. Installing the extension does **not**
+restore the old invocation or create a compatibility alias.
+
+After upgrading the CLI, migrate from the project root in this order:
+
+1. Review and port any customizations in the old command or skill to the
+   namespaced extension command before forcing an integration upgrade. The
+   upgrade deletes old manifest-tracked `taskstoissues` artifacts; `--force`
+   authorizes deletion even when those files were locally customized.
+2. Run `specify integration upgrade <integration>` for each installed integration.
+   Replace `<integration>` with its key, such as `copilot` or `claude`.
+3. Run `specify extension add github` only if `github` is not already installed.
+   An already-installed, enabled extension is re-registered during the integration
+   upgrade; it does not need to be reinstalled.
+4. Invoke `speckit.github.taskstoissues` using your integration's syntax and update
+   references in presets, handoffs, extension prompts, and automation.
+
+See the [extension migration guide](https://github.com/github/spec-kit/blob/main/extensions/github/README.md#migrating-from-the-core-taskstoissues-command)
+for invocation syntax, customization migration, and dependent extensions.
+Projects that do not opt in no longer receive a tasks-to-issues command.
+
+Release sequencing follows [#4423](https://github.com/github/spec-kit/issues/4423):
+the removal must ship in a later minor release, after the bundled extension
+and core deprecation from #4421 and #4422 have shipped in earlier minor releases.
+
+---
+
 ## Part 1: Upgrade the CLI Tool
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.

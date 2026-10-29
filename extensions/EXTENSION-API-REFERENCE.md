@@ -645,6 +645,15 @@ Hooks are prompts run in the same session; they reuse the resolved `BUG_SLUG` an
 - `before_bug_test` - Before running verification
 - `after_bug_test` - After writing `test.md`
 
+#### Bundled `github` extension events (available when the extension is installed)
+
+The `speckit.github.taskstoissues` command consumes these events from
+`.specify/extensions.yml`. They are extension-owned, not core events; existing
+registrations, including the `git` extension's hooks, keep the same keys.
+
+- `before_taskstoissues` - Before tasks-to-issues conversion
+- `after_taskstoissues` - After tasks-to-issues conversion
+
 ### Hook Configuration
 
 **In `.specify/extensions.yml`**:

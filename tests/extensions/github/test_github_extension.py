@@ -157,8 +157,16 @@ class TestManifest:
 
         m = ExtensionManifest(EXT_DIR / "extension.yml")
         assert m.id == "github"
-        assert m.version == "1.0.2"
+        assert m.version == "1.0.3"
         assert [c["name"] for c in m.commands] == [COMMAND_NAME]
+
+    def test_manifest_does_not_restore_legacy_alias(self):
+        from specify_cli.extensions import ExtensionManifest
+
+        manifest = ExtensionManifest(EXT_DIR / "extension.yml")
+        for command in manifest.commands:
+            assert command["name"] != "speckit.taskstoissues"
+            assert "speckit.taskstoissues" not in command.get("aliases", [])
 
     def test_manifest_command_files_exist(self):
         from specify_cli.extensions import ExtensionManifest

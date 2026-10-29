@@ -78,22 +78,36 @@ Prerequisite errors name the Spec Kit command without assuming an integration's 
 
 ## Migrating from the core `taskstoissues` command
 
+**Breaking change:** the core command has been removed. Integration upgrades
+delete old manifest-tracked `taskstoissues` command and skill files, rather than
+replacing them with an updated prompt. Review and port local customizations to
+the namespaced extension command **before** using `--force`; forcing the upgrade
+also authorizes deletion of customized legacy files. Installing this extension
+does not restore the old invocation or provide a compatibility alias.
+
 For existing projects, upgrading the CLI alone does not refresh the generated
 core command files. After upgrading the CLI, run this from the project root:
 
 ```bash
-specify integration upgrade <key>
+specify integration upgrade <integration>
 ```
 
-Replace `<key>` with the installed integration key, or omit it to upgrade the
-default integration. If locally modified files block the upgrade, inspect those changes
-before deciding whether to overwrite them. See [Upgrade an Integration](../../docs/reference/integrations.md#upgrade-an-integration).
+Replace `<integration>` with the installed integration key, or omit it to upgrade
+the default integration. Repeat for each installed integration. If locally
+modified files block the upgrade, port those changes before deciding whether to
+delete the legacy files with `--force`. See
+[Upgrade an Integration](https://github.github.io/spec-kit/reference/integrations/#upgrade-an-integration).
 
-To migrate, install the extension and use the namespaced command instead:
+Then install the extension, **skipping this step if `github` is already
+installed**, and use the namespaced command instead:
 
 ```bash
 specify extension add github
 ```
+
+An already-installed, enabled extension is re-registered during the integration
+upgrade. See the [public upgrade guide](https://github.github.io/spec-kit/upgrade/#breaking-core-taskstoissues-removal)
+for the complete migration sequence.
 
 The `generic` integration supports this migration in both commands and skills
 layouts under its configured `--commands-dir`.
