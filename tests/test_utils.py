@@ -14,6 +14,13 @@ from specify_cli import check_tool, run_command
 from specify_cli._utils import docker_agent_command
 
 
+def _symlink_or_skip(link, target, *, target_is_directory=False):
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+
 def test_run_command_has_no_shell_parameter():
     """The shell-injection surface is removed at the API level.
 
@@ -74,13 +81,15 @@ def test_docker_discovery_skips_checkout_executables(
     local_bin.mkdir()
     installed = tmp_path / "installed"
     installed.mkdir()
+    monkeypatch.setenv("PATHEXT", ".exe")
     filename = f"{name}.exe" if os.name == "nt" else name
     for directory in (project, local_bin, installed):
         executable = directory / filename
         executable.touch()
         executable.chmod(0o755)
     link = tmp_path / "linked-bin"
-    link.symlink_to(local_bin, target_is_directory=True)
+    if entry == "symlink":
+        _symlink_or_skip(link, local_bin, target_is_directory=True)
     entries = {
         "empty": "",
         "relative": "bin",
@@ -115,13 +124,14 @@ def test_docker_discovery_rejects_executable_symlink_into_checkout(
 ):
     project = tmp_path / "project"
     project.mkdir()
+    monkeypatch.setenv("PATHEXT", ".exe")
     filename = f"{name}.exe" if os.name == "nt" else name
     executable = project / filename
     executable.touch()
     executable.chmod(0o755)
     installed = tmp_path / "installed"
     installed.mkdir()
-    (installed / filename).symlink_to(executable)
+    _symlink_or_skip(installed / filename, executable)
     monkeypatch.chdir(project)
     monkeypatch.setenv("PATH", str(installed))
     run = Mock()
@@ -139,6 +149,7 @@ def test_docker_plugin_probe_failures_are_unavailable(tmp_path, monkeypatch, fai
     project.mkdir()
     installed = tmp_path / "installed"
     installed.mkdir()
+    monkeypatch.setenv("PATHEXT", ".exe")
     executable = installed / ("docker.exe" if os.name == "nt" else "docker")
     executable.touch()
     executable.chmod(0o755)
@@ -173,6 +184,7 @@ def test_docker_discovery_uses_default_path_when_unset(tmp_path, monkeypatch):
     project.mkdir()
     installed = tmp_path / "installed"
     installed.mkdir()
+    monkeypatch.setenv("PATHEXT", ".exe")
     executable = installed / ("docker-agent.exe" if os.name == "nt" else "docker-agent")
     executable.touch()
     executable.chmod(0o755)

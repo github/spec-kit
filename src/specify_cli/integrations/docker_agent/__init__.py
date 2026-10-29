@@ -60,9 +60,11 @@ class DockerAgentIntegration(SkillsIntegration):
             None if executable == self.key else executable
         )
         if command is None:
-            # Preserve the normal executable-shaped argv for dispatch callers;
-            # preflight and the subprocess runner report the unavailable CLI.
-            return [executable, "run"]
+            raise ValueError(
+                "Docker Agent executable is unavailable. Install Docker Agent "
+                "on an absolute PATH outside the working directory, or set "
+                "SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE explicitly."
+            )
         return command
 
     @classmethod

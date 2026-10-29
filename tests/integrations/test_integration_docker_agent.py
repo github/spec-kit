@@ -1,5 +1,9 @@
 """Tests for the Docker Agent integration."""
 
+import os
+import subprocess
+from unittest.mock import Mock
+
 import pytest
 
 from specify_cli.integrations.docker_agent import DockerAgentIntegration
@@ -107,7 +111,10 @@ def test_per_step_args_ignore_legacy_extra_flags(monkeypatch):
     monkeypatch.setenv(
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "--hide-tool-results"
     )
-    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: "/usr/bin/docker-agent",
+    )
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -116,7 +123,7 @@ def test_per_step_args_ignore_legacy_extra_flags(monkeypatch):
     )
 
     assert args == [
-        "docker-agent",
+        "/usr/bin/docker-agent",
         "run",
         "--exec",
         "./agent.yaml",
@@ -131,7 +138,10 @@ def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
         "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS",
         legacy_value,
     )
-    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: "/usr/bin/docker-agent",
+    )
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -140,7 +150,7 @@ def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
     )
 
     assert args == [
-        "docker-agent",
+        "/usr/bin/docker-agent",
         "run",
         "--exec",
         "./step.yaml",
@@ -151,7 +161,10 @@ def test_per_step_args_override_legacy_extra_args(monkeypatch, legacy_value):
 
 def test_command_step_model_is_the_only_model_source(monkeypatch):
     monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False)
-    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: "/usr/bin/docker-agent",
+    )
 
     args = DockerAgentIntegration().build_exec_args(
         "prompt",
@@ -234,11 +247,14 @@ def test_prompt_is_passed_after_agent_config(monkeypatch):
 
 def test_prompt_starting_with_flag_is_delimited(monkeypatch):
     monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
-    monkeypatch.setattr("specify_cli._utils._find_docker_executable", lambda name: None)
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: "/usr/bin/docker-agent",
+    )
 
     args = DockerAgentIntegration().build_exec_args("--help", output_json=False)
 
-    assert args == ["docker-agent", "run", "--exec", "./agent.yaml", "--", "--help"]
+    assert args == ["/usr/bin/docker-agent", "run", "--exec", "./agent.yaml", "--", "--help"]
 
 
 def test_requires_agent_config(monkeypatch):
@@ -303,3 +319,73 @@ def test_docker_executable_override_uses_agent_subcommand(monkeypatch):
     args = DockerAgentIntegration().build_exec_args("prompt", output_json=False)
 
     assert args == ["/opt/docker", "agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_dispatch_rejects_checkout_local_executable(tmp_path, monkeypatch, stream):
+    executable = tmp_path / ("docker-agent.exe" if os.name == "nt" else "docker-agent")
+    executable.touch()
+    executable.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(ValueError, match="Docker Agent executable is unavailable"):
+        DockerAgentIntegration().dispatch_command(
+            "speckit.plan",
+            project_root=tmp_path,
+            stream=stream,
+            integration_args=["./agent.yaml"],
+        )
+
+    run.assert_not_called()
+
+
+def test_dispatch_preserves_explicit_checkout_local_override(tmp_path, monkeypatch):
+    executable = tmp_path / ("docker-agent.exe" if os.name == "nt" else "docker-agent")
+    executable.touch()
+    executable.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", str(executable))
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="done", stderr=""))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    result = DockerAgentIntegration().dispatch_command(
+        "speckit.plan",
+        project_root=tmp_path,
+        stream=False,
+        integration_args=["./agent.yaml"],
+    )
+
+    assert result == {"exit_code": 0, "stdout": "done", "stderr": ""}
+    assert run.call_args.args[0][0] == str(executable)
+    run.assert_called_once()
+
+
+def test_dispatch_stops_after_failed_plugin_probe(tmp_path, monkeypatch):
+    executable = tmp_path / ("docker.exe" if os.name == "nt" else "docker")
+    monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+    monkeypatch.setattr(
+        "specify_cli._utils._find_docker_executable",
+        lambda name: str(executable) if name == "docker" else None,
+    )
+    run = Mock(return_value=subprocess.CompletedProcess([], 1))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(ValueError, match="Docker Agent executable is unavailable"):
+        DockerAgentIntegration().dispatch_command(
+            "speckit.plan",
+            stream=False,
+            integration_args=["./agent.yaml"],
+        )
+
+    run.assert_called_once_with(
+        [str(executable), "agent", "version"],
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
