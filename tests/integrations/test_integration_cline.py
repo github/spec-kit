@@ -112,6 +112,23 @@ class TestClineIntegration(MarkdownIntegrationTests):
         )
         assert refs == {"agent": "speckit-foo-md", "next": "/speckit-foo-md"}
 
+    def test_cline_refs_hyphenate_dotted_preset_command_ending_in_md(self):
+        """A dotted preset command name ending in ``md`` is a command, not a file."""
+        from specify_cli.agents import CommandRegistrar
+
+        body = (
+            "Run speckit.foo.bar.md or /speckit.foo.bar.md, "
+            "then edit presets/foo/commands/speckit.foo.bar.md."
+        )
+        assert CommandRegistrar._hyphenate_body_refs(body) == (
+            "Run speckit-foo-bar-md or /speckit-foo-bar-md, "
+            "then edit presets/foo/commands/speckit.foo.bar.md."
+        )
+        refs = CommandRegistrar._hyphenate_frontmatter_refs(
+            {"agent": "speckit.foo.bar.md", "file": "commands/speckit.foo.bar.md"}
+        )
+        assert refs == {"agent": "speckit-foo-bar-md", "file": "commands/speckit.foo.bar.md"}
+
     def test_cline_frontmatter_refs_keep_md_file_names(self):
         """Frontmatter string values get the same ``.md`` file name protection."""
         from specify_cli.agents import CommandRegistrar
