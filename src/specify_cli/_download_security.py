@@ -35,6 +35,7 @@ MAX_ZIP_COMPONENT_BYTES = 255
 MAX_ZIP_CENTRAL_DIRECTORY_BYTES = 4 * 1024 * 1024
 # Include tar headers, padding, and GNU/PAX metadata, not just file payloads.
 MAX_TAR_STREAM_BYTES = MAX_ZIP_TOTAL_BYTES + 4 * 1024 * 1024
+MAX_TAR_METADATA_BYTES = 64 * 1024
 READ_CHUNK_SIZE = 64 * 1024
 
 # Tighter ceilings for responses that are read fully into memory and parsed as
@@ -95,8 +96,26 @@ _ARCHIVE_CONTENT_TYPES: dict[str, ArchiveFormat] = {
 }
 
 
-class _TarStreamLimitError(tarfile.ReadError):
+class _TarLimitError(tarfile.ReadError):
     pass
+
+
+class _BoundedTarInfo(tarfile.TarInfo):
+    """Check every metadata header, including headers parsed recursively."""
+
+    def _proc_member(self, archive: tarfile.TarFile) -> tarfile.TarInfo:
+        if self.type in (
+            tarfile.GNUTYPE_LONGNAME,
+            tarfile.GNUTYPE_LONGLINK,
+            tarfile.XHDTYPE,
+            tarfile.XGLTYPE,
+            tarfile.SOLARIS_XHDTYPE,
+        ) and self.size > MAX_TAR_METADATA_BYTES:
+            raise _TarLimitError(
+                "tar.gz metadata payload exceeds maximum size "
+                f"of {MAX_TAR_METADATA_BYTES} bytes"
+            )
+        return super()._proc_member(archive)
 
 
 class _BoundedTarGzipFile(gzip.GzipFile):
@@ -104,7 +123,7 @@ class _BoundedTarGzipFile(gzip.GzipFile):
 
     def _check_position(self, position: int) -> None:
         if position > MAX_TAR_STREAM_BYTES:
-            raise _TarStreamLimitError(
+            raise _TarLimitError(
                 "tar.gz archive exceeds maximum decompressed stream size "
                 f"of {MAX_TAR_STREAM_BYTES} bytes"
             )
@@ -217,18 +236,22 @@ def detect_archive_format(
                 try:
                     with (
                         _BoundedTarGzipFile(fileobj=archive_file, mode="rb") as source,
-                        tarfile.open(fileobj=source, mode="r:"),
+                        tarfile.open(
+                            fileobj=source, mode="r:", tarinfo=_BoundedTarInfo
+                        ),
                     ):
                         is_tar_gz = True
-                except _TarStreamLimitError as exc:
-                    _raise_from(error_type, str(exc), exc)
-                except _TAR_DECOMPRESSION_ERRORS:
+                except _TarLimitError:
+                    raise
+                except (*_TAR_DECOMPRESSION_ERRORS, gzip.BadGzipFile):
                     # A truncated gzip stream raises a bare EOFError here rather
                     # than a TarError, so catching only TarError let it escape
                     # this probe as a raw exception instead of leaving
                     # ``is_tar_gz`` False and reporting the format mismatch.
                     pass
             archive_file.seek(0)
+        except _TarLimitError as exc:
+            _raise_from(error_type, str(exc), exc)
         except OSError as exc:
             _raise_from(error_type, f"Invalid archive: {archive_path}", exc)
 
@@ -1140,7 +1163,9 @@ def safe_extract_tar(
                     fileobj=archive_file,
                 )
             )
-            archive = stack.enter_context(tarfile.open(fileobj=source, mode="r:"))
+            archive = stack.enter_context(
+                tarfile.open(fileobj=source, mode="r:", tarinfo=_BoundedTarInfo)
+            )
         except (*_TAR_DECOMPRESSION_ERRORS, OSError) as exc:
             _raise_from(error_type, f"Invalid tar.gz archive: {archive_path}: {exc}", exc)
 

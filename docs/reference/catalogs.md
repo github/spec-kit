@@ -111,9 +111,10 @@ installing or running components from an unfamiliar project.
 
 Shared archive validation limits the decompressed tar.gz stream to 54 MiB,
 including tar headers, padding, and GNU/PAX metadata as well as file contents.
-The limit applies before tar metadata is parsed during format detection and
-extraction; ordinary member-size and total-file-size limits still apply.
-Packages that exceed it must be reduced before installation.
+Each GNU/PAX metadata payload is also capped at 64 KiB before it is read or
+parsed. These limits apply during format detection and extraction; ordinary
+member-size and total-file-size limits still apply. Packages that exceed these
+limits must be reduced before installation.
 
 ## Host a private catalog
 

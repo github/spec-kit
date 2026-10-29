@@ -30,6 +30,193 @@ from specify_cli._download_security import (
 )
 
 
+def _write_tar_metadata_archive(path, metadata_type, size, position="first"):
+    def metadata_record(record_type, record_size):
+        info = tarfile.TarInfo("metadata")
+        info.type = record_type
+        info.size = record_size
+        if record_type in (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
+            payload = b"file.txt\0".ljust(record_size, b"\0")
+        else:
+            prefix = f"{record_size} comment=".encode()
+            payload = prefix + b"x" * (record_size - len(prefix) - 1) + b"\n"
+        return (
+            info.tobuf(format=tarfile.USTAR_FORMAT)
+            + payload
+            + b"\0" * (-record_size % tarfile.BLOCKSIZE)
+        )
+
+    plain = b""
+    if position == "later":
+        plain += tarfile.TarInfo("safe.txt").tobuf()
+    elif position == "nested":
+        plain += metadata_record(tarfile.XHDTYPE, 32)
+    plain += metadata_record(metadata_type, size)
+    info = tarfile.TarInfo("file.txt")
+    info.size = 8
+    plain += info.tobuf() + b"contents".ljust(tarfile.BLOCKSIZE, b"\0")
+    path.write_bytes(gzip.compress(plain + b"\0" * tarfile.BLOCKSIZE))
+
+
+@pytest.mark.parametrize(
+    "metadata_type",
+    [
+        tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+        tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK,
+    ],
+)
+@pytest.mark.parametrize(
+    "operation, position",
+    [
+        ("detect", "first"), ("detect", "nested"),
+        ("extract", "first"), ("extract", "later"), ("extract", "nested"),
+        ("combined", "first"), ("combined", "later"), ("combined", "nested"),
+    ],
+)
+def test_tar_metadata_payload_limit_precedes_read(
+    tmp_path, monkeypatch, metadata_type, operation, position
+):
+    archive_path = tmp_path / "metadata.tar.gz"
+    _write_tar_metadata_archive(archive_path, metadata_type, 65537, position)
+    out_dir = tmp_path / "out"
+    original_read = gzip.GzipFile.read
+
+    def bounded_read(stream, size=-1):
+        assert 0 <= size <= 65536, "Oversized metadata read reached gzip"
+        return original_read(stream, size)
+
+    monkeypatch.setattr(gzip.GzipFile, "read", bounded_read)
+    with archive_path.open("rb") as source:
+        with pytest.raises(_CustomZipError, match="metadata.*maximum size.*65536"):
+            if operation == "detect":
+                detect_archive_format(
+                    archive_path, archive_file=source, error_type=_CustomZipError
+                )
+            else:
+                extractor = (
+                    safe_extract_tar if operation == "extract" else safe_extract_archive
+                )
+                extractor(
+                    archive_path, out_dir, archive_file=source,
+                    error_type=_CustomZipError,
+                )
+        assert not source.closed
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "metadata_type",
+    [
+        tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+        tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK,
+    ],
+)
+def test_tar_accepts_metadata_at_payload_limit(tmp_path, metadata_type):
+    archive_path = tmp_path / "metadata.tar.gz"
+    _write_tar_metadata_archive(archive_path, metadata_type, 65536)
+    out_dir = tmp_path / "out"
+
+    assert safe_extract_archive(archive_path, out_dir) == "tar.gz"
+    assert (out_dir / "file.txt").read_bytes() == b"contents"
+
+
+def test_tiny_compressed_pax_archive_rejects_large_metadata(tmp_path):
+    archive_path = tmp_path / "metadata.tar.gz"
+    _write_tar_metadata_archive(archive_path, tarfile.XHDTYPE, 2 * 1024 * 1024)
+    assert archive_path.stat().st_size < 4096
+
+    with pytest.raises(_CustomZipError, match="metadata.*maximum size.*65536"):
+        safe_extract_archive(
+            archive_path, tmp_path / "out", error_type=_CustomZipError
+        )
+    assert not (tmp_path / "out").exists()
+
+
+def test_tar_metadata_limit_does_not_limit_regular_file_payload(tmp_path):
+    archive_path = tmp_path / "payload.tar.gz"
+    contents = b"x" * 65537
+    _write_tar_gz(archive_path, [("file.txt", contents)])
+    out_dir = tmp_path / "out"
+
+    assert safe_extract_archive(archive_path, out_dir) == "tar.gz"
+    assert (out_dir / "file.txt").read_bytes() == contents
+
+
+@pytest.mark.parametrize("operation", ["detect", "combined"])
+@pytest.mark.parametrize("limit_kind", ["stream", "metadata"])
+def test_tar_limit_diagnostic_survives_oserror_caller_type(
+    tmp_path, monkeypatch, operation, limit_kind
+):
+    class ArchiveIOError(OSError):
+        pass
+
+    archive_path = tmp_path / "metadata.tar.gz"
+    if limit_kind == "stream":
+        monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 2048)
+        size = 4096
+        diagnostic = "maximum decompressed"
+    else:
+        size = 65537
+        diagnostic = "metadata.*maximum size"
+    _write_tar_metadata_archive(archive_path, tarfile.XHDTYPE, size)
+
+    with pytest.raises(ArchiveIOError, match=diagnostic) as exc_info:
+        if operation == "detect":
+            detect_archive_format(archive_path, error_type=ArchiveIOError)
+        else:
+            safe_extract_archive(
+                archive_path, tmp_path / "out", error_type=ArchiveIOError
+            )
+    assert "Invalid archive" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("operation", ["detect", "combined"])
+@pytest.mark.parametrize("use_stream", [False, True])
+def test_malformed_gzip_header_keeps_format_mismatch(
+    tmp_path, operation, use_stream
+):
+    archive_path = tmp_path / "corrupt.tar.gz"
+    archive_path.write_bytes(b"\x1f\x8b\x00" + b"\0" * 7)
+    source = io.BytesIO(archive_path.read_bytes()) if use_stream else None
+    with pytest.raises(_CustomZipError, match="Archive format mismatch"):
+        if operation == "detect":
+            detect_archive_format(
+                archive_path, archive_file=source, error_type=_CustomZipError
+            )
+        else:
+            safe_extract_archive(
+                archive_path, tmp_path / "out", archive_file=source,
+                error_type=_CustomZipError,
+            )
+    if source is not None:
+        assert not source.closed
+        source.close()
+
+
+@pytest.mark.parametrize("operation", ["detect", "combined"])
+@pytest.mark.parametrize("use_stream", [False, True])
+def test_zip_with_malformed_gzip_prefix_remains_supported(
+    tmp_path, operation, use_stream
+):
+    archive_path = tmp_path / "prefixed.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("file.txt", b"contents")
+    archive_path.write_bytes(b"\x1f\x8b\x00" + b"\0" * 7 + archive_path.read_bytes())
+    source = io.BytesIO(archive_path.read_bytes()) if use_stream else None
+    out_dir = tmp_path / "out"
+
+    if operation == "detect":
+        assert detect_archive_format(archive_path, archive_file=source) == "zip"
+    else:
+        assert safe_extract_archive(
+            archive_path, out_dir, archive_file=source
+        ) == "zip"
+        assert (out_dir / "file.txt").read_bytes() == b"contents"
+    if source is not None:
+        assert not source.closed
+        source.close()
+
+
 @pytest.mark.parametrize(
     "metadata_type",
     [tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK],
