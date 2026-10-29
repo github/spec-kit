@@ -151,7 +151,8 @@ def test_read_integration_json_rejects_symlinks(linked_integration_state, reader
 
 
 def test_write_integration_json_rejects_symlinks_before_observer(linked_integration_state):
-    project, link, target, outside, contained = linked_integration_state
+    project, link, _, outside, contained = linked_integration_state
+    original_target = link.readlink()
     original = (outside / "integration.json").read_bytes()
     contained_original = (contained / "integration.json").read_bytes()
     changes = []
@@ -167,7 +168,7 @@ def test_write_integration_json_rejects_symlinks_before_observer(linked_integrat
     assert "allow_symlinks does not apply to integration state" in str(exc_info.value)
     assert "explicitly allow symlinks" not in str(exc_info.value)
     assert link.is_symlink()
-    assert link.readlink() == target
+    assert link.readlink() == original_target
     assert (outside / "integration.json").read_bytes() == original
     assert (contained / "integration.json").read_bytes() == contained_original
     assert not (outside / "missing.json").exists()
