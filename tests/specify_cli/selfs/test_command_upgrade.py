@@ -102,17 +102,22 @@ def test_deleted_working_directory_gets_rejection_guidance(
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_rejected_probe_does_not_hide_a_different_missing_installer(
-    monkeypatch, tmp_path, dry_run
+@pytest.mark.parametrize("rejected_name", ["uv", "pipx"])
+def test_rejected_probe_prevents_selecting_a_different_installer(
+    monkeypatch, tmp_path, dry_run, rejected_name
 ):
     monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
-    pipx_results = iter([sys.executable, None])
+    other_name = "pipx" if rejected_name == "uv" else "uv"
+    probe_args = ["list", "--json"] if other_name == "pipx" else ["tool", "list"]
+    probe_output = (
+        '{"venvs":{"specify-cli":{}}}' if other_name == "pipx" else "specify-cli v0.7.6\n"
+    )
 
     def fake_which(name):
-        if name == "uv":
-            return "./uv"
-        if name == "pipx":
-            return next(pipx_results)
+        if name == rejected_name:
+            return f"./{name}"
+        if name == other_name:
+            return sys.executable
         return None
 
     with patch(
@@ -123,9 +128,9 @@ def test_rejected_probe_does_not_hide_a_different_missing_installer(
         "specify_cli._version._get_installed_version", return_value="0.7.5"
     ), patch("specify_cli._version.subprocess.run") as mock_run:
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[sys.executable, "list", "--json"],
+            args=[sys.executable, *probe_args],
             returncode=0,
-            stdout='{"venvs":{"specify-cli":{}}}',
+            stdout=probe_output,
             stderr="",
         )
         args = ["self", "upgrade", "--tag", "v0.7.6"]
@@ -133,13 +138,14 @@ def test_rejected_probe_does_not_hide_a_different_missing_installer(
             args.append("--dry-run")
         result = runner.invoke(app, args)
 
-    assert result.exit_code == (0 if dry_run else 3)
+    assert result.exit_code == 0
     output = strip_ansi(result.output)
-    assert "Installer uv rejected" in output
-    assert "pipx not found on PATH" in output
-    assert "Installer pipx rejected" not in output
+    assert f"Installer {rejected_name} rejected" in output
+    assert "Could not identify your install method automatically" in output
+    assert "Upgrading specify-cli" not in output
+    assert "not found on PATH" not in output
     assert mock_run.call_count == 1
-    assert mock_run.call_args.args[0] == [sys.executable, "list", "--json"]
+    assert mock_run.call_args.args[0] == [sys.executable, *probe_args]
 
 
 class TestTagValidation:

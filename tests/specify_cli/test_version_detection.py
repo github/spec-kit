@@ -1011,6 +1011,46 @@ class TestDetectionPipx:
         assert "pipx list --json" in signals.installer_registries_consulted
 
 
+    @pytest.mark.parametrize("rejected_name", ["uv", "pipx"])
+    def test_tier3_rejected_probe_leaves_ownership_ambiguous(
+        self, monkeypatch, tmp_path, rejected_name
+    ):
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+        other_name = "pipx" if rejected_name == "uv" else "uv"
+        probe_args = ["list", "--json"] if other_name == "pipx" else ["tool", "list"]
+        probe_output = (
+            '{"venvs":{"specify-cli":{}}}' if other_name == "pipx" else "specify-cli v0.7.6\n"
+        )
+
+        def fake_which(name):
+            if name == rejected_name:
+                return f"./{name}"
+            if name == other_name:
+                return sys.executable
+            return None
+
+        with patch(
+            "specify_cli._version.shutil.which", side_effect=fake_which
+        ), patch(
+            "specify_cli._version._editable_marker_seen", return_value=False
+        ), patch("specify_cli._version.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[sys.executable, *probe_args],
+                returncode=0,
+                stdout=probe_output,
+                stderr="",
+            )
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert method == _InstallMethod.UNSUPPORTED
+        assert signals.matched_tier is None
+        assert signals.installer_registries_consulted == (" ".join([other_name, *probe_args]),)
+        assert len(signals.installer_rejections) == 1
+        assert f"Installer {rejected_name} rejected" in signals.installer_rejections[0]
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[0] == [sys.executable, *probe_args]
+
+
 class TestEditableInstallMetadata:
     @pytest.mark.skipif(
         not hasattr(importlib.metadata, "InvalidMetadataError"),

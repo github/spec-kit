@@ -647,10 +647,10 @@ def _detect_install_method(
             except (subprocess.TimeoutExpired, OSError, ValueError):
                 pass
 
-        # If both registries claim ownership, the active entrypoint is ambiguous.
-        # Treat it as unsupported rather than guessing and upgrading the wrong install.
+        # Both matches or a rejected probe leave ownership ambiguous.
+        # Never guess and risk upgrading the wrong installation.
         exactly_one_match = uv_tool_match != pipx_match
-        if exactly_one_match:
+        if exactly_one_match and not rejections:
             method = _InstallMethod.UV_TOOL if uv_tool_match else _InstallMethod.PIPX
             if include_signals:
                 return method, _DetectionSignals(
