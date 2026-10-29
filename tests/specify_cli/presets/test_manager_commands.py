@@ -1,6 +1,7 @@
 """Tests for preset command artifacts in specify_cli.presets._manager_commands."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -3112,8 +3113,13 @@ class TestRemoveReconciliation:
         assert (scripts / "pre-hooks.sh").is_symlink()
         assert not (scripts / "post-hooks.sh").exists()
 
-    def test_replace_install_provisions_its_own_hook_refs(self, project_dir, temp_dir):
+    @pytest.mark.parametrize("script", [None, "sh", "ps", "py"])
+    def test_replace_install_provisions_its_own_hook_refs(self, project_dir, temp_dir, script):
         (project_dir / ".gemini/commands").mkdir(parents=True)
+        if script is not None:
+            (project_dir / ".specify/init-options.json").write_text(
+                json.dumps({"ai": "gemini", "script": script}), encoding="utf-8"
+            )
         preset = _make_wrap_preset_dir(
             temp_dir, "replace-with-hooks", "speckit.specify", "before", "after"
         )
@@ -3121,15 +3127,21 @@ class TestRemoveReconciliation:
             "---\ndescription: Hook-bearing replacement\nstrategy: replace\n"
             "---\n\n{PRE_HOOK_SCRIPT} specify\n", encoding="utf-8"
         )
-        dispatchers = project_dir / ".specify/scripts/bash"
-        assert not (dispatchers / "pre-hooks.sh").exists()
+        selected_script = script or ("ps" if os.name == "nt" else "sh")
+        variant, pre_name, post_name = {
+            "sh": ("bash", "pre-hooks.sh", "post-hooks.sh"),
+            "ps": ("powershell", "pre-hooks.ps1", "post-hooks.ps1"),
+            "py": ("python", "pre_hooks.py", "post_hooks.py"),
+        }[selected_script]
+        dispatchers = project_dir / ".specify/scripts" / variant
+        assert not (dispatchers / pre_name).exists()
 
         PresetManager(project_dir).install_from_directory(preset, "0.1.5")
 
         command = project_dir / ".gemini/commands/speckit.specify.toml"
-        assert ".specify/scripts/bash/pre-hooks.sh" in command.read_text(encoding="utf-8")
-        assert (dispatchers / "pre-hooks.sh").is_file()
-        assert (dispatchers / "post-hooks.sh").is_file()
+        assert f".specify/scripts/{variant}/{pre_name}" in command.read_text(encoding="utf-8")
+        assert (dispatchers / pre_name).is_file()
+        assert (dispatchers / post_name).is_file()
 
     @pytest.mark.parametrize("lower_hooks", [True, False])
     def test_remove_provisions_only_surviving_replacement_variant(
