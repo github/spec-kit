@@ -18,6 +18,17 @@ _PRERELEASE_PATTERN = re.compile(
 )
 
 
+def strip_version_prefix(value: str) -> str:
+    """Return *value* without an optional leading ``v``/``V``.
+
+    Display formatter: only the prefix is removed, so prerelease spellings stay
+    as the author wrote them. ``_normalize_semver`` also rewrites those, which
+    would make a label disagree with the recorded version.
+    """
+    text = str(value)
+    return text[1:] if text[:1] in ("v", "V") else text
+
+
 def _normalize_semver(value: str) -> str:
     """Normalize common SemVer prerelease spellings into PEP 440 text."""
     text = str(value)

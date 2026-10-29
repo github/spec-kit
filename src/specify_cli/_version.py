@@ -38,6 +38,7 @@ _RESOLUTION_FAILURE_RATE_LIMITED = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
 )
 _RESOLUTION_FAILURE_HTTP_PREFIX = "HTTP "
+_RESOLUTION_FAILURE_AUTH_PREFIX = "authentication error: "
 _FAILURE_INSTALLER_MISSING = "installer-missing"
 _FAILURE_INSTALLER_INVALID = "installer-invalid"
 _FAILURE_TARGET_TAG_UNPARSEABLE = "target-tag-unparseable"
@@ -109,11 +110,12 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
     """Return (tag, failure_category). Exactly one outbound call, 5 s timeout.
 
     On success: (tag_name, None).
-    On a documented network/HTTP failure (added in T029/T030): (None, category).
+    On a documented authentication/network/HTTP failure: (None, category).
     On anything else — including a malformed response body — the exception
     propagates; there is no catch-all (research D-006).
     """
     from .authentication.http import open_url
+    from .authentication.github import GitHubCliAuthError
 
     try:
         with open_url(
@@ -132,6 +134,8 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             if not isinstance(tag, str) or not tag:
                 raise ValueError("GitHub API response missing valid tag_name")
             return tag, None
+    except GitHubCliAuthError as exc:
+        return None, f"{_RESOLUTION_FAILURE_AUTH_PREFIX}{exc.reason}"
     except urllib.error.HTTPError as e:
         # Order matters: HTTPError is a subclass of URLError.
         # 403 (primary rate limit / abuse detection) and 429 (Too Many Requests /
@@ -1107,7 +1111,10 @@ def _emit_failure(
     """Render user-facing output for resolver, installer, or verification failures."""
     if (
         category in _RESOLUTION_FAILURE_CATEGORIES
-        or category.startswith(_RESOLUTION_FAILURE_HTTP_PREFIX)
+        or category.startswith((
+            _RESOLUTION_FAILURE_HTTP_PREFIX,
+            _RESOLUTION_FAILURE_AUTH_PREFIX,
+        ))
     ):
         console.print(f"Upgrade aborted: {category}", soft_wrap=True)
         return

@@ -10,6 +10,7 @@ from mcp.types import CallToolResult, TextContent
 
 from ..artifacts._mcp import register as register_artifacts
 from ..mcp_version import register as register_version
+from ..workflows._mcp import register as register_workflows
 from .catalog import (
     CommandAdapterError,
     CommandDescription,
@@ -89,6 +90,7 @@ def create_server(
 
     register_version(server)
     register_artifacts(server, launch_directory=server_launch_directory)
+    register_workflows(server, launch_directory=server_launch_directory)
 
     return server
 

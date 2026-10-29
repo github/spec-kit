@@ -20,7 +20,7 @@
     "assess": {
       "name": "Idea Assessment Pipeline",
       "id": "assess",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide. A go verdict hands off to /speckit.specify; a kill closes it. Lives under .specify/assessments/<slug>/",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",

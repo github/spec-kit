@@ -1,7 +1,7 @@
 """Explicit MCP dispositions for the complete ``specify workflow`` hierarchy.
 
-No workflow adapter is registered yet. These records describe the conservative
-union of the current CLI paths, not a promise of a future MCP contract.
+Only workflow.list has a shared operation and adapter. Unavailable records
+describe the conservative union of CLI paths, not a future MCP contract.
 
 Effect boundaries worth retaining when adapters are introduced:
 
@@ -23,7 +23,13 @@ they do not expand MCP discovery or the legacy server command catalog.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
+
+from mcp.server import MCPServer
+
+from ._operation_list import WORKFLOW_LIST_OPERATION
+from .mcp_list import register as register_list
 
 WorkflowDisposition = Literal["available", "unavailable", "excluded"]
 WorkflowCapability = Literal[
@@ -101,12 +107,11 @@ WORKFLOW_TOOLS = (
         operation_id="workflow.list",
         cli_path="specify workflow list",
         mcp_tool_name="specify_workflow_list",
-        disposition_reason=(
-            "WorkflowRegistry.list returns registry dictionaries rendered by the CLI; "
-            "no shared typed list outcome or MCP adapter."
-        ),
-        capabilities=_LOCAL_READ,
-        network_access="none",
+        disposition_reason=None,
+        disposition="available",
+        contract_version=WORKFLOW_LIST_OPERATION.contract_version,
+        capabilities=WORKFLOW_LIST_OPERATION.capabilities,
+        network_access=WORKFLOW_LIST_OPERATION.network_access,
     ),
     WorkflowToolInventory(
         operation_id="workflow.remove",
@@ -375,3 +380,14 @@ WORKFLOW_TOOLS = (
         network_access="none",
     ),
 )
+
+
+def register(server: MCPServer, *, launch_directory: Path) -> None:
+    """Register only the workflow list operation from its owning hierarchy."""
+    record = next(
+        item for item in WORKFLOW_TOOLS if item.operation_id == "workflow.list"
+    )
+    if record.disposition == "available":
+        register_list(
+            server, launch_directory=launch_directory, tool_name=record.mcp_tool_name
+        )

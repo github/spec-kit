@@ -26,6 +26,8 @@ from specify_cli.mcp_server.catalog import (
 )
 from specify_cli.mcp_server.server import create_server
 from specify_cli.workflows import _commands, _mcp
+from specify_cli.workflows._operation_list import WORKFLOW_LIST_OPERATION
+from specify_cli.workflows.mcp_list import WorkflowListToolInput, WorkflowListToolResult
 from specify_cli.workflows.step import catalog as step_catalog
 
 
@@ -68,13 +70,7 @@ def _assert_inventory(
     cli_paths: Sequence[str],
     tools: Sequence[Tool],
 ) -> None:
-    """Validate accounting and fail closed for available workflow records.
-
-    No shared workflow operation descriptors exist yet. Real available records
-    must fail closed until operation-specific assertions bind their descriptor,
-    version, effects and adapter schemas, as in the artifact inventory tests.
-    A matching name and object schemas alone cannot establish that binding.
-    """
+    """Bind the one implemented contract; fail closed for all other operations."""
     for label, values in (
         ("operation IDs", [item.operation_id for item in records]),
         ("CLI paths", [item.cli_path for item in records]),
@@ -127,9 +123,17 @@ def _assert_inventory(
                 f"Available reason: {item.operation_id}"
             )
             _assert_synthetic_discovery_shape(item, tools)
-            raise AssertionError(
+            assert item.operation_id == WORKFLOW_LIST_OPERATION.operation_id, (
                 f"No workflow operation contract evidence: {item.operation_id}"
             )
+            assert item.contract_version == WORKFLOW_LIST_OPERATION.contract_version
+            assert item.capabilities == WORKFLOW_LIST_OPERATION.capabilities
+            assert item.network_access == WORKFLOW_LIST_OPERATION.network_access
+            tool = matching[0]
+            expected_input = WorkflowListToolInput.model_json_schema()
+            assert tool.input_schema["properties"] == expected_input["properties"]
+            assert tool.input_schema["additionalProperties"] is False
+            assert tool.output_schema == WorkflowListToolResult.model_json_schema()
         else:
             assert item.contract_version is None, (
                 f"Nonavailable tool has contract version: {item.operation_id}"
@@ -397,13 +401,14 @@ def test_uninventoried_workflow_tool_is_rejected(available_record_and_tool):
         _assert_inventory([], [], [tool])
 
 
-def test_existing_server_and_legacy_catalog_are_unchanged(tmp_path):
+def test_server_adds_only_workflow_list_and_preserves_legacy_catalog(tmp_path):
     tools = asyncio.run(create_server(launch_directory=tmp_path).list_tools())
     assert Counter(tool.name for tool in tools) == Counter(
         {
             "specify_version": 1,
             "specify_artifact_list": 1,
             "specify_artifact_info": 1,
+            "specify_workflow_list": 1,
             "specify_list_commands": 1,
             "specify_describe_command": 1,
             "specify_run_command": 1,
@@ -414,6 +419,11 @@ def test_existing_server_and_legacy_catalog_are_unchanged(tmp_path):
     with pytest.raises(CommandAdapterError) as exc:
         describe_command("workflow.run")
     assert exc.value.code == "unavailable_command"
+    assert [
+        item.operation_id
+        for item in _mcp.WORKFLOW_TOOLS
+        if item.disposition == "available"
+    ] == ["workflow.list"]
 
 
 @pytest.mark.parametrize("operation_id", ["workflow.run", "workflow.resume"])
