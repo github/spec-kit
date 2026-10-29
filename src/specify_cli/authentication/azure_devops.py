@@ -7,6 +7,7 @@ import json as _json
 import os
 import shutil
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
@@ -31,6 +32,36 @@ def _extract_token(payload: object, key: str) -> str | None:
     if not isinstance(token, str):
         return None
     return token.strip() or None
+
+
+def _find_az_cli() -> str | None:
+    """Find Azure CLI without searching the current directory or its aliases."""
+    names = ["az"]
+    if sys.platform == "win32":
+        # Python 3.11's which() does not expand PATHEXT for absolute paths.
+        extensions = (os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(";")
+        names = ["az" + extension for extension in extensions if extension]
+
+    cwd = os.getcwd()
+    for directory in os.get_exec_path():
+        if not os.path.isabs(directory):
+            continue
+        try:
+            if os.path.samefile(directory, cwd):
+                continue
+        except OSError:
+            continue
+        for name in names:
+            resolved = shutil.which(os.path.join(directory, name))
+            if not resolved or not os.path.isabs(resolved):
+                continue
+            try:
+                if os.path.samefile(os.path.dirname(os.path.realpath(resolved)), cwd):
+                    continue
+            except OSError:
+                continue
+            return resolved
+    return None
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -72,25 +103,9 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
-            # Absolute candidates bypass Windows' implicit current-directory
-            # search while retaining PATHEXT support for the az.cmd shim.
-            cwd = os.path.normcase(os.path.realpath(os.getcwd()))
-            for directory in os.get_exec_path():
-                if (
-                    not os.path.isabs(directory)
-                    or os.path.normcase(os.path.realpath(directory)) == cwd
-                ):
-                    continue
-                az = shutil.which(os.path.join(directory, "az"))
-                if (
-                    az
-                    and os.path.isabs(az)
-                    and os.path.normcase(os.path.dirname(os.path.realpath(az))) != cwd
-                ):
-                    break
-            else:
+            az = _find_az_cli()
+            if az is None:
                 return None
-
             result = subprocess.run(  # noqa: S603
                 [
                     az,

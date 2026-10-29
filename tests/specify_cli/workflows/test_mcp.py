@@ -503,7 +503,7 @@ def test_catalog_discovery_effects_include_cache_and_auth_execution(
     assert result.exit_code == 0, result.output
     assert requests == [url]
     assert len(processes) == 1
-    assert processes[0][0] == str(executable)
+    assert os.path.normcase(processes[0][0]) == os.path.normcase(str(executable))
     assert processes[0][1:3] == ["account", "get-access-token"]
     cache = tmp_path / ".specify" / "workflows"
     if step:

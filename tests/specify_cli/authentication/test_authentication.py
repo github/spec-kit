@@ -931,6 +931,8 @@ class TestAzureDevOpsAuth:
         executable.write_text("test executable", encoding="utf-8")
         executable.chmod(0o755)
         monkeypatch.setenv("PATH", str(executable.parent))
+        if os.name == "nt":
+            monkeypatch.setenv("PATHEXT", ".EXE;.CMD")
         return executable
 
     def test_basic_pat_headers(self):
@@ -1005,7 +1007,8 @@ class TestAzureDevOpsAuth:
     def test_resolve_token_azure_cli_resolves_executable(self, az_cli_executable):
         """The az executable is resolved via shutil.which before invocation, so
         the .cmd/.bat shim on Windows (CreateProcess ignores PATHEXT) is used."""
-        from unittest.mock import patch, MagicMock
+        import shutil
+        from unittest.mock import call, patch, MagicMock
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
         )
@@ -1015,16 +1018,71 @@ class TestAzureDevOpsAuth:
         result.stdout = '{"accessToken": "tok"}'
         with patch(
             "specify_cli.authentication.azure_devops.shutil.which",
-            return_value=resolved_path,
+            wraps=shutil.which,
         ) as which, patch(
             "specify_cli.authentication.azure_devops.subprocess.run",
             return_value=result,
         ) as run:
             assert AzureDevOpsAuth().resolve_token(entry) == "tok"
         argv = run.call_args.args[0]
-        which.assert_called_once_with(str(az_cli_executable.parent / "az"))
-        assert argv[0] == resolved_path
+        names = ["az"]
+        if os.name == "nt":
+            names = ["az.EXE", "az.CMD"]
+            names = names[:names.index("az" + az_cli_executable.suffix.upper()) + 1]
+        assert which.call_args_list == [
+            call(str(az_cli_executable.parent / name)) for name in names
+        ]
+        assert os.path.normcase(argv[0]) == os.path.normcase(resolved_path)
         assert argv[1:4] == ["account", "get-access-token", "--resource"]
+
+    @pytest.mark.parametrize("extension", [".EXE", ".CMD", None])
+    @pytest.mark.parametrize("pathext", [".EXE;.CMD", "", None])
+    def test_resolve_token_azure_cli_python311_windows_candidates(
+        self, monkeypatch, tmp_path, extension, pathext
+    ):
+        from unittest.mock import MagicMock, call, patch
+
+        executable = tmp_path / "bin" / ("az" + (extension or ".CMD"))
+        executable.parent.mkdir()
+        if extension is not None:
+            executable.write_text("test executable", encoding="utf-8")
+            executable.chmod(0o755)
+        monkeypatch.setenv("PATH", str(executable.parent))
+        if pathext is None:
+            monkeypatch.delenv("PATHEXT", raising=False)
+        else:
+            monkeypatch.setenv("PATHEXT", pathext)
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout='{"accessToken": "tok"}')
+
+        def python311_which(candidate):
+            # Python 3.11 checks directory-bearing candidates verbatim,
+            # without appending PATHEXT.
+            return candidate if os.path.isfile(candidate) else None
+
+        with patch("sys.platform", "win32"), patch(
+            "specify_cli.authentication.azure_devops.shutil.which",
+            side_effect=python311_which,
+        ) as which, patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ) as run:
+            assert AzureDevOpsAuth().resolve_token(entry) == (
+                "tok" if extension is not None else None
+            )
+
+        names = ["az" + suffix for suffix in (pathext or ".COM;.EXE;.BAT;.CMD").split(";")]
+        if extension is not None:
+            names = names[:names.index("az" + extension) + 1]
+        assert which.call_args_list == [
+            call(str(executable.parent / name)) for name in names
+        ]
+        if extension is None:
+            run.assert_not_called()
+        else:
+            assert os.path.normcase(run.call_args.args[0][0]) == os.path.normcase(str(executable))
 
     @pytest.mark.parametrize(
         "which_result", [None, r".\az.CMD", r".\az.exe", "az.cmd", "./az", "absolute-cwd"]
@@ -1052,7 +1110,10 @@ class TestAzureDevOpsAuth:
             assert AzureDevOpsAuth().resolve_token(entry) is None
         run.assert_not_called()
 
-    @pytest.mark.parametrize("path_entry", ["", ".", "relative-bin", "current", "symlink"])
+    @pytest.mark.parametrize(
+        "path_entry",
+        ["", ".", "relative-bin", "current", "symlink", "case-alias", "missing", "uninspectable"],
+    )
     @pytest.mark.parametrize("trusted_install", [False, True])
     def test_resolve_token_azure_cli_ignores_untrusted_search_directories(
         self, monkeypatch, tmp_path, az_cli_executable, path_entry, trusted_install
@@ -1071,12 +1132,36 @@ class TestAzureDevOpsAuth:
         relative_executable.chmod(0o755)
         if path_entry == "current":
             path_entry = str(project)
+        elif path_entry == "case-alias":
+            alias = project.with_name("PROJECT")
+            if not alias.exists():
+                pytest.skip("Case-sensitive filesystem")
+            path_entry = str(alias)
         elif path_entry == "symlink":
             if os.name == "nt":
                 pytest.skip("Directory symlink creation requires Windows privileges")
             alias = tmp_path / "project-alias"
             alias.symlink_to(project, target_is_directory=True)
             path_entry = str(alias)
+        elif path_entry == "missing":
+            path_entry = str(tmp_path / "missing")
+        elif path_entry == "uninspectable":
+            from specify_cli.authentication import azure_devops
+
+            uninspectable = tmp_path / "uninspectable"
+            uninspectable.mkdir()
+            executable = uninspectable / az_cli_executable.name
+            executable.write_text("test executable", encoding="utf-8")
+            executable.chmod(0o755)
+            samefile = os.path.samefile
+
+            def inspect_directory(left, right):
+                if left == str(uninspectable):
+                    raise PermissionError("test-only inspection failure")
+                return samefile(left, right)
+
+            monkeypatch.setattr(azure_devops.os.path, "samefile", inspect_directory)
+            path_entry = str(uninspectable)
         monkeypatch.chdir(project)
         search_path = [path_entry]
         if trusted_install:
@@ -1094,6 +1179,67 @@ class TestAzureDevOpsAuth:
             token = AzureDevOpsAuth().resolve_token(entry)
 
         if trusted_install:
+            assert token == "tok"
+            assert os.path.normcase(run.call_args.args[0][0]) == os.path.normcase(
+                str(az_cli_executable)
+            )
+        else:
+            assert token is None
+            run.assert_not_called()
+
+    @pytest.mark.skipif(os.name == "nt", reason="Executable symlinks require Windows privileges")
+    @pytest.mark.parametrize("target", ["project", "case-alias", "external", "uninspectable"])
+    @pytest.mark.parametrize("trusted_install", [False, True])
+    def test_resolve_token_azure_cli_executable_symlinks(
+        self, monkeypatch, tmp_path, az_cli_executable, target, trusted_install
+    ):
+        from unittest.mock import MagicMock, patch
+        from specify_cli.authentication import azure_devops
+
+        project = tmp_path / "project"
+        project.mkdir()
+        target_directory = project
+        if target in ("external", "uninspectable"):
+            target_directory = tmp_path / target
+            target_directory.mkdir()
+        executable = target_directory / "az"
+        executable.write_text("test executable", encoding="utf-8")
+        executable.chmod(0o755)
+        if target == "case-alias":
+            alias = project.with_name("PROJECT")
+            if not alias.exists():
+                pytest.skip("Case-sensitive filesystem")
+            executable = alias / "az"
+        link = tmp_path / "shim" / "az"
+        link.parent.mkdir()
+        link.symlink_to(executable)
+        if target == "uninspectable":
+            samefile = os.path.samefile
+
+            def inspect_directory(left, right):
+                if left == str(target_directory):
+                    raise PermissionError("test-only inspection failure")
+                return samefile(left, right)
+
+            monkeypatch.setattr(azure_devops.os.path, "samefile", inspect_directory)
+        monkeypatch.chdir(project)
+        search_path = [str(link.parent)]
+        if trusted_install:
+            search_path.append(str(az_cli_executable.parent))
+        monkeypatch.setenv("PATH", os.pathsep.join(search_path))
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout='{"accessToken": "tok"}')
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run", return_value=result
+        ) as run:
+            token = AzureDevOpsAuth().resolve_token(entry)
+
+        if target == "external":
+            assert token == "tok"
+            assert run.call_args.args[0][0] == str(link)
+        elif trusted_install:
             assert token == "tok"
             assert run.call_args.args[0][0] == str(az_cli_executable)
         else:
