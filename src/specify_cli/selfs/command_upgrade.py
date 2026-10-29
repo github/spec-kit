@@ -76,6 +76,7 @@ def self_upgrade(
         _render_argv,
         _run_installer,
         _runs_from_uv_tool_env_on_windows,
+        _UV_TOOL_MANUAL_INTRO,
         _uv_tool_manual_command,
         _validate_tag,
         _verify_upgrade,
@@ -119,7 +120,7 @@ def self_upgrade(
             and plan.installer_argv is not None
             and _runs_from_uv_tool_env_on_windows()
         ):
-            console.print("Run it yourself once this command exits:", soft_wrap=True)
+            console.print(_UV_TOOL_MANUAL_INTRO, soft_wrap=True)
             console.print(f"  {_uv_tool_manual_command(plan.target_tag)}", soft_wrap=True)
         raise typer.Exit(0)
 
@@ -175,7 +176,7 @@ def self_upgrade(
             "running from. No changes were made.",
             soft_wrap=True,
         )
-        console.print("Run it yourself once this command exits:", soft_wrap=True)
+        console.print(_UV_TOOL_MANUAL_INTRO, soft_wrap=True)
         console.print(f"  {_uv_tool_manual_command(target_tag)}", soft_wrap=True)
         raise typer.Exit(0)
 

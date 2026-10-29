@@ -680,6 +680,14 @@ def _runs_from_uv_tool_env_on_windows() -> bool:
     )
 
 
+# Another process from the same tool environment, such as an editor's
+# `specify mcp` server, keeps python.exe locked after this command exits.
+_UV_TOOL_MANUAL_INTRO = (
+    "Stop any other specify process (such as `specify mcp`), then run this "
+    "once this command exits:"
+)
+
+
 def _uv_tool_manual_command(target_tag: str | None) -> str:
     """Return the uv command a Windows uv-tool user runs after specify exits."""
     return f"uv tool install specify-cli --force --from {_source_spec(target_tag)}"

@@ -612,7 +612,8 @@ class TestWindowsUvToolEnvironment:
             "replace the tool environment specify is running from)"
         ) in " ".join(out.split())
         assert (
-            "Run it yourself once this command exits:\n"
+            "Stop any other specify process (such as `specify mcp`), then run "
+            "this once this command exits:\n"
             "  uv tool install specify-cli --force --from "
             "git+https://github.com/github/spec-kit.git@v1.2.4\n"
         ) in out
@@ -662,7 +663,8 @@ class TestWindowsUvToolEnvironment:
             outputs[len(args)] = strip_ansi(result.output)
 
         manual_steps = (
-            "Run it yourself once this command exits:\n"
+            "Stop any other specify process (such as `specify mcp`), then run "
+            "this once this command exits:\n"
             "  uv tool install specify-cli --force --from "
             "git+https://github.com/github/spec-kit.git@v1.2.4\n"
         )
@@ -688,7 +690,7 @@ class TestWindowsUvToolEnvironment:
             "Command that would be executed: uv tool install specify-cli --force "
             "--from git+https://github.com/github/spec-kit.git@v1.2.4"
         ) in " ".join(out.split())
-        assert "Run it yourself" not in out
+        assert "then run this once this command exits" not in out
 
     def test_windows_uv_tool_dry_run_without_uv_reports_missing_installer(
         self, uv_tool_argv0, clean_environ
@@ -706,7 +708,7 @@ class TestWindowsUvToolEnvironment:
         assert result.exit_code == 0
         out = strip_ansi(result.output)
         assert "Command that would be executed: (installer uv not found on PATH)" in out
-        assert "Run it yourself" not in out
+        assert "then run this once this command exits" not in out
         assert mock_run.call_count == 0
 
     def test_help_mentions_windows_uv_tool_exception(self):
