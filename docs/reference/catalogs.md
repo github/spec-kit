@@ -115,6 +115,9 @@ Each GNU/PAX metadata payload is also capped at 64 KiB before it is read or
 parsed. These limits apply during format detection and extraction; ordinary
 member-size and total-file-size limits still apply. Packages that exceed these
 limits must be reduced before installation.
+Old GNU sparse archives and GNU sparse 1.0 archives are rejected before their
+separately stored maps are parsed; sparse maps contained in bounded PAX 0.0/0.1
+metadata remain supported.
 
 ## Host a private catalog
 

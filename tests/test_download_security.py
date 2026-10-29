@@ -28,6 +28,79 @@ from specify_cli._download_security import (
     safe_extract_tar,
     safe_extract_zip,
 )
+from tests.archive_helpers import tar_safety_archive
+
+
+@pytest.mark.parametrize("kind", ["gnu-sparse", "pax-sparse-1.0"])
+@pytest.mark.parametrize(
+    "operation, position",
+    [
+        ("detect", "first"), ("detect", "nested"),
+        ("extract", "first"), ("extract", "later"), ("extract", "nested"),
+        ("combined", "first"), ("combined", "later"), ("combined", "nested"),
+    ],
+)
+def test_tar_sparse_maps_rejected_before_parsing(
+    tmp_path, monkeypatch, kind, operation, position
+):
+    plain = gzip.decompress(tar_safety_archive(kind))
+    if position == "later":
+        plain = tarfile.TarInfo("safe.txt").tobuf() + plain
+    elif position == "nested":
+        plain = tarfile.TarInfo.create_pax_global_header({"comment": "normal"}) + plain
+    archive_path = tmp_path / "sparse.tar.gz"
+    archive_path.write_bytes(gzip.compress(plain))
+    out_dir = tmp_path / "out"
+
+    def reject_parser(*_args, **_kwargs):
+        pytest.fail("Unbounded GNU sparse map parser was called")
+
+    monkeypatch.setattr(
+        tarfile.TarInfo,
+        "_proc_sparse" if kind == "gnu-sparse" else "_proc_gnusparse_10",
+        reject_parser,
+    )
+    with archive_path.open("rb") as source:
+        with pytest.raises(_CustomZipError, match="Unsupported GNU sparse"):
+            if operation == "detect":
+                detect_archive_format(
+                    archive_path, archive_file=source, error_type=_CustomZipError
+                )
+            else:
+                extractor = (
+                    safe_extract_tar if operation == "extract" else safe_extract_archive
+                )
+                extractor(
+                    archive_path, out_dir, archive_file=source,
+                    error_type=_CustomZipError,
+                )
+        assert not source.closed
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "sparse_headers",
+    [
+        {"GNU.sparse.map": "0,1", "GNU.sparse.size": "1"},
+        {
+            "GNU.sparse.offset": "0", "GNU.sparse.numbytes": "1",
+            "GNU.sparse.size": "1",
+        },
+    ],
+)
+def test_tar_accepts_sparse_maps_within_bounded_pax_headers(
+    tmp_path, sparse_headers
+):
+    archive_path = tmp_path / "bounded-sparse.tar.gz"
+    info = tarfile.TarInfo("file.txt")
+    info.size = 1
+    info.pax_headers = sparse_headers
+    with tarfile.open(archive_path, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+        archive.addfile(info, io.BytesIO(b"x"))
+
+    out_dir = tmp_path / "out"
+    assert safe_extract_archive(archive_path, out_dir) == "tar.gz"
+    assert (out_dir / "file.txt").read_bytes() == b"x"
 
 
 def _write_tar_metadata_archive(path, metadata_type, size, position="first"):

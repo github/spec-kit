@@ -27,6 +27,7 @@ from specify_cli.extensions import (
     ValidationError,
 )
 from tests.conftest import strip_ansi
+from tests.archive_helpers import tar_safety_archive
 from tests.specify_cli.extensions._helpers import (
     LISTED_COMMAND_NAME_CASES,
     MINIMAL_ZIP_BYTES as _MINIMAL_ZIP_BYTES,
@@ -39,6 +40,54 @@ from tests.specify_cli.extensions._helpers import (
 
 class TestExtensionAddCLI:
     """CLI tests for ``specify extension add``."""
+
+    @pytest.mark.parametrize(
+        "kind, diagnostic",
+        [
+            ("stream", "maximum decompressed"),
+            ("metadata", "metadata payload exceeds"),
+            ("gnu-sparse", "Unsupported GNU sparse"),
+            ("pax-sparse-1.0", "Unsupported GNU sparse"),
+        ],
+    )
+    @pytest.mark.parametrize("suffix", ["ext.tar.gz", "assets/42"])
+    def test_add_from_url_preserves_archive_safety_errors(
+        self, project_dir, monkeypatch, kind, diagnostic, suffix
+    ):
+        from specify_cli import _download_security
+
+        if kind == "stream":
+            monkeypatch.setattr(_download_security, "MAX_TAR_STREAM_BYTES", 2048)
+        with (
+            patch.object(Path, "cwd", return_value=project_dir),
+            patch("typer.confirm", return_value=True),
+            patch(
+                "specify_cli.extensions._commands._validate_safe_cache_dir",
+                side_effect=_validate_safe_cache_dir_test_stand_in,
+            ),
+            patch(
+                "specify_cli.extensions._commands._safe_open_download_zip",
+                side_effect=_open_test_download_zip,
+            ),
+            patch(
+                "specify_cli.authentication.http.open_url",
+                return_value=io.BytesIO(tar_safety_archive(kind)),
+            ),
+            patch.object(ExtensionManager, "install_from_zip") as install,
+        ):
+            result = CliRunner().invoke(
+                app,
+                ["extension", "add", "unsafe", "--from", f"https://example.com/{suffix}"],
+            )
+
+        output = " ".join(strip_ansi(result.output).split())
+        assert result.exit_code == 1, output
+        assert isinstance(result.exception, SystemExit), repr(result.exception)
+        assert diagnostic in output
+        assert "not authenticated" not in output
+        assert "Traceback" not in output
+        install.assert_not_called()
+        assert not (project_dir / ".specify" / "extensions" / "unsafe").exists()
 
     @pytest.mark.parametrize("command", [
         pytest.param(["speckit.test-ext.hello"], id="list"),

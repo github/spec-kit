@@ -100,10 +100,17 @@ class _TarLimitError(tarfile.ReadError):
     pass
 
 
+def is_archive_safety_error(exc: Exception) -> bool:
+    """Identify a tar safety signal retained by shared error translation."""
+    return isinstance(exc, _TarLimitError) or isinstance(exc.__cause__, _TarLimitError)
+
+
 class _BoundedTarInfo(tarfile.TarInfo):
     """Check every metadata header, including headers parsed recursively."""
 
     def _proc_member(self, archive: tarfile.TarFile) -> tarfile.TarInfo:
+        if self.type == tarfile.GNUTYPE_SPARSE:
+            raise _TarLimitError("Unsupported GNU sparse metadata in tar.gz archive")
         if self.type in (
             tarfile.GNUTYPE_LONGNAME,
             tarfile.GNUTYPE_LONGLINK,
@@ -116,6 +123,15 @@ class _BoundedTarInfo(tarfile.TarInfo):
                 f"of {MAX_TAR_METADATA_BYTES} bytes"
             )
         return super()._proc_member(archive)
+
+    def _proc_gnusparse_10(
+        self,
+        next_member: tarfile.TarInfo,
+        pax_headers: dict[str, str],
+        archive: tarfile.TarFile,
+    ) -> NoReturn:
+        # This map lives in file data, outside the bounded PAX header payload.
+        raise _TarLimitError("Unsupported GNU sparse metadata in tar.gz archive")
 
 
 class _BoundedTarGzipFile(gzip.GzipFile):
