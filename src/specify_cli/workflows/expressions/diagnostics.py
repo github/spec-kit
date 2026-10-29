@@ -9,6 +9,7 @@ so a widened engine reaches the gate for free.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from . import namespace
@@ -67,6 +68,43 @@ def condition_is_never_evaluated(condition: Any) -> bool:
     # body *is* evaluated. Only the first is "never evaluated"; see
     # ``condition_has_malformed_expression_block`` for the second.
     return _first_unclosable_block(stripped) == "verbatim"
+
+
+def switch_expression_is_never_evaluated(
+    expression: Any, case_keys: Iterable[Any] = ()
+) -> bool:
+    """True when a switch *expression* is a reference written without its braces.
+
+    ``condition_is_never_evaluated`` cannot be reused here as it stands. It flags
+    every braceless string, because a condition is coerced by ``bool()`` and any
+    non-empty text is therefore always true. A switch instead matches its resolved
+    value against case keys, and a case key is a literal: ``expression: review``
+    resolves to ``"review"`` and dispatches the ``review:`` case, and whitespace
+    strips to the ``""`` key. Both are valid, if constant, switches.
+
+    What is never evaluated is text plainly meant as an expression -- one that opens
+    by walking into a root ``_build_namespace`` supplies, such as ``inputs.mode``.
+    It is matched against the case keys as its own source text, so it falls through
+    to ``default`` on every run. An opening ``{{`` the interpolator emits verbatim
+    is flagged for the same reason, exactly as it is for a condition.
+
+    *case_keys* are the keys the switch declares, and they decide that last point
+    rather than the expression text alone. Text reading like a reference is still a
+    literal the author may have meant: ``expression: inputs.mode`` against a declared
+    ``inputs.mode:`` case dispatches it on every run, because ``SwitchStep.execute``
+    compares the resolved value -- for a braceless expression, this very text,
+    stripped -- against ``str(case_key)``. Such a switch is constant, not unevaluated,
+    so it is left alone. Only a reference matching no declared key can do nothing but
+    fall through, which is the authoring mistake this guards.
+    """
+    if not isinstance(expression, str):
+        return False
+    stripped = expression.strip()
+    if "{{" in stripped:
+        return _first_unclosable_block(stripped) == "verbatim"
+    if namespace._NAMESPACE_REFERENCE.match(stripped) is None:
+        return False
+    return all(str(key) != stripped for key in case_keys)
 
 
 def condition_is_interpolated_to_text(condition: Any) -> bool:
