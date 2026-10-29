@@ -1,7 +1,10 @@
 """Tests for preset registry persistence and priority in specify_cli.presets._registry."""
 
+import json
+
 import pytest
 
+from specify_cli.file_helper import FileHelper, SymlinkDeniedError
 from specify_cli.presets import PresetRegistry
 
 
@@ -280,6 +283,170 @@ class TestPresetRegistry:
         assert "pack-disabled" in pack_ids
         # Disabled pack has lower priority number, so it comes first when included
         assert pack_ids[0] == "pack-disabled"
+
+
+class TestPresetRegistrySymlinks:
+    @pytest.mark.parametrize("relative", [False, True])
+    def test_regular_registry_preserves_persistence_and_observers(
+        self, tmp_path, monkeypatch, relative
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        packs_dir = project / ".specify" / "presets"
+        if relative:
+            packs_dir = packs_dir.relative_to(project)
+        registry = PresetRegistry(packs_dir)
+        observed = []
+        monkeypatch.setattr(
+            "specify_cli.integrations._file_changes.before_file_change",
+            lambda path: observed.append(("before", path)),
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations._file_changes.after_file_change",
+            lambda path: observed.append(("after", path)),
+        )
+
+        registry.add("example", {"label": "caf\u00e9"})
+
+        assert observed == [
+            ("before", packs_dir / ".registry"),
+            ("after", packs_dir / ".registry"),
+        ]
+        assert PresetRegistry(packs_dir).get("example")["label"] == "caf\u00e9"
+        content = registry.registry_path.read_text(encoding="utf-8")
+        assert content == json.dumps(registry.data, indent=2)
+
+    @pytest.mark.parametrize("operation", ["read_text", "overwrite_text"])
+    def test_io_errors_propagate(self, tmp_path, monkeypatch, operation):
+        project = tmp_path / "project"
+        project.mkdir()
+        packs_dir = project / ".specify" / "presets"
+        registry = PresetRegistry(packs_dir)
+        registry.add("example", {"version": "1.0"})
+        original = registry.registry_path.read_bytes()
+
+        def fail(*args, **kwargs):
+            raise PermissionError("registry access denied")
+
+        monkeypatch.setattr(FileHelper, operation, fail)
+
+        with pytest.raises(PermissionError, match="registry access denied"):
+            if operation == "read_text":
+                PresetRegistry(packs_dir)
+            else:
+                registry.update("example", {"version": "2.0"})
+
+        assert registry.registry_path.read_bytes() == original
+
+    @pytest.mark.parametrize("linked_entry", ["presets", ".registry"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize("allow_symlinks", [False, True])
+    def test_load_rejects_external_links(
+        self, tmp_path, linked_entry, dangling, allow_symlinks
+    ):
+        project = tmp_path / "project"
+        packs_dir = project / ".specify" / "presets"
+        packs_dir.parent.mkdir(parents=True)
+        (packs_dir.parent / "init-options.json").write_text(
+            json.dumps({"allow_symlinks": allow_symlinks}), encoding="utf-8"
+        )
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        sentinel = outside / ".registry"
+        sentinel.write_bytes(b"not registry JSON")
+        target = outside / "missing" if dangling else outside
+        if linked_entry == ".registry":
+            packs_dir.mkdir()
+            link = packs_dir / ".registry"
+            target = target / ".registry"
+        else:
+            link = packs_dir
+        link.symlink_to(target, target_is_directory=linked_entry == "presets")
+
+        with pytest.raises(SymlinkDeniedError):
+            PresetRegistry(packs_dir)
+
+        assert sentinel.read_bytes() == b"not registry JSON"
+        assert link.is_symlink()
+        assert not (outside / "missing").exists()
+
+    @pytest.mark.parametrize("linked_entry", [".specify", "presets", ".registry"])
+    @pytest.mark.parametrize("dangling", [False, True])
+    @pytest.mark.parametrize("operation", ["add", "update", "remove", "restore"])
+    def test_save_rejects_links_before_observer_or_mutation(
+        self, tmp_path, monkeypatch, linked_entry, dangling, operation
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        packs_dir = project / ".specify" / "presets"
+        registry = PresetRegistry(packs_dir)
+        registry.add("example", {"version": "1.0"})
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        sentinel = (
+            outside / "presets" / ".registry"
+            if linked_entry == ".specify"
+            else outside / ".registry"
+        )
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_bytes(b"do not overwrite")
+        link = {
+            ".specify": project / ".specify",
+            "presets": packs_dir,
+            ".registry": packs_dir / ".registry",
+        }[linked_entry]
+        link.rename(project / "original")
+        target = outside / "missing" if dangling else outside
+        if linked_entry == ".registry":
+            target = target / ".registry"
+        link.symlink_to(target, target_is_directory=linked_entry != ".registry")
+        observed = []
+        monkeypatch.setattr(
+            "specify_cli.integrations._file_changes.before_file_change", observed.append
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations._file_changes.after_file_change", observed.append
+        )
+
+        with pytest.raises(SymlinkDeniedError):
+            if operation == "remove":
+                registry.remove("example")
+            else:
+                getattr(registry, operation)("example", {"version": "2.0"})
+
+        assert sentinel.read_bytes() == b"do not overwrite"
+        assert not (outside / "missing").exists()
+        assert link.is_symlink()
+        assert observed == []
+
+    @pytest.mark.parametrize("linked_entry", ["presets", ".registry"])
+    def test_registry_metadata_rejects_even_opted_in_contained_links(
+        self, tmp_path, linked_entry
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        packs_dir = project / ".specify" / "presets"
+        registry = PresetRegistry(packs_dir)
+        registry.add("example", {"version": "1.0"})
+        link = packs_dir if linked_entry == "presets" else registry.registry_path
+        target = project / "contained"
+        link.rename(target)
+        link.symlink_to(target, target_is_directory=linked_entry == "presets")
+
+        with pytest.raises(SymlinkDeniedError):
+            PresetRegistry(packs_dir)
+
+        (project / ".specify" / "init-options.json").write_text(
+            '{"allow_symlinks": true}', encoding="utf-8"
+        )
+        with pytest.raises(SymlinkDeniedError):
+            PresetRegistry(packs_dir)
+
+        assert link.is_symlink()
+        registry_target = target / ".registry" if linked_entry == "presets" else target
+        saved = json.loads(registry_target.read_text(encoding="utf-8"))
+        assert saved["presets"]["example"]["version"] == "1.0"
 
 
 class TestRegistryPriority:

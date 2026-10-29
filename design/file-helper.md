@@ -8,6 +8,16 @@ enforce symlink behavior on those operations. Shared infrastructure, registratio
 managed storage, catalogs, scripts and runtime operations retain their existing
 behavior until their dependent migration stages.
 
+Preset registry reads and writes use a project-root-scoped deny-mode helper.
+For the documented `.specify/presets` registry location, the root is two
+parents above that directory, never the preset
+storage directory itself. Registry metadata and its parent hierarchy must
+not be links, independently of the operational `allow_symlinks` setting. Saves
+validate the destination before file-change observers or directory creation
+and preserve the existing registry text I/O and metadata behavior. This
+migration covers registry persistence only, not the remaining preset lifecycle
+filesystem operations.
+
 Only `specify init --allow-symlinks` exposes the setting; init defaults to deny
 and persists the literal JSON boolean `allow_symlinks` in
 `.specify/init-options.json`. Re-init without the flag records `false`.

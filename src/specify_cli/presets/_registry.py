@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..extensions import normalize_priority
+from ..file_helper import FileHelper
 
 
 class PresetRegistry:
@@ -23,19 +24,16 @@ class PresetRegistry:
         """
         self.packs_dir = packs_dir
         self.registry_path = packs_dir / self.REGISTRY_FILE
+        # Scope above .specify so neither it nor presets becomes a trusted alias.
+        self._files = FileHelper(packs_dir.absolute().parent.parent)
         self.data = self._load()
 
     def _load(self) -> dict:
         """Load registry from disk."""
-        if not self.registry_path.exists():
-            return {
-                "schema_version": self.SCHEMA_VERSION,
-                "presets": {}
-            }
-
         try:
-            with open(self.registry_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = json.loads(
+                self._files.read_text(self.registry_path.absolute(), encoding="utf-8")
+            )
             # Validate loaded data is a dict (handles corrupted registry files)
             if not isinstance(data, dict):
                 return {
@@ -61,10 +59,14 @@ class PresetRegistry:
         """Save registry to disk."""
         from ..integrations._file_changes import after_file_change, before_file_change
 
+        path = self.registry_path.absolute()
+        try:
+            self._files.read_bytes(path)
+        except FileNotFoundError:
+            pass
         before_file_change(self.registry_path)
-        self.packs_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, 'w', encoding='utf-8') as f:
-            json.dump(self.data, f, indent=2)
+        self._files.mkdir(self.packs_dir.absolute(), parents=True, exist_ok=True)
+        self._files.overwrite_text(path, json.dumps(self.data, indent=2), encoding="utf-8")
         after_file_change(self.registry_path)
 
     def add(self, pack_id: str, metadata: dict):
