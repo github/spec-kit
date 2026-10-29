@@ -84,6 +84,27 @@ def test_invalid_shell_bindings_fail_validation_and_execution(monkeypatch, optio
     assert message in result.error
 
 
+@pytest.mark.parametrize("run_config", [
+    {},
+    {"run": None},
+    {"run": ["echo", "hello"]},
+], ids=["missing", "null", "list"])
+def test_strict_invalid_run_has_one_diagnostic_and_never_launches(monkeypatch, run_config):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("An invalid strict run must never reach the shell")
+
+    monkeypatch.setattr("subprocess.run", unexpected_run)
+    config = {"id": "invalid-run", "strict": True, **run_config}
+    expected_error = "Shell step 'invalid-run': 'run' must be a string in strict mode."
+    step = ShellStep()
+
+    assert step.validate(config) == [expected_error]
+    result = step.execute(config, StepContext())
+    assert result.status == StepStatus.FAILED
+    assert result.error == expected_error
+    assert result.output["exit_code"] == -1
+
+
 @pytest.mark.parametrize("value", [None, 42, False, [], {}, "nul\x00value"])
 def test_invalid_resolved_environment_fails_before_execution(monkeypatch, value):
     def unexpected_run(*args, **kwargs):
