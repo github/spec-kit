@@ -1860,6 +1860,10 @@ class TestCommandStep:
             "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
         )
         monkeypatch.setattr(
+            "specify_cli._utils._find_docker_executable",
+            lambda name, **_kwargs: "/usr/bin/docker-agent" if name == "docker-agent" else None,
+        )
+        monkeypatch.setattr(
             "shutil.which",
             lambda name: (
                 "/usr/bin/docker-agent"
@@ -1956,6 +1960,10 @@ class TestCommandStep:
 
         monkeypatch.delenv(
             "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "specify_cli._utils._find_docker_executable",
+            lambda name, **_kwargs: "/usr/bin/docker-agent" if name == "docker-agent" else None,
         )
         monkeypatch.setattr(
             "shutil.which",
@@ -2428,6 +2436,49 @@ class TestCommandStep:
 
 class TestPromptStep:
     """Test the prompt step type."""
+
+    def test_adapter_integrity_failure_still_propagates(self, monkeypatch):
+        from unittest.mock import Mock
+        from specify_cli.integrations.installer import IntegrationInstallError
+        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.step.prompt import PromptStep
+
+        monkeypatch.setattr(
+            PromptStep,
+            "_try_dispatch",
+            Mock(side_effect=IntegrationInstallError("installed package has been modified")),
+        )
+
+        with pytest.raises(IntegrationInstallError, match="installed package has been modified"):
+            PromptStep().execute(
+                {"id": "review", "prompt": "Review changes", "integration": "docker-agent"},
+                StepContext(),
+            )
+
+    def test_unavailable_docker_agent_returns_failed_result(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock
+        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.step.prompt import PromptStep
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
+        monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+        monkeypatch.setenv("PATH", "")
+        run = Mock()
+        monkeypatch.setattr("subprocess.run", run)
+
+        result = PromptStep().execute(
+            {"id": "review", "prompt": "Review changes", "integration": "docker-agent"},
+            StepContext(project_root=str(tmp_path)),
+        )
+
+        assert result.status is StepStatus.FAILED
+        assert result.output["prompt"] == "Review changes"
+        assert result.output["integration"] == "docker-agent"
+        assert result.output["exit_code"] == 1
+        assert result.output["dispatched"] is False
+        assert result.error is not None
+        assert "Prompt step 'review': Docker Agent executable is unavailable" in result.error
+        run.assert_not_called()
 
     def test_execute_basic(self):
         from unittest.mock import patch
@@ -8332,6 +8383,40 @@ class TestWorkflowDispatchDefaultExecution:
 class TestContinueOnError:
     """Test the `continue_on_error` step-level field."""
 
+    @pytest.mark.parametrize("continue_on_error", [False, True])
+    def test_unavailable_docker_prompt_obeys_continue_on_error(
+        self, project_dir, monkeypatch, continue_on_error
+    ):
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", "./agent.yaml")
+        monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+        monkeypatch.setenv("PATH", "")
+        definition = WorkflowDefinition({
+            "schema_version": "1.0",
+            "workflow": {"id": "missing-docker", "name": "Missing Docker", "version": "1.0.0"},
+            "steps": [
+                {
+                    "id": "review",
+                    "type": "prompt",
+                    "prompt": "Review changes",
+                    "integration": "docker-agent",
+                    "continue_on_error": continue_on_error,
+                },
+                {"id": "after", "type": "shell", "run": "echo did-run"},
+            ],
+        })
+
+        state = WorkflowEngine(project_dir).execute(definition)
+
+        expected_status = RunStatus.COMPLETED if continue_on_error else RunStatus.FAILED
+        assert state.status is expected_status
+        assert state.step_results["review"]["status"] == "failed"
+        assert state.step_results["review"]["output"]["dispatched"] is False
+        assert "Docker Agent executable is unavailable" in state.step_results["review"]["error"]
+        assert ("after" in state.step_results) is continue_on_error
+
     def test_undeclared_failure_halts_run(self, project_dir):
         """Default behaviour (no `continue_on_error`): a failing step
         halts the workflow run with `status == StepStatus.FAILED`.
@@ -11687,6 +11772,10 @@ steps:
             "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
         )
         monkeypatch.setattr(
+            "specify_cli._utils._find_docker_executable",
+            lambda name, **_kwargs: "/usr/bin/docker-agent" if name == "docker-agent" else None,
+        )
+        monkeypatch.setattr(
             "shutil.which",
             lambda name: (
                 "/usr/bin/docker-agent"
@@ -11735,6 +11824,10 @@ steps:
 
         monkeypatch.delenv(
             "SPECKIT_INTEGRATION_DOCKER_AGENT_EXTRA_ARGS", raising=False
+        )
+        monkeypatch.setattr(
+            "specify_cli._utils._find_docker_executable",
+            lambda name, **_kwargs: "/usr/bin/docker-agent" if name == "docker-agent" else None,
         )
         monkeypatch.setattr(
             "shutil.which",

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from specify_cli.integrations._capture import run_captured
-from specify_cli.integrations.installer import project_dispatch
+from specify_cli.integrations.installer import IntegrationInstallError, project_dispatch
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 from specify_cli.workflows.step._capture import (
@@ -118,20 +118,31 @@ class PromptStep(StepBase):
 
         # Attempt CLI dispatch
         timeout = config.get("timeout", 300)
-        dispatch_result = self._try_dispatch(
-            prompt,
-            integration,
-            model,
-            context,
-            timeout=timeout,
-            capture_max_bytes=capture_max_bytes,
-        )
-
         output: dict[str, Any] = {
             "prompt": prompt,
             "integration": integration,
             "model": model,
         }
+        try:
+            dispatch_result = self._try_dispatch(
+                prompt,
+                integration,
+                model,
+                context,
+                timeout=timeout,
+                capture_max_bytes=capture_max_bytes,
+            )
+        except IntegrationInstallError:
+            # Adapter integrity failures must still abort the workflow.
+            raise
+        except ValueError as exc:
+            output["exit_code"] = 1
+            output["dispatched"] = False
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=f"Prompt step {config.get('id', '?')!r}: {exc}",
+            )
 
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]

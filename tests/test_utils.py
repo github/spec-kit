@@ -193,3 +193,65 @@ def test_docker_discovery_uses_default_path_when_unset(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "defpath", str(installed))
 
     assert docker_agent_command() == [str(executable), "run"]
+
+
+@pytest.mark.parametrize("pathext", [None, ""])
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+def test_docker_discovery_uses_default_windows_extensions(
+    tmp_path, monkeypatch, name, pathext
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    installed = tmp_path / "installed"
+    installed.mkdir()
+    executable = str(installed / f"{name}.EXE")
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", str(installed))
+    if pathext is None:
+        monkeypatch.delenv("PATHEXT", raising=False)
+    else:
+        monkeypatch.setenv("PATHEXT", pathext)
+    monkeypatch.setattr("specify_cli._utils.sys.platform", "win32")
+    monkeypatch.setattr(
+        shutil, "which", lambda command: executable if command == executable else None
+    )
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    expected = [executable, "agent", "run"] if name == "docker" else [executable, "run"]
+    assert docker_agent_command() == expected
+    if name == "docker":
+        run.assert_called_once()
+    else:
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["docker", "docker-agent"])
+@pytest.mark.parametrize("entry", ["directory", "executable-symlink"])
+def test_docker_discovery_rejects_case_aliases_of_checkout(
+    tmp_path, monkeypatch, name, entry
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    alias = tmp_path / "PROJECT"
+    if not alias.exists() or not alias.samefile(project):
+        pytest.skip("requires a case-insensitive filesystem")
+    local_bin = project / "bin"
+    local_bin.mkdir()
+    filename = f"{name}.exe" if os.name == "nt" else name
+    executable = local_bin / filename
+    executable.touch()
+    executable.chmod(0o755)
+    search_directory = alias / "bin"
+    if entry == "executable-symlink":
+        search_directory = tmp_path / "installed"
+        search_directory.mkdir()
+        _symlink_or_skip(search_directory / filename, alias / "bin" / filename)
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", str(search_directory))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0))
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert docker_agent_command() is None
+    run.assert_not_called()

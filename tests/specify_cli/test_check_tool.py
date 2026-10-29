@@ -117,7 +117,7 @@ class TestCheckToolOther:
     def test_docker_agent_plugin_fallback(self):
         """docker-agent should detect a working Docker CLI plugin form."""
 
-        def fake_which(name):
+        def fake_which(name, **_kwargs):
             return "/usr/bin/docker" if name == "docker" else None
 
         with (
@@ -140,7 +140,7 @@ class TestCheckToolOther:
 
     def test_docker_agent_plugin_missing(self):
         """Plain Docker CLI should not count as Docker Agent."""
-        def fake_which(name):
+        def fake_which(name, **_kwargs):
             return "/usr/bin/docker" if name == "docker" else None
 
         with (

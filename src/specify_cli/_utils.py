@@ -20,15 +20,34 @@ CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".b
 DOCKER_AGENT_CHECK_TIMEOUT = 5
 
 
-def _find_docker_executable(name: str) -> str | None:
-    """Search absolute PATH entries outside the CWD subtree for a Docker CLI."""
-    cwd = Path.cwd().resolve()
+def _docker_path_is_excluded(path: Path, roots: tuple[Path, ...]) -> bool:
+    if any(path.is_relative_to(root) for root in roots):
+        return True
+    # resolve() can retain a different spelling on case-insensitive filesystems.
+    for ancestor in (path, *path.parents):
+        for root in roots:
+            try:
+                if ancestor.samefile(root):
+                    return True
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+    return False
+
+
+def _find_docker_executable(
+    name: str, *, project_root: Path | None = None
+) -> str | None:
+    """Search absolute PATH entries outside launch and runtime directories."""
+    roots = (Path.cwd().resolve(),)
+    if project_root is not None:
+        roots += (project_root.resolve(),)
     names = [name]
     if sys.platform == "win32":
         # Python 3.11's which() does not expand PATHEXT for qualified names.
+        pathext = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
         names = [
             name + extension
-            for extension in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";")
+            for extension in pathext.split(";")
             if extension
         ]
     for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
@@ -36,19 +55,23 @@ def _find_docker_executable(name: str) -> str | None:
         if not directory.is_absolute():
             continue
         directory = directory.resolve()
-        if directory.is_relative_to(cwd):
+        if _docker_path_is_excluded(directory, roots):
             continue
         # A qualified name bypasses Python 3.11's implicit Windows CWD search.
         for filename in names:
             resolved = shutil.which(str(directory / filename))
             if resolved is not None:
                 executable = Path(resolved)
-                if executable.is_absolute() and not executable.resolve().is_relative_to(cwd):
+                if executable.is_absolute() and not _docker_path_is_excluded(
+                    executable.resolve(), roots
+                ):
                     return str(executable)
     return None
 
 
-def docker_agent_command(executable: str | None = None) -> list[str] | None:
+def docker_agent_command(
+    executable: str | None = None, *, project_root: Path | None = None
+) -> list[str] | None:
     """Return a runnable Docker Agent command, or ``None`` if unavailable.
 
     Docker Agent is distributed either as the standalone ``docker-agent``
@@ -57,10 +80,10 @@ def docker_agent_command(executable: str | None = None) -> list[str] | None:
     is not mistaken for an installed Docker Agent.
     """
     if executable is None:
-        standalone = _find_docker_executable("docker-agent")
+        standalone = _find_docker_executable("docker-agent", project_root=project_root)
         if standalone is not None:
             return [standalone, "run"]
-        executable = _find_docker_executable("docker")
+        executable = _find_docker_executable("docker", project_root=project_root)
         if executable is None:
             return None
 
