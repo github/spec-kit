@@ -28,8 +28,9 @@ from tests.specify_cli.integrations._helpers import (
 class TestIntegrationInstall:
     @pytest.mark.parametrize("existing_target", [True, False])
     @pytest.mark.parametrize("allow_symlinks", [False, True])
+    @pytest.mark.parametrize("contained_target", [False, True])
     def test_install_rejects_symlinked_state_before_setup(
-        self, tmp_path, existing_target, allow_symlinks,
+        self, tmp_path, existing_target, allow_symlinks, contained_target,
     ):
         project = _init_project(tmp_path, "claude")
         options_path = project / ".specify" / "init-options.json"
@@ -37,7 +38,7 @@ class TestIntegrationInstall:
         options["allow_symlinks"] = allow_symlinks
         options_path.write_text(json.dumps(options), encoding="utf-8")
         destination = project / ".specify" / "integration.json"
-        target = tmp_path / "external-state.json"
+        target = project / "state.json" if contained_target else tmp_path / "external-state.json"
         original = b'{"integration": "claude"}\n'
         if existing_target:
             target.write_bytes(original)

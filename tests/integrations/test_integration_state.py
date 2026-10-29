@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from specify_cli._file_policy import project_files, save_project_options
 from specify_cli.file_helper import SymlinkDeniedError
 from specify_cli.integration_state import (
     INTEGRATION_JSON,
@@ -173,6 +174,32 @@ def test_write_integration_json_rejects_symlinks_before_observer(linked_integrat
     assert (contained / "integration.json").read_bytes() == contained_original
     assert not (outside / "missing.json").exists()
     assert not (outside / "missing").exists()
+
+
+@pytest.mark.parametrize("linked_integration_state", ["contained-file"], indirect=True)
+def test_contained_state_link_is_denied_despite_symlink_opt_in(linked_integration_state):
+    project, link, target, _, _ = linked_integration_state
+    original = target.read_bytes()
+    original_target = link.readlink()
+    save_project_options(project, {"allow_symlinks": True})
+
+    files = project_files(project)
+    assert files.allow_symlinks is True
+    assert files.read_bytes(INTEGRATION_JSON) == original
+
+    for reader in (try_read_integration_json, try_read_integration_json_with_raw):
+        *states, error = reader(project)
+        assert all(state is None for state in states)
+        assert error is not None
+        assert error.kind == "os"
+        assert "allow_symlinks does not apply to integration state" in error.detail
+
+    with pytest.raises(SymlinkDeniedError, match="allow_symlinks does not apply"):
+        write_integration_json(project, version="1.2.3", integration_key="codex")
+
+    assert link.is_symlink()
+    assert link.readlink() == original_target
+    assert target.read_bytes() == original
 
 
 def test_write_integration_json_preserves_observer_and_regular_file(tmp_path):
