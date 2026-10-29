@@ -1936,6 +1936,124 @@ class TestCommandRunner:
         assert out_file.exists(), f"inline fallback did not run script; stderr={result.stderr!r} rc={result.returncode}"
         assert out_file.read_text() == '{"tool_name":"x"}'
 
+    @pytest.mark.parametrize("runtime", ["missing-package", "stale-package"])
+    @pytest.mark.parametrize("storage", [
+        "plain", "missing", "registry-live", "registry-dangling",
+        "extensions-live", "extensions-dangling", "specify-live",
+    ])
+    def test_dispatcher_checks_registry_before_delegation_or_fallback(
+        self, tmp_path, runtime, storage
+    ):
+        import subprocess
+        import sys
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        project = tmp_path / "project"
+        specify_dir = project / ".specify"
+        extensions_dir = specify_dir / "extensions"
+        commands = extensions_dir / "example" / "commands"
+        commands.mkdir(parents=True)
+        marker = tmp_path / "executed"
+        imported = tmp_path / "imported"
+        (specify_dir / "init-options.json").write_text('{"script": "py"}', encoding="utf-8")
+        (commands / "speckit.example.boot.md").write_text(
+            "---\nscripts:\n  py: boot.py\n---\n", encoding="utf-8"
+        )
+        (extensions_dir / "example" / "boot.py").write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inline')\n",
+            encoding="utf-8",
+        )
+        dispatcher = project / EVENTS_DISPATCHER_REL
+        dispatcher.write_text(_EVENTS_DISPATCHER_TEMPLATE, encoding="utf-8")
+        registry = extensions_dir / ".registry"
+        if storage != "missing":
+            registry.write_text('{"extensions": {}}', encoding="utf-8")
+        external = tmp_path / "external"
+        try:
+            if storage.startswith("registry-"):
+                registry.unlink()
+                if storage == "registry-live":
+                    external.write_text('{"extensions": {}}', encoding="utf-8")
+                registry.symlink_to(external)
+            elif storage.startswith("extensions-"):
+                if storage == "extensions-live":
+                    extensions_dir.rename(external)
+                else:
+                    import shutil
+                    shutil.rmtree(extensions_dir)
+                extensions_dir.symlink_to(external, target_is_directory=True)
+            elif storage == "specify-live":
+                specify_dir.rename(external)
+                specify_dir.symlink_to(external, target_is_directory=True)
+        except OSError:
+            pytest.skip("Symlink creation unavailable")
+
+        shadow = tmp_path / "shadow"
+        package = shadow / "specify_cli"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        if runtime == "stale-package":
+            (package / "events.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(imported)!r}).write_text('imported')\n"
+                "EVENT_SCRIPT_PATH_CONFINEMENT = True\n"
+                "def resolve_and_run_event_command(*args, **kwargs):\n"
+                f"    Path({str(marker)!r}).write_text('delegated')\n"
+                "    return 0\n",
+                encoding="utf-8",
+            )
+        env = dict(os.environ, PYTHONPATH=str(shadow))
+        result = subprocess.run(
+            [sys.executable, str(dispatcher), "speckit.example.boot", "session_start"],
+            input="{}", capture_output=True, text=True, encoding="utf-8",
+            env=env, cwd=project, timeout=30,
+        )
+
+        allowed = storage in ("plain", "missing")
+        assert result.returncode == (0 if allowed else 2), result.stderr
+        assert marker.exists() is allowed
+        assert imported.exists() is (allowed and runtime == "stale-package")
+        assert result.stdout == ""
+        if allowed:
+            assert result.stderr == ""
+            expected = "inline" if runtime == "missing-package" else "delegated"
+            assert marker.read_text(encoding="utf-8") == expected
+        else:
+            assert "symlink" in result.stderr
+            assert "Traceback" not in result.stderr
+        if storage == "registry-live":
+            assert external.read_text(encoding="utf-8") == '{"extensions": {}}'
+        if storage.endswith("dangling"):
+            assert not external.exists()
+
+    @pytest.mark.parametrize("component", [".specify", "extensions", ".registry"])
+    def test_dispatcher_rejects_registry_reparse_points(self, tmp_path, monkeypatch, component):
+        from types import SimpleNamespace
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        registry = extensions_dir / ".registry"
+        registry.write_text('{"extensions": {}}', encoding="utf-8")
+        reparse = {
+            ".specify": tmp_path / ".specify",
+            "extensions": extensions_dir,
+            ".registry": registry,
+        }[component]
+        lstat = Path.lstat
+
+        def reparse_lstat(path, **kwargs):
+            entry = lstat(path, **kwargs)
+            if path == reparse:
+                return SimpleNamespace(st_mode=entry.st_mode, st_file_attributes=0x400)
+            return entry
+
+        namespace = {"__name__": "dispatcher_test"}
+        exec(compile(_EVENTS_DISPATCHER_TEMPLATE, "<dispatcher>", "exec"), namespace)
+        monkeypatch.setattr(Path, "lstat", reparse_lstat)
+        with pytest.raises(ValueError, match="reparse"):
+            namespace["_validate_registry_hierarchy"](tmp_path)
+
     def test_dispatcher_ignores_stale_specify_cli_without_confinement(self, tmp_path):
         """A generated dispatcher must not delegate to an older specify_cli
         that lacks EVENT_SCRIPT_PATH_CONFINEMENT (uvx-init plus stale

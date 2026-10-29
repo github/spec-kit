@@ -105,9 +105,26 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+
+def _validate_registry_hierarchy(project_root):
+    """Reject registry links without depending on an installed CLI package."""
+    current = project_root
+    for component in (".specify", "extensions", ".registry"):
+        current = current / component
+        try:
+            entry = current.lstat()
+        except FileNotFoundError:
+            return
+        if (
+            stat.S_ISLNK(entry.st_mode)
+            or getattr(entry, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+        ):
+            raise ValueError(f"Refusing symlink or unsupported reparse point: {current}")
 
 
 def _script_under_base(base, token, project_root):
@@ -417,6 +434,11 @@ def main():
     else:
         payload = "{}"
     project_root = Path(__file__).parent.parent.resolve()
+    try:
+        _validate_registry_hierarchy(project_root)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"Event command {command_name} error: {exc}\\n")
+        sys.exit(2)
 
     # Preferred path: specify_cli is importable (durable install) — delegate to
     # the full resolver, which also handles extension manifests whose file stem

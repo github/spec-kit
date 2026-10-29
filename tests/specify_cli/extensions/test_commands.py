@@ -18,6 +18,8 @@ from specify_cli import app
     ["disable", "example"],
     ["remove", "example", "--force"],
     ["set-priority", "example", "10"],
+    ["update", "example"],
+    ["update"],
 ])
 def test_linked_registry_reports_cli_error(project_dir, tmp_path, monkeypatch, arguments):
     registry = project_dir / ".specify" / "extensions" / ".registry"

@@ -24,7 +24,6 @@ from ._command_update_discovery import discover_updates
 def run_update_command(extension: str | None) -> None:
     """Run discovery, confirmation, and transactional extension updates."""
     from . import (
-        ExtensionManager,
         ExtensionCatalog,
         ExtensionError,
         ValidationError,
@@ -34,7 +33,7 @@ def run_update_command(extension: str | None) -> None:
     )
 
     project_root = _commands._require_specify_project()
-    manager = ExtensionManager(project_root)
+    manager = _commands._extension_manager(project_root)
     catalog = ExtensionCatalog(project_root)
     speckit_version = _commands.get_speckit_version()
 

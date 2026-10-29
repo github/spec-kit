@@ -100,6 +100,10 @@ registry. Artifact inventory, template resolution, and event command resolution
 fail closed on forbidden storage. CLI commands preserve their diagnostics and
 JSON error envelopes; warning-only dependency and configuration probes preserve
 their no-results fallback without reading through forbidden paths.
+Generated event dispatchers validate the registry hierarchy using only the
+standard library before delegating to an installed CLI or using their inline
+fallback, so unavailable or stale packages cannot bypass link and reparse-point
+rejection. A rejected hierarchy produces a diagnostic and exit status 2.
 This boundary has the portable helper's
 concurrent-mutation limits described below.
 
