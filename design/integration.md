@@ -81,6 +81,12 @@ their naming too. `build_command_invocation()` remains the runtime dispatch seam
 for integrations such as Bob and Copilot whose executable behavior depends on
 the installed layout.
 
+Shared page-template installation and refresh use the active integration's
+`resolve_command_refs_for_mode()` with its resolved output mode, honoring both
+resolver and `build_command_reference()` overrides. Without an active integration,
+they retain the static separator/prefix fallback. Shared executable scripts keep
+their existing separator/prefix rendering.
+
 Core templates that call scripts declare `sh`, `ps`, and `py` commands in
 `scripts:` frontmatter; template processing replaces `{SCRIPT}` with the
 selected variant. `py` is opt-in; non-interactive init defaults to `sh` on

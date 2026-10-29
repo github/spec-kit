@@ -790,6 +790,10 @@ def register(app: typer.Typer) -> None:
                     selected_script,
                     tracker=tracker,
                     force=force,
+                    integration=resolved_integration,
+                    skills_enabled=resolved_integration.is_skills_mode(
+                        integration_parsed_options, project_root=project_path
+                    ),
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
                     ),

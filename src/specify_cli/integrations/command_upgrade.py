@@ -208,6 +208,10 @@ def integration_upgrade(
         project_root,
         selected_script,
         force=force,
+        integration=infra_integration,
+        skills_enabled=infra_integration.is_skills_mode(
+            infra_parsed, project_root=project_root
+        ),
         invoke_separator=_invoke_separator_for_integration(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
@@ -254,6 +258,10 @@ def integration_upgrade(
                 _install_shared_infra(
                     project_root,
                     selected_script,
+                    integration=integration,
+                    skills_enabled=integration.is_skills_mode(
+                        parsed_options, project_root=project_root
+                    ),
                     invoke_separator=_invoke_separator_for_integration(
                         integration, {"integration_settings": settings}, key, parsed_options,
                         project_root=project_root,

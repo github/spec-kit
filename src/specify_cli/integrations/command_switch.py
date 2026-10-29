@@ -262,6 +262,10 @@ def integration_switch(
         selected_script,
         force=refresh_shared_infra,
         refresh_managed=True,
+        integration=target_integration,
+        skills_enabled=target_integration.is_skills_mode(
+            target_parsed_options, project_root=project_root
+        ),
         invoke_separator=_invoke_separator_for_integration(
             target_integration, current, target, target_parsed_options,
             project_root=project_root,

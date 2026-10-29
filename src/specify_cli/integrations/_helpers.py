@@ -333,6 +333,10 @@ def _set_default_integration(
             _install_shared_infra(
                 project_root,
                 resolved_script,
+                integration=integration,
+                skills_enabled=integration.is_skills_mode(
+                    parsed_options, project_root=project_root
+                ),
                 invoke_separator=_invoke_separator_for_integration(
                     integration, {"integration_settings": settings}, key, parsed_options,
                     project_root=project_root,

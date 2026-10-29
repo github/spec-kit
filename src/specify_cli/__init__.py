@@ -38,6 +38,7 @@ from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
 )
+from .integrations.base import IntegrationBase
 
 from ._console import (
     BANNER as BANNER,
@@ -117,6 +118,8 @@ def _refresh_shared_templates(
     invoke_separator: str,
     invoke_prefix: str = "/",
     force: bool = False,
+    integration: IntegrationBase | None = None,
+    skills_enabled: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
     _refresh_shared_templates_impl(
@@ -128,6 +131,8 @@ def _refresh_shared_templates(
         invoke_separator=invoke_separator,
         invoke_prefix=invoke_prefix,
         force=force,
+        integration=integration,
+        skills_enabled=skills_enabled,
     )
 
 
@@ -140,6 +145,8 @@ def _install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    integration: IntegrationBase | None = None,
+    skills_enabled: bool = False,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -148,9 +155,10 @@ def _install_shared_infra(
     installs PowerShell, and ``py`` installs Python plus the platform shell
     fallback. Tracks all installed files in ``speckit.manifest.json``.
 
-    Shared scripts and page templates are processed to resolve
-    ``__SPECKIT_COMMAND_<NAME>__`` placeholders using *invoke_separator*
-    (``"."`` for markdown agents, ``"-"`` for skills agents).
+    Page templates resolve ``__SPECKIT_COMMAND_<NAME>__`` placeholders through
+    *integration* with the resolved *skills_enabled* mode when supplied.
+    Shared scripts and the no-integration template fallback use *invoke_separator*
+    and *invoke_prefix* (``"."`` for markdown agents, ``"-"`` for skills agents).
 
     Overwrite policy:
 
@@ -184,6 +192,8 @@ def _install_shared_infra(
         invoke_prefix=invoke_prefix,
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
+        integration=integration,
+        skills_enabled=skills_enabled,
     )
 
 
@@ -196,6 +206,8 @@ def _install_shared_infra_or_exit(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    integration: IntegrationBase | None = None,
+    skills_enabled: bool = False,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -207,6 +219,8 @@ def _install_shared_infra_or_exit(
             invoke_prefix=invoke_prefix,
             refresh_managed=refresh_managed,
             refresh_hint=refresh_hint,
+            integration=integration,
+            skills_enabled=skills_enabled,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")
