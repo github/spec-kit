@@ -344,13 +344,18 @@ def test_dispatch_rejects_checkout_local_executable(tmp_path, monkeypatch, strea
     run.assert_not_called()
 
 
-def test_dispatch_preserves_explicit_checkout_local_override(tmp_path, monkeypatch):
+@pytest.mark.parametrize("override_kind", ["absolute", "bare"])
+def test_dispatch_preserves_explicit_checkout_local_override(
+    tmp_path, monkeypatch, override_kind
+):
     executable = tmp_path / ("docker-agent.exe" if os.name == "nt" else "docker-agent")
     executable.touch()
     executable.chmod(0o755)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", "")
-    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", str(executable))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PATHEXT", ".exe")
+    override = str(executable) if override_kind == "absolute" else "docker-agent"
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", override)
     run = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="done", stderr=""))
     monkeypatch.setattr(subprocess, "run", run)
 
@@ -364,6 +369,41 @@ def test_dispatch_preserves_explicit_checkout_local_override(tmp_path, monkeypat
     assert result == {"exit_code": 0, "stdout": "done", "stderr": ""}
     assert run.call_args.args[0][0] == str(executable)
     run.assert_called_once()
+
+
+@pytest.mark.parametrize("override", ["docker-agent", "  docker-agent  "])
+def test_explicit_default_named_override_bypasses_automatic_discovery(monkeypatch, override):
+    monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", override)
+    finder = Mock(return_value=None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", finder)
+    run = Mock()
+    monkeypatch.setattr(subprocess, "run", run)
+
+    args = DockerAgentIntegration().build_exec_args(
+        "prompt", output_json=False, integration_args=["./agent.yaml"]
+    )
+
+    assert args == ["docker-agent", "run", "--exec", "./agent.yaml", "--", "prompt"]
+    finder.assert_not_called()
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("override", [None, "", "   "])
+def test_unset_or_blank_override_still_uses_restricted_discovery(monkeypatch, override):
+    if override is None:
+        monkeypatch.delenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", raising=False)
+    else:
+        monkeypatch.setenv("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", override)
+    finder = Mock(return_value=None)
+    monkeypatch.setattr("specify_cli._utils._find_docker_executable", finder)
+    run = Mock()
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert DockerAgentIntegration().build_exec_args(
+        "prompt", integration_args=["./agent.yaml"]
+    ) is None
+    assert [call.args[0] for call in finder.call_args_list] == ["docker-agent", "docker"]
+    run.assert_not_called()
 
 
 def test_dispatch_stops_after_failed_plugin_probe(tmp_path, monkeypatch):

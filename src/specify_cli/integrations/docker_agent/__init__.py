@@ -56,8 +56,12 @@ class DockerAgentIntegration(SkillsIntegration):
         # The shared executable override supports both a standalone
         # ``docker-agent`` binary and the Docker CLI plugin form.
         executable = self._resolve_executable()
+        # An explicit override can have the same spelling as the default key.
+        has_override = bool(
+            os.environ.get("SPECKIT_INTEGRATION_DOCKER_AGENT_EXECUTABLE", "").strip()
+        )
         return docker_agent_command(
-            None if executable == self.key else executable,
+            None if executable == self.key and not has_override else executable,
             project_root=project_root,
         )
 
