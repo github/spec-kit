@@ -1133,6 +1133,8 @@ def _plain_workflow_json(payload: Any, *, max_nodes: int | None = None) -> Any:
         """Canonicalize a mapping key to the property name json.dumps emits."""
         if isinstance(key, str):
             return key
+        if isinstance(key, (bytes, bytearray)):
+            return f"<binary: {len(key)} bytes>"
         if isinstance(key, (int, float, bool)) or key is None:
             return json.dumps(key)
         return str(key)

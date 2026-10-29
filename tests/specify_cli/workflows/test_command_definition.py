@@ -246,6 +246,30 @@ steps:
         assert definition["copies"] == ["<binary: 65536 bytes>"] * 30
         assert len(result.stdout) < 10_000
 
+    def test_binary_mapping_keys_are_replaced_by_a_size_placeholder(
+        self, project_dir
+    ):
+        # A binary key must not be stringified per alias visit: 200 aliases of
+        # a 16 KiB key would retain millions of characters before the byte
+        # budget runs.
+        blob = base64.b64encode(b"\0" * 16384).decode()
+        copies = ", ".join(["*shared"] * 200)
+        text = (
+            "workflow: {id: binary-key, name: Binary key}\n"
+            f'shared: &shared {{? !!binary "{blob}" : 1}}\n'
+            f"copies: [{copies}]\n"
+            "steps:\n  - {id: g, type: gate, message: hi}\n"
+        )
+        run = _run(project_dir, text)
+
+        result = _definition(project_dir, run["run_id"])
+
+        assert result.exit_code == 0, result.stderr
+        definition = json.loads(result.stdout)["definition"]
+        assert definition["shared"] == {"<binary: 16384 bytes>": 1}
+        assert definition["copies"] == [{"<binary: 16384 bytes>": 1}] * 200
+        assert len(result.stdout) < 50_000
+
     def test_sets_are_emitted_as_sorted_lists(self, project_dir):
         text = (
             "workflow: {id: sets, name: Sets}\n"
