@@ -26,6 +26,7 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePath
+from typing import Literal, overload
 
 import typer
 from packaging.version import InvalidVersion, Version
@@ -233,6 +234,10 @@ class _InstallerResult:
     returncode: int | None = None
 
 
+class _InstallerRejected(ValueError):
+    """Installer lookup succeeded but its path could not be trusted."""
+
+
 @dataclass(frozen=True)
 class _UpgradePlan:
     """Resolved upgrade decision shared by preview and apply paths."""
@@ -243,6 +248,8 @@ class _UpgradePlan:
     installer_argv: list[str] | None
     preview_summary: str
     pre_upgrade_snapshot: str
+    installer_rejections: tuple[str, ...] = ()
+    installer_rejected: bool = False
 
 
 @dataclass(frozen=True)
@@ -255,6 +262,7 @@ class _DetectionSignals:
     editable_marker_seen: bool
     installer_registries_consulted: tuple[str, ...]
     resolved_method: _InstallMethod
+    installer_rejections: tuple[str, ...] = ()
 
 
 _GITHUB_CREDENTIAL_SUFFIXES = (
@@ -482,12 +490,32 @@ def _editable_marker_seen() -> bool:
 
 def _find_installer(name: str) -> str | None:
     """Find an installer outside the working directory and current Git tree."""
-    cwd = Path.cwd().resolve()
-    cwd_status = cwd.stat()
-    project_root = _git_ancestor(cwd)
-    project_status = project_root.stat() if project_root is not None else None
+    context: tuple[os.stat_result, os.stat_result | None] | None = None
+    rejections: list[str] = []
+
+    def rejected_lookup(resolved: str) -> str:
+        if not Path(resolved).is_absolute():
+            return (
+                f"Installer {name} rejected: lookup returned a relative path {resolved!r}. "
+                "Use an absolute PATH entry for the installed tool. "
+                "Run from a directory without a matching installer executable "
+                "to avoid implicit current-directory matches on Windows, and retry."
+            )
+        return (
+            f"Installer {name} rejected: lookup or target is not trusted ({resolved!r}). "
+            "Run from another directory and ensure PATH points to the installed tool."
+        )
 
     def eligible(path: Path, *, executable: bool) -> bool:
+        nonlocal context
+        if context is None:
+            cwd = Path.cwd().resolve()
+            project_root = _git_ancestor(cwd)
+            context = (
+                cwd.stat(),
+                project_root.stat() if project_root is not None else None,
+            )
+        cwd_status, project_status = context
         # Check that traversal terminates before inspecting intermediate links.
         path.resolve(strict=True)
         if not executable and os.path.samestat(path.stat(), cwd_status):
@@ -552,28 +580,60 @@ def _find_installer(name: str) -> str | None:
             entry = entry.strip('"')
         directory = Path(entry)
         if not directory.is_absolute():
+            if entry:
+                for suffix in suffixes:
+                    candidate = str(directory / f"{name}{suffix}")
+                    if os.path.lexists(candidate):
+                        rejections.append(rejected_lookup(candidate))
             continue
         try:
-            if not eligible(directory, executable=False):
-                continue
             for suffix in suffixes:
                 found = shutil.which(str(directory / f"{name}{suffix}"))
                 if found is not None:
                     executable = Path(found)
-                    if executable.is_absolute() and eligible(
-                        executable, executable=True
+                    if (
+                        executable.is_absolute()
+                        and eligible(directory, executable=False)
+                        and eligible(executable, executable=True)
                     ):
                         return str(executable)
-        except FileNotFoundError:
-            continue
+                    rejections.append(rejected_lookup(found))
         except (OSError, RuntimeError) as exc:
+            rejections.append(
+                f"Installer {name} rejected: could not validate its path ({exc}). "
+                "Run from an existing, accessible working directory and check PATH."
+            )
             console.print(
                 f"Skipping installer PATH entry {directory} while finding {name}: {exc}",
                 style="yellow",
                 markup=False,
                 soft_wrap=True,
             )
+    if rejections:
+        raise _InstallerRejected(rejections[0])
     return None
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    include_signals: Literal[False] = False,
+) -> _InstallMethod: ...
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    *,
+    include_signals: Literal[True],
+) -> tuple[_InstallMethod, _DetectionSignals]: ...
+
+
+@overload
+def _detect_install_method(
+    argv0: str | None = None,
+    include_signals: bool = False,
+) -> _InstallMethod | tuple[_InstallMethod, _DetectionSignals]: ...
 
 
 def _detect_install_method(
@@ -627,9 +687,14 @@ def _detect_install_method(
 
     # --- Tier 3: PATH + registry reconciliation ---
     consulted: list[str] = []
+    rejections: list[str] = []
     if _tier3_registry_lookup_allowed(argv0_path):
         uv_tool_match = False
-        uv_bin = _find_installer("uv")
+        try:
+            uv_bin = _find_installer("uv")
+        except _InstallerRejected as exc:
+            rejections.append(str(exc))
+            uv_bin = None
         if uv_bin is not None:
             consulted.append("uv tool list")
             try:
@@ -649,7 +714,11 @@ def _detect_install_method(
                 pass
 
         pipx_match = False
-        pipx_bin = _find_installer("pipx")
+        try:
+            pipx_bin = _find_installer("pipx")
+        except _InstallerRejected as exc:
+            rejections.append(str(exc))
+            pipx_bin = None
         if pipx_bin is not None:
             consulted.append("pipx list --json")
             try:
@@ -669,10 +738,10 @@ def _detect_install_method(
             except (subprocess.TimeoutExpired, OSError, ValueError):
                 pass
 
-        # If both registries claim ownership, the active entrypoint is ambiguous.
-        # Treat it as unsupported rather than guessing and upgrading the wrong install.
+        # Both matches or a rejected probe leave ownership ambiguous.
+        # Never guess and risk upgrading the wrong installation.
         exactly_one_match = uv_tool_match != pipx_match
-        if exactly_one_match:
+        if exactly_one_match and not rejections:
             method = _InstallMethod.UV_TOOL if uv_tool_match else _InstallMethod.PIPX
             if include_signals:
                 return method, _DetectionSignals(
@@ -682,6 +751,7 @@ def _detect_install_method(
                     editable_marker_seen=False,
                     installer_registries_consulted=tuple(consulted),
                     resolved_method=method,
+                    installer_rejections=tuple(rejections),
                 )
             return method
 
@@ -695,6 +765,7 @@ def _detect_install_method(
             editable_marker_seen=False,
             installer_registries_consulted=tuple(consulted),
             resolved_method=method,
+            installer_rejections=tuple(rejections),
         )
     return method
 
@@ -792,7 +863,8 @@ def _build_upgrade_plan(
     A valid `target_tag_override` skips network resolution entirely.
     A fetched target tag is validated before installer argv construction.
     """
-    method = _detect_install_method()
+    method, signals = _detect_install_method(include_signals=True)
+    rejections = list(signals.installer_rejections)
 
     if target_tag_override is not None:
         target_tag = target_tag_override
@@ -819,10 +891,18 @@ def _build_upgrade_plan(
         target_tag = None
 
     current = _get_installed_version()
-    argv = _assemble_installer_argv(method, target_tag)
+    installer_rejected = False
+    try:
+        argv = _assemble_installer_argv(method, target_tag)
+    except _InstallerRejected as exc:
+        rejections.append(str(exc))
+        installer_rejected = True
+        argv = None
     if argv is None and method in (_InstallMethod.UV_TOOL, _InstallMethod.PIPX):
         command_preview = (
-            f"(installer {_installer_binary_name(method)} not found on PATH)"
+            "(installer rejected)"
+            if installer_rejected
+            else f"(installer {_installer_binary_name(method)} not found on PATH)"
         )
     else:
         command_preview = (
@@ -843,6 +923,8 @@ def _build_upgrade_plan(
         installer_argv=argv,
         preview_summary=preview,
         pre_upgrade_snapshot=current,
+        installer_rejections=tuple(rejections),
+        installer_rejected=installer_rejected,
     )
     return plan, None
 

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from specify_cli._version import (
     _InstallMethod,
+    _DetectionSignals,
     _UpgradePlan,
     _assemble_installer_argv,
     _detect_install_method,
@@ -28,6 +29,7 @@ __all__ = (
     "_assemble_installer_argv",
     "_completed_process",
     "_detect_install_method",
+    "_detection_result",
     "_verify_upgrade",
     "mock_urlopen_response",
     "requires_posix",
@@ -51,6 +53,17 @@ requires_posix = pytest.mark.skipif(
 
 SENTINEL_GH_TOKEN = "SENTINEL-GH-TOKEN-VALUE"
 SENTINEL_GITHUB_TOKEN = "SENTINEL-GITHUB-TOKEN-VALUE"
+
+
+def _detection_result(method: _InstallMethod) -> tuple[_InstallMethod, _DetectionSignals]:
+    return method, _DetectionSignals(
+        sys_argv0="",
+        matched_tier=None,
+        matched_prefix=None,
+        editable_marker_seen=False,
+        installer_registries_consulted=(),
+        resolved_method=method,
+    )
 
 
 def _completed_process(

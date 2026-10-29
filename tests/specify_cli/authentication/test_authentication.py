@@ -1706,7 +1706,9 @@ class TestGitHubCliAuthenticatedHttp:
         "Run 'gh auth login --hostname github.com'.",
     ])
     @pytest.mark.parametrize("command,exit_code", [("check", 0), ("upgrade", 1)])
-    def test_release_commands_preserve_cli_failure(self, detail, command, exit_code):
+    def test_release_commands_preserve_cli_failure(
+        self, detail, command, exit_code, uv_tool_argv0
+    ):
         from unittest.mock import patch
         from typer.testing import CliRunner
         from specify_cli import app, _version
@@ -1716,8 +1718,6 @@ class TestGitHubCliAuthenticatedHttp:
         )
         with patch.object(
             GitHubAuth, "_acquire_via_gh_cli", side_effect=error,
-        ), patch.object(
-            _version, "_detect_install_method", return_value=_version._InstallMethod.UV_TOOL,
         ), patch.object(
             _version, "_get_installed_version", return_value="1.0.0",
         ), patch(

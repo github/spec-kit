@@ -8777,7 +8777,7 @@ class TestConfigManagerNonMappingManifestConfigSection:
 class TestConfigManagerTopLevelManifestDefaults:
     """A top-level `defaults:` in extension.yml must be loaded (#5084).
 
-    The extension template and EXTENSION-API-REFERENCE.md put defaults under a
+    The extension template and docs/extensions/api.md put defaults under a
     top-level ``defaults:`` key, but ``_get_extension_defaults`` only read
     ``config.defaults``, so an extension built from the template silently had
     no defaults at runtime.

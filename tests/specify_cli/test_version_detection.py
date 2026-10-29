@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from tests.specify_cli.self_upgrade_helpers import (
     _assemble_installer_argv,
     _completed_process,
     _detect_install_method,
+    _detection_result,
     mock_urlopen_response,
     runner,
     strip_ansi,
@@ -335,6 +337,285 @@ class TestArgv0Resolution:
         assert result == Path("/broken/specify")
 
 
+class TestInstallerResolution:
+    @pytest.mark.skipif(os.name == "nt", reason="requires unprivileged symlinks")
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_working_directory_symlink_to_nested_target_is_rejected(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        target = project / "scripts" / name
+        target.parent.mkdir(parents=True)
+        target.write_text("decoy; must never be executed\n", encoding="utf-8")
+        target.chmod(0o755)
+        installer = project / name
+        installer.symlink_to(target)
+        monkeypatch.chdir(project)
+
+        with patch(
+            "specify_cli._version.shutil.which", return_value=str(installer)
+        ), pytest.raises(ValueError, match=f"Installer {name} rejected"):
+            _assemble_installer_argv(method, "v0.7.6")
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_case_alias_of_working_directory_is_rejected(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "Project"
+        project.mkdir()
+        alias = tmp_path / "pROJECT"
+        if not alias.exists():
+            pytest.skip("requires a case-insensitive filesystem")
+        installer = project / name
+        installer.write_text("decoy; must never be executed\n", encoding="utf-8")
+        installer.chmod(0o755)
+        monkeypatch.chdir(project)
+
+        with patch(
+            "specify_cli._version.shutil.which", return_value=str(alias / name)
+        ), pytest.raises(ValueError, match=f"Installer {name} rejected"):
+            _assemble_installer_argv(method, "v0.7.6")
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize(
+        ("operation", "error"),
+        [
+            ("cwd", FileNotFoundError("working directory was deleted")),
+            ("stat", PermissionError("cannot stat installer directory")),
+            ("resolve", RuntimeError("symlink loop")),
+        ],
+    )
+    def test_path_comparison_errors_are_rejected(
+        self, tmp_path, method, name, operation, error
+    ):
+        with patch(
+            "specify_cli._version.shutil.which",
+            side_effect=lambda command: sys.executable if Path(command).stem == name else None,
+        ), patch(
+            "specify_cli._version._resolved_argv0_path",
+            return_value=tmp_path / "missing" / "specify",
+        ), patch(
+            "specify_cli._version._expand_prefix", return_value=None
+        ), patch(
+            "specify_cli._version._editable_marker_seen", return_value=False
+        ), patch(
+            "specify_cli._version._tier3_registry_lookup_allowed", return_value=True
+        ), patch(
+            "specify_cli._version.subprocess.run"
+        ) as mock_run, patch.object(
+            Path, operation, side_effect=error
+        ):
+            with pytest.raises(ValueError, match=f"Installer {name} rejected"):
+                _assemble_installer_argv(method, "v0.7.6")
+            detected, signals = _detect_install_method(include_signals=True)
+
+        assert detected == _InstallMethod.UNSUPPORTED
+        assert signals.installer_registries_consulted == ()
+        assert len(signals.installer_rejections) == 1
+        assert str(error) in signals.installer_rejections[0]
+        mock_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize("target_missing", [False, True])
+    def test_missing_installer_paths_are_rejected(
+        self, monkeypatch, tmp_path, method, name, target_missing
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        directory = tmp_path / "installer-bin"
+        if target_missing:
+            directory.mkdir()
+
+        with patch(
+            "specify_cli._version.shutil.which", return_value=str(directory / name)
+        ), pytest.raises(ValueError, match=f"Installer {name} rejected"):
+            _assemble_installer_argv(method, "v0.7.6")
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize(
+        "location",
+        ["bare", "current-relative", "relative-directory", "windows-relative", "current-absolute"],
+    )
+    def test_unsafe_lookup_result_is_not_used_for_upgrade_or_registry_probe(
+        self, monkeypatch, tmp_path, method, name, location
+    ):
+        monkeypatch.chdir(tmp_path)
+        paths = {
+            "bare": name,
+            "current-relative": f"./{name}",
+            "relative-directory": f"bin/{name}",
+            "windows-relative": f".\\{name}.exe",
+            "current-absolute": str(tmp_path / name),
+        }
+        decoy = tmp_path / name
+        decoy.write_text("#!/bin/sh\n", encoding="utf-8")
+        decoy.chmod(0o755)
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+
+        with patch(
+            "specify_cli._version.shutil.which",
+            side_effect=lambda command: paths[location] if Path(command).stem == name else None,
+        ), patch(
+            "specify_cli._version._editable_marker_seen", return_value=False
+        ), patch("specify_cli._version.subprocess.run") as mock_run:
+            with pytest.raises(ValueError, match=f"Installer {name} rejected") as rejection:
+                _assemble_installer_argv(method, "v0.7.6")
+            detected, signals = _detect_install_method(include_signals=True)
+
+        assert detected == _InstallMethod.UNSUPPORTED
+        assert signals.installer_registries_consulted == ()
+        assert len(signals.installer_rejections) == 1
+        assert f"Installer {name} rejected" in signals.installer_rejections[0]
+        if location == "windows-relative":
+            guidance = "Run from a directory without a matching installer executable"
+            assert guidance in str(rejection.value)
+            assert guidance in signals.installer_rejections[0]
+        mock_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_absolute_installer_outside_working_directory_is_preserved(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        installer = tmp_path / "installed tools" / name
+        installer.parent.mkdir()
+        installer.write_text("#!/bin/sh\n", encoding="utf-8")
+        installer.chmod(0o755)
+
+        with patch(
+            "specify_cli._version.shutil.which", return_value=str(installer)
+        ):
+            argv = _assemble_installer_argv(method, "v0.7.6")
+
+        assert argv is not None
+        assert argv[0] == str(installer)
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    @pytest.mark.parametrize("path_entry", ["empty", "dot", "relative", "current-absolute"])
+    def test_real_lookup_rejects_working_directory_and_relative_path_entries(
+        self, monkeypatch, tmp_path, method, name, path_entry
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+        monkeypatch.setenv("PATHEXT", ".EXE")
+        filename = f"{name}.exe" if os.name == "nt" else name
+        (tmp_path / "bin").mkdir()
+        for directory in (tmp_path, tmp_path / "bin"):
+            executable = directory / filename
+            executable.write_text("decoy; must never be executed\n", encoding="utf-8")
+            executable.chmod(0o755)
+        entries = {
+            "empty": "",
+            "dot": ".",
+            "relative": "bin",
+            "current-absolute": str(tmp_path),
+        }
+        monkeypatch.setenv("PATH", entries[path_entry])
+
+        if path_entry == "empty":
+            assert _assemble_installer_argv(method, "v0.7.6") is None
+        else:
+            with pytest.raises(ValueError, match=f"Installer {name} rejected"):
+                _assemble_installer_argv(method, "v0.7.6")
+
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_real_lookup_preserves_installed_tool_on_absolute_path(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        directory = tmp_path / "installed tools"
+        directory.mkdir()
+        filename = f"{name}.exe" if os.name == "nt" else name
+        installer = directory / filename
+        installer.write_text("installer fixture; never executed\n", encoding="utf-8")
+        installer.chmod(0o755)
+        monkeypatch.setenv("PATH", str(directory))
+        monkeypatch.setenv("PATHEXT", ".EXE")
+
+        argv = _assemble_installer_argv(method, "v0.7.6")
+
+        assert argv is not None
+        assert Path(argv[0]) == installer
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows implicit cwd search")
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_windows_implicit_cwd_lookup_cannot_shadow_installed_tool(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        directory = tmp_path / "installed tools"
+        directory.mkdir()
+        for parent in (project, directory):
+            executable = parent / f"{name}.exe"
+            executable.write_text("fixture; must never be executed\n", encoding="utf-8")
+        monkeypatch.chdir(project)
+        monkeypatch.setenv("PATH", str(directory))
+        monkeypatch.setenv("PATHEXT", ".EXE")
+        monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+
+        try:
+            argv = _assemble_installer_argv(method, "v0.7.6")
+        except specify_cli._version._InstallerRejected:
+            return
+        assert argv is not None
+        assert Path(argv[0]) == directory / f"{name}.exe"
+
+    @pytest.mark.skipif(os.name == "nt", reason="requires unprivileged symlinks")
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [(_InstallMethod.UV_TOOL, "uv"), (_InstallMethod.PIPX, "pipx")],
+    )
+    def test_absolute_symlink_to_working_directory_installer_is_rejected(
+        self, monkeypatch, tmp_path, method, name
+    ):
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        decoy = project / name
+        decoy.write_text("#!/bin/sh\n", encoding="utf-8")
+        decoy.chmod(0o755)
+        installer = tmp_path / name
+        installer.symlink_to(decoy)
+
+        with patch(
+            "specify_cli._version.shutil.which", return_value=str(installer)
+        ), pytest.raises(ValueError, match=f"Installer {name} rejected"):
+            _assemble_installer_argv(method, "v0.7.6")
+
+
 class TestArgvAssemblyUvTool:
     """uv-tool installer argv shape."""
 
@@ -495,12 +776,13 @@ class TestInstallerLookupSecurity:
             ) as run,
         ):
             if operation == "lookup":
-                argv = _assemble_installer_argv(method, "v0.7.6")
                 if fallback:
+                    argv = _assemble_installer_argv(method, "v0.7.6")
                     assert argv is not None
                     assert Path(argv[0]) == expected
                 else:
-                    assert argv is None
+                    with pytest.raises(specify_cli._version._InstallerRejected):
+                        _assemble_installer_argv(method, "v0.7.6")
                 run.assert_not_called()
                 return
             if operation == "registry":
@@ -508,12 +790,12 @@ class TestInstallerLookupSecurity:
                 assert detected == (method if fallback else _InstallMethod.UNSUPPORTED)
             else:
                 with patch(
-                    "specify_cli._version._detect_install_method", return_value=method
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
                 ):
                     result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
                 assert result.exit_code == (0 if fallback else 3)
                 if not fallback:
-                    assert f"Installer {name} not found on PATH" in strip_ansi(
+                    assert f"Installer {name} rejected" in strip_ansi(
                         result.output
                     )
 
@@ -552,7 +834,7 @@ class TestInstallerLookupSecurity:
             method = _InstallMethod.UV_TOOL if name == "uv" else _InstallMethod.PIPX
             with (
                 patch(
-                    "specify_cli._version._detect_install_method", return_value=method
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
                 ),
                 patch(
                     "specify_cli._version._get_installed_version", return_value="0.7.5"
@@ -594,12 +876,13 @@ class TestInstallerLookupSecurity:
             os.pathsep.join([str(entry), str(trusted)] if fallback else [str(entry)]),
         )
 
-        found = specify_cli._version._find_installer(name)
         if fallback:
+            found = specify_cli._version._find_installer(name)
             assert found is not None
             assert Path(found) == expected
         else:
-            assert found is None
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     @pytest.mark.parametrize("stage", ["resolve", "lstat"])
@@ -614,6 +897,7 @@ class TestInstallerLookupSecurity:
         (project / ".git").mkdir()
         bad = tmp_path / "bad"
         bad.mkdir()
+        self.executable(bad, name)
         trusted = tmp_path / "trusted"
         trusted.mkdir()
         expected = self.executable(trusted, name)
@@ -751,7 +1035,7 @@ class TestInstallerLookupSecurity:
                 assert _detect_install_method() == method
             else:
                 with patch(
-                    "specify_cli._version._detect_install_method", return_value=method
+                    "specify_cli._version._detect_install_method", return_value=_detection_result(method)
                 ):
                     result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
                 assert result.exit_code == 0
@@ -788,12 +1072,13 @@ class TestInstallerLookupSecurity:
             os.pathsep.join([extended, str(trusted)] if fallback else [extended]),
         )
 
-        found = specify_cli._version._find_installer(name)
         if fallback:
+            found = specify_cli._version._find_installer(name)
             assert found is not None
             assert Path(found) == expected
         else:
-            assert found is None
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
 
     @pytest.mark.skipif(os.name != "nt", reason="Native Windows junctions required")
     @pytest.mark.parametrize("name", ["uv", "pipx"])
@@ -822,12 +1107,13 @@ class TestInstallerLookupSecurity:
             os.pathsep.join([str(alias), str(trusted)] if fallback else [str(alias)]),
         )
 
-        found = specify_cli._version._find_installer(name)
         if fallback:
+            found = specify_cli._version._find_installer(name)
             assert found is not None
             assert Path(found) == expected
         else:
-            assert found is None
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     def test_relative_lookup_result_is_rejected(self, monkeypatch, tmp_path, name):
@@ -838,7 +1124,8 @@ class TestInstallerLookupSecurity:
         monkeypatch.chdir(project)
         monkeypatch.setenv("PATH", str(trusted))
         with patch("specify_cli._version.shutil.which", return_value=name):
-            assert specify_cli._version._find_installer(name) is None
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                specify_cli._version._find_installer(name)
 
     @pytest.mark.parametrize("name", ["uv", "pipx"])
     def test_file_symlink_to_non_project_cwd_is_rejected(
@@ -856,7 +1143,8 @@ class TestInstallerLookupSecurity:
         monkeypatch.chdir(project)
         monkeypatch.setenv("PATH", str(bin_dir))
 
-        assert specify_cli._version._find_installer(name) is None
+        with pytest.raises(specify_cli._version._InstallerRejected):
+            specify_cli._version._find_installer(name)
 
     @pytest.mark.parametrize(
         "method,name",
@@ -954,7 +1242,11 @@ class TestInstallerLookupSecurity:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PATH", path)
 
-        assert _assemble_installer_argv(method, "v0.7.6") is None
+        if not path:
+            assert _assemble_installer_argv(method, "v0.7.6") is None
+        else:
+            with pytest.raises(specify_cli._version._InstallerRejected):
+                _assemble_installer_argv(method, "v0.7.6")
 
     def test_registry_probes_do_not_execute_project_local_installers(
         self, monkeypatch, tmp_path
@@ -989,14 +1281,14 @@ class TestInstallerLookupSecurity:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PATH", str(tmp_path))
         with (
-            patch("specify_cli._version._detect_install_method", return_value=method),
+            patch("specify_cli._version._detect_install_method", return_value=_detection_result(method)),
             patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
             patch("specify_cli._version.subprocess.run") as run,
         ):
             result = runner.invoke(app, ["self", "upgrade", "--tag", "v0.7.6"])
 
         assert result.exit_code == 3
-        assert f"Installer {name} not found on PATH" in strip_ansi(result.output)
+        assert f"Installer {name} rejected" in strip_ansi(result.output)
         run.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -1095,9 +1387,10 @@ class TestInstallerLookupSecurity:
                 return_value=_completed_process(0, stdout=stdout),
             ) as run,
         ):
-            detected = _detect_install_method()
+            detected, signals = _detect_install_method(include_signals=True)
 
-        assert detected == method
+        assert detected == _InstallMethod.UNSUPPORTED
+        assert signals.installer_rejections
         run.assert_called_once()
         assert Path(run.call_args.args[0][0]) == expected
 
@@ -1121,7 +1414,7 @@ class TestInstallerLookupSecurity:
         monkeypatch.setenv("PATH", os.pathsep.join([".", str(trusted)]))
 
         with (
-            patch("specify_cli._version._detect_install_method", return_value=method),
+            patch("specify_cli._version._detect_install_method", return_value=_detection_result(method)),
             patch("specify_cli._version._get_installed_version", return_value="0.7.5"),
             patch("specify_cli._version._verify_upgrade", return_value="0.7.6"),
             patch(
@@ -1168,7 +1461,8 @@ class TestInstallerLookupSecurity:
         monkeypatch.chdir(nested)
         monkeypatch.setenv("PATH", str(project_bin))
 
-        assert specify_cli._version._find_installer(name) is None
+        with pytest.raises(specify_cli._version._InstallerRejected):
+            specify_cli._version._find_installer(name)
 
 
 class TestBareUpgradeUvTool:
@@ -1559,6 +1853,47 @@ class TestDetectionPipx:
         assert signals.matched_tier is None
         assert "uv tool list" in signals.installer_registries_consulted
         assert "pipx list --json" in signals.installer_registries_consulted
+
+
+    @pytest.mark.parametrize("rejected_name", ["uv", "pipx"])
+    def test_tier3_rejected_probe_leaves_ownership_ambiguous(
+        self, monkeypatch, tmp_path, rejected_name, installer_paths
+    ):
+        monkeypatch.setattr("sys.argv", [str(tmp_path / "missing" / "specify")])
+        other_name = "pipx" if rejected_name == "uv" else "uv"
+        probe_args = ["list", "--json"] if other_name == "pipx" else ["tool", "list"]
+        probe_output = (
+            '{"venvs":{"specify-cli":{}}}' if other_name == "pipx" else "specify-cli v0.7.6\n"
+        )
+
+        def fake_which(name):
+            name = Path(name).stem
+            if name == rejected_name:
+                return f"./{name}"
+            if name == other_name:
+                return installer_paths[other_name]
+            return None
+
+        with patch(
+            "specify_cli._version.shutil.which", side_effect=fake_which
+        ), patch(
+            "specify_cli._version._editable_marker_seen", return_value=False
+        ), patch("specify_cli._version.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[installer_paths[other_name], *probe_args],
+                returncode=0,
+                stdout=probe_output,
+                stderr="",
+            )
+            method, signals = _detect_install_method(include_signals=True)
+
+        assert method == _InstallMethod.UNSUPPORTED
+        assert signals.matched_tier is None
+        assert signals.installer_registries_consulted == (" ".join([other_name, *probe_args]),)
+        assert len(signals.installer_rejections) == 1
+        assert f"Installer {rejected_name} rejected" in signals.installer_rejections[0]
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[0] == [installer_paths[other_name], *probe_args]
 
 
 class TestEditableInstallMetadata:
