@@ -60,7 +60,13 @@ def test_taskstoissues_hooks_and_safety_contracts_remain(command):
     assert "hooks.after_taskstoissues" in text
     assert "ONLY PROCEED TO NEXT STEPS IF THE REMOTE IS A GITHUB URL" in text
     assert "**Fetch existing issues for deduplication**" in text
-    assert "**Skip** any task whose ID is already present" in text
+    # The skip rule, now that dedup is scoped to one feature. Task IDs restart at
+    # `T001` in every feature's tasks.md, so "ID is already present" let the first
+    # feature to reach the tracker suppress `T001` for every later one. Matching on
+    # the ID alone is the thing this must not go back to, so the ID is pinned as
+    # necessary-but-not-sufficient rather than as the whole condition.
+    assert "**Skip** a task only when an existing issue matches **both**" in text
+    assert "this feature's identifier and the task ID" in text
     assert "Only create issues for tasks that do not yet have a matching issue." in text
     assert "UNDER NO CIRCUMSTANCES EVER CREATE ISSUES IN REPOSITORIES THAT DO NOT MATCH THE REMOTE URL" in text
 
