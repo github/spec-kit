@@ -1088,14 +1088,15 @@ class TestExpressions:
     def test_filter_call_with_trailing_tokens_fails_loudly(self):
         # A trailing operator/token after a filter comes out as a parse error
         # rather than being silently discarded. The grammar makes the filter
-        # chain a complete expression: a comparison after it and garbage after
-        # its closing paren both fail to parse (previously the hand-written
-        # parser routed these to an "unsupported form" ValueError instead).
+        # chain a complete expression: a comparison after it is reported as a
+        # filter precedence mistake, and garbage after its closing paren fails
+        # to parse (previously the hand-written parser routed both to an
+        # "unsupported form" ValueError instead).
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
-        with pytest.raises(ValueError, match="invalid expression"):
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
             evaluate_expression(
                 "{{ inputs.missing | default('7') > '5' }}", StepContext(inputs={})
             )
@@ -1661,6 +1662,151 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.a or inputs.b and inputs.c }}", ctx) is True
         # Explicit grouping overrides the default and flips the result.
         assert evaluate_expression("{{ (inputs.a or inputs.b) and inputs.c }}", ctx) is False
+
+    def test_comparisons_share_one_level_and_group_left_to_right(self):
+        """No comparison operator has priority over another.
+
+        The former engine's operator scan order made ``==``/``!=`` bind looser
+        than ``<``/``>``/``in`` and grouped repeated comparisons from the right.
+        The grammar puts every comparison on one level, left-associative, so
+        ``a == b > 0`` is ``(a == b) > 0``. Each case is checked against its
+        explicit grouping and against the other grouping, which gives a
+        different result, so the assertion fails if the precedence moves.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"enabled": True, "count": 5, "mode": "x", "tags": ["x"]}
+        )
+        cases = [
+            ("inputs.enabled == inputs.count > 0",
+             "(inputs.enabled == inputs.count) > 0",
+             "inputs.enabled == (inputs.count > 0)"),
+            ("true == inputs.mode in inputs.tags",
+             "(true == inputs.mode) in inputs.tags",
+             "true == (inputs.mode in inputs.tags)"),
+            ("inputs.enabled != inputs.count >= 10",
+             "(inputs.enabled != inputs.count) >= 10",
+             "inputs.enabled != (inputs.count >= 10)"),
+            ("1 < 2 < 3", "(1 < 2) < 3", "1 < (2 < 3)"),
+            ("3 > 2 > 1", "(3 > 2) > 1", "3 > (2 > 1)"),
+        ]
+        for plain, left, right in cases:
+            result = evaluate_expression("{{ " + plain + " }}", ctx)
+            assert result == evaluate_expression("{{ " + left + " }}", ctx), plain
+            assert result != evaluate_expression("{{ " + right + " }}", ctx), plain
+        # Comparisons still bind tighter than not/and/or.
+        assert evaluate_expression("{{ not inputs.count > 9 }}", ctx) is True
+        assert evaluate_expression(
+            "{{ inputs.count > 9 or inputs.mode == 'x' }}", ctx
+        ) is True
+
+    def test_number_literal_forms(self):
+        """Every number form the former engine read through ``int()``/``float()``.
+
+        A ``.`` makes a float (exponents need one too, as before); a sign and
+        digit-group underscores are allowed.
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"ratio": 0.7})
+        for text, expected in [
+            ("5", 5), ("-5", -5), ("+5", 5), ("1_000", 1000),
+            ("0.5", 0.5), (".5", 0.5), ("-.5", -0.5), ("5.", 5.0),
+            ("1.5e3", 1500.0), (".5E-1", 0.05), ("1_000.5", 1000.5),
+        ]:
+            result = evaluate_expression("{{ " + text + " }}", ctx)
+            assert result == expected and type(result) is type(expected), text
+        assert evaluate_expression("{{ inputs.ratio > .5 }}", ctx) is True
+        assert evaluate_expression("{{ [.5, +1] }}", ctx) == [0.5, 1]
+
+    def test_malformed_number_literals_are_refused(self):
+        """Forms ``int()``/``float()`` refuse (or, for ``1e3``, the former engine
+        never read as a number) do not lex as one either."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        for text in ("1__0", "1_", "1e3", "5..", "."):
+            with pytest.raises(ValueError, match="invalid expression"):
+                evaluate_expression("{{ " + text + " }}", StepContext(inputs={}))
+
+    def test_not_on_the_right_of_a_comparison(self):
+        """``a == not b`` compares against the negation, as before."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": False, "b": True})
+        assert evaluate_expression("{{ inputs.a == not inputs.b }}", ctx) is True
+        assert evaluate_expression("{{ inputs.a != not inputs.b }}", ctx) is False
+        assert evaluate_expression("{{ inputs.b == not not inputs.b }}", ctx) is True
+        # The negation covers only its operand; `and` still splits the whole.
+        assert evaluate_expression(
+            "{{ inputs.a == not inputs.b and inputs.a }}", ctx
+        ) is False
+        with pytest.raises(ValueError, match="unexpected end of text"):
+            evaluate_expression("{{ inputs.a == not }}", ctx)
+        # A filter after it is still a filter precedence mistake.
+        with pytest.raises(ValueError, match="ambiguous filter precedence"):
+            evaluate_expression("{{ inputs.a == not inputs.b | default(1) }}", ctx)
+
+    def test_filter_form_is_checked_before_arguments_are_evaluated(self):
+        """A misused or unknown filter is reported as such, even when evaluating
+        its argument would itself raise."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"s": "hi", "n": None})
+        with pytest.raises(ValueError, match=r"upper: expected '\| upper' with no arguments"):
+            evaluate_expression("{{ inputs.s | upper(inputs.n | split(',')) }}", ctx)
+        with pytest.raises(ValueError, match="filter 'join' used in an unsupported form"):
+            evaluate_expression("{{ inputs.s | join(inputs.n | upper, 1) }}", ctx)
+        with pytest.raises(ValueError, match="unknown filter 'nope'"):
+            evaluate_expression("{{ inputs.s | nope(inputs.n | upper) }}", ctx)
+        # A correctly used filter still evaluates its argument and surfaces its
+        # error.
+        with pytest.raises(ValueError, match="upper: expected a string value"):
+            evaluate_expression("{{ inputs.s | join(inputs.n | upper) }}", ctx)
+
+    def test_operator_after_a_filter_chain_is_a_filter_precedence_error(self):
+        """Both directions of a filter used as an operator's operand get the
+        filter-precedence message; a doubled ``|`` does not."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": [1], "s": "hi", "t": True, "a": 1, "b": 2})
+        for text in (
+            "inputs.items | length > 0",
+            "inputs.s | contains('h') and inputs.t",
+            "(inputs.s | upper) | lower == 'hi'",
+        ):
+            with pytest.raises(ValueError, match="ambiguous filter precedence"):
+                evaluate_expression("{{ " + text + " }}", ctx)
+        assert evaluate_expression("{{ (inputs.items | length) > 0 }}", ctx) is True
+        with pytest.raises(ValueError) as excinfo:
+            evaluate_expression("{{ inputs.a || inputs.b }}", ctx)
+        assert "ambiguous filter precedence" not in str(excinfo.value)
+        assert "unexpected '|' at column 11" in str(excinfo.value)
+
+    def test_text_that_is_not_an_expression_is_refused(self):
+        """Prose inside ``{{ }}`` and path keys outside ``[\\w-]`` are syntax
+        errors. The former engine looked them up as paths and rendered the
+        miss as an empty string or ``None``."""
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"weird:key": "v", "ok-key": "v"})
+        with pytest.raises(ValueError, match="invalid expression 'some text'"):
+            evaluate_expression("a {{ some text }} b", ctx)
+        with pytest.raises(ValueError, match="unexpected character ':'"):
+            evaluate_expression("{{ inputs.weird:key }}", ctx)
+        assert evaluate_expression("{{ inputs.ok-key }}", ctx) == "v"
 
     def test_item_and_fan_in_namespace(self):
         """The ``item`` and ``fan_in`` roots resolve inside fan-out/fan-in, like

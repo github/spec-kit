@@ -547,6 +547,25 @@ def test_incomplete_operand_covers_every_operator_the_evaluator_splits_on():
         assert _has_incomplete_operand("inputs.a" + op + "inputs.b") is False, op
 
 
+@pytest.mark.parametrize(
+    "text,incomplete",
+    [
+        ("inputs.items | length > 0", False),
+        ("inputs.s | contains('h') and inputs.t", False),
+        ("(inputs.x | upper) | lower == 'x'", False),
+        ("inputs.a || inputs.b", True),
+        ("inputs.a == == inputs.b", True),
+        ("| upper", True),
+    ],
+)
+def test_incomplete_operand_tells_a_filter_chain_from_a_missing_operand(
+    text, incomplete
+):
+    """An operator token only means a missing operand where an operand was
+    expected; after a filter chain it is a filter precedence mistake."""
+    assert _has_incomplete_operand(text) is incomplete
+
+
 # Copilot round 3: the first two gates each inspected only one position. These pin
 # every-position scanning, both ends, and bracket-type matching.
 MULTI_POSITION_UNFIXABLE = [
@@ -559,14 +578,22 @@ MULTI_POSITION_UNFIXABLE = [
     ("inputs.items | truncate", "the evaluator rejects it"),
     ("inputs.tags | join", "used in an unsupported form"),
     # The grammar-based engine names the position instead of classifying
-    # the text: `he said ...` fails at the second word, `count+1` at the `+`.
+    # the text: `he said ...` fails at the second word, `count+1` at the `+1`
+    # (a signed number literal).
     # Previously: "is not a name the evaluator can resolve" / "is not a valid
     # path segment".
     ('he said "hi" then left', "unexpected 'said'"),
-    ("inputs.count+1", "unexpected character '+' at column 13"),
+    ("inputs.count+1", "unexpected '+1' at column 13"),
     ("inputs.a === inputs.b", "unexpected character '=' at column 12"),
     ("bogus == 'x'", "is not one of the namespace roots"),
     ("inputs.payload | from_json()", "the evaluator rejects it"),
+    # An operator after a filter chain has both operands: it is a filter
+    # precedence mistake, not a missing operand. A doubled `|` or operator is
+    # the missing operand.
+    ("inputs.items | length > 0", "ambiguous filter precedence"),
+    ("inputs.s | contains('h') and inputs.t", "ambiguous filter precedence"),
+    ("inputs.a || inputs.b", "missing an operand"),
+    ("inputs.a == == inputs.b", "missing an operand"),
 ]
 
 

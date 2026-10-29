@@ -1,7 +1,16 @@
 """Lark (LALR) engine for workflow expressions.
 
-The grammar replaces the former hand-written parser; the expression language
-is unchanged. Only the block body is parsed here:
+The grammar replaces the former hand-written parser. Only the block body is
+parsed here. The language is the same with these deliberate differences, all
+documented in ``workflows/ARCHITECTURE.md``:
+
+* All comparison operators share one precedence level and group left to right
+  (``a == b > 0`` is ``(a == b) > 0``). The former engine's operator scan order
+  gave them accidental priorities; parenthesize to combine comparisons.
+* Text that is not an expression -- prose inside ``{{ }}``, path keys with
+  characters outside ``[\\w-]`` -- is a syntax error instead of a ``None`` lookup.
+
+The rest of this docstring describes how the engine is built:
 
 * **The precedence guards are in the grammar, not in a post-check.** A filter
   chain is only valid where the language allows one: the head is a plain
@@ -111,7 +120,10 @@ filtered: operand ("|" filter)+
          | comparison
 
 ?comparison: operand
-           | comparison CMP_OP operand  -> cmp
+           | comparison CMP_OP cmp_rhs  -> cmp
+
+?cmp_rhs: operand
+        | NOT cmp_rhs              -> not_op
 
 ?operand: string
         | number
@@ -141,7 +153,7 @@ OR.2: /(?<![\w-])or(?![\w-])/
 FILTER_NAME: /[A-Za-z_][\w-]*/
 PATH: /""" + path_pattern + r"""/
 STRING: /'[^']*'/ | /"[^"]*"/
-NUMBER: /-?\d+(\.\d+)?/
+NUMBER: /[+-]?(?:(?:\d(?:_?\d)*\.(?:\d(?:_?\d)*)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?|\d(?:_?\d)*)/
 %import common.WS
 %ignore WS
 """
@@ -226,17 +238,33 @@ def _parse(text: str) -> Any:
 def _parse_error_message(text: str, exc: UnexpectedInput) -> str:
     """The author-facing message for a parse failure of *text*.
 
-    The pipe case is the one carried-over semantic: a ``|`` where an operand
-    was expected is the shape the current evaluator refuses as an ambiguous
-    filter precedence, so it gets the same wording. Everything else names the
-    offending character and column.
+    Filter precedence is the one carried-over semantic. A filter chain cannot
+    be an operand of an operator, in either direction: a ``|`` after an
+    operator's operand (``count > limit | default(5)``), or an operator after a
+    filter chain (``items | length > 0``). Both get the same wording. Everything
+    else names the offending character and column.
     """
     token = getattr(exc, "token", None)
-    if token is not None and token.value == "|" and getattr(token, "column", 1) > 1:
+    expected = set(getattr(exc, "expected", ()) or ())
+    expects_operand = bool(expected & _OPERAND_EXPECTED)
+    if token is not None and token.type == "VBAR" and not expects_operand:
         return (
             f"ambiguous filter precedence in '{text}': a filter cannot be an "
             f"operand of an operator. Filter the operand in its own expression "
             f"instead."
+        )
+    if (
+        token is not None
+        and str(token.type) in _OPERATOR_TOKENS
+        and "VBAR" in expected
+        and not expects_operand
+    ):
+        operator = " ".join(str(token.value).split())
+        return (
+            f"ambiguous filter precedence in '{text}': '{operator}' follows a "
+            f"filter chain, and a filter chain cannot be an operand of an "
+            f"operator; parenthesize the filtered operand, as in "
+            f"'(inputs.items | length) > 0'"
         )
     if token is not None and token.type == "$END":
         return f"invalid expression '{text}': unexpected end of text"
@@ -274,14 +302,15 @@ def _apply_filter(
 ) -> Any:
     """Apply one ``("filter", name, args, has_parens)`` node to *value*.
 
-    Arguments are evaluated here, before the table lookup, so a leaf in an
-    argument is visible to the diagnostics even when the filter name is wrong.
-    The accepted call forms and the error wording come from ``FILTER_TABLE``
-    and``_EXPECTED_FILTERS``: the same table the message lists, so adding a
-    filter cannot leave the two disagreeing.
+    The call form is checked against ``FILTER_TABLE`` before any argument is
+    evaluated, so an unknown or misused filter is reported as such even when
+    an argument would itself fail. The diagnostics walk the parse tree for
+    argument leaves, so they do not need the arguments evaluated first. The
+    error wording comes from ``FILTER_TABLE`` and ``_EXPECTED_FILTERS``: the
+    same table the message lists, so adding a filter cannot leave the two
+    disagreeing.
     """
     _, name, arg_nodes, has_parens = filt
-    args = [_eval(node, namespace_) for node in arg_nodes]
     display = f"{name}(...)" if has_parens else name
 
     spec = FILTER_TABLE.get(name)
@@ -298,8 +327,8 @@ def _apply_filter(
                 f"tokens, got '| {display}'"
             )
         return spec.function(value)
-    if has_parens and len(args) == 1:
-        return spec.function(value, args[0])
+    if has_parens and len(arg_nodes) == 1:
+        return spec.function(value, _eval(arg_nodes[0], namespace_))
     if not has_parens and spec.bare:
         return spec.function(value)
     raise ValueError(
@@ -529,6 +558,13 @@ def _evaluator_rejects(text: str) -> str | None:
 
 _OPERATOR_TOKENS = frozenset({"CMP_OP", "AND", "OR", "NOT"})
 
+# Terminals the parser expects exactly where an operand (``PATH``) or a filter
+# name (``FILTER_NAME``) is missing. An operator token that fails while one of
+# these is expected lacks an operand; one that fails after a filter chain
+# (where only ``|``, ``(``, ``)`` and the like are expected) is a filter
+# precedence mistake instead.
+_OPERAND_EXPECTED = frozenset({"PATH", "FILTER_NAME"})
+
 # A word operator at the very start of the text. The LALR lexer only offers
 # CMP_OP/AND/OR/NOT where the grammar can take them, so without a left operand
 # `in`/`and`/`or` lex as paths and the failure lands on the *next* token; the
@@ -542,11 +578,13 @@ def _has_incomplete_operand(text: str) -> bool:
 
     Reads the parse failure rather than restating the operator table: text
     that ends where an operand was expected (``inputs.a ==``, ``inputs.a and``,
-    ``inputs.x |``) fails at the ``$END`` token; a leading word operator
-    (``in inputs.a``, ``and inputs.x``) fails right behind the word. A failure
-    anywhere else (arithmetic, a stray character, a second literal) is a
-    syntax error, not an incomplete operand, and is reported by
-    ``_syntax_error`` instead.
+    ``inputs.x |``) fails at the ``$END`` token; an operator or ``|`` where an
+    operand or a filter name was expected (``inputs.a == == inputs.b``,
+    ``inputs.a || inputs.b``) fails on that token; a leading word operator
+    (``in inputs.a``, ``and inputs.x``) fails right behind the word. An operator
+    after a filter chain (``inputs.items | length > 0``) has both operands and
+    is a filter precedence mistake, reported by ``_syntax_error``, as is a
+    failure anywhere else (arithmetic, a stray character, a second literal).
     """
     stripped = text.strip()
     if not stripped:
@@ -554,10 +592,11 @@ def _has_incomplete_operand(text: str) -> bool:
     try:
         _parse(_collapse_whitespace(stripped))
     except UnexpectedToken as exc:
-        if exc.token.type == "$END":
+        token_type = str(exc.token.type)
+        if token_type == "$END":
             return True
-        if str(exc.token.type) in _OPERATOR_TOKENS:
-            return True
+        if token_type in _OPERATOR_TOKENS or token_type == "VBAR":
+            return bool(set(exc.expected) & _OPERAND_EXPECTED)
         return bool(_LEADING_WORD_OPERATOR.match(stripped))
     except UnexpectedInput:
         return False
