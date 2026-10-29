@@ -68,6 +68,29 @@ def test_list_escapes_markup_in_records(project: Path):
     assert "2026-01-01T00:00:00Z[/dim]" in output
 
 
+def test_list_json_includes_bundle_references(project: Path):
+    record = {
+        "bundle_id": "parent",
+        "version": "1.0.0",
+        "installed_at": "2026-01-01T00:00:00Z",
+        "contributed_components": [],
+        "bundle_references": [
+            {"id": "child", "version": "1.0.0", "source": "default"}
+        ],
+    }
+    (project / ".specify" / "bundle-records.json").write_text(
+        json.dumps({"schema_version": "1.0", "bundles": [record]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["bundle", "list", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["bundle_references"] == [
+        {"id": "child", "version": "1.0.0", "source": "default"}
+    ]
+
+
 @pytest.mark.parametrize(
     ("contributed", "required", "expected_count"),
     [

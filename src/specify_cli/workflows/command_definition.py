@@ -7,6 +7,7 @@ import sys
 from .._installed_list_json import InstalledListJSONCommand, emit_json_error
 from .._project import ProjectResolutionError, resolve_specify_project_root
 from . import _commands as cli
+from ._storage import WorkflowStorageError, validate_workflow_storage
 
 
 def _require_json_flag(json_output: bool) -> None:
@@ -34,8 +35,10 @@ def workflow_definition(
         project_root = resolve_specify_project_root()
     except ProjectResolutionError as exc:
         emit_json_error(exc)
-    if error := cli._workflow_storage_error(project_root):
-        emit_json_error(ValueError(error))
+    try:
+        validate_workflow_storage(project_root)
+    except WorkflowStorageError as exc:
+        emit_json_error(exc)
     try:
         state = cli._load_run_state(run_id, project_root)
     except ValueError as exc:

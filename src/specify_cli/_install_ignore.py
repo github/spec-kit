@@ -17,14 +17,16 @@ def load_install_ignore(
     Match the extension installer's Git-style patterns, including whitespace
     trimming and backslash normalization. Only the named root ignore file is
     read; there are no default exclusions except the ignore filename itself.
-    Invalid encoding or patterns raise the caller's domain validation error
-    before copying.
+    A non-file path, invalid encoding, or invalid patterns raise the caller's
+    domain validation error before copying.
     Excluded directories are pruned by copytree, so child negations cannot
     restore files inside them unless the parent directory is also re-included.
     """
     ignore_file = source_dir / ignore_filename
     if not ignore_file.exists():
         return None
+    if not ignore_file.is_file():
+        raise validation_error(f"{ignore_filename} is not a regular file: {ignore_file}")
 
     # Accept UTF-8 with or without the BOM emitted by Windows PowerShell 5.1.
     # Strip it after decoding so error offsets remain relative to the file.
