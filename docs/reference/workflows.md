@@ -782,6 +782,32 @@ qualified `step_id`. A step emits completion after its checkpoint; containers
 emit before their children, while replayed completed occurrences emit no step
 events.
 
+### Shell step
+
+`type: shell` executes `run` through the platform shell, retaining support for
+pipes, redirects, and multiple commands. Set `strict: true` to reject `{{`
+expression markers anywhere in `run`, including inside quotes. This is checked
+both during validation and immediately before execution. `strict` must be a
+boolean; omitted or `false` preserves existing raw interpolation behavior.
+
+Use an `env` mapping to bind dynamic values without inserting them into shell
+source. For example, on POSIX:
+
+```yaml
+- id: display-result
+  type: shell
+  strict: true
+  env:
+    RESULT: "{{ steps.plan.output.stdout }}"
+  run: 'printf "%s\n" "$RESULT"'
+```
+
+For cross-platform scripts, read the environment in the program itself, such
+as `os.environ["RESULT"]` in Python. See
+[Shell Step Environment Variables](#shell-step-environment-variables) for the
+binding contract and [Interpolation and shell safety](#interpolation-and-shell-safety)
+for the remaining trust boundary.
+
 > **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
 ### GitHub step
@@ -1237,9 +1263,11 @@ If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, back
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
 - **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `command` or `prompt` step with [`capture: true`](#capturing-command-and-prompt-output) this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
-There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step. Prefer [`strict: true`](#shell-step) with `env` bindings to keep dynamic values out of shell source. Strict mode does not sanitise data, inspect commands, or prevent an authored script from interpreting data as code. Do not use `eval`, build another `sh -c` command from a variable, or pass untrusted values through shell startup variables such as `BASH_ENV`. On Windows, `cmd.exe` expansion of `%VALUE%` can introduce shell syntax; read untrusted values inside a program instead. On POSIX, quote variable expansions and use the target program's argument validation or `--` where appropriate to prevent option injection.
 
-- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all. This is the strongest control the engine offers — prefer it over any downstream mitigation.
+For compatibility, raw interpolation remains enabled when `strict` is omitted or `false`. Its injection risk remains unchanged. Keep values you cannot constrain out of `run` fields entirely. Scrutinise every non-strict `run` field that interpolates a value you do not control, and at minimum:
+
+- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a non-strict `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all.
 
   ```yaml
   inputs:
@@ -1261,6 +1289,20 @@ Shell steps automatically receive the following environment variables:
 | Variable | Description |
 | -------- | ----------- |
 | `SPECKIT_WORKFLOW_DIR` | Resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path. |
+
+An optional per-step `env` mapping is available in both strict and non-strict
+mode. Names must match `[A-Za-z_][A-Za-z0-9_]*`; names are literal, not
+expressions. Values must be strings and may contain workflow expressions.
+Each value is evaluated once and must resolve to a string without NUL
+characters; numbers, booleans, null, lists, and mappings are rejected rather
+than silently converted. To serialize structured data, explicitly use
+`to_json`. Invalid bindings fail the step before launching a process.
+
+Bindings override inherited environment values for that subprocess only;
+they do not modify the parent process or subsequent steps. An empty string is
+valid. `SPECKIT_WORKFLOW_DIR` is reserved (case-insensitively) and cannot be
+overridden. Keep environment names and executable-loading settings under the
+workflow author's control: environment binding is a data channel, not a sandbox.
 
 ## Input Types
 

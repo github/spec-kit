@@ -7,6 +7,7 @@ import json
 import locale
 import math
 import os
+import re
 import subprocess
 from typing import Any
 
@@ -23,6 +24,13 @@ class ShellStep(StepBase):
     type_key = "shell"
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
+        binding_errors = self._binding_errors(config)
+        if binding_errors:
+            return StepResult(
+                status=StepStatus.FAILED,
+                error="; ".join(binding_errors),
+                output={"exit_code": -1, "stdout": "", "stderr": "invalid shell bindings"},
+            )
         run_cmd = config.get("run", "")
         if isinstance(run_cmd, str) and "{{" in run_cmd:
             run_cmd = evaluate_expression(run_cmd, context)
@@ -45,6 +53,23 @@ class ShellStep(StepBase):
             )
 
         env = {**os.environ}
+        for name, template in config.get("env", {}).items():
+            try:
+                value = evaluate_expression(template, context)
+            except ValueError as exc:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Shell step {config.get('id', '?')!r}: env {name!r}: {exc}",
+                    output={"exit_code": -1, "stdout": "", "stderr": "invalid environment expression"},
+                )
+            value_error = self._environment_value_error(name, value)
+            if value_error is not None:
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=f"Shell step {config.get('id', '?')!r}: {value_error}",
+                    output={"exit_code": -1, "stdout": "", "stderr": "invalid environment value"},
+                )
+            env[name.upper() if os.name == "nt" else name] = value
         if context.workflow_dir:
             env["SPECKIT_WORKFLOW_DIR"] = context.workflow_dir
         else:
@@ -52,8 +77,9 @@ class ShellStep(StepBase):
 
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
-        # control commands; catalog-installed workflows should be reviewed
-        # before use (see PUBLISHING.md for security guidance).
+        # control commands. strict=True rejects expression interpolation in
+        # run; dynamic data can instead be bound through env without becoming
+        # shell source. Neither mode sandboxes authored shell commands.
         try:
             proc = subprocess.run(  # noqa: S602 -- intentional shell=True (see NOTE above)
                 run_cmd,
@@ -122,6 +148,46 @@ class ShellStep(StepBase):
             )
 
     @staticmethod
+    def _environment_value_error(name: str, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return f"env {name!r} must be a string, got {type(value).__name__}."
+        if "\x00" in value:
+            return f"env {name!r} must not contain NUL characters."
+        return None
+
+    @classmethod
+    def _binding_errors(cls, config: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        prefix = f"Shell step {config.get('id', '?')!r}: "
+        strict = config.get("strict", False)
+        if not isinstance(strict, bool):
+            errors.append(prefix + "'strict' must be a boolean.")
+        elif strict:
+            run = config.get("run")
+            if not isinstance(run, str):
+                errors.append(prefix + "'run' must be a string in strict mode.")
+            elif "{{" in run:
+                errors.append(
+                    prefix + "strict mode forbids expressions in 'run'; "
+                    "bind dynamic values through 'env' instead."
+                )
+
+        bindings = config.get("env", {})
+        if not isinstance(bindings, dict):
+            errors.append(prefix + "'env' must be a mapping.")
+            return errors
+        for name, template in bindings.items():
+            if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+                errors.append(prefix + f"invalid environment variable name {name!r}.")
+                continue
+            if name.upper() == "SPECKIT_WORKFLOW_DIR":
+                errors.append(prefix + f"environment variable {name!r} is reserved.")
+            value_error = cls._environment_value_error(name, template)
+            if value_error is not None:
+                errors.append(prefix + value_error)
+        return errors
+
+    @staticmethod
     def _timeout_error(config: dict[str, Any]) -> str | None:
         """Return an error message if ``config['timeout']`` is invalid, else None.
 
@@ -157,6 +223,7 @@ class ShellStep(StepBase):
 
     def validate(self, config: dict[str, Any]) -> list[str]:
         errors = super().validate(config)
+        errors.extend(self._binding_errors(config))
         if "run" not in config:
             errors.append(
                 f"Shell step {config.get('id', '?')!r} is missing 'run' field."

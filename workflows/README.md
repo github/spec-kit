@@ -184,9 +184,18 @@ Run a shell command and capture output:
 ```yaml
 - id: run-tests
   type: shell
+  strict: true          # Optional: reject workflow expressions in run
   run: "npm test"       # runs from the project root; no interpolation needed
   timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
+
+For dynamic values, prefer `strict: true` and a per-step `env` mapping such as
+`env: {RESULT: "{{ steps.plan.output.stdout }}"}`. Values must resolve to strings
+and are passed as environment data, not inserted into `run`. Read them inside
+the called program; on POSIX, quoted variable expansion in a fixed script is
+also suitable. Strict mode is not a sandbox: do not reinterpret values with
+`eval` or a nested shell. Omitting `strict`, or setting it to `false`, preserves
+existing raw interpolation and its risks.
 
 > ⚠️ **Constrain interpolated values in `run` fields.** A `run` field is executed
 > by the system shell, and `{{ ... }}` expressions are substituted as raw text
