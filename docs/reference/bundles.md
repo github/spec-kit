@@ -82,6 +82,9 @@ update`, and `bundle init` forward `--trust-steps` to both bundled and catalog
 workflow installers. Without the switch, interactive invocations ask for
 approval and unattended invocations refuse to load custom steps. Neither
 `--offline` nor `--refresh` implies approval, and consent is never persisted.
+One interactive approval covers subsequent workflow delegates in the same
+bundle command, including a mix of bundled and catalog workflows. Later
+commands require approval again.
 
 If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override an already-initialized project's active integration: if a bundle targets a different integration than the project's, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Without `--refresh`, installation is idempotent — already-installed components matching their pins are skipped, as are bundle-owned compatible packaged patch releases with a warning (see below). Other differing or missing installed versions cannot satisfy a pin. Only `--refresh` can repair a drifted version owned exclusively by this bundle; independently installed components are skipped and never adopted or replaced. On failure, no provenance record is written (a failed install records nothing), and the components installed during that run are removed on a best-effort basis — removal errors are swallowed, so partial on-disk state may remain.
 

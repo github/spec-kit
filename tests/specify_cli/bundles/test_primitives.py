@@ -464,6 +464,46 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     assert calls == [(str(bundled / "workflow.yml"), True, None, False)]
 
 
+def test_step_approval_is_shared_only_within_installer_and_project(tmp_path, monkeypatch):
+    import specify_cli
+    from specify_cli.workflows import _commands as workflow_cli
+
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    (bundled / "workflow.yml").write_text(
+        "workflow:\n  id: bundled-wf\n  version: 1.0.0\n", encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "specify_cli._assets._locate_bundled_workflow", lambda wid: bundled,
+    )
+    approvals = []
+    forwarded = []
+    monkeypatch.setattr(
+        workflow_cli, "_approve_custom_steps",
+        lambda root: approvals.append(root.resolve()) or True,
+    )
+    monkeypatch.setattr(
+        specify_cli, "workflow_add",
+        lambda *args, **kwargs: forwarded.append(kwargs["trust_steps"]),
+    )
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    for project in (project_a, project_b):
+        (project / ".specify").mkdir(parents=True)
+    installer = DefaultPrimitiveInstaller(allow_network=False)
+    component = _component("workflows", "bundled-wf")
+
+    installer.install(project_a, component)
+    installer.install(project_a, component)
+    installer.install(project_b, component)
+
+    assert approvals == [project_a.resolve(), project_b.resolve()]
+    assert forwarded == [True, True, True]
+
+    DefaultPrimitiveInstaller(allow_network=False).install(project_a, component)
+    assert approvals == [project_a.resolve(), project_b.resolve(), project_a.resolve()]
+
+
 def test_assert_pinned_version_matches_passes():
     from specify_cli.bundles.primitives import _assert_pinned_version
 

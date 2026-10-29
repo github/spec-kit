@@ -33,6 +33,9 @@ Approval is never persisted or inherited by subsequent invocations.
 Bundle `add`, `install`, `update`, and `init` commands forward the same explicit
 consent through their primitive installer to both bundled and catalog workflow
 delegates. Bundle metadata, offline mode, and refresh do not imply trust.
+An interactive approval is shared by the bundle invocation's primitive
+installer for that project, so subsequent workflow delegates do not prompt
+again. The approval is discarded with that invocation, never stored globally.
 
 ## Step contract
 

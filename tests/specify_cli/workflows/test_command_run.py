@@ -13,6 +13,25 @@ import yaml
 from tests.specify_cli.workflows.helpers import force_gate_stdin as _force_gate_stdin
 
 
+@pytest.mark.parametrize("trust_steps", [False, True])
+def test_collecting_consent_does_not_import_step_code(tmp_path, monkeypatch, trust_steps):
+    from specify_cli.workflows import _commands as cli
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
+
+    marker = write_step_import_probe(tmp_path)
+    force_workflow_stdin(monkeypatch, tty=True)
+    monkeypatch.setattr(cli.typer, "confirm", lambda *args, **kwargs: True)
+
+    assert cli._approve_custom_steps(tmp_path, trust_steps=trust_steps) is True
+    assert not marker.exists()
+
+    cli._load_custom_steps(tmp_path, trust_steps=True)
+    assert marker.exists()
+
+
 @pytest.mark.parametrize("json_output", [False, True])
 @pytest.mark.parametrize("console_width", [13, 80])
 @pytest.mark.parametrize(

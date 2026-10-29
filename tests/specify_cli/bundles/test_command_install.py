@@ -35,64 +35,99 @@ runner = CliRunner()
 REPO_ROOT = Path(__file__).parents[3]
 
 
-@pytest.mark.parametrize("trust_steps", [False, True])
-@pytest.mark.parametrize("source", ["bundled", "catalog"])
+@pytest.mark.parametrize("mode", ["unattended", "flag", "accept", "decline"])
+@pytest.mark.parametrize("source", ["bundled", "catalog", "mixed", "mixed-reversed"])
 @pytest.mark.parametrize("command", ["add", "install", "refresh", "update", "init"])
 def test_bundle_forwards_custom_step_consent(
-    project: Path, monkeypatch, trust_steps: bool, source: str, command: str,
+    project: Path, monkeypatch, mode: str, source: str, command: str,
 ):
     from specify_cli.bundles.manifest import ComponentRef
     from specify_cli.bundles.records import InstalledBundleRecord, save_records
     from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
-    from tests.specify_cli.workflows.helpers import write_step_import_probe
+    from tests.specify_cli.workflows.helpers import (
+        force_workflow_stdin,
+        write_step_import_probe,
+    )
 
     marker = write_step_import_probe(project)
-    workflow_dir = project / "workflow-source"
-    workflow_dir.mkdir()
-    workflow_bytes = (
-        'schema_version: "1.0"\n'
-        "workflow:\n  id: trust-workflow\n  name: Trust workflow\n  version: 1.0.0\n"
-        "steps:\n  - id: probe\n    type: import-probe\n"
-    ).encode()
-    (workflow_dir / "workflow.yml").write_bytes(workflow_bytes)
+    force_workflow_stdin(monkeypatch, tty=mode in {"accept", "decline"})
+    workflow_sources = {
+        "bundled": {"trust-workflow": "bundled"},
+        "catalog": {"trust-workflow": "catalog"},
+        "mixed": {"first-workflow": "bundled", "second-workflow": "catalog"},
+        "mixed-reversed": {"first-workflow": "catalog", "second-workflow": "bundled"},
+    }[source]
+    workflow_contents = {}
+    workflow_dirs = {}
+    workflow_urls = {}
+    for wid in workflow_sources:
+        workflow_dirs[wid] = project / "workflow-source" / wid
+        workflow_dirs[wid].mkdir(parents=True)
+        workflow_contents[wid] = (
+            'schema_version: "1.0"\n'
+            f"workflow:\n  id: {wid}\n  name: Trust workflow\n  version: 1.0.0\n"
+            "steps:\n  - id: probe\n    type: import-probe\n"
+        ).encode()
+        (workflow_dirs[wid] / "workflow.yml").write_bytes(workflow_contents[wid])
+        workflow_urls[wid] = f"https://example.com/{wid}.yml"
     monkeypatch.setattr(
         "specify_cli._assets._locate_bundled_workflow",
-        lambda wid: workflow_dir if source == "bundled" and wid == "trust-workflow" else None,
+        lambda wid: workflow_dirs[wid] if workflow_sources.get(wid) == "bundled" else None,
     )
-    workflow_url = "https://example.com/trust-workflow.yml"
     catalog_source = SimpleNamespace(
         name="test", url="https://example.com/catalog.json", install_allowed=True,
     )
     monkeypatch.setattr(WorkflowCatalog, "get_active_catalogs", lambda self: [catalog_source])
     monkeypatch.setattr(
         WorkflowCatalog, "_fetch_single_catalog",
-        lambda self, entry: {"workflows": {"trust-workflow": {
-            "id": "trust-workflow", "version": "1.0.0", "url": workflow_url,
-            "sha256": hashlib.sha256(workflow_bytes).hexdigest(),
-        }}},
+        lambda self, entry: {"workflows": {
+            wid: {
+                "id": wid, "version": "1.0.0", "url": workflow_urls[wid],
+                "sha256": hashlib.sha256(workflow_contents[wid]).hexdigest(),
+            }
+            for wid in workflow_sources
+        }},
     )
 
+    content_by_url = {
+        workflow_urls[wid]: workflow_contents[wid] for wid in workflow_sources
+    }
+
     class WorkflowResponse(io.BytesIO):
+        def __init__(self, url):
+            super().__init__(content_by_url[url])
+            self.url = url
+
         def geturl(self):
-            return workflow_url
+            return self.url
 
     monkeypatch.setattr(
         "specify_cli.authentication.http.open_url",
-        lambda *args, **kwargs: WorkflowResponse(workflow_bytes),
+        lambda url, **kwargs: WorkflowResponse(url),
     )
-    manifest_data = _bundled_workflow_manifest("trust-workflow")
+    manifest_data = valid_manifest_dict(provides={"workflows": [
+        {"id": wid, "version": "1.0.0"} for wid in workflow_sources
+    ]})
     manifest = BundleManifest.from_dict(manifest_data)
     bundle_path = write_manifest(project / "bundle-source", manifest_data)
-    installed = project / ".specify" / "workflows" / "trust-workflow" / "workflow.yml"
-    original = workflow_bytes + b"# Previously installed workflow\n"
+    installed = {
+        wid: project / ".specify" / "workflows" / wid / "workflow.yml"
+        for wid in workflow_sources
+    }
+    original = {
+        wid: content + b"# Previously installed workflow\n"
+        for wid, content in workflow_contents.items()
+    }
     if command in {"update", "refresh"}:
-        component = ComponentRef("workflows", "trust-workflow", "1.0.0")
         save_records(project, [
-            InstalledBundleRecord.create("demo-bundle", "1.2.0", [component]),
+            InstalledBundleRecord.create("demo-bundle", "1.2.0", [
+                ComponentRef("workflows", wid, "1.0.0") for wid in workflow_sources
+            ]),
         ])
-        installed.parent.mkdir(parents=True)
-        installed.write_bytes(original)
-        WorkflowRegistry(project).add("trust-workflow", {"version": "1.0.0"})
+        for wid, path in installed.items():
+            path.parent.mkdir(parents=True)
+            path.write_bytes(original[wid])
+            WorkflowRegistry(project).add(wid, {"version": "1.0.0"})
     if command == "update":
         resolved = SimpleNamespace(install_allowed=True)
         monkeypatch.setattr(
@@ -110,21 +145,39 @@ def test_bundle_forwards_custom_step_consent(
             arguments.append("--refresh")
     if source == "bundled":
         arguments.append("--offline")
-    if trust_steps:
+    if mode == "flag":
         arguments.append("--trust-steps")
 
-    result = runner.invoke(app, arguments, input="y\n")
+    result = runner.invoke(app, arguments, input="n\n" if mode == "decline" else "y\n")
 
-    assert result.exit_code == (0 if trust_steps else 1), result.output
-    assert marker.exists() is trust_steps
-    if trust_steps:
-        assert installed.read_bytes() == workflow_bytes
+    approved = mode in {"accept", "flag"}
+    assert result.exit_code == (0 if approved else 1), result.output
+    assert marker.exists() is approved
+    assert result.output.count("Trust all custom workflow step code") == (
+        1 if mode in {"accept", "decline"} else 0
+    )
+    if approved:
+        for wid, path in installed.items():
+            assert path.read_bytes() == workflow_contents[wid]
+
+        marker.unlink()
+        repeated_args = ["bundle", "install", str(bundle_path), "--refresh"]
+        if source == "bundled":
+            repeated_args.append("--offline")
+        repeated = runner.invoke(app, repeated_args, input="n\n")
+
+        assert repeated.exit_code == 1, repeated.output
+        assert not marker.exists()
+        for wid, path in installed.items():
+            assert path.read_bytes() == workflow_contents[wid]
     else:
-        assert "--trust-steps" in " ".join(result.output.split())
-        if command in {"update", "refresh"}:
-            assert installed.read_bytes() == original
-        else:
-            assert not installed.exists()
+        expected = "not approved" if mode == "decline" else "--trust-steps"
+        assert expected in " ".join(result.output.split())
+        for wid, path in installed.items():
+            if command in {"update", "refresh"}:
+                assert path.read_bytes() == original[wid]
+            else:
+                assert not path.exists()
 
 
 @pytest.mark.parametrize("refresh", [False, True])

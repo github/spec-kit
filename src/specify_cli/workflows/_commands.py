@@ -62,14 +62,16 @@ def _fail_integration_load(exc: Exception, *, json_output: bool, run_id: str | N
     raise typer.Exit(1) from exc
 
 
-def _load_custom_steps(
+def _approve_custom_steps(
     project_root: Path, *, trust_steps: bool = False, json_output: bool = False,
-) -> None:
-    """Collect per-invocation CLI consent before the domain imports step code."""
+) -> bool:
+    """Collect consent without importing code; return whether imports are approved."""
     from . import CustomStepTrustError, load_custom_steps
 
+    if trust_steps:
+        return True
     try:
-        load_custom_steps(project_root, trusted=trust_steps)
+        load_custom_steps(project_root)
     except CustomStepTrustError:
         if not sys.stdin.isatty():
             raise
@@ -94,6 +96,19 @@ def _load_custom_steps(
             raise CustomStepTrustError(
                 "Custom workflow step execution was not approved."
             )
+        return True
+    return False
+
+
+def _load_custom_steps(
+    project_root: Path, *, trust_steps: bool = False, json_output: bool = False,
+) -> None:
+    """Collect per-invocation CLI consent before the domain imports step code."""
+    from . import load_custom_steps
+
+    if _approve_custom_steps(
+        project_root, trust_steps=trust_steps, json_output=json_output,
+    ):
         load_custom_steps(project_root, trusted=True)
 
 
