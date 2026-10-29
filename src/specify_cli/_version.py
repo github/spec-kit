@@ -497,7 +497,9 @@ def _find_installer(name: str) -> str | None:
         if not installer.is_absolute():
             raise _InstallerRejected(
                 f"Installer {name} rejected: lookup returned a relative path {resolved!r}. "
-                "Use an absolute PATH entry for the installed tool and retry."
+                "Use an absolute PATH entry for the installed tool. "
+                "Run from a directory without a matching installer executable "
+                "to avoid implicit current-directory matches on Windows, and retry."
             )
         cwd = Path.cwd()
         if (

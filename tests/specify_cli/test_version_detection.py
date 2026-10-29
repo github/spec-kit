@@ -459,7 +459,7 @@ class TestInstallerResolution:
         ), patch(
             "specify_cli._version._editable_marker_seen", return_value=False
         ), patch("specify_cli._version.subprocess.run") as mock_run:
-            with pytest.raises(ValueError, match=f"Installer {name} rejected"):
+            with pytest.raises(ValueError, match=f"Installer {name} rejected") as rejection:
                 _assemble_installer_argv(method, "v0.7.6")
             detected, signals = _detect_install_method(include_signals=True)
 
@@ -467,6 +467,10 @@ class TestInstallerResolution:
         assert signals.installer_registries_consulted == ()
         assert len(signals.installer_rejections) == 1
         assert f"Installer {name} rejected" in signals.installer_rejections[0]
+        if location == "windows-relative":
+            guidance = "Run from a directory without a matching installer executable"
+            assert guidance in str(rejection.value)
+            assert guidance in signals.installer_rejections[0]
         mock_run.assert_not_called()
 
     @pytest.mark.parametrize(

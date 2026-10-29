@@ -17,8 +17,12 @@ def test_unsafe_installer_lookup_aborts_without_execution(
     monkeypatch, tmp_path, request, method, name, absolute, dry_run
 ):
     request.getfixturevalue("uv_tool_argv0" if method == "uv-tool" else "pipx_argv0")
-    monkeypatch.chdir(tmp_path)
-    decoy = tmp_path / name
+    # Exercise the Windows fixture directory collision on every platform.
+    (tmp_path / name).mkdir(exist_ok=True)
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    decoy = project / name
     decoy.write_text("decoy; must never be executed\n", encoding="utf-8")
     decoy.chmod(0o755)
     unsafe_path = str(decoy) if absolute else f"./{name}"
@@ -38,6 +42,8 @@ def test_unsafe_installer_lookup_aborts_without_execution(
     assert f"Installer {name} rejected" in output
     assert "PATH" in output
     assert ("Run from another directory" if absolute else "absolute PATH") in output
+    if not absolute:
+        assert "Run from a directory without a matching installer executable" in output
     assert "reinstall" not in output
     assert "not found on PATH" not in output
     mock_run.assert_not_called()
@@ -64,6 +70,7 @@ def test_registry_probe_rejection_guidance_is_preserved(
     output = strip_ansi(result.output)
     assert f"Installer {name} rejected" in output
     assert "absolute PATH" in output
+    assert "Run from a directory without a matching installer executable" in output
     mock_run.assert_not_called()
 
 
