@@ -6,12 +6,18 @@ Vibe uses ``.vibe/skills/speckit-<name>/SKILL.md`` layout (enforced since v2.0.0
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import logging
+import os
+import re
+import tomllib
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ..base import IntegrationOption, SkillsIntegration
+from .._file_changes import unlink as _unlink_file, write_bytes as _write_bytes
 from ..manifest import IntegrationManifest
+from ..._toml_string import escape_toml_basic
 from ..._utils import dump_frontmatter
 
 # Per-command frontmatter overrides for skills that should run in a forked
@@ -26,6 +32,28 @@ from ..._utils import dump_frontmatter
 # command opts into ``context: fork``. The injection mechanism below stays in
 # place so a future command can be added here when that holds true.
 FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
+
+# Keep the native Vibe timeout slightly longer than the dispatcher's inner
+# timeout so Vibe does not terminate the dispatcher before it can reap its
+# child process.
+VIBE_EVENT_TIMEOUT_BUFFER = 5
+
+logger = logging.getLogger(__name__)
+
+
+def _toml_physical_lines(source: str) -> Iterator[str]:
+    """Yield TOML physical lines, preserving their original terminators.
+
+    TOML recognizes LF and CRLF only.  In particular, Python's ``splitlines``
+    would incorrectly treat bare CR and Unicode line-separator characters as
+    physical line boundaries.
+    """
+    start = 0
+    while (newline := source.find("\n", start)) >= 0:
+        yield source[start:newline + 1]
+        start = newline + 1
+    if start < len(source):
+        yield source[start:]
 
 
 class VibeIntegration(SkillsIntegration):
@@ -68,6 +96,14 @@ class VibeIntegration(SkillsIntegration):
     # still parse cleanly.
     events_context_envelope = {"*": "hook_specific_output"}
 
+    # Set by ``setup()`` from ``--no-model-invocation``; applies to core
+    # command skills only, since mandatory extension hooks rely on the model
+    # invoking the hook skill. Integrations are process-wide singletons, so
+    # preset overrides re-registered later in the same run see the same value.
+    # Commands that rewrite skills without calling ``setup()`` (e.g.
+    # ``preset add``, ``integration use``) get the default.
+    _disable_model_invocation: bool = False
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         opts = super().options()
@@ -78,6 +114,17 @@ class VibeIntegration(SkillsIntegration):
                 default=True,
                 help="Install as agent skills",
             ),
+        )
+        opts.append(
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Install core command skills as user-invocable only "
+                    "(disable-model-invocation: true)"
+                ),
+            )
         )
         return opts
 
@@ -177,6 +224,14 @@ class VibeIntegration(SkillsIntegration):
         Reads the ``name:`` field of the first frontmatter block and strips
         the ``speckit-`` prefix. Returns ``None`` when no name is present.
         """
+        name = VibeIntegration._skill_name_from_content(content)
+        if name and name.startswith("speckit-"):
+            return name[len("speckit-"):]
+        return name
+
+    @staticmethod
+    def _skill_name_from_content(content: str) -> str | None:
+        """Return the ``name:`` field of a skill's first frontmatter block."""
         dash_count = 0
         for line in content.splitlines():
             stripped = line.rstrip("\r\n")
@@ -187,10 +242,17 @@ class VibeIntegration(SkillsIntegration):
                 continue
             if dash_count == 1 and stripped.startswith("name:"):
                 name = stripped[len("name:"):].strip().strip('"').strip("'")
-                if name.startswith("speckit-"):
-                    return name[len("speckit-"):]
                 return name or None
         return None
+
+    @classmethod
+    def _is_core_command_skill(cls, content: str) -> bool:
+        from specify_cli.extensions import CORE_COMMAND_NAMES  # lazy: avoids circular import
+
+        name = cls._skill_name_from_content(content)
+        return bool(name) and name.startswith("speckit-") and (
+            name.removeprefix("speckit-") in CORE_COMMAND_NAMES
+        )
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Vibe-specific frontmatter flags.
@@ -198,10 +260,17 @@ class VibeIntegration(SkillsIntegration):
         Applied by every skill-generation path (setup, presets, extensions),
         so Vibe-specific frontmatter stays consistent however the SKILL.md
         was produced.
+
+        ``disable-model-invocation`` is ``true`` for core command skills when
+        the last ``setup()`` in this process was given
+        ``--no-model-invocation``, else ``false``.
         """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        disable = self._disable_model_invocation and self._is_core_command_skill(updated)
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "true" if disable else "false"
+        )
 
         stem = self._skill_stem_from_content(updated)
         if stem:
@@ -228,4 +297,394 @@ class VibeIntegration(SkillsIntegration):
             err=True,
         )
 
-        return super().setup(project_root, manifest, parsed_options=parsed_options, **opts)
+        self._disable_model_invocation = (
+            (parsed_options or {}).get("no_model_invocation") is True
+        )
+        try:
+            return super().setup(
+                project_root, manifest, parsed_options=parsed_options, **opts
+            )
+        except BaseException:
+            self._disable_model_invocation = False
+            raise
+
+    @staticmethod
+    def _hook_target_os() -> str:
+        """Return the shell Vibe uses for hook commands on this host."""
+        return "cmd" if os.name == "nt" else "host"
+
+    @staticmethod
+    def _toml_quote(value: str) -> str:
+        """Render a TOML basic string without exposing Vibe syntax to events."""
+        return escape_toml_basic(value)
+
+    @staticmethod
+    def _parse_toml_header(code: str) -> tuple[bool, tuple[str | None, ...] | None]:
+        """Return a TOML header's kind and key path, or ``None`` if it is not one.
+
+        This deliberately recognizes only header syntax, not full TOML.  Its
+        caller has already excluded comments and unterminated strings.  A
+        ``None`` key component represents a quoted basic key with an escape:
+        it is still a real header, but cannot be the literal ``hooks`` key we
+        manage without decoding TOML escapes.
+        """
+        text = code.strip(" \t")
+        is_array = text.startswith("[[")
+        if is_array:
+            if not text.endswith("]]") or len(text) < 5:
+                return False, None
+            body = text[2:-2]
+        else:
+            if not text.startswith("[") or not text.endswith("]") or len(text) < 3:
+                return False, None
+            body = text[1:-1]
+
+        parts: list[str | None] = []
+        index = 0
+        length = len(body)
+        while True:
+            while index < length and body[index] in " \t":
+                index += 1
+            if index == length:
+                return False, None
+
+            if body[index] in "\"'":
+                quote = body[index]
+                index += 1
+                start = index
+                escaped = False
+                while index < length:
+                    char = body[index]
+                    if quote == "\"" and escaped:
+                        escaped = False
+                    elif quote == "\"" and char == "\\":
+                        escaped = True
+                    elif char == quote:
+                        raw_part = body[start:index]
+                        parts.append(raw_part if "\\\\" not in raw_part else None)
+                        index += 1
+                        break
+                    index += 1
+                else:
+                    return False, None
+            else:
+                start = index
+                while index < length and (body[index].isalnum() or body[index] in "_-"):
+                    # TOML bare keys are ASCII-only; non-ASCII alphanumerics
+                    # make this header ambiguous, so fail closed.
+                    if not body[index].isascii():
+                        return False, None
+                    index += 1
+                if start == index:
+                    return False, None
+                parts.append(body[start:index])
+
+            while index < length and body[index] in " \t":
+                index += 1
+            if index == length:
+                return is_array, tuple(parts)
+            if body[index] != ".":
+                return False, None
+            index += 1
+
+    @staticmethod
+    def _managed_hook_spans(source: str) -> list[tuple[int, int]] | None:
+        """Find Specify-owned hook blocks in valid TOML without interpreting values.
+
+        The scanner only needs TOML's lexical boundaries: comments, ordinary
+        strings, multiline strings, multiline arrays, and standalone table
+        headers. A parser validity gate and the scanner both return ``None``
+        for malformed or ambiguous input so callers can leave the source
+        byte-for-byte untouched.
+
+        A block ends after its last line of TOML and the blank lines right
+        after it. A standalone comment that follows stays with the content
+        after it, such as the user hook it introduces (#5079).
+        """
+        try:
+            tomllib.loads(source)
+        except tomllib.TOMLDecodeError:
+            return None
+
+        spans: list[tuple[int, int]] = []
+        current_start: int | None = None
+        current_end = 0
+        current_after_comment = False
+        current_is_hooks = False
+        current_has_marker = False
+        multiline: str | None = None
+        array_depth = 0
+        offset = 0
+
+        for line in _toml_physical_lines(source):
+            content = line.rstrip("\r\n")
+            index = 0
+            code_end = len(content)
+            line_starts_in_multiline_string = multiline is not None
+            line_has_multiline_string = line_starts_in_multiline_string
+            line_starts_in_array = array_depth > 0
+            structural = list(content)
+            while index < len(content):
+                char = content[index]
+                if multiline is not None:
+                    if multiline == '"""' and char == "\\":
+                        # A basic multiline string may escape its next
+                        # character (including a newline continuation).
+                        structural[index:min(index + 2, len(content))] = " " * min(
+                            2, len(content) - index
+                        )
+                        index += 2
+                        continue
+                    if content.startswith(multiline, index):
+                        run_end = index
+                        while run_end < len(content) and content[run_end] == multiline[0]:
+                            run_end += 1
+                        if run_end - index > 5:
+                            return None
+                        if run_end - index >= 3:
+                            structural[index:run_end] = " " * (run_end - index)
+                            multiline = None
+                            index = run_end
+                            continue
+                    structural[index] = " "
+                    index += 1
+                    continue
+
+                if char == "#":
+                    code_end = index
+                    break
+                if content.startswith('"""', index) or content.startswith("'''", index):
+                    multiline = content[index:index + 3]
+                    line_has_multiline_string = True
+                    structural[index:index + 3] = "   "
+                    index += 3
+                    continue
+                if char in "\"'":
+                    quote = char
+                    start = index
+                    index += 1
+                    while index < len(content):
+                        if quote == "\"" and content[index] == "\\":
+                            if index + 1 == len(content):
+                                return None
+                            index += 2
+                            continue
+                        if content[index] == quote:
+                            index += 1
+                            structural[start:index] = " " * (index - start)
+                            break
+                        index += 1
+                    else:
+                        return None
+                    continue
+                index += 1
+
+            if multiline is not None and not line.endswith(("\n", "\r")):
+                return None
+
+            # A multiline string can contain arbitrary text that resembles a
+            # header or marker. A header/assignment cannot validly share its
+            # physical line, so ignore that line for ownership purposes.
+            code = "" if line_has_multiline_string else content[:code_end]
+            is_array, header_path = (
+                VibeIntegration._parse_toml_header(code)
+                if not line_starts_in_array and not line_has_multiline_string
+                else (False, None)
+            )
+            if header_path is not None:
+                if current_start is not None and current_has_marker:
+                    spans.append((current_start, current_end))
+                current_start = offset
+                current_is_hooks = is_array and header_path == ("hooks",)
+                current_has_marker = False
+            elif (
+                not line_starts_in_array
+                and not line_starts_in_multiline_string
+                and content.lstrip(" \t").startswith("[")
+            ):
+                # A line that starts like a header but cannot be classified is
+                # ambiguous (for example, a malformed header); never remove
+                # content from such a file.  Inspect the original line here:
+                # triple-quoted tokens are illegal in a header, but would
+                # otherwise blank ``code`` before this guard sees it.
+                return None
+            elif current_is_hooks and re.fullmatch(
+                r"[ \t]*speckit_marker[ \t]*=[ \t]*true[ \t]*", code
+            ):
+                current_has_marker = True
+
+            if header_path is None:
+                for char in structural[:code_end]:
+                    if char == "[":
+                        array_depth += 1
+                    elif char == "]":
+                        array_depth -= 1
+                        if array_depth < 0:
+                            return None
+
+            # Lines inside a multiline string or array are part of the value,
+            # even when they look like comments.
+            if line_starts_in_array or line_has_multiline_string or code.strip(" \t"):
+                current_end = offset + len(line)
+                current_after_comment = False
+            elif content.strip(" \t"):
+                current_after_comment = True
+            elif not current_after_comment:
+                current_end = offset + len(line)
+
+            offset += len(line)
+
+        if multiline is not None or array_depth:
+            return None
+        if current_start is not None and current_has_marker:
+            spans.append((current_start, current_end))
+        return spans
+
+    @classmethod
+    def _without_managed_hooks(cls, source: str) -> str | None:
+        """Remove managed spans, preserving every other source slice verbatim."""
+        spans = cls._managed_hook_spans(source)
+        if spans is None:
+            return None
+        if not spans:
+            return source
+        slices: list[str] = []
+        previous_end = 0
+        for start, end in spans:
+            slices.append(source[previous_end:start])
+            previous_end = end
+        slices.append(source[previous_end:])
+        return "".join(slices)
+
+    def merge_vibe_event_hooks(
+        self,
+        project_root: Path,
+        events: dict[str, list[dict[str, Any]]],
+        *,
+        build_dispatcher_command: Callable[[str, str, str, Any], str],
+        native_timeout: Callable[[Any], int],
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Render and merge managed Vibe hooks without disturbing user content.
+
+        This intentionally lives on Vibe rather than in shared events: Vibe's
+        flat TOML schema, supported fields, unique-name rule, native shell
+        quoting, and ownership-marker cleanup are all Vibe-specific.
+        """
+        lines: list[str] = []
+        used_names: set[str] = set()
+        for event, handlers in events.items():
+            native = self.CANONICAL_TO_NATIVE[event]
+            for config in handlers:
+                command = config.get("command", "")
+                dispatcher_command = build_dispatcher_command(
+                    command,
+                    event,
+                    self._hook_target_os(),
+                    config.get("timeout", 60),
+                )
+                command_stem = command.split(".")[-1] if command else "unknown"
+                command_stem = re.sub(r"[^A-Za-z0-9_-]+", "-", command_stem) or "unknown"
+                base_name = f"speckit-{native}-{command_stem}"
+                hook_name = base_name
+                suffix = 2
+                while hook_name in used_names:
+                    hook_name = f"{base_name}-{suffix}"
+                    suffix += 1
+                used_names.add(hook_name)
+
+                lines.extend(
+                    [
+                        "[[hooks]]",
+                        f"name = {self._toml_quote(hook_name)}",
+                        f"type = {self._toml_quote(native)}",
+                    ]
+                )
+                matcher = config.get("matcher", "*")
+                if matcher and matcher != "*" and native in ("pre_tool", "post_tool"):
+                    lines.append(f"match = {self._toml_quote('re:' + matcher)}")
+                lines.extend(
+                    [
+                        f"command = {self._toml_quote(dispatcher_command)}",
+                        f"timeout = {native_timeout(config.get('timeout', 60) + VIBE_EVENT_TIMEOUT_BUFFER)}",
+                        "speckit_marker = true",
+                        "",
+                    ]
+                )
+        return self._merge_managed_hooks(
+            project_root / self.events_config_file,
+            "\n".join(lines),
+            ensure_safe_destination=ensure_safe_destination,
+        )
+
+    def remove_vibe_event_hooks(
+        self,
+        project_root: Path,
+        *,
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Remove only Specify-owned Vibe hooks and delete an owned-only file."""
+        path = project_root / self.events_config_file
+        if not path.exists():
+            return False
+        ensure_safe_destination(path)
+        try:
+            with path.open(encoding="utf-8", newline="") as file:
+                existing = file.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Could not read %s (it may be unreadable or not UTF-8); "
+                "skipping event-config cleanup to preserve user content.",
+                path,
+            )
+            logger.debug("Read error detail: %s", exc)
+            return False
+
+        cleaned = self._without_managed_hooks(existing)
+        if cleaned is None:
+            return False
+        if cleaned == existing:
+            return False
+        non_comment_content = "\n".join(
+            line
+            for line in cleaned.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        )
+        if not non_comment_content:
+            _unlink_file(path, missing_ok=True)
+            return True
+        _write_bytes(path, cleaned.encode("utf-8"))
+        return False
+
+    def _merge_managed_hooks(
+        self,
+        path: Path,
+        fragment: str,
+        *,
+        ensure_safe_destination: Callable[[Path], None],
+    ) -> bool:
+        """Replace managed entries while retaining unowned content.
+
+        Active merges normalize trailing separators before appending generated
+        hooks, so they do not promise byte-for-byte preservation.
+        """
+        ensure_safe_destination(path)
+        existing = ""
+        if path.exists():
+            try:
+                with path.open(encoding="utf-8", newline="") as file:
+                    existing = file.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.warning(
+                    "Could not read %s (it may be unreadable or not UTF-8); "
+                    "skipping event-config merge to preserve user content.",
+                    path,
+                )
+                logger.debug("Read error detail: %s", exc)
+                return False
+        cleaned = self._without_managed_hooks(existing)
+        if cleaned is None:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_bytes(path, (cleaned.rstrip() + "\n\n" + fragment + "\n").encode("utf-8"))
+        return True

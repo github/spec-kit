@@ -21,6 +21,12 @@ Example:
 specify workflow run speckit -i spec="Build a kanban board with drag-and-drop task management"
 ```
 
+Inputs declared as `type: number` preserve integer values and integer strings
+exactly, including 64-bit identifiers and nanosecond timestamps above `2**53`.
+Decimal and exponent strings continue to use floating-point conversion;
+whole-valued results are stored as integers. Booleans, non-numeric values, and
+non-finite numbers are rejected.
+
 With `--json`, a single machine-readable object is printed instead of formatted text (the default output is unchanged when the flag is omitted):
 
 ```bash
@@ -1198,7 +1204,13 @@ Notes on the newer filters:
 - **`to_json` output is deterministic.** Object keys are sorted and non-ASCII characters are left as-is rather than escaped, so the same value always serializes to the same bytes. That buys reproducibility only — it does **not** make the result safe to pass through a shell, because [interpolation adds no quoting or escaping](#interpolation-and-shell-safety). Do not interpolate unconstrained JSON into a `run` field.
 - **`to_json` rejects non-finite floats.** `NaN`, `Infinity`, and `-Infinity` raise a `ValueError` naming `to_json` instead of serializing to bare tokens. None of the three is valid JSON, so emitting them would hand a standards-compliant downstream parser a string it must reject.
 - **`to_json` requires string mapping keys.** JSON objects have string keys, so a mapping with any other key type — `{1: "a"}`, `{True: "a"}` — raises a `ValueError` naming the key type instead. Left to `json.dumps`, an integer key would be coerced to `"1"` and collide with an existing `"1"` key, while mixed key types would fail `sort_keys` with an ordering `TypeError` reported only as "not JSON-serializable".
-- **Trailing comparisons after a filter are rejected.** The parser splits on the top-level `|` before looking for operators, so `{{ items | length > 0 }}` raises rather than evaluating. The count does not exist until `length` runs, so there is no way to write that comparison; the supported branching form is the filter's own truthiness in a `condition:`, since `length` returns `0` for an empty input:
+- **Comparing filtered counts requires parentheses.** The parser splits on the top-level `|` before looking for operators, so an unparenthesized trailing comparison such as `{{ inputs.items | length > 0 }}` raises a `ValueError`. Parenthesize the filtered operand to compare its result: `{{ (inputs.items | length) > 0 }}`. For a threshold of at least two:
+
+  ```yaml
+  condition: "{{ (inputs.items | length) >= 2 }}"
+  ```
+
+  For an emptiness check, use the filtered count's truthiness directly:
 
   ```yaml
   condition: "{{ inputs.items | length }}"   # 0 is False, any non-zero count is True

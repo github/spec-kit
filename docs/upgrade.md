@@ -21,6 +21,10 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
+If you installed from PyPI and want to keep that install route, follow the
+[PyPI upgrade instructions](install/pypi.md#upgrade). Repeating
+`uv tool install specify-cli` does not upgrade an existing installation.
+
 ### Recommended: `specify self upgrade`
 
 The CLI ships with two self-management commands that handle the common case automatically:
@@ -140,7 +144,7 @@ specify integration upgrade claude
 specify integration upgrade codex
 ```
 
-See the [integration reference](reference/integrations.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
+See the [integration reference](integrations/cli.md#upgrade-an-integration) for options such as `--script`, `--integration-options`, and `--force`.
 
 ### 3. Update installed extensions
 

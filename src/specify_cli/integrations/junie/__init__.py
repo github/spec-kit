@@ -5,6 +5,7 @@ from ..manifest import IntegrationManifest
 
 
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -187,3 +188,31 @@ class JunieIntegration(MarkdownIntegration):
                 self.record_file_in_manifest(path, project_root, manifest)
 
         return created
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``junie`` execution.
+
+        ``MarkdownIntegration``'s default passes the prompt as ``-p <prompt>``,
+        but Junie's ``-p`` is ``--project <path>``, so the prompt would be
+        taken as the project directory and no task would be given. Junie
+        takes a non-interactive task as a positional argument or ``--task``.
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self._resolve_executable(), "--task", prompt]
+        self._apply_extra_args_env_var(args)
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args

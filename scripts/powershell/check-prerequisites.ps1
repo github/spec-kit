@@ -94,7 +94,7 @@ if ($PathsOnly) {
 }
 
 # Validate required directories and files
-if (-not (Test-Path $paths.FEATURE_DIR -PathType Container)) {
+if (-not (Test-Path -LiteralPath $paths.FEATURE_DIR -PathType Container)) {
     [Console]::Error.WriteLine("ERROR: Feature directory not found: $($paths.FEATURE_DIR)")
     $specifyCommand = Format-SpecKitCommand -CommandName 'specify' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $specifyCommand first to create the feature structure.")
@@ -118,7 +118,7 @@ if ((Get-Item -LiteralPath $paths.IMPL_PLAN).Length -eq 0) {
 }
 
 # Check for spec.md if required
-if ($RequireSpec -and -not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
+if ($RequireSpec -and -not (Test-Path -LiteralPath $paths.FEATURE_SPEC -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: spec.md not found in $($paths.FEATURE_DIR)")
     $specifyCommand = Format-SpecKitCommand -CommandName 'specify' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $specifyCommand first to create the feature specification.")
@@ -126,7 +126,7 @@ if ($RequireSpec -and -not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
 }
 
 # Check for tasks.md if required
-if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
+if ($RequireTasks -and -not (Test-Path -LiteralPath $paths.TASKS -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: tasks.md not found in $($paths.FEATURE_DIR)")
     $tasksCommand = Format-SpecKitCommand -CommandName 'tasks' -RepoRoot $paths.REPO_ROOT
     [Console]::Error.WriteLine("Run $tasksCommand first to create the task list.")
@@ -137,18 +137,18 @@ if ($RequireTasks -and -not (Test-Path $paths.TASKS -PathType Leaf)) {
 $docs = @()
 
 # Always check these optional docs
-if (Test-Path $paths.RESEARCH) { $docs += 'research.md' }
-if (Test-Path $paths.DATA_MODEL) { $docs += 'data-model.md' }
+if (Test-Path -LiteralPath $paths.RESEARCH) { $docs += 'research.md' }
+if (Test-Path -LiteralPath $paths.DATA_MODEL) { $docs += 'data-model.md' }
 
 # Check contracts directory (only if it exists and has files)
-if ((Test-Path $paths.CONTRACTS_DIR) -and (Get-ChildItem -Path $paths.CONTRACTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+if ((Test-Path -LiteralPath $paths.CONTRACTS_DIR) -and (Get-ChildItem -LiteralPath $paths.CONTRACTS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1)) {
     $docs += 'contracts/'
 }
 
-if (Test-Path $paths.QUICKSTART) { $docs += 'quickstart.md' }
+if (Test-Path -LiteralPath $paths.QUICKSTART) { $docs += 'quickstart.md' }
 
 # Include tasks.md if requested and it exists
-if ($IncludeTasks -and (Test-Path $paths.TASKS)) {
+if ($IncludeTasks -and (Test-Path -LiteralPath $paths.TASKS)) {
     $docs += 'tasks.md'
 }
 

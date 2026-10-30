@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json  # noqa: F401
 import os  # noqa: F401
 import shutil  # noqa: F401
@@ -22,6 +23,74 @@ from tests.specify_cli.integrations._helpers import (
 )
 
 class TestIntegrationUse:
+    @pytest.mark.parametrize("edited_command", [None, "plan", "tasks"])
+    def test_use_syncs_manifest_without_blessing_user_edits(
+        self, tmp_path, tasks_preset_src, edited_command
+    ):
+        """Refresh preset hashes, retaining evidence of earlier edits (#5078)."""
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        if edited_command:
+            edited_rel = f".agents/skills/speckit-{edited_command}/SKILL.md"
+            before = IntegrationManifest.load("codex", project).files[edited_rel]
+            (project / edited_rel).write_bytes(b"User-edited skill\n")
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+        manifest = IntegrationManifest.load("codex", project)
+        if edited_command:
+            assert manifest.files[edited_rel] == before, "pre-existing edits must not be recorded as pristine"
+            assert edited_rel in manifest.check_modified()
+        else:
+            rel = ".agents/skills/speckit-tasks/SKILL.md"
+            content = (project / rel).read_bytes()
+            assert b"Preset tasks body" in content
+            assert manifest.files[rel] == hashlib.sha256(content).hexdigest(), (
+                "manifest hash must match the preset-overridden skill (#5078)"
+            )
+        result = _run_in_project(project, ["integration", "upgrade", "codex", "--script", "sh"])
+        if edited_command:
+            assert result.exit_code == 1, result.output
+            assert "modified since installation" in result.output
+        else:
+            assert result.exit_code == 0, result.output
+
+    @pytest.mark.parametrize("state", ["missing", "corrupt"])
+    def test_use_without_readable_manifest_skips_hash_refresh(
+        self, tmp_path, tasks_preset_src, state
+    ):
+        """A missing or unreadable manifest skips the hash refresh, nothing else (#5078)."""
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["integration", "install", "codex", "--script", "sh"])
+        assert result.exit_code == 0, result.output
+        result = _run_in_project(project, ["preset", "add", "--dev", str(tasks_preset_src)])
+        assert result.exit_code == 0, result.output
+        manifest_path = project / ".specify/integrations/codex.manifest.json"
+        if state == "missing":
+            manifest_path.unlink()
+        else:
+            manifest_path.write_text("{invalid", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+        skill = project / ".agents/skills/speckit-tasks/SKILL.md"
+        assert b"Preset tasks body" in skill.read_bytes(), "registration must still run"
+        output = strip_ansi(result.output)
+        if state == "missing":
+            assert not manifest_path.exists(), "no manifest may be created"
+            assert "Warning:" not in output
+        else:
+            assert manifest_path.read_text(encoding="utf-8") == "{invalid"
+            assert "snapshot manifest hashes for integration 'codex'" in output
+
     def test_use_installed_integration_sets_default(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()

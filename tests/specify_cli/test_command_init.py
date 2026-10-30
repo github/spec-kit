@@ -17,6 +17,7 @@ escapes user-controlled display values; init.py was the outlier.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import re
 import subprocess
@@ -91,6 +92,34 @@ def _init(tmp_path: Path, name: str):
         )
     finally:
         os.chdir(previous)
+
+
+@pytest.mark.parametrize("numbering", ["timestamp", "sequential", None])
+def test_reinit_preserves_feature_numbering(tmp_path: Path, monkeypatch, numbering):
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, _strip(result.stdout)
+    project = tmp_path / "proj"
+    options_path = project / ".specify" / "init-options.json"
+    options = json.loads(options_path.read_text(encoding="utf-8"))
+    assert options["feature_numbering"] == "sequential"
+    if numbering is None:
+        options.pop("feature_numbering")
+    else:
+        options["feature_numbering"] = numbering
+    options["custom_setting"] = "keep me"
+    options_path.write_text(json.dumps(options), encoding="utf-8")
+
+    monkeypatch.chdir(project)
+    result = CliRunner().invoke(app, [
+        "init", "--here", "--force", "--integration", "generic",
+        "--integration-options", "--commands-dir .agent/commands",
+        "--script", "sh", "--non-interactive", "--ignore-agent-tools", "--offline",
+    ])
+    assert result.exit_code == 0, _strip(result.stdout)
+    updated = json.loads(options_path.read_text(encoding="utf-8"))
+    assert updated["feature_numbering"] == (numbering or "sequential")
+    assert updated["custom_setting"] == "keep me"
+    assert updated["here"] is True
 
 
 @pytest.mark.parametrize("name", ["proj [v2]", "my[bold]app"])
@@ -209,3 +238,66 @@ def test_shell_quote_arg_is_host_appropriate():
         assert quoted == '"my project"'
     else:
         assert quoted == "'my project'"
+
+
+@pytest.mark.parametrize("here", [False, True])
+def test_output_free_init_recommends_switching_integrations(tmp_path, monkeypatch, here):
+    from specify_cli.integrations.generic import GenericIntegration
+
+    monkeypatch.setattr(GenericIntegration, "list_command_templates", lambda self: [])
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "init", *(["--here"] if here else ["proj"]),
+            "--integration", "generic",
+            "--integration-options", "--commands-dir .agent/commands",
+            "--ignore-agent-tools",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Next Steps" in output
+    if here:
+        assert "You're already in the project directory!" in output
+    else:
+        assert "cd proj" in output
+    assert "specify integration switch <key>" in output
+    assert "Switch this project to it:" in output
+    assert "Add it to this project:" not in output
+    assert "specify integration list" in output
+    assert "Start using" not in output
+    assert "speckit." not in output
+    assert "Enhancement Commands" not in output
+    assert "Enhancement Skills" not in output
+    project = tmp_path if here else tmp_path / "proj"
+    assert not (project / ".agent" / "commands").exists()
+
+
+def test_rendering_init_preserves_command_guidance(tmp_path):
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Start using slash commands" in output
+    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
+                    "clarify", "analyze", "checklist"):
+        assert f"/speckit.{command}" in output
+        assert (tmp_path / "proj" / ".agent" / "commands" / f"speckit.{command}.md").is_file()
+    assert "Enhancement Commands" in output
+    assert "specify integration switch <key>" not in output
+
+
+def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        app, ["init", "proj", "--integration", "copilot", "--ignore-agent-tools"],
+    )
+    assert result.exit_code == 0, result.output
+    output = _strip(result.output)
+    assert "Start using skills" in output
+    assert "Enhancement Skills" in output
+    assert "specify integration switch <key>" not in output
+    for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
+                    "clarify", "analyze", "checklist"):
+        assert f"/speckit-{command}" in output
+        assert (tmp_path / "proj" / ".github" / "skills" / f"speckit-{command}" / "SKILL.md").is_file()

@@ -11,7 +11,9 @@ _READ_TIMEOUT_SECONDS = 10
 _TEST_TIMEOUT_SECONDS = 30
 
 
-def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
+def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools(tmp_path):
+    (tmp_path / ".specify").mkdir()
+
     async def exercise() -> None:
         repo_root = Path(__file__).resolve().parents[3]
         parameters = StdioServerParameters(
@@ -34,6 +36,12 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
                     tools = await session.list_tools()
                     listed = await session.call_tool("specify_list_commands", {})
                     version = await session.call_tool("specify_version", {})
+                    workflows = await session.call_tool(
+                        "specify_workflow_list", {"project_directory": str(tmp_path)}
+                    )
+                    workflow_failure = await session.call_tool(
+                        "specify_workflow_list", {"project_directory": "relative"}
+                    )
                     artifacts = await session.call_tool("specify_artifact_list", {})
                     artifact = await session.call_tool(
                         "specify_artifact_info",
@@ -65,6 +73,7 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
             "specify_version",
             "specify_artifact_list",
             "specify_artifact_info",
+            "specify_workflow_list",
         ]
         assert listed.structured_content["commands"][0]["command"] == "version"
         assert set(version.structured_content) == {
@@ -74,6 +83,13 @@ def test_real_stdio_server_initializes_discovers_and_calls_first_class_tools():
             "features",
         }
         assert version.is_error is False
+        assert workflows.is_error is False
+        assert workflows.structured_content == {"items": [], "truncated": False}
+        assert workflow_failure.is_error is True
+        assert (
+            workflow_failure.structured_content["error"]["code"]
+            == "invalid_project_directory"
+        )
         assert artifacts.is_error is False
         assert isinstance(artifacts.structured_content["rows"], list)
         assert artifacts.structured_content["rows"]

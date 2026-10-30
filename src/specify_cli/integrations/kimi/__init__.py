@@ -12,6 +12,7 @@ this layout and handles two distinct changes: the directory move from
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,34 @@ class KimiIntegration(SkillsIntegration):
     def post_process_skill_content(self, content: str) -> str:
         """Ensure in-skill cross-command references use Kimi's `/skill:` syntax."""
         return super().post_process_skill_content(content)
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``kimi`` execution.
+
+        ``SkillsIntegration``'s default requests ``--output-format json``,
+        which Kimi Code CLI does not accept: the option only allows ``text``
+        and ``stream-json``, so the CLI exits 1 before the prompt runs.
+        Structured output maps to ``stream-json`` (JSONL events) instead.
+        """
+        self.validate_runtime_config(integration_args, integration_options)
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "stream-json"])
+        return args
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

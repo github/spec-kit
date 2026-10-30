@@ -11,7 +11,7 @@ see [Workflows](../docs/reference/workflows.md).
 
 | Route | Source | Registration |
 |---|---|---|
-| Built-in | `src/specify_cli/workflows/steps/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
+| Built-in | `src/specify_cli/workflows/step/<package>/__init__.py` | Explicit import and `_register_step()` in `src/specify_cli/workflows/__init__.py` |
 | Installed | Package under `.specify/workflows/steps/<id>/`, containing `step.yml` and `__init__.py` | `load_custom_steps(project_root)` loads a matching `StepBase` subclass at workflow run/resume |
 
 `STEP_REGISTRY` maps each `type_key` to a single step instance. Built-in keys
@@ -72,7 +72,7 @@ thread-safe, with per-run data in `config` and `context`, not on `self`.
 
 ## Adding a step type
 
-1. Implement the step in its own `steps/<package>/` subpackage and register
+1. Implement the step in its own `step/<package>/` subpackage and register
    it explicitly with a unique `type_key`. For an external package, provide
    `step.yml` with a matching `step.type_key` and a matching subclass in
    `__init__.py`; catalog discovery alone does not register the code.

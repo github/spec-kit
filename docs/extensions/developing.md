@@ -1,6 +1,10 @@
-# Extension Development Guide
+# Developing extensions
 
-A guide for creating Spec Kit extensions.
+A guide for creating Spec Kit extensions using GitHub Copilot's skills layout.
+Invoke skills in Copilot chat with hyphenated names such as
+`/speckit-my-ext-hello`. Extension manifests still use dotted command identifiers
+such as `speckit.my-ext.hello`; Spec Kit renders them as Copilot skills during
+installation.
 
 ---
 
@@ -41,7 +45,6 @@ provides:
     - name: "speckit.my-ext.hello"      # Must follow pattern: speckit.{ext-id}.{cmd}
       file: "commands/hello.md"
       description: "Say hello"
-      aliases: ["speckit.my-ext.hi"]    # Optional aliases, same pattern
 
   config:                               # Optional: Config files
     - name: "my-ext-config.yml"
@@ -70,7 +73,7 @@ mkdir commands
 
 **File**: `commands/hello.md`
 
-```markdown
+````markdown
 ---
 description: "Say hello command"
 tools:                              # Optional: AI tools this command uses
@@ -101,13 +104,21 @@ echo "Arguments: $ARGUMENTS"
 ## Extension Configuration
 
 Load extension config from `.specify/extensions/my-ext/my-ext-config.yml`.
+````
 
 ### 5. Test Locally
 
 ```bash
 cd /path/to/spec-kit-project
+specify integration install copilot --integration-options="--skills"
 specify extension add --dev /path/to/my-extension
 ```
+
+For a new project, initialize it with
+`specify init my-project --integration copilot --integration-options="--skills"`.
+If Copilot is already installed in a commands layout, follow the
+[Copilot migration guidance](../integrations/copilot.md#commands-layout)
+instead of installing it again.
 
 ### 6. Verify Installation
 
@@ -120,16 +131,17 @@ specify extension list
 #     Commands: 1 | Hooks: 1 | Status: Enabled
 ```
 
-### 7. Test Command
+### 7. Test Skill
 
-If using Claude:
+Open GitHub Copilot chat and invoke the skill:
 
-```bash
-claude
-> /speckit.my-ext.hello world
+```text
+/speckit-my-ext-hello world
 ```
 
-The command will be available in `.claude/commands/speckit.my-ext.hello.md`.
+The generated skill is available in
+`.github/skills/speckit-my-ext-hello/SKILL.md`. This invocation belongs in
+Copilot chat, not in your terminal.
 
 ---
 
@@ -193,7 +205,6 @@ of `provides.commands`, `provides.templates`, `provides.scripts`, `hooks`, or
 - `name`: Command name (must match `speckit.{ext-id}.{command}`)
 - `file`: Path to command file (relative to extension root)
 - `description`: Command description (optional)
-- `aliases`: Alternative command names (optional, array; each must match `speckit.{ext-id}.{command}`)
 
 **Template object**:
 
@@ -295,9 +306,13 @@ echo "Running with args: $args"
 
 ### Referencing other commands
 
-A command body is a *template* that Spec Kit renders once per agent. Different agents invoke commands with different surface syntax — for example `/speckit.plan` (dot separator) or `/speckit-plan` (hyphen separator). Some agents also use different prefixes in skills mode (e.g. Kimi `/skill:speckit-plan`, Codex/ZCode `$speckit-plan`). So when you reference a sibling command from a body, **do not hard-code a literal invocation** like `/speckit.my-ext.prepare`. A literal is correct for exactly one agent and breaks on the rest.
+A command body is a *template* that Spec Kit renders as a Copilot skill.
+When referencing another command from that body, **do not hard-code its
+invocation**. Use a command-reference token so Spec Kit renders the correct
+skill syntax and the extension remains portable.
 
-Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to a `/speckit<separator>...` invocation using the active integration's `invoke_separator` (and integrations may post-process that further in skills output).
+Use the token `__SPECKIT_COMMAND_<NAME>__`. In Copilot's skills layout,
+Spec Kit resolves it to a `/speckit-...` invocation.
 
 Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore. A hyphen inside a segment is kept as a hyphen:
 
@@ -308,7 +323,10 @@ Encode the command name in upper case, dropping the `speckit.` prefix and turnin
 | `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
 | `speckit.agent-context.update.md` | `__SPECKIT_COMMAND_AGENT-CONTEXT_UPDATE__` |
 
-The resolver maps each underscore back to the active agent's separator. An underscore separates segments and a hyphen belongs to the segment it sits in, so `AGENT-CONTEXT_UPDATE` is the two segments `agent-context` and `update` rather than three.
+An underscore separates command segments and a hyphen belongs to the segment
+it sits in, so `AGENT-CONTEXT_UPDATE` is the two segments `agent-context` and
+`update` rather than three. Copilot renders this as
+`/speckit-agent-context-update`.
 
 **Example** — a command body that points the user at the next step:
 
@@ -316,21 +334,12 @@ The resolver maps each underscore back to the active agent's separator. An under
 Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<slug>`.
 ```
 
-This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/speckit-bug-fix slug=<slug>` for a skills-based agent, and so on — the author writes it once and it stays portable. The first-party `bug` and `git` extensions use this token exclusively; see `extensions/bug/commands/` for working examples.
+This renders as `/speckit-bug-fix slug=<slug>` in Copilot chat. The first-party
+`bug` and `git` extensions use this token exclusively; see
+`extensions/bug/commands/` for working examples.
 
-> **Skills mode.** Token resolution runs in both paths, so the token is safe to
-> use either way. Command files go through the command-rendering path
-> (`CommandRegistrar`). Skill bodies go through `_resolve_command_ref_tokens` in
-> `_register_extension_skills`, which resolves the same token shape against the
-> active skill style, so `__SPECKIT_COMMAND_BUG_FIX__` renders as:
->
-> | Agent | Rendered |
-> | --- | --- |
-> | Codex, ZCode, Command Code | `$speckit-bug-fix` |
-> | Claude, Copilot, Cursor, Devin, Droid, Grok and the other slash agents | `/speckit-bug-fix` |
-> | Kimi | `/skill:speckit-bug-fix` |
->
-> Anything else falls through to the integration's own `build_command_invocation`.
+For other integrations' invocation formats, see the shared
+[command invocation reference](../integrations/cli.md#command-invocation).
 
 ### Script Path Rewriting
 
@@ -500,7 +509,8 @@ The following `.gitignore` features are **not applicable** in this context:
 
 ### Manual Testing
 
-1. **Create test extension**
+1. **Create test extension** in a project configured for
+   [Copilot skills](../integrations/copilot.md#setup).
 2. **Install locally**:
 
    ```bash
@@ -513,11 +523,11 @@ The following `.gitignore` features are **not applicable** in this context:
    specify extension list
    ```
 
-4. **Test commands** with your AI agent
-5. **Check command registration**:
+4. **Test skills** in Copilot chat, for example `/speckit-my-ext-hello world`.
+5. **Check skill registration**:
 
    ```bash
-   ls .claude/commands/speckit.my-ext.*
+   ls .github/skills/speckit-my-ext-*/SKILL.md
    ```
 
 6. **Remove extension**:
@@ -603,7 +613,7 @@ Submit to the community catalog for public discovery:
    - Users copy the entry to their own `catalog.json`
    - Users install with: `specify extension add my-ext` (from their catalog)
 
-See the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md) for detailed submission instructions.
+See the [Extension Publishing Guide](publishing.md) for detailed submission instructions.
 
 ---
 
@@ -759,19 +769,19 @@ hooks:
 
 **Error**: `Extension requires spec-kit >=0.2.0`
 
-- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../docs/upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../docs/install/pypi.md#upgrade).
+- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../install/pypi.md#upgrade).
 
 **Error**: `Command file not found`
 
 - **Fix**: Ensure command files exist at paths specified in manifest
 
-### Commands not registered
+### Skills not registered
 
-**Symptom**: Commands don't appear in AI agent
+**Symptom**: Skills don't appear in GitHub Copilot chat
 
 **Check**:
 
-1. `.claude/commands/` directory exists
+1. The generated skill exists at `.github/skills/speckit-my-ext-hello/SKILL.md`
 2. Extension installed successfully
 3. Commands registered in registry:
 
@@ -779,7 +789,9 @@ hooks:
    cat .specify/extensions/.registry
    ```
 
-**Fix**: Reinstall extension to trigger registration
+**Fix**: Confirm Copilot is configured for the
+[skills layout](../integrations/copilot.md#default-skills-layout), then
+reinstall the extension to trigger registration.
 
 ### Config not loading
 
@@ -807,3 +819,5 @@ hooks:
 4. **Iterate** based on feedback
 
 Happy extending! 🚀
+
+> Agent invocation examples on this page use GitHub Copilot's default skills syntax (`/speckit-*`). For other integrations and modes, see [Command invocation](../integrations/cli.md#command-invocation).

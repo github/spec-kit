@@ -17,7 +17,7 @@ requires:
 provides:
   extensions:
     - id: "assess"
-      version: "1.0.1"
+      version: "1.0.2"
   workflows:
     - id: "assess"
       version: "1.0.0"

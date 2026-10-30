@@ -46,11 +46,11 @@ cd my-project
 
 <a id="-対応しているaiコーディングエージェント"></a>
 
-この例では **GitHub Copilotのデフォルトのスキルモード** を使用しています。他の対応エージェントを使う場合は、`copilot` をお使いのエージェントの[連携キー](https://github.github.io/spec-kit/reference/integrations.html)に置き換えてください。
+この例では **GitHub Copilotのデフォルトのスキルモード** を使用しています。他の対応エージェントを使う場合は、`copilot` をお使いのエージェントの[連携キー](https://github.github.io/spec-kit/integrations/index.html)に置き換えてください。
 
 すでにコードがありますか？[既存プロジェクト向けガイド](https://github.github.io/spec-kit/guides/existing-projects.html)を参照してください。バージョン固定でのインストール、その他のインストーラー、CI、トラブルシューティングについては[インストールガイド](https://github.github.io/spec-kit/installation.html)を、既存のインストールを更新する場合は[アップグレードガイド](https://github.github.io/spec-kit/upgrade.html)を参照してください。
 
-ここから**プロジェクトディレクトリでコーディングエージェントを起動し**、下記のいずれかのプロセスを選んでください。各 `/speckit-*` **スキルはエージェントのチャット内で**、1つずつ呼び出し、結果を確認してから次に進んでください。これらはターミナルコマンドではなく、エージェントのスキルです。エージェントやモードによっては、[異なる呼び出し方](https://github.github.io/spec-kit/reference/integrations.html#command-invocation)を使う場合があります。
+ここから**プロジェクトディレクトリでコーディングエージェントを起動し**、下記のいずれかのプロセスを選んでください。各 `/speckit-*` **スキルはエージェントのチャット内で**、1つずつ呼び出し、結果を確認してから次に進んでください。これらはターミナルコマンドではなく、エージェントのスキルです。エージェントやモードによっては、[異なる呼び出し方](https://github.github.io/spec-kit/integrations/cli.html#command-invocation)を使う場合があります。
 
 <a id="-仕様駆動開発とは"></a>
 <a id="sdd-クイックスタート"></a>
@@ -157,7 +157,7 @@ specify extension add assess
 
 - [CLIリファレンス](https://github.github.io/spec-kit/reference/overview.html) と [プロセスコマンド](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [SDDの理念](https://github.github.io/spec-kit/concepts/sdd.html)、[完全な方法論](./spec-driven.md)、[既存の仕様の進化](https://github.github.io/spec-kit/guides/evolving-specs.html)
-- [紹介動画](https://github.github.io/spec-kit/quickstart.html#video-overview) と [プロジェクトの歴史](https://github.github.io/spec-kit/history.html)
+- [プロジェクトの歴史](https://github.github.io/spec-kit/history.html)
 - [Spec KitはSpec Kit自身をどう使っているか](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)
 
 ## スター数の推移

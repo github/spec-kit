@@ -176,6 +176,38 @@ class TestCollectExtensionEvents:
         result = collect_extension_events(tmp_path)
         assert result == {"pre_tool_use": [{"command": "speckit.my-ext.check"}]}
 
+    @pytest.mark.parametrize(
+        "invalid",
+        [
+            {"command": "speckit.bad.check", "matcher": ["Bash"]},
+            {"command": "speckit.bad.check", "timeout": "30"},
+            {"command": "speckit.bad.check", "timeout": None},
+            {"command": "speckit.bad.check", "matcher": None},
+            {"matcher": "Bash"},
+        ],
+        ids=["matcher-list", "timeout-string", "timeout-null", "matcher-null", "missing-command"],
+    )
+    def test_unregistered_invalid_handler_does_not_break_install(self, tmp_path, caplog, invalid):
+        ext_dir = tmp_path / ".specify" / "extensions" / "staged"
+        ext_dir.mkdir(parents=True)
+        valid = {"command": "speckit.staged.check", "matcher": "Bash"}
+        (ext_dir / "extension.yml").write_text(
+            json.dumps({"events": {"pre_tool_use": [invalid, valid]}}), encoding="utf-8"
+        )
+
+        resolved = resolve_events("claude", None, tmp_path, None)
+        manifest = MagicMock(spec=IntegrationManifest)
+        manifest.files = {}
+        install_integration_events(ClaudeIntegration(), tmp_path, manifest, resolved)
+
+        assert resolved == {"pre_tool_use": [valid]}
+        config = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        hooks = config["hooks"]["PreToolUse"][0]["hooks"]
+        assert len(hooks) == 1
+        assert "speckit.staged.check" in hooks[0]["command"]
+        assert "staged" in caplog.text
+        assert "pre_tool_use" in caplog.text
+
     def test_invalid_yaml_skipped(self, tmp_path):
         ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
         ext_dir.mkdir(parents=True)
@@ -343,6 +375,14 @@ class TestEventCapableOptionsComposition:
 
 class TestValidateEvents:
     """Test manifest validation."""
+
+    @pytest.mark.parametrize("field", ["matcher", "timeout"])
+    def test_null_optional_handler_field_rejected(self, field):
+        from specify_cli.extensions import ValidationError
+
+        data = {"events": {"pre_tool_use": {"command": "speckit.test", field: None}}}
+        with pytest.raises(ValidationError, match=field):
+            validate_events(data)
 
     def test_unknown_event_rejected(self):
         from specify_cli.extensions import ValidationError
@@ -2343,6 +2383,54 @@ def _claude_manifest(tmp_path):
     return manifest
 
 
+class TestNativeIntegrationDelegation:
+    """Shared events owns orchestration and manifest claims around native hooks."""
+
+    def test_vibe_merge_is_delegated_and_claimed_by_shared_events(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        manifest = _claude_manifest(tmp_path)
+        merge = MagicMock(return_value=True)
+        monkeypatch.setattr(integration, "merge_vibe_event_hooks", merge)
+
+        install_integration_events(
+            integration,
+            tmp_path,
+            manifest,
+            {"pre_tool_use": [{"command": "speckit.tdd.validate"}]},
+        )
+
+        merge.assert_called_once()
+        assert merge.call_args.args[0] == tmp_path
+        assert {"build_dispatcher_command", "native_timeout", "ensure_safe_destination"} == set(
+            merge.call_args.kwargs
+        )
+        manifest.record_existing.assert_called_once_with(".vibe/hooks.toml")
+
+    def test_vibe_cleanup_is_delegated_and_manifest_claim_is_removed(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("vibe")
+        manifest = _claude_manifest(tmp_path)
+        config_path = tmp_path / ".vibe" / "hooks.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text('user_option = "keep"\n', encoding="utf-8")
+        remove = MagicMock(return_value=False)
+        monkeypatch.setattr(integration, "remove_vibe_event_hooks", remove)
+
+        remove_integration_events(integration, tmp_path, manifest)
+
+        remove.assert_called_once()
+        assert remove.call_args.args == (tmp_path,)
+        assert set(remove.call_args.kwargs) == {"ensure_safe_destination"}
+        manifest.remove.assert_called_once_with(".vibe/hooks.toml")
+
+
 class TestMergeIdempotency:
     """#9/#11: marker recursion and full-clean-before-add."""
 
@@ -2940,6 +3028,30 @@ class TestOverridePreserveLayers:
     the accumulated built-in + extension layers, instead of disabling all
     hooks."""
 
+    @pytest.mark.parametrize("entry", ["{}", "{evnts: {stop: {command: speckit.typo}}}"])
+    def test_missing_events_field_keeps_prior_layers(self, tmp_path, caplog, entry):
+        ext_dir = tmp_path / ".specify" / "extensions" / "my-ext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(
+            "events:\n  session_start:\n    command: speckit.my-ext.boot\n",
+            encoding="utf-8",
+        )
+        override_file = tmp_path / ".specify" / "integration-events.yml"
+        override_file.write_text(f"integrations:\n  claude: {entry}\n", encoding="utf-8")
+
+        result = resolve_events(
+            "claude",
+            {"events": {"post_tool_use": {"command": "speckit.tdd.validate"}}},
+            tmp_path,
+            None,
+        )
+
+        assert result == {
+            "post_tool_use": [{"command": "speckit.tdd.validate"}],
+            "session_start": [{"command": "speckit.my-ext.boot"}],
+        }
+        assert "'events' for 'claude' is not a mapping; ignoring override" in caplog.text
+
     def test_invalid_override_entry_keeps_prior_layers(self, tmp_path):
         override_file = tmp_path / ".specify" / "integration-events.yml"
         override_file.parent.mkdir(parents=True, exist_ok=True)
@@ -3160,7 +3272,8 @@ class TestDispatcherManifestClaimDroppedOnRetain:
     it), this integration's manifest still drops its claim so the subsequent
     manifest.uninstall() in teardown() doesn't delete the shared file."""
 
-    def test_full_teardown_keeps_dispatcher_when_other_references_it(self, tmp_path):
+    @pytest.mark.parametrize("force", [False, True])
+    def test_full_teardown_keeps_dispatcher_when_other_references_it(self, tmp_path, force):
         from specify_cli.integrations.codex import CodexIntegration
         from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -3196,8 +3309,7 @@ class TestDispatcherManifestClaimDroppedOnRetain:
 
         # Full teardown of claude (remove + manifest.uninstall): the dispatcher
         # must survive because codex's manifest still references it.
-        remove_integration_events(claude, tmp_path, claude_manifest)
-        claude_manifest.uninstall(tmp_path, force=True)
+        claude.teardown(tmp_path, claude_manifest, force=force)
 
         assert dispatcher_path.exists(), (
             "Shared dispatcher was deleted by teardown() despite another "
@@ -3277,6 +3389,240 @@ class TestDispatcherManifestClaimDroppedOnRetain:
         assert not dispatcher_path.exists(), (
             "Dispatcher orphaned after upgrade with a fresh manifest (S2)."
         )
+
+    @pytest.mark.parametrize("operation", ["teardown", "disable"])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    @pytest.mark.parametrize("modified", [False, True])
+    def test_cleanup_after_shared_dispatcher_revision_changes(
+        self, tmp_path, monkeypatch, caplog, operation, newline, modified,
+    ):
+        import specify_cli.events as event_module
+        from specify_cli.integrations.codex import CodexIntegration
+
+        claude = ClaudeIntegration()
+        codex = CodexIntegration()
+        current_template = event_module._EVENTS_DISPATCHER_TEMPLATE
+        claude_manifest = IntegrationManifest(claude.key, tmp_path)
+        with monkeypatch.context() as old_revision:
+            old_revision.setattr(
+                event_module, "_EVENTS_DISPATCHER_TEMPLATE",
+                current_template + "\n# Previous generated revision\n",
+            )
+            install_integration_events(
+                claude, tmp_path, claude_manifest,
+                {"pre_tool_use": [{"command": "speckit.x"}]},
+            )
+        claude_manifest.save()
+        codex_manifest = IntegrationManifest(codex.key, tmp_path)
+        install_integration_events(
+            codex, tmp_path, codex_manifest,
+            {"pre_tool_use": [{"command": "speckit.y"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_bytes(current_template.replace("\n", newline).encode("utf-8"))
+        codex_manifest.record_existing(EVENTS_DISPATCHER_REL)
+        codex_manifest.save()
+        assert claude_manifest.files[EVENTS_DISPATCHER_REL] != codex_manifest.files[EVENTS_DISPATCHER_REL]
+        state_path = tmp_path / ".specify/integration.json"
+        state_path.write_text(json.dumps({
+            "default_integration": "codex",
+            "installed_integrations": ["claude", "codex"],
+        }), encoding="utf-8")
+
+        codex.teardown(tmp_path, codex_manifest)
+        assert dispatcher.exists()
+        state_path.write_text(json.dumps({
+            "default_integration": "claude",
+            "installed_integrations": ["claude"],
+        }), encoding="utf-8")
+        expected = dispatcher.read_bytes()
+        if modified:
+            expected += b"\n# User customization\n"
+            dispatcher.write_bytes(expected)
+
+        if operation == "teardown":
+            claude.teardown(tmp_path, IntegrationManifest.load(claude.key, tmp_path))
+        else:
+            fresh = IntegrationManifest(claude.key, tmp_path)
+            install_integration_events(claude, tmp_path, fresh, {})
+
+        assert dispatcher.exists() is modified
+        if modified:
+            assert dispatcher.read_bytes() == expected
+            assert "modified dispatcher" in caplog.text
+        else:
+            assert "modified dispatcher" not in caplog.text
+
+
+class TestDispatcherCleanupOwnership:
+    @pytest.mark.parametrize("ownership", ["unowned", "recovered", "partial"])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_generated_template_does_not_establish_ownership(self, tmp_path, ownership, newline):
+        from specify_cli.events import _EVENTS_DISPATCHER_TEMPLATE
+
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True)
+        content = _EVENTS_DISPATCHER_TEMPLATE.replace("\n", newline).encode("utf-8")
+        dispatcher.write_bytes(content)
+        if ownership != "unowned":
+            manifest.record_existing(
+                EVENTS_DISPATCHER_REL,
+                recovered=ownership == "recovered",
+                ownership="partial" if ownership == "partial" else "shared",
+            )
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest)
+
+        assert dispatcher.read_bytes() == content
+
+    @pytest.mark.parametrize("operation", ["install", "remove", "teardown"])
+    @pytest.mark.parametrize("saved_manifest", [False, True])
+    def test_unowned_dispatcher_is_preserved(self, tmp_path, operation, saved_manifest):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        if saved_manifest:
+            manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True, exist_ok=True)
+        content = b"# User-owned dispatcher\n"
+        dispatcher.write_bytes(content)
+
+        if operation == "install":
+            install_integration_events(integration, tmp_path, manifest, {})
+        elif operation == "remove":
+            remove_integration_events(integration, tmp_path, manifest)
+        else:
+            integration.teardown(tmp_path, manifest, force=True)
+
+        assert dispatcher.read_bytes() == content
+        assert EVENTS_DISPATCHER_REL not in manifest.files
+
+    @pytest.mark.parametrize("fresh", [False, True])
+    def test_empty_map_preserves_modified_dispatcher(self, tmp_path, fresh, caplog):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-modified dispatcher\n", encoding="utf-8")
+        if fresh:
+            manifest = IntegrationManifest(integration.key, tmp_path)
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-modified dispatcher\n"
+        assert EVENTS_DISPATCHER_REL not in manifest.files
+        assert "modified dispatcher" in caplog.text
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_teardown_modified_dispatcher_honors_force(self, tmp_path, force):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-modified dispatcher\n", encoding="utf-8")
+
+        integration.teardown(tmp_path, manifest, force=force)
+
+        assert dispatcher.exists() is not force
+        if not force:
+            assert dispatcher.read_text(encoding="utf-8") == "# User-modified dispatcher\n"
+
+    @pytest.mark.parametrize(
+        ("recovered", "ownership"), [(True, "shared"), (True, "whole"), (False, "partial")],
+    )
+    def test_observed_dispatcher_is_not_cleanup_authority(self, tmp_path, recovered, ownership):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.parent.mkdir(parents=True)
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+        manifest.record_existing(EVENTS_DISPATCHER_REL, recovered=recovered, ownership=ownership)
+        manifest.save()
+
+        integration.teardown(tmp_path, manifest, force=True)
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+
+    @pytest.mark.parametrize("content", [b"{invalid", b"\xff", b"[]"])
+    def test_unreadable_prior_manifest_does_not_authorize_cleanup(self, tmp_path, caplog, content):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        manifest.save()
+        manifest.manifest_path.write_bytes(content)
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+
+        install_integration_events(integration, tmp_path, manifest, {})
+
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        assert "prior dispatcher manifest" in caplog.text
+        assert integration.key in caplog.text
+
+    @pytest.mark.parametrize("error", [ValueError("invalid manifest"), PermissionError("manifest denied")])
+    def test_prior_manifest_failure_does_not_block_teardown(self, tmp_path, caplog, error):
+        integration = CopilotIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".github/skills/speckit-plan/SKILL.md", "# Plan\n")
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        dispatcher.write_text("# User-owned dispatcher\n", encoding="utf-8")
+
+        with patch.object(IntegrationManifest, "load", side_effect=error):
+            removed, skipped = integration.teardown(tmp_path, manifest, force=True)
+
+        assert generated in removed
+        assert not generated.exists()
+        assert skipped == []
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.read_text(encoding="utf-8") == "# User-owned dispatcher\n"
+        assert "prior dispatcher manifest" in caplog.text
+        assert str(error) in caplog.text
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_unreadable_dispatcher_does_not_block_teardown(self, tmp_path, monkeypatch, caplog, force):
+        integration = ClaudeIntegration()
+        manifest = IntegrationManifest(integration.key, tmp_path)
+        generated = manifest.record_file(".claude/skills/speckit-plan/SKILL.md", "# Plan\n")
+        install_integration_events(
+            integration, tmp_path, manifest,
+            {"pre_tool_use": [{"command": "speckit.x"}]},
+        )
+        manifest.save()
+        dispatcher = tmp_path / EVENTS_DISPATCHER_REL
+        read_bytes = Path.read_bytes
+        read_attempts = []
+
+        def deny_dispatcher_read(path):
+            if path == dispatcher:
+                read_attempts.append(path)
+                raise PermissionError("dispatcher denied")
+            return read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", deny_dispatcher_read)
+
+        removed, skipped = integration.teardown(tmp_path, manifest, force=force)
+
+        assert generated in removed
+        assert not generated.exists()
+        assert skipped == []
+        assert not manifest.manifest_path.exists()
+        assert dispatcher.exists() is not force
+        if force:
+            assert read_attempts == []
+        else:
+            assert read_attempts == [dispatcher]
+            assert "unreadable dispatcher" in caplog.text
+            assert "dispatcher denied" in caplog.text
 
 
 # -- Dispatcher stale-cleanup exclusion (C3) ---------------------------------

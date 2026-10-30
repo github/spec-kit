@@ -44,7 +44,6 @@ provides:
     - name: string       # Required, pattern: ^speckit\.[a-z0-9-]+\.[a-z0-9-]+$
       file: string       # Required, relative path to command file
       description: string # Required
-      aliases: [string]  # Optional, same pattern as name; namespace must match extension.id and must not shadow core or installed extension commands
 
   templates:             # Optional, array of declared templates. Always resolve
                           # as "replace" -- 'strategy' is not an authorable field here.
