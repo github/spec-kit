@@ -197,6 +197,11 @@ also suitable. Strict mode is not a sandbox: do not reinterpret values with
 `eval` or a nested shell. Omitting `strict`, or setting it to `false`, preserves
 existing raw interpolation and its risks.
 
+Before installing or running an unfamiliar workflow, review both `run` and
+`env`, including overlay changes and referenced code. Even with `strict: true`,
+settings such as `PATH` and `PYTHONPATH` can select different executables or modules.
+String validation and catalog or bundle installation do not establish trust.
+
 > ⚠️ **Constrain interpolated values in `run` fields.** A `run` field is executed
 > by the system shell, and `{{ ... }}` expressions are substituted as raw text
 > with no automatic quoting or escaping. An `inputs.*` value or prior-step output

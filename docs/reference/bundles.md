@@ -335,6 +335,11 @@ non-default source.
 
 > **Vet both the bundle source and its component catalogs.** A project can supply its own bundle catalog and `install-allowed` component catalogs (extension, preset, workflow, and step) under `.specify/`; that project configuration existing is not evidence anything in it was reviewed. Before installing a bundle from an unfamiliar project, run `specify bundle catalog list` — and the equivalent `extension`/`preset`/`workflow catalog list` and `specify workflow step catalog list` commands for the components it pulls in — and treat any source you didn't add yourself as unvetted until you've reviewed it.
 
+For workflow components, inspect shell `run` and `env` fields and their
+referenced code, including changes introduced by active overlays. This applies
+even to `strict: true` steps: environment bindings can change executable lookup
+or runtime loading. See [Reviewing shell execution](workflows.md#reviewing-shell-execution).
+
 ### List the Catalog Stack
 
 ```bash

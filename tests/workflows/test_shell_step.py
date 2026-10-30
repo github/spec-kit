@@ -275,6 +275,39 @@ def test_environment_preserves_dynamic_values_as_data(
     assert "STATIC" not in os.environ
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX executable fixtures")
+@pytest.mark.parametrize("variable", ["PATH", "PYTHONPATH"])
+@pytest.mark.parametrize("selected", ["first", "second"])
+def test_strict_environment_can_select_executables_and_modules(project_dir, variable, selected):
+    parent_value = os.environ.get(variable)
+    for name in ("first", "second"):
+        directory = project_dir / name
+        directory.mkdir()
+        if variable == "PATH":
+            script = directory / "strict-env-probe"
+            script.write_text(f"#!/bin/sh\nprintf '%s\\n' '{name}'\n", encoding="utf-8")
+            script.chmod(0o755)
+        else:
+            (directory / "workflow_env_probe.py").write_text(
+                f"selected = {name!r}\n", encoding="utf-8",
+            )
+    run = "strict-env-probe" if variable == "PATH" else _python_run(
+        project_dir, "import workflow_env_probe\nprint(workflow_env_probe.selected)\n",
+    )
+    config = {
+        "id": "execution-env", "strict": True, "run": run,
+        "env": {variable: "{{ inputs.directory }}"},
+    }
+    assert ShellStep().validate(config) == []
+    result = ShellStep().execute(config, StepContext(
+        project_root=str(project_dir),
+        inputs={"directory": str(project_dir / selected)},
+    ))
+    assert result.status == StepStatus.COMPLETED
+    assert result.output["stdout"] == selected + "\n"
+    assert os.environ.get(variable) == parent_value
+
+
 @pytest.mark.parametrize("strict_options", [{}, {"strict": False}])
 def test_legacy_run_interpolation_is_preserved(project_dir, strict_options):
     config = {

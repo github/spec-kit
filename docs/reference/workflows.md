@@ -453,7 +453,7 @@ referents, so a pre-existing cache-file symlink can be replaced without changing
 its target. If a cache cannot be safely written, a warning is logged and
 discovery continues using the fetched catalog.
 
-> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit `run` fields; read a workflow's shell steps yourself before running it (see [Who maintains workflows?](#who-maintains-workflows)).
+> **A project's `.specify/workflow-catalogs.yml` can point `add` and `search` at a catalog you didn't choose.** Before running a workflow from an unfamiliar project, run `specify workflow catalog list` (and `specify workflow step catalog list` for the step catalogs its steps can pull in) — a project supplying that config is not evidence its workflows or steps were vetted. Maintainers do not audit workflow code; review both `run` and `env` in its shell steps yourself, including strict steps (see [Reviewing shell execution](#reviewing-shell-execution) and [Who maintains workflows?](#who-maintains-workflows)).
 
 ### List Catalogs
 
@@ -1310,6 +1310,39 @@ they do not modify the parent process or subsequent steps. An empty string is
 valid. `SPECKIT_WORKFLOW_DIR` is reserved (case-insensitively) and cannot be
 overridden. Keep environment names and executable-loading settings under the
 workflow author's control: environment binding is a data channel, not a sandbox.
+
+### Reviewing shell execution
+
+Before installing or running an unfamiliar workflow, audit each shell step's
+`run` **and** `env`, including nested branches and fan-out templates. Review
+referenced scripts and resources, called workflows, and active overlay YAML
+that can replace or insert steps. Apply the same review to workflow components
+of bundles, and repeat it when definitions, overlays, or referenced code change.
+Custom step packages require their own source review because loading them
+executes Python code.
+
+An environment value can control execution rather than merely supply data.
+For example, `PATH` selects executables, `PYTHONPATH` affects Python imports,
+`BASH_ENV` can select Bash startup code, and `NODE_OPTIONS` can change Node.js
+startup behavior. Native loaders and other programs have their own settings;
+these examples are not an exhaustive list. A fixed `run` can therefore execute
+different code even with `strict: true` and no `eval`. Strict mode neither
+filters execution-controlling bindings nor cleans the inherited environment.
+Keep those settings literal and author-vetted, or constrain dynamic values to
+an approved set of trusted paths/options. Use unconstrained input or agent
+output only for application-data variables whose consumers handle it as data.
+
+When a shell step invokes Specify itself, catalog overrides such as
+`SPECKIT_WORKFLOW_CATALOG_URL` can also change where child commands discover
+or install components. Vet those bindings alongside the
+[active catalog sources](catalogs.md#discovery-and-trust).
+
+Workflow validation checks configuration, not whether environment settings or
+commands are safe. `specify workflow info` shows metadata and step identities;
+`specify workflow resolve` shows layer and step attribution. Neither displays
+the complete `run`/`env` configuration or replaces reading the contributing
+source files. Catalog install permission, bundle installation, and strict mode
+are not security endorsements.
 
 ## Input Types
 

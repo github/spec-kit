@@ -51,6 +51,9 @@ POSIX, and overrides only the child environment.
 `SPECKIT_WORKFLOW_DIR` remains engine-owned. This prevents workflow expression
 values from becoming shell source in strict mode; it is not a sandbox or a
 guarantee that an authored script handles environment data safely.
+Environment bindings and inherited settings can intentionally affect executable
+lookup, module loading, and runtime startup. Strict mode does not filter them;
+workflow source review must cover both `run` and `env` and referenced code.
 
 New runs persist an execution tree. Resume replays completed occurrences into
 their expression contexts without calling their implementations, then continues
